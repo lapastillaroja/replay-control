@@ -24,12 +24,16 @@ pub struct SystemInfo {
 #[cfg(feature = "ssr")]
 pub use replay_core::favorites::Favorite;
 #[cfg(feature = "ssr")]
+pub use replay_core::game_ref::GameRef;
+#[cfg(feature = "ssr")]
 pub use replay_core::recents::RecentEntry;
 #[cfg(feature = "ssr")]
 pub use replay_core::roms::{RomEntry, SystemSummary};
 
 #[cfg(not(feature = "ssr"))]
-pub use crate::types::{Favorite, RecentEntry, RomEntry, SystemSummary};
+pub use crate::types::{
+    ArcadeMetadata, Favorite, GameRef, RecentEntry, RomDetail, RomEntry, SystemSummary,
+};
 
 #[server(prefix = "/sfn")]
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
@@ -91,7 +95,10 @@ pub async fn get_roms_page(
         all_roms
     } else {
         let q = search.to_lowercase();
-        all_roms.into_iter().filter(|r| r.filename.to_lowercase().contains(&q)).collect()
+        all_roms.into_iter().filter(|r| {
+            r.game.rom_filename.to_lowercase().contains(&q)
+                || r.game.display_name.as_ref().is_some_and(|dn| dn.to_lowercase().contains(&q))
+        }).collect()
     };
 
     let total = filtered.len();
@@ -155,7 +162,7 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<String>, ServerF
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_core::favorites::list_favorites_for_system(&state.storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(favs.into_iter().map(|f| f.rom_filename).collect())
+    Ok(favs.into_iter().map(|f| f.game.rom_filename).collect())
 }
 
 #[server(prefix = "/sfn")]
@@ -171,4 +178,65 @@ pub async fn rename_rom(relative_path: String, new_filename: String) -> Result<S
     let new_path = replay_core::roms::rename_rom(&state.storage, &relative_path, &new_filename)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(new_path.display().to_string())
+}
+
+/// Detailed ROM info including arcade metadata and favorite status.
+#[cfg(feature = "ssr")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RomDetail {
+    pub rom: RomEntry,
+    pub is_favorite: bool,
+    pub arcade_info: Option<ArcadeMetadata>,
+}
+
+#[cfg(feature = "ssr")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArcadeMetadata {
+    pub year: String,
+    pub manufacturer: String,
+    pub players: u8,
+    pub rotation: String,
+    pub category: String,
+    pub is_clone: bool,
+    pub parent: String,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let all_roms = replay_core::roms::list_roms(&state.storage, &system)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let rom = all_roms
+        .into_iter()
+        .find(|r| r.game.rom_filename == filename)
+        .ok_or_else(|| ServerFnError::new(format!("ROM not found: {filename}")))?;
+
+    let is_favorite = replay_core::favorites::is_favorite(&state.storage, &system, &filename);
+
+    let arcade_info = replay_core::arcade_db::lookup_arcade_game(
+        filename.strip_suffix(".zip").unwrap_or(&filename),
+    )
+    .map(|info| {
+        let rotation = match info.rotation {
+            replay_core::arcade_db::Rotation::Horizontal => "Horizontal",
+            replay_core::arcade_db::Rotation::Vertical => "Vertical",
+            replay_core::arcade_db::Rotation::Unknown => "Unknown",
+        };
+        ArcadeMetadata {
+            year: info.year.to_string(),
+            manufacturer: info.manufacturer.to_string(),
+            players: info.players,
+            rotation: rotation.to_string(),
+            category: info.category.to_string(),
+            is_clone: info.is_clone,
+            parent: info.parent.to_string(),
+        }
+    });
+
+    Ok(RomDetail {
+        rom,
+        is_favorite,
+        arcade_info,
+    })
 }

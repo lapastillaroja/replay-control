@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::i18n::{use_i18n, t};
@@ -23,18 +24,11 @@ pub fn FavoritesPage() -> impl IntoView {
 
     view! {
         <div class="page favorites-page">
-            <div class="page-header">
-                <h2 class="page-title">{move || t(i18n.locale.get(), "favorites.title")}</h2>
-                <button class="toggle-btn" on:click=move |_| grouped_view.update(|v| *v = !*v)>
-                    {toggle_label}
-                </button>
-            </div>
-
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                 <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let favs = favorites.await?;
-                        Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view /> })
+                        Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view toggle_label /> })
                     })}
                 </Suspense>
             </ErrorBoundary>
@@ -42,17 +36,28 @@ pub fn FavoritesPage() -> impl IntoView {
     }
 }
 
-/// Inner content — reactive list of favorites with remove support.
+/// Inner content — full favorites page with hero, recent scroll, system cards, and full list.
 #[component]
-fn FavoritesContent(favs: Vec<Favorite>, grouped_view: RwSignal<bool>) -> impl IntoView {
+fn FavoritesContent<F>(
+    favs: Vec<Favorite>,
+    grouped_view: RwSignal<bool>,
+    toggle_label: F,
+) -> impl IntoView
+where
+    F: Fn() -> &'static str + Clone + Send + Sync + 'static,
+{
     let i18n = use_i18n();
     let favorites = RwSignal::new(favs);
+
+    // Track which favorite is pending removal confirmation.
+    let confirm_remove = RwSignal::new(Option::<String>::None);
 
     let remove_fav = move |fav_filename: String, subfolder: String| {
         // Optimistically remove from local state.
         favorites.update(|list| {
-            list.retain(|f| f.filename != fav_filename);
+            list.retain(|f| f.marker_filename != fav_filename);
         });
+        confirm_remove.set(None);
         // Call server to persist.
         let sub = if subfolder.is_empty() { None } else { Some(subfolder) };
         leptos::task::spawn_local(async move {
@@ -61,22 +66,159 @@ fn FavoritesContent(favs: Vec<Favorite>, grouped_view: RwSignal<bool>) -> impl I
     };
 
     let is_empty = move || favorites.read().is_empty();
+    let total_count = move || favorites.read().len();
+    let system_count = move || {
+        let favs = favorites.read();
+        let mut systems = std::collections::HashSet::new();
+        for fav in favs.iter() {
+            systems.insert(fav.game.system.clone());
+        }
+        systems.len()
+    };
+
+    // The latest added favorite (last in the list) for the hero card.
+    let featured = move || {
+        let favs = favorites.read();
+        favs.last().cloned()
+    };
+
+    // Recently added favorites (last ~10, excluding the featured one), reversed for newest-first.
+    let recent_items = move || {
+        let favs = favorites.read();
+        let len = favs.len();
+        if len <= 1 {
+            return Vec::new();
+        }
+        let skip_count = if len > 11 { len - 11 } else { 0 };
+        favs.iter()
+            .skip(skip_count)
+            .take(len - 1 - skip_count) // exclude last (featured)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+    };
+
+    // System summary: for each system, count and the latest favorite.
+    let system_cards = move || {
+        let favs = favorites.read();
+        let mut map: std::collections::BTreeMap<String, (String, String, usize, String)> =
+            std::collections::BTreeMap::new();
+        for fav in favs.iter() {
+            let entry = map
+                .entry(fav.game.system.clone())
+                .or_insert_with(|| (fav.game.system_display.clone(), fav.game.system.clone(), 0, String::new()));
+            entry.2 += 1;
+            // Track the latest favorite name for this system (last one wins).
+            entry.3 = fav.game.display_name.clone().unwrap_or_else(|| fav.game.rom_filename.clone());
+        }
+        map.into_values().collect::<Vec<_>>()
+    };
 
     view! {
         <Show when=move || !is_empty() fallback=move || view! {
+            <div class="page-header">
+                <h2 class="page-title">{move || t(i18n.locale.get(), "favorites.title")}</h2>
+            </div>
             <p class="empty-state">{t(i18n.locale.get(), "favorites.empty")}</p>
         }>
-            <Show when=move || grouped_view.get() fallback=move || view! {
-                <FlatFavorites favorites remove_fav />
-            }>
-                <GroupedFavorites favorites remove_fav />
+            // Featured / Latest Added — hero card
+            <section class="section">
+                <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.latest_added")}</h2>
+                {move || featured().map(|fav| {
+                    let href = format!("/games/{}/{}", fav.game.system, urlencoding::encode(&fav.game.rom_filename));
+                    view! {
+                        <A href=href attr:class="hero-card rom-name-link">
+                            <div class="hero-info">
+                                <h3 class="hero-title">{fav.game.display_name.clone().unwrap_or_else(|| fav.game.rom_filename.clone())}</h3>
+                                <p class="hero-system">{fav.game.system_display.clone()}</p>
+                            </div>
+                        </A>
+                    }
+                })}
+            </section>
+
+            // Recently Added — horizontal scroll
+            <Show when=move || !recent_items().is_empty()>
+                <section class="section">
+                    <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.recently_added")}</h2>
+                    <div class="recent-scroll">
+                        {move || recent_items().into_iter().map(|fav| {
+                            let href = format!("/games/{}/{}", fav.game.system, urlencoding::encode(&fav.game.rom_filename));
+                            view! {
+                                <A href=href attr:class="recent-item rom-name-link">
+                                    <div class="recent-name">{fav.game.display_name.clone().unwrap_or_else(|| fav.game.rom_filename.clone())}</div>
+                                    <div class="recent-system">{fav.game.system_display.clone()}</div>
+                                </A>
+                            }
+                        }).collect::<Vec<_>>()}
+                    </div>
+                </section>
             </Show>
+
+            // Stats
+            <section class="section">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">{total_count}</div>
+                        <div class="stat-label">{move || t(i18n.locale.get(), "stats.favorites")}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{system_count}</div>
+                        <div class="stat-label">{move || t(i18n.locale.get(), "stats.systems")}</div>
+                    </div>
+                </div>
+            </section>
+
+            // By System — system cards
+            <Show when=move || { system_cards().len() > 1 }>
+                <section class="section">
+                    <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.by_system")}</h2>
+                    <div class="systems-grid">
+                        {move || system_cards().into_iter().map(|(display_name, system, count, latest)| {
+                            let href = format!("/games/{system}");
+                            let count_label = move || {
+                                let locale = i18n.locale.get();
+                                format!("{count} {}", t(locale, "stats.favorites").to_lowercase())
+                            };
+                            view! {
+                                <A href=href attr:class="system-card">
+                                    <div class="system-card-name">{display_name}</div>
+                                    <div class="system-card-count">{count_label}</div>
+                                    <div class="system-card-size">{latest}</div>
+                                </A>
+                            }
+                        }).collect::<Vec<_>>()}
+                    </div>
+                </section>
+            </Show>
+
+            // All Favorites — full list with grouped/flat toggle
+            <section class="section">
+                <div class="page-header">
+                    <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.all")}</h2>
+                    <button class="toggle-btn" on:click=move |_| grouped_view.update(|v| *v = !*v)>
+                        {toggle_label.clone()}
+                    </button>
+                </div>
+
+                <Show when=move || grouped_view.get() fallback=move || view! {
+                    <FlatFavorites favorites confirm_remove remove_fav />
+                }>
+                    <GroupedFavorites favorites confirm_remove remove_fav />
+                </Show>
+            </section>
         </Show>
     }
 }
 
 #[component]
-fn FlatFavorites<F>(favorites: RwSignal<Vec<Favorite>>, remove_fav: F) -> impl IntoView
+fn FlatFavorites<F>(
+    favorites: RwSignal<Vec<Favorite>>,
+    confirm_remove: RwSignal<Option<String>>,
+    remove_fav: F,
+) -> impl IntoView
 where
     F: Fn(String, String) + Clone + Send + Sync + 'static,
 {
@@ -84,17 +226,21 @@ where
         <div class="fav-list">
             <For
                 each=move || favorites.get()
-                key=|fav| fav.filename.clone()
+                key=|fav| fav.marker_filename.clone()
                 let:fav
             >
-                <FavItem fav show_system=true remove_fav=remove_fav.clone() />
+                <FavItem fav show_system=true confirm_remove remove_fav=remove_fav.clone() />
             </For>
         </div>
     }
 }
 
 #[component]
-fn GroupedFavorites<F>(favorites: RwSignal<Vec<Favorite>>, remove_fav: F) -> impl IntoView
+fn GroupedFavorites<F>(
+    favorites: RwSignal<Vec<Favorite>>,
+    confirm_remove: RwSignal<Option<String>>,
+    remove_fav: F,
+) -> impl IntoView
 where
     F: Fn(String, String) + Clone + Send + Sync + 'static,
 {
@@ -103,7 +249,7 @@ where
         let mut map: std::collections::BTreeMap<String, Vec<Favorite>> =
             std::collections::BTreeMap::new();
         for fav in favs {
-            map.entry(fav.system_display.clone()).or_default().push(fav);
+            map.entry(fav.game.system_display.clone()).or_default().push(fav);
         }
         map.into_iter().collect::<Vec<_>>()
     };
@@ -126,7 +272,7 @@ where
                             </h3>
                             {favs.into_iter().map(|fav| {
                                 let remove_fav = remove_fav.clone();
-                                view! { <FavItem fav show_system=false remove_fav /> }
+                                view! { <FavItem fav show_system=false confirm_remove remove_fav /> }
                             }).collect::<Vec<_>>()}
                         </div>
                     }
@@ -137,28 +283,61 @@ where
 }
 
 #[component]
-fn FavItem<F>(fav: Favorite, show_system: bool, remove_fav: F) -> impl IntoView
+fn FavItem<F>(
+    fav: Favorite,
+    show_system: bool,
+    confirm_remove: RwSignal<Option<String>>,
+    remove_fav: F,
+) -> impl IntoView
 where
     F: Fn(String, String) + Clone + Send + Sync + 'static,
 {
-    let fav_filename = StoredValue::new(fav.filename.clone());
-    let subfolder = StoredValue::new(fav.subfolder.clone());
-    let rom_name = fav.rom_filename;
-    let system_display = if show_system { Some(fav.system_display) } else { None };
+    let game_href = format!("/games/{}/{}", fav.game.system, urlencoding::encode(&fav.game.rom_filename));
 
-    let on_remove = move |_| {
-        remove_fav(fav_filename.get_value(), subfolder.get_value());
+    let fav_filename = StoredValue::new(fav.marker_filename.clone());
+    let subfolder = StoredValue::new(fav.subfolder.clone());
+    let rom_name = fav.game.display_name.unwrap_or(fav.game.rom_filename);
+    let system_display = if show_system { Some(fav.game.system_display) } else { None };
+
+    let is_confirming = move || {
+        confirm_remove.read().as_deref() == Some(&*fav_filename.get_value())
+    };
+
+    let on_star_click = move |_| {
+        confirm_remove.set(Some(fav_filename.get_value()));
+    };
+
+    let remove_fav = StoredValue::new(remove_fav);
+
+    let on_confirm = move |_| {
+        let rf = remove_fav.get_value();
+        rf(fav_filename.get_value(), subfolder.get_value());
+    };
+
+    let on_cancel = move |_| {
+        confirm_remove.set(None);
     };
 
     view! {
         <div class="fav-item">
             <div class="fav-info">
-                <span class="fav-name">{rom_name}</span>
+                <A href=game_href attr:class="fav-name rom-name-link">{rom_name}</A>
                 {system_display.map(|s| view! { <span class="fav-system">{s}</span> })}
             </div>
-            <button class="fav-star-btn" title="Remove from favorites" on:click=on_remove>
-                {"\u{2605}"}
-            </button>
+            <Show when=is_confirming fallback=move || view! {
+                <button class="fav-star-btn" title="Remove from favorites" on:click=on_star_click>
+                    {"\u{2605}"}
+                </button>
+            }>
+                <div class="fav-confirm-actions">
+                    <button class="rom-action-btn rom-action-confirm-delete" on:click=on_confirm>
+                        {"Remove?"}
+                    </button>
+                    <button class="rom-action-btn" on:click=on_cancel>
+                        {"\u{2715}"}
+                    </button>
+                </div>
+            </Show>
         </div>
     }
 }

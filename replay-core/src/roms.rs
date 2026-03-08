@@ -3,20 +3,15 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::game_ref::GameRef;
 use crate::storage::StorageLocation;
 use crate::systems::{self, System};
 
 /// A ROM file on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomEntry {
-    /// System folder name (e.g., "nintendo_nes")
-    pub system: String,
-    /// Display name of the system
-    pub system_display: String,
-    /// ROM filename (e.g., "Super Mario Bros (USA).nes")
-    pub filename: String,
-    /// Full path relative to the storage root (e.g., "/roms/nintendo_nes/Super Mario Bros (USA).nes")
-    pub relative_path: String,
+    #[serde(flatten)]
+    pub game: GameRef,
     /// File size in bytes
     pub size_bytes: u64,
     /// Whether this is an M3U playlist file
@@ -80,8 +75,12 @@ pub fn list_roms(storage: &StorageLocation, system_folder: &str) -> Result<Vec<R
     let mut roms = Vec::new();
     collect_roms_recursive(&system_dir, &storage.roms_dir(), system, &mut roms);
 
-    // Sort alphabetically by filename
-    roms.sort_by(|a, b| a.filename.to_lowercase().cmp(&b.filename.to_lowercase()));
+    // Sort alphabetically by display name (if available) or filename.
+    roms.sort_by(|a, b| {
+        let a_name = a.game.display_name.as_deref().unwrap_or(&a.game.rom_filename);
+        let b_name = b.game.display_name.as_deref().unwrap_or(&b.game.rom_filename);
+        a_name.to_lowercase().cmp(&b_name.to_lowercase())
+    });
 
     Ok(roms)
 }
@@ -133,7 +132,7 @@ pub fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
     let mut duplicates = Vec::new();
 
     for rom in all_roms {
-        let key = (rom.filename.to_lowercase(), rom.size_bytes);
+        let key = (rom.game.rom_filename.to_lowercase(), rom.size_bytes);
         if let Some(original) = seen.get(&key) {
             duplicates.push((original.clone(), rom));
         } else {
@@ -195,21 +194,18 @@ fn collect_roms_recursive(
             }
             collect_roms_recursive(&path, roms_root, system, out);
         } else if is_rom_file(&path, system) {
-            let filename = entry.file_name().to_string_lossy().to_string();
+            let rom_filename = entry.file_name().to_string_lossy().to_string();
             let relative = path
                 .strip_prefix(roms_root.parent().unwrap_or(Path::new("/")))
                 .unwrap_or(&path);
-            let relative_path = format!("/{}", relative.display());
+            let rom_path = format!("/{}", relative.display());
             let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
             let is_m3u = path
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
 
             out.push(RomEntry {
-                system: system.folder_name.to_string(),
-                system_display: system.display_name.to_string(),
-                filename,
-                relative_path,
+                game: GameRef::new(system.folder_name, rom_filename, rom_path),
                 size_bytes,
                 is_m3u,
             });

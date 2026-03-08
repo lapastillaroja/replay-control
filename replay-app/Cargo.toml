@@ -16,6 +16,7 @@ leptos_router = "0.7"
 server_fn = "0.7"
 serde = { workspace = true }
 serde_json = { workspace = true }
+urlencoding = "2"
 wasm-bindgen = "0.2"
 
 # SSR-only

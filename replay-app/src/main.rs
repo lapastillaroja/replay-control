@@ -69,6 +69,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_app::server_fns::GetSystemFavorites>();
         server_fn::axum::register_explicit::<replay_app::server_fns::DeleteRom>();
         server_fn::axum::register_explicit::<replay_app::server_fns::RenameRom>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::GetRomDetail>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_app")

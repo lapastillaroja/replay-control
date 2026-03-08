@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use leptos::prelude::*;
+use leptos_router::components::A;
 
 use crate::i18n::{use_i18n, t};
 use crate::server_fns::{self, RomEntry, PAGE_SIZE};
@@ -255,12 +256,24 @@ fn RomItem(
     set_rename_value: WriteSignal<String>,
     set_version: WriteSignal<u32>,
 ) -> impl IntoView {
-    let filename = StoredValue::new(rom.filename.clone());
-    let relative_path = StoredValue::new(rom.relative_path.clone());
-    let system = StoredValue::new(rom.system.clone());
+    let filename = StoredValue::new(rom.game.rom_filename.clone());
+    let display_name = StoredValue::new(rom.game.display_name.clone());
+    let relative_path = StoredValue::new(rom.game.rom_path.clone());
+    let system = StoredValue::new(rom.game.system.clone());
     let size = format_size(rom.size_bytes);
-    let ext = format!(".{}", rom.filename.rsplit('.').next().unwrap_or(""));
-    let path_display = rom.relative_path.clone();
+    let ext = format!(".{}", rom.game.rom_filename.rsplit('.').next().unwrap_or(""));
+    let path_display = rom.game.rom_path.clone();
+
+    let game_href = {
+        let sys = rom.game.system.clone();
+        let fname = rom.game.rom_filename.clone();
+        format!("/games/{}/{}", sys, urlencoding::encode(&fname))
+    };
+    let game_href = StoredValue::new(game_href);
+
+    let shown_name = move || {
+        display_name.get_value().unwrap_or_else(|| filename.get_value())
+    };
 
     let is_deleting = move || confirm_delete.get().as_deref() == Some(&*relative_path.get_value());
     let is_renaming = move || renaming.get().as_deref() == Some(&*relative_path.get_value());
@@ -271,7 +284,7 @@ fn RomItem(
 
             <div class="rom-info">
                 <Show when=is_renaming fallback=move || view! {
-                    <span class="rom-name">{filename.get_value()}</span>
+                    <A href=game_href.get_value() attr:class="rom-name rom-name-link">{shown_name()}</A>
                     <span class="rom-path">{path_display.clone()}</span>
                 }>
                     <RenameInput rename_value set_rename_value set_renaming

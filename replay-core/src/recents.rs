@@ -1,22 +1,17 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::game_ref::GameRef;
 use crate::storage::StorageLocation;
 use crate::systems;
 
 /// A recently played game entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentEntry {
-    /// The .rec filename
-    pub filename: String,
-    /// System folder name
-    pub system: String,
-    /// Display name of the system
-    pub system_display: String,
-    /// ROM filename
-    pub rom_filename: String,
-    /// Full ROM path stored inside the .rec file
-    pub rom_path: String,
+    #[serde(flatten)]
+    pub game: GameRef,
+    /// The .rec marker filename
+    pub marker_filename: String,
     /// Timestamp of last play (file modification time as unix epoch seconds)
     pub last_played: u64,
 }
@@ -65,16 +60,9 @@ pub fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>> {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        let system_display = systems::find_system(&system)
-            .map(|s| s.display_name.to_string())
-            .unwrap_or_else(|| system.clone());
-
         recents.push(RecentEntry {
-            filename,
-            system,
-            system_display,
-            rom_filename,
-            rom_path,
+            game: GameRef::new(&system, rom_filename, rom_path),
+            marker_filename: filename,
             last_played,
         });
     }
@@ -123,7 +111,7 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
         let recents = list_recents(&storage).unwrap();
         assert_eq!(recents.len(), 1);
-        assert_eq!(recents[0].system, "sega_smd");
-        assert_eq!(recents[0].rom_filename, "Sonic.md");
+        assert_eq!(recents[0].game.system, "sega_smd");
+        assert_eq!(recents[0].game.rom_filename, "Sonic.md");
     }
 }

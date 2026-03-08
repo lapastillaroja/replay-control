@@ -3,22 +3,17 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::game_ref::GameRef;
 use crate::storage::StorageLocation;
 use crate::systems;
 
 /// A parsed favorite entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Favorite {
-    /// The .fav filename (e.g., "sega_smd@Sonic.md.fav")
-    pub filename: String,
-    /// System folder name extracted from the filename
-    pub system: String,
-    /// Display name of the system
-    pub system_display: String,
-    /// ROM filename extracted from the fav filename
-    pub rom_filename: String,
-    /// Full ROM path stored inside the .fav file
-    pub rom_path: String,
+    #[serde(flatten)]
+    pub game: GameRef,
+    /// The .fav marker filename (e.g., "sega_smd@Sonic.md.fav")
+    pub marker_filename: String,
     /// Subfolder within _favorites (empty string if at root)
     pub subfolder: String,
 }
@@ -34,9 +29,10 @@ pub fn list_favorites(storage: &StorageLocation) -> Result<Vec<Favorite>> {
     collect_favorites(&favs_dir, &favs_dir, &mut favorites)?;
 
     favorites.sort_by(|a, b| {
-        a.system
-            .cmp(&b.system)
-            .then(a.rom_filename.to_lowercase().cmp(&b.rom_filename.to_lowercase()))
+        a.game
+            .system
+            .cmp(&b.game.system)
+            .then(a.game.rom_filename.to_lowercase().cmp(&b.game.rom_filename.to_lowercase()))
     });
 
     Ok(favorites)
@@ -48,7 +44,7 @@ pub fn list_favorites_for_system(
     system_folder: &str,
 ) -> Result<Vec<Favorite>> {
     let all = list_favorites(storage)?;
-    Ok(all.into_iter().filter(|f| f.system == system_folder).collect())
+    Ok(all.into_iter().filter(|f| f.game.system == system_folder).collect())
 }
 
 /// Add a ROM to favorites.
@@ -80,10 +76,6 @@ pub fn add_favorite(
 
     std::fs::write(&fav_path, rom_relative_path).map_err(|e| Error::io(&fav_path, e))?;
 
-    let system_display = systems::find_system(system_folder)
-        .map(|s| s.display_name.to_string())
-        .unwrap_or_else(|| system_folder.to_string());
-
     let subfolder = if grouped_by_system {
         system_folder.to_string()
     } else {
@@ -91,11 +83,8 @@ pub fn add_favorite(
     };
 
     Ok(Favorite {
-        filename: fav_filename,
-        system: system_folder.to_string(),
-        system_display,
-        rom_filename,
-        rom_path: rom_relative_path.to_string(),
+        game: GameRef::new(system_folder, rom_filename, rom_relative_path.to_string()),
+        marker_filename: fav_filename,
         subfolder,
     })
 }
@@ -263,16 +252,9 @@ fn collect_favorites(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let system_display = systems::find_system(&system)
-            .map(|s| s.display_name.to_string())
-            .unwrap_or_else(|| system.clone());
-
         out.push(Favorite {
-            filename,
-            system,
-            system_display,
-            rom_filename,
-            rom_path,
+            game: GameRef::new(&system, rom_filename, rom_path),
+            marker_filename: filename,
             subfolder,
         });
     }
@@ -316,9 +298,9 @@ mod tests {
 
         let favs = list_favorites(&storage).unwrap();
         assert_eq!(favs.len(), 1);
-        assert_eq!(favs[0].system, "sega_smd");
-        assert_eq!(favs[0].rom_filename, "Sonic.md");
-        assert_eq!(favs[0].rom_path, "/roms/sega_smd/Sonic.md");
+        assert_eq!(favs[0].game.system, "sega_smd");
+        assert_eq!(favs[0].game.rom_filename, "Sonic.md");
+        assert_eq!(favs[0].game.rom_path, "/roms/sega_smd/Sonic.md");
     }
 
     #[test]

@@ -51,9 +51,9 @@ async fn find_duplicates(
         dupes
             .into_iter()
             .map(|(a, b)| DuplicateResponse {
-                original: a.relative_path,
-                duplicate: b.relative_path,
-                filename: a.filename,
+                original: a.game.rom_path,
+                duplicate: b.game.rom_path,
+                filename: a.game.rom_filename,
                 size_bytes: a.size_bytes,
             })
             .collect(),

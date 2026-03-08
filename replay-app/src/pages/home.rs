@@ -24,15 +24,16 @@ pub fn HomePage() -> impl IntoView {
                             let locale = i18n.locale.get();
                             let entries = recents.await?;
                             Ok::<_, ServerFnError>(if let Some(last) = entries.first() {
-                                let name = last.rom_filename.clone();
-                                let sys = last.system_display.clone();
+                                let name = last.game.display_name.clone().unwrap_or_else(|| last.game.rom_filename.clone());
+                                let sys = last.game.system_display.clone();
+                                let href = format!("/games/{}/{}", last.game.system, urlencoding::encode(&last.game.rom_filename));
                                 view! {
-                                    <div class="hero-card">
+                                    <A href=href attr:class="hero-card rom-name-link">
                                         <div class="hero-info">
                                             <h3 class="hero-title">{name}</h3>
                                             <p class="hero-system">{sys}</p>
                                         </div>
-                                    </div>
+                                    </A>
                                 }.into_any()
                             } else {
                                 view! { <p class="empty-state">{t(locale, "home.no_games_played")}</p> }.into_any()
@@ -56,11 +57,13 @@ pub fn HomePage() -> impl IntoView {
                                 view! {
                                     <div class="recent-scroll">
                                         {items.into_iter().map(|entry| {
+                                            let name = entry.game.display_name.clone().unwrap_or_else(|| entry.game.rom_filename.clone());
+                                            let href = format!("/games/{}/{}", entry.game.system, urlencoding::encode(&entry.game.rom_filename));
                                             view! {
-                                                <div class="recent-item">
-                                                    <div class="recent-name">{entry.rom_filename.clone()}</div>
-                                                    <div class="recent-system">{entry.system_display.clone()}</div>
-                                                </div>
+                                                <A href=href attr:class="recent-item rom-name-link">
+                                                    <div class="recent-name">{name}</div>
+                                                    <div class="recent-system">{entry.game.system_display.clone()}</div>
+                                                </A>
                                             }
                                         }).collect::<Vec<_>>()}
                                     </div>
