@@ -1,3 +1,4 @@
+pub mod arcade_db;
 pub mod config;
 pub mod error;
 pub mod favorites;

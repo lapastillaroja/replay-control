@@ -451,6 +451,17 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
 
 ## Implementation Task List
 
+### Phase 0: Flycast / Naomi / Atomiswave (DONE)
+
+**Completed.** The `arcade_dc` system is implemented as the first arcade DB, proving the build pipeline works.
+
+- **Data source:** Game list extracted from Flycast source code (`naomi_roms.cpp`) cross-referenced with MAME driver files (`naomi.cpp`, `dc_atomiswave.cpp`, `segasp.cpp`) for year/manufacturer metadata.
+- **Data file:** `replay-core/data/arcade/flycast_games.csv` -- 301 entries (212 parents + 89 clones) covering Naomi, Naomi 2, Naomi GD-ROM, Atomiswave, and System SP platforms.
+- **Build pipeline:** `replay-core/build.rs` parses the CSV and generates a `phf::Map` via `phf_codegen`. The generated code is `include!`'d into `replay-core/src/arcade_db.rs`.
+- **Public API:** `lookup_arcade_game(rom_name)` and `arcade_display_name(filename)` in `replay_core::arcade_db`.
+- **Tests:** 8 unit tests covering lookups, clones, rotation, display name fallback.
+- **Dependencies:** `phf` (runtime), `phf_codegen` + `csv` (build).
+
 ### Phase 1: Core database (FBNeo + MAME 2003+)
 
 1. **Download and commit source data files**
@@ -458,27 +469,21 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
    - Store in `replay-core/data/sources/`
    - Create `UPDATE.md` with download URLs and refresh instructions
 
-2. **Create `replay-core/build.rs`**
-   - Add `phf_codegen`, `quick-xml` (or `roxmltree`) to `[build-dependencies]`
+2. **Extend `replay-core/build.rs`**
+   - Add `quick-xml` (or `roxmltree`) to `[build-dependencies]`
    - Parse FBNeo DAT: extract game name, description, year, manufacturer, cloneof
    - Parse MAME 2003+ XML: extract same fields plus video orientation, input players, driver status
    - Parse catver.ini: extract rom_name -> category mapping
-   - Merge into unified map, deduplicate by rom_name
-   - Generate `arcade_db.rs` using `phf_codegen`
+   - Merge into unified map with existing Flycast data, deduplicate by rom_name
+   - The build.rs is already structured to accept multiple data sources
 
-3. **Create `replay-core/src/arcade_db.rs`**
-   - Define `ArcadeGameInfo`, `Rotation`, `DriverStatus` types
-   - `include!` the generated code
-   - Public API: `lookup_arcade_game()`, `arcade_display_name()`
-   - Add to `lib.rs` module list
-
-4. **Integrate with ROM listing**
+3. **Integrate with ROM listing**
    - Add `display_name: Option<String>` to `RomEntry`
    - In `collect_roms_recursive`, call `arcade_display_name()` for arcade systems
    - Update sorting to use display name
    - Update tests
 
-5. **Testing**
+4. **Testing**
    - Unit tests for `lookup_arcade_game` with known ROM names
    - Test fallback behavior for unknown ROMs
    - Test that all source entries parse without errors
@@ -486,22 +491,21 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
 
 ### Phase 2: Enhanced metadata usage (future)
 
-6. Add filtering by category, players, orientation in the UI
-7. Show metadata in game detail view (year, manufacturer, category)
-8. Add "hide clones" toggle
-9. Add "hide non-working" toggle
+5. Add filtering by category, players, orientation in the UI
+6. Show metadata in game detail view (year, manufacturer, category)
+7. Add "hide clones" toggle
+8. Add "hide non-working" toggle
 
 ### Phase 3: Current MAME support (future)
 
-10. Download and process current MAME listxml
-11. Filter out non-arcade entries (isbios, isdevice, ismechanical, !runnable)
-12. Add to the merged database
-13. Handle `arcade_dc` (Atomiswave/Naomi) -- small enough to hardcode or pull from Flycast metadata
+9. Download and process current MAME listxml
+10. Filter out non-arcade entries (isbios, isdevice, ismechanical, !runnable)
+11. Add to the merged database
 
 ## Open Questions
 
 1. **Should we ship the source data files in git?** The FBNeo DAT is 13 MB and MAME 2003+ XML is 22 MB. Together ~35 MB in the repo. This is acceptable for a one-time cost, and avoids network dependencies in builds. We could also use git-lfs if size becomes a concern.
 
-2. **Version pinning:** ~~Should we pin to a specific FBNeo/MAME version?~~ **Resolved:** Yes — pin to MAME 0.285 (matching RePlayOS v1.4.0 internal DB). Use current FBNeo DAT from GitHub (RePlayOS tracks latest). Update when new RePlayOS versions ship with updated cores.
+2. **Version pinning:** ~~Should we pin to a specific FBNeo/MAME version?~~ **Resolved:** Yes -- pin to MAME 0.285 (matching RePlayOS v1.4.0 internal DB). Use current FBNeo DAT from GitHub (RePlayOS tracks latest). Update when new RePlayOS versions ship with updated cores.
 
-3. **Atomiswave/Naomi (`arcade_dc`):** This is a small set (~50 games) running on the Flycast core (v2.4+). Requires `naomi.zip` and `naomi2.zip` BIOS. We could hardcode these or find a Flycast-specific game list. Lower priority.
+3. ~~**Atomiswave/Naomi (`arcade_dc`):** This is a small set (~50 games) running on the Flycast core (v2.4+). Requires `naomi.zip` and `naomi2.zip` BIOS. We could hardcode these or find a Flycast-specific game list. Lower priority.~~ **Resolved:** Implemented in Phase 0 with 197 entries sourced from Flycast + MAME. Covers Naomi, Naomi 2, Atomiswave, and System SP.
