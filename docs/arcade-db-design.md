@@ -239,45 +239,67 @@ ArcadeGame {
 ### Overview
 
 ```
-Source Files (GitHub)          Build Script (build.rs)           Compiled Binary
-────────────────────          ─────────────────────────         ─────────────────
-FBNeo arcade DAT ──┐
-                    ├──> Parse XML ──> Normalize ──> Serialize ──> include_bytes!()
-MAME 2003+ XML ────┤                                    │
-                    │                                    │
-catver.ini ─────────┘                                    │
-                                                         ▼
-                                              arcade_db.bin (~500 KB)
+Source Files (downloaded)      Build Script (build.rs)           Compiled Binary
+────────────────────────       ─────────────────────────         ─────────────────
+FBNeo arcade DAT ──────┐
+                        ├──> Parse XML ──> Normalize ──> PHF codegen ──> include!()
+MAME 2003+ XML ────────┤                                    │
+                        │                                    │
+MAME 0.285 compact XML ┤                                    │
+                        │                                    │
+catver.ini (2003+) ─────┤                                    │
+                        │                                    │
+catver.ini (current) ───┘                                    │
+                                                             ▼
+                                                  arcade_db.rs (~2.2 MB)
 ```
 
-### Step 1: Download sources (offline-first)
+### Step 1: Download sources
 
-Keep cached copies of the source files in the repository under `replay-core/data/sources/`:
+Source files live in `data/` at the project root (gitignored -- not checked into the repo). A download script fetches them from GitHub:
+
+```sh
+./scripts/download-arcade-data.sh
+```
+
+This creates and populates:
 
 ```
-replay-core/data/sources/
+data/
+├── README.md                 # Checked into git (explains the folder)
 ├── fbneo-arcade.dat          # FBNeo ClrMame Pro XML, Arcade only
 ├── mame2003plus.xml          # MAME 2003+ listxml
-├── catver.ini                # Category/version file
-└── UPDATE.md                 # Instructions + URLs for refreshing
+├── mame0285-arcade.xml       # MAME 0.285 compact arcade XML (preprocessed)
+├── catver.ini                # Category/version file (MAME 2003+)
+└── catver-mame-current.ini   # Category/version file (current MAME)
 ```
 
-These files are checked into git. A developer updates them manually when a new emulator version ships. This avoids network dependencies during build.
+The script downloads from the libretro GitHub repos (see URLs in "Source Data URLs" below), is idempotent, and safe to re-run. Developers run it once after cloning, and again when they want to refresh the data.
 
-**Why not download at build time?** Build reproducibility, offline builds, CI reliability. The source files change infrequently (emulator core updates are rare on RePlayOS).
+**Why not checked into git?** The source files total ~35 MB and come from upstream repos. Keeping them out of git avoids bloating the repository. The download script makes setup a single command.
+
+**Why not downloaded at build time?** Build reproducibility, offline builds, CI reliability. The `build.rs` gracefully handles missing source files (it only processes files that exist), so the build succeeds even without running the download script -- you just get fewer entries in the arcade DB.
+
+Note: `replay-core/data/arcade/flycast_games.csv` (hand-curated, small) remains checked into git separately from the downloaded sources.
 
 ### Step 2: Parse and merge (build.rs)
 
 The `build.rs` script:
 
-1. Parses FBNeo DAT (ClrMame Pro XML format) -- extracts name, description, year, manufacturer, cloneof
-2. Parses MAME 2003+ XML -- extracts name, description, year, manufacturer, cloneof, orientation, players, driver status
-3. Parses catver.ini -- builds a `HashMap<rom_name, category>`
-4. Merges into a unified map keyed by `rom_name`:
-   - If a game exists in both, prefer MAME 2003+ metadata (has orientation/players/status)
-   - Always overlay category from catver.ini
-   - FBNeo-only games get `players=0, rotation=unknown, status=unknown`
-5. Serializes to a compact binary format
+1. Parses Flycast CSV -- hand-curated Naomi/Atomiswave entries (always preserved)
+2. Parses FBNeo DAT (ClrMame Pro XML format) -- extracts name, description, year, manufacturer, cloneof
+3. Parses MAME 2003+ XML -- extracts all FBNeo fields plus orientation, players, driver status
+4. Parses MAME 0.285 compact XML -- richest/most up-to-date data, overrides FBNeo and MAME 2003+ entries
+5. Parses catver.ini (MAME 2003+) -- overlays category data on entries
+6. Parses catver-mame-current.ini -- overlays categories on remaining entries
+7. Generates a PHF map via `phf_codegen`
+
+Merge strategy:
+- Flycast entries are always preserved (hand-curated, tracked by rom name)
+- FBNeo entries fill gaps (only insert if rom_name is new)
+- MAME 2003+ overrides FBNeo-sourced entries (which lack players/rotation/status)
+- MAME current overrides FBNeo and MAME 2003+ entries (more accurate/updated metadata)
+- catver.ini categories are overlaid on entries that lack a category
 
 ### Step 3: Binary format
 
@@ -418,11 +440,11 @@ roms.sort_by(|a, b| {
 
 | Component                       | Entries | Est. Binary Size |
 |---------------------------------|---------|------------------|
-| FBNeo arcade games              | 8,095   | ~500 KB          |
-| MAME 2003+ games                | 5,256   | ~350 KB          |
-| Combined (deduplicated)         | ~10,000 | ~700 KB          |
-| With PHF overhead               | ~10,000 | ~800 KB          |
-| Future: add current MAME arcade | ~15,000 | ~1.2 MB          |
+| FBNeo arcade games              | 8,108   | ~500 KB          |
+| MAME 2003+ games                | 5,272   | ~350 KB          |
+| MAME current (0.285) arcade     | 26,777  | ~1.5 MB          |
+| Combined (deduplicated)         | ~28,600 | ~2.0 MB          |
+| With PHF overhead               | ~28,600 | ~2.2 MB          |
 
 These are conservative estimates. The actual binary impact includes the PHF hash displacement table (~2-3 bytes per entry) plus all string data. At ~800 KB for the initial version, this is well within acceptable limits for a Raspberry Pi binary.
 
@@ -430,13 +452,15 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
 
 ## Source Data URLs
 
-### Primary (checked into repo)
+### Primary (downloaded via `./scripts/download-arcade-data.sh`)
 
 | File | URL | Update Frequency |
 |------|-----|------------------|
 | FBNeo Arcade DAT | `https://raw.githubusercontent.com/libretro/FBNeo/master/dats/FinalBurn%20Neo%20(ClrMame%20Pro%20XML%2C%20Arcade%20only).dat` | ~Monthly |
 | MAME 2003+ XML | `https://raw.githubusercontent.com/libretro/mame2003-plus-libretro/master/metadata/mame2003-plus.xml` | Rarely |
 | MAME 2003+ catver.ini | `https://raw.githubusercontent.com/libretro/mame2003-plus-libretro/master/metadata/catver.ini` | Rarely |
+| MAME 0.285 DAT pack | `https://www.progettosnaps.net/download/?tipo=dat_mame&file=/dats/MAME/packs/MAME_Dats_285.7z` | Per MAME release |
+| catver.ini (current MAME) | `https://raw.githubusercontent.com/AntoPISA/MAME_SupportFiles/refs/heads/main/catver.ini/catver.ini` | ~Monthly |
 
 ### Future / supplementary
 
@@ -462,32 +486,38 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
 - **Tests:** 8 unit tests covering lookups, clones, rotation, display name fallback.
 - **Dependencies:** `phf` (runtime), `phf_codegen` + `csv` (build).
 
-### Phase 1: Core database (FBNeo + MAME 2003+)
+### Phase 1: Core database (FBNeo + MAME 2003+) (DONE)
 
-1. **Download and commit source data files**
-   - Fetch FBNeo arcade-only DAT, MAME 2003+ XML, and catver.ini
-   - Store in `replay-core/data/sources/`
-   - Create `UPDATE.md` with download URLs and refresh instructions
+**Completed.** The arcade DB now includes FBNeo and MAME 2003+ data, expanding from 301 to 10,375 unique entries.
 
-2. **Extend `replay-core/build.rs`**
-   - Add `quick-xml` (or `roxmltree`) to `[build-dependencies]`
-   - Parse FBNeo DAT: extract game name, description, year, manufacturer, cloneof
-   - Parse MAME 2003+ XML: extract same fields plus video orientation, input players, driver status
-   - Parse catver.ini: extract rom_name -> category mapping
-   - Merge into unified map with existing Flycast data, deduplicate by rom_name
-   - The build.rs is already structured to accept multiple data sources
+1. **Source data files** -- downloaded via `./scripts/download-arcade-data.sh` into `data/` at the project root (gitignored):
+   - `fbneo-arcade.dat` -- FBNeo ClrMame Pro XML, arcade only (8,108 entries, ~13 MB)
+   - `mame2003plus.xml` -- MAME 2003+ XML (5,272 entries, ~22 MB)
+   - `catver.ini` -- category/genre mappings (5,258 entries)
 
-3. **Integrate with ROM listing**
-   - Add `display_name: Option<String>` to `RomEntry`
-   - In `collect_roms_recursive`, call `arcade_display_name()` for arcade systems
-   - Update sorting to use display name
-   - Update tests
+2. **Extended `replay-core/build.rs`**:
+   - Added `quick-xml = "0.37"` to `[build-dependencies]` for streaming SAX XML parsing
+   - `parse_fbneo_dat()` -- streaming parser for FBNeo ClrMame Pro XML; extracts name, description, year, manufacturer, cloneof
+   - `parse_mame2003plus_xml()` -- streaming parser for MAME 2003+ XML; extracts all FBNeo fields plus video orientation, input players, driver status
+   - `parse_catver_ini()` -- INI parser for `[Category]` section; builds rom_name-to-category mapping
+   - Merge strategy: Flycast CSV loaded first (hand-curated, preserved), then FBNeo (fills gaps), then MAME 2003+ (overwrites entries lacking players/rotation/status), then catver.ini category overlay
+   - Build emits `cargo:warning` counts per source for visibility
+   - All source files tracked via `cargo::rerun-if-changed`
 
-4. **Testing**
-   - Unit tests for `lookup_arcade_game` with known ROM names
-   - Test fallback behavior for unknown ROMs
-   - Test that all source entries parse without errors
-   - Verify binary size increase is within estimates
+3. **Integrate with ROM listing** (DONE -- completed as part of Phase 0 integration)
+   - `display_name: Option<String>` added to `RomEntry`, `RecentEntry`, and `Favorite`
+   - `collect_roms_recursive` calls `arcade_display_name()` for arcade systems
+   - Sorting uses display name when available
+   - Search matches on both filename and display name
+   - Home page, favorites page, and game detail page all show display names
+
+4. **Testing** -- 31 tests total (5 new):
+   - `lookup_sf2_from_mame` -- verifies MAME 2003+ metadata (players, rotation, status, category)
+   - `lookup_pacman_clone` -- verifies clone/parent relationship and category overlay
+   - `lookup_dkong_vertical` -- verifies vertical rotation detection
+   - `lookup_fbneo_only_game` -- verifies FBNeo-only entry with unknown rotation/status
+   - `total_entry_count` -- asserts 10,000+ unique entries after deduplication
+   - All 26 existing tests continue to pass
 
 ### Phase 2: Enhanced metadata usage (future)
 
@@ -496,15 +526,42 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
 7. Add "hide clones" toggle
 8. Add "hide non-working" toggle
 
-### Phase 3: Current MAME support (future)
+### Phase 3: Current MAME support (DONE)
 
-9. Download and process current MAME listxml
-10. Filter out non-arcade entries (isbios, isdevice, ismechanical, !runnable)
-11. Add to the merged database
+**Completed.** The arcade DB now includes MAME 0.285 data, expanding from 10,375 to 28,593 unique entries.
+
+1. **Data source:** The full MAME 0.285 listxml (~285 MB XML) is downloaded from Progetto-SNAPS as a 7z archive (~40 MB), then preprocessed by `scripts/extract-mame-arcade.py` into a compact ~3.6 MB XML file containing only arcade entries with the metadata fields we need (name, description, year, manufacturer, cloneof, rotation, players, driver status). Non-arcade entries (BIOS, devices, mechanical, non-runnable) are filtered out during preprocessing.
+
+2. **Category data:** `catver-mame-current.ini` from the MAME_SupportFiles GitHub repo (v0.274, 47,853 mappings) supplements the MAME 2003+ catver.ini with categories for newer games.
+
+3. **Data files** (downloaded via `./scripts/download-arcade-data.sh` into `data/`, gitignored):
+   - `mame0285-arcade.xml` -- preprocessed MAME 0.285 arcade entries (26,777 entries, ~3.6 MB)
+   - `catver-mame-current.ini` -- category/genre mappings for current MAME (47,853 entries, ~2.3 MB)
+
+4. **Preprocessing pipeline** (in download script, requires `7z` and `python3`):
+   - Download `MAME_Dats_285.7z` from Progetto-SNAPS
+   - Extract full listxml from archive
+   - Run `scripts/extract-mame-arcade.py` to produce compact XML
+   - Clean up large temporary files (7z archive and full XML are not kept)
+
+5. **Extended `replay-core/build.rs`**:
+   - Added `parse_mame_current_xml()` -- streaming parser for the compact format (`<m>` elements with `<d>`, `<y>`, `<f>` children)
+   - Merge step 4: MAME current entries override FBNeo and MAME 2003+ entries (which may have outdated metadata), but preserve Flycast hand-curated entries
+   - Merge step 6: catver-mame-current.ini overlays categories on entries that still lack them after the MAME 2003+ catver overlay
+   - Build stats: 26,777 MAME current entries loaded, 18,218 new + 8,258 overrides, 21,078 additional category overlays
+
+6. **Testing** -- 35 tests total (4 new):
+   - `lookup_mame_current_only_game` -- verifies Time Crisis metadata (MAME current only, not in FBNeo/MAME 2003+)
+   - `lookup_mame_current_overrides_mame2003` -- verifies MAME current overrides FBNeo entries with rotation/status data
+   - `lookup_mame_current_preserves_flycast` -- verifies Flycast hand-curated entries are preserved
+   - `mame_current_category_overlay` -- verifies category applied from current MAME catver.ini
+   - Updated `lookup_fbneo_only_game` to use `3countba` (a game truly only in FBNeo)
+   - Updated `lookup_sf2_from_mame` to expect MAME current description format
+   - Updated `total_entry_count` threshold from 10,000 to 25,000
 
 ## Open Questions
 
-1. **Should we ship the source data files in git?** The FBNeo DAT is 13 MB and MAME 2003+ XML is 22 MB. Together ~35 MB in the repo. This is acceptable for a one-time cost, and avoids network dependencies in builds. We could also use git-lfs if size becomes a concern.
+1. ~~**Should we ship the source data files in git?**~~ **Resolved:** No. Source files (~35 MB) live in `data/` at the project root, which is gitignored. A download script (`./scripts/download-arcade-data.sh`) fetches them. This keeps the repo small while making setup a single command. `build.rs` gracefully handles missing files.
 
 2. **Version pinning:** ~~Should we pin to a specific FBNeo/MAME version?~~ **Resolved:** Yes -- pin to MAME 0.285 (matching RePlayOS v1.4.0 internal DB). Use current FBNeo DAT from GitHub (RePlayOS tracks latest). Update when new RePlayOS versions ship with updated cores.
 
