@@ -1,0 +1,86 @@
+pub mod components;
+pub mod i18n;
+pub mod pages;
+pub mod server_fns;
+pub mod types;
+pub mod util;
+
+#[cfg(feature = "ssr")]
+pub mod api;
+
+use leptos::prelude::*;
+use leptos_router::components::{Route, Router, Routes, A};
+use leptos_router::path;
+
+use components::nav::BottomNav;
+use i18n::{provide_i18n, use_i18n, t};
+use pages::favorites::FavoritesPage;
+use pages::games::{GamesPage, SystemRomView};
+use pages::home::HomePage;
+use pages::more::MorePage;
+
+/// The HTML shell wrapping the App component for SSR.
+#[cfg(feature = "ssr")]
+#[component]
+pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
+    view! {
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <title>"Replay"</title>
+                <link rel="stylesheet" href="/style.css" />
+                <HydrationScripts options=options.clone() />
+            </head>
+            <body>
+                <App />
+            </body>
+        </html>
+    }
+}
+
+#[component]
+pub fn App() -> impl IntoView {
+    provide_i18n();
+    let i18n = use_i18n();
+
+    view! {
+        <Router>
+            <div class="app">
+                <header class="top-bar">
+                    <h1 class="app-title">
+                        <A href="/" attr:class="app-title-link">{move || t(i18n.locale.get(), "app.title")}</A>
+                    </h1>
+                    <div class="top-actions">
+                        <A href="/favorites" attr:class="icon-btn" attr:title="Favorites">
+                            {icon_star()}
+                        </A>
+                    </div>
+                </header>
+
+                <main class="content">
+                    <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
+                        <Route path=path!("/") view=HomePage />
+                        <Route path=path!("/games") view=GamesPage />
+                        <Route path=path!("/games/:system") view=SystemRomView />
+                        <Route path=path!("/favorites") view=FavoritesPage />
+                        <Route path=path!("/more") view=MorePage />
+                    </Routes>
+                </main>
+
+                <BottomNav />
+            </div>
+        </Router>
+    }
+}
+
+fn icon_star() -> &'static str {
+    "\u{2605}"
+}
+
+#[cfg(feature = "hydrate")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn hydrate() {
+    leptos::mount::hydrate_body(App);
+}
