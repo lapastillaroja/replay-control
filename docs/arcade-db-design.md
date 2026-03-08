@@ -443,8 +443,8 @@ roms.sort_by(|a, b| {
 | FBNeo arcade games              | 8,108   | ~500 KB          |
 | MAME 2003+ games                | 5,272   | ~350 KB          |
 | MAME current (0.285) arcade     | 26,777  | ~1.5 MB          |
-| Combined (deduplicated)         | ~28,600 | ~2.0 MB          |
-| With PHF overhead               | ~28,600 | ~2.2 MB          |
+| Combined (deduplicated)         | 28,593  | ~2.0 MB          |
+| With PHF overhead               | 28,593  | ~2.2 MB          |
 
 These are conservative estimates. The actual binary impact includes the PHF hash displacement table (~2-3 bytes per entry) plus all string data. At ~800 KB for the initial version, this is well within acceptable limits for a Raspberry Pi binary.
 

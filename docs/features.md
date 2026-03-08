@@ -69,11 +69,13 @@ Tracking document for the Replay companion app. Organized by page/area.
   - Per-ROM delete with confirmation step (delete button swaps to confirm/cancel)
   - ROM metadata display: filename, relative path, file size, file extension badge
   - Only one delete confirmation or rename operation active at a time
-- **Arcade display names** (Phase 0) — Flycast/Naomi/Atomiswave games show human-readable names (e.g., "Metal Slug 6" instead of `mslug6.zip`) via embedded PHF database (301 entries). Display names appear in ROM lists, home page recents, favorites, and game detail pages.
+- **Arcade display names** — full arcade DB with 28,593 unique entries covering Flycast/Naomi/Atomiswave (301), FBNeo (8,108), MAME 2003+ (5,272), and MAME current (26,777), deduplicated at build time via embedded PHF database. Display names appear in ROM lists, home page recents, favorites, and game detail pages. See `docs/arcade-db-design.md`.
 - **`display_name` propagation** — `RomEntry`, `RecentEntry`, and `Favorite` all carry an optional `display_name` populated from the arcade DB for arcade systems. Search matches on both filename and display name.
+- **`is_favorite` on RomEntry** — ROM entries carry a boolean `is_favorite` flag, enabling favorite state display directly in the ROM list without separate lookups
+- **System display name in ROM list header** — system ROM list page shows the human-readable system name (e.g., "Sega Mega Drive") in the header instead of the system ID
+- **Add favorite from game list** — favorite toggle in ROM list works correctly (was previously broken)
 
 ### Planned
-- **Arcade DB expansion** — FBNeo (~8K entries) and MAME 2003+ (~5K entries) game databases (see `docs/arcade-db-design.md`, Phase 1)
 - **ROM filename parsing** — parse No-Intro and GoodTools naming conventions to extract clean title, region, revision, translation info, and hack markers (see `docs/rom-identification.md`)
 - **Game grouping** — group regional variants, revisions, hacks, and translations of the same game into a single collapsible row
 - **Grouped view toggle** — switch between flat file list and grouped game list per system
@@ -104,10 +106,10 @@ Tracking document for the Replay companion app. Organized by page/area.
 - **Remove confirmation** — clicking the star shows a "Remove?" confirmation button instead of immediately removing; cancel button or clicking another item dismisses
 - Only one confirmation active at a time across all favorites
 - **Optimistic UI** — favorite removal updates the list immediately, server call happens in background
+- **`date_added` on Favorite** — favorites carry a timestamp, enabling true "recently added" ordering
 
 ### Planned
 - **Favorite organization** — group/flatten favorites by system subfolder (`_favorites/sega_smd/`) with server-side file reorganization (server functions `group_favorites` and `flatten_favorites` exist)
-- **Date added** tracking — add a timestamp to favorites to enable true "recently added" ordering instead of relying on list position
 
 ### Future ideas
 - Search within favorites
@@ -149,19 +151,17 @@ Tracking document for the Replay companion app. Organized by page/area.
 - **Responsive design** — mobile-first CSS with breakpoints for tablet (768px) and desktop (1024px)
 - **Two-crate architecture**: `replay-core` (business logic, native only) and `replay-app` (SSR + hydration)
 - **Build system** — `build.sh` script building WASM hydrate + server SSR binary (no cargo-leptos)
-- **Arcade metadata database** — embedded PHF map for Flycast/Naomi/Atomiswave games (301 entries), generated at build time from CSV data via `phf_codegen`
+- **Arcade metadata database** — embedded PHF map with 28,593 unique entries (Flycast 301, FBNeo 8,108, MAME 2003+ 5,272, MAME current 26,777), generated at build time from XML/CSV data via `phf_codegen`. See `docs/arcade-db-design.md`.
+- **GameRef unification** — unified game reference type used across ROM lists, favorites, recents, and game detail pages for consistent game identification
 - **Storage abstraction** — supports local filesystem and USB-mounted storage, auto-detects storage root
 - **Caching layer** — in-memory cache for system summaries with TTL-based expiration
 - **Mirror types** — client-side type definitions matching server-side `replay-core` types for serialization
 
 ### Planned
-- **Arcade DB expansion** — add FBNeo (~8K entries) and MAME 2003+ (~5K entries) game databases, merged and deduplicated at build time (see `docs/arcade-db-design.md`)
 - **ROM filename parser** — regex-based parser for No-Intro and GoodTools naming conventions, extracting title, region, revision, flags (see `docs/rom-identification.md`)
 - **Background task manager** — `TaskManager` with `DashMap`, progress via `AtomicU32`, cancellation via `CancellationToken`, polling-based UI (see `docs/background-tasks.md`)
 - **Game metadata integration** — pluggable metadata providers for box art, descriptions, ratings. ScreenScraper recommended as primary source for console games, Arcade Italia for arcade (see `docs/game-metadata-sources.md`)
 - **Server function registration** — explicit registration for library-crate server functions to prevent linker stripping
-
-### Planned
 - **Game launching** — launch games on RePlayOS from the web UI. Recommended approach: `_autostart` folder manipulation + process restart. Needs testing on real hardware. See `docs/game-launching.md`.
 
 ### Future ideas
