@@ -6,9 +6,39 @@ Arcade ROM files are stored as zip archives with short, cryptic filenames (e.g.,
 
 We need an embedded database that maps arcade ROM zip names to display names and metadata, covering the four arcade system folders: `arcade_fbneo`, `arcade_mame`, `arcade_mame_2k3p`, and `arcade_dc`.
 
+## RePlayOS Arcade Core Versions
+
+Source: [RePlayOS changelog](https://www.replayos.com/changelog/) and [systems page](https://www.replayos.com/systems/).
+
+As of **RePlayOS v1.4.0** (latest public release):
+
+| System Folder      | Display Name               | Libretro Core        | Core/ROM Set Version     | RPi 3/Zero 2 | RPi 4 | RPi 5 |
+|--------------------|----------------------------|----------------------|--------------------------|---------------|-------|-------|
+| `arcade_fbneo`     | Arcade (FBNeo)             | fbneo_libretro       | Current FBNeo (latest)   | Partial       | Yes   | Yes   |
+| `arcade_mame`      | Arcade (MAME)              | mamearcade_libretro  | MAME 0.284+              | No            | Partial | Yes |
+| `arcade_mame_2k3p` | Arcade (MAME 2K3+)        | mame2003_plus_libretro | MAME 0.78 (backported) | Partial       | Partial | No  |
+| `arcade_dc`        | Arcade SEGA Naomi/Atomis   | flycast_libretro     | Flycast v2.4+            | No            | Partial | Yes |
+
+### Version History (from changelog)
+
+- **v1.4.0**: Internal arcade database updated to **MAME 0.285**
+- **v1.2.0**: Updated FBNeo and MAME mainline arcade cores (**MAME 0.284**); internal arcade DB to MAME 0.284
+- **v0.52.0**: Internal arcade naming database based on **MAME 0.276**
+- **v0.50.0**: Updated MAME core to **v0.275**, Flycast core to **v2.4**
+
+### Key Notes
+
+- RePlayOS generates its internal arcade naming database using a **Python utility** that parses **FBNeo + MAME full Arcade DAT** files (added in v0.49.0, expanded in v0.49.17).
+- The internal arcade DB is **not accessible** to external apps — it's compiled into the `replay` C binary.
+- `arcade_mame_2k3p` is **not supported on RPi 5** (the core is too old / RPi 5 uses newer cores).
+- `arcade_dc` uses Flycast for Naomi/Atomiswave boards (SEGA arcade hardware based on Dreamcast).
+- FBNeo uses MVS BIOS and SNK NEO-GEO AES BIOS (changed in v1.2.0).
+- Naomi/Atomiswave requires `naomi.zip` and `naomi2.zip` BIOS files in the `dc/` BIOS subfolder.
+- ROM format for all arcade systems: **zip**.
+
 ## Data Sources Evaluation
 
-### 1. MAME -listxml XML (Current MAME, v0.286+)
+### 1. MAME -listxml XML (Current MAME — RePlayOS uses v0.284+, DB up to v0.285)
 
 **What it is:** The canonical, machine-readable output from `mame -listxml`. An XML file (~285 MB uncompressed) containing every machine MAME supports (~49,000+ entries including non-arcade devices, BIOS, mechanical).
 
@@ -30,9 +60,9 @@ We need an embedded database that maps arcade ROM zip names to display names and
 - Requires filtering out ~35,000 non-arcade entries (devices, BIOS, software lists, mechanical)
 - Version-specific: ROM names can change between MAME versions
 - Cannot easily be downloaded without running a MAME binary or using third-party mirrors
-- RePlayOS uses a specific MAME version (lr-mame), not necessarily the latest
+- RePlayOS currently uses MAME 0.284+ core with internal DB up to 0.285. We should match this version.
 
-**Best source for:** Current MAME (`arcade_mame`) entries. Download from progettosnaps.net mirrors.
+**Best source for:** Current MAME (`arcade_mame`) entries. Download MAME 0.285 DAT from progettosnaps.net mirrors.
 
 ### 2. MAME 2003-Plus XML (libretro)
 
@@ -148,12 +178,12 @@ We need an embedded database that maps arcade ROM zip names to display names and
 
 Use the **version-matched DAT/XML files** from the libretro GitHub repos as primary sources, since they directly correspond to the emulator cores running on RePlayOS:
 
-| RePlayOS Folder    | Emulator Core           | Primary Data Source                     |
-|--------------------|-------------------------|-----------------------------------------|
-| `arcade_fbneo`     | fbneo_libretro.so       | FBNeo Arcade-only DAT (GitHub)          |
-| `arcade_mame`      | mamearcade_libretro.so  | Current MAME listxml (progettosnaps)    |
-| `arcade_mame_2k3p` | mame2003_plus_libretro  | MAME 2003+ XML (GitHub)                 |
-| `arcade_dc`        | flycast_libretro.so     | Hardcoded list (small, ~50 games)       |
+| RePlayOS Folder    | Emulator Core           | ROM Set Version       | Primary Data Source                     |
+|--------------------|-------------------------|-----------------------|-----------------------------------------|
+| `arcade_fbneo`     | fbneo_libretro          | Current FBNeo         | FBNeo Arcade-only DAT (GitHub)          |
+| `arcade_mame`      | mamearcade_libretro     | MAME 0.284+           | MAME 0.285 listxml (progettosnaps)      |
+| `arcade_mame_2k3p` | mame2003_plus_libretro  | MAME 0.78 (backported)| MAME 2003+ XML (GitHub)                 |
+| `arcade_dc`        | flycast_libretro        | Flycast v2.4+         | Hardcoded list (small, ~50 games)       |
 
 Supplement with `catver.ini` for genre/category data.
 
@@ -472,6 +502,6 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
 
 1. **Should we ship the source data files in git?** The FBNeo DAT is 13 MB and MAME 2003+ XML is 22 MB. Together ~35 MB in the repo. This is acceptable for a one-time cost, and avoids network dependencies in builds. We could also use git-lfs if size becomes a concern.
 
-2. **Version pinning:** Should we pin to a specific FBNeo/MAME version that matches the RePlayOS release? Ideally yes, but in practice ROM names are highly stable across versions. A newer DAT will be a strict superset of what the user has.
+2. **Version pinning:** ~~Should we pin to a specific FBNeo/MAME version?~~ **Resolved:** Yes — pin to MAME 0.285 (matching RePlayOS v1.4.0 internal DB). Use current FBNeo DAT from GitHub (RePlayOS tracks latest). Update when new RePlayOS versions ship with updated cores.
 
-3. **Atomiswave/Naomi (`arcade_dc`):** This is a small set (~50 games). Flycast uses a different ROM format. We could hardcode these or find a Flycast-specific game list. Lower priority.
+3. **Atomiswave/Naomi (`arcade_dc`):** This is a small set (~50 games) running on the Flycast core (v2.4+). Requires `naomi.zip` and `naomi2.zip` BIOS. We could hardcode these or find a Flycast-specific game list. Lower priority.
