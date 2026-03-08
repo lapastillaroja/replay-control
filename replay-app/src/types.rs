@@ -35,6 +35,7 @@ pub struct Favorite {
     pub game: GameRef,
     pub marker_filename: String,
     pub subfolder: String,
+    pub date_added: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

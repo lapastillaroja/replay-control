@@ -16,6 +16,8 @@ pub struct Favorite {
     pub marker_filename: String,
     /// Subfolder within _favorites (empty string if at root)
     pub subfolder: String,
+    /// Unix timestamp when the favorite was added (from file mtime)
+    pub date_added: u64,
 }
 
 /// List all favorites, searching root and subfolders.
@@ -66,7 +68,9 @@ pub fn add_favorite(
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         dir
     } else {
-        storage.favorites_dir()
+        let dir = storage.favorites_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+        dir
     };
 
     let fav_path = target_dir.join(&fav_filename);
@@ -82,10 +86,16 @@ pub fn add_favorite(
         String::new()
     };
 
+    let date_added = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
     Ok(Favorite {
         game: GameRef::new(system_folder, rom_filename, rom_relative_path.to_string()),
         marker_filename: fav_filename,
         subfolder,
+        date_added,
     })
 }
 
@@ -252,10 +262,19 @@ fn collect_favorites(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
+        let date_added = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
         out.push(Favorite {
             game: GameRef::new(&system, rom_filename, rom_path),
             marker_filename: filename,
             subfolder,
+            date_added,
         });
     }
 

@@ -76,42 +76,38 @@ where
         systems.len()
     };
 
-    // The latest added favorite (last in the list) for the hero card.
-    let featured = move || {
+    // Sort by date_added descending to find the most recently added favorites.
+    let by_date = move || {
         let favs = favorites.read();
-        favs.last().cloned()
+        let mut sorted: Vec<_> = favs.iter().cloned().collect();
+        sorted.sort_by(|a, b| b.date_added.cmp(&a.date_added));
+        sorted
     };
 
-    // Recently added favorites (last ~10, excluding the featured one), reversed for newest-first.
+    // The latest added favorite for the hero card.
+    let featured = move || by_date().into_iter().next();
+
+    // Recently added favorites (~10, excluding the featured one), newest-first.
     let recent_items = move || {
-        let favs = favorites.read();
-        let len = favs.len();
-        if len <= 1 {
-            return Vec::new();
-        }
-        let skip_count = if len > 11 { len - 11 } else { 0 };
-        favs.iter()
-            .skip(skip_count)
-            .take(len - 1 - skip_count) // exclude last (featured)
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
+        let sorted = by_date();
+        sorted.into_iter().skip(1).take(10).collect::<Vec<_>>()
     };
 
-    // System summary: for each system, count and the latest favorite.
+    // System summary: for each system, count and the most recently added favorite.
     let system_cards = move || {
         let favs = favorites.read();
-        let mut map: std::collections::BTreeMap<String, (String, String, usize, String)> =
+        let mut map: std::collections::BTreeMap<String, (String, String, usize, String, u64)> =
             std::collections::BTreeMap::new();
         for fav in favs.iter() {
             let entry = map
                 .entry(fav.game.system.clone())
-                .or_insert_with(|| (fav.game.system_display.clone(), fav.game.system.clone(), 0, String::new()));
+                .or_insert_with(|| (fav.game.system_display.clone(), fav.game.system.clone(), 0, String::new(), 0));
             entry.2 += 1;
-            // Track the latest favorite name for this system (last one wins).
-            entry.3 = fav.game.display_name.clone().unwrap_or_else(|| fav.game.rom_filename.clone());
+            // Track the most recently added favorite for this system.
+            if fav.date_added >= entry.4 {
+                entry.3 = fav.game.display_name.clone().unwrap_or_else(|| fav.game.rom_filename.clone());
+                entry.4 = fav.date_added;
+            }
         }
         map.into_values().collect::<Vec<_>>()
     };
@@ -176,7 +172,7 @@ where
                 <section class="section">
                     <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.by_system")}</h2>
                     <div class="systems-grid">
-                        {move || system_cards().into_iter().map(|(display_name, system, count, latest)| {
+                        {move || system_cards().into_iter().map(|(display_name, system, count, latest, _)| {
                             let href = format!("/games/{system}");
                             let count_label = move || {
                                 let locale = i18n.locale.get();
