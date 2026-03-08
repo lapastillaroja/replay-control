@@ -590,10 +590,22 @@ a, a:visited, a:hover, a:active {
     color: var(--text-secondary);
 }
 
-.fav-star {
+.fav-star-btn {
+    background: none;
+    border: none;
     color: var(--star);
-    font-size: 1rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px 8px;
     margin-left: 8px;
+    flex-shrink: 0;
+    transition: color 0.15s, transform 0.15s;
+    line-height: 1;
+}
+
+.fav-star-btn:hover {
+    color: var(--text-secondary);
+    transform: scale(1.2);
 }
 
 .fav-group {

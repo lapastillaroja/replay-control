@@ -44,6 +44,15 @@ pub fn RomList(system: String) -> impl IntoView {
             }
             cb.forget();
         });
+
+        // Clean up pending timer on unmount.
+        on_cleanup(move || {
+            if let Some(handle) = timer_handle.get_value() {
+                if let Some(w) = web_sys::window() {
+                    w.clear_timeout_with_handle(handle);
+                }
+            }
+        });
     }
 
     // Extra ROMs loaded after the first page.
