@@ -34,7 +34,7 @@ pub use crate::types::{Favorite, RecentEntry, RomEntry, SystemSummary};
 #[server(prefix = "/sfn")]
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let summaries = replay_core::roms::scan_systems(&state.storage);
+    let summaries = state.cache.get_systems(&state.storage);
     let favorites = replay_core::favorites::list_favorites(&state.storage).unwrap_or_default();
 
     let disk = state
@@ -65,7 +65,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(replay_core::roms::scan_systems(&state.storage))
+    Ok(state.cache.get_systems(&state.storage))
 }
 
 /// A page of ROM results with total count.

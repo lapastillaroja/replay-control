@@ -248,6 +248,16 @@ replay/
 └── README.md
 ```
 
+### Browser Support
+
+| Browser | Desktop | Mobile | PWA Install |
+|---------|---------|--------|-------------|
+| Firefox | Yes     | Yes    | Android only |
+| Chrome  | Yes     | Yes    | Yes          |
+| Safari  | Yes     | Yes    | Yes (Add to Home Screen) |
+
+The app is a Progressive Web App (PWA) — installable on mobile and desktop for an app-like experience (standalone window, no browser chrome).
+
 ### Build Process (without cargo-leptos)
 
 ```bash

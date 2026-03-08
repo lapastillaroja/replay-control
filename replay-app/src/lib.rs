@@ -28,10 +28,20 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
         <html lang="en">
             <head>
                 <meta charset="UTF-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+                <meta name="theme-color" content="#0f1115" />
+                <meta name="apple-mobile-web-app-capable" content="yes" />
+                <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+                <meta name="apple-mobile-web-app-title" content="Replay" />
                 <title>"Replay"</title>
+                <link rel="manifest" href="/manifest.json" />
+                <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+                <link rel="apple-touch-icon" href="/icons/icon-192.png" />
                 <link rel="stylesheet" href="/style.css" />
                 <HydrationScripts options=options.clone() />
+                <script>
+                    "if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }"
+                </script>
             </head>
             <body>
                 <App />

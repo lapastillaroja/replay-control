@@ -121,12 +121,31 @@ mod ssr {
                 ),
             )
             .nest_service("/pkg", ServeDir::new(format!("{site_root}/pkg")))
+            .nest_service("/icons", ServeDir::new(format!("{site_root}/icons")))
             .route(
                 "/style.css",
                 axum::routing::get(|| async {
                     (
                         [("content-type", "text/css")],
                         include_str!("../style/style.css"),
+                    )
+                }),
+            )
+            .route(
+                "/manifest.json",
+                axum::routing::get(|| async {
+                    (
+                        [("content-type", "application/manifest+json")],
+                        include_str!("../static/manifest.json"),
+                    )
+                }),
+            )
+            .route(
+                "/sw.js",
+                axum::routing::get(|| async {
+                    (
+                        [("content-type", "application/javascript")],
+                        include_str!("../static/sw.js"),
                     )
                 }),
             )

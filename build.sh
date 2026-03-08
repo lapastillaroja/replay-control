@@ -21,8 +21,9 @@ wasm-bindgen \
   --target web \
   --no-typescript
 
-# Copy CSS
+# Copy static assets
 cp "$CRATE/style/style.css" "$OUT_DIR/style.css"
+cp -r "$CRATE/static/icons" "$OUT_DIR/icons" 2>/dev/null || true
 
 echo "==> Building server (ssr)..."
 cargo build -p "$CRATE" --bin "$CRATE" \

@@ -46,6 +46,7 @@ a, a:visited, a:hover, a:active {
     display: flex;
     flex-direction: column;
     min-height: 100dvh;
+    padding-top: env(safe-area-inset-top);
 }
 
 /* Top bar */
@@ -109,7 +110,8 @@ a, a:visited, a:hover, a:active {
     bottom: 0;
     left: 0;
     right: 0;
-    height: var(--nav-height);
+    height: calc(var(--nav-height) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
     background: var(--surface);
     border-top: 1px solid var(--border);
     z-index: 100;
@@ -719,34 +721,5 @@ a, a:visited, a:hover, a:active {
 @media (min-width: 1024px) {
     .systems-grid {
         grid-template-columns: repeat(4, 1fr);
-    }
-
-    .bottom-nav {
-        top: 0;
-        bottom: auto;
-        left: 0;
-        width: 200px;
-        height: 100vh;
-        flex-direction: column;
-        padding-top: 72px;
-        border-top: none;
-        border-right: 1px solid var(--border);
-    }
-
-    .nav-tab {
-        flex-direction: row;
-        justify-content: flex-start;
-        padding: 12px 20px;
-        gap: 12px;
-        font-size: 0.85rem;
-    }
-
-    .content {
-        margin-left: 200px;
-        padding-bottom: 0;
-    }
-
-    .top-bar {
-        margin-left: 200px;
     }
 }
