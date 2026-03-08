@@ -16,6 +16,9 @@ pub struct RomEntry {
     pub size_bytes: u64,
     /// Whether this is an M3U playlist file
     pub is_m3u: bool,
+    /// Whether this ROM is in the user's favorites
+    #[serde(default)]
+    pub is_favorite: bool,
 }
 
 /// Summary of a system's ROM collection.
@@ -83,6 +86,21 @@ pub fn list_roms(storage: &StorageLocation, system_folder: &str) -> Result<Vec<R
     });
 
     Ok(roms)
+}
+
+/// Mark each ROM entry's `is_favorite` flag using the favorites on disk.
+/// Efficient: collects favorite filenames once, then checks via HashSet lookup.
+pub fn mark_favorites(storage: &StorageLocation, system: &str, roms: &mut [RomEntry]) {
+    let fav_set: std::collections::HashSet<String> =
+        crate::favorites::list_favorites_for_system(storage, system)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| f.game.rom_filename)
+            .collect();
+
+    for rom in roms.iter_mut() {
+        rom.is_favorite = fav_set.contains(&rom.game.rom_filename);
+    }
 }
 
 /// Delete a ROM file.
@@ -208,6 +226,7 @@ fn collect_roms_recursive(
                 game: GameRef::new(system.folder_name, rom_filename, rom_path),
                 size_bytes,
                 is_m3u,
+                is_favorite: false,
             });
         }
     }

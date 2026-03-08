@@ -27,6 +27,8 @@ pub struct RomEntry {
     pub game: GameRef,
     pub size_bytes: u64,
     pub is_m3u: bool,
+    #[serde(default)]
+    pub is_favorite: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

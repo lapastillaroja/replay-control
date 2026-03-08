@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use leptos::prelude::*;
 use leptos_router::components::A;
 
@@ -99,20 +97,6 @@ pub fn RomList(system: String) -> impl IntoView {
         });
     };
 
-    // Favorites — re-fetches when version changes (after delete/rename).
-    let fav_filenames = Resource::new(
-        move || (sys.get_value(), version.get()),
-        |(s, _)| server_fns::get_system_favorites(s),
-    );
-    let (local_favs, set_local_favs) = signal(HashSet::<String>::new());
-
-    // Seed/re-seed local_favs when server data arrives.
-    Effect::new(move || {
-        if let Some(Ok(server_favs)) = fav_filenames.get() {
-            set_local_favs.set(server_favs.into_iter().collect());
-        }
-    });
-
     // Action states.
     let (confirm_delete, set_confirm_delete) = signal(Option::<String>::None);
     let (renaming, set_renaming) = signal(Option::<String>::None);
@@ -191,7 +175,7 @@ pub fn RomList(system: String) -> impl IntoView {
                                 // First page ROMs (from SSR).
                                 {page.roms.into_iter().map(|rom| {
                                     view! {
-                                        <RomItem rom local_favs set_local_favs
+                                        <RomItem rom
                                             confirm_delete set_confirm_delete
                                             renaming set_renaming
                                             rename_value set_rename_value
@@ -204,7 +188,7 @@ pub fn RomList(system: String) -> impl IntoView {
                                 {move || {
                                     extra_roms.get().into_iter().map(|rom| {
                                         view! {
-                                            <RomItem rom local_favs set_local_favs
+                                            <RomItem rom
                                                 confirm_delete set_confirm_delete
                                                 renaming set_renaming
                                                 rename_value set_rename_value
@@ -246,8 +230,6 @@ pub fn RomList(system: String) -> impl IntoView {
 #[component]
 fn RomItem(
     rom: RomEntry,
-    local_favs: ReadSignal<HashSet<String>>,
-    set_local_favs: WriteSignal<HashSet<String>>,
     confirm_delete: ReadSignal<Option<String>>,
     set_confirm_delete: WriteSignal<Option<String>>,
     renaming: ReadSignal<Option<String>>,
@@ -260,6 +242,7 @@ fn RomItem(
     let display_name = StoredValue::new(rom.game.display_name.clone());
     let relative_path = StoredValue::new(rom.game.rom_path.clone());
     let system = StoredValue::new(rom.game.system.clone());
+    let is_fav = RwSignal::new(rom.is_favorite);
     let size = format_size(rom.size_bytes);
     let ext = format!(".{}", rom.game.rom_filename.rsplit('.').next().unwrap_or(""));
     let path_display = rom.game.rom_path.clone();
@@ -278,9 +261,29 @@ fn RomItem(
     let is_deleting = move || confirm_delete.get().as_deref() == Some(&*relative_path.get_value());
     let is_renaming = move || renaming.get().as_deref() == Some(&*relative_path.get_value());
 
+    let on_toggle_fav = move |_| {
+        let fav = is_fav.get();
+        is_fav.set(!fav);
+        let fname = filename.get_value();
+        let sys = system.get_value();
+        let rp = relative_path.get_value();
+        if fav {
+            let fav_filename = format!("{sys}@{fname}.fav");
+            leptos::task::spawn_local(async move {
+                let _ = server_fns::remove_favorite(fav_filename, None).await;
+            });
+        } else {
+            leptos::task::spawn_local(async move {
+                let _ = server_fns::add_favorite(sys, rp, false).await;
+            });
+        }
+    };
+
+    let star = move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" };
+
     view! {
         <div class="rom-item">
-            <FavButton filename system rom_path=relative_path local_favs set_local_favs />
+            <button class="rom-fav-btn" on:click=on_toggle_fav>{star}</button>
 
             <div class="rom-info">
                 <Show when=is_renaming fallback=move || view! {
@@ -315,43 +318,6 @@ fn RomItem(
             </div>
         </div>
     }
-}
-
-#[component]
-fn FavButton(
-    filename: StoredValue<String>,
-    system: StoredValue<String>,
-    rom_path: StoredValue<String>,
-    local_favs: ReadSignal<HashSet<String>>,
-    set_local_favs: WriteSignal<HashSet<String>>,
-) -> impl IntoView {
-    let on_toggle = move |_| {
-        let fname = filename.get_value();
-        let sys = system.get_value();
-        let rp = rom_path.get_value();
-        let is_fav = local_favs.get().contains(&fname);
-
-        set_local_favs.update(|set| {
-            if is_fav { set.remove(&fname); } else { set.insert(fname.clone()); }
-        });
-
-        if is_fav {
-            let fav_filename = format!("{sys}@{fname}.fav");
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::remove_favorite(fav_filename, None).await;
-            });
-        } else {
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::add_favorite(sys, rp, false).await;
-            });
-        }
-    };
-
-    let star = move || {
-        if local_favs.get().contains(&filename.get_value()) { "\u{2605}" } else { "\u{2606}" }
-    };
-
-    view! { <button class="rom-fav-btn" on:click=on_toggle>{star}</button> }
 }
 
 #[component]

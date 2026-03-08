@@ -102,8 +102,10 @@ pub async fn get_roms_page(
     };
 
     let total = filtered.len();
-    let roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).collect();
+    let mut roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).collect();
     let has_more = offset + roms.len() < total;
+
+    replay_core::roms::mark_favorites(&state.storage, &system, &mut roms);
 
     Ok(RomPage { roms, total, has_more })
 }
