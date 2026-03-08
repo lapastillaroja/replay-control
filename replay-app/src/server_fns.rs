@@ -78,6 +78,9 @@ pub struct RomPage {
     pub roms: Vec<RomEntry>,
     pub total: usize,
     pub has_more: bool,
+    /// Human-readable system name (e.g., "Arcade (Atomiswave/Naomi)")
+    #[serde(default)]
+    pub system_display: String,
 }
 
 #[server(prefix = "/sfn")]
@@ -88,6 +91,9 @@ pub async fn get_roms_page(
     search: String,
 ) -> Result<RomPage, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    let system_display = replay_core::systems::find_system(&system)
+        .map(|s| s.display_name.to_string())
+        .unwrap_or_else(|| system.clone());
     let all_roms = replay_core::roms::list_roms(&state.storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -107,7 +113,7 @@ pub async fn get_roms_page(
 
     replay_core::roms::mark_favorites(&state.storage, &system, &mut roms);
 
-    Ok(RomPage { roms, total, has_more })
+    Ok(RomPage { roms, total, has_more, system_display })
 }
 
 #[server(prefix = "/sfn")]

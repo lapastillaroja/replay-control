@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 
 use crate::components::rom_list::RomList;
@@ -39,19 +38,12 @@ pub fn GamesPage() -> impl IntoView {
 /// `/games/:system` — ROM list for a specific system with infinite scroll.
 #[component]
 pub fn SystemRomView() -> impl IntoView {
-    let i18n = use_i18n();
     let params = use_params_map();
     let system = move || params.read().get("system").unwrap_or_default();
 
     view! {
         <div class="page games-page">
             <div class="system-rom-view">
-                <div class="rom-header">
-                    <A href="/games" attr:class="back-btn">
-                        {move || t(i18n.locale.get(), "games.back")}
-                    </A>
-                    <h2 class="page-title">{system}</h2>
-                </div>
                 <RomList system=system() />
             </div>
         </div>

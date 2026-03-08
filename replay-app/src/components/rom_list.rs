@@ -143,15 +143,6 @@ pub fn RomList(system: String) -> impl IntoView {
     }
 
     view! {
-        <div class="search-bar">
-            <input
-                type="text"
-                placeholder=move || t(i18n.locale.get(), "games.search_placeholder")
-                class="search-input"
-                on:input=move |ev| set_search_input.set(event_target_value(&ev))
-            />
-        </div>
-
         <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "games.loading_roms")}</div> }>
             {move || Suspend::new(async move {
                 let locale = i18n.locale.get();
@@ -160,6 +151,7 @@ pub fn RomList(system: String) -> impl IntoView {
                         set_has_more.set(page.has_more);
                         let total = page.total;
                         let first_page_len = page.roms.len();
+                        let display_name = page.system_display.clone();
                         let count_text = move || {
                             let loaded = first_page_len + extra_roms.read().len();
                             if loaded < total {
@@ -170,6 +162,20 @@ pub fn RomList(system: String) -> impl IntoView {
                         };
 
                         view! {
+                            <div class="rom-header">
+                                <A href="/games" attr:class="back-btn">
+                                    {t(locale, "games.back")}
+                                </A>
+                                <h2 class="page-title">{display_name}</h2>
+                            </div>
+                            <div class="search-bar">
+                                <input
+                                    type="text"
+                                    placeholder=move || t(i18n.locale.get(), "games.search_placeholder")
+                                    class="search-input"
+                                    on:input=move |ev| set_search_input.set(event_target_value(&ev))
+                                />
+                            </div>
                             <p class="rom-count">{count_text}</p>
                             <div class="rom-list">
                                 // First page ROMs (from SSR).
