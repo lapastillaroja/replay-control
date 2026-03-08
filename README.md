@@ -1,4 +1,6 @@
-# Replay Project Notes
+# Replay
+
+A companion web app for **RePlayOS** — manage ROMs, favorites, and settings from any device on the local network.
 
 ## About RePlayOS
 
@@ -67,7 +69,7 @@ RePlayOS is a **Linux distribution** featuring a custom **libretro frontend** de
 
 **Web application** running directly on the RePlayOS Raspberry Pi. Accessible from **any device** (phone, tablet, desktop) via browser on the local network.
 
-**Project name:** TBD (working folder: `replay`)
+**Project name:** Replay
 
 ---
 
@@ -242,8 +244,8 @@ replay/
 │   │   └── pages/          (shared page components)
 │   └── style/
 │       └── style.css
-├── scripts/                (setup/install scripts for Pi)
-└── NOTES.md
+├── dev.sh                  (auto-rebuild dev server)
+└── README.md
 ```
 
 ### Build Process (without cargo-leptos)
