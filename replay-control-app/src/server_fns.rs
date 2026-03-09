@@ -476,6 +476,7 @@ pub struct SkinInfo {
     pub name: String,
     pub bg: String,
     pub surface: String,
+    pub surface_hover: String,
     pub border: String,
     pub text: String,
     pub text_secondary: String,
@@ -498,6 +499,7 @@ pub async fn get_skins() -> Result<(u32, Vec<SkinInfo>), ServerFnError> {
                 name: name.to_string(),
                 bg: p.bg.to_string(),
                 surface: p.surface.to_string(),
+                surface_hover: p.surface_hover.to_string(),
                 border: p.border.to_string(),
                 text: p.text.to_string(),
                 text_secondary: p.text_secondary.to_string(),
@@ -508,6 +510,16 @@ pub async fn get_skins() -> Result<(u32, Vec<SkinInfo>), ServerFnError> {
         .collect();
 
     Ok((current, skins))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    state
+        .update_config(|config| {
+            config.set("system_skin", &index.to_string());
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Result of organizing favorites into subfolders.

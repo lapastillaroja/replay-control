@@ -147,7 +147,8 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.theme" => "Theme",
         "theme.title" => "Theme",
         "theme.current" => "Current",
-        "theme.synced" => "Synced with ReplayOS",
+        "theme.synced" => "Select a theme. Reload the page to see the changes.",
+        "theme.applied" => "Theme saved. Reload to see the new theme.",
 
         // WiFi configuration
         "wifi.title" => "Wi-Fi Configuration",
