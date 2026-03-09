@@ -725,3 +725,590 @@ No-Intro/Redump DATs alone provide only filenames, regions, and hashes -- no yea
 - **Don't embed cover art** -- even URLs/hashes are too volatile; fetch at runtime.
 - **Don't try to replace the metadata API approach** described in `game-metadata-sources.md` -- the embedded DB is for offline display names and basic metadata, while the API provides rich media (images, videos, detailed descriptions).
 - **Don't use a single monolithic PHF map** for all 108K entries -- split by system.
+
+---
+
+## Appendix A: Rich Metadata Fields -- Size and Build Impact Analysis
+
+This appendix analyzes the impact of adding five additional metadata fields to the embedded database, beyond the core fields already planned (filename, clean_title, region, crc32, year, publisher, genre, players). The analysis covers fields that were either omitted in section 4.2 or mentioned only briefly, and reconsiders them with concrete numbers.
+
+The fields are analyzed in priority order, with cumulative totals showing the cost of including each one.
+
+### A.1 Players (u8)
+
+#### Data sourcing
+
+- **TheGamesDB JSON dump** (`database-latest.json`, ~40 MB): The `players` field is a direct integer in each game entry. Coverage is good for popular retro titles but spotty for obscure releases -- estimated 60-70% of retro game entries have a non-null `players` value.
+- **Libretro-database**: The `metadat/maxusers/` directory contains per-system DAT files that map ROM filenames to max player counts. This is compiled from multiple sources and is CRC-matched, so coverage is high for games present in the No-Intro sets. Estimated 50-60% coverage across all systems.
+- **LaunchBox Metadata XML** (108K+ entries): The `MaxPlayers` field is present on most entries. Estimated 70-80% coverage.
+- **Cross-referencing**: Best strategy is to use libretro-database `maxusers` DATs as primary (hash-matched, authoritative) and fall back to TheGamesDB/LaunchBox for gaps.
+- **Quality**: Highly consistent -- player count is a simple integer (1-8 typically). Minimal data quality issues.
+
+#### Size impact
+
+- **Per entry**: 1 byte (u8). Zero for unknown (already in the schema).
+- **Total raw**: 108,000 x 1 = **108 KB**.
+- **No compression needed** -- it's a single byte.
+- **Cumulative**: 108 KB.
+
+#### Build impact
+
+- Negligible. Parsing maxusers DATs is trivial (simple key-value format). The u8 field adds virtually nothing to PHF map generation or compile time.
+
+#### Storage strategy
+
+- Inline in the PHF map entry struct. A u8 field is the most compact possible representation.
+
+#### Recommendation
+
+**Include in Phase 2.** Already planned in the schema (section 4.1). Cost is negligible (108 KB). The players field is valuable for filtering (multiplayer games) and display. libretro-database maxusers DATs are the best source -- free, hash-matched, maintained.
+
+---
+
+### A.2 Genres
+
+#### Data sourcing
+
+- **TheGamesDB JSON dump**: Genres are stored as arrays of integer IDs referencing a separate lookup table in the dump's `include.genres` section. Each game may have 1-3 genre IDs. The lookup table has ~30 genres (Action, Adventure, Fighting, Platform, Puzzle, Racing, RPG, Shooter, Sports, Strategy, etc.). Coverage: estimated 65-75% of retro game entries have at least one genre.
+- **Libretro-database**: The `metadat/genre/` directory contains per-system DAT files mapping ROM filenames (via CRC) to genre strings. These use their own genre taxonomy. Coverage varies by system -- popular systems like NES and SNES have good coverage (60-70%), less common systems may be 30-40%.
+- **LaunchBox Metadata XML**: The `Genres` field uses semicolon-separated genre strings. Coverage is high (80%+) with a rich taxonomy.
+- **Quality**: Genre taxonomies are inconsistent across sources. TheGamesDB uses broad categories ("Action"), libretro uses more specific categories ("Platform / Run Jump" similar to MAME catver.ini), and LaunchBox uses its own set. Normalization is needed.
+
+#### Size impact
+
+- **Per entry (string)**: Average genre string is 10-20 bytes (e.g., "Action", "Role-Playing", "Platform / Action"). With multiple genres, average ~20 bytes.
+- **Total raw**: 108,000 x 20 = **2.1 MB**.
+- **With string interning**: There are only ~30-50 unique genre values (or ~100-150 if using compound genres like "Action / Platform"). A string interning pool of genre values would be ~2-4 KB. Each entry stores a u8 or u16 index instead of a string pointer. Per entry: 1-2 bytes. Total: 108,000 x 2 = **216 KB** interned.
+- **Cumulative**: 108 KB (players) + 216 KB (genres) = **324 KB**.
+
+#### Build impact
+
+- Parsing genre DATs from libretro-database or extracting from TheGamesDB JSON: 1-2 seconds additional.
+- String interning at build time: trivial.
+- PHF impact: minimal -- replacing a `&'static str` with a u8/u16 index reduces generated code size.
+
+#### Storage strategy
+
+- **String interning pool**: Build a static array of genre strings at compile time. Each entry stores a `u8` index into this array (supports up to 255 genres, more than enough). This is far more compact than embedding genre strings per-entry.
+
+```rust
+static GENRE_POOL: &[&str] = &["Action", "Adventure", "Fighting", "Platform", ...];
+
+pub struct GameInfo {
+    // ...
+    pub genre_index: u8,  // index into GENRE_POOL, 255 = unknown
+}
+```
+
+- For games with multiple genres, either pick the primary genre (most common in practice) or use a `u16` bitfield (supports up to 16 genres per game with 16 possible genre values, or more with wider types).
+
+#### Recommendation
+
+**Include in Phase 2.** With string interning, the cost is ~216 KB -- trivial. Genre data is highly valuable for filtering and browsing. Use libretro-database `metadat/genre/` as the primary source (CRC-matched), supplemented by TheGamesDB. Normalize to a unified taxonomy of ~30-50 genres at build time.
+
+---
+
+### A.3 Developer
+
+#### Data sourcing
+
+- **TheGamesDB JSON dump**: Developers are stored as arrays of integer IDs referencing `include.developers` lookup table. The lookup table contains ~9,000 developer entries. Each game typically has 1-2 developer IDs. Coverage for retro games: estimated 55-65%.
+- **Libretro-database**: The `metadat/developer/` directory contains per-system DAT files. These map CRC-matched ROMs to developer strings. Coverage varies -- major systems have reasonable coverage (40-60%), but many entries are missing or attributed to the publisher rather than the actual developer.
+- **LaunchBox Metadata XML**: The `Developer` field is a string. Coverage: ~70% for retro platforms.
+- **Quality**: Developer data is messy for retro games. Many NES/SNES games were developed by small studios that were renamed, merged, or dissolved. Spellings vary across sources (e.g., "Konami" vs "Konami Computer Entertainment Tokyo" vs "KCET"). Normalization is harder than for genres.
+
+#### Size impact
+
+- **Per entry (raw string)**: Average developer name is 12-20 bytes (e.g., "Capcom", "Nintendo R&D1", "Square", "Konami Computer Entertainment Tokyo").
+- **Total raw**: 108,000 x 16 = **1.7 MB**.
+- **With string interning**: There are roughly 2,000-4,000 unique developer names across the full dataset. An interning pool of developer strings would be ~40-80 KB. Each entry stores a u16 index. Per entry: 2 bytes. Total entries: 108,000 x 2 = **216 KB** for indices + ~60 KB pool = **276 KB** interned.
+- **Cumulative**: 324 KB + 276 KB = **600 KB**.
+
+#### Build impact
+
+- Parsing developer DATs or extracting from TheGamesDB JSON: 1-2 seconds additional.
+- Developer name normalization (deduplication of variant spellings): adds complexity to build.rs but doesn't significantly impact build time.
+- PHF impact: minimal with interning.
+
+#### Storage strategy
+
+- **String interning pool** (same approach as genres): Build a static array of developer strings. Each entry stores a `u16` index (supports up to 65,535 developers). The pool itself is ~40-80 KB.
+
+```rust
+static DEVELOPER_POOL: &[&str] = &["Capcom", "Nintendo", "Konami", "Square", "Sega", ...];
+
+pub struct GameInfo {
+    // ...
+    pub developer_index: u16,  // index into DEVELOPER_POOL, 0xFFFF = unknown
+}
+```
+
+#### Recommendation
+
+**Include in Phase 2, but lower priority than genres.** Cost is ~276 KB with interning -- still modest. The value is moderate: developer info is nice-to-have for display but rarely used for filtering. The main challenge is data quality -- developer names need normalization, which adds build.rs complexity. Consider deferring to Phase 3 if the normalization effort is too high.
+
+---
+
+### A.4 Publisher
+
+#### Data sourcing
+
+- **TheGamesDB JSON dump**: Publishers are stored as arrays of integer IDs referencing `include.publishers` lookup table. The lookup table contains ~4,000 publisher entries. Coverage: estimated 60-70% for retro games.
+- **Libretro-database**: The `metadat/publisher/` directory contains per-system DAT files. CRC-matched. Coverage similar to developer data (40-60%).
+- **LaunchBox Metadata XML**: The `Publisher` field is a string. Coverage: ~75%.
+- **Quality**: Better than developer data -- publishers are more standardized. "Nintendo", "Sega", "Capcom", "Konami" are unambiguous. Some variant spellings exist ("THQ" vs "THQ Inc.") but fewer than developers.
+
+#### Size impact
+
+- **Per entry (raw string)**: Average publisher name is 10-15 bytes.
+- **Total raw**: 108,000 x 12 = **1.3 MB**.
+- **With string interning**: There are roughly 1,000-2,500 unique publisher names. An interning pool would be ~20-50 KB. Each entry stores a u16 index. Per entry: 2 bytes. Total: 108,000 x 2 = **216 KB** indices + ~35 KB pool = **251 KB** interned.
+- **Cumulative**: 600 KB + 251 KB = **851 KB**.
+
+#### Build impact
+
+- Same as developer: 1-2 seconds parsing, trivial interning.
+- Publisher name normalization is simpler than developer normalization.
+
+#### Storage strategy
+
+- **String interning pool**, identical approach to developer. Publisher is already in the planned schema (section 4.1), so this confirms the interning approach is optimal.
+
+#### Recommendation
+
+**Include in Phase 2** (already planned). Cost is ~251 KB with interning. Publisher is more useful than developer for browsing ("show me all Capcom games") and has better data quality. Use TheGamesDB as primary source, supplemented by libretro-database `metadat/publisher/`.
+
+---
+
+### A.5 Description/Overview
+
+#### Data sourcing
+
+- **TheGamesDB JSON dump**: The `overview` field contains a prose description/synopsis of the game. This is the most substantial text field in any game metadata source. Skyscraper (a popular ROM scraper) defaults to truncating TheGamesDB descriptions at 2,500 characters. In practice, retro game descriptions in TheGamesDB range from 50 to 2,000 characters, with an estimated average of 400-600 characters (200-300 words). Coverage: estimated 50-65% of retro game entries have a non-empty overview.
+- **LaunchBox Metadata XML**: The `Notes` field contains similar description text, sourced from MobyGames, Wikipedia, and community contributions. Average length is comparable to TheGamesDB. Coverage: ~60-70%.
+- **ScreenScraper API**: Provides multi-language descriptions (French, English, Spanish, etc.). Not available in bulk download -- requires per-game API calls.
+- **Quality**: Descriptions vary wildly in quality. Some are one-sentence stubs ("Pac-Man is a classic arcade game."), others are detailed multi-paragraph summaries. Retro games (pre-2000) tend to have shorter descriptions than modern games. English-only from TheGamesDB and LaunchBox.
+
+#### Size impact
+
+This is the most impactful field by far. The analysis considers several scenarios:
+
+**Scenario 1: Full descriptions, uncompressed**
+
+- Estimated average: 500 bytes per entry (considering that ~40% of entries have no description).
+- For entries with descriptions (~65K entries): average 750 bytes each.
+- **Total raw**: ~65,000 x 750 + 43,000 x 0 = **~48 MB**.
+- This is larger than the entire current binary (35 MB). Clearly not viable as-is.
+
+**Scenario 2: Truncated descriptions (first 200 characters)**
+
+- Average after truncation: ~150 bytes per entry (with empty entries).
+- **Total raw**: 108,000 x 150 = **~16 MB**.
+- Still very large -- nearly doubles the binary.
+
+**Scenario 3: Full descriptions, zstd-compressed blob**
+
+- Raw text of ~48 MB of English prose compresses extremely well with zstd. English text typically achieves 3:1 to 5:1 compression ratios. Game descriptions are repetitive (similar vocabulary, structure) which helps compression.
+- With zstd dictionary compression (trained on the corpus): estimated 5:1 to 8:1 ratio.
+- **Compressed size**: 48 MB / 6 = **~8 MB** (zstd with dictionary).
+- This would be embedded as a single `include_bytes!` blob. At runtime, individual descriptions are decompressed on demand using an offset table.
+- Decompression speed: zstd decompresses at 1-2 GB/s, so a single description (750 bytes) decompresses in microseconds.
+
+**Scenario 4: Separate runtime file (not compiled in)**
+
+- Ship descriptions as a separate `.zst` or `.sqlite` file alongside the binary.
+- File size: ~8-10 MB compressed.
+- Not part of the binary at all -- loaded on demand.
+- **Binary impact: 0 MB** (plus ~100 KB for the offset index).
+
+**Scenario 5: Fetched on-demand via API**
+
+- No embedded data at all. Use ScreenScraper, TheGamesDB API, or IGDB API to fetch descriptions when the user views a game detail page.
+- **Binary impact: 0 MB**.
+- Requires network access. Already planned as the primary approach in `game-metadata-sources.md`.
+
+#### Build impact
+
+- **Scenarios 1-3**: Parsing TheGamesDB's ~40 MB JSON dump to extract descriptions: 3-5 seconds. Compressing the blob with zstd: 1-2 seconds. The descriptions would NOT go through PHF -- they'd be a separate compressed blob with an offset table.
+- **Scenario 4**: Build.rs generates the compressed file as a build artifact. No compile-time impact on the Rust binary itself.
+- **Scenario 5**: No build impact.
+
+#### Storage strategy analysis
+
+| Strategy | Binary Size | Startup Cost | Lookup Cost | Complexity | Offline? |
+|----------|------------|-------------|-------------|------------|----------|
+| Inline in PHF map (raw strings) | +48 MB | None | O(1) | Low | Yes |
+| Truncated (200 chars) in PHF | +16 MB | None | O(1) | Low | Yes |
+| Compressed blob (zstd) via `include_bytes!` | +8 MB | ~50 ms decompress index | O(1) + decompress | Medium | Yes |
+| Separate .zst file at runtime | +0 MB binary | File open + index load | O(1) + decompress | Medium | Yes |
+| Separate SQLite file at runtime | +0 MB binary | DB open (~5 ms) | SQL query | Medium | Yes |
+| Fetched on-demand via API | +0 MB | None | Network latency | Low | No |
+
+**Compressed blob details**: The embedded blob approach would work as follows:
+1. Build.rs generates a compressed blob: `[offset_table][zstd_compressed_descriptions]`
+2. The offset table maps game IDs to (offset, length) pairs within the compressed data.
+3. At runtime, to read a description: look up the offset, decompress that slice with zstd.
+4. With zstd's seekable format or per-entry compression with a shared dictionary, individual entries can be decompressed without decompressing the entire blob.
+
+**SQLite file details**: An alternative to the compressed blob is a SQLite database file:
+1. Build.rs generates a SQLite file with a single table: `descriptions(game_id TEXT PRIMARY KEY, text TEXT)`.
+2. Embedded via `include_bytes!` or shipped as a separate file.
+3. At runtime, open as an in-memory database (or memory-mapped file).
+4. SQLite's built-in page-level compression (via extensions) or external zstd compression can reduce size.
+5. Adds `rusqlite`/`libsqlite3-sys` dependency (~1.5 MB binary overhead).
+
+#### Recommendation
+
+**Defer descriptions from the embedded database. Continue with the API-based approach from `game-metadata-sources.md`.**
+
+Rationale:
+- Even compressed, descriptions add 8 MB to the binary -- nearly matching the entire metadata DB.
+- The value proposition is lower than other fields: descriptions are only shown on the game detail page (not in lists), so the user sees them one at a time.
+- API-based fetching (ScreenScraper, TheGamesDB) provides the same data with zero binary cost, and supports multiple languages.
+- If offline descriptions are needed in the future, the best approach is **Scenario 4** (separate compressed file) rather than embedding in the binary. This keeps the binary lean while allowing optional description data to be shipped alongside it.
+
+If offline descriptions become a requirement, the recommended approach is:
+1. Generate a zstd-compressed descriptions file at build time (~8 MB).
+2. Ship it alongside the binary as an optional data file.
+3. Load and decompress on demand using an offset index.
+4. Fall back to API-based fetching if the file is not present.
+
+---
+
+### A.6 Cumulative Size Summary
+
+| Fields Included | Per-Entry Bytes | Total Size (108K entries) | Notes |
+|----------------|---------------:|-------------------------:|-------|
+| Baseline (filename, clean_title, region, crc32, year) | ~77 | ~8.3 MB | Current plan (section 5.2) |
+| + Players (u8) | +1 | +108 KB | Negligible |
+| + Genre (u8 interned index) | +2 | +216 KB + ~3 KB pool | Trivial |
+| + Publisher (u16 interned index) | +2 | +216 KB + ~35 KB pool | Already planned |
+| + Developer (u16 interned index) | +2 | +216 KB + ~60 KB pool | Moderate value |
+| **Total (all four)** | **+7** | **+~850 KB** | **~9.2 MB total binary impact** |
+| + Descriptions (compressed blob) | +0 per entry | +8 MB blob | Deferred -- use API instead |
+| **Total with descriptions** | | **~17 MB** | Not recommended |
+
+The four structured fields (players, genre, publisher, developer) add only ~850 KB total with string interning. This is a 10% increase over the baseline metadata DB size and well within acceptable limits. Descriptions, by contrast, would nearly double the total size and are better served by the API-based approach.
+
+### A.7 How Other Projects Handle Embedded Game Metadata
+
+- **RetroArch/libretro**: Compiles metadata from multiple DAT sources into .rdb (RetroArch Database) binary files. These are per-system files loaded at runtime, not embedded in the binary. Fields include name, description, genre, developer, publisher, release year, players, CRC/MD5/SHA1. Descriptions are included in the RDB files but RetroArch loads them from disk, not from compiled-in data.
+
+- **OpenEmu (macOS)**: Uses OpenVGDB, a SQLite database (~9 MB compressed) downloaded at first launch. Contains game names, descriptions, genres, publishers, developers, and ROM hashes. Not compiled into the binary.
+
+- **EmulationStation**: Uses gamelist.xml files generated by scrapers (Skyscraper, Selph's scraper). These are per-system XML files on disk containing name, description, developer, publisher, genre, players, release date, and image paths. Not embedded in the binary.
+
+- **Pegasus Frontend**: Uses metadata files (metafile.txt or gamelist.xml) generated by scrapers. Similar approach to EmulationStation -- per-system files on disk.
+
+**Common pattern**: No major emulator frontend embeds game descriptions in the binary. They all use either runtime files (SQLite, XML, custom binary) or API-based fetching. The Replay approach of embedding identification + basic metadata (name, year, publisher, genre, players) in the binary while fetching rich content (descriptions, media) via API is consistent with industry practice, but goes further by using PHF for zero-cost lookups rather than runtime-loaded databases.
+
+---
+
+## Appendix B: Multi-ROM Game Grouping Strategy
+
+This appendix analyzes how the embedded metadata database should handle the relationship between multiple ROM files (regional variants, revisions, translations) and a single canonical "game" entity. This is about the data model in the embedded DB -- the UI grouping behavior is described in `rom-identification.md` section 4 and `features.md`.
+
+### B.1 The Problem
+
+A single game like "Super Mario World" exists as multiple ROM files in a No-Intro set:
+
+```
+Super Mario World (USA).sfc                         CRC: B19ED489
+Super Mario World (Europe).sfc                       CRC: 6B47BB75
+Super Mario World (Europe) (Rev 1).sfc               CRC: A1B0E19C
+Super Mario World (Japan).sfc                        CRC: 47DC3788
+Super Mario World (USA) (Virtual Console).sfc        CRC: ...
+```
+
+Each of these is a separate entry in the No-Intro DAT file with a distinct CRC32 hash. In the current metadata DB design (section 4), each gets its own entry in the PHF map with its own copy of metadata:
+
+```
+"Super Mario World (USA)"          -> { clean_title: "Super Mario World", year: 1992, publisher: "Nintendo", genre: "Platform", players: 2 }
+"Super Mario World (Europe)"       -> { clean_title: "Super Mario World", year: 1992, publisher: "Nintendo", genre: "Platform", players: 2 }
+"Super Mario World (Europe) (Rev 1)" -> { clean_title: "Super Mario World", year: 1992, publisher: "Nintendo", genre: "Platform", players: 2 }
+"Super Mario World (Japan)"        -> { clean_title: "Super Mario World", year: 1992, publisher: "Nintendo", genre: "Platform", players: 2 }
+```
+
+The metadata (year, publisher, genre, players) is identical across all variants. This is wasteful -- the same strings (or interned indices) are repeated for every variant.
+
+More importantly, when cross-referencing against TheGamesDB to obtain metadata, TheGamesDB has **one entry** for "Super Mario World" on SNES (possibly with separate entries per platform, but not per regional variant). We need to match multiple No-Intro filenames to a single TheGamesDB entry.
+
+### B.2 Scale of the Problem
+
+Based on the data from section 3.1 of this document:
+
+| Category | Full Entries (all variants) | Est. Unique Games | Variant Ratio |
+|----------|---------------------------:|------------------:|--------------:|
+| Cartridge systems | ~57,500 | ~23,500 | 2.4:1 |
+| Disc systems | ~22,300 | ~7,200 | 3.1:1 |
+| **Total (non-arcade)** | **~79,800** | **~30,700** | **2.6:1** |
+| Arcade (existing DB) | 28,593 | ~10,000 | 2.9:1 |
+| **Grand total** | **~108,400** | **~40,700** | **2.7:1** |
+
+On average, each unique game has ~2.7 ROM entries in the full No-Intro/Redump sets. Some games have far more: popular titles like "Tetris" or "Super Mario Bros." may have 10-20 variants (multiple regions, revisions, special editions, Virtual Console re-releases).
+
+The ratios vary significantly by system:
+
+| System | Full Entries | Est. Unique | Ratio | Notes |
+|--------|------------:|------------:|------:|-------|
+| NES | ~14,100 | ~4,500 | 3.1:1 | Many unlicensed/bootleg/region variants |
+| SNES | ~4,300 | ~1,800 | 2.4:1 | Typical ratio |
+| N64 | ~2,700 | ~400 | 6.8:1 | Small library, many regional variants |
+| Game Boy | ~2,200 | ~800 | 2.8:1 | |
+| PlayStation | ~13,200 | ~4,000 | 3.3:1 | Disc systems have more variants |
+| Mega Drive | ~3,900 | ~1,500 | 2.6:1 | |
+
+**Key insight**: Deduplicating metadata by storing it once per unique game rather than once per ROM variant would save roughly 60% of the metadata storage for string fields like clean_title, publisher, genre, and developer.
+
+### B.3 No-Intro Parent/Clone Relationships
+
+No-Intro DATs support a `cloneof` attribute in XML-format parent/clone DATs, directly analogous to MAME's parent/clone system:
+
+```xml
+<game name="Super Mario World (Europe)">
+  <description>Super Mario World (Europe)</description>
+  <rom name="Super Mario World (Europe).sfc" size="524288" crc="6B47BB75" ... />
+</game>
+
+<game name="Super Mario World (USA)" cloneof="Super Mario World (Europe)">
+  <description>Super Mario World (USA)</description>
+  <rom name="Super Mario World (USA).sfc" size="524288" crc="B19ED489" ... />
+</game>
+```
+
+**Availability**: No-Intro parent/clone DATs are available from DAT-o-MATIC (requires a free account) in XML format. The standard DATs mirrored in libretro-database (`metadat/no-intro/`) use ClrMamePro format which does NOT include parent/clone information. To get parent/clone data, you must download the XML-format P/C DATs from DAT-o-MATIC directly.
+
+**How parent selection works in No-Intro**: Unlike MAME (where the parent is typically the World or most recent version), No-Intro's parent designation is somewhat arbitrary -- it indicates a grouping relationship, not a preferred version. The Retool project explicitly ignores No-Intro's parent/clone assignments and instead does its own title-based grouping, because the parent/clone assignments in No-Intro DATs can be inconsistent or incomplete.
+
+**Coverage**: Parent/clone DATs are not available for all systems. The major systems (NES, SNES, Mega Drive, Game Boy, etc.) have them, but coverage is not universal.
+
+**Verdict**: No-Intro P/C DATs are useful as a supplementary grouping signal, but cannot be the sole grouping mechanism. Title-based normalization is more reliable and universally available.
+
+### B.4 Grouping Approaches Analyzed
+
+#### Approach 1: Title Normalization (Recommended Primary Method)
+
+Strip region tags, revision markers, and flags from No-Intro filenames to derive a base title, then use that as the grouping key.
+
+**Algorithm** (already described in `rom-identification.md` section 4):
+```
+"Super Mario World (USA)"              -> "super mario world"
+"Super Mario World (Europe) (Rev 1)"   -> "super mario world"
+"Super Mario World (Japan)"            -> "super mario world"
+"Sonic the Hedgehog (USA, Europe)"     -> "sonic hedgehog"
+"Sonic the Hedgehog (Japan)"           -> "sonic hedgehog"
+```
+
+**Reliability**: Very high for No-Intro-named files. No-Intro's naming convention ensures that regional variants of the same game have identical titles before the first `(`. The `rom-identification.md` parser handles this correctly.
+
+**Edge cases**:
+- **Subtitle differences**: "Contra (USA)" vs "Probotector (Europe)" -- different titles for the same game in different regions. Title normalization alone won't group these. Requires a manual override list or cross-referencing against TheGamesDB.
+- **Numbering conventions**: "Final Fantasy III (USA)" is actually "Final Fantasy VI (Japan)". Again, requires manual mapping.
+- **"Name, The" normalization**: "Legend of Zelda, The (USA)" and "Zelda no Densetsu (Japan)" -- different titles entirely. Cannot be grouped by title alone.
+
+**Estimated accuracy**: ~85-90% of No-Intro entries correctly group by title normalization alone. The remaining 10-15% are regional title differences that require supplementary data.
+
+#### Approach 2: No-Intro Parent/Clone DATs (Supplementary)
+
+Use the `cloneof` attribute from No-Intro XML P/C DATs to establish groupings.
+
+**Pros**: Authoritative groupings maintained by the No-Intro community. Handles regional title differences (e.g., "Contra" / "Probotector" will share a parent).
+
+**Cons**: Requires downloading separate DAT files from DAT-o-MATIC (not available in the libretro mirror). Not available for all systems. Parent designation is somewhat arbitrary.
+
+**Recommended use**: Parse P/C DATs at build time as a supplementary grouping signal. When title normalization fails to group variants that the P/C DAT says belong together, use the P/C relationship.
+
+#### Approach 3: TheGamesDB Cross-Reference (Supplementary)
+
+TheGamesDB entries are per-game, not per-ROM. When the build.rs cross-references No-Intro entries against TheGamesDB by title+platform, multiple No-Intro entries will match the same TheGamesDB entry. The TheGamesDB ID becomes a natural grouping key.
+
+**Pros**: Provides a canonical game ID from an external source. Handles some regional title differences if TheGamesDB has alternate titles.
+
+**Cons**: Only works for entries that match TheGamesDB (~60-70%). Name matching is fuzzy and may produce false positives (e.g., "Mega Man" matching "Mega Man 2").
+
+**Recommended use**: When a TheGamesDB match is found, record the TGDB ID as the canonical game ID. Multiple ROM entries sharing the same TGDB ID are grouped together.
+
+#### Approach 4: Hash-Based Grouping (Implicit)
+
+No-Intro DATs list all known dumps per game. Different hashes = different ROMs, but the DAT groups them under the same `game` element (each `game` element can have multiple `rom` elements for multi-file games, though this is rare for cartridge systems).
+
+**Relevance**: This is already handled by the DAT parsing -- each `game` element produces one DB entry. The "multiple ROMs per game" problem is actually "multiple `game` elements per logical game" (due to regional variants being separate `game` entries in the DAT).
+
+#### Approach 5: Retool's Clone Lists (Supplementary Reference)
+
+The Retool project (a 1G1R tool for No-Intro/Redump) maintains JSON-based clone lists that manually define groupings for titles that automatic title matching misses. These clone lists are open source and cover the most problematic cases (regional title differences, compilations, supersets).
+
+**Value**: Retool's clone lists are a curated, high-quality source of grouping overrides. They can be parsed at build time to supplement title-based normalization.
+
+**Location**: `https://github.com/unexpectedpanda/retool` -- clone lists are in the `clonelists/` directory.
+
+### B.5 Recommended Data Model
+
+#### Two-Level Structure: Game ID + ROM Entries
+
+Instead of storing full metadata per ROM filename, use a normalized two-level model:
+
+**Level 1: Canonical Games** (one per unique game per system)
+
+```rust
+pub struct CanonicalGame {
+    /// Unique game ID (u32, assigned at build time).
+    pub game_id: u32,
+    /// Clean display title.
+    pub display_name: &'static str,
+    /// Release year (0 = unknown).
+    pub year: u16,
+    /// Publisher index into interning pool (0xFFFF = unknown).
+    pub publisher: u16,
+    /// Developer index into interning pool (0xFFFF = unknown).
+    pub developer: u16,
+    /// Genre index into interning pool (0xFF = unknown).
+    pub genre: u8,
+    /// Max players (0 = unknown).
+    pub players: u8,
+}
+```
+
+**Per-entry size**: 4 (id) + 8 (ptr+len for display_name on 32-bit, or just an offset) + 2 (year) + 2 (publisher) + 2 (developer) + 1 (genre) + 1 (players) = **~12-20 bytes** per canonical game.
+
+**Count**: ~30,700 unique games (non-arcade) or ~40,700 including arcade.
+
+**Total**: 30,700 x 16 = **~490 KB** for the canonical game table.
+
+**Level 2: ROM Entries** (one per ROM filename in the No-Intro/Redump sets)
+
+```rust
+pub struct RomEntry {
+    /// Game ID linking to CanonicalGame.
+    pub game_id: u32,
+    /// Region code.
+    pub region: &'static str,
+    /// CRC32 for hash-based matching.
+    pub crc32: u32,
+}
+```
+
+**Per-entry size**: 4 (game_id) + 6 (region string avg) + 4 (crc32) + 3 (PHF overhead) = **~17 bytes** per ROM entry.
+
+**Count**: ~79,800 ROM entries (non-arcade).
+
+**Total**: 79,800 x 17 = **~1.35 MB** for ROM entry maps.
+
+#### PHF Map Structure
+
+```rust
+// Per-system generated code
+
+/// Canonical game table: game_id -> metadata
+static NES_GAMES: &[CanonicalGame] = &[ ... ];  // ~4,500 entries for NES
+
+/// ROM filename -> (game_id, region, crc32)
+static NES_ROM_DB: phf::Map<&'static str, RomEntry> = ...;  // ~14,100 entries for NES
+
+/// CRC32 -> canonical filename (for hash-based fallback)
+static NES_CRC_INDEX: phf::Map<u32, &'static str> = ...;  // ~14,100 entries
+```
+
+The canonical game table is a simple array (not a PHF map) indexed by a per-system sequential `game_id`. The ROM-to-game mapping uses PHF for O(1) filename lookup.
+
+#### Lookup Flow
+
+```
+1. User has: "Super Mario World (USA).sfc"
+2. Strip extension: "Super Mario World (USA)"
+3. PHF lookup in NES_ROM_DB: -> RomEntry { game_id: 1234, region: "USA", crc32: 0xB19ED489 }
+4. Index into NES_GAMES[1234]: -> CanonicalGame { display_name: "Super Mario World", year: 1992, ... }
+5. Return combined info
+```
+
+### B.6 Size Impact of Deduplication
+
+#### Current approach (denormalized): metadata repeated per ROM entry
+
+Per the existing plan (section 4.3), each of ~108K entries carries ~111 bytes including all metadata strings. This includes the clean_title string repeated across all variants of the same game.
+
+- **Total (denormalized)**: 108,000 x 111 = **~11.7 MB**
+
+#### Proposed approach (normalized): metadata stored once per canonical game
+
+- **Canonical game table**: 40,700 x 16 = **~650 KB** (with interned strings for publisher/developer/genre)
+- **ROM entry maps**: 108,000 x 17 = **~1.84 MB** (filename key + game_id + region + crc32)
+- **CRC index maps**: 108,000 x 11 = **~1.19 MB** (crc32 key + canonical filename reference)
+- **String interning pools**: ~100 KB (genres + publishers + developers)
+- **Display name strings**: 40,700 x 25 = **~1.02 MB** (one copy per game, not per variant)
+- **Canonical name strings**: 108,000 x 40 = **~4.32 MB** (still needed for filename-based lookup keys, cannot be deduplicated)
+- **Region strings**: with interning (~20 unique regions), negligible
+- **PHF overhead**: 108,000 x 3 = **~324 KB** (ROM maps) + 108,000 x 3 = **~324 KB** (CRC maps) + 40,700 x 0 = 0 (canonical game table is array, not PHF)
+
+**Total (normalized)**: 650 KB + 1.84 MB + 1.19 MB + 100 KB + 1.02 MB + 4.32 MB + 648 KB = **~9.8 MB**
+
+#### Comparison
+
+| Approach | Binary Size | Metadata per entry | Unique metadata copies |
+|----------|------------|-------------------|----------------------|
+| Denormalized (current plan) | ~11.7 MB | ~111 bytes | 108,000 |
+| Normalized (two-level) | ~9.8 MB | ~17 bytes + shared game | 40,700 |
+| **Savings** | **~1.9 MB (16%)** | | |
+
+The savings from normalization are moderate (~16%) because the dominant cost is the PHF map keys (canonical filenames), which cannot be deduplicated -- each ROM filename is unique. The savings come primarily from not repeating display_name, publisher, genre, developer, and players across regional variants.
+
+**Verdict**: The 16% size reduction is welcome but not transformative. The stronger argument for normalization is **data quality**: storing metadata once per game ensures consistency (you can't have "Super Mario World (USA)" say publisher "Nintendo" while "Super Mario World (Europe)" says publisher "Nintendo EAD" due to a cross-referencing mismatch).
+
+### B.7 Grouping Algorithm for Build-Time Processing
+
+The build.rs pipeline should assign canonical game IDs using this algorithm:
+
+```
+1. Parse all No-Intro/Redump DAT entries for a system.
+2. For each entry, derive a group_key by:
+   a. Strip everything from the first '(' onward.
+   b. Trim whitespace.
+   c. Normalize articles ("Name, The" -> "The Name").
+   d. Lowercase.
+   e. Remove punctuation.
+   f. Collapse whitespace.
+3. Group entries by (system, group_key).
+4. OPTIONAL: Parse No-Intro P/C DATs. For entries grouped differently
+   by P/C data vs. title normalization, prefer P/C grouping.
+5. OPTIONAL: Parse Retool clone lists for override cases
+   (regional title differences like Contra/Probotector).
+6. Assign a sequential game_id to each group.
+7. Cross-reference each group against TheGamesDB by title + platform
+   to obtain metadata (year, publisher, genre, players).
+8. Store: one CanonicalGame per group, one RomEntry per DAT entry.
+```
+
+**Build time impact**: Steps 2-3 are trivial string manipulation. Step 4 adds P/C DAT parsing (~1-2 seconds). Step 5 adds clone list JSON parsing (<1 second). Steps 6-7 are already planned. Total additional build time: **~2-3 seconds**.
+
+### B.8 Handling Non-Standard Filenames
+
+The two-level model handles non-standard filenames naturally:
+
+1. **Standard No-Intro filename**: Direct PHF lookup in ROM_DB succeeds. Get game_id, look up canonical game.
+2. **Non-standard filename** (e.g., `smw.sfc`): PHF lookup fails. Fall back to CRC32 hash computation.
+3. **CRC32 hash match**: Look up CRC in CRC_INDEX. Get canonical filename, then PHF lookup, then game_id.
+4. **No match**: Fall back to filename parser from `rom-identification.md`. The parser extracts a clean title, which can be fuzzy-matched against canonical game display names.
+
+This is the same fallback chain described in section 7 of the main document, but now each step resolves to a canonical `game_id` rather than duplicated metadata.
+
+### B.9 Impact on the Phased Rollout Plan
+
+The two-level normalized model can be adopted incrementally:
+
+**Phase 1** (identification layer): No change needed. Phase 1 only embeds filenames and derived clean_titles -- there's no rich metadata to deduplicate yet. Title normalization already happens at this phase, so group_keys are available.
+
+**Phase 2** (TheGamesDB cross-reference): This is where normalization pays off. Instead of cross-referencing each ROM filename against TheGamesDB individually (and potentially getting different matches for variants of the same game), cross-reference once per group_key. Store the result in the CanonicalGame table. This improves match rates (grouping variants increases the chance that at least one title matches TheGamesDB) and ensures consistency.
+
+**Phase 3** (CRC32 hash index): No change. The CRC index maps to canonical filenames, which resolve to game_ids via the ROM_DB.
+
+**Phase 4-5** (disc systems, remaining systems): The normalized model scales naturally. Adding new systems means adding new per-system canonical game tables and ROM maps.
+
+### B.10 Recommendation
+
+**Adopt the two-level normalized model from Phase 2 onward.**
+
+- **Phase 1**: Keep the simpler denormalized model (filename -> clean_title + region). The overhead of normalization isn't justified when there's no rich metadata to deduplicate.
+- **Phase 2**: When adding TheGamesDB metadata, switch to the two-level model. Use title normalization as the primary grouping algorithm, supplemented by No-Intro P/C DATs where available. Store metadata once per canonical game.
+- **Grouping accuracy**: Title normalization handles ~85-90% of cases. No-Intro P/C DATs handle most of the remaining cases. A small manual override list (inspired by Retool's clone lists) handles the remaining edge cases (regional title differences).
+- **Size savings**: ~1.9 MB (16%) compared to the denormalized approach. More importantly, metadata consistency is guaranteed.
+- **Implementation complexity**: Moderate. The build.rs pipeline needs a grouping step before cross-referencing, and the runtime API adds an indirection (ROM -> game_id -> metadata). But the actual code is straightforward -- a HashMap for grouping at build time, and an array index at runtime.
