@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::arcade_db;
+use crate::game_db;
+use crate::rom_tags;
 use crate::systems::{self, SystemCategory};
 
 /// A reference to a game — the common identity shared across ROM listings,
@@ -13,14 +15,18 @@ pub struct GameRef {
     pub system_display: String,
     /// ROM filename (e.g., "Super Mario Bros (USA).nes")
     pub rom_filename: String,
-    /// Human-readable display name resolved from arcade DB.
+    /// Human-readable display name resolved from arcade DB or game DB.
     pub display_name: Option<String>,
     /// Path to the ROM file relative to the storage root
     pub rom_path: String,
 }
 
 impl GameRef {
-    /// Create a new GameRef, resolving display_name from the arcade DB for arcade systems.
+    /// Create a new GameRef, resolving display_name from the appropriate DB.
+    ///
+    /// For arcade systems, uses the arcade DB (zip filename lookup).
+    /// For non-arcade systems with game DB coverage, uses the game DB
+    /// (No-Intro filename lookup).
     pub fn new(system: &str, rom_filename: String, rom_path: String) -> Self {
         let sys_info = systems::find_system(system);
 
@@ -28,16 +34,21 @@ impl GameRef {
             .map(|s| s.display_name.to_string())
             .unwrap_or_else(|| system.to_string());
 
-        let display_name = sys_info
-            .filter(|s| s.category == SystemCategory::Arcade)
-            .and_then(|_| {
+        let display_name = sys_info.and_then(|s| {
+            if s.category == SystemCategory::Arcade {
+                // Arcade: use arcade DB (zip filename without extension)
                 let resolved = arcade_db::arcade_display_name(&rom_filename);
                 if resolved != rom_filename {
                     Some(resolved.to_string())
                 } else {
                     None
                 }
-            });
+            } else {
+                // Non-arcade: try game DB first, then append useful filename tags
+                game_db::game_display_name(system, &rom_filename)
+                    .map(|name| rom_tags::display_name_with_tags(name, &rom_filename))
+            }
+        });
 
         Self {
             system: system.to_string(),

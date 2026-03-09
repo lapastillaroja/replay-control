@@ -18,6 +18,9 @@ fn main() {
     // Source data files live in data/ at the project root (one level up from replay-core/)
     let sources_dir = manifest_path.join("..").join("data");
 
+    // --- Game DB generation (non-arcade systems) ---
+    generate_game_db(&out_dir, &sources_dir);
+
     // Rerun if any data file changes
     println!(
         "cargo::rerun-if-changed={}",
@@ -781,4 +784,1025 @@ fn generate_phf_map(out: &mut impl Write, entries: &[GameEntry]) {
         map.build()
     )
     .unwrap();
+}
+
+// =============================================================================
+// Game DB generation for non-arcade systems
+// =============================================================================
+
+/// System configuration: maps RePlayOS folder name to No-Intro DAT filename
+/// and the identifier used for generated Rust code.
+struct SystemConfig {
+    folder_name: &'static str,
+    nointro_dat: &'static str,
+    rust_prefix: &'static str,
+    tgdb_platform_ids: &'static [u32],
+}
+
+const GAME_DB_SYSTEMS: &[SystemConfig] = &[
+    SystemConfig {
+        folder_name: "nintendo_nes",
+        nointro_dat: "Nintendo - Nintendo Entertainment System.dat",
+        rust_prefix: "NES",
+        tgdb_platform_ids: &[7],
+    },
+    SystemConfig {
+        folder_name: "nintendo_snes",
+        nointro_dat: "Nintendo - Super Nintendo Entertainment System.dat",
+        rust_prefix: "SNES",
+        tgdb_platform_ids: &[6],
+    },
+    SystemConfig {
+        folder_name: "nintendo_gb",
+        nointro_dat: "Nintendo - Game Boy.dat",
+        rust_prefix: "GB",
+        tgdb_platform_ids: &[4],
+    },
+    SystemConfig {
+        folder_name: "nintendo_gbc",
+        nointro_dat: "Nintendo - Game Boy Color.dat",
+        rust_prefix: "GBC",
+        tgdb_platform_ids: &[41],
+    },
+    SystemConfig {
+        folder_name: "nintendo_gba",
+        nointro_dat: "Nintendo - Game Boy Advance.dat",
+        rust_prefix: "GBA",
+        tgdb_platform_ids: &[5],
+    },
+    SystemConfig {
+        folder_name: "nintendo_n64",
+        nointro_dat: "Nintendo - Nintendo 64.dat",
+        rust_prefix: "N64",
+        tgdb_platform_ids: &[3],
+    },
+    SystemConfig {
+        folder_name: "sega_sms",
+        nointro_dat: "Sega - Master System - Mark III.dat",
+        rust_prefix: "SMS",
+        tgdb_platform_ids: &[35],
+    },
+    SystemConfig {
+        folder_name: "sega_smd",
+        nointro_dat: "Sega - Mega Drive - Genesis.dat",
+        rust_prefix: "SMD",
+        tgdb_platform_ids: &[18, 36],
+    },
+    SystemConfig {
+        folder_name: "sega_gg",
+        nointro_dat: "Sega - Game Gear.dat",
+        rust_prefix: "GG",
+        tgdb_platform_ids: &[20],
+    },
+];
+
+/// A ROM entry parsed from a No-Intro DAT file.
+struct NoIntroEntry {
+    /// Game name from the DAT (e.g., "Super Mario World (USA)")
+    name: String,
+    /// ROM filename (e.g., "Super Mario World (USA).sfc")
+    rom_filename: String,
+    /// Region code (e.g., "USA", "Europe", "Japan")
+    region: String,
+    /// CRC32 hash
+    crc32: u32,
+}
+
+/// Metadata from TheGamesDB, keyed by normalized title + platform.
+struct TgdbEntry {
+    #[allow(dead_code)]
+    title: String,
+    year: u16,
+    players: u8,
+    genre_ids: Vec<u32>,
+    #[allow(dead_code)]
+    developer_ids: Vec<u32>,
+}
+
+/// Canonical game after grouping ROM variants.
+struct CanonicalGameBuild {
+    display_name: String,
+    year: u16,
+    genre: String,
+    developer: String,
+    players: u8,
+}
+
+/// ROM entry with its canonical game assignment.
+struct RomEntryBuild {
+    /// Filename stem (No-Intro name without extension)
+    filename_stem: String,
+    region: String,
+    crc32: u32,
+    /// Index into the canonical games array for this system
+    game_id: usize,
+}
+
+/// Parse a No-Intro ClrMamePro-format DAT file.
+///
+/// Format:
+/// ```text
+/// game (
+///     name "Super Mario World (USA)"
+///     region "USA"
+///     rom ( name "Super Mario World (USA).sfc" size 524288 crc B19ED489 ... )
+/// )
+/// ```
+fn parse_nointro_dat(path: &Path) -> Vec<NoIntroEntry> {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Warning: could not open {}: {}", path.display(), e);
+            return Vec::new();
+        }
+    };
+    let reader = BufReader::new(file);
+    let mut entries = Vec::new();
+
+    let mut in_game = false;
+    let mut in_rom = false;
+    let mut current_name = String::new();
+    let mut current_region = String::new();
+    let mut current_rom_name = String::new();
+    let mut current_crc: u32 = 0;
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let trimmed = line.trim();
+
+        if trimmed == ")" && in_rom {
+            in_rom = false;
+            continue;
+        }
+
+        if trimmed.starts_with("game (") || trimmed == "game (" {
+            in_game = true;
+            current_name.clear();
+            current_region.clear();
+            current_rom_name.clear();
+            current_crc = 0;
+            continue;
+        }
+
+        if trimmed == ")" && in_game {
+            in_game = false;
+            if !current_name.is_empty() && !current_rom_name.is_empty() {
+                // If region wasn't explicitly set, try to extract from name
+                if current_region.is_empty() {
+                    current_region = extract_region_from_name(&current_name);
+                }
+                entries.push(NoIntroEntry {
+                    name: current_name.clone(),
+                    rom_filename: current_rom_name.clone(),
+                    region: current_region.clone(),
+                    crc32: current_crc,
+                });
+            }
+            continue;
+        }
+
+        if !in_game {
+            continue;
+        }
+
+        // Parse fields inside a game block
+        if let Some(val) = extract_quoted_field(trimmed, "name ") {
+            if in_rom || trimmed.starts_with("rom (") || trimmed.contains("rom ( name") {
+                // This is a rom name field
+            } else {
+                current_name = val;
+            }
+        }
+
+        if let Some(val) = extract_quoted_field(trimmed, "region ") {
+            current_region = val;
+        }
+
+        // Parse rom line: rom ( name "file.ext" size 123 crc ABCD1234 ... )
+        if trimmed.starts_with("rom (") || trimmed.starts_with("rom(") {
+            in_rom = true;
+            if let Some(rom_name) = extract_quoted_after(trimmed, "name ") {
+                current_rom_name = rom_name;
+            }
+            if let Some(crc_str) = extract_word_after(trimmed, "crc ") {
+                current_crc = u32::from_str_radix(&crc_str, 16).unwrap_or(0);
+            }
+            if trimmed.ends_with(')') {
+                in_rom = false;
+            }
+        }
+    }
+
+    entries
+}
+
+/// Extract a quoted value after a field name, e.g., `name "value"` -> `value`
+fn extract_quoted_field(line: &str, field: &str) -> Option<String> {
+    let rest = line.strip_prefix(field)?;
+    let rest = rest.trim();
+    if rest.starts_with('"') {
+        let content = &rest[1..];
+        if let Some(end) = content.find('"') {
+            return Some(content[..end].to_string());
+        }
+    }
+    None
+}
+
+/// Extract a quoted value after a keyword anywhere in the line.
+fn extract_quoted_after(line: &str, keyword: &str) -> Option<String> {
+    let idx = line.find(keyword)?;
+    let rest = &line[idx + keyword.len()..];
+    let rest = rest.trim();
+    if rest.starts_with('"') {
+        let content = &rest[1..];
+        if let Some(end) = content.find('"') {
+            return Some(content[..end].to_string());
+        }
+    }
+    None
+}
+
+/// Extract a word (non-whitespace token) after a keyword.
+fn extract_word_after(line: &str, keyword: &str) -> Option<String> {
+    let idx = line.find(keyword)?;
+    let rest = &line[idx + keyword.len()..];
+    let word: String = rest.chars().take_while(|c| !c.is_whitespace() && *c != ')').collect();
+    if word.is_empty() {
+        None
+    } else {
+        Some(word)
+    }
+}
+
+/// Extract region from a No-Intro game name by looking at parenthesized tags.
+fn extract_region_from_name(name: &str) -> String {
+    // Look for the first parenthesized group which typically contains the region
+    if let Some(start) = name.find('(') {
+        if let Some(end) = name[start..].find(')') {
+            let tag = &name[start + 1..start + end];
+            // Check if it's a known region
+            let regions = [
+                "USA", "Europe", "Japan", "World", "Australia", "Brazil",
+                "Canada", "China", "France", "Germany", "Hong Kong", "Italy",
+                "Korea", "Netherlands", "Russia", "Spain", "Sweden", "Taiwan",
+                "UK",
+            ];
+            for region in &regions {
+                if tag.contains(region) {
+                    return region.to_string();
+                }
+            }
+            // Return the whole tag content as region
+            return tag.to_string();
+        }
+    }
+    String::new()
+}
+
+/// Parse a libretro metadata DAT file (maxusers or genre format).
+///
+/// Format:
+/// ```text
+/// game (
+///     comment "Game Name (Region)"
+///     users 2          // for maxusers
+///     genre "Action"   // for genre
+///     rom ( crc ABCD1234 )
+/// )
+/// ```
+///
+/// Returns a map of CRC32 -> value (either player count or genre string).
+fn parse_libretro_meta_dat(path: &Path, field_name: &str) -> HashMap<u32, String> {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return HashMap::new(),
+    };
+    let reader = BufReader::new(file);
+    let mut result = HashMap::new();
+
+    let mut in_game = false;
+    let mut current_value = String::new();
+    let mut current_crc: u32 = 0;
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("game (") || trimmed == "game (" {
+            in_game = true;
+            current_value.clear();
+            current_crc = 0;
+            continue;
+        }
+
+        if trimmed == ")" && in_game {
+            in_game = false;
+            if current_crc != 0 && !current_value.is_empty() {
+                result.insert(current_crc, current_value.clone());
+            }
+            continue;
+        }
+
+        if !in_game {
+            continue;
+        }
+
+        // Parse the value field (users or genre)
+        if trimmed.starts_with(field_name) {
+            let rest = trimmed[field_name.len()..].trim();
+            // Handle both quoted and unquoted values
+            if rest.starts_with('"') {
+                if let Some(end) = rest[1..].find('"') {
+                    current_value = rest[1..1 + end].to_string();
+                }
+            } else {
+                current_value = rest.to_string();
+            }
+        }
+
+        // Parse rom line for CRC
+        if trimmed.starts_with("rom (") || trimmed.starts_with("rom(") {
+            if let Some(crc_str) = extract_word_after(trimmed, "crc ") {
+                current_crc = u32::from_str_radix(&crc_str, 16).unwrap_or(0);
+            }
+        }
+    }
+
+    result
+}
+
+/// Normalize a No-Intro game name to a grouping key for canonical game deduplication.
+///
+/// "Super Mario World (USA)" -> "super mario world"
+/// "Legend of Zelda, The (USA) (Rev A)" -> "legend of zelda the"
+fn normalize_title(name: &str) -> String {
+    // Strip everything from the first '(' onward (removes region/revision tags)
+    let base = name.split('(').next().unwrap_or(name).trim();
+
+    // Normalize "Name, The" -> "The Name" -> then lowercase strips articles anyway
+    // For grouping purposes, we just lowercase and remove punctuation
+    let mut result = String::with_capacity(base.len());
+    for ch in base.chars() {
+        if ch.is_alphanumeric() || ch == ' ' {
+            result.push(ch.to_ascii_lowercase());
+        }
+    }
+
+    // Collapse whitespace
+    let parts: Vec<&str> = result.split_whitespace().collect();
+    parts.join(" ")
+}
+
+/// Derive a clean display name from a No-Intro game name.
+///
+/// "Super Mario World (USA)" -> "Super Mario World"
+/// "Legend of Zelda, The (USA)" -> "The Legend of Zelda"
+/// "Legend of Zelda, The - A Link to the Past (USA)" -> "The Legend of Zelda - A Link to the Past"
+fn clean_display_name(name: &str) -> String {
+    // Strip everything from the first '(' onward
+    let base = name.split('(').next().unwrap_or(name).trim();
+
+    // Handle "Name, The" or "Name, The - Subtitle" -> "The Name" or "The Name - Subtitle"
+    // Look for ", The" followed by end of string, " - ", or " ~ "
+    for article in &[", The", ", An", ", A"] {
+        if let Some(idx) = base.find(article) {
+            let after_article = &base[idx + article.len()..];
+            // Only match if followed by nothing, " - ", or end of string
+            if after_article.is_empty()
+                || after_article.starts_with(" - ")
+                || after_article.starts_with(" ~ ")
+            {
+                let prefix = &base[..idx];
+                let art = &article[2..]; // Strip the leading ", "
+                if after_article.is_empty() {
+                    return format!("{art} {prefix}");
+                } else {
+                    return format!("{art} {prefix}{after_article}");
+                }
+            }
+        }
+    }
+
+    base.to_string()
+}
+
+/// TheGamesDB genre ID to name mapping.
+/// These are the standard TGDB genre IDs (1-30), which are stable.
+fn tgdb_genre_name(id: u32) -> &'static str {
+    match id {
+        1 => "Action",
+        2 => "Adventure",
+        3 => "Board",
+        4 => "Card",
+        5 => "Casino",
+        6 => "Comedy",
+        7 => "Compilation",
+        8 => "Shooter",
+        9 => "Educational",
+        10 => "Family",
+        11 => "Fighting",
+        12 => "Horror",
+        13 => "MMO",
+        14 => "Music",
+        15 => "Other",
+        16 => "Pinball",
+        17 => "Platform",
+        18 => "Puzzle",
+        19 => "Racing",
+        20 => "Role-Playing",
+        21 => "Sandbox",
+        22 => "Simulation",
+        23 => "Sports",
+        24 => "Stealth",
+        25 => "Strategy",
+        26 => "Trivia",
+        27 => "Virtual Life",
+        28 => "Flight Simulator",
+        29 => "Fitness",
+        30 => "Party",
+        _ => "",
+    }
+}
+
+/// Parse TheGamesDB JSON dump and build a lookup by normalized title + platform.
+///
+/// Returns: HashMap<(normalized_title, platform_id), TgdbEntry>
+fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!(
+                "Warning: could not open TheGamesDB JSON at {}: {}",
+                path.display(),
+                e
+            );
+            return HashMap::new();
+        }
+    };
+
+    let reader = BufReader::new(file);
+    let json: serde_json::Value = match serde_json::from_reader(reader) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Warning: failed to parse TheGamesDB JSON: {}", e);
+            return HashMap::new();
+        }
+    };
+
+    let mut result: HashMap<(String, u32), TgdbEntry> = HashMap::new();
+
+    let games = match json["data"]["games"].as_array() {
+        Some(arr) => arr,
+        None => return result,
+    };
+
+    for game in games {
+        let title = match game["game_title"].as_str() {
+            Some(t) => t.to_string(),
+            None => continue,
+        };
+        let platform = match game["platform"].as_u64() {
+            Some(p) => p as u32,
+            None => continue,
+        };
+
+        // Extract year from release_date (format: "YYYY-MM-DD")
+        let year: u16 = game["release_date"]
+            .as_str()
+            .and_then(|d| d.get(..4))
+            .and_then(|y| y.parse().ok())
+            .unwrap_or(0);
+
+        let players: u8 = game["players"]
+            .as_u64()
+            .map(|p| p.min(255) as u8)
+            .unwrap_or(0);
+
+        let genre_ids: Vec<u32> = game["genres"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+            .unwrap_or_default();
+
+        let developer_ids: Vec<u32> = game["developers"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+            .unwrap_or_default();
+
+        let normalized = normalize_title_for_tgdb(&title);
+        let key = (normalized, platform);
+
+        // Only keep the first entry per title+platform (avoid overwriting)
+        result.entry(key).or_insert(TgdbEntry {
+            title,
+            year,
+            players,
+            genre_ids,
+            developer_ids,
+        });
+    }
+
+    result
+}
+
+/// Normalize a title for matching against TheGamesDB.
+/// Simpler normalization — lowercase, strip punctuation, collapse whitespace.
+fn normalize_title_for_tgdb(title: &str) -> String {
+    let mut result = String::with_capacity(title.len());
+    for ch in title.chars() {
+        if ch.is_alphanumeric() || ch == ' ' {
+            result.push(ch.to_ascii_lowercase());
+        }
+    }
+    let parts: Vec<&str> = result.split_whitespace().collect();
+    parts.join(" ")
+}
+
+/// Generate the game_db.rs file with per-system PHF maps and canonical game tables.
+fn generate_game_db(out_dir: &str, sources_dir: &Path) {
+    let dest_path = Path::new(out_dir).join("game_db.rs");
+    let mut out = BufWriter::new(File::create(&dest_path).unwrap());
+
+    let nointro_dir = sources_dir.join("no-intro");
+    let maxusers_dir = sources_dir.join("libretro-meta").join("maxusers");
+    let genre_dir = sources_dir.join("libretro-meta").join("genre");
+    let tgdb_path = sources_dir.join("thegamesdb-latest.json");
+
+    // Register rerun-if-changed for all game DB data directories
+    println!("cargo::rerun-if-changed={}", nointro_dir.display());
+    println!("cargo::rerun-if-changed={}", maxusers_dir.display());
+    println!("cargo::rerun-if-changed={}", genre_dir.display());
+    println!("cargo::rerun-if-changed={}", tgdb_path.display());
+
+    // Parse TheGamesDB JSON dump (shared across all systems)
+    let tgdb = if tgdb_path.exists() {
+        println!("cargo:warning=Game DB: Loading TheGamesDB JSON dump...");
+        let tgdb = parse_tgdb_json(&tgdb_path);
+        println!(
+            "cargo:warning=Game DB: TheGamesDB loaded {} entries",
+            tgdb.len()
+        );
+        tgdb
+    } else {
+        println!("cargo:warning=Game DB: TheGamesDB JSON not found, skipping metadata enrichment");
+        HashMap::new()
+    };
+
+    // Track grand totals
+    let mut total_roms = 0usize;
+    let mut total_games = 0usize;
+    let mut total_tgdb_matches = 0usize;
+    let mut system_names: Vec<&str> = Vec::new();
+
+    // Process each system
+    for sys in GAME_DB_SYSTEMS {
+        let dat_path = nointro_dir.join(sys.nointro_dat);
+        if !dat_path.exists() {
+            println!(
+                "cargo:warning=Game DB: No-Intro DAT not found for {}, skipping",
+                sys.folder_name
+            );
+            // Write empty statics for this system
+            write_empty_system(&mut out, sys.rust_prefix);
+            system_names.push(sys.folder_name);
+            continue;
+        }
+
+        // 1. Parse No-Intro DAT
+        let nointro_entries = parse_nointro_dat(&dat_path);
+        println!(
+            "cargo:warning=Game DB: {} - parsed {} ROM entries from No-Intro DAT",
+            sys.folder_name,
+            nointro_entries.len()
+        );
+
+        // 2. Parse libretro metadata (maxusers and genre by CRC)
+        let maxusers_path = maxusers_dir.join(sys.nointro_dat);
+        let maxusers: HashMap<u32, String> = if maxusers_path.exists() {
+            parse_libretro_meta_dat(&maxusers_path, "users ")
+        } else {
+            HashMap::new()
+        };
+        println!(
+            "cargo:warning=Game DB: {} - {} maxusers entries",
+            sys.folder_name,
+            maxusers.len()
+        );
+
+        let genre_path = genre_dir.join(sys.nointro_dat);
+        let genres: HashMap<u32, String> = if genre_path.exists() {
+            parse_libretro_meta_dat(&genre_path, "genre ")
+        } else {
+            HashMap::new()
+        };
+        println!(
+            "cargo:warning=Game DB: {} - {} genre entries",
+            sys.folder_name,
+            genres.len()
+        );
+
+        // 3. Group ROM entries into canonical games by normalized title
+        let mut game_groups: HashMap<String, Vec<usize>> = HashMap::new();
+        for (idx, entry) in nointro_entries.iter().enumerate() {
+            let key = normalize_title(&entry.name);
+            game_groups.entry(key).or_default().push(idx);
+        }
+
+        // 4. Build canonical games and ROM entries
+        // Sort group keys for deterministic output
+        let mut group_keys: Vec<String> = game_groups.keys().cloned().collect();
+        group_keys.sort();
+
+        let mut canonical_games: Vec<CanonicalGameBuild> = Vec::new();
+        let mut rom_entries: Vec<RomEntryBuild> = Vec::new();
+        let mut tgdb_match_count = 0usize;
+
+        for group_key in &group_keys {
+            let indices = &game_groups[group_key];
+            let game_id = canonical_games.len();
+
+            // Pick the best representative entry for display name
+            // Prefer USA/World region, then first entry
+            let best_idx = indices
+                .iter()
+                .copied()
+                .find(|&i| {
+                    let r = nointro_entries[i].region.as_str();
+                    r == "USA" || r == "World"
+                })
+                .unwrap_or(indices[0]);
+
+            let display_name = clean_display_name(&nointro_entries[best_idx].name);
+
+            // Try to get metadata from TheGamesDB
+            let mut year: u16 = 0;
+            let mut tgdb_players: u8 = 0;
+            let mut tgdb_genre = String::new();
+
+            // Try matching against each TGDB platform ID for this system
+            let tgdb_normalized = normalize_title_for_tgdb(&display_name);
+            for &platform_id in sys.tgdb_platform_ids {
+                if let Some(tgdb_entry) = tgdb.get(&(tgdb_normalized.clone(), platform_id)) {
+                    year = tgdb_entry.year;
+                    tgdb_players = tgdb_entry.players;
+                    if !tgdb_entry.genre_ids.is_empty() {
+                        tgdb_genre = tgdb_genre_name(tgdb_entry.genre_ids[0]).to_string();
+                    }
+                    tgdb_match_count += 1;
+                    break;
+                }
+            }
+
+            // Get players and genre from libretro metadata (CRC-based, more reliable)
+            // Use libretro data as primary, TGDB as fallback
+            let mut final_players: u8 = 0;
+            let mut final_genre = String::new();
+
+            for &idx in indices {
+                let crc = nointro_entries[idx].crc32;
+                if final_players == 0 {
+                    if let Some(users_str) = maxusers.get(&crc) {
+                        final_players = users_str.parse().unwrap_or(0);
+                    }
+                }
+                if final_genre.is_empty() {
+                    if let Some(genre_str) = genres.get(&crc) {
+                        final_genre = genre_str.clone();
+                    }
+                }
+                if final_players > 0 && !final_genre.is_empty() {
+                    break;
+                }
+            }
+
+            // Fall back to TGDB data if libretro didn't have it
+            if final_players == 0 {
+                final_players = tgdb_players;
+            }
+            if final_genre.is_empty() {
+                final_genre = tgdb_genre;
+            }
+
+            canonical_games.push(CanonicalGameBuild {
+                display_name,
+                year,
+                genre: final_genre,
+                developer: String::new(), // Developer lookup not available in TGDB dump
+                players: final_players,
+            });
+
+            // Create ROM entries for all variants
+            for &idx in indices {
+                let entry = &nointro_entries[idx];
+                // Filename stem = ROM filename without extension
+                let stem = entry
+                    .rom_filename
+                    .rfind('.')
+                    .map(|i| &entry.rom_filename[..i])
+                    .unwrap_or(&entry.rom_filename);
+
+                rom_entries.push(RomEntryBuild {
+                    filename_stem: stem.to_string(),
+                    region: entry.region.clone(),
+                    crc32: entry.crc32,
+                    game_id,
+                });
+            }
+        }
+
+        println!(
+            "cargo:warning=Game DB: {} - {} canonical games, {} ROM entries, {} TGDB matches",
+            sys.folder_name,
+            canonical_games.len(),
+            rom_entries.len(),
+            tgdb_match_count
+        );
+
+        let genre_coverage = rom_entries
+            .iter()
+            .filter(|r| !canonical_games[r.game_id].genre.is_empty())
+            .count();
+        let players_coverage = rom_entries
+            .iter()
+            .filter(|r| canonical_games[r.game_id].players > 0)
+            .count();
+        println!(
+            "cargo:warning=Game DB: {} - genre coverage: {}/{} ({:.0}%), players coverage: {}/{} ({:.0}%)",
+            sys.folder_name,
+            genre_coverage,
+            rom_entries.len(),
+            if rom_entries.is_empty() { 0.0 } else { genre_coverage as f64 / rom_entries.len() as f64 * 100.0 },
+            players_coverage,
+            rom_entries.len(),
+            if rom_entries.is_empty() { 0.0 } else { players_coverage as f64 / rom_entries.len() as f64 * 100.0 },
+        );
+
+        total_roms += rom_entries.len();
+        total_games += canonical_games.len();
+        total_tgdb_matches += tgdb_match_count;
+        system_names.push(sys.folder_name);
+
+        // 5. Generate Rust code for this system
+        write_system_code(&mut out, sys.rust_prefix, &canonical_games, &rom_entries);
+    }
+
+    // Generate the dispatch functions
+    write_dispatch_code(&mut out, &system_names);
+
+    println!(
+        "cargo:warning=Game DB: Total: {} ROM entries, {} canonical games, {} TGDB matches across {} systems",
+        total_roms,
+        total_games,
+        total_tgdb_matches,
+        system_names.len()
+    );
+}
+
+/// Write empty statics for a system that has no data.
+fn write_empty_system(out: &mut impl Write, prefix: &str) {
+    writeln!(out, "static {prefix}_GAMES: &[CanonicalGame] = &[];").unwrap();
+    writeln!(
+        out,
+        "static {prefix}_ROM_DB: phf::Map<&'static str, GameEntry> = phf::Map {{ key: 0, disps: &[], entries: &[] }};"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "static {prefix}_CRC_INDEX: phf::Map<u32, &'static str> = phf::Map {{ key: 0, disps: &[], entries: &[] }};"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "static {prefix}_NORM_INDEX: phf::Map<&'static str, u16> = phf::Map {{ key: 0, disps: &[], entries: &[] }};"
+    )
+    .unwrap();
+    writeln!(out).unwrap();
+}
+
+/// Write the generated Rust code for a single system.
+fn write_system_code(
+    out: &mut impl Write,
+    prefix: &str,
+    games: &[CanonicalGameBuild],
+    rom_entries: &[RomEntryBuild],
+) {
+    // 1. Canonical games array
+    writeln!(out, "static {prefix}_GAMES: &[CanonicalGame] = &[").unwrap();
+    for game in games {
+        writeln!(
+            out,
+            "    CanonicalGame {{ display_name: \"{}\", year: {}, genre: \"{}\", developer: \"{}\", players: {} }},",
+            escape_str(&game.display_name),
+            game.year,
+            escape_str(&game.genre),
+            escape_str(&game.developer),
+            game.players,
+        )
+        .unwrap();
+    }
+    writeln!(out, "];").unwrap();
+    writeln!(out).unwrap();
+
+    // 2. ROM DB (filename_stem -> GameEntry) via PHF
+    //    Deduplicate filename stems — if multiple ROMs share the same filename
+    //    stem (e.g., different dumps of the same ROM), keep only the first.
+    if rom_entries.is_empty() {
+        writeln!(
+            out,
+            "static {prefix}_ROM_DB: phf::Map<&'static str, GameEntry> = phf::Map {{ key: 0, disps: &[], entries: &[] }};"
+        )
+        .unwrap();
+    } else {
+        let mut map = phf_codegen::Map::new();
+        let mut seen_stems: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for entry in rom_entries {
+            if !seen_stems.insert(&entry.filename_stem) {
+                continue; // Skip duplicate filename stems
+            }
+            let value = format!(
+                "GameEntry {{ canonical_name: \"{}\", region: \"{}\", crc32: 0x{:08X}, game: &{prefix}_GAMES[{}] }}",
+                escape_str(&entry.filename_stem),
+                escape_str(&entry.region),
+                entry.crc32,
+                entry.game_id,
+            );
+            map.entry(&entry.filename_stem, &value);
+        }
+        writeln!(
+            out,
+            "static {prefix}_ROM_DB: phf::Map<&'static str, GameEntry> = {};",
+            map.build()
+        )
+        .unwrap();
+    }
+    writeln!(out).unwrap();
+
+    // 3. CRC32 index (crc32 -> filename_stem) via PHF
+    if rom_entries.is_empty() {
+        writeln!(
+            out,
+            "static {prefix}_CRC_INDEX: phf::Map<u32, &'static str> = phf::Map {{ key: 0, disps: &[], entries: &[] }};"
+        )
+        .unwrap();
+    } else {
+        // Only include entries with non-zero CRC32, and deduplicate CRCs
+        // (if multiple ROMs have the same CRC, only keep the first)
+        let mut seen_crcs: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut crc_entries: Vec<(u32, &str)> = Vec::new();
+        for entry in rom_entries {
+            if entry.crc32 != 0 && seen_crcs.insert(entry.crc32) {
+                crc_entries.push((entry.crc32, &entry.filename_stem));
+            }
+        }
+
+        let mut map = phf_codegen::Map::new();
+        for (crc, stem) in &crc_entries {
+            map.entry(*crc, &format!("\"{}\"", escape_str(stem)));
+        }
+        writeln!(
+            out,
+            "static {prefix}_CRC_INDEX: phf::Map<u32, &'static str> = {};",
+            map.build()
+        )
+        .unwrap();
+    }
+    writeln!(out).unwrap();
+
+    // 4. Normalized title index (normalized_title -> game_id) via PHF
+    //    Maps normalized game titles to canonical game indices for fuzzy matching.
+    //    Multiple ROM entries may share the same normalized title (regional variants,
+    //    translations, etc.) — we keep only the first canonical game per normalized title.
+    if games.is_empty() {
+        writeln!(
+            out,
+            "static {prefix}_NORM_INDEX: phf::Map<&'static str, u16> = phf::Map {{ key: 0, disps: &[], entries: &[] }};"
+        )
+        .unwrap();
+    } else {
+        // Build a map from normalized title -> game_id, deduplicating
+        let mut norm_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (game_id, game) in games.iter().enumerate() {
+            let normalized = normalize_title(&game.display_name);
+            if !normalized.is_empty() {
+                norm_map.entry(normalized).or_insert(game_id);
+            }
+        }
+
+        let mut map = phf_codegen::Map::new();
+        // Sort for deterministic output
+        let mut norm_entries: Vec<(&str, usize)> = norm_map.iter().map(|(k, &v)| (k.as_str(), v)).collect();
+        norm_entries.sort_by_key(|(k, _)| k.to_string());
+        for (norm_title, game_id) in &norm_entries {
+            map.entry(*norm_title, &format!("{}u16", game_id));
+        }
+        writeln!(
+            out,
+            "static {prefix}_NORM_INDEX: phf::Map<&'static str, u16> = {};",
+            map.build()
+        )
+        .unwrap();
+
+        println!(
+            "cargo:warning=Game DB: {} - {} normalized title index entries",
+            prefix, norm_entries.len()
+        );
+    }
+    writeln!(out).unwrap();
+}
+
+/// Write the dispatch functions that route system folder names to per-system maps.
+fn write_dispatch_code(out: &mut impl Write, system_names: &[&str]) {
+    // System list constant
+    writeln!(out, "static GAME_DB_SYSTEMS: &[&str] = &[").unwrap();
+    for name in system_names {
+        writeln!(out, "    \"{name}\",").unwrap();
+    }
+    writeln!(out, "];").unwrap();
+    writeln!(out).unwrap();
+
+    // Dispatch function for ROM DB
+    writeln!(
+        out,
+        "fn get_system_db(system: &str) -> Option<&'static phf::Map<&'static str, GameEntry>> {{"
+    )
+    .unwrap();
+    writeln!(out, "    match system {{").unwrap();
+    for sys in GAME_DB_SYSTEMS {
+        writeln!(
+            out,
+            "        \"{}\" => Some(&{}_ROM_DB),",
+            sys.folder_name, sys.rust_prefix
+        )
+        .unwrap();
+    }
+    writeln!(out, "        _ => None,").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out).unwrap();
+
+    // Dispatch function for CRC index
+    writeln!(
+        out,
+        "fn get_system_crc_index(system: &str) -> Option<&'static phf::Map<u32, &'static str>> {{"
+    )
+    .unwrap();
+    writeln!(out, "    match system {{").unwrap();
+    for sys in GAME_DB_SYSTEMS {
+        writeln!(
+            out,
+            "        \"{}\" => Some(&{}_CRC_INDEX),",
+            sys.folder_name, sys.rust_prefix
+        )
+        .unwrap();
+    }
+    writeln!(out, "        _ => None,").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out).unwrap();
+
+    // Dispatch function for normalized title index
+    writeln!(
+        out,
+        "fn get_system_norm_index(system: &str) -> Option<&'static phf::Map<&'static str, u16>> {{"
+    )
+    .unwrap();
+    writeln!(out, "    match system {{").unwrap();
+    for sys in GAME_DB_SYSTEMS {
+        writeln!(
+            out,
+            "        \"{}\" => Some(&{}_NORM_INDEX),",
+            sys.folder_name, sys.rust_prefix
+        )
+        .unwrap();
+    }
+    writeln!(out, "        _ => None,").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+
+    writeln!(out).unwrap();
+
+    // Dispatch function for canonical games array
+    writeln!(
+        out,
+        "fn get_system_games(system: &str) -> Option<&'static [CanonicalGame]> {{"
+    )
+    .unwrap();
+    writeln!(out, "    match system {{").unwrap();
+    for sys in GAME_DB_SYSTEMS {
+        writeln!(
+            out,
+            "        \"{}\" => Some({}_GAMES),",
+            sys.folder_name, sys.rust_prefix
+        )
+        .unwrap();
+    }
+    writeln!(out, "        _ => None,").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
 }
