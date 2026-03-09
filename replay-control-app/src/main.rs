@@ -7,11 +7,11 @@ mod ssr {
     use tower_http::cors::CorsLayer;
     use tower_http::services::ServeDir;
 
-    use replay_app::api;
-    use replay_app::Shell;
+    use replay_control_app::api;
+    use replay_control_app::Shell;
 
     #[derive(Parser)]
-    #[command(name = "replay-app", about = "Replay Control — companion app for RePlayOS")]
+    #[command(name = "replay-control-app", about = "Replay Control — companion app for RePlayOS")]
     struct Cli {
         /// Port to listen on
         #[arg(short, long, default_value = "8080")]
@@ -34,7 +34,7 @@ mod ssr {
         tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "replay_app=info,replay_core=info".parse().unwrap()),
+                    .unwrap_or_else(|_| "replay_control_app=info,replay_control_core=info".parse().unwrap()),
             )
             .init();
 
@@ -60,31 +60,33 @@ mod ssr {
 
         // Explicitly register all server functions (inventory auto-registration
         // doesn't work when the functions are in a library crate).
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetInfo>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetSystems>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetFavorites>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetRecents>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::AddFavorite>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::RemoveFavorite>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GroupFavorites>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::FlattenFavorites>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetRomsPage>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetSystemFavorites>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::DeleteRom>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::RenameRom>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetRomDetail>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::RefreshStorage>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetWifiConfig>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::SaveWifiConfig>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetNfsConfig>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::SaveNfsConfig>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::RestartReplayUi>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::RebootSystem>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::OrganizeFavorites>();
-        server_fn::axum::register_explicit::<replay_app::server_fns::GetSkins>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetInfo>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystems>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFavorites>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecents>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::AddFavorite>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveFavorite>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GroupFavorites>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::FlattenFavorites>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomsPage>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemFavorites>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::DeleteRom>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RenameRom>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRomDetail>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RefreshStorage>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetWifiConfig>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveWifiConfig>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetNfsConfig>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveNfsConfig>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RestartReplayUi>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RebootSystem>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::OrganizeFavorites>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSkins>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetHostname>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveHostname>();
 
         let leptos_options = LeptosOptions::builder()
-            .output_name("replay_app")
+            .output_name("replay_control_app")
             .site_root(cli.site_root.clone())
             .site_pkg_dir("pkg")
             .build();

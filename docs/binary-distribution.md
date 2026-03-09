@@ -36,11 +36,11 @@ closed-source projects distributing via GitHub.
 Single tarball: `replay-aarch64-linux.tar.gz` containing:
 
 ```
-replay-app          # aarch64 server binary
+replay-control-app          # aarch64 server binary
 site/               # WASM + CSS + static assets
   pkg/
-    replay_app.js
-    replay_app_bg.wasm
+    replay_control_app.js
+    replay_control_app_bg.wasm
   style.css
   icons/
 ```
@@ -78,33 +78,33 @@ jobs:
 
       - name: Build WASM (hydrate)
         run: |
-          cargo build -p replay-app --lib \
+          cargo build -p replay-control-app --lib \
             --target wasm32-unknown-unknown \
             --release --features hydrate --no-default-features
 
       - name: Run wasm-bindgen
         run: |
           mkdir -p target/site/pkg
-          wasm-bindgen target/wasm32-unknown-unknown/release/replay_app.wasm \
-            --out-dir target/site/pkg --out-name replay_app --target web --no-typescript
+          wasm-bindgen target/wasm32-unknown-unknown/release/replay_control_app.wasm \
+            --out-dir target/site/pkg --out-name replay_control_app --target web --no-typescript
 
       - name: Copy static assets
         run: |
-          cp replay-app/style/style.css target/site/style.css
-          cp -r replay-app/static/icons target/site/icons 2>/dev/null || true
+          cp replay-control-app/style/style.css target/site/style.css
+          cp -r replay-control-app/static/icons target/site/icons 2>/dev/null || true
 
       - name: Build aarch64 binary
         uses: houseabsolute/actions-rust-cross@v0
         with:
           command: build
           target: aarch64-unknown-linux-gnu
-          args: "-p replay-app --bin replay-app --release --features ssr --no-default-features"
+          args: "-p replay-control-app --bin replay-control-app --release --features ssr --no-default-features"
 
       - name: Package tarball
         run: |
           STAGING="replay-aarch64-linux"
           mkdir -p "$STAGING"
-          cp target/aarch64-unknown-linux-gnu/release/replay-app "$STAGING/"
+          cp target/aarch64-unknown-linux-gnu/release/replay-control-app "$STAGING/"
           cp -r target/site "$STAGING/site"
           tar -czf replay-aarch64-linux.tar.gz "$STAGING"
           sha256sum replay-aarch64-linux.tar.gz > checksums.txt
@@ -175,7 +175,7 @@ After downloading, verify the checksum:
 - `install.sh` defaults to `latest` (GitHub's `/releases/latest/download/` redirect).
 - Pin a version: `REPLAY_VERSION=v0.3.0 bash install.sh`
 - The binary should embed its version (set via `env!("CARGO_PKG_VERSION")` or build-time
-  env var) so users can check: `replay-app --version`.
+  env var) so users can check: `replay-control-app --version`.
 
 ## Security
 
@@ -194,6 +194,6 @@ After downloading, verify the checksum:
 4. Add `.github/workflows/release.yml` to the private repo (see above)
 5. Update `REPO` in `install.sh` to point to the public repo
 6. Consolidate the two tarballs into one in the build/install flow
-7. Add `--version` flag to `replay-app` if not already present
+7. Add `--version` flag to `replay-control-app` if not already present
 8. Tag and push: `git tag v0.1.0 && git push --tags`
 9. Verify: `curl -fsSL https://raw.githubusercontent.com/user/replay-releases/main/install.sh | bash`

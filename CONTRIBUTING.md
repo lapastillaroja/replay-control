@@ -40,11 +40,11 @@ The Cargo linker config is already set up in `.cargo/config.toml`.
 ./build.sh
 ```
 
-Produces an x86_64 binary at `target/release/replay-app` and site assets at `target/site/`.
+Produces an x86_64 binary at `target/release/replay-control-app` and site assets at `target/site/`.
 
 Run locally:
 ```
-./target/release/replay-app --storage-path /run/media/$USER/replay-roms --site-root target/site
+./target/release/replay-control-app --storage-path /run/media/$USER/replay-roms --site-root target/site
 ```
 
 ### Cross-compile for Pi (aarch64)
@@ -53,7 +53,7 @@ Run locally:
 ./build.sh --target aarch64
 ```
 
-Produces an aarch64 binary at `target/aarch64-unknown-linux-gnu/release/replay-app`.
+Produces an aarch64 binary at `target/aarch64-unknown-linux-gnu/release/replay-control-app`.
 
 
 ## Deploying to a Pi
@@ -97,8 +97,8 @@ bash install.sh --local --dry-run --ip <pi-address>
 
 ```
 replay/
-├── replay-core/          # Business logic (native only, not WASM)
-├── replay-app/           # Leptos SSR app (server + hydration)
+├── replay-control-core/          # Business logic (native only, not WASM)
+├── replay-control-app/           # Leptos SSR app (server + hydration)
 │   ├── src/
 │   │   ├── main.rs       # Axum server entry point
 │   │   ├── lib.rs        # App component + hydrate entry
@@ -118,9 +118,9 @@ replay/
 
 ### Two-crate architecture
 
-- **`replay-core`**: ROM management, favorites, recents, storage, arcade DB. Native only (`std::fs`).
-- **`replay-app`**: Leptos SSR + hydration. Has two Cargo features:
-  - `ssr` — server binary (Axum, depends on `replay-core`)
+- **`replay-control-core`**: ROM management, favorites, recents, storage, arcade DB. Native only (`std::fs`).
+- **`replay-control-app`**: Leptos SSR + hydration. Has two Cargo features:
+  - `ssr` — server binary (Axum, depends on `replay-control-core`)
   - `hydrate` — WASM client for browser hydration
 
 Both features share the same components, pages, and types. Server functions (`#[server]`) are direct calls on the server and HTTP requests on the client.
@@ -129,6 +129,6 @@ Both features share the same components, pages, and types. Server functions (`#[
 ## Development tips
 
 - Always rebuild both WASM and server after changing shared types (`types.rs`, `server_fns.rs`). Stale WASM causes hydration failures.
-- If `cargo clean -p replay-app` doesn't pick up changes, delete `target/wasm32-unknown-unknown/release/deps/replay_app*` manually.
-- Server functions from `replay-core` need explicit registration in `main.rs` — the linker strips them otherwise.
+- If `cargo clean -p replay-control-app` doesn't pick up changes, delete `target/wasm32-unknown-unknown/release/deps/replay_control_app*` manually.
+- Server functions from `replay-control-core` need explicit registration in `main.rs` — the linker strips them otherwise.
 - The app auto-detects storage at `/media/sd`, `/media/usb`, `/media/nfs`, or falls back to `--storage-path`.

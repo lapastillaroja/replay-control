@@ -85,7 +85,7 @@ Enhanced `flatten_favorites()`:
 
 ## API
 
-### Core functions (`replay-core/src/favorites.rs`)
+### Core functions (`replay-control-core/src/favorites.rs`)
 
 ```rust
 pub enum OrganizeCriteria {

@@ -3,7 +3,7 @@
 Extract arcade game metadata from the full MAME listxml into a compact XML file.
 
 Filters out non-arcade entries (BIOS, devices, mechanical, non-runnable) and strips
-ROM/disk/chip details, keeping only the metadata fields needed by replay-core's
+ROM/disk/chip details, keeping only the metadata fields needed by replay-control-core's
 build.rs: name, description, year, manufacturer, cloneof, rotation, players, and
 driver status.
 

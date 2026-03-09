@@ -7,8 +7,8 @@ use super::AppState;
 
 async fn list_recents(
     State(state): State<AppState>,
-) -> Result<Json<Vec<replay_core::recents::RecentEntry>>, StatusCode> {
-    replay_core::recents::list_recents(&state.storage())
+) -> Result<Json<Vec<replay_control_core::recents::RecentEntry>>, StatusCode> {
+    replay_control_core::recents::list_recents(&state.storage())
         .map(Json)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
@@ -16,7 +16,7 @@ async fn list_recents(
 async fn last_played(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let entry = replay_core::recents::last_played(&state.storage())
+    let entry = replay_control_core::recents::last_played(&state.storage())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match entry {

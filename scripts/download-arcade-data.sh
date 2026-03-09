@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Download arcade source data files used by replay-core's build.rs to generate
+# Download arcade source data files used by replay-control-core's build.rs to generate
 # the embedded arcade game database (PHF map).
 #
 # These files are NOT checked into git. Run this script after cloning or when

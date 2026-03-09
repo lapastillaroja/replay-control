@@ -175,7 +175,7 @@ resolve_download_urls() {
         base_url="https://github.com/$REPO/releases/download/$VERSION"
     fi
 
-    BINARY_URL="${base_url}/replay-app-aarch64-linux.tar.gz"
+    BINARY_URL="${base_url}/replay-control-app-aarch64-linux.tar.gz"
     SITE_URL="${base_url}/replay-site.tar.gz"
 }
 
@@ -187,10 +187,10 @@ prepare_local_artifacts() {
 
     # Prefer aarch64 binary (for Pi), fall back to native
     local binary=""
-    if [[ -f "$project_dir/target/aarch64-unknown-linux-gnu/release/replay-app" ]]; then
-        binary="$project_dir/target/aarch64-unknown-linux-gnu/release/replay-app"
-    elif [[ -f "$project_dir/target/release/replay-app" ]]; then
-        binary="$project_dir/target/release/replay-app"
+    if [[ -f "$project_dir/target/aarch64-unknown-linux-gnu/release/replay-control-app" ]]; then
+        binary="$project_dir/target/aarch64-unknown-linux-gnu/release/replay-control-app"
+    elif [[ -f "$project_dir/target/release/replay-control-app" ]]; then
+        binary="$project_dir/target/release/replay-control-app"
         local arch
         arch="$(file "$binary" 2>/dev/null || true)"
         if [[ "$arch" == *"x86-64"* ]] && [[ "$MODE" == "ssh" ]]; then
@@ -200,8 +200,8 @@ prepare_local_artifacts() {
 
     if [[ -z "$binary" ]] || [[ ! -f "$binary" ]]; then
         fatal "Local binary not found at:
-  $project_dir/target/aarch64-unknown-linux-gnu/release/replay-app
-  $project_dir/target/release/replay-app
+  $project_dir/target/aarch64-unknown-linux-gnu/release/replay-control-app
+  $project_dir/target/release/replay-control-app
   Run ./build.sh first, or specify the project directory: --local /path/to/replay"
     fi
 
@@ -222,7 +222,7 @@ prepare_local_artifacts() {
     fi
 
     # Create the same tar archives the remote flow expects
-    tar -czf "$TMPDIR_WORK/replay-app-aarch64-linux.tar.gz" -C "$(dirname "$binary")" "$(basename "$binary")"
+    tar -czf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C "$(dirname "$binary")" "$(basename "$binary")"
     tar -czf "$TMPDIR_WORK/replay-site.tar.gz" -C "$(dirname "$site_dir")" "$(basename "$site_dir")"
 
     success "Packaged local artifacts"
@@ -240,7 +240,7 @@ download_artifacts() {
         return
     fi
 
-    if ! curl -fSL --progress-bar -o "$TMPDIR_WORK/replay-app-aarch64-linux.tar.gz" "$BINARY_URL"; then
+    if ! curl -fSL --progress-bar -o "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" "$BINARY_URL"; then
         if [[ "$VERSION" != "latest" ]]; then
             fatal "Release $VERSION not found. Check https://github.com/$REPO/releases for available versions."
         else
@@ -381,7 +381,7 @@ After=media-sd.mount media-usb.mount
 [Service]
 Type=simple
 EnvironmentFile=-/etc/default/replay-companion
-ExecStart=/usr/local/bin/replay-app \
+ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --site-root ${REPLAY_SITE_ROOT}
 Restart=on-failure
@@ -410,7 +410,7 @@ REPLAY_SITE_ROOT=/usr/local/share/replay/site
 #REPLAY_CONFIG_PATH=/media/sd/config/replay.cfg
 
 # Log level (trace, debug, info, warn, error)
-RUST_LOG=replay_app=info,replay_core=info
+RUST_LOG=replay_control_app=info,replay_control_core=info
 ENV
 }
 
@@ -437,11 +437,11 @@ install_ssh() {
 
     if $DRY_RUN; then
         dry "Would set up SSH_ASKPASS for password automation"
-        dry "Would transfer replay-app-aarch64-linux.tar.gz to ${PI_USER}@${PI_ADDR}:/tmp/"
+        dry "Would transfer replay-control-app-aarch64-linux.tar.gz to ${PI_USER}@${PI_ADDR}:/tmp/"
         dry "Would transfer replay-site.tar.gz to ${PI_USER}@${PI_ADDR}:/tmp/"
         echo ""
         dry "Would run installation commands on Pi via SSH:"
-        dry "  - Extract binary to ${INSTALL_DIR}/replay-app"
+        dry "  - Extract binary to ${INSTALL_DIR}/replay-control-app"
         dry "  - Extract site assets to ${SITE_DIR}/site/"
         dry "  - Write systemd service to ${SERVICE_FILE}"
         dry "  - Write environment file to ${ENV_FILE} (only if not present)"
@@ -460,7 +460,7 @@ install_ssh() {
 
     info "Transferring files to Pi..."
 
-    run_scp "$TMPDIR_WORK/replay-app-aarch64-linux.tar.gz" "${PI_USER}@${PI_ADDR}:/tmp/" || {
+    run_scp "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" "${PI_USER}@${PI_ADDR}:/tmp/" || {
         teardown_askpass
         fatal "Failed to transfer binary archive. SSH authentication may have failed."
     }
@@ -478,9 +478,9 @@ install_ssh() {
 set -euo pipefail
 
 # Extract binary
-tar -xzf /tmp/replay-app-aarch64-linux.tar.gz -C /tmp/
+tar -xzf /tmp/replay-control-app-aarch64-linux.tar.gz -C /tmp/
 mkdir -p /usr/local/bin
-install -m755 /tmp/replay-app /usr/local/bin/replay-app
+install -m755 /tmp/replay-control-app /usr/local/bin/replay-control-app
 
 # Extract site assets
 rm -rf /usr/local/share/replay/site
@@ -497,7 +497,7 @@ After=media-sd.mount media-usb.mount
 [Service]
 Type=simple
 EnvironmentFile=-/etc/default/replay-companion
-ExecStart=/usr/local/bin/replay-app \
+ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --site-root ${REPLAY_SITE_ROOT}
 Restart=on-failure
@@ -526,7 +526,7 @@ REPLAY_SITE_ROOT=/usr/local/share/replay/site
 #REPLAY_CONFIG_PATH=/media/sd/config/replay.cfg
 
 # Log level (trace, debug, info, warn, error)
-RUST_LOG=replay_app=info,replay_core=info
+RUST_LOG=replay_control_app=info,replay_control_core=info
 ENV
 fi
 
@@ -556,7 +556,7 @@ systemctl enable replay-companion
 systemctl restart replay-companion
 
 # Cleanup
-rm -f /tmp/replay-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-app
+rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
 REMOTE_INSTALL
 
     teardown_askpass
@@ -592,7 +592,7 @@ uninstall_ssh() {
         dry "  - Run: systemctl disable ${SERVICE_NAME}"
         dry "  - Remove: ${SERVICE_FILE}"
         dry "  - Remove: ${AVAHI_FILE}"
-        dry "  - Remove: ${INSTALL_DIR}/replay-app"
+        dry "  - Remove: ${INSTALL_DIR}/replay-control-app"
         dry "  - Remove: ${SITE_DIR}/"
         dry "  - Run: systemctl daemon-reload"
         dry "  Note: ${ENV_FILE} would be preserved"
@@ -610,7 +610,7 @@ systemctl stop replay-companion 2>/dev/null || true
 systemctl disable replay-companion 2>/dev/null || true
 rm -f /etc/systemd/system/replay-companion.service
 rm -f /etc/avahi/services/replay-companion.service
-rm -f /usr/local/bin/replay-app
+rm -f /usr/local/bin/replay-control-app
 rm -rf /usr/local/share/replay
 systemctl daemon-reload
 
@@ -848,7 +848,7 @@ install_sdcard() {
     if $DRY_RUN; then
         echo ""
         dry "Would extract and install binary:"
-        dry "  install -m755 replay-app -> ${sd}${INSTALL_DIR}/replay-app"
+        dry "  install -m755 replay-control-app -> ${sd}${INSTALL_DIR}/replay-control-app"
         echo ""
         dry "Would extract and install site assets:"
         dry "  mkdir -p ${sd}${SITE_DIR}"
@@ -873,9 +873,9 @@ install_sdcard() {
     info "Installing to SD card at $sd..."
 
     # Extract binary
-    tar -xzf "$TMPDIR_WORK/replay-app-aarch64-linux.tar.gz" -C "$TMPDIR_WORK/"
+    tar -xzf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C "$TMPDIR_WORK/"
     mkdir -p "${sd}${INSTALL_DIR}"
-    install -m755 "$TMPDIR_WORK/replay-app" "${sd}${INSTALL_DIR}/replay-app"
+    install -m755 "$TMPDIR_WORK/replay-control-app" "${sd}${INSTALL_DIR}/replay-control-app"
     success "Installed binary"
 
     # Extract site assets

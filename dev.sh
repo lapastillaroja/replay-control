@@ -11,7 +11,7 @@ set -euo pipefail
 #   port: 8091
 #   storage-path: auto-detect
 
-CRATE="replay-app"
+CRATE="replay-control-app"
 OUT_DIR="target/site"
 PKG_DIR="$OUT_DIR/pkg"
 PORT="${PORT:-8091}"
@@ -52,7 +52,7 @@ build_ssr() {
 
 # Copy CSS.
 copy_assets() {
-    cp "$CRATE/style/style.css" "$OUT_DIR/style.css"
+    cp "replay-control-app/style/style.css" "$OUT_DIR/style.css"
 }
 
 echo "==> Initial build..."
@@ -62,19 +62,19 @@ copy_assets
 
 echo ""
 echo "==> Starting cargo-watch on port $PORT"
-echo "    Watching: replay-app/src, replay-core/src, replay-app/style"
+echo "    Watching: replay-control-app/src, replay-control-core/src, replay-control-app/style"
 echo "    Press Ctrl+C to stop."
 echo ""
 
 exec cargo watch \
-    -w replay-app/src \
-    -w replay-core/src \
-    -w replay-app/style \
+    -w replay-control-app/src \
+    -w replay-control-core/src \
+    -w replay-control-app/style \
     -s "$(cat <<INNER
 set -e
 cargo build -p $CRATE --lib --target wasm32-unknown-unknown --features hydrate --no-default-features
 wasm-bindgen target/wasm32-unknown-unknown/debug/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
-cp $CRATE/style/style.css $OUT_DIR/style.css
+cp replay-control-app/style/style.css $OUT_DIR/style.css
 cargo run -p $CRATE --features ssr -- --port $PORT $SERVER_ARGS
 INNER
 )"

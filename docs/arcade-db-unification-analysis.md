@@ -178,7 +178,7 @@ Even with these features in mind, merging `ArcadeGameInfo` and `CanonicalGame` i
 
 ## 10. Recommended Approach: Unify at the Backend API / SSR Layer
 
-The right place to unify is not at the embedded database level (too costly, wrong abstraction) and not with a trait-object query layer in replay-core (adds complexity to the library crate that only the app needs). Instead, unify where the data crosses the server-function boundary: the **backend API types and server functions** that the Leptos SSR app uses to serve pages and respond to client requests.
+The right place to unify is not at the embedded database level (too costly, wrong abstraction) and not with a trait-object query layer in replay-control-core (adds complexity to the library crate that only the app needs). Instead, unify where the data crosses the server-function boundary: the **backend API types and server functions** that the Leptos SSR app uses to serve pages and respond to client requests.
 
 This approach:
 - **Keeps both databases at optimal sizes** -- no struct bloat, no wasted fields, no interleaved build logic
@@ -478,10 +478,10 @@ Implementation cost: ~60 lines in build.rs (a mapping function + wiring into bot
 
 This approach deliberately does **not** touch:
 
-- **The embedded databases** -- `arcade_db.rs` and `game_db.rs` in replay-core remain separate modules with separate structs, separate PHF maps, separate build pipelines. Their binary footprint stays optimal.
+- **The embedded databases** -- `arcade_db.rs` and `game_db.rs` in replay-control-core remain separate modules with separate structs, separate PHF maps, separate build pipelines. Their binary footprint stays optimal.
 - **The build.rs pipeline** -- no interleaving of arcade and console parsing logic. The only addition is a shared genre normalization function called from both output paths.
 - **System-specific lookup APIs** -- `lookup_arcade_game()`, `game_db::lookup_game()`, and `game_db::lookup_by_crc()` stay as-is. They are still useful for targeted queries.
-- **Type safety in replay-core** -- `ArcadeGameInfo` still has `rotation: Rotation` (an enum), not `Option<String>`. `CanonicalGame` still has `year: u16`, not a string. The type erasure only happens at the serialization boundary.
+- **Type safety in replay-control-core** -- `ArcadeGameInfo` still has `rotation: Rotation` (an enum), not `Option<String>`. `CanonicalGame` still has `year: u16`, not a string. The type erasure only happens at the serialization boundary.
 
 ## 13. Implementation Plan
 

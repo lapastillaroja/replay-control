@@ -151,13 +151,13 @@ Tracking document for Replay Control. Organized by page/area.
 - **PWA support** — manifest.json, service worker registration, apple-mobile-web-app meta tags
 - **Internationalization (i18n)** — lightweight manual approach with `t(locale, "key")`, English default, extensible to additional languages
 - **Responsive design** — mobile-first CSS with breakpoints for tablet (768px) and desktop (1024px)
-- **Two-crate architecture**: `replay-core` (business logic, native only) and `replay-app` (SSR + hydration)
+- **Two-crate architecture**: `replay-control-core` (business logic, native only) and `replay-control-app` (SSR + hydration)
 - **Build system** — `build.sh` script building WASM hydrate + server SSR binary (no cargo-leptos)
 - **Arcade metadata database** — embedded PHF map with 28,593 unique entries (Flycast 301, FBNeo 8,108, MAME 2003+ 5,272, MAME current 26,777), generated at build time from XML/CSV data via `phf_codegen`. See `docs/arcade-db-design.md`.
 - **GameRef unification** — unified game reference type used across ROM lists, favorites, recents, and game detail pages for consistent game identification
 - **Storage abstraction** — supports local filesystem and USB-mounted storage, auto-detects storage root
 - **Caching layer** — in-memory cache for system summaries with TTL-based expiration
-- **Mirror types** — client-side type definitions matching server-side `replay-core` types for serialization
+- **Mirror types** — client-side type definitions matching server-side `replay-control-core` types for serialization
 
 ### Planned
 - **ROM filename parser** — regex-based parser for No-Intro and GoodTools naming conventions, extracting title, region, revision, flags (see `docs/rom-identification.md`)
@@ -181,5 +181,5 @@ Tracking document for Replay Control. Organized by page/area.
 - **systemd integration** — run as a system service on RePlayOS
 - **mDNS/Avahi** — auto-discovery via `replaypi.local`
 - **CLI mode** — command-line interface for scripting and power users (same binary)
-- **App-specific configuration file** — Replay Control should NOT write to `replay.cfg`, which is reserved for official RePlayOS system configurations (Wi-Fi, NFS, video output, etc.). Instead, the app needs its own config file (e.g., `replay-companion.cfg` or `replay-app.conf`) for storing user preferences such as preferred region, language, theme, and other app-level settings. The format should be plain text and user-editable, similar to `replay.cfg` (key = "value" pairs). This file would live alongside `replay.cfg` in the storage config directory.
+- **App-specific configuration file** — Replay Control should NOT write to `replay.cfg`, which is reserved for official RePlayOS system configurations (Wi-Fi, NFS, video output, etc.). Instead, the app needs its own config file (e.g., `replay-companion.cfg` or `replay-control-app.conf`) for storing user preferences such as preferred region, language, theme, and other app-level settings. The format should be plain text and user-editable, similar to `replay.cfg` (key = "value" pairs). This file would live alongside `replay.cfg` in the storage config directory.
 - **Install/deployment script** — a setup script for deploying Replay Control on RePlayOS (systemd service file, binary installation, permissions, etc.). Note: "setup" in this project refers to deployment/installation tooling, not an in-app first-run wizard. The app itself should work out of the box without requiring an initial setup flow.

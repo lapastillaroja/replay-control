@@ -1,6 +1,6 @@
 # Arcade Source Data
 
-This folder contains downloaded source files used by `replay-core/build.rs` to
+This folder contains downloaded source files used by `replay-control-core/build.rs` to
 generate the embedded arcade game database at compile time.
 
 These files are **not checked into git** (they are large and come from upstream

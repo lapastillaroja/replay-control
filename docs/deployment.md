@@ -12,7 +12,7 @@ Replay Control runs on the Raspberry Pi, not on the user's computer. The user's 
 
 The app consists of two artifacts produced by `build.sh`:
 
-- **`replay-app`** -- the server binary (Axum + Leptos SSR), built for Linux aarch64
+- **`replay-control-app`** -- the server binary (Axum + Leptos SSR), built for Linux aarch64
 - **`site/`** -- static assets for client-side hydration (WASM bundle, icons, CSS)
 
 At runtime the binary serves the web UI on a configurable port (default 8080) and needs read/write access to the RePlayOS storage location (`/media/sd`, `/media/usb`, or `/media/nfs`).
@@ -42,7 +42,7 @@ RePlayOS runs on Raspberry Pi (aarch64). Cross-compilation from an x86_64 host r
 TARGET=aarch64-unknown-linux-gnu ./build.sh
 ```
 
-Only the server binary build step changes. The WASM build and asset copy are identical. The resulting binary lands at `target/aarch64-unknown-linux-gnu/release/replay-app`.
+Only the server binary build step changes. The WASM build and asset copy are identical. The resulting binary lands at `target/aarch64-unknown-linux-gnu/release/replay-control-app`.
 
 
 ## 3. GitHub Releases
@@ -53,14 +53,14 @@ Each release publishes pre-built artifacts to GitHub Releases.
 
 | Artifact | Contents |
 |---|---|
-| `replay-app-aarch64-linux.tar.gz` | Server binary for Linux aarch64 (Raspberry Pi / RePlayOS) |
-| `replay-app-x86_64-linux.tar.gz` | Server binary for Linux x86_64 (development machines) |
+| `replay-control-app-aarch64-linux.tar.gz` | Server binary for Linux aarch64 (Raspberry Pi / RePlayOS) |
+| `replay-control-app-x86_64-linux.tar.gz` | Server binary for Linux x86_64 (development machines) |
 | `replay-site.tar.gz` | Static site assets (`pkg/`, icons, CSS) -- architecture-independent |
 
 ### Naming convention
 
 ```
-replay-app-{ARCH}-{OS}.tar.gz
+replay-control-app-{ARCH}-{OS}.tar.gz
 ```
 
 Where `ARCH` is `aarch64` or `x86_64`, and `OS` is `linux` or `darwin`.
@@ -72,8 +72,8 @@ The site assets archive is always `replay-site.tar.gz` since it contains archite
 Each binary archive contains a single file at the root:
 
 ```
-replay-app-aarch64-linux.tar.gz
-  └── replay-app
+replay-control-app-aarch64-linux.tar.gz
+  └── replay-control-app
 ```
 
 The site archive preserves the directory structure:
@@ -82,8 +82,8 @@ The site archive preserves the directory structure:
 replay-site.tar.gz
   └── site/
       ├── pkg/
-      │   ├── replay-app.js
-      │   ├── replay-app_bg.wasm
+      │   ├── replay-control-app.js
+      │   ├── replay-control-app_bg.wasm
       │   └── ...
       ├── icons/
       ├── style.css
@@ -123,7 +123,7 @@ The installer is two separate scripts (Bash and PowerShell) that share no code. 
 Both scripts implement the same behavior:
 
 1. Determine the release URL (latest or pinned version).
-2. Download `replay-app-aarch64-linux.tar.gz` and `replay-site.tar.gz` to a temp directory.
+2. Download `replay-control-app-aarch64-linux.tar.gz` and `replay-site.tar.gz` to a temp directory.
 3. Discover or prompt for the Pi's IP address.
 4. Transfer files to the Pi via SCP.
 5. Run the installation commands on the Pi via SSH (extract, install to `/usr/local/`, set up systemd, start the service).
@@ -200,8 +200,8 @@ Once files are transferred to `/tmp/` on the Pi, both scripts run the same seque
 
 ```bash
 # Extract binary
-tar -xzf /tmp/replay-app-aarch64-linux.tar.gz -C /tmp/
-install -m755 /tmp/replay-app /usr/local/bin/replay-app
+tar -xzf /tmp/replay-control-app-aarch64-linux.tar.gz -C /tmp/
+install -m755 /tmp/replay-control-app /usr/local/bin/replay-control-app
 
 # Extract site assets
 rm -rf /usr/local/share/replay/site
@@ -218,7 +218,7 @@ After=media-sd.mount media-usb.mount
 [Service]
 Type=simple
 EnvironmentFile=-/etc/default/replay-companion
-ExecStart=/usr/local/bin/replay-app \
+ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --site-root ${REPLAY_SITE_ROOT}
 Restart=on-failure
@@ -236,7 +236,7 @@ if [ ! -f /etc/default/replay-companion ]; then
     cat > /etc/default/replay-companion << 'ENV'
 REPLAY_PORT=8080
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
-RUST_LOG=replay_app=info,replay_core=info
+RUST_LOG=replay_control_app=info,replay_control_core=info
 ENV
 fi
 
@@ -261,7 +261,7 @@ systemctl enable replay-companion
 systemctl restart replay-companion
 
 # Cleanup
-rm -f /tmp/replay-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-app
+rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
 ```
 
 This entire sequence is sent as a single SSH command (heredoc or semicolon-separated) to minimize round trips.
@@ -301,7 +301,7 @@ The script writes directly to the SD card's root filesystem:
 ```bash
 SD_ROOT="/run/media/user/REPLAYOS"
 
-install -m755 replay-app "$SD_ROOT/usr/local/bin/replay-app"
+install -m755 replay-control-app "$SD_ROOT/usr/local/bin/replay-control-app"
 mkdir -p "$SD_ROOT/usr/local/share/replay"
 cp -r site/ "$SD_ROOT/usr/local/share/replay/site"
 
@@ -378,7 +378,7 @@ After=media-sd.mount media-usb.mount
 [Service]
 Type=simple
 EnvironmentFile=-/etc/default/replay-companion
-ExecStart=/usr/local/bin/replay-app \
+ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --site-root ${REPLAY_SITE_ROOT}
 Restart=on-failure
@@ -409,7 +409,7 @@ REPLAY_SITE_ROOT=/usr/local/share/replay/site
 #REPLAY_CONFIG_PATH=/media/sd/config/replay.cfg
 
 # Log level (trace, debug, info, warn, error)
-RUST_LOG=replay_app=info,replay_core=info
+RUST_LOG=replay_control_app=info,replay_control_core=info
 ```
 
 The environment file is only written on first install. Re-running the installer preserves user customizations.

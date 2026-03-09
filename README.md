@@ -123,7 +123,7 @@ RePlayOS is a **Linux distribution** featuring a custom **libretro frontend** de
 
 **Option B: SSH/SCP install (network)**
 1. Pi is connected via ethernet or Wi-Fi is already configured
-2. User transfers binary via SCP: `scp replay-app pi@<ip>:/path/`
+2. User transfers binary via SCP: `scp replay-control-app pi@<ip>:/path/`
 3. User SSHs in and runs the setup script: `ssh pi@<ip> ./setup.sh`
 4. App starts automatically
 
@@ -182,7 +182,7 @@ Both options (SD card and SSH/SCP) should be supported and documented.
 │   ANY DEVICE        │         │   RASPBERRY PI (RePlayOS)            │
 │   (phone/tablet/PC) │  HTTP   │                                      │
 │                     │         │   ┌──────────────────────────────┐   │
-│   ┌─────────────┐   │────────►│   │  replay-app (single binary) │   │
+│   ┌─────────────┐   │────────►│   │  replay-control-app (single binary) │   │
 │   │  Browser    │   │         │   │                              │   │
 │   │  (Leptos    │   │◄────────│   │  ┌────────┐  ┌───────────┐  │   │
 │   │   WASM)     │   │         │   │  │ Web UI │  │ REST API  │  │   │
@@ -208,30 +208,30 @@ Both options (SD card and SSH/SCP) should be supported and documented.
 
 Since everything runs on the Pi, the app is a single merged crate with SSR:
 
-1. **`replay-core`** (library crate)
+1. **`replay-control-core`** (library crate)
    - ROM file operations (list, upload, delete, rename, move, dedup)
    - RePlayOS config parser (replay.cfg)
    - System info (storage, Pi model, network)
    - Metadata management (pluggable providers)
    - Backup engine
 
-2. **`replay-app`** (binary + library crate, dual-feature)
+2. **`replay-control-app`** (binary + library crate, dual-feature)
    - **`ssr` feature:** Axum web server with SSR rendering + REST API + server functions
    - **`hydrate` feature:** WASM client for browser hydration
    - Components, pages, types, and i18n are shared between both features
-   - `replay-core` is only compiled with `ssr` (it uses `std::fs`, not WASM-compatible)
+   - `replay-control-core` is only compiled with `ssr` (it uses `std::fs`, not WASM-compatible)
    - Server functions (`#[server]`) bridge data fetching: direct calls on server, HTTP on client
-   - CLI mode via clap (`replay-app cli <command>`)
+   - CLI mode via clap (`replay-control-app cli <command>`)
    - systemd service integration
 
 ### Cargo Workspace Structure
 
 ```
 replay/
-├── Cargo.toml              (workspace: replay-core, replay-app)
+├── Cargo.toml              (workspace: replay-control-core, replay-control-app)
 ├── build.sh                (builds WASM + server)
-├── replay-core/            (library — business logic, native only)
-├── replay-app/             (merged server + frontend)
+├── replay-control-core/            (library — business logic, native only)
+├── replay-control-app/             (merged server + frontend)
 │   ├── Cargo.toml          (features: ssr, hydrate)
 │   ├── src/
 │   │   ├── main.rs         (server entry, #[cfg(feature = "ssr")])
@@ -265,7 +265,7 @@ The app is a Progressive Web App (PWA) — installable on mobile and desktop for
 ```
 
 Output:
-- `target/release/replay-app` — server binary
+- `target/release/replay-control-app` — server binary
 - `target/site/pkg/` — WASM + JS glue
 - `target/site/style.css` — stylesheet
 

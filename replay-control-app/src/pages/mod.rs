@@ -2,6 +2,7 @@ pub mod favorites;
 pub mod game_detail;
 pub mod games;
 pub mod home;
+pub mod hostname;
 pub mod more;
 pub mod nfs;
 pub mod theme;

@@ -115,6 +115,14 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "organize.flattened" => "favorites moved to root",
         "organize.already_flat" => "All favorites are already at root",
 
+        // Hostname settings
+        "more.hostname" => "Hostname",
+        "hostname.title" => "Hostname",
+        "hostname.label" => "Hostname",
+        "hostname.hint" => "Sets the network name for this RePlayOS system. Use lowercase letters, digits, and hyphens (e.g., replay-living-room).",
+        "hostname.saved" => "Hostname updated. Reboot may be needed for mDNS (.local) to fully update.",
+        "hostname.invalid" => "Invalid hostname",
+
         // More page
         "more.title" => "More",
         "more.upload" => "Upload ROMs",
@@ -154,7 +162,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "nfs.server" => "Server Address",
         "nfs.share" => "Share Path",
         "nfs.version" => "NFS Version",
-        "nfs.hint" => "NFS changes take effect after switching storage to NFS and restarting ReplayOS.",
+        "nfs.hint" => "A reboot is required for NFS changes to take effect.",
 
         // Settings (shared)
         "settings.save" => "Save",

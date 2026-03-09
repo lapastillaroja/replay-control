@@ -711,9 +711,9 @@ Filename parsing happens at scan time (fast, always available). Hash computation
 
 ## 8. Implementation Plan
 
-### Phase 1: Filename Parser (in `replay-core`)
+### Phase 1: Filename Parser (in `replay-control-core`)
 
-Add a new module `replay-core/src/rom_info.rs`:
+Add a new module `replay-control-core/src/rom_info.rs`:
 
 - `parse_filename(filename: &str) -> RomInfo` -- the core parser
 - `normalize_title(raw: &str) -> String` -- article handling
@@ -727,7 +727,7 @@ Add a new module `replay-core/src/rom_info.rs`:
 
 ### Phase 2: Game Grouping
 
-Add grouping logic to `replay-core/src/rom_info.rs` or a new `game_groups.rs`:
+Add grouping logic to `replay-control-core/src/rom_info.rs` or a new `game_groups.rs`:
 
 - `group_roms(roms: Vec<(RomInfo, String, u64)>) -> Vec<GameGroup>`
 - `GameGroup`, `GameVariant` structs

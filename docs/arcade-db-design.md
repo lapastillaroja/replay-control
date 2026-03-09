@@ -280,7 +280,7 @@ The script downloads from the libretro GitHub repos (see URLs in "Source Data UR
 
 **Why not downloaded at build time?** Build reproducibility, offline builds, CI reliability. The `build.rs` gracefully handles missing source files (it only processes files that exist), so the build succeeds even without running the download script -- you just get fewer entries in the arcade DB.
 
-Note: `replay-core/data/arcade/flycast_games.csv` (hand-curated, small) remains checked into git separately from the downloaded sources.
+Note: `replay-control-core/data/arcade/flycast_games.csv` (hand-curated, small) remains checked into git separately from the downloaded sources.
 
 ### Step 2: Parse and merge (build.rs)
 
@@ -360,19 +360,19 @@ For ~10,000 entries, PHF is the right choice. It trades ~800 KB of binary size f
 
 ### Step 4: Compile-time embedding
 
-The generated code lives at `replay-core/src/arcade_db_generated.rs` (gitignored) and is included via:
+The generated code lives at `replay-control-core/src/arcade_db_generated.rs` (gitignored) and is included via:
 
 ```rust
-// In replay-core/src/arcade_db.rs
+// In replay-control-core/src/arcade_db.rs
 include!(concat!(env!("OUT_DIR"), "/arcade_db.rs"));
 ```
 
 ## Integration Plan
 
-### API surface (replay-core)
+### API surface (replay-control-core)
 
 ```rust
-// replay-core/src/arcade_db.rs
+// replay-control-core/src/arcade_db.rs
 
 /// Metadata for an arcade game ROM.
 pub struct ArcadeGameInfo {
@@ -406,7 +406,7 @@ pub fn arcade_display_name(filename: &str) -> &str {
 
 ### Integration with ROM listing
 
-In `replay-core/src/roms.rs`, the `RomEntry` struct currently has a `filename` field. Two options:
+In `replay-control-core/src/roms.rs`, the `RomEntry` struct currently has a `filename` field. Two options:
 
 **Option 1 (minimal change):** Add a `display_name` field to `RomEntry`, populated during `collect_roms_recursive` for arcade systems:
 
@@ -420,9 +420,9 @@ pub struct RomEntry {
 
 When building a `RomEntry` for an arcade system (`SystemCategory::Arcade`), call `arcade_display_name()` and store the result.
 
-**Option 2 (lazy resolution):** Don't change `RomEntry`. Instead, resolve display names in the UI layer (replay-app) when rendering the game list. This keeps replay-core agnostic about display concerns.
+**Option 2 (lazy resolution):** Don't change `RomEntry`. Instead, resolve display names in the UI layer (replay-control-app) when rendering the game list. This keeps replay-control-core agnostic about display concerns.
 
-**Recommendation:** Option 1. The display name is a property of the ROM, not a UI concern. It should be available to any consumer of replay-core.
+**Recommendation:** Option 1. The display name is a property of the ROM, not a UI concern. It should be available to any consumer of replay-control-core.
 
 ### Sorting with display names
 
@@ -480,9 +480,9 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
 **Completed.** The `arcade_dc` system is implemented as the first arcade DB, proving the build pipeline works.
 
 - **Data source:** Game list extracted from Flycast source code (`naomi_roms.cpp`) cross-referenced with MAME driver files (`naomi.cpp`, `dc_atomiswave.cpp`, `segasp.cpp`) for year/manufacturer metadata.
-- **Data file:** `replay-core/data/arcade/flycast_games.csv` -- 301 entries (212 parents + 89 clones) covering Naomi, Naomi 2, Naomi GD-ROM, Atomiswave, and System SP platforms.
-- **Build pipeline:** `replay-core/build.rs` parses the CSV and generates a `phf::Map` via `phf_codegen`. The generated code is `include!`'d into `replay-core/src/arcade_db.rs`.
-- **Public API:** `lookup_arcade_game(rom_name)` and `arcade_display_name(filename)` in `replay_core::arcade_db`.
+- **Data file:** `replay-control-core/data/arcade/flycast_games.csv` -- 301 entries (212 parents + 89 clones) covering Naomi, Naomi 2, Naomi GD-ROM, Atomiswave, and System SP platforms.
+- **Build pipeline:** `replay-control-core/build.rs` parses the CSV and generates a `phf::Map` via `phf_codegen`. The generated code is `include!`'d into `replay-control-core/src/arcade_db.rs`.
+- **Public API:** `lookup_arcade_game(rom_name)` and `arcade_display_name(filename)` in `replay_control_core::arcade_db`.
 - **Tests:** 8 unit tests covering lookups, clones, rotation, display name fallback.
 - **Dependencies:** `phf` (runtime), `phf_codegen` + `csv` (build).
 
@@ -495,7 +495,7 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
    - `mame2003plus.xml` -- MAME 2003+ XML (5,272 entries, ~22 MB)
    - `catver.ini` -- category/genre mappings (5,258 entries)
 
-2. **Extended `replay-core/build.rs`**:
+2. **Extended `replay-control-core/build.rs`**:
    - Added `quick-xml = "0.37"` to `[build-dependencies]` for streaming SAX XML parsing
    - `parse_fbneo_dat()` -- streaming parser for FBNeo ClrMame Pro XML; extracts name, description, year, manufacturer, cloneof
    - `parse_mame2003plus_xml()` -- streaming parser for MAME 2003+ XML; extracts all FBNeo fields plus video orientation, input players, driver status
@@ -544,7 +544,7 @@ For comparison, a single arcade ROM zip is typically 1-50 MB. The entire metadat
    - Run `scripts/extract-mame-arcade.py` to produce compact XML
    - Clean up large temporary files (7z archive and full XML are not kept)
 
-5. **Extended `replay-core/build.rs`**:
+5. **Extended `replay-control-core/build.rs`**:
    - Added `parse_mame_current_xml()` -- streaming parser for the compact format (`<m>` elements with `<d>`, `<y>`, `<f>` children)
    - Merge step 4: MAME current entries override FBNeo and MAME 2003+ entries (which may have outdated metadata), but preserve Flycast hand-curated entries
    - Merge step 6: catver-mame-current.ini overlays categories on entries that still lack them after the MAME 2003+ catver overlay

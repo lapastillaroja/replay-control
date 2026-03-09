@@ -18,6 +18,6 @@ When using `render_app_to_stream_with_context` directly (without `generate_route
 
 1. `cargo build --lib --target wasm32-unknown-unknown --features hydrate` — WASM client
 2. `wasm-bindgen` — generates JS glue + optimized `.wasm` into `target/site/pkg/`
-3. `cargo build --bin replay-app --features ssr` — server binary
+3. `cargo build --bin replay-control-app --features ssr` — server binary
 
 The `wasm-bindgen-cli` version must match the `wasm-bindgen` crate version in `Cargo.lock`. The `--out-name` must use underscores (matching `LeptosOptions::output_name`).

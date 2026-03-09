@@ -21,9 +21,9 @@ struct SystemInfo {
 async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
     let storage = state.storage();
     let summaries = state.cache.get_systems(&storage);
-    let favorites = replay_core::favorites::list_favorites(&storage).unwrap_or_default();
+    let favorites = replay_control_core::favorites::list_favorites(&storage).unwrap_or_default();
 
-    let disk = storage.disk_usage().unwrap_or(replay_core::storage::DiskUsage {
+    let disk = storage.disk_usage().unwrap_or(replay_control_core::storage::DiskUsage {
         total_bytes: 0,
         available_bytes: 0,
         used_bytes: 0,

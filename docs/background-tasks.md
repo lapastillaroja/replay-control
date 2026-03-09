@@ -256,7 +256,7 @@ pub async fn start_library_scan() -> Result<u64, ServerFnError> {
         // scan_systems is synchronous and blocking -- run on a blocking thread.
         let systems = tokio::task::spawn_blocking({
             let storage = storage.clone();
-            move || replay_core::roms::scan_systems(&storage)
+            move || replay_control_core::roms::scan_systems(&storage)
         }).await.map_err(|e| e.to_string())?;
 
         ctx.set_progress(50);
@@ -273,7 +273,7 @@ pub async fn start_library_scan() -> Result<u64, ServerFnError> {
             let storage = storage.clone();
             let folder = sys.folder_name.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                replay_core::roms::list_roms(&storage, &folder)
+                replay_control_core::roms::list_roms(&storage, &folder)
             }).await;
             ctx.set_progress(50 + ((i + 1) * 50 / total) as u32);
         }
@@ -377,7 +377,7 @@ When a task like "Library scan" completes, the cache is already warm. The next n
 ## New Dependencies
 
 ```toml
-# replay-app Cargo.toml, under [dependencies] (ssr-only)
+# replay-control-app Cargo.toml, under [dependencies] (ssr-only)
 dashmap = { version = "6", optional = true }
 tokio-util = { version = "0.7", features = ["rt"], optional = true }
 ```
@@ -387,7 +387,7 @@ tokio-util = { version = "0.7", features = ["rt"], optional = true }
 ## Where Code Lives
 
 ```
-replay-app/
+replay-control-app/
   src/
     tasks/
       mod.rs          -- TaskManager, TaskContext, TaskInfo, TaskStatus
@@ -399,7 +399,7 @@ replay-app/
       nav.rs          -- add TaskIndicator to top bar
 ```
 
-The task system lives in `replay-app` (not `replay-core`) because it depends on tokio and is server-only. The actual work functions (scanning, DB building) call into `replay-core`.
+The task system lives in `replay-control-app` (not `replay-control-core`) because it depends on tokio and is server-only. The actual work functions (scanning, DB building) call into `replay-control-core`.
 
 ## Implementation Plan
 

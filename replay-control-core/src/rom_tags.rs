@@ -30,7 +30,7 @@
 ///
 /// # Examples
 /// ```
-/// use replay_core::rom_tags::extract_tags;
+/// use replay_control_core::rom_tags::extract_tags;
 ///
 /// assert_eq!(extract_tags("Super Mario World (USA).sfc"), "USA");
 /// assert_eq!(extract_tags("Super Mario World (Europe) (60hz).sfc"), "Europe, 60Hz");

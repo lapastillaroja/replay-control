@@ -167,4 +167,4 @@ else
     echo "TheGamesDB: NOT DOWNLOADED"
 fi
 echo
-echo "Done. You can now build replay-core to generate the game metadata DB."
+echo "Done. You can now build replay-control-core to generate the game metadata DB."

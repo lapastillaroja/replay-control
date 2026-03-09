@@ -20,6 +20,7 @@ use pages::games::{GamesPage, SystemRomView};
 use pages::home::HomePage;
 use pages::more::MorePage;
 use pages::wifi::WifiPage;
+use pages::hostname::HostnamePage;
 use pages::nfs::NfsPage;
 use pages::theme::ThemePage;
 
@@ -28,7 +29,7 @@ use pages::theme::ThemePage;
 #[component]
 pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     use crate::api::AppState;
-    use replay_core::skins;
+    use replay_control_core::skins;
 
     let state = expect_context::<AppState>();
     let skin_index = state
@@ -97,6 +98,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/more") view=MorePage />
                         <Route path=path!("/more/wifi") view=WifiPage />
                         <Route path=path!("/more/nfs") view=NfsPage />
+                        <Route path=path!("/more/hostname") view=HostnamePage />
                         <Route path=path!("/more/theme") view=ThemePage />
                     </Routes>
                 </main>

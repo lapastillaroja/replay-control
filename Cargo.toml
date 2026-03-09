@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["replay-core", "replay-app"]
+members = ["replay-control-core", "replay-control-app"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

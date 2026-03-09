@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use replay_core::config::ReplayConfig;
-use replay_core::roms::{RomEntry, SystemSummary};
-use replay_core::storage::{StorageKind, StorageLocation};
+use replay_control_core::config::ReplayConfig;
+use replay_control_core::roms::{RomEntry, SystemSummary};
+use replay_control_core::storage::{StorageKind, StorageLocation};
 
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
@@ -68,7 +68,7 @@ impl RomCache {
             }
         }
         // Cache miss — scan and store.
-        let summaries = replay_core::roms::scan_systems(storage);
+        let summaries = replay_control_core::roms::scan_systems(storage);
         if let Ok(mut guard) = self.systems.write() {
             *guard = Some(CacheEntry::new(summaries.clone()));
         }
@@ -80,7 +80,7 @@ impl RomCache {
         &self,
         storage: &StorageLocation,
         system: &str,
-    ) -> Result<Vec<RomEntry>, replay_core::error::Error> {
+    ) -> Result<Vec<RomEntry>, replay_control_core::error::Error> {
         let key = system.to_string();
         // Try read lock first.
         if let Ok(guard) = self.roms.read() {
@@ -91,7 +91,7 @@ impl RomCache {
             }
         }
         // Cache miss — scan and store.
-        let roms = replay_core::roms::list_roms(storage, system)?;
+        let roms = replay_control_core::roms::list_roms(storage, system)?;
         if let Ok(mut guard) = self.roms.write() {
             guard.insert(key, CacheEntry::new(roms.clone()));
         }

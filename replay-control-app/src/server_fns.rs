@@ -3,7 +3,7 @@ use server_fn::ServerFnError;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ssr")]
-pub use replay_core::favorites::OrganizeCriteria;
+pub use replay_control_core::favorites::OrganizeCriteria;
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::OrganizeCriteria;
 
@@ -29,13 +29,13 @@ pub struct SystemInfo {
 // On the server, use replay-core types directly.
 // On the client, use mirror types from types.rs.
 #[cfg(feature = "ssr")]
-pub use replay_core::favorites::Favorite;
+pub use replay_control_core::favorites::Favorite;
 #[cfg(feature = "ssr")]
-pub use replay_core::game_ref::GameRef;
+pub use replay_control_core::game_ref::GameRef;
 #[cfg(feature = "ssr")]
-pub use replay_core::recents::RecentEntry;
+pub use replay_control_core::recents::RecentEntry;
 #[cfg(feature = "ssr")]
-pub use replay_core::roms::{RomEntry, SystemSummary};
+pub use replay_control_core::roms::{RomEntry, SystemSummary};
 
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::{
@@ -47,11 +47,11 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     let summaries = state.cache.get_systems(&storage);
-    let favorites = replay_core::favorites::list_favorites(&storage).unwrap_or_default();
+    let favorites = replay_control_core::favorites::list_favorites(&storage).unwrap_or_default();
 
     let disk = storage
         .disk_usage()
-        .unwrap_or(replay_core::storage::DiskUsage {
+        .unwrap_or(replay_control_core::storage::DiskUsage {
             total_bytes: 0,
             available_bytes: 0,
             used_bytes: 0,
@@ -124,7 +124,7 @@ pub async fn get_roms_page(
     search: String,
 ) -> Result<RomPage, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let system_display = replay_core::systems::find_system(&system)
+    let system_display = replay_control_core::systems::find_system(&system)
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| system.clone());
     let storage = state.storage();
@@ -145,7 +145,7 @@ pub async fn get_roms_page(
     let mut roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).collect();
     let has_more = offset + roms.len() < total;
 
-    replay_core::roms::mark_favorites(&storage, &system, &mut roms);
+    replay_control_core::roms::mark_favorites(&storage, &system, &mut roms);
 
     Ok(RomPage { roms, total, has_more, system_display })
 }
@@ -153,14 +153,14 @@ pub async fn get_roms_page(
 #[server(prefix = "/sfn")]
 pub async fn get_favorites() -> Result<Vec<Favorite>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::list_favorites(&state.storage())
+    replay_control_core::favorites::list_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn get_recents() -> Result<Vec<RecentEntry>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::recents::list_recents(&state.storage())
+    replay_control_core::recents::list_recents(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -171,7 +171,7 @@ pub async fn add_favorite(
     grouped: bool,
 ) -> Result<Favorite, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
+    replay_control_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -181,42 +181,42 @@ pub async fn remove_favorite(
     subfolder: Option<String>,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::remove_favorite(&state.storage(), &filename, subfolder.as_deref())
+    replay_control_core::favorites::remove_favorite(&state.storage(), &filename, subfolder.as_deref())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::group_by_system(&state.storage())
+    replay_control_core::favorites::group_by_system(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::flatten_favorites(&state.storage())
+    replay_control_core::favorites::flatten_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn get_system_favorites(system: String) -> Result<Vec<Favorite>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::list_favorites_for_system(&state.storage(), &system)
+    replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn delete_rom(relative_path: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::roms::delete_rom(&state.storage(), &relative_path)
+    replay_control_core::roms::delete_rom(&state.storage(), &relative_path)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn rename_rom(relative_path: String, new_filename: String) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let new_path = replay_core::roms::rename_rom(&state.storage(), &relative_path, &new_filename)
+    let new_path = replay_control_core::roms::rename_rom(&state.storage(), &relative_path, &new_filename)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(new_path.display().to_string())
 }
@@ -254,16 +254,16 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         .find(|r| r.game.rom_filename == filename)
         .ok_or_else(|| ServerFnError::new(format!("ROM not found: {filename}")))?;
 
-    let is_favorite = replay_core::favorites::is_favorite(&storage, &system, &filename);
+    let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);
 
-    let arcade_info = replay_core::arcade_db::lookup_arcade_game(
+    let arcade_info = replay_control_core::arcade_db::lookup_arcade_game(
         filename.strip_suffix(".zip").unwrap_or(&filename),
     )
     .map(|info| {
         let rotation = match info.rotation {
-            replay_core::arcade_db::Rotation::Horizontal => "Horizontal",
-            replay_core::arcade_db::Rotation::Vertical => "Vertical",
-            replay_core::arcade_db::Rotation::Unknown => "Unknown",
+            replay_control_core::arcade_db::Rotation::Horizontal => "Horizontal",
+            replay_control_core::arcade_db::Rotation::Vertical => "Vertical",
+            replay_control_core::arcade_db::Rotation::Unknown => "Unknown",
         };
         ArcadeMetadata {
             year: info.year.to_string(),
@@ -408,6 +408,67 @@ pub async fn reboot_system() -> Result<String, ServerFnError> {
     }
 }
 
+#[server(prefix = "/sfn")]
+pub async fn get_hostname() -> Result<String, ServerFnError> {
+    let content = std::fs::read_to_string("/etc/hostname")
+        .map_err(|e| ServerFnError::new(format!("Failed to read hostname: {e}")))?;
+    Ok(content.trim().to_string())
+}
+
+#[server(prefix = "/sfn")]
+pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
+    if !is_replayos() {
+        return Ok("Hostname change skipped (not running on ReplayOS)".to_string());
+    }
+
+    let hostname = hostname.trim().to_lowercase();
+
+    // Validate: 1-63 chars, lowercase alphanumeric + hyphens, no leading/trailing hyphens.
+    if hostname.is_empty() || hostname.len() > 63 {
+        return Err(ServerFnError::new("Hostname must be 1-63 characters"));
+    }
+    if hostname.starts_with('-') || hostname.ends_with('-') {
+        return Err(ServerFnError::new("Hostname must not start or end with a hyphen"));
+    }
+    if !hostname.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+        return Err(ServerFnError::new(
+            "Hostname must contain only lowercase letters, digits, and hyphens",
+        ));
+    }
+
+    // Read old hostname for /etc/hosts update.
+    let old_hostname = std::fs::read_to_string("/etc/hostname")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    // Step 1: Set hostname via hostnamectl (updates /etc/hostname + kernel).
+    let output = std::process::Command::new("hostnamectl")
+        .args(["set-hostname", &hostname])
+        .output()
+        .map_err(|e| ServerFnError::new(format!("Failed to set hostname: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ServerFnError::new(format!("hostnamectl failed: {stderr}")));
+    }
+
+    // Step 2: Update /etc/hosts — replace old hostname with new.
+    if !old_hostname.is_empty() && old_hostname != hostname {
+        if let Ok(hosts) = std::fs::read_to_string("/etc/hosts") {
+            let updated = hosts.replace(&old_hostname, &hostname);
+            let _ = std::fs::write("/etc/hosts", updated);
+        }
+    }
+
+    // Step 3: Restart Avahi so mDNS broadcasts the new name.
+    let _ = std::process::Command::new("systemctl")
+        .args(["restart", "avahi-daemon"])
+        .output();
+
+    Ok(format!("Hostname set to {hostname}"))
+}
+
 /// Skin info for the theme page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkinInfo {
@@ -427,11 +488,11 @@ pub async fn get_skins() -> Result<(u32, Vec<SkinInfo>), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let current = state.config.read().expect("config lock poisoned").system_skin();
 
-    let skins = replay_core::skins::SKIN_NAMES
+    let skins = replay_control_core::skins::SKIN_NAMES
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let p = replay_core::skins::palette(i as u32).unwrap();
+            let p = replay_control_core::skins::palette(i as u32).unwrap();
             SkinInfo {
                 index: i as u32,
                 name: name.to_string(),
@@ -463,7 +524,7 @@ pub async fn organize_favorites(
     keep_originals: bool,
 ) -> Result<OrganizeResult, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let result = replay_core::favorites::organize_favorites(
+    let result = replay_control_core::favorites::organize_favorites(
         &state.storage(),
         primary,
         secondary,
