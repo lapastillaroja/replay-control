@@ -1,6 +1,6 @@
 # Replay
 
-A companion web app for **RePlayOS** — manage ROMs, favorites, and settings from any device on the local network.
+**Replay Control** — a companion web app for **RePlayOS** to manage ROMs, favorites, and settings from any device on the local network.
 
 ## About RePlayOS
 

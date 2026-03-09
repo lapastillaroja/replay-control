@@ -11,7 +11,7 @@ mod ssr {
     use replay_app::Shell;
 
     #[derive(Parser)]
-    #[command(name = "replay-app", about = "RePlayOS Companion App")]
+    #[command(name = "replay-app", about = "Replay Control — companion app for RePlayOS")]
     struct Cli {
         /// Port to listen on
         #[arg(short, long, default_value = "8080")]
@@ -79,6 +79,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_app::server_fns::GetNfsConfig>();
         server_fn::axum::register_explicit::<replay_app::server_fns::SaveNfsConfig>();
         server_fn::axum::register_explicit::<replay_app::server_fns::RestartReplayUi>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::RebootSystem>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::OrganizeFavorites>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_app")

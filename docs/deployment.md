@@ -1,11 +1,11 @@
 # Deployment on RePlayOS
 
-Design for deploying the Replay companion app on a Raspberry Pi running RePlayOS. Covers building, releasing, installing from a user's computer (Windows, macOS, or Linux), running as a system service, and updating.
+Design for deploying Replay Control on a Raspberry Pi running RePlayOS. Covers building, releasing, installing from a user's computer (Windows, macOS, or Linux), running as a system service, and updating.
 
 
 ## 1. Overview
 
-The companion app runs on the Raspberry Pi, not on the user's computer. The user's computer is only used to trigger the installation. There are two installation methods:
+Replay Control runs on the Raspberry Pi, not on the user's computer. The user's computer is only used to trigger the installation. There are two installation methods:
 
 1. **Remote install via SSH** (primary) -- a script runs on the user's computer, connects to the Pi over the network via SSH, and deploys the app. The user never manually opens a terminal on the Pi. Works on Windows, macOS, and Linux.
 2. **Direct SD card write** (secondary) -- for Unix systems only. The user mounts the Pi's SD card on their computer and the script writes files directly to it. Useful for first-time setup before the Pi has ever booted, or when SSH is unavailable.
@@ -17,7 +17,7 @@ The app consists of two artifacts produced by `build.sh`:
 
 At runtime the binary serves the web UI on a configurable port (default 8080) and needs read/write access to the RePlayOS storage location (`/media/sd`, `/media/usb`, or `/media/nfs`).
 
-RePlayOS runs as root with publicly known credentials. The companion app service runs as root accordingly.
+RePlayOS runs as root with publicly known credentials. The Replay Control service runs as root accordingly.
 
 
 ## 2. Build
@@ -211,7 +211,7 @@ tar -xzf /tmp/replay-site.tar.gz -C /usr/local/share/replay/
 # Write systemd service file
 cat > /etc/systemd/system/replay-companion.service << 'UNIT'
 [Unit]
-Description=Replay Companion App
+Description=Replay Control
 After=network.target
 After=media-sd.mount media-usb.mount
 
@@ -246,7 +246,7 @@ if [ -d /etc/avahi/services ]; then
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
-  <name>Replay Companion</name>
+  <name>Replay Control</name>
   <service>
     <type>_http._tcp</type>
     <port>8080</port>
@@ -371,7 +371,7 @@ Installed to `/etc/systemd/system/replay-companion.service` by the installer.
 
 ```ini
 [Unit]
-Description=Replay Companion App
+Description=Replay Control
 After=network.target
 After=media-sd.mount media-usb.mount
 
@@ -442,7 +442,7 @@ The installer drops an Avahi service file at `/etc/avahi/services/replay-compani
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
-  <name>Replay Companion</name>
+  <name>Replay Control</name>
   <service>
     <type>_http._tcp</type>
     <port>8080</port>
@@ -483,7 +483,7 @@ $env:REPLAY_VERSION="v0.2.0"; irm https://raw.githubusercontent.com/user/replay/
 
 ### Future: self-update from the web UI
 
-The companion app could check for new releases on startup or periodically and offer a one-click update from the web UI. Under the hood it would download the new artifacts and restart itself via systemd. This removes the need for the user to re-run the installer from their computer.
+Replay Control could check for new releases on startup or periodically and offer a one-click update from the web UI. Under the hood it would download the new artifacts and restart itself via systemd. This removes the need for the user to re-run the installer from their computer.
 
 
 ## 8. Security Considerations

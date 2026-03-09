@@ -2,7 +2,7 @@
 
 ## Problem
 
-Several operations in the Replay companion app are too slow for a request/response cycle: scanning the full ROM library, building a metadata database, bulk ROM operations. These need to run in the background with progress reporting, and the user should be able to see what's running and cancel if needed.
+Several operations in Replay Control are too slow for a request/response cycle: scanning the full ROM library, building a metadata database, bulk ROM operations. These need to run in the background with progress reporting, and the user should be able to see what's running and cancel if needed.
 
 ## Use Cases
 

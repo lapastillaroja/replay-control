@@ -35,6 +35,8 @@ pub fn MorePage() -> impl IntoView {
                                 <InfoRow label=t(locale, "more.disk_total") value=format_size(info.disk_total_bytes) />
                                 <InfoRow label=t(locale, "more.disk_used") value=format_size(info.disk_used_bytes) />
                                 <InfoRow label=t(locale, "more.disk_available") value=format_size(info.disk_available_bytes) />
+                                <InfoRow label=t(locale, "more.ethernet_ip") value=info.ethernet_ip.unwrap_or_else(|| t(locale, "more.not_connected").to_string()) />
+                                <InfoRow label=t(locale, "more.wifi_ip") value=info.wifi_ip.unwrap_or_else(|| t(locale, "more.not_connected").to_string()) />
                             </div>
                         })
                     })}

@@ -1,7 +1,7 @@
 {
-  "name": "Replay",
-  "short_name": "Replay",
-  "description": "RePlayOS Companion App — manage ROMs, favorites, and settings",
+  "name": "Replay Control",
+  "short_name": "Replay Control",
+  "description": "Replay Control — manage ROMs, favorites, and settings for RePlayOS",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f1115",

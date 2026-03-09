@@ -2,6 +2,15 @@
 /// These match the replay-core types that server functions serialize.
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrganizeCriteria {
+    System,
+    Genre,
+    Players,
+    Alphabetical,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemSummary {
     pub folder_name: String,

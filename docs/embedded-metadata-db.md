@@ -10,7 +10,7 @@ Design document analyzing the feasibility of extending the existing arcade DB ap
 
 ## 1. Problem Statement
 
-The Replay companion app has an embedded arcade metadata database (28,593 entries) that maps ROM zip filenames to display names and metadata. Non-arcade systems (consoles, handhelds, computers) have no equivalent -- they display raw filenames like `Super Mario World (USA).sfc` instead of clean titles like "Super Mario World."
+Replay Control has an embedded arcade metadata database (28,593 entries) that maps ROM zip filenames to display names and metadata. Non-arcade systems (consoles, handhelds, computers) have no equivalent -- they display raw filenames like `Super Mario World (USA).sfc` instead of clean titles like "Super Mario World."
 
 While the ROM filename parser described in `rom-identification.md` can extract clean titles from No-Intro/GoodTools naming conventions, an embedded metadata database would provide:
 

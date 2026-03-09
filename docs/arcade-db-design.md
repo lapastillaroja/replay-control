@@ -2,7 +2,7 @@
 
 ## Problem
 
-Arcade ROM files are stored as zip archives with short, cryptic filenames (e.g., `mslug6.zip`, `sf2.zip`, `ffight.zip`). RePlayOS internally maps these to human-readable names using its own database built from FBNeo/MAME DAT files plus arcadeitalia.net, but that database is not accessible to us. The Replay companion app currently displays these raw filenames, which is a poor user experience.
+Arcade ROM files are stored as zip archives with short, cryptic filenames (e.g., `mslug6.zip`, `sf2.zip`, `ffight.zip`). RePlayOS internally maps these to human-readable names using its own database built from FBNeo/MAME DAT files plus arcadeitalia.net, but that database is not accessible to us. Replay Control currently displays these raw filenames, which is a poor user experience.
 
 We need an embedded database that maps arcade ROM zip names to display names and metadata, covering the four arcade system folders: `arcade_fbneo`, `arcade_mame`, `arcade_mame_2k3p`, and `arcade_dc`.
 
@@ -231,7 +231,7 @@ ArcadeGame {
 
 - **ROM file checksums/sizes:** Not our job (ROM managers handle this)
 - **Control type:** Nice-to-have but not essential for display
-- **Screen resolution:** Not useful for a web companion app
+- **Screen resolution:** Not useful for Replay Control
 - **BIOS requirements:** Not our concern
 
 ## Build Pipeline

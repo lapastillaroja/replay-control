@@ -6,7 +6,7 @@ use server_fn::ServerFnError;
 use crate::i18n::{use_i18n, t};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
-use crate::server_fns::Favorite;
+use crate::server_fns::{Favorite, OrganizeCriteria};
 
 #[component]
 pub fn FavoritesPage() -> impl IntoView {
@@ -167,6 +167,9 @@ where
                     </div>
                 </div>
             </section>
+
+            // Organize panel
+            <OrganizePanel favorites />
 
             // By System — system cards
             <Show when=move || { system_cards().len() > 1 }>
@@ -336,6 +339,176 @@ where
                 </div>
             </Show>
         </div>
+    }
+}
+
+/// Collapsible panel for organizing favorites into subfolders.
+#[component]
+fn OrganizePanel(favorites: RwSignal<Vec<Favorite>>) -> impl IntoView {
+    let i18n = use_i18n();
+    let expanded = RwSignal::new(false);
+    let primary = RwSignal::new("genre".to_string());
+    let secondary = RwSignal::new("none".to_string());
+    let keep_originals = RwSignal::new(true);
+    let busy = RwSignal::new(false);
+    let status = RwSignal::new(Option::<(bool, String)>::None);
+
+    // Reset secondary when primary changes to the same value.
+    Effect::new(move || {
+        let p = primary.get();
+        if secondary.get_untracked() == p {
+            secondary.set("none".to_string());
+        }
+    });
+
+    let on_organize = move |_| {
+        busy.set(true);
+        status.set(None);
+        let p = parse_criteria(&primary.get());
+        let s = parse_criteria(&secondary.get());
+        let keep = keep_originals.get();
+
+        if let Some(p) = p {
+            leptos::task::spawn_local(async move {
+                match server_fns::organize_favorites(p, s, keep).await {
+                    Ok(result) => {
+                        let locale = use_i18n().locale.get_untracked();
+                        let msg = format!("{} {}", result.organized, t(locale, "organize.done"));
+                        status.set(Some((true, msg)));
+                        // Reload favorites.
+                        if let Ok(new_favs) = server_fns::get_favorites().await {
+                            favorites.set(new_favs);
+                        }
+                    }
+                    Err(e) => status.set(Some((false, e.to_string()))),
+                }
+                busy.set(false);
+            });
+        }
+    };
+
+    let on_flatten = move |_| {
+        busy.set(true);
+        status.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::flatten_favorites().await {
+                Ok(count) => {
+                    let locale = use_i18n().locale.get_untracked();
+                    let msg = if count == 0 {
+                        t(locale, "organize.already_flat").to_string()
+                    } else {
+                        format!("{count} {}", t(locale, "organize.flattened"))
+                    };
+                    status.set(Some((true, msg)));
+                    if let Ok(new_favs) = server_fns::get_favorites().await {
+                        favorites.set(new_favs);
+                    }
+                }
+                Err(e) => status.set(Some((false, e.to_string()))),
+            }
+            busy.set(false);
+        });
+    };
+
+    view! {
+        <section class="section">
+            <button
+                class="toggle-btn organize-toggle"
+                on:click=move |_| expanded.update(|v| *v = !*v)
+            >
+                <span class="organize-toggle-icon">{move || if expanded.get() { "\u{25BC}" } else { "\u{25B6}" }}</span>
+                {move || t(i18n.locale.get(), "organize.title")}
+            </button>
+
+            <Show when=move || expanded.get()>
+                <div class="organize-panel">
+                    <div class="form-field">
+                        <label class="form-label">{move || t(i18n.locale.get(), "organize.primary")}</label>
+                        <select class="form-input" bind:value=primary>
+                            <option value="genre">{move || t(i18n.locale.get(), "organize.genre")}</option>
+                            <option value="system">{move || t(i18n.locale.get(), "organize.system")}</option>
+                            <option value="players">{move || t(i18n.locale.get(), "organize.players")}</option>
+                            <option value="alphabetical">{move || t(i18n.locale.get(), "organize.alphabetical")}</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field">
+                        <label class="form-label">{move || t(i18n.locale.get(), "organize.secondary")}</label>
+                        {move || {
+                            let p = primary.get();
+                            let options: Vec<(&str, &str)> = [
+                                ("genre", "organize.genre"),
+                                ("system", "organize.system"),
+                                ("players", "organize.players"),
+                                ("alphabetical", "organize.alphabetical"),
+                            ]
+                            .into_iter()
+                            .filter(|(val, _)| *val != p.as_str())
+                            .collect();
+
+                            view! {
+                                <select class="form-input" bind:value=secondary>
+                                    <option value="none">{t(i18n.locale.get(), "organize.none")}</option>
+                                    {options.into_iter().map(|(val, key)| {
+                                        let label = t(i18n.locale.get(), key);
+                                        view! { <option value=val>{label}</option> }
+                                    }).collect::<Vec<_>>()}
+                                </select>
+                            }
+                        }}
+                    </div>
+
+                    <div class="form-field form-field-check">
+                        <div>
+                            <label class="form-label">{move || t(i18n.locale.get(), "organize.keep_originals")}</label>
+                            <p class="form-hint">{move || t(i18n.locale.get(), "organize.keep_hint")}</p>
+                        </div>
+                        <input type="checkbox"
+                            class="form-checkbox"
+                            bind:checked=keep_originals
+                        />
+                    </div>
+
+                    {move || status.get().map(|(ok, msg)| {
+                        let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
+                        view! { <div class=class>{msg}</div> }
+                    })}
+
+                    <div class="organize-actions">
+                        <button
+                            class="form-btn"
+                            on:click=on_organize
+                            disabled=move || busy.get()
+                        >
+                            {move || {
+                                let locale = i18n.locale.get();
+                                if busy.get() { t(locale, "organize.organizing") } else { t(locale, "organize.apply") }
+                            }}
+                        </button>
+                        <button
+                            class="form-btn form-btn-secondary"
+                            on:click=on_flatten
+                            disabled=move || busy.get()
+                        >
+                            {move || {
+                                let locale = i18n.locale.get();
+                                if busy.get() { t(locale, "organize.flattening") } else { t(locale, "organize.flatten") }
+                            }}
+                        </button>
+                    </div>
+                </div>
+            </Show>
+        </section>
+    }
+}
+
+fn parse_criteria(value: &str) -> Option<OrganizeCriteria> {
+    match value {
+        "system" => Some(OrganizeCriteria::System),
+        "genre" => Some(OrganizeCriteria::Genre),
+        "players" => Some(OrganizeCriteria::Players),
+        "alphabetical" => Some(OrganizeCriteria::Alphabetical),
+        _ => None,
     }
 }
 

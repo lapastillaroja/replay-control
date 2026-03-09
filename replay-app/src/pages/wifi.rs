@@ -138,40 +138,40 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
                 }}
             </button>
 
-            <ApplyChangesButton />
+            <RebootButton />
         </div>
     }
 }
 
 #[component]
-fn ApplyChangesButton() -> impl IntoView {
+fn RebootButton() -> impl IntoView {
     let i18n = use_i18n();
-    let restarting = RwSignal::new(false);
+    let rebooting = RwSignal::new(false);
     let result = RwSignal::new(Option::<(bool, String)>::None);
 
-    let on_restart = move |_| {
-        restarting.set(true);
+    let on_reboot = move |_| {
+        rebooting.set(true);
         result.set(None);
         leptos::task::spawn_local(async move {
-            match server_fns::restart_replay_ui().await {
+            match server_fns::reboot_system().await {
                 Ok(msg) => result.set(Some((true, msg))),
                 Err(e) => result.set(Some((false, e.to_string()))),
             }
-            restarting.set(false);
+            rebooting.set(false);
         });
     };
 
     view! {
         <div class="apply-section">
-            <p class="form-hint">{move || t(i18n.locale.get(), "settings.apply_hint")}</p>
+            <p class="form-hint">{move || t(i18n.locale.get(), "settings.reboot_hint")}</p>
             <button
                 class="form-btn form-btn-secondary"
-                on:click=on_restart
-                disabled=move || restarting.get()
+                on:click=on_reboot
+                disabled=move || rebooting.get()
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if restarting.get() { t(locale, "settings.restarting") } else { t(locale, "settings.restart_ui") }
+                    if rebooting.get() { t(locale, "settings.rebooting") } else { t(locale, "settings.reboot") }
                 }}
             </button>
             {move || result.get().map(|(ok, msg)| {

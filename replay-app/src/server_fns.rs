@@ -2,6 +2,11 @@ use leptos::prelude::*;
 use server_fn::ServerFnError;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "ssr")]
+pub use replay_core::favorites::OrganizeCriteria;
+#[cfg(not(feature = "ssr"))]
+pub use crate::types::OrganizeCriteria;
+
 pub const PAGE_SIZE: usize = 100;
 
 /// System info returned by get_info server function.
@@ -16,6 +21,8 @@ pub struct SystemInfo {
     pub systems_with_games: usize,
     pub total_games: usize,
     pub total_favorites: usize,
+    pub ethernet_ip: Option<String>,
+    pub wifi_ip: Option<String>,
 }
 
 // Re-export types for use in components.
@@ -53,6 +60,8 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let systems_with_games = summaries.iter().filter(|s| s.game_count > 0).count();
     let total_games: usize = summaries.iter().map(|s| s.game_count).sum();
 
+    let (ethernet_ip, wifi_ip) = get_network_ips();
+
     Ok(SystemInfo {
         storage_kind: format!("{:?}", storage.kind).to_lowercase(),
         storage_root: storage.root.display().to_string(),
@@ -63,7 +72,31 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         systems_with_games,
         total_games,
         total_favorites: favorites.len(),
+        ethernet_ip,
+        wifi_ip,
     })
+}
+
+#[cfg(feature = "ssr")]
+fn get_network_ips() -> (Option<String>, Option<String>) {
+    let extract_ip = |iface_prefix: &str| -> Option<String> {
+        let output = std::process::Command::new("ip")
+            .args(["-4", "-o", "addr", "show"])
+            .output()
+            .ok()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 && parts[1].starts_with(iface_prefix) {
+                // Format: "2: eth0    inet 192.168.1.100/24 ..."
+                return parts[3].split('/').next().map(|s| s.to_string());
+            }
+        }
+        None
+    };
+    let eth = extract_ip("eth").or_else(|| extract_ip("enp"));
+    let wifi = extract_ip("wlan").or_else(|| extract_ip("wlp"));
+    (eth, wifi)
 }
 
 #[server(prefix = "/sfn")]
@@ -332,21 +365,80 @@ pub async fn save_nfs_config(
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
+#[cfg(feature = "ssr")]
+fn is_replayos() -> bool {
+    std::path::Path::new("/opt/replay").exists()
+}
+
 #[server(prefix = "/sfn")]
 pub async fn restart_replay_ui() -> Result<String, ServerFnError> {
+    if !is_replayos() {
+        return Ok("Restart skipped (not running on ReplayOS)".to_string());
+    }
+
     let output = std::process::Command::new("systemctl")
         .args(["restart", "replay"])
         .output()
         .map_err(|e| ServerFnError::new(format!("Failed to restart: {e}")))?;
 
     if output.status.success() {
-        Ok("ReplayOS UI restarted".to_string())
+        Ok("ReplayOS restarted".to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(ServerFnError::new(format!(
             "Restart failed: {stderr}"
         )))
     }
+}
+
+#[server(prefix = "/sfn")]
+pub async fn reboot_system() -> Result<String, ServerFnError> {
+    if !is_replayos() {
+        return Ok("Reboot skipped (not running on ReplayOS)".to_string());
+    }
+
+    // Sync filesystem before reboot (as recommended by ReplayOS docs).
+    let _ = std::process::Command::new("sync").output();
+
+    let output = std::process::Command::new("reboot")
+        .output()
+        .map_err(|e| ServerFnError::new(format!("Failed to reboot: {e}")))?;
+
+    if output.status.success() {
+        Ok("Rebooting...".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(ServerFnError::new(format!(
+            "Reboot failed: {stderr}"
+        )))
+    }
+}
+
+/// Result of organizing favorites into subfolders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizeResult {
+    pub organized: usize,
+    pub skipped: usize,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn organize_favorites(
+    primary: OrganizeCriteria,
+    secondary: Option<OrganizeCriteria>,
+    keep_originals: bool,
+) -> Result<OrganizeResult, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let result = replay_core::favorites::organize_favorites(
+        &state.storage(),
+        primary,
+        secondary,
+        keep_originals,
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(OrganizeResult {
+        organized: result.organized,
+        skipped: result.skipped,
+    })
 }
 
 /// Result of a storage refresh operation.

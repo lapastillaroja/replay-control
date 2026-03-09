@@ -1,8 +1,9 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::game_db;
 use crate::game_ref::GameRef;
 use crate::storage::StorageLocation;
 use crate::systems;
@@ -29,6 +30,24 @@ pub fn list_favorites(storage: &StorageLocation) -> Result<Vec<Favorite>> {
 
     let mut favorites = Vec::new();
     collect_favorites(&favs_dir, &favs_dir, &mut favorites)?;
+
+    // Deduplicate: when the same .fav exists at root AND in a subfolder
+    // (from "keep originals" organize mode), prefer the subfolder version.
+    let mut seen = std::collections::HashMap::new();
+    for (i, fav) in favorites.iter().enumerate() {
+        let entry = seen.entry(fav.marker_filename.clone()).or_insert(i);
+        // Prefer the one with a non-empty subfolder (organized copy).
+        if favorites[*entry].subfolder.is_empty() && !fav.subfolder.is_empty() {
+            *entry = i;
+        }
+    }
+    let keep: std::collections::HashSet<usize> = seen.into_values().collect();
+    let mut favorites: Vec<_> = favorites
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| keep.contains(i))
+        .map(|(_, f)| f)
+        .collect();
 
     favorites.sort_by(|a, b| {
         a.game
@@ -158,63 +177,290 @@ pub fn group_by_system(storage: &StorageLocation) -> Result<usize> {
 }
 
 /// Flatten favorites: move all .fav files from subfolders back to root.
+/// Handles arbitrarily deep nesting and deduplicates by skipping files
+/// that already exist at root.
 pub fn flatten_favorites(storage: &StorageLocation) -> Result<usize> {
+    flatten_favorites_deep(storage)
+}
+
+/// Criteria for organizing favorites into subfolders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrganizeCriteria {
+    System,
+    Genre,
+    Players,
+    Alphabetical,
+}
+
+/// Result of an organize or flatten operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizeResult {
+    pub organized: usize,
+    pub skipped: usize,
+}
+
+/// Organize favorites into subfolders based on the given criteria.
+///
+/// - `primary`: First level of subfolder nesting.
+/// - `secondary`: Optional second level of nesting within the first.
+/// - `keep_originals`: If true, copies files to subfolders while keeping root copies.
+///   If false, moves files from root to subfolders.
+pub fn organize_favorites(
+    storage: &StorageLocation,
+    primary: OrganizeCriteria,
+    secondary: Option<OrganizeCriteria>,
+    keep_originals: bool,
+) -> Result<OrganizeResult> {
+    let favs_dir = storage.favorites_dir();
+    if !favs_dir.exists() {
+        return Ok(OrganizeResult {
+            organized: 0,
+            skipped: 0,
+        });
+    }
+
+    // First, flatten everything to root to start clean.
+    flatten_favorites(storage)?;
+
+    // Collect all .fav files from root.
+    let entries: Vec<_> = std::fs::read_dir(&favs_dir)
+        .map_err(|e| Error::io(&favs_dir, e))?
+        .flatten()
+        .filter(|e| {
+            e.path().is_file()
+                && e.file_name()
+                    .to_string_lossy()
+                    .ends_with(".fav")
+        })
+        .collect();
+
+    let mut organized = 0;
+    let mut skipped = 0;
+
+    for entry in &entries {
+        let filename = entry.file_name().to_string_lossy().to_string();
+        let src = entry.path();
+
+        // Parse system and rom_filename from the .fav filename.
+        let Some(system) = systems::system_from_fav_filename(&filename) else {
+            skipped += 1;
+            continue;
+        };
+        let rom_filename = filename
+            .split_once('@')
+            .map(|(_, rest)| rest.trim_end_matches(".fav"))
+            .unwrap_or("");
+
+        // Determine the subfolder path.
+        let primary_folder = criteria_folder(primary, system, rom_filename);
+        let subfolder = match secondary {
+            Some(sec) => {
+                let secondary_folder = criteria_folder(sec, system, rom_filename);
+                PathBuf::from(&primary_folder).join(&secondary_folder)
+            }
+            None => PathBuf::from(&primary_folder),
+        };
+
+        let target_dir = favs_dir.join(&subfolder);
+        std::fs::create_dir_all(&target_dir).map_err(|e| Error::io(&target_dir, e))?;
+
+        let dest = target_dir.join(&filename);
+        if dest.exists() {
+            skipped += 1;
+            continue;
+        }
+
+        if keep_originals {
+            std::fs::copy(&src, &dest).map_err(|e| Error::io(&src, e))?;
+        } else {
+            std::fs::rename(&src, &dest).map_err(|e| Error::io(&src, e))?;
+        }
+        organized += 1;
+    }
+
+    Ok(OrganizeResult {
+        organized,
+        skipped,
+    })
+}
+
+/// Sanitize a string for use as a directory name.
+/// Replaces `/` and other filesystem-unsafe characters with `-`.
+fn sanitize_folder_name(name: &str) -> String {
+    name.replace('/', "-")
+        .replace('\\', "-")
+        .replace(':', "-")
+}
+
+/// Determine the subfolder name for a favorite based on the given criteria.
+fn criteria_folder(criteria: OrganizeCriteria, system: &str, rom_filename: &str) -> String {
+    let raw = criteria_folder_raw(criteria, system, rom_filename);
+    sanitize_folder_name(&raw)
+}
+
+fn criteria_folder_raw(criteria: OrganizeCriteria, system: &str, rom_filename: &str) -> String {
+    match criteria {
+        OrganizeCriteria::System => {
+            systems::find_system(system)
+                .map(|s| s.display_name.to_string())
+                .unwrap_or_else(|| system.to_string())
+        }
+        OrganizeCriteria::Genre => {
+            let display_name = game_db::game_display_name(system, rom_filename);
+            // Try to get genre from game_db.
+            let stem = rom_filename
+                .rfind('.')
+                .map(|i| &rom_filename[..i])
+                .unwrap_or(rom_filename);
+            let genre = game_db::lookup_game(system, stem)
+                .map(|e| e.game.genre)
+                .or_else(|| {
+                    let normalized = game_db::normalize_filename(stem);
+                    game_db::lookup_by_normalized_title(system, &normalized)
+                        .map(|g| g.genre)
+                })
+                .unwrap_or("");
+            if genre.is_empty() {
+                // Use display_name hint for a fallback if we know nothing.
+                let _ = display_name;
+                "Other".to_string()
+            } else {
+                genre.to_string()
+            }
+        }
+        OrganizeCriteria::Players => {
+            let stem = rom_filename
+                .rfind('.')
+                .map(|i| &rom_filename[..i])
+                .unwrap_or(rom_filename);
+            let players = game_db::lookup_game(system, stem)
+                .map(|e| e.game.players)
+                .or_else(|| {
+                    let normalized = game_db::normalize_filename(stem);
+                    game_db::lookup_by_normalized_title(system, &normalized)
+                        .map(|g| g.players)
+                })
+                .unwrap_or(0);
+            match players {
+                0 => "Unknown".to_string(),
+                1 => "1 Player".to_string(),
+                2 => "2 Players".to_string(),
+                n => format!("{n} Players"),
+            }
+        }
+        OrganizeCriteria::Alphabetical => {
+            let display = game_db::game_display_name(system, rom_filename)
+                .unwrap_or(rom_filename);
+            let first = display
+                .chars()
+                .next()
+                .unwrap_or('#')
+                .to_ascii_uppercase();
+            if first.is_ascii_alphabetic() {
+                first.to_string()
+            } else {
+                "#".to_string()
+            }
+        }
+    }
+}
+
+/// Flatten favorites: recursively move all .fav files from any subfolder back to root.
+/// Skips duplicates (if file already exists at root). Removes empty subfolders.
+pub fn flatten_favorites_deep(storage: &StorageLocation) -> Result<usize> {
     let favs_dir = storage.favorites_dir();
     if !favs_dir.exists() {
         return Ok(0);
     }
 
     let mut moved = 0;
-    let entries: Vec<_> = std::fs::read_dir(&favs_dir)
-        .map_err(|e| Error::io(&favs_dir, e))?
+    flatten_recursive(&favs_dir, &favs_dir, &mut moved)?;
+    // Clean up empty directories.
+    remove_empty_dirs(&favs_dir);
+    Ok(moved)
+}
+
+fn flatten_recursive(dir: &Path, root: &Path, moved: &mut usize) -> Result<()> {
+    let entries: Vec<_> = std::fs::read_dir(dir)
+        .map_err(|e| Error::io(dir, e))?
         .flatten()
         .collect();
 
     for entry in entries {
-        let sub_dir = entry.path();
-        if !sub_dir.is_dir() {
-            continue;
-        }
-
-        // Skip non-system directories
-        let dir_name = entry.file_name().to_string_lossy().to_string();
-        if dir_name.starts_with('_') || dir_name.starts_with('.') {
-            continue;
-        }
-
-        let sub_entries: Vec<_> = std::fs::read_dir(&sub_dir)
-            .map_err(|e| Error::io(&sub_dir, e))?
-            .flatten()
-            .collect();
-
-        for sub_entry in sub_entries {
-            let path = sub_entry.path();
-            if path.is_file() && path.extension().is_some_and(|e| e == "fav") {
-                let dest = favs_dir.join(sub_entry.file_name());
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with('_') && !name.starts_with('.') {
+                flatten_recursive(&path, root, moved)?;
+            }
+        } else if path.is_file()
+            && path.extension().is_some_and(|e| e == "fav")
+            && path.parent() != Some(root)
+        {
+            let dest = root.join(entry.file_name());
+            if dest.exists() {
+                // Duplicate — remove the subfolder copy.
+                let _ = std::fs::remove_file(&path);
+            } else {
                 std::fs::rename(&path, &dest).map_err(|e| Error::io(&path, e))?;
-                moved += 1;
+                *moved += 1;
             }
         }
-
-        // Remove empty subfolder
-        let _ = std::fs::remove_dir(&sub_dir);
     }
-
-    Ok(moved)
+    Ok(())
 }
 
-/// Check if a ROM is favorited.
+fn remove_empty_dirs(dir: &Path) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with('_') && !name.starts_with('.') {
+                    remove_empty_dirs(&path);
+                    let _ = std::fs::remove_dir(&path); // only succeeds if empty
+                }
+            }
+        }
+    }
+}
+
+/// Check if a ROM is favorited (searches root and all subfolders).
 pub fn is_favorite(storage: &StorageLocation, system_folder: &str, rom_filename: &str) -> bool {
     let fav_filename = format!("{system_folder}@{rom_filename}.fav");
     let favs_dir = storage.favorites_dir();
 
-    // Check root
+    // Check root first (fast path).
     if favs_dir.join(&fav_filename).exists() {
         return true;
     }
 
-    // Check system subfolder
-    favs_dir.join(system_folder).join(&fav_filename).exists()
+    // Check system subfolder (common case).
+    if favs_dir.join(system_folder).join(&fav_filename).exists() {
+        return true;
+    }
+
+    // Search all subfolders recursively (for genre/players/alpha organization).
+    find_fav_recursive(&favs_dir, &fav_filename)
+}
+
+fn find_fav_recursive(dir: &Path, fav_filename: &str) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with('_') && !name.starts_with('.') {
+                if path.join(fav_filename).exists() || find_fav_recursive(&path, fav_filename) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn collect_favorites(
@@ -361,6 +607,183 @@ mod tests {
             .favorites_dir()
             .join("sega_smd@Sonic.md.fav")
             .exists());
+    }
+
+    #[test]
+    fn organize_by_system_moves_files() {
+        let (_tmp, storage) = setup_test_storage();
+
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
+        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+
+        let result =
+            organize_favorites(&storage, OrganizeCriteria::System, None, false).unwrap();
+        assert_eq!(result.organized, 2);
+
+        // Files should be in system-named subfolders.
+        let favs = list_favorites(&storage).unwrap();
+        assert_eq!(favs.len(), 2);
+        assert!(favs.iter().all(|f| !f.subfolder.is_empty()));
+
+        // Root should be empty of .fav files.
+        let root_favs: Vec<_> = std::fs::read_dir(storage.favorites_dir())
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.path().is_file()
+                    && e.file_name().to_string_lossy().ends_with(".fav")
+            })
+            .collect();
+        assert_eq!(root_favs.len(), 0);
+    }
+
+    #[test]
+    fn organize_keep_originals_duplicates() {
+        let (_tmp, storage) = setup_test_storage();
+
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
+
+        let result =
+            organize_favorites(&storage, OrganizeCriteria::System, None, true).unwrap();
+        assert_eq!(result.organized, 1);
+
+        // File should exist both at root and in subfolder.
+        let favs_dir = storage.favorites_dir();
+        assert!(favs_dir.join("sega_smd@Sonic.md.fav").exists());
+
+        // list_favorites should deduplicate: only 1 entry.
+        let favs = list_favorites(&storage).unwrap();
+        assert_eq!(favs.len(), 1);
+        // Should prefer subfolder version.
+        assert!(!favs[0].subfolder.is_empty());
+    }
+
+    #[test]
+    fn flatten_after_organize() {
+        let (_tmp, storage) = setup_test_storage();
+
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
+        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+
+        organize_favorites(&storage, OrganizeCriteria::System, None, false).unwrap();
+        let moved = flatten_favorites(&storage).unwrap();
+        assert_eq!(moved, 2);
+
+        let favs = list_favorites(&storage).unwrap();
+        assert_eq!(favs.len(), 2);
+        assert!(favs.iter().all(|f| f.subfolder.is_empty()));
+    }
+
+    #[test]
+    fn organize_alphabetical() {
+        let (_tmp, storage) = setup_test_storage();
+
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
+        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+
+        let result =
+            organize_favorites(&storage, OrganizeCriteria::Alphabetical, None, false).unwrap();
+        assert_eq!(result.organized, 2);
+
+        let favs = list_favorites(&storage).unwrap();
+        // One should be in "S/" and the other in "M/"
+        let subfolders: Vec<_> = favs.iter().map(|f| f.subfolder.as_str()).collect();
+        assert!(subfolders.contains(&"S"));
+        assert!(subfolders.contains(&"M"));
+    }
+
+    #[test]
+    fn organize_two_levels() {
+        let (_tmp, storage) = setup_test_storage();
+
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
+
+        let result = organize_favorites(
+            &storage,
+            OrganizeCriteria::Alphabetical,
+            Some(OrganizeCriteria::System),
+            false,
+        )
+        .unwrap();
+        assert_eq!(result.organized, 1);
+
+        let favs = list_favorites(&storage).unwrap();
+        assert_eq!(favs.len(), 1);
+        // Subfolder should be "S/{system_display_name}"
+        assert!(favs[0].subfolder.starts_with("S"));
+        assert!(favs[0].subfolder.contains(std::path::MAIN_SEPARATOR));
+    }
+
+    #[test]
+    fn organize_system_with_slash_in_name() {
+        let (_tmp, storage) = setup_test_storage();
+
+        // Sega Mega Drive / Genesis has a `/` in the display name.
+        add_favorite(
+            &storage,
+            "sega_smd",
+            "/roms/sega_smd/Sonic.md",
+            false,
+        )
+        .unwrap();
+        // Arcade (Atomiswave/Naomi) also has `/`.
+        add_favorite(
+            &storage,
+            "arcade_flycast",
+            "/roms/arcade_flycast/game.zip",
+            false,
+        )
+        .unwrap();
+
+        let result =
+            organize_favorites(&storage, OrganizeCriteria::System, None, false).unwrap();
+        assert_eq!(result.organized, 2);
+
+        // The subfolder should NOT create nested dirs from the `/`.
+        let favs = list_favorites(&storage).unwrap();
+        assert_eq!(favs.len(), 2);
+        for fav in &favs {
+            // Subfolder must be a single-level name (no path separator).
+            assert!(
+                !fav.subfolder.contains('/'),
+                "Subfolder '{}' should not contain '/'",
+                fav.subfolder
+            );
+        }
+
+        // Flatten should bring them all back.
+        let moved = flatten_favorites(&storage).unwrap();
+        assert_eq!(moved, 2);
+        let favs = list_favorites(&storage).unwrap();
+        assert!(favs.iter().all(|f| f.subfolder.is_empty()));
+    }
+
+    #[test]
+    fn flatten_deep_nesting() {
+        let (_tmp, storage) = setup_test_storage();
+
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
+        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+
+        // Organize with 2 levels.
+        organize_favorites(
+            &storage,
+            OrganizeCriteria::Alphabetical,
+            Some(OrganizeCriteria::System),
+            false,
+        )
+        .unwrap();
+
+        // Verify they're nested.
+        let favs = list_favorites(&storage).unwrap();
+        assert!(favs.iter().all(|f| f.subfolder.contains(std::path::MAIN_SEPARATOR)));
+
+        // Flatten should handle deep nesting.
+        let moved = flatten_favorites(&storage).unwrap();
+        assert_eq!(moved, 2);
+        let favs = list_favorites(&storage).unwrap();
+        assert_eq!(favs.len(), 2);
+        assert!(favs.iter().all(|f| f.subfolder.is_empty()));
     }
 
     #[test]

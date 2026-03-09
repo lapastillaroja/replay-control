@@ -108,9 +108,46 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
                 }}
             </button>
 
-            <div class="apply-section">
-                <p class="form-hint">{move || t(i18n.locale.get(), "nfs.hint")}</p>
-            </div>
+            <RestartButton />
+        </div>
+    }
+}
+
+#[component]
+fn RestartButton() -> impl IntoView {
+    let i18n = use_i18n();
+    let restarting = RwSignal::new(false);
+    let result = RwSignal::new(Option::<(bool, String)>::None);
+
+    let on_restart = move |_| {
+        restarting.set(true);
+        result.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::restart_replay_ui().await {
+                Ok(msg) => result.set(Some((true, msg))),
+                Err(e) => result.set(Some((false, e.to_string()))),
+            }
+            restarting.set(false);
+        });
+    };
+
+    view! {
+        <div class="apply-section">
+            <p class="form-hint">{move || t(i18n.locale.get(), "nfs.hint")}</p>
+            <button
+                class="form-btn form-btn-secondary"
+                on:click=on_restart
+                disabled=move || restarting.get()
+            >
+                {move || {
+                    let locale = i18n.locale.get();
+                    if restarting.get() { t(locale, "settings.restarting") } else { t(locale, "settings.restart_ui") }
+                }}
+            </button>
+            {move || result.get().map(|(ok, msg)| {
+                let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
+                view! { <div class=class>{msg}</div> }
+            })}
         </div>
     }
 }

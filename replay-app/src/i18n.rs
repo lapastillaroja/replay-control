@@ -48,7 +48,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
     let _ = locale;
     match key {
         // App chrome
-        "app.title" => "Replay",
+        "app.title" => "Replay Control",
         "nav.home" => "Home",
         "nav.games" => "Games",
         "nav.favorites" => "Favs",
@@ -96,6 +96,25 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "favorites.by_system" => "By System",
         "favorites.all" => "All Favorites",
 
+        // Organize favorites
+        "organize.title" => "Organize Favorites",
+        "organize.primary" => "Primary",
+        "organize.secondary" => "Secondary (optional)",
+        "organize.none" => "None",
+        "organize.system" => "By System",
+        "organize.genre" => "By Genre",
+        "organize.players" => "By Players",
+        "organize.alphabetical" => "Alphabetical",
+        "organize.keep_originals" => "Keep originals at root",
+        "organize.keep_hint" => "Maintains compatibility with ReplayOS UI",
+        "organize.apply" => "Organize",
+        "organize.organizing" => "Organizing...",
+        "organize.flatten" => "Flatten All",
+        "organize.flattening" => "Flattening...",
+        "organize.done" => "organized",
+        "organize.flattened" => "favorites moved to root",
+        "organize.already_flat" => "All favorites are already at root",
+
         // More page
         "more.title" => "More",
         "more.upload" => "Upload ROMs",
@@ -108,6 +127,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.disk_total" => "Disk Total",
         "more.disk_used" => "Disk Used",
         "more.disk_available" => "Disk Available",
+        "more.ethernet_ip" => "Ethernet IP",
+        "more.wifi_ip" => "Wi-Fi IP",
+        "more.not_connected" => "Not connected",
         "more.refresh_storage" => "Refresh Storage",
         "more.refreshing" => "Refreshing...",
         "more.storage_changed" => "Storage updated",
@@ -126,15 +148,18 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "nfs.server" => "Server Address",
         "nfs.share" => "Share Path",
         "nfs.version" => "NFS Version",
-        "nfs.hint" => "NFS changes take effect after switching storage to NFS and restarting the ReplayOS UI.",
+        "nfs.hint" => "NFS changes take effect after switching storage to NFS and restarting ReplayOS.",
 
         // Settings (shared)
         "settings.save" => "Save",
         "settings.saving" => "Saving...",
         "settings.saved" => "Settings saved",
-        "settings.apply_hint" => "Restart the ReplayOS UI to apply changes.",
-        "settings.restart_ui" => "Restart ReplayOS UI",
+        "settings.apply_hint" => "Restart ReplayOS to apply changes.",
+        "settings.restart_ui" => "Restart ReplayOS",
         "settings.restarting" => "Restarting...",
+        "settings.reboot" => "Reboot System",
+        "settings.rebooting" => "Rebooting...",
+        "settings.reboot_hint" => "A reboot is required for WiFi changes to take effect.",
         "settings.password_keep" => "Leave empty to keep current",
         "settings.password_enter" => "Enter password",
 

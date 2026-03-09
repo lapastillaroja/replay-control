@@ -724,6 +724,37 @@ a, a:visited, a:hover, a:active {
     font-weight: 500;
 }
 
+/* Organize favorites */
+.organize-toggle {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.organize-toggle-icon {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.organize-panel {
+    margin-top: 12px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.organize-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.organize-actions .form-btn {
+    flex: 1;
+}
+
 /* Settings / Forms */
 .settings-page .page-title {
     margin-bottom: 0;

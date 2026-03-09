@@ -1,6 +1,6 @@
 # Features
 
-Tracking document for the Replay companion app. Organized by page/area.
+Tracking document for Replay Control. Organized by page/area.
 
 ---
 
@@ -181,5 +181,5 @@ Tracking document for the Replay companion app. Organized by page/area.
 - **systemd integration** — run as a system service on RePlayOS
 - **mDNS/Avahi** — auto-discovery via `replaypi.local`
 - **CLI mode** — command-line interface for scripting and power users (same binary)
-- **App-specific configuration file** — the companion app should NOT write to `replay.cfg`, which is reserved for official RePlayOS system configurations (Wi-Fi, NFS, video output, etc.). Instead, the app needs its own config file (e.g., `replay-companion.cfg` or `replay-app.conf`) for storing user preferences such as preferred region, language, theme, and other app-level settings. The format should be plain text and user-editable, similar to `replay.cfg` (key = "value" pairs). This file would live alongside `replay.cfg` in the storage config directory.
-- **Install/deployment script** — a setup script for deploying the companion app on RePlayOS (systemd service file, binary installation, permissions, etc.). Note: "setup" in this project refers to deployment/installation tooling, not an in-app first-run wizard. The app itself should work out of the box without requiring an initial setup flow.
+- **App-specific configuration file** — Replay Control should NOT write to `replay.cfg`, which is reserved for official RePlayOS system configurations (Wi-Fi, NFS, video output, etc.). Instead, the app needs its own config file (e.g., `replay-companion.cfg` or `replay-app.conf`) for storing user preferences such as preferred region, language, theme, and other app-level settings. The format should be plain text and user-editable, similar to `replay.cfg` (key = "value" pairs). This file would live alongside `replay.cfg` in the storage config directory.
+- **Install/deployment script** — a setup script for deploying Replay Control on RePlayOS (systemd service file, binary installation, permissions, etc.). Note: "setup" in this project refers to deployment/installation tooling, not an in-app first-run wizard. The app itself should work out of the box without requiring an initial setup flow.

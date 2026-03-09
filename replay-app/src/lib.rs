@@ -35,8 +35,8 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <meta name="theme-color" content="#0f1115" />
                 <meta name="apple-mobile-web-app-capable" content="yes" />
                 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-                <meta name="apple-mobile-web-app-title" content="Replay" />
-                <title>"Replay"</title>
+                <meta name="apple-mobile-web-app-title" content="Replay Control" />
+                <title>"Replay Control"</title>
                 <link rel="manifest" href="/manifest.json" />
                 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
                 <link rel="apple-touch-icon" href="/icons/icon-192.png" />

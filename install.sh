@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Replay Companion App Installer ──────────────────────────────────────────
+# ── Replay Control Installer ──────────────────────────────────────────
 #
-# Installs the Replay companion app on a Raspberry Pi running RePlayOS.
+# Installs the Replay Control on a Raspberry Pi running RePlayOS.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/user/replay/main/install.sh | bash
@@ -74,9 +74,9 @@ trap cleanup EXIT
 
 usage() {
     cat <<EOF
-${BOLD}Replay Companion App Installer${RESET}
+${BOLD}Replay Control Installer${RESET}
 
-Installs the Replay companion app on a Raspberry Pi running RePlayOS.
+Installs the Replay Control on a Raspberry Pi running RePlayOS.
 
 ${BOLD}USAGE${RESET}
     install.sh [FLAGS]
@@ -231,7 +231,7 @@ prepare_local_artifacts() {
 download_artifacts() {
     TMPDIR_WORK="$(mktemp -d)"
 
-    info "Downloading Replay companion app (version: $VERSION)..."
+    info "Downloading Replay Control (version: $VERSION)..."
 
     if $DRY_RUN; then
         dry "Would download: $BINARY_URL"
@@ -374,7 +374,7 @@ run_scp() {
 systemd_service_content() {
     cat <<'UNIT'
 [Unit]
-Description=Replay Companion App
+Description=Replay Control
 After=network.target
 After=media-sd.mount media-usb.mount
 
@@ -419,7 +419,7 @@ avahi_service_content() {
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
-  <name>Replay Companion</name>
+  <name>Replay Control</name>
   <service>
     <type>_http._tcp</type>
     <port>8080</port>
@@ -490,7 +490,7 @@ tar -xzf /tmp/replay-site.tar.gz -C /usr/local/share/replay/
 # Write systemd service file
 cat > /etc/systemd/system/replay-companion.service << 'UNIT'
 [Unit]
-Description=Replay Companion App
+Description=Replay Control
 After=network.target
 After=media-sd.mount media-usb.mount
 
@@ -540,7 +540,7 @@ if command -v avahi-daemon &>/dev/null; then
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
-  <name>Replay Companion</name>
+  <name>Replay Control</name>
   <service>
     <type>_http._tcp</type>
     <port>8080</port>
@@ -574,7 +574,7 @@ REMOTE_INSTALL
     teardown_askpass
 
     echo ""
-    success "${BOLD}Replay companion app installed!${RESET}"
+    success "${BOLD}Replay Control installed!${RESET}"
     echo "  Open ${GREEN}http://${PI_ADDR}:${DEFAULT_PORT}${RESET} in your browser."
     echo ""
 }
@@ -619,7 +619,7 @@ REMOTE_UNINSTALL
 
     teardown_askpass
 
-    success "Replay companion app uninstalled from Pi"
+    success "Replay Control uninstalled from Pi"
 }
 
 # ── SD card detection ───────────────────────────────────────────────────────
@@ -910,7 +910,7 @@ install_sdcard() {
     fi
 
     echo ""
-    success "${BOLD}Replay companion app installed to SD card!${RESET}"
+    success "${BOLD}Replay Control installed to SD card!${RESET}"
     echo "  Insert the SD card into your Pi and boot it."
     echo "  The app will start automatically at ${GREEN}http://replaypi.local:${DEFAULT_PORT}${RESET}"
     echo ""
@@ -922,7 +922,7 @@ main() {
     parse_args "$@"
 
     echo ""
-    echo "${BOLD}Replay Companion App Installer${RESET}"
+    echo "${BOLD}Replay Control Installer${RESET}"
     if $DRY_RUN; then
         echo "${YELLOW}(dry run -- no changes will be made)${RESET}"
     fi

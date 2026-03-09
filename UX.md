@@ -1,4 +1,4 @@
-# Companion App — UX Design
+# Replay Control — UX Design
 
 ## Visual Style
 
