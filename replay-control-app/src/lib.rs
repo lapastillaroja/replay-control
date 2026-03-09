@@ -22,7 +22,7 @@ use pages::more::MorePage;
 use pages::wifi::WifiPage;
 use pages::hostname::HostnamePage;
 use pages::nfs::NfsPage;
-use pages::theme::ThemePage;
+use pages::skin::SkinPage;
 
 /// The HTML shell wrapping the App component for SSR.
 #[cfg(feature = "ssr")]
@@ -32,11 +32,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     use replay_control_core::skins;
 
     let state = expect_context::<AppState>();
-    let skin_index = state
-        .config
-        .read()
-        .expect("config lock poisoned")
-        .system_skin();
+    let skin_index = state.effective_skin();
     let theme_color = skins::theme_color(skin_index);
     let skin_css = skins::theme_css(skin_index).unwrap_or_default();
 
@@ -99,7 +95,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/more/wifi") view=WifiPage />
                         <Route path=path!("/more/nfs") view=NfsPage />
                         <Route path=path!("/more/hostname") view=HostnamePage />
-                        <Route path=path!("/more/theme") view=ThemePage />
+                        <Route path=path!("/more/skin") view=SkinPage />
                     </Routes>
                 </main>
 

@@ -724,6 +724,72 @@ fn parse_catver_ini(path: &Path) -> HashMap<String, String> {
     categories
 }
 
+/// Normalize an arcade catver.ini category to the shared genre taxonomy.
+///
+/// Extracts the primary category (before " / ") and maps it to a shared genre.
+fn normalize_arcade_genre(category: &str) -> &'static str {
+    // Extract primary category: "Fighter / Versus" -> "Fighter"
+    let primary = category.split(" / ").next().unwrap_or(category).trim();
+    match primary {
+        "Fighter" => "Fighting",
+        "Platform" | "Climbing" => "Platform",
+        "Shooter" => "Shooter",
+        "Driving" => "Driving",
+        "Sports" => "Sports",
+        "Puzzle" => "Puzzle",
+        "Maze" => "Maze",
+        "Casino" | "Slot Machine" => "Board & Card",
+        "Tabletop" => "Board & Card",
+        "Quiz" | "Trivia" => "Quiz",
+        "Pinball" => "Pinball",
+        "Ball & Paddle" | "Breakout" => "Action",
+        "Music" | "Rhythm" => "Music",
+        "Racing" => "Driving",
+        "Beat'em Up" | "BeatEmUp" => "Beat'em Up",
+        "Action" => "Action",
+        "Adventure" => "Adventure",
+        "Simulation" | "Flight" => "Simulation",
+        "Strategy" => "Strategy",
+        "Board Game" | "Cards" => "Board & Card",
+        "Educational" => "Educational",
+        "Role-Playing" | "RPG" => "Role-Playing",
+        // Non-game categories
+        "System" | "BIOS" | "Utilities" | "Electromechanical" | "Device"
+        | "Rewritable" | "Not Coverage" | "Mature" | "Rhythm" => "Other",
+        _ if category.is_empty() => "",
+        _ => "Other",
+    }
+}
+
+/// Normalize a libretro/TGDB genre string to the shared genre taxonomy.
+fn normalize_console_genre(genre: &str) -> &'static str {
+    match genre {
+        "Action" => "Action",
+        "Adventure" => "Adventure",
+        "Beat'em Up" | "Beat-'Em-Up" | "Beat 'Em Up" => "Beat'em Up",
+        "Board" | "Card" | "Board Game" | "Casino" | "Gambling" => "Board & Card",
+        "Racing" | "Driving" => "Driving",
+        "Educational" => "Educational",
+        "Fighting" => "Fighting",
+        "Music" | "Rhythm" => "Music",
+        "Pinball" => "Pinball",
+        "Platform" => "Platform",
+        "Puzzle" => "Puzzle",
+        "Quiz" | "Trivia" => "Quiz",
+        "Role-Playing" | "Role-playing (RPG)" | "RPG" | "Role-Playing (RPG)" => "Role-Playing",
+        "Shooter" | "Shoot-'Em-Up" | "Shoot'em Up" | "Lightgun Shooter"
+        | "Run & Gun" | "Shoot 'Em Up" => "Shooter",
+        "Simulation" | "Flight Simulator" | "Virtual Life" => "Simulation",
+        "Sports" | "Fitness" => "Sports",
+        "Strategy" => "Strategy",
+        "Maze" => "Maze",
+        "Compilation" | "Party" => "Action",
+        "Sandbox" | "Stealth" | "Horror" | "MMO" | "Family" | "Comedy" => "Action",
+        _ if genre.is_empty() => "",
+        _ => "Other",
+    }
+}
+
 fn rotation_variant(rot: &str) -> &'static str {
     match rot {
         "0" => "Rotation::Horizontal",
@@ -751,6 +817,7 @@ fn generate_phf_map(out: &mut impl Write, entries: &[GameEntry]) {
     let mut map = phf_codegen::Map::new();
 
     for entry in entries {
+        let norm_genre = normalize_arcade_genre(&entry.category);
         let value = format!(
             "ArcadeGameInfo {{ \
                 rom_name: \"{}\", \
@@ -762,7 +829,8 @@ fn generate_phf_map(out: &mut impl Write, entries: &[GameEntry]) {
                 status: {}, \
                 is_clone: {}, \
                 parent: \"{}\", \
-                category: \"{}\" \
+                category: \"{}\", \
+                normalized_genre: \"{}\" \
             }}",
             escape_str(&entry.rom_name),
             escape_str(&entry.display_name),
@@ -774,6 +842,7 @@ fn generate_phf_map(out: &mut impl Write, entries: &[GameEntry]) {
             entry.is_clone,
             escape_str(&entry.parent),
             escape_str(&entry.category),
+            escape_str(norm_genre),
         );
         map.entry(&entry.rom_name, &value);
     }
@@ -1595,14 +1664,16 @@ fn write_system_code(
     // 1. Canonical games array
     writeln!(out, "static {prefix}_GAMES: &[CanonicalGame] = &[").unwrap();
     for game in games {
+        let norm_genre = normalize_console_genre(&game.genre);
         writeln!(
             out,
-            "    CanonicalGame {{ display_name: \"{}\", year: {}, genre: \"{}\", developer: \"{}\", players: {} }},",
+            "    CanonicalGame {{ display_name: \"{}\", year: {}, genre: \"{}\", developer: \"{}\", players: {}, normalized_genre: \"{}\" }},",
             escape_str(&game.display_name),
             game.year,
             escape_str(&game.genre),
             escape_str(&game.developer),
             game.players,
+            escape_str(norm_genre),
         )
         .unwrap();
     }

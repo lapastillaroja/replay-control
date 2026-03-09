@@ -300,6 +300,9 @@ fn criteria_folder(criteria: OrganizeCriteria, system: &str, rom_filename: &str)
 }
 
 fn criteria_folder_raw(criteria: OrganizeCriteria, system: &str, rom_filename: &str) -> String {
+    let is_arcade = systems::find_system(system)
+        .is_some_and(|s| s.category == systems::SystemCategory::Arcade);
+
     match criteria {
         OrganizeCriteria::System => {
             systems::find_system(system)
@@ -307,51 +310,87 @@ fn criteria_folder_raw(criteria: OrganizeCriteria, system: &str, rom_filename: &
                 .unwrap_or_else(|| system.to_string())
         }
         OrganizeCriteria::Genre => {
-            let display_name = game_db::game_display_name(system, rom_filename);
-            // Try to get genre from game_db.
-            let stem = rom_filename
-                .rfind('.')
-                .map(|i| &rom_filename[..i])
-                .unwrap_or(rom_filename);
-            let genre = game_db::lookup_game(system, stem)
-                .map(|e| e.game.genre)
-                .or_else(|| {
-                    let normalized = game_db::normalize_filename(stem);
-                    game_db::lookup_by_normalized_title(system, &normalized)
-                        .map(|g| g.genre)
-                })
-                .unwrap_or("");
-            if genre.is_empty() {
-                // Use display_name hint for a fallback if we know nothing.
-                let _ = display_name;
-                "Other".to_string()
+            if is_arcade {
+                // Use arcade_db for genre resolution.
+                let stem = rom_filename
+                    .strip_suffix(".zip")
+                    .unwrap_or(rom_filename);
+                let genre = crate::arcade_db::lookup_arcade_game(stem)
+                    .map(|info| info.normalized_genre)
+                    .unwrap_or("");
+                if genre.is_empty() {
+                    "Other".to_string()
+                } else {
+                    genre.to_string()
+                }
             } else {
-                genre.to_string()
+                // Use game_db for genre resolution.
+                let stem = rom_filename
+                    .rfind('.')
+                    .map(|i| &rom_filename[..i])
+                    .unwrap_or(rom_filename);
+                let genre = game_db::lookup_game(system, stem)
+                    .map(|e| e.game.normalized_genre)
+                    .or_else(|| {
+                        let normalized = game_db::normalize_filename(stem);
+                        game_db::lookup_by_normalized_title(system, &normalized)
+                            .map(|g| g.normalized_genre)
+                    })
+                    .unwrap_or("");
+                if genre.is_empty() {
+                    "Other".to_string()
+                } else {
+                    genre.to_string()
+                }
             }
         }
         OrganizeCriteria::Players => {
-            let stem = rom_filename
-                .rfind('.')
-                .map(|i| &rom_filename[..i])
-                .unwrap_or(rom_filename);
-            let players = game_db::lookup_game(system, stem)
-                .map(|e| e.game.players)
-                .or_else(|| {
-                    let normalized = game_db::normalize_filename(stem);
-                    game_db::lookup_by_normalized_title(system, &normalized)
-                        .map(|g| g.players)
-                })
-                .unwrap_or(0);
-            match players {
-                0 => "Unknown".to_string(),
-                1 => "1 Player".to_string(),
-                2 => "2 Players".to_string(),
-                n => format!("{n} Players"),
+            if is_arcade {
+                // Use arcade_db for players resolution.
+                let stem = rom_filename
+                    .strip_suffix(".zip")
+                    .unwrap_or(rom_filename);
+                let players = crate::arcade_db::lookup_arcade_game(stem)
+                    .map(|info| info.players)
+                    .unwrap_or(0);
+                match players {
+                    0 => "Unknown".to_string(),
+                    1 => "1 Player".to_string(),
+                    2 => "2 Players".to_string(),
+                    n => format!("{n} Players"),
+                }
+            } else {
+                let stem = rom_filename
+                    .rfind('.')
+                    .map(|i| &rom_filename[..i])
+                    .unwrap_or(rom_filename);
+                let players = game_db::lookup_game(system, stem)
+                    .map(|e| e.game.players)
+                    .or_else(|| {
+                        let normalized = game_db::normalize_filename(stem);
+                        game_db::lookup_by_normalized_title(system, &normalized)
+                            .map(|g| g.players)
+                    })
+                    .unwrap_or(0);
+                match players {
+                    0 => "Unknown".to_string(),
+                    1 => "1 Player".to_string(),
+                    2 => "2 Players".to_string(),
+                    n => format!("{n} Players"),
+                }
             }
         }
         OrganizeCriteria::Alphabetical => {
-            let display = game_db::game_display_name(system, rom_filename)
-                .unwrap_or(rom_filename);
+            let display = if is_arcade {
+                let stem = rom_filename
+                    .strip_suffix(".zip")
+                    .unwrap_or(rom_filename);
+                crate::arcade_db::lookup_arcade_game(stem)
+                    .map(|info| info.display_name)
+            } else {
+                game_db::game_display_name(system, rom_filename)
+            };
+            let display = display.unwrap_or(rom_filename);
             let first = display
                 .chars()
                 .next()

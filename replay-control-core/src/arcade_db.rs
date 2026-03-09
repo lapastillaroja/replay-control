@@ -38,6 +38,8 @@ pub struct ArcadeGameInfo {
     pub parent: &'static str,
     /// Genre/category (e.g., "Fighter / 2D"). May be empty.
     pub category: &'static str,
+    /// Normalized genre from shared taxonomy (e.g., "Fighting"). May be empty.
+    pub normalized_genre: &'static str,
 }
 
 include!(concat!(env!("OUT_DIR"), "/arcade_db.rs"));

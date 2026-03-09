@@ -9,6 +9,35 @@ pub use crate::types::OrganizeCriteria;
 
 pub const PAGE_SIZE: usize = 100;
 
+/// Unified game metadata returned by server functions.
+/// Populated from arcade_db or game_db depending on the system,
+/// but consumers never need to know which source was used.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameInfo {
+    // --- Identity (always present) ---
+    pub system: String,
+    pub system_display: String,
+    pub rom_filename: String,
+    pub rom_path: String,
+    pub display_name: String,
+
+    // --- Common metadata (from either DB) ---
+    pub year: String,
+    pub genre: String,
+    pub developer: String,
+    pub players: u8,
+
+    // --- Arcade-specific (None for non-arcade) ---
+    pub rotation: Option<String>,
+    pub driver_status: Option<String>,
+    pub is_clone: Option<bool>,
+    pub parent_rom: Option<String>,
+    pub arcade_category: Option<String>,
+
+    // --- Console-specific (None for arcade) ---
+    pub region: Option<String>,
+}
+
 /// System info returned by get_info server function.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemInfo {
@@ -38,9 +67,143 @@ pub use replay_control_core::recents::RecentEntry;
 pub use replay_control_core::roms::{RomEntry, SystemSummary};
 
 #[cfg(not(feature = "ssr"))]
-pub use crate::types::{
-    ArcadeMetadata, Favorite, GameRef, RecentEntry, RomDetail, RomEntry, SystemSummary,
-};
+pub use crate::types::{Favorite, GameRef, RecentEntry, RomEntry, SystemSummary};
+
+/// Resolve full game metadata for any system.
+/// This is the single function that bridges arcade_db and game_db.
+#[cfg(feature = "ssr")]
+fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameInfo {
+    use replay_control_core::arcade_db;
+    use replay_control_core::game_db;
+    use replay_control_core::rom_tags;
+    use replay_control_core::systems::{self, SystemCategory};
+
+    let sys_info = systems::find_system(system);
+    let system_display = sys_info
+        .map(|s| s.display_name.to_string())
+        .unwrap_or_else(|| system.to_string());
+    let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
+
+    if is_arcade {
+        let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+        match arcade_db::lookup_arcade_game(stem) {
+            Some(info) => {
+                let rotation = match info.rotation {
+                    arcade_db::Rotation::Horizontal => "Horizontal",
+                    arcade_db::Rotation::Vertical => "Vertical",
+                    arcade_db::Rotation::Unknown => "Unknown",
+                };
+                let driver_status = match info.status {
+                    arcade_db::DriverStatus::Working => "Working",
+                    arcade_db::DriverStatus::Imperfect => "Imperfect",
+                    arcade_db::DriverStatus::Preliminary => "Preliminary",
+                    arcade_db::DriverStatus::Unknown => "Unknown",
+                };
+                GameInfo {
+                    system: system.to_string(),
+                    system_display,
+                    rom_filename: rom_filename.to_string(),
+                    rom_path: rom_path.to_string(),
+                    display_name: info.display_name.to_string(),
+                    year: info.year.to_string(),
+                    genre: info.normalized_genre.to_string(),
+                    developer: info.manufacturer.to_string(),
+                    players: info.players,
+                    rotation: Some(rotation.to_string()),
+                    driver_status: Some(driver_status.to_string()),
+                    is_clone: Some(info.is_clone),
+                    parent_rom: if info.is_clone {
+                        Some(info.parent.to_string())
+                    } else {
+                        None
+                    },
+                    arcade_category: if info.category.is_empty() {
+                        None
+                    } else {
+                        Some(info.category.to_string())
+                    },
+                    region: None,
+                }
+            }
+            None => GameInfo {
+                system: system.to_string(),
+                system_display,
+                rom_filename: rom_filename.to_string(),
+                rom_path: rom_path.to_string(),
+                display_name: rom_filename.to_string(),
+                year: String::new(),
+                genre: String::new(),
+                developer: String::new(),
+                players: 0,
+                rotation: None,
+                driver_status: None,
+                is_clone: None,
+                parent_rom: None,
+                arcade_category: None,
+                region: None,
+            },
+        }
+    } else {
+        let stem = rom_filename
+            .rfind('.')
+            .map(|i| &rom_filename[..i])
+            .unwrap_or(rom_filename);
+
+        // Try exact match, then normalized title fallback
+        let entry = game_db::lookup_game(system, stem);
+        let game = entry.map(|e| e.game);
+        let region = entry.map(|e| e.region).unwrap_or("");
+
+        // If exact match failed, try normalized title for display name
+        let display_name = if let Some(g) = game {
+            rom_tags::display_name_with_tags(g.display_name, rom_filename)
+        } else if let Some(dn) = game_db::game_display_name(system, rom_filename) {
+            rom_tags::display_name_with_tags(dn, rom_filename)
+        } else {
+            rom_filename.to_string()
+        };
+
+        // For metadata, also try normalized title fallback
+        let game_meta = game.or_else(|| {
+            let normalized = game_db::normalize_filename(stem);
+            game_db::lookup_by_normalized_title(system, &normalized)
+        });
+
+        GameInfo {
+            system: system.to_string(),
+            system_display,
+            rom_filename: rom_filename.to_string(),
+            rom_path: rom_path.to_string(),
+            display_name,
+            year: game_meta
+                .map(|g| {
+                    if g.year > 0 {
+                        g.year.to_string()
+                    } else {
+                        String::new()
+                    }
+                })
+                .unwrap_or_default(),
+            genre: game_meta
+                .map(|g| g.normalized_genre.to_string())
+                .unwrap_or_default(),
+            developer: game_meta
+                .map(|g| g.developer.to_string())
+                .unwrap_or_default(),
+            players: game_meta.map(|g| g.players).unwrap_or(0),
+            rotation: None,
+            driver_status: None,
+            is_clone: None,
+            parent_rom: None,
+            arcade_category: None,
+            region: if region.is_empty() {
+                None
+            } else {
+                Some(region.to_string())
+            },
+        }
+    }
+}
 
 #[server(prefix = "/sfn")]
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
@@ -136,8 +299,9 @@ pub async fn get_roms_page(
     } else {
         let q = search.to_lowercase();
         all_roms.into_iter().filter(|r| {
-            r.game.rom_filename.to_lowercase().contains(&q)
-                || r.game.display_name.as_ref().is_some_and(|dn| dn.to_lowercase().contains(&q))
+            let display = r.game.display_name.as_deref().unwrap_or(&r.game.rom_filename);
+            display.to_lowercase().contains(&q)
+                || r.game.rom_filename.to_lowercase().contains(&q)
         }).collect()
     };
 
@@ -221,25 +385,13 @@ pub async fn rename_rom(relative_path: String, new_filename: String) -> Result<S
     Ok(new_path.display().to_string())
 }
 
-/// Detailed ROM info including arcade metadata and favorite status.
-#[cfg(feature = "ssr")]
+/// Detailed ROM info including unified game metadata and favorite status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomDetail {
-    pub rom: RomEntry,
+    pub game: GameInfo,
+    pub size_bytes: u64,
+    pub is_m3u: bool,
     pub is_favorite: bool,
-    pub arcade_info: Option<ArcadeMetadata>,
-}
-
-#[cfg(feature = "ssr")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArcadeMetadata {
-    pub year: String,
-    pub manufacturer: String,
-    pub players: u8,
-    pub rotation: String,
-    pub category: String,
-    pub is_clone: bool,
-    pub parent: String,
 }
 
 #[server(prefix = "/sfn")]
@@ -256,30 +408,13 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);
 
-    let arcade_info = replay_control_core::arcade_db::lookup_arcade_game(
-        filename.strip_suffix(".zip").unwrap_or(&filename),
-    )
-    .map(|info| {
-        let rotation = match info.rotation {
-            replay_control_core::arcade_db::Rotation::Horizontal => "Horizontal",
-            replay_control_core::arcade_db::Rotation::Vertical => "Vertical",
-            replay_control_core::arcade_db::Rotation::Unknown => "Unknown",
-        };
-        ArcadeMetadata {
-            year: info.year.to_string(),
-            manufacturer: info.manufacturer.to_string(),
-            players: info.players,
-            rotation: rotation.to_string(),
-            category: info.category.to_string(),
-            is_clone: info.is_clone,
-            parent: info.parent.to_string(),
-        }
-    });
+    let game = resolve_game_info(&system, &filename, &rom.game.rom_path);
 
     Ok(RomDetail {
-        rom,
+        game,
+        size_bytes: rom.size_bytes,
+        is_m3u: rom.is_m3u,
         is_favorite,
-        arcade_info,
     })
 }
 
@@ -469,7 +604,7 @@ pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
     Ok(format!("Hostname set to {hostname}"))
 }
 
-/// Skin info for the theme page.
+/// Skin info for the skin page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkinInfo {
     pub index: u32,
@@ -484,10 +619,12 @@ pub struct SkinInfo {
     pub accent_hover: String,
 }
 
+/// Skin page data: (active_skin_index, sync_enabled, skins_list).
 #[server(prefix = "/sfn")]
-pub async fn get_skins() -> Result<(u32, Vec<SkinInfo>), ServerFnError> {
+pub async fn get_skins() -> Result<(u32, bool, Vec<SkinInfo>), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let current = state.config.read().expect("config lock poisoned").system_skin();
+    let current = state.effective_skin();
+    let sync = state.skin_override.read().expect("skin lock poisoned").is_none();
 
     let skins = replay_control_core::skins::SKIN_NAMES
         .iter()
@@ -509,17 +646,31 @@ pub async fn get_skins() -> Result<(u32, Vec<SkinInfo>), ServerFnError> {
         })
         .collect();
 
-    Ok((current, skins))
+    Ok((current, sync, skins))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state
-        .update_config(|config| {
-            config.set("system_skin", &index.to_string());
-        })
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    // When setting a skin manually, disable sync and store the override.
+    let mut guard = state.skin_override.write().expect("skin lock poisoned");
+    *guard = Some(index);
+    Ok(())
+}
+
+#[server(prefix = "/sfn")]
+pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if enabled {
+        let mut guard = state.skin_override.write().expect("skin lock poisoned");
+        *guard = None;
+    } else {
+        // Read the current effective skin before acquiring the write lock.
+        let current = state.effective_skin();
+        let mut guard = state.skin_override.write().expect("skin lock poisoned");
+        *guard = Some(current);
+    }
+    Ok(())
 }
 
 /// Result of organizing favorites into subfolders.

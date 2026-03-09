@@ -128,6 +128,9 @@ pub struct AppState {
     pub cache: Arc<RomCache>,
     /// When set, --storage-path was given on the CLI and auto-detection is skipped.
     pub storage_path_override: Option<PathBuf>,
+    /// When Some, the app uses this skin index instead of reading from replay.cfg.
+    /// Set via the skin page when "Sync with ReplayOS" is disabled.
+    pub skin_override: Arc<std::sync::RwLock<Option<u32>>>,
 }
 
 impl AppState {
@@ -184,6 +187,7 @@ impl AppState {
             config_path,
             cache: Arc::new(RomCache::new()),
             storage_path_override,
+            skin_override: Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -191,6 +195,15 @@ impl AppState {
     /// Panics only if the lock is poisoned (program bug).
     pub fn storage(&self) -> StorageLocation {
         self.storage.read().expect("storage lock poisoned").clone()
+    }
+
+    /// Get the effective skin index: override if set, otherwise from replay.cfg.
+    pub fn effective_skin(&self) -> u32 {
+        if let Some(index) = *self.skin_override.read().expect("skin lock poisoned") {
+            index
+        } else {
+            self.config.read().expect("config lock poisoned").system_skin()
+        }
     }
 
     /// Update replay.cfg: apply the updater closure, then write back to disk.
@@ -208,20 +221,24 @@ impl AppState {
     /// Re-detect storage from config (unless a CLI override was given).
     /// Returns `true` if the storage location actually changed.
     pub fn refresh_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
-        if self.storage_path_override.is_some() {
-            tracing::debug!("Storage path override is set, skipping re-detection");
-            return Ok(false);
-        }
-
-        // Re-read config from disk
-        let default_config = PathBuf::from("/media/sd/config/replay.cfg");
-        let config = if let Some(ref p) = self.config_path {
-            ReplayConfig::from_file(p)?
-        } else if default_config.exists() {
-            ReplayConfig::from_file(&default_config)?
+        // Re-read config from disk so non-storage settings (system_skin,
+        // wifi, etc.) are picked up on next SSR render.
+        let config_path = self.config_file_path();
+        let config = if config_path.exists() {
+            ReplayConfig::from_file(&config_path)?
         } else {
             ReplayConfig::parse("")?
         };
+
+        {
+            let mut guard = self.config.write().expect("config lock poisoned");
+            *guard = config.clone();
+        }
+
+        // Skip storage re-detection when an explicit path was given.
+        if self.storage_path_override.is_some() {
+            return Ok(false);
+        }
 
         let new_storage = StorageLocation::detect(&config)?;
 
@@ -240,10 +257,6 @@ impl AppState {
             {
                 let mut guard = self.storage.write().expect("storage lock poisoned");
                 *guard = new_storage;
-            }
-            {
-                let mut guard = self.config.write().expect("config lock poisoned");
-                *guard = config;
             }
             self.cache.invalidate();
         }

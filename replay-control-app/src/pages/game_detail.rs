@@ -5,7 +5,7 @@ use server_fn::ServerFnError;
 
 use crate::i18n::{use_i18n, t};
 use crate::pages::ErrorDisplay;
-use crate::server_fns::{self, ArcadeMetadata, RomDetail};
+use crate::server_fns::{self, RomDetail};
 use crate::util::format_size;
 
 #[component]
@@ -46,21 +46,16 @@ pub fn GameDetailPage() -> impl IntoView {
 fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let i18n = use_i18n();
 
-    let game_name = detail
-        .rom
-        .game
-        .display_name
-        .clone()
-        .unwrap_or_else(|| detail.rom.game.rom_filename.clone());
+    let game = &detail.game;
+    let game_name = game.display_name.clone();
     let game_name_sv = StoredValue::new(game_name.clone());
-    let filename_sv = StoredValue::new(detail.rom.game.rom_filename.clone());
-    let relative_path_sv = StoredValue::new(detail.rom.game.rom_path.clone());
+    let filename_sv = StoredValue::new(game.rom_filename.clone());
+    let relative_path_sv = StoredValue::new(game.rom_path.clone());
     let system_sv = StoredValue::new(system.clone());
-    let system_display = detail.rom.game.system_display.clone();
-    let size_display = format_size(detail.rom.size_bytes);
-    let ext = detail
-        .rom
-        .game
+    let system_display = game.system_display.clone();
+    let size_display = format_size(detail.size_bytes);
+    let has_arcade = game.rotation.is_some();
+    let ext = game
         .rom_filename
         .rsplit('.')
         .next()
@@ -69,15 +64,38 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let back_href = format!("/games/{system}");
 
     let is_favorite = RwSignal::new(detail.is_favorite);
-    let arcade_info = detail.arcade_info.clone();
-    let has_arcade = arcade_info.is_some();
+
+    // Metadata fields
+    let has_year = !game.year.is_empty();
+    let has_developer = !game.developer.is_empty();
+    let has_genre = !game.genre.is_empty();
+    let has_players = game.players > 0;
+    let year = StoredValue::new(game.year.clone());
+    let developer = StoredValue::new(game.developer.clone());
+    let genre = StoredValue::new(game.genre.clone());
+    let players_str = if game.players > 0 {
+        game.players.to_string()
+    } else {
+        String::new()
+    };
+
+    // Arcade-specific fields
+    let rotation = game.rotation.clone();
+    let driver_status = game.driver_status.clone();
+    let is_clone = game.is_clone.unwrap_or(false);
+    let parent_rom = game.parent_rom.clone();
+    let arcade_category = StoredValue::new(game.arcade_category.clone());
+    let has_category = game.arcade_category.is_some();
+
+    // Console-specific fields
+    let region = game.region.clone();
 
     // Delete confirmation state
     let confirming_delete = RwSignal::new(false);
 
     // Rename state
     let is_renaming = RwSignal::new(false);
-    let rename_value = RwSignal::new(detail.rom.game.rom_filename.clone());
+    let rename_value = RwSignal::new(game.rom_filename.clone());
 
     // Toggle favorite
     let on_toggle_fav = move |_| {
@@ -154,8 +172,74 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             </div>
         </section>
 
-        // Arcade Info (if applicable)
-        {arcade_info.map(|info| view! { <ArcadeInfoSection info /> })}
+        // Game Metadata (unified for all systems)
+        <section class="section">
+            <h2 class="section-title">{move || if has_arcade {
+                t(i18n.locale.get(), "game_detail.arcade_info")
+            } else {
+                t(i18n.locale.get(), "game_detail.metadata")
+            }}</h2>
+            <div class="game-meta-grid">
+                <Show when=move || has_year>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.year")}</span>
+                        <span class="game-meta-value">{year.get_value()}</span>
+                    </div>
+                </Show>
+                <Show when=move || has_developer>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.developer")}</span>
+                        <span class="game-meta-value">{developer.get_value()}</span>
+                    </div>
+                </Show>
+                <Show when=move || has_genre>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.genre")}</span>
+                        <span class="game-meta-value">{genre.get_value()}</span>
+                    </div>
+                </Show>
+                <Show when=move || has_players>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.players")}</span>
+                        <span class="game-meta-value">{players_str.clone()}</span>
+                    </div>
+                </Show>
+
+                // Arcade-specific fields
+                {rotation.map(|r| view! {
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.rotation")}</span>
+                        <span class="game-meta-value">{r}</span>
+                    </div>
+                })}
+                {driver_status.map(|s| view! {
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.status")}</span>
+                        <span class="game-meta-value">{s}</span>
+                    </div>
+                })}
+                <Show when=move || has_category>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.raw_category")}</span>
+                        <span class="game-meta-value">{arcade_category.get_value()}</span>
+                    </div>
+                </Show>
+                <Show when=move || is_clone>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.parent_rom")}</span>
+                        <span class="game-meta-value">{parent_rom.clone()}</span>
+                    </div>
+                </Show>
+
+                // Console-specific fields
+                {region.map(|r| view! {
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.region")}</span>
+                        <span class="game-meta-value">{r}</span>
+                    </div>
+                })}
+            </div>
+        </section>
 
         // Description
         <section class="section game-section">
@@ -325,62 +409,3 @@ fn GameDeleteAction(
     }
 }
 
-#[component]
-fn ArcadeInfoSection(info: ArcadeMetadata) -> impl IntoView {
-    let i18n = use_i18n();
-
-    let year = StoredValue::new(info.year);
-    let manufacturer = StoredValue::new(info.manufacturer);
-    let players = info.players;
-    let rotation = info.rotation;
-    let category = StoredValue::new(info.category);
-    let is_clone = info.is_clone;
-    let parent = info.parent;
-
-    let has_year = !year.get_value().is_empty();
-    let has_manufacturer = !manufacturer.get_value().is_empty();
-    let has_players = players != 0;
-    let has_category = !category.get_value().is_empty();
-
-    view! {
-        <section class="section">
-            <h2 class="section-title">{move || t(i18n.locale.get(), "game_detail.arcade_info")}</h2>
-            <div class="game-meta-grid">
-                <Show when=move || has_year>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.year")}</span>
-                        <span class="game-meta-value">{year.get_value()}</span>
-                    </div>
-                </Show>
-                <Show when=move || has_manufacturer>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.manufacturer")}</span>
-                        <span class="game-meta-value">{manufacturer.get_value()}</span>
-                    </div>
-                </Show>
-                <Show when=move || has_players>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.players")}</span>
-                        <span class="game-meta-value">{players.to_string()}</span>
-                    </div>
-                </Show>
-                <div class="game-meta-item">
-                    <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.rotation")}</span>
-                    <span class="game-meta-value">{rotation.clone()}</span>
-                </div>
-                <Show when=move || has_category>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.category")}</span>
-                        <span class="game-meta-value">{category.get_value()}</span>
-                    </div>
-                </Show>
-                <Show when=move || is_clone>
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.parent_rom")}</span>
-                        <span class="game-meta-value">{parent.clone()}</span>
-                    </div>
-                </Show>
-            </div>
-        </section>
-    }
-}

@@ -21,6 +21,8 @@ pub struct CanonicalGame {
     pub developer: &'static str,
     /// Max players (0 = unknown).
     pub players: u8,
+    /// Normalized genre from shared taxonomy (e.g., "Platform"). Empty if unknown.
+    pub normalized_genre: &'static str,
 }
 
 /// Metadata for a specific ROM file variant.

@@ -7,7 +7,7 @@ use crate::pages::ErrorDisplay;
 use crate::server_fns;
 
 #[component]
-pub fn ThemePage() -> impl IntoView {
+pub fn SkinPage() -> impl IntoView {
     let i18n = use_i18n();
     let skins = Resource::new(|| (), |_| server_fns::get_skins());
 
@@ -17,14 +17,14 @@ pub fn ThemePage() -> impl IntoView {
                 <A href="/more" attr:class="back-btn">
                     {move || t(i18n.locale.get(), "games.back")}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "theme.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), "skin.title")}</h2>
             </div>
 
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                 <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
-                        let (current, skins) = skins.await?;
-                        Ok::<_, ServerFnError>(view! { <SkinGrid current skins /> })
+                        let (current, sync, skins) = skins.await?;
+                        Ok::<_, ServerFnError>(view! { <SkinGrid current sync skins /> })
                     })}
                 </Suspense>
             </ErrorBoundary>
@@ -33,21 +33,55 @@ pub fn ThemePage() -> impl IntoView {
 }
 
 #[component]
-fn SkinGrid(current: u32, skins: Vec<server_fns::SkinInfo>) -> impl IntoView {
+fn SkinGrid(current: u32, sync: bool, skins: Vec<server_fns::SkinInfo>) -> impl IntoView {
     let i18n = use_i18n();
     let active = RwSignal::new(current);
+    let sync_enabled = RwSignal::new(sync);
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
+
+    let on_toggle_sync = move |_| {
+        let new_sync = !sync_enabled.get_untracked();
+        saving.set(true);
+        status.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::set_skin_sync(new_sync).await {
+                Ok(()) => {
+                    sync_enabled.set(new_sync);
+                }
+                Err(e) => {
+                    status.set(Some((false, e.to_string())));
+                }
+            }
+            saving.set(false);
+        });
+    };
 
     let cards = skins
         .into_iter()
         .map(|skin| {
-            view! { <SkinCard skin active saving status /> }
+            view! { <SkinCard skin active sync_enabled saving status /> }
         })
         .collect::<Vec<_>>();
 
     view! {
-        <p class="form-hint">{move || t(i18n.locale.get(), "theme.synced")}</p>
+        <div class="form-field form-field-check">
+            <label class="form-label">{move || t(i18n.locale.get(), "skin.sync")}</label>
+            <input type="checkbox"
+                class="form-checkbox"
+                prop:checked=move || sync_enabled.get()
+                on:change=on_toggle_sync
+                disabled=move || saving.get()
+            />
+        </div>
+        <p class="form-hint">{move || {
+            let locale = i18n.locale.get();
+            if sync_enabled.get() {
+                t(locale, "skin.sync_hint")
+            } else {
+                t(locale, "skin.hint")
+            }
+        }}</p>
         {move || status.get().map(|(ok, msg)| {
             let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
             view! { <div class=class>{msg}</div> }
@@ -62,6 +96,7 @@ fn SkinGrid(current: u32, skins: Vec<server_fns::SkinInfo>) -> impl IntoView {
 fn SkinCard(
     skin: server_fns::SkinInfo,
     active: RwSignal<u32>,
+    sync_enabled: RwSignal<bool>,
     saving: RwSignal<bool>,
     status: RwSignal<Option<(bool, String)>>,
 ) -> impl IntoView {
@@ -69,6 +104,7 @@ fn SkinCard(
     let index = skin.index;
 
     let is_active = move || active.get() == index;
+    let is_disabled = move || saving.get() || sync_enabled.get();
     let card_class = move || {
         if is_active() {
             "skin-card skin-card-active"
@@ -77,20 +113,18 @@ fn SkinCard(
         }
     };
 
+    let style = format!(
+        "background:{};border-color:{};color:{}",
+        skin.surface, skin.border, skin.text
+    );
+
     let bg = skin.bg.clone();
-    let surface = skin.surface.clone();
-    let border = skin.border.clone();
-    let text = skin.text.clone();
     let accent = skin.accent.clone();
     let accent_hover = skin.accent_hover.clone();
     let text_secondary = skin.text_secondary.clone();
 
-    let style = format!(
-        "background:{surface};border-color:{border};color:{text}"
-    );
-
     let on_click = move |_| {
-        if saving.get_untracked() || active.get_untracked() == index {
+        if is_disabled() || active.get_untracked() == index {
             return;
         }
         saving.set(true);
@@ -100,7 +134,7 @@ fn SkinCard(
                 Ok(()) => {
                     active.set(index);
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "theme.applied").to_string())));
+                    status.set(Some((true, t(locale, "skin.applied").to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -115,7 +149,7 @@ fn SkinCard(
             class=card_class
             style=style
             on:click=on_click
-            disabled=move || saving.get()
+            disabled=is_disabled
         >
             <div class="skin-preview" style=format!("background:{bg}")>
                 <div class="skin-preview-bar" style=format!("background:{accent}")></div>
@@ -124,7 +158,7 @@ fn SkinCard(
             </div>
             <div class="skin-name">{skin.name}</div>
             <Show when=is_active>
-                <span class="skin-badge">{move || t(i18n.locale.get(), "theme.current")}</span>
+                <span class="skin-badge">{move || t(i18n.locale.get(), "skin.current")}</span>
             </Show>
         </button>
     }

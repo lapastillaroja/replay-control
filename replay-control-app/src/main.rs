@@ -83,6 +83,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::OrganizeFavorites>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSkins>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SetSkin>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SetSkinSync>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveHostname>();
 

@@ -57,20 +57,3 @@ pub struct RecentEntry {
     pub last_played: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RomDetail {
-    pub rom: RomEntry,
-    pub is_favorite: bool,
-    pub arcade_info: Option<ArcadeMetadata>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArcadeMetadata {
-    pub year: String,
-    pub manufacturer: String,
-    pub players: u8,
-    pub rotation: String,
-    pub category: String,
-    pub is_clone: bool,
-    pub parent: String,
-}

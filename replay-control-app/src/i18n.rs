@@ -126,7 +126,6 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         // More page
         "more.title" => "More",
         "more.upload" => "Upload ROMs",
-        "more.backup" => "Backup & Restore",
         "more.wifi" => "Wi-Fi Configuration",
         "more.nfs" => "NFS Share Settings",
         "more.system_info" => "System Info",
@@ -143,12 +142,14 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.storage_changed" => "Storage updated",
         "more.storage_unchanged" => "Storage unchanged",
 
-        // Theme
-        "more.theme" => "Theme",
-        "theme.title" => "Theme",
-        "theme.current" => "Current",
-        "theme.synced" => "Select a theme. Reload the page to see the changes.",
-        "theme.applied" => "Theme saved. Reload to see the new theme.",
+        // Skin
+        "more.skin" => "Skin",
+        "skin.title" => "Skin",
+        "skin.current" => "Current",
+        "skin.hint" => "Select a skin. Reload the page to see the changes.",
+        "skin.applied" => "Skin saved. Reload to see the new skin.",
+        "skin.sync" => "Sync with ReplayOS",
+        "skin.sync_hint" => "When enabled, the app skin follows the ReplayOS skin setting.",
 
         // WiFi configuration
         "wifi.title" => "Wi-Fi Configuration",
@@ -190,6 +191,12 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.rotation" => "Rotation",
         "game_detail.category" => "Category",
         "game_detail.parent_rom" => "Parent ROM",
+        "game_detail.metadata" => "Metadata",
+        "game_detail.genre" => "Genre",
+        "game_detail.developer" => "Developer",
+        "game_detail.status" => "Status",
+        "game_detail.raw_category" => "Raw Category",
+        "game_detail.region" => "Region",
         "game_detail.description" => "Description",
         "game_detail.no_description" => "No description available",
         "game_detail.screenshots" => "Screenshots",
