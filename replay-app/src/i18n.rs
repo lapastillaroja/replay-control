@@ -61,12 +61,14 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "home.systems" => "Systems",
         "home.no_games_played" => "No games played yet",
         "home.no_recent" => "No recent games",
+        "home.no_systems" => "No systems with games",
 
         // Stats
         "stats.games" => "Games",
         "stats.systems" => "Systems",
         "stats.favorites" => "Favorites",
         "stats.used" => "Used",
+        "stats.storage" => "Storage",
 
         // Games page
         "games.systems" => "Systems",

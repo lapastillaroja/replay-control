@@ -87,6 +87,7 @@ pub fn HomePage() -> impl IntoView {
                                     <StatCard value=info.systems_with_games.to_string() label=t(locale, "stats.systems") />
                                     <StatCard value=info.total_favorites.to_string() label=t(locale, "stats.favorites") />
                                     <StatCard value=format_size(info.disk_used_bytes) label=t(locale, "stats.used") />
+                                    <StatCard value=info.storage_kind.to_uppercase() label=t(locale, "stats.storage") />
                                 </div>
                             })
                         })}
@@ -102,20 +103,24 @@ pub fn HomePage() -> impl IntoView {
                             let locale = i18n.locale.get();
                             let systems = systems.await?;
                             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
-                            Ok::<_, ServerFnError>(view! {
-                                <div class="systems-grid">
-                                    {with_games.into_iter().map(|sys| {
-                                        let href = format!("/games/{}", sys.folder_name);
-                                        let name = sys.display_name.clone();
-                                        let count = format!("{} {}", sys.game_count, t(locale, "stats.games").to_lowercase());
-                                        view! {
-                                            <A href=href attr:class="system-card">
-                                                <div class="system-card-name">{name}</div>
-                                                <div class="system-card-count">{count}</div>
-                                            </A>
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </div>
+                            Ok::<_, ServerFnError>(if with_games.is_empty() {
+                                view! { <p class="empty-state">{t(locale, "home.no_systems")}</p> }.into_any()
+                            } else {
+                                view! {
+                                    <div class="systems-grid">
+                                        {with_games.into_iter().map(|sys| {
+                                            let href = format!("/games/{}", sys.folder_name);
+                                            let name = sys.display_name.clone();
+                                            let count = format!("{} {}", sys.game_count, t(locale, "stats.games").to_lowercase());
+                                            view! {
+                                                <A href=href attr:class="system-card">
+                                                    <div class="system-card-name">{name}</div>
+                                                    <div class="system-card-count">{count}</div>
+                                                </A>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
                             })
                         })}
                     </Suspense>
