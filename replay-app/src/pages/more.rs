@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::i18n::{use_i18n, t};
@@ -16,9 +17,9 @@ pub fn MorePage() -> impl IntoView {
             <h2 class="page-title">{move || t(i18n.locale.get(), "more.title")}</h2>
 
             <div class="menu-list">
-                <MenuItem icon="\u{1F4BE}" label_key="more.backup" />
-                <MenuItem icon="\u{1F4F6}" label_key="more.wifi" />
-                <MenuItem icon="\u{1F4C1}" label_key="more.nfs" />
+                <MenuItem icon="\u{1F4BE}" label_key="more.backup" href=None />
+                <MenuItem icon="\u{1F4F6}" label_key="more.wifi" href=Some("/more/wifi") />
+                <MenuItem icon="\u{1F4C1}" label_key="more.nfs" href=Some("/more/nfs") />
             </div>
 
             <h3 class="section-title">{move || t(i18n.locale.get(), "more.system_info")}</h3>
@@ -45,13 +46,26 @@ pub fn MorePage() -> impl IntoView {
 }
 
 #[component]
-fn MenuItem(icon: &'static str, label_key: &'static str) -> impl IntoView {
+fn MenuItem(icon: &'static str, label_key: &'static str, href: Option<&'static str>) -> impl IntoView {
     let i18n = use_i18n();
-    view! {
-        <div class="menu-item">
-            <span class="menu-icon">{icon}</span>
-            <span class="menu-label">{move || t(i18n.locale.get(), label_key)}</span>
-        </div>
+    let content = view! {
+        <span class="menu-icon">{icon}</span>
+        <span class="menu-label">{move || t(i18n.locale.get(), label_key)}</span>
+    };
+
+    if let Some(href) = href {
+        view! {
+            <A href=href attr:class="menu-item">
+                {content}
+                <span class="menu-chevron">{"\u{203A}"}</span>
+            </A>
+        }.into_any()
+    } else {
+        view! {
+            <div class="menu-item menu-item-disabled">
+                {content}
+            </div>
+        }.into_any()
     }
 }
 

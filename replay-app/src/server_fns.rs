@@ -95,7 +95,7 @@ pub async fn get_roms_page(
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| system.clone());
     let storage = state.storage();
-    let all_roms = replay_core::roms::list_roms(&storage, &system)
+    let all_roms = state.cache.get_roms(&storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let filtered: Vec<RomEntry> = if search.is_empty() {
@@ -213,7 +213,7 @@ pub struct ArcadeMetadata {
 pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let all_roms = replay_core::roms::list_roms(&storage, &system)
+    let all_roms = state.cache.get_roms(&storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let rom = all_roms
@@ -248,6 +248,105 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         is_favorite,
         arcade_info,
     })
+}
+
+/// WiFi configuration (password is never sent to the client).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WifiConfig {
+    pub ssid: String,
+    pub country: String,
+    pub mode: String,
+    pub hidden: bool,
+    pub has_password: bool,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_wifi_config() -> Result<WifiConfig, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let config = state.config.read().expect("config lock poisoned");
+    Ok(WifiConfig {
+        ssid: config.get("wifi_name").unwrap_or("").to_string(),
+        country: config.get("wifi_country").unwrap_or("").to_string(),
+        mode: config.get("wifi_mode").unwrap_or("transition").to_string(),
+        hidden: config.get("wifi_hidden").unwrap_or("false") == "true",
+        has_password: config
+            .get("wifi_pwd")
+            .is_some_and(|p| !p.is_empty() && p != "********"),
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn save_wifi_config(
+    ssid: String,
+    password: String,
+    country: String,
+    mode: String,
+    hidden: bool,
+) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    state
+        .update_config(|config| {
+            config.set("wifi_name", &ssid);
+            if !password.is_empty() {
+                config.set("wifi_pwd", &password);
+            }
+            config.set("wifi_country", &country);
+            config.set("wifi_mode", &mode);
+            config.set("wifi_hidden", if hidden { "true" } else { "false" });
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+/// NFS share configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NfsConfig {
+    pub server: String,
+    pub share: String,
+    pub version: String,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_nfs_config() -> Result<NfsConfig, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let config = state.config.read().expect("config lock poisoned");
+    Ok(NfsConfig {
+        server: config.get("nfs_server").unwrap_or("").to_string(),
+        share: config.get("nfs_share").unwrap_or("").to_string(),
+        version: config.get("nfs_version").unwrap_or("4").to_string(),
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn save_nfs_config(
+    server: String,
+    share: String,
+    version: String,
+) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    state
+        .update_config(|config| {
+            config.set("nfs_server", &server);
+            config.set("nfs_share", &share);
+            config.set("nfs_version", &version);
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn restart_replay_ui() -> Result<String, ServerFnError> {
+    let output = std::process::Command::new("systemctl")
+        .args(["restart", "replay"])
+        .output()
+        .map_err(|e| ServerFnError::new(format!("Failed to restart: {e}")))?;
+
+    if output.status.success() {
+        Ok("ReplayOS UI restarted".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(ServerFnError::new(format!(
+            "Restart failed: {stderr}"
+        )))
+    }
 }
 
 /// Result of a storage refresh operation.

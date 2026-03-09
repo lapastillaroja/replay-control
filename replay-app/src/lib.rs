@@ -19,6 +19,8 @@ use pages::game_detail::GameDetailPage;
 use pages::games::{GamesPage, SystemRomView};
 use pages::home::HomePage;
 use pages::more::MorePage;
+use pages::wifi::WifiPage;
+use pages::nfs::NfsPage;
 
 /// The HTML shell wrapping the App component for SSR.
 #[cfg(feature = "ssr")]
@@ -79,6 +81,8 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/favorites") view=FavoritesPage />
                         <Route path=path!("/favorites/:system") view=SystemFavoritesPage />
                         <Route path=path!("/more") view=MorePage />
+                        <Route path=path!("/more/wifi") view=WifiPage />
+                        <Route path=path!("/more/nfs") view=NfsPage />
                     </Routes>
                 </main>
 

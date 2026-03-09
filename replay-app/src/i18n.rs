@@ -113,6 +113,31 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.storage_changed" => "Storage updated",
         "more.storage_unchanged" => "Storage unchanged",
 
+        // WiFi configuration
+        "wifi.title" => "Wi-Fi Configuration",
+        "wifi.ssid" => "Network Name (SSID)",
+        "wifi.password" => "Password",
+        "wifi.country" => "Country Code",
+        "wifi.mode" => "Security Mode",
+        "wifi.hidden" => "Hidden Network",
+
+        // NFS settings
+        "nfs.title" => "NFS Share Settings",
+        "nfs.server" => "Server Address",
+        "nfs.share" => "Share Path",
+        "nfs.version" => "NFS Version",
+        "nfs.hint" => "NFS changes take effect after switching storage to NFS and restarting the ReplayOS UI.",
+
+        // Settings (shared)
+        "settings.save" => "Save",
+        "settings.saving" => "Saving...",
+        "settings.saved" => "Settings saved",
+        "settings.apply_hint" => "Restart the ReplayOS UI to apply changes.",
+        "settings.restart_ui" => "Restart ReplayOS UI",
+        "settings.restarting" => "Restarting...",
+        "settings.password_keep" => "Leave empty to keep current",
+        "settings.password_enter" => "Enter password",
+
         // Game detail page
         "game_detail.info" => "Game Info",
         "game_detail.system" => "System",

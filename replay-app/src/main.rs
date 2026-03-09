@@ -74,6 +74,11 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_app::server_fns::RenameRom>();
         server_fn::axum::register_explicit::<replay_app::server_fns::GetRomDetail>();
         server_fn::axum::register_explicit::<replay_app::server_fns::RefreshStorage>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::GetWifiConfig>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::SaveWifiConfig>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::GetNfsConfig>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::SaveNfsConfig>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::RestartReplayUi>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_app")

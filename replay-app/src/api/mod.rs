@@ -193,6 +193,18 @@ impl AppState {
         self.storage.read().expect("storage lock poisoned").clone()
     }
 
+    /// Update replay.cfg: apply the updater closure, then write back to disk.
+    pub fn update_config<F>(&self, updater: F) -> Result<(), Box<dyn std::error::Error>>
+    where
+        F: FnOnce(&mut ReplayConfig),
+    {
+        let config_path = self.config_file_path();
+        let mut config = self.config.write().expect("config lock poisoned");
+        updater(&mut config);
+        config.write_to_file(&config_path, &config_path)?;
+        Ok(())
+    }
+
     /// Re-detect storage from config (unless a CLI override was given).
     /// Returns `true` if the storage location actually changed.
     pub fn refresh_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
