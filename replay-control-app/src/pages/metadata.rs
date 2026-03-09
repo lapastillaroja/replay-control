@@ -4,23 +4,38 @@ use server_fn::ServerFnError;
 
 use crate::i18n::{use_i18n, t};
 use crate::pages::ErrorDisplay;
-use crate::server_fns;
+use crate::server_fns::{self, ImportState};
 use crate::util::format_size;
 
 #[component]
 pub fn MetadataPage() -> impl IntoView {
     let i18n = use_i18n();
     let stats = Resource::new(|| (), |_| server_fns::get_metadata_stats());
+    let coverage = Resource::new(|| (), |_| server_fns::get_system_coverage());
 
     // Import state
     let xml_path = RwSignal::new(String::new());
     let importing = RwSignal::new(false);
-    let import_result = RwSignal::new(Option::<String>::None);
+    let import_message = RwSignal::new(Option::<String>::None);
+    let progress = RwSignal::new(Option::<server_fns::ImportProgress>::None);
 
     // Clear state
     let confirming_clear = RwSignal::new(false);
     let clearing = RwSignal::new(false);
     let clear_result = RwSignal::new(Option::<String>::None);
+
+    // Check for in-progress import on page load (client-side only).
+    Effect::new(move || {
+        leptos::task::spawn_local(async move {
+            if let Ok(Some(p)) = server_fns::get_import_progress().await {
+                if p.state == ImportState::BuildingIndex || p.state == ImportState::Parsing {
+                    progress.set(Some(p));
+                    importing.set(true);
+                    poll_progress(importing, progress, import_message, stats, coverage).await;
+                }
+            }
+        });
+    });
 
     let on_import = move |_| {
         let path = xml_path.get();
@@ -28,25 +43,19 @@ pub fn MetadataPage() -> impl IntoView {
             return;
         }
         importing.set(true);
-        import_result.set(None);
+        import_message.set(None);
+        progress.set(None);
+
         leptos::task::spawn_local(async move {
             match server_fns::import_launchbox_metadata(path).await {
-                Ok(result) => {
-                    import_result.set(Some(format!(
-                        "{}: {} {}, {} {}",
-                        "Import complete",
-                        result.matched,
-                        "matched",
-                        result.inserted,
-                        "inserted",
-                    )));
-                    stats.refetch();
+                Ok(()) => {
+                    poll_progress(importing, progress, import_message, stats, coverage).await;
                 }
                 Err(e) => {
-                    import_result.set(Some(format!("Error: {e}")));
+                    import_message.set(Some(format!("Error: {e}")));
+                    importing.set(false);
                 }
             }
-            importing.set(false);
         });
     };
 
@@ -58,6 +67,7 @@ pub fn MetadataPage() -> impl IntoView {
                 Ok(()) => {
                     clear_result.set(Some("Metadata cleared".to_string()));
                     stats.refetch();
+                    coverage.refetch();
                 }
                 Err(e) => {
                     clear_result.set(Some(format!("Error: {e}")));
@@ -120,6 +130,7 @@ pub fn MetadataPage() -> impl IntoView {
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.import")}</h2>
                 <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.import_hint")}</p>
+                <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.auto_import_hint")}</p>
                 <div class="metadata-import-form">
                     <input
                         type="text"
@@ -139,9 +150,55 @@ pub fn MetadataPage() -> impl IntoView {
                         }}
                     </button>
                 </div>
-                <Show when=move || import_result.get().is_some()>
-                    <p class="settings-saved">{move || import_result.get().unwrap_or_default()}</p>
+
+                // Progress display
+                <Show when=move || progress.read().is_some()>
+                    <ImportProgressDisplay progress />
                 </Show>
+
+                <Show when=move || import_message.read().is_some()>
+                    <p class="settings-saved">{move || import_message.get().unwrap_or_default()}</p>
+                </Show>
+            </section>
+
+            // Per-system coverage
+            <section class="section">
+                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.coverage")}</h2>
+                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                        {move || Suspend::new(async move {
+                            let locale = i18n.locale.get();
+                            let data = coverage.await?;
+                            Ok::<_, ServerFnError>(if data.is_empty() || data.iter().all(|c| c.with_metadata == 0) {
+                                view! {
+                                    <p class="game-section-empty">{t(locale, "metadata.no_coverage")}</p>
+                                }.into_any()
+                            } else {
+                                let rows = data.into_iter()
+                                    .filter(|c| c.with_metadata > 0)
+                                    .map(|c| {
+                                        let pct = if c.total_games > 0 {
+                                            (c.with_metadata as f64 / c.total_games as f64 * 100.0) as u32
+                                        } else { 0 };
+                                        view! {
+                                            <div class="info-row">
+                                                <span class="info-label">{c.display_name}</span>
+                                                <span class="info-value">
+                                                    {format!("{}/{} ({}%)", c.with_metadata, c.total_games, pct)}
+                                                </span>
+                                            </div>
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                                view! {
+                                    <div class="info-grid">
+                                        {rows}
+                                    </div>
+                                }.into_any()
+                            })
+                        })}
+                    </Suspense>
+                </ErrorBoundary>
             </section>
 
             // Cache management section
@@ -175,7 +232,7 @@ pub fn MetadataPage() -> impl IntoView {
                         </button>
                     </div>
                 </Show>
-                <Show when=move || clear_result.get().is_some()>
+                <Show when=move || clear_result.read().is_some()>
                     <p class="settings-saved">{move || clear_result.get().unwrap_or_default()}</p>
                 </Show>
             </section>
@@ -185,6 +242,95 @@ pub fn MetadataPage() -> impl IntoView {
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.attribution")}</h2>
                 <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.attribution_text")}</p>
             </section>
+        </div>
+    }
+}
+
+/// Polls the server for import progress until complete or failed.
+#[allow(unused_variables, unreachable_code)]
+async fn poll_progress(
+    importing: RwSignal<bool>,
+    progress: RwSignal<Option<server_fns::ImportProgress>>,
+    import_message: RwSignal<Option<String>>,
+    stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
+    coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
+) {
+    loop {
+        // Sleep 1 second between polls.
+        #[cfg(target_arch = "wasm32")]
+        gloo_timers::future::TimeoutFuture::new(1_000).await;
+        #[cfg(not(target_arch = "wasm32"))]
+        break;
+
+        match server_fns::get_import_progress().await {
+            Ok(Some(p)) => {
+                let done = matches!(p.state, ImportState::Complete | ImportState::Failed);
+                if p.state == ImportState::Complete {
+                    import_message.set(Some(format!(
+                        "Import complete: {} matched, {} inserted ({}s)",
+                        p.matched, p.inserted, p.elapsed_secs,
+                    )));
+                } else if p.state == ImportState::Failed {
+                    import_message.set(Some(format!(
+                        "Import failed: {}",
+                        p.error.as_deref().unwrap_or("unknown error"),
+                    )));
+                }
+                progress.set(Some(p));
+                if done {
+                    importing.set(false);
+                    stats.refetch();
+                    coverage.refetch();
+                    break;
+                }
+            }
+            _ => break,
+        }
+    }
+}
+
+/// Displays real-time import progress.
+#[component]
+fn ImportProgressDisplay(
+    progress: RwSignal<Option<server_fns::ImportProgress>>,
+) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <div class="import-progress">
+            {move || {
+                let locale = i18n.locale.get();
+                let p = progress.get();
+                match p {
+                    Some(p) => {
+                        let state_text = match p.state {
+                            ImportState::BuildingIndex => t(locale, "metadata.building_index").to_string(),
+                            ImportState::Parsing => format!(
+                                "{} ({} {}, {} {})",
+                                t(locale, "metadata.parsing_xml"),
+                                p.processed,
+                                t(locale, "metadata.processed"),
+                                p.matched,
+                                t(locale, "metadata.matched"),
+                            ),
+                            ImportState::Complete => t(locale, "metadata.import_complete").to_string(),
+                            ImportState::Failed => format!(
+                                "{}: {}",
+                                t(locale, "metadata.import_failed"),
+                                p.error.as_deref().unwrap_or(""),
+                            ),
+                        };
+                        let elapsed = format!("{}s", p.elapsed_secs);
+                        view! {
+                            <div class="import-progress-bar">
+                                <span class="import-progress-text">{state_text}</span>
+                                <span class="import-progress-time">{elapsed}</span>
+                            </div>
+                        }.into_any()
+                    }
+                    None => view! { <span></span> }.into_any(),
+                }
+            }}
         </div>
     }
 }

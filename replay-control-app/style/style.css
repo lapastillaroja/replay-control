@@ -1036,6 +1036,30 @@ select.form-input option {
     }
 }
 
+.import-progress {
+    margin-top: 8px;
+}
+
+.import-progress-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+}
+
+.import-progress-text {
+    color: var(--text);
+}
+
+.import-progress-time {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
 .game-actions {
     display: flex;
     flex-direction: column;

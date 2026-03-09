@@ -75,3 +75,32 @@ pub struct MetadataStats {
     pub db_size_bytes: u64,
 }
 
+/// Mirror of `replay_control_core::metadata_db::ImportState` for WASM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImportState {
+    BuildingIndex,
+    Parsing,
+    Complete,
+    Failed,
+}
+
+/// Mirror of `replay_control_core::metadata_db::ImportProgress` for WASM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportProgress {
+    pub state: ImportState,
+    pub processed: usize,
+    pub matched: usize,
+    pub inserted: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
+/// Per-system metadata coverage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemCoverage {
+    pub system: String,
+    pub display_name: String,
+    pub total_games: usize,
+    pub with_metadata: usize,
+}
+

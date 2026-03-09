@@ -133,6 +133,8 @@ pub struct AppState {
     pub skin_override: Arc<std::sync::RwLock<Option<u32>>>,
     /// Metadata DB handle (lazily opened on first access).
     metadata_db: Arc<std::sync::Mutex<Option<replay_control_core::metadata_db::MetadataDb>>>,
+    /// Progress of the current metadata import (None = no import running).
+    pub import_progress: Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
 }
 
 impl AppState {
@@ -191,6 +193,7 @@ impl AppState {
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(None)),
             metadata_db: Arc::new(std::sync::Mutex::new(None)),
+            import_progress: Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -294,6 +297,156 @@ impl AppState {
             p.join("config/replay.cfg")
         } else {
             PathBuf::from("/media/sd/config/replay.cfg")
+        }
+    }
+
+    /// Start a background metadata import from a LaunchBox XML file.
+    /// Returns `false` if an import is already running.
+    pub fn start_import(&self, xml_path: PathBuf) -> bool {
+        use replay_control_core::metadata_db::{ImportProgress, ImportState};
+
+        // Check if already running.
+        {
+            let guard = self.import_progress.read().expect("import_progress lock poisoned");
+            if let Some(ref p) = *guard {
+                if p.state == ImportState::BuildingIndex || p.state == ImportState::Parsing {
+                    return false;
+                }
+            }
+        }
+
+        // Set initial progress.
+        {
+            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            *guard = Some(ImportProgress {
+                state: ImportState::BuildingIndex,
+                processed: 0,
+                matched: 0,
+                inserted: 0,
+                elapsed_secs: 0,
+                error: None,
+            });
+        }
+
+        let state = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let start = std::time::Instant::now();
+            let storage_root = state.storage().root.clone();
+
+            // Build ROM index.
+            let rom_index = replay_control_core::launchbox::build_rom_index(&storage_root);
+
+            // Update progress to Parsing.
+            {
+                let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
+                if let Some(ref mut p) = *guard {
+                    p.state = ImportState::Parsing;
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+            }
+
+            // Take DB from state (so we don't hold the mutex during import).
+            let db = {
+                let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+                guard.take()
+            };
+            let mut db = match db {
+                Some(db) => db,
+                None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
+                    Ok(db) => db,
+                    Err(e) => {
+                        let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
+                        if let Some(ref mut p) = *guard {
+                            p.state = ImportState::Failed;
+                            p.error = Some(format!("Cannot open metadata DB: {e}"));
+                            p.elapsed_secs = start.elapsed().as_secs();
+                        }
+                        return;
+                    }
+                },
+            };
+
+            let progress_ref = state.import_progress.clone();
+            let start_ref = start;
+            let result = replay_control_core::launchbox::import_launchbox(
+                &xml_path,
+                &mut db,
+                &rom_index,
+                |processed, matched, inserted| {
+                    let mut guard = progress_ref.write().expect("import_progress lock poisoned");
+                    if let Some(ref mut p) = *guard {
+                        p.processed = processed;
+                        p.matched = matched;
+                        p.inserted = inserted;
+                        p.elapsed_secs = start_ref.elapsed().as_secs();
+                    }
+                },
+            );
+
+            // Put DB back.
+            {
+                let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+                *guard = Some(db);
+            }
+
+            // Update final progress.
+            {
+                let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
+                match result {
+                    Ok(stats) => {
+                        *guard = Some(ImportProgress {
+                            state: ImportState::Complete,
+                            processed: stats.total_source,
+                            matched: stats.matched,
+                            inserted: stats.inserted,
+                            elapsed_secs: start.elapsed().as_secs(),
+                            error: None,
+                        });
+                    }
+                    Err(e) => {
+                        if let Some(ref mut p) = *guard {
+                            p.state = ImportState::Failed;
+                            p.error = Some(e.to_string());
+                            p.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    }
+                }
+            }
+        });
+
+        true
+    }
+
+    /// Auto-import metadata on startup if Metadata.xml exists and DB is empty.
+    pub fn spawn_auto_import(&self) {
+        use replay_control_core::metadata_db::RC_DIR;
+
+        let storage_root = self.storage().root.clone();
+        let xml_path = storage_root.join(RC_DIR).join("Metadata.xml");
+
+        if !xml_path.exists() {
+            tracing::debug!(
+                "No Metadata.xml at {}, skipping auto-import",
+                xml_path.display()
+            );
+            return;
+        }
+
+        let should_import = if let Some(guard) = self.metadata_db() {
+            guard
+                .as_ref()
+                .and_then(|db| db.is_empty().ok())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if should_import {
+            tracing::info!(
+                "Auto-importing metadata from {}",
+                xml_path.display()
+            );
+            self.start_import(xml_path);
         }
     }
 

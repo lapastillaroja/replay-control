@@ -9,8 +9,37 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use crate::error::{Error, Result};
 
 /// Directory name for Replay Control data on ROM storage.
-const RC_DIR: &str = ".replay-control";
+pub const RC_DIR: &str = ".replay-control";
 const DB_FILE: &str = "metadata.db";
+
+/// State of a metadata import operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ImportState {
+    BuildingIndex,
+    Parsing,
+    Complete,
+    Failed,
+}
+
+/// Progress of an ongoing metadata import.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImportProgress {
+    pub state: ImportState,
+    pub processed: usize,
+    pub matched: usize,
+    pub inserted: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
+/// Per-system metadata coverage.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SystemCoverage {
+    pub system: String,
+    pub display_name: String,
+    pub total_games: usize,
+    pub with_metadata: usize,
+}
 
 /// Cached metadata for a single game.
 #[derive(Debug, Clone)]
@@ -265,6 +294,37 @@ impl MetadataDb {
             .execute("VACUUM", [])
             .map_err(|e| Error::Other(format!("Vacuum failed: {e}")))?;
         Ok(())
+    }
+
+    /// Check if the database has any entries.
+    pub fn is_empty(&self) -> Result<bool> {
+        let count: usize = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM game_metadata", [], |row| row.get(0))
+            .map_err(|e| Error::Other(format!("Count query failed: {e}")))?;
+        Ok(count == 0)
+    }
+
+    /// Count metadata entries per system, ordered by count descending.
+    pub fn entries_per_system(&self) -> Result<Vec<(String, usize)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system, COUNT(*) as cnt FROM game_metadata GROUP BY system ORDER BY cnt DESC",
+            )
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+
+        let mut result = Vec::new();
+        for row in rows.flatten() {
+            result.push(row);
+        }
+        Ok(result)
     }
 
     /// Get path to the database file.

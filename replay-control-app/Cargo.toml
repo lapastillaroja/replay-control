@@ -40,12 +40,14 @@ web-sys = { version = "0.3", features = [
     "IntersectionObserverInit",
     "IntersectionObserverEntry",
 ], optional = true }
+gloo-timers = { version = "0.3", features = ["futures"], optional = true }
 
 [features]
 default = []
 hydrate = [
     "leptos/hydrate",
     "dep:web-sys",
+    "dep:gloo-timers",
 ]
 ssr = [
     "leptos/ssr",

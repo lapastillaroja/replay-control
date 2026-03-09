@@ -58,6 +58,9 @@ mod ssr {
         // Spawn background storage re-detection task.
         app_state.clone().spawn_storage_watcher();
 
+        // Auto-import metadata if Metadata.xml exists and DB is empty.
+        app_state.spawn_auto_import();
+
         // Explicitly register all server functions (inventory auto-registration
         // doesn't work when the functions are in a library crate).
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetInfo>();
@@ -89,6 +92,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportLaunchboxMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearMetadata>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImportProgress>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemCoverage>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")

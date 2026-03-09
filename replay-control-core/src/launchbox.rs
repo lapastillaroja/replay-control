@@ -144,6 +144,7 @@ pub fn import_launchbox(
     xml_path: &Path,
     db: &mut MetadataDb,
     rom_index: &HashMap<(String, String), Vec<String>>,
+    mut on_progress: impl FnMut(usize, usize, usize),
 ) -> Result<ImportStats> {
     let file = std::fs::File::open(xml_path)
         .map_err(|e| Error::io(xml_path, e))?;
@@ -205,6 +206,11 @@ pub fn import_launchbox(
                 stats.inserted += n;
             }
             batch.clear();
+        }
+
+        // Report progress every 5000 entries.
+        if stats.total_source % 5000 == 0 {
+            on_progress(stats.total_source, stats.matched, stats.inserted);
         }
     })?;
 
