@@ -167,4 +167,40 @@ mod tests {
         let config = ReplayConfig::parse("").unwrap();
         assert_eq!(config.storage_mode(), "sd");
     }
+
+    #[test]
+    fn write_preserves_comments_and_updates_values() {
+        use std::io::Write;
+
+        let original = "# RePlayOS config\nsystem_storage = \"sd\"\nwifi_name = \"OldWifi\"\n";
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "replay-config-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let original_path = tmp_dir.join("original.cfg");
+        let output_path = tmp_dir.join("output.cfg");
+        std::fs::File::create(&original_path)
+            .unwrap()
+            .write_all(original.as_bytes())
+            .unwrap();
+
+        let mut config = ReplayConfig::parse(original).unwrap();
+        config.set("wifi_name", "NewWifi");
+        config.set("video_mode", "5");
+        config.write_to_file(&original_path, &output_path).unwrap();
+
+        let result = std::fs::read_to_string(&output_path).unwrap();
+        assert!(result.contains("# RePlayOS config"), "comment preserved");
+        assert!(result.contains("wifi_name = \"NewWifi\""), "value updated");
+        assert!(result.contains("system_storage = \"sd\""), "unchanged key preserved");
+        assert!(result.contains("video_mode = \"5\""), "new key appended");
+    }
+
+    #[test]
+    fn parse_error_on_malformed_line() {
+        let result = ReplayConfig::parse("no_equals_sign");
+        assert!(result.is_err());
+    }
 }

@@ -378,10 +378,8 @@ fn normalize_region(region: &str) -> String {
 
 /// Expand compact region codes like "UE" to "USA, Europe".
 fn expand_region_code(code: &str) -> String {
-    // Map of single-letter codes
     let mut parts = Vec::new();
-    let mut chars = code.chars().peekable();
-    while let Some(c) = chars.next() {
+    for c in code.chars() {
         match c {
             'J' => parts.push("Japan"),
             'U' => parts.push("USA"),
@@ -514,14 +512,12 @@ impl<'a> Iterator for ParenTags<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let open = self.remaining.find('(')?;
-            let after_open = &self.remaining[open + 1..];
-            let close = after_open.find(')')?;
-            let tag = &after_open[..close];
-            self.remaining = &after_open[close + 1..];
-            return Some(tag);
-        }
+        let open = self.remaining.find('(')?;
+        let after_open = &self.remaining[open + 1..];
+        let close = after_open.find(')')?;
+        let tag = &after_open[..close];
+        self.remaining = &after_open[close + 1..];
+        Some(tag)
     }
 }
 
@@ -540,14 +536,12 @@ impl<'a> Iterator for BracketTags<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let open = self.remaining.find('[')?;
-            let after_open = &self.remaining[open + 1..];
-            let close = after_open.find(']')?;
-            let tag = &after_open[..close];
-            self.remaining = &after_open[close + 1..];
-            return Some(tag);
-        }
+        let open = self.remaining.find('[')?;
+        let after_open = &self.remaining[open + 1..];
+        let close = after_open.find(']')?;
+        let tag = &after_open[..close];
+        self.remaining = &after_open[close + 1..];
+        Some(tag)
     }
 }
 

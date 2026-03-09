@@ -327,7 +327,11 @@ pub fn find_system(folder_name: &str) -> Option<&'static System> {
 /// Extract the system folder name from a favorite/recent filename.
 /// E.g., "sega_smd@Sonic.md.fav" → "sega_smd"
 pub fn system_from_fav_filename(filename: &str) -> Option<&str> {
-    filename.split('@').next()
+    let (system, rest) = filename.split_once('@')?;
+    if system.is_empty() || rest.is_empty() {
+        return None;
+    }
+    Some(system)
 }
 
 #[cfg(test)]
@@ -356,5 +360,13 @@ mod tests {
             system_from_fav_filename("arcade_fbneo@ffight.zip.fav"),
             Some("arcade_fbneo")
         );
+    }
+
+    #[test]
+    fn system_from_fav_rejects_malformed() {
+        assert_eq!(system_from_fav_filename("no_at_sign.fav"), None);
+        assert_eq!(system_from_fav_filename("@missing_system.fav"), None);
+        assert_eq!(system_from_fav_filename("system@"), None);
+        assert_eq!(system_from_fav_filename(""), None);
     }
 }
