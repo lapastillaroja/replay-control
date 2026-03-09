@@ -20,7 +20,7 @@ urlencoding = "2"
 wasm-bindgen = "0.2"
 
 # SSR-only
-replay-control-core = { path = "../replay-control-core", optional = true }
+replay-control-core = { path = "../replay-control-core", features = ["metadata"], optional = true }
 axum = { version = "0.7", features = ["multipart"], optional = true }
 leptos_axum = { version = "0.7", optional = true }
 tower-http = { version = "0.6", features = ["fs", "cors"], optional = true }

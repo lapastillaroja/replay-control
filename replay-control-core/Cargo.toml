@@ -3,12 +3,18 @@ name = "replay-control-core"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+metadata = ["dep:rusqlite", "dep:quick-xml"]
+
 [dependencies]
 phf = "0.11"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+quick-xml = { version = "0.37", optional = true }
 
 [build-dependencies]
 csv = "1"

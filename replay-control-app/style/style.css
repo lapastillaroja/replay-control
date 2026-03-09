@@ -1008,6 +1008,34 @@ select.form-input option {
     padding: 16px 0;
 }
 
+.game-description {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-line;
+}
+
+/* Metadata management page */
+.metadata-import-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+@media (min-width: 600px) {
+    .metadata-import-form {
+        flex-direction: row;
+    }
+    .metadata-import-form .rename-input {
+        flex: 1;
+    }
+    .metadata-import-form .game-action-btn {
+        width: auto;
+        white-space: nowrap;
+    }
+}
+
 .game-actions {
     display: flex;
     flex-direction: column;

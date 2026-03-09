@@ -131,6 +131,8 @@ pub struct AppState {
     /// When Some, the app uses this skin index instead of reading from replay.cfg.
     /// Set via the skin page when "Sync with ReplayOS" is disabled.
     pub skin_override: Arc<std::sync::RwLock<Option<u32>>>,
+    /// Metadata DB handle (lazily opened on first access).
+    metadata_db: Arc<std::sync::Mutex<Option<replay_control_core::metadata_db::MetadataDb>>>,
 }
 
 impl AppState {
@@ -188,6 +190,7 @@ impl AppState {
             cache: Arc::new(RomCache::new()),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(None)),
+            metadata_db: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 
@@ -195,6 +198,25 @@ impl AppState {
     /// Panics only if the lock is poisoned (program bug).
     pub fn storage(&self) -> StorageLocation {
         self.storage.read().expect("storage lock poisoned").clone()
+    }
+
+    /// Get a lock on the metadata DB, lazily opening it on first access.
+    /// Returns None if the DB can't be opened (e.g., storage not available).
+    pub fn metadata_db(&self) -> Option<std::sync::MutexGuard<'_, Option<replay_control_core::metadata_db::MetadataDb>>> {
+        let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+        if guard.is_none() {
+            let storage = self.storage();
+            match replay_control_core::metadata_db::MetadataDb::open(&storage.root) {
+                Ok(db) => {
+                    *guard = Some(db);
+                }
+                Err(e) => {
+                    tracing::debug!("Could not open metadata DB: {e}");
+                    return None;
+                }
+            }
+        }
+        Some(guard)
     }
 
     /// Get the effective skin index: override if set, otherwise from replay.cfg.

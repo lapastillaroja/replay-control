@@ -36,6 +36,11 @@ pub struct GameInfo {
 
     // --- Console-specific (None for arcade) ---
     pub region: Option<String>,
+
+    // --- External metadata (from local cache, None if not yet fetched) ---
+    pub description: Option<String>,
+    pub rating: Option<f32>,
+    pub publisher: Option<String>,
 }
 
 /// System info returned by get_info server function.
@@ -84,7 +89,7 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
         .unwrap_or_else(|| system.to_string());
     let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
 
-    if is_arcade {
+    let mut info = if is_arcade {
         let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
         match arcade_db::lookup_arcade_game(stem) {
             Some(info) => {
@@ -123,6 +128,9 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
                         Some(info.category.to_string())
                     },
                     region: None,
+                    description: None,
+                    rating: None,
+                    publisher: None,
                 }
             }
             None => GameInfo {
@@ -141,6 +149,9 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
                 parent_rom: None,
                 arcade_category: None,
                 region: None,
+                description: None,
+                rating: None,
+                publisher: None,
             },
         }
     } else {
@@ -201,6 +212,37 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
             } else {
                 Some(region.to_string())
             },
+            description: None,
+            rating: None,
+            publisher: None,
+        }
+    };
+
+    // Enrich with external metadata from local cache.
+    enrich_from_metadata_cache(&mut info);
+
+    info
+}
+
+/// Look up cached external metadata and enrich the GameInfo.
+#[cfg(feature = "ssr")]
+fn enrich_from_metadata_cache(info: &mut GameInfo) {
+    let state = leptos::prelude::expect_context::<crate::api::AppState>();
+    if let Some(guard) = state.metadata_db() {
+        if let Some(db) = guard.as_ref() {
+            match db.lookup(&info.system, &info.rom_filename) {
+                Ok(Some(meta)) => {
+                    info.description = meta.description;
+                    info.rating = meta.rating.map(|r| r as f32);
+                    if meta.publisher.is_some() {
+                        info.publisher = meta.publisher;
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::debug!("Metadata lookup failed for {}/{}: {e}", info.system, info.rom_filename);
+                }
+            }
         }
     }
 }
@@ -720,4 +762,59 @@ pub async fn refresh_storage() -> Result<RefreshResult, ServerFnError> {
         storage_kind: format!("{:?}", storage.kind).to_lowercase(),
         storage_root: storage.root.display().to_string(),
     })
+}
+
+// ── Metadata management ──────────────────────────────────────────
+
+#[cfg(feature = "ssr")]
+pub use replay_control_core::metadata_db::{ImportStats, MetadataStats};
+#[cfg(not(feature = "ssr"))]
+pub use crate::types::{ImportStats, MetadataStats};
+
+/// Get metadata coverage stats.
+#[server(prefix = "/sfn")]
+pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+    let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+    db.stats().map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+/// Import metadata from a LaunchBox Metadata.xml file.
+/// The XML path should be accessible on the server's filesystem.
+#[server(prefix = "/sfn")]
+pub async fn import_launchbox_metadata(xml_path: String) -> Result<ImportStats, ServerFnError> {
+    use replay_control_core::launchbox;
+
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let path = std::path::PathBuf::from(&xml_path);
+
+    if !path.exists() {
+        return Err(ServerFnError::new(format!("File not found: {xml_path}")));
+    }
+
+    tracing::info!("Starting LaunchBox import from {xml_path}");
+
+    // Build ROM index from filesystem.
+    let rom_index = launchbox::build_rom_index(&storage.root);
+
+    // Open metadata DB.
+    let mut guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+    let db = guard.as_mut().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+
+    // Parse and import.
+    let stats = launchbox::import_launchbox(&path, db, &rom_index)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok(stats)
+}
+
+/// Clear all cached metadata.
+#[server(prefix = "/sfn")]
+pub async fn clear_metadata() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+    let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+    db.clear().map_err(|e| ServerFnError::new(e.to_string()))
 }

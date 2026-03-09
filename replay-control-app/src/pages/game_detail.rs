@@ -90,6 +90,14 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     // Console-specific fields
     let region = game.region.clone();
 
+    // External metadata
+    let description = StoredValue::new(game.description.clone());
+    let has_description = game.description.is_some();
+    let has_rating = game.rating.is_some();
+    let rating_display = StoredValue::new(game.rating.map(|r| format!("{:.1} / 5.0", r)));
+    let has_publisher = game.publisher.as_ref().is_some_and(|p| !p.is_empty());
+    let publisher = StoredValue::new(game.publisher.clone().unwrap_or_default());
+
     // Delete confirmation state
     let confirming_delete = RwSignal::new(false);
 
@@ -169,17 +177,6 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                         <span class="game-meta-value">{ext.clone()}</span>
                     </div>
                 </Show>
-            </div>
-        </section>
-
-        // Game Metadata (unified for all systems)
-        <section class="section">
-            <h2 class="section-title">{move || if has_arcade {
-                t(i18n.locale.get(), "game_detail.arcade_info")
-            } else {
-                t(i18n.locale.get(), "game_detail.metadata")
-            }}</h2>
-            <div class="game-meta-grid">
                 <Show when=move || has_year>
                     <div class="game-meta-item">
                         <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.year")}</span>
@@ -192,6 +189,12 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                         <span class="game-meta-value">{developer.get_value()}</span>
                     </div>
                 </Show>
+                <Show when=move || has_publisher>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.publisher")}</span>
+                        <span class="game-meta-value">{publisher.get_value()}</span>
+                    </div>
+                </Show>
                 <Show when=move || has_genre>
                     <div class="game-meta-item">
                         <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.genre")}</span>
@@ -202,6 +205,12 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                     <div class="game-meta-item">
                         <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.players")}</span>
                         <span class="game-meta-value">{players_str.clone()}</span>
+                    </div>
+                </Show>
+                <Show when=move || has_rating>
+                    <div class="game-meta-item">
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.rating")}</span>
+                        <span class="game-meta-value">{rating_display.get_value()}</span>
                     </div>
                 </Show>
 
@@ -244,7 +253,11 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         // Description
         <section class="section game-section">
             <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.description")}</h2>
-            <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_description")}</p>
+            <Show when=move || has_description
+                fallback=move || view! { <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_description")}</p> }
+            >
+                <p class="game-description">{move || description.get_value()}</p>
+            </Show>
         </section>
 
         // Screenshots Gallery

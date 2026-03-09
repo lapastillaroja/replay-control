@@ -22,6 +22,7 @@ use pages::more::MorePage;
 use pages::wifi::WifiPage;
 use pages::hostname::HostnamePage;
 use pages::nfs::NfsPage;
+use pages::metadata::MetadataPage;
 use pages::skin::SkinPage;
 
 /// The HTML shell wrapping the App component for SSR.
@@ -95,6 +96,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/more/wifi") view=WifiPage />
                         <Route path=path!("/more/nfs") view=NfsPage />
                         <Route path=path!("/more/hostname") view=HostnamePage />
+                        <Route path=path!("/more/metadata") view=MetadataPage />
                         <Route path=path!("/more/skin") view=SkinPage />
                     </Routes>
                 </main>

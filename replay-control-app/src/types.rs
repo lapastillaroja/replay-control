@@ -57,3 +57,21 @@ pub struct RecentEntry {
     pub last_played: u64,
 }
 
+/// Mirror of `replay_control_core::metadata_db::ImportStats` for WASM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportStats {
+    pub total_source: usize,
+    pub matched: usize,
+    pub inserted: usize,
+    pub skipped: usize,
+}
+
+/// Mirror of `replay_control_core::metadata_db::MetadataStats` for WASM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataStats {
+    pub total_entries: usize,
+    pub with_description: usize,
+    pub with_rating: usize,
+    pub db_size_bytes: u64,
+}
+
