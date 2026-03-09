@@ -4,6 +4,24 @@ set -euo pipefail
 CRATE="replay-app"
 OUT_DIR="target/site"
 PKG_DIR="$OUT_DIR/pkg"
+TARGET=""
+
+# Parse arguments
+for arg in "$@"; do
+    case "$arg" in
+        --target)  shift_next=true ;;
+        aarch64)   TARGET="aarch64-unknown-linux-gnu" ;;
+        *)
+            if [[ "${shift_next:-}" == "true" ]]; then
+                TARGET="$arg"
+                shift_next=false
+            fi
+            ;;
+    esac
+done
+
+# Allow TARGET env var as well
+TARGET="${TARGET:-${BUILD_TARGET:-}}"
 
 echo "==> Building WASM (hydrate)..."
 cargo build -p "$CRATE" --lib \
@@ -26,15 +44,33 @@ cp "$CRATE/style/style.css" "$OUT_DIR/style.css"
 cp -r "$CRATE/static/icons" "$OUT_DIR/icons" 2>/dev/null || true
 
 echo "==> Building server (ssr)..."
-cargo build -p "$CRATE" --bin "$CRATE" \
-  --release \
-  --features ssr \
-  --no-default-features
+if [[ -n "$TARGET" ]]; then
+    echo "    Target: $TARGET"
+    cargo build -p "$CRATE" --bin "$CRATE" \
+      --release \
+      --target "$TARGET" \
+      --features ssr \
+      --no-default-features
+    BIN_PATH="target/$TARGET/release/$CRATE"
+else
+    cargo build -p "$CRATE" --bin "$CRATE" \
+      --release \
+      --features ssr \
+      --no-default-features
+    BIN_PATH="target/release/$CRATE"
+fi
 
 echo ""
 echo "Done!"
-echo "  Binary: target/release/$CRATE"
+echo "  Binary: $BIN_PATH"
 echo "  Site:   $OUT_DIR/"
-echo ""
-echo "Run with:"
-echo "  ./target/release/$CRATE --storage-path /path/to/replayos --site-root $OUT_DIR"
+
+if [[ -n "$TARGET" ]]; then
+    echo ""
+    echo "Deploy to Pi with:"
+    echo "  bash install.sh --local --ip <pi-address>"
+else
+    echo ""
+    echo "Run with:"
+    echo "  ./$BIN_PATH --storage-path /path/to/replayos --site-root $OUT_DIR"
+fi
