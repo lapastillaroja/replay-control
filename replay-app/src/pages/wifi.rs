@@ -41,8 +41,8 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
     let country = RwSignal::new(config.country);
     let mode = RwSignal::new(config.mode);
     let hidden = RwSignal::new(config.hidden);
-    let has_password = config.has_password;
 
+    let show_password = RwSignal::new(false);
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
@@ -69,12 +69,6 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
         });
     };
 
-    let password_placeholder = if has_password {
-        "settings.password_keep"
-    } else {
-        "settings.password_enter"
-    };
-
     view! {
         <div class="settings-form">
             <div class="form-field">
@@ -88,11 +82,21 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
 
             <div class="form-field">
                 <label class="form-label">{move || t(i18n.locale.get(), "wifi.password")}</label>
-                <input type="password"
-                    class="form-input"
-                    bind:value=password
-                    placeholder=move || t(i18n.locale.get(), password_placeholder)
-                />
+                <div class="input-with-toggle">
+                    <input
+                        type=move || if show_password.get() { "text" } else { "password" }
+                        class="form-input"
+                        bind:value=password
+                        placeholder=move || t(i18n.locale.get(), "settings.password_enter")
+                    />
+                    <button
+                        type="button"
+                        class="toggle-password"
+                        on:click=move |_| show_password.update(|v| *v = !*v)
+                    >
+                        {move || if show_password.get() { "\u{1F648}" } else { "\u{1F441}" }}
+                    </button>
+                </div>
             </div>
 
             <div class="form-field">

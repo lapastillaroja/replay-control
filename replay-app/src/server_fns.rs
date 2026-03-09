@@ -290,7 +290,6 @@ pub struct WifiConfig {
     pub country: String,
     pub mode: String,
     pub hidden: bool,
-    pub has_password: bool,
 }
 
 #[server(prefix = "/sfn")]
@@ -302,9 +301,6 @@ pub async fn get_wifi_config() -> Result<WifiConfig, ServerFnError> {
         country: config.get("wifi_country").unwrap_or("").to_string(),
         mode: config.get("wifi_mode").unwrap_or("transition").to_string(),
         hidden: config.get("wifi_hidden").unwrap_or("false") == "true",
-        has_password: config
-            .get("wifi_pwd")
-            .is_some_and(|p| !p.is_empty() && p != "********"),
     })
 }
 
@@ -320,9 +316,7 @@ pub async fn save_wifi_config(
     state
         .update_config(|config| {
             config.set("wifi_name", &ssid);
-            if !password.is_empty() {
-                config.set("wifi_pwd", &password);
-            }
+            config.set("wifi_pwd", &password);
             config.set("wifi_country", &country);
             config.set("wifi_mode", &mode);
             config.set("wifi_hidden", if hidden { "true" } else { "false" });
@@ -412,6 +406,47 @@ pub async fn reboot_system() -> Result<String, ServerFnError> {
             "Reboot failed: {stderr}"
         )))
     }
+}
+
+/// Skin info for the theme page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkinInfo {
+    pub index: u32,
+    pub name: String,
+    pub bg: String,
+    pub surface: String,
+    pub border: String,
+    pub text: String,
+    pub text_secondary: String,
+    pub accent: String,
+    pub accent_hover: String,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_skins() -> Result<(u32, Vec<SkinInfo>), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let current = state.config.read().expect("config lock poisoned").system_skin();
+
+    let skins = replay_core::skins::SKIN_NAMES
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let p = replay_core::skins::palette(i as u32).unwrap();
+            SkinInfo {
+                index: i as u32,
+                name: name.to_string(),
+                bg: p.bg.to_string(),
+                surface: p.surface.to_string(),
+                border: p.border.to_string(),
+                text: p.text.to_string(),
+                text_secondary: p.text_secondary.to_string(),
+                accent: p.accent.to_string(),
+                accent_hover: p.accent_hover.to_string(),
+            }
+        })
+        .collect();
+
+    Ok((current, skins))
 }
 
 /// Result of organizing favorites into subfolders.

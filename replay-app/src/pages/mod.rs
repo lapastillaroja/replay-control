@@ -4,6 +4,7 @@ pub mod games;
 pub mod home;
 pub mod more;
 pub mod nfs;
+pub mod theme;
 pub mod wifi;
 
 // Re-export shared error display component.

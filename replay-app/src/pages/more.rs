@@ -17,6 +17,7 @@ pub fn MorePage() -> impl IntoView {
             <h2 class="page-title">{move || t(i18n.locale.get(), "more.title")}</h2>
 
             <div class="menu-list">
+                <MenuItem icon="\u{1F3A8}" label_key="more.theme" href=Some("/more/theme") />
                 <MenuItem icon="\u{1F4BE}" label_key="more.backup" href=None />
                 <MenuItem icon="\u{1F4F6}" label_key="more.wifi" href=Some("/more/wifi") />
                 <MenuItem icon="\u{1F4C1}" label_key="more.nfs" href=Some("/more/nfs") />

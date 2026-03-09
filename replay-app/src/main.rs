@@ -81,6 +81,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_app::server_fns::RestartReplayUi>();
         server_fn::axum::register_explicit::<replay_app::server_fns::RebootSystem>();
         server_fn::axum::register_explicit::<replay_app::server_fns::OrganizeFavorites>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::GetSkins>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_app")

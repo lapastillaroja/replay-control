@@ -127,6 +127,14 @@ impl ReplayConfig {
     pub fn video_connector(&self) -> Option<&str> {
         self.get("video_connector")
     }
+
+    /// Active skin index (0-10 for built-in skins, 11+ for custom slots).
+    /// Defaults to 0 (the REPLAY skin) when unset or not a valid number.
+    pub fn system_skin(&self) -> u32 {
+        self.get("system_skin")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    }
 }
 
 #[cfg(test)]

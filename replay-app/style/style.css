@@ -799,6 +799,26 @@ a, a:visited, a:hover, a:active {
     color: var(--text-secondary);
 }
 
+.input-with-toggle {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.input-with-toggle .form-input {
+    padding-right: 44px;
+}
+.toggle-password {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+}
+
 select.form-input {
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b8f96' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
@@ -1100,6 +1120,72 @@ select.form-input option {
     }
 
     .game-meta-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* Skin theme grid */
+.skin-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+}
+.skin-card {
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    text-align: center;
+    position: relative;
+    transition: border-color 0.2s;
+}
+.skin-card-active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+.skin-preview {
+    border-radius: var(--radius-sm);
+    padding: 10px 8px;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+}
+.skin-preview-bar {
+    height: 6px;
+    width: 80%;
+    border-radius: 3px;
+}
+.skin-preview-bar-hover {
+    width: 60%;
+}
+.skin-preview-text {
+    font-size: 0.75rem;
+    margin-top: 2px;
+}
+.skin-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+.skin-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    background: var(--accent);
+    color: #fff;
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-top: 4px;
+}
+
+@media (min-width: 600px) {
+    .skin-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+@media (min-width: 900px) {
+    .skin-grid {
         grid-template-columns: repeat(4, 1fr);
     }
 }

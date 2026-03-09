@@ -7,5 +7,6 @@ pub mod game_ref;
 pub mod recents;
 pub mod rom_tags;
 pub mod roms;
+pub mod skins;
 pub mod storage;
 pub mod systems;

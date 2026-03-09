@@ -21,18 +21,31 @@ use pages::home::HomePage;
 use pages::more::MorePage;
 use pages::wifi::WifiPage;
 use pages::nfs::NfsPage;
+use pages::theme::ThemePage;
 
 /// The HTML shell wrapping the App component for SSR.
 #[cfg(feature = "ssr")]
 #[component]
 pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
+    use crate::api::AppState;
+    use replay_core::skins;
+
+    let state = expect_context::<AppState>();
+    let skin_index = state
+        .config
+        .read()
+        .expect("config lock poisoned")
+        .system_skin();
+    let theme_color = skins::theme_color(skin_index);
+    let skin_css = skins::theme_css(skin_index).unwrap_or_default();
+
     view! {
         <!DOCTYPE html>
         <html lang="en">
             <head>
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-                <meta name="theme-color" content="#0f1115" />
+                <meta name="theme-color" content=theme_color />
                 <meta name="apple-mobile-web-app-capable" content="yes" />
                 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
                 <meta name="apple-mobile-web-app-title" content="Replay Control" />
@@ -41,6 +54,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
                 <link rel="apple-touch-icon" href="/icons/icon-192.png" />
                 <link rel="stylesheet" href="/style.css" />
+                <style id="skin-theme">{skin_css}</style>
                 <HydrationScripts options=options.clone() />
                 <script>
                     "if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }"
@@ -83,6 +97,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/more") view=MorePage />
                         <Route path=path!("/more/wifi") view=WifiPage />
                         <Route path=path!("/more/nfs") view=NfsPage />
+                        <Route path=path!("/more/theme") view=ThemePage />
                     </Routes>
                 </main>
 
