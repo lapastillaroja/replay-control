@@ -55,6 +55,9 @@ mod ssr {
             }
         };
 
+        // Spawn background storage re-detection task.
+        app_state.clone().spawn_storage_watcher();
+
         // Explicitly register all server functions (inventory auto-registration
         // doesn't work when the functions are in a library crate).
         server_fn::axum::register_explicit::<replay_app::server_fns::GetInfo>();
@@ -70,6 +73,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_app::server_fns::DeleteRom>();
         server_fn::axum::register_explicit::<replay_app::server_fns::RenameRom>();
         server_fn::axum::register_explicit::<replay_app::server_fns::GetRomDetail>();
+        server_fn::axum::register_explicit::<replay_app::server_fns::RefreshStorage>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_app")

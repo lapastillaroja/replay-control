@@ -10,7 +10,7 @@ async fn upload_rom(
     Path(system): Path<String>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let system_dir = state.storage.system_roms_dir(&system);
+    let system_dir = state.storage().system_roms_dir(&system);
     if !system_dir.exists() {
         std::fs::create_dir_all(&system_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
@@ -47,7 +47,7 @@ async fn upload_rom(
 async fn list_upload_targets(
     State(state): State<AppState>,
 ) -> Json<Vec<serde_json::Value>> {
-    let summaries = replay_core::roms::scan_systems(&state.storage);
+    let summaries = replay_core::roms::scan_systems(&state.storage());
     Json(
         summaries
             .into_iter()

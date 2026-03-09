@@ -108,6 +108,10 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.disk_total" => "Disk Total",
         "more.disk_used" => "Disk Used",
         "more.disk_available" => "Disk Available",
+        "more.refresh_storage" => "Refresh Storage",
+        "more.refreshing" => "Refreshing...",
+        "more.storage_changed" => "Storage updated",
+        "more.storage_unchanged" => "Storage unchanged",
 
         // Game detail page
         "game_detail.info" => "Game Info",

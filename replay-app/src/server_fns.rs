@@ -38,11 +38,11 @@ pub use crate::types::{
 #[server(prefix = "/sfn")]
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let summaries = state.cache.get_systems(&state.storage);
-    let favorites = replay_core::favorites::list_favorites(&state.storage).unwrap_or_default();
+    let storage = state.storage();
+    let summaries = state.cache.get_systems(&storage);
+    let favorites = replay_core::favorites::list_favorites(&storage).unwrap_or_default();
 
-    let disk = state
-        .storage
+    let disk = storage
         .disk_usage()
         .unwrap_or(replay_core::storage::DiskUsage {
             total_bytes: 0,
@@ -54,8 +54,8 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let total_games: usize = summaries.iter().map(|s| s.game_count).sum();
 
     Ok(SystemInfo {
-        storage_kind: format!("{:?}", state.storage.kind).to_lowercase(),
-        storage_root: state.storage.root.display().to_string(),
+        storage_kind: format!("{:?}", storage.kind).to_lowercase(),
+        storage_root: storage.root.display().to_string(),
         disk_total_bytes: disk.total_bytes,
         disk_used_bytes: disk.used_bytes,
         disk_available_bytes: disk.available_bytes,
@@ -69,7 +69,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(state.cache.get_systems(&state.storage))
+    Ok(state.cache.get_systems(&state.storage()))
 }
 
 /// A page of ROM results with total count.
@@ -94,7 +94,8 @@ pub async fn get_roms_page(
     let system_display = replay_core::systems::find_system(&system)
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| system.clone());
-    let all_roms = replay_core::roms::list_roms(&state.storage, &system)
+    let storage = state.storage();
+    let all_roms = replay_core::roms::list_roms(&storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let filtered: Vec<RomEntry> = if search.is_empty() {
@@ -111,7 +112,7 @@ pub async fn get_roms_page(
     let mut roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).collect();
     let has_more = offset + roms.len() < total;
 
-    replay_core::roms::mark_favorites(&state.storage, &system, &mut roms);
+    replay_core::roms::mark_favorites(&storage, &system, &mut roms);
 
     Ok(RomPage { roms, total, has_more, system_display })
 }
@@ -119,14 +120,14 @@ pub async fn get_roms_page(
 #[server(prefix = "/sfn")]
 pub async fn get_favorites() -> Result<Vec<Favorite>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::list_favorites(&state.storage)
+    replay_core::favorites::list_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn get_recents() -> Result<Vec<RecentEntry>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::recents::list_recents(&state.storage)
+    replay_core::recents::list_recents(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -137,7 +138,7 @@ pub async fn add_favorite(
     grouped: bool,
 ) -> Result<Favorite, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::add_favorite(&state.storage, &system, &rom_path, grouped)
+    replay_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -147,43 +148,42 @@ pub async fn remove_favorite(
     subfolder: Option<String>,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::remove_favorite(&state.storage, &filename, subfolder.as_deref())
+    replay_core::favorites::remove_favorite(&state.storage(), &filename, subfolder.as_deref())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::group_by_system(&state.storage)
+    replay_core::favorites::group_by_system(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::favorites::flatten_favorites(&state.storage)
+    replay_core::favorites::flatten_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
-pub async fn get_system_favorites(system: String) -> Result<Vec<String>, ServerFnError> {
+pub async fn get_system_favorites(system: String) -> Result<Vec<Favorite>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let favs = replay_core::favorites::list_favorites_for_system(&state.storage, &system)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(favs.into_iter().map(|f| f.game.rom_filename).collect())
+    replay_core::favorites::list_favorites_for_system(&state.storage(), &system)
+        .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn delete_rom(relative_path: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_core::roms::delete_rom(&state.storage, &relative_path)
+    replay_core::roms::delete_rom(&state.storage(), &relative_path)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
 pub async fn rename_rom(relative_path: String, new_filename: String) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let new_path = replay_core::roms::rename_rom(&state.storage, &relative_path, &new_filename)
+    let new_path = replay_core::roms::rename_rom(&state.storage(), &relative_path, &new_filename)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(new_path.display().to_string())
 }
@@ -212,7 +212,8 @@ pub struct ArcadeMetadata {
 #[server(prefix = "/sfn")]
 pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let all_roms = replay_core::roms::list_roms(&state.storage, &system)
+    let storage = state.storage();
+    let all_roms = replay_core::roms::list_roms(&storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let rom = all_roms
@@ -220,7 +221,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         .find(|r| r.game.rom_filename == filename)
         .ok_or_else(|| ServerFnError::new(format!("ROM not found: {filename}")))?;
 
-    let is_favorite = replay_core::favorites::is_favorite(&state.storage, &system, &filename);
+    let is_favorite = replay_core::favorites::is_favorite(&storage, &system, &filename);
 
     let arcade_info = replay_core::arcade_db::lookup_arcade_game(
         filename.strip_suffix(".zip").unwrap_or(&filename),
@@ -246,5 +247,27 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         rom,
         is_favorite,
         arcade_info,
+    })
+}
+
+/// Result of a storage refresh operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshResult {
+    pub changed: bool,
+    pub storage_kind: String,
+    pub storage_root: String,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn refresh_storage() -> Result<RefreshResult, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let changed = state
+        .refresh_storage()
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let storage = state.storage();
+    Ok(RefreshResult {
+        changed,
+        storage_kind: format!("{:?}", storage.kind).to_lowercase(),
+        storage_root: storage.root.display().to_string(),
     })
 }

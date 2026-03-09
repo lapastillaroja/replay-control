@@ -31,6 +31,7 @@ tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 any_spawner = { version = "0.2", features = ["tokio"], optional = true }
+notify = { version = "8", optional = true }
 
 # Hydrate-only
 web-sys = { version = "0.3", features = [
@@ -60,4 +61,5 @@ ssr = [
     "dep:tracing-subscriber",
     "dep:clap",
     "dep:any_spawner",
+    "dep:notify",
 ]

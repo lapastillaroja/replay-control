@@ -19,10 +19,11 @@ struct SystemInfo {
 }
 
 async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
-    let summaries = replay_core::roms::scan_systems(&state.storage);
-    let favorites = replay_core::favorites::list_favorites(&state.storage).unwrap_or_default();
+    let storage = state.storage();
+    let summaries = replay_core::roms::scan_systems(&storage);
+    let favorites = replay_core::favorites::list_favorites(&storage).unwrap_or_default();
 
-    let disk = state.storage.disk_usage().unwrap_or(replay_core::storage::DiskUsage {
+    let disk = storage.disk_usage().unwrap_or(replay_core::storage::DiskUsage {
         total_bytes: 0,
         available_bytes: 0,
         used_bytes: 0,
@@ -32,8 +33,8 @@ async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
     let total_games: usize = summaries.iter().map(|s| s.game_count).sum();
 
     Json(SystemInfo {
-        storage_kind: format!("{:?}", state.storage.kind).to_lowercase(),
-        storage_root: state.storage.root.display().to_string(),
+        storage_kind: format!("{:?}", storage.kind).to_lowercase(),
+        storage_root: storage.root.display().to_string(),
         disk_total_bytes: disk.total_bytes,
         disk_used_bytes: disk.used_bytes,
         disk_available_bytes: disk.available_bytes,
