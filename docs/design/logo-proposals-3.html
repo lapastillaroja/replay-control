@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Replay Control — Logo Proposals (Batch 3): Cartridges & Characters</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Press+Start+2P&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1115;
+    --bg-card: #16181d;
+    --bg-card-hover: #1c1f26;
+    --border: #2a2d35;
+    --text: #e4e4e7;
+    --text-muted: #71717a;
+    --indigo: #6366f1;
+    --green: #00b543;
+    --red: #e00000;
+    --gold: #c8a848;
+    --indigo-bg: #1a1640;
+    --green-bg: #0a2010;
+    --red-bg: #2a0a0a;
+    --gold-bg: #2a2210;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    padding: 0;
+  }
+
+  .page-header {
+    text-align: center;
+    padding: 60px 24px 48px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #14161c 0%, var(--bg) 100%);
+  }
+
+  .page-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, #818cf8, #6366f1, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    max-width: 580px;
+    margin: 0 auto;
+  }
+
+  .page-header .batch-badge {
+    display: inline-block;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    color: var(--gold);
+    background: rgba(200,168,72,0.15);
+    padding: 5px 14px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    letter-spacing: 0.05em;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Theme divider */
+  .theme-divider {
+    text-align: center;
+    padding: 48px 0 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .theme-divider h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+
+  .theme-divider p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-top: 6px;
+  }
+
+  .theme-badge {
+    display: inline-block;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.55rem;
+    padding: 4px 12px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    letter-spacing: 0.05em;
+  }
+
+  .theme-badge.cartridge { color: #f97316; background: rgba(249,115,22,0.15); }
+  .theme-badge.character { color: #ec4899; background: rgba(236,72,153,0.15); }
+  .theme-badge.mixed { color: #8b5cf6; background: rgba(139,92,246,0.15); }
+
+  /* Logo section */
+  .logo-section {
+    padding: 56px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo-section:last-of-type { border-bottom: none; }
+
+  .logo-header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+
+  .logo-number {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    color: var(--indigo);
+    background: rgba(99, 102, 241, 0.12);
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .logo-header h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .logo-desc {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    max-width: 600px;
+    margin-bottom: 32px;
+    padding-left: 0;
+  }
+
+  /* Color variant grid */
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 0;
+  }
+
+  @media (max-width: 900px) {
+    .color-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .color-card {
+    border-radius: 12px;
+    padding: 28px 20px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .color-card.indigo { background: var(--indigo-bg); border-color: rgba(99,102,241,0.2); }
+  .color-card.green  { background: var(--green-bg);  border-color: rgba(0,181,67,0.2); }
+  .color-card.red    { background: var(--red-bg);     border-color: rgba(224,0,0,0.2); }
+  .color-card.gold   { background: var(--gold-bg);    border-color: rgba(200,168,72,0.2); }
+
+  .color-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  .size-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .size-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .size-label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .icon-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Wordmark row */
+  .wordmark-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .wordmark-row .wm-text {
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+
+  /* Context section */
+  .context-section {
+    padding: 56px 0 72px;
+    border-top: 1px solid var(--border);
+  }
+
+  .context-section h2 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+
+  .context-section > p {
+    text-align: center;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+  }
+
+  .context-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  @media (max-width: 900px) {
+    .context-grid { grid-template-columns: 1fr; }
+  }
+
+  .context-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .context-card-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .context-card-header h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .context-card-body {
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+  }
+
+  /* Mobile app bar mock */
+  .app-bar {
+    background: #1a1c24;
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+    border: 1px solid #2a2d35;
+  }
+
+  .app-bar .title {
+    font-weight: 600;
+    font-size: 1rem;
+    flex: 1;
+  }
+
+  .app-bar .hamburger {
+    width: 20px;
+    height: 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .app-bar .hamburger span {
+    display: block;
+    height: 2px;
+    background: var(--text-muted);
+    border-radius: 1px;
+  }
+
+  /* PWA icon mock */
+  .pwa-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .pwa-icon.indigo { background: linear-gradient(135deg, #4f46e5, #6366f1); }
+
+  .pwa-label {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  /* Favicon mock */
+  .favicon-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #1e2028;
+    border-radius: 8px;
+    padding: 10px 16px;
+    border: 1px solid #2a2d35;
+  }
+
+  .favicon-row .tab-title {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .top-picks-label {
+    display: inline-block;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.65rem;
+    color: var(--gold);
+    background: rgba(200,168,72,0.12);
+    padding: 4px 12px;
+    border-radius: 4px;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+
+  .top-pick-section {
+    margin-bottom: 48px;
+  }
+
+  .top-pick-section:last-child { margin-bottom: 0; }
+
+  .top-pick-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .top-pick-rank {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    background: linear-gradient(135deg, var(--gold), #e0c060);
+    color: #1a1a0a;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+  }
+
+  .top-pick-header h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .nav-link {
+    display: inline-block;
+    color: var(--indigo);
+    text-decoration: none;
+    font-size: 0.9rem;
+    margin-top: 12px;
+    border-bottom: 1px solid rgba(99,102,241,0.3);
+    padding-bottom: 1px;
+  }
+  .nav-link:hover { border-bottom-color: var(--indigo); }
+
+  .nav-links {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="batch-badge">BATCH 3</div>
+  <h1>Replay Control — Logo Proposals</h1>
+  <p>Twelve logo concepts exploring game cartridges, anime-style characters, and the playful intersection of both. Companion app for RePlayOS on Raspberry Pi.</p>
+  <div class="nav-links">
+    <a class="nav-link" href="logo-proposals.html">View Batch 1 (concepts 01-10)</a>
+    <a class="nav-link" href="logo-proposals-2.html">View Batch 2 (concepts 11-23)</a>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ========== THEME A: GAME CARTRIDGES ========== -->
+<div class="theme-divider">
+  <span class="theme-badge cartridge">THEME A</span>
+  <h2>Game Cartridges</h2>
+  <p>The iconic shape of game cartridges reimagined as bold logo marks.</p>
+</div>
+
+<!-- ========== LOGO 24: Cartridge Shield ========== -->
+<div class="logo-section" id="logo-24">
+  <div class="logo-header">
+    <span class="logo-number">24</span>
+    <h2>Cartridge Shield</h2>
+  </div>
+  <p class="logo-desc">A game cartridge shape merged with a heraldic shield silhouette. The cartridge pins become the shield's base, and a play triangle sits in the label area like a coat of arms. Protection, legacy, and the sacred nature of your game collection.</p>
+  <div class="color-grid" id="cart-shield-grid"></div>
+</div>
+
+<!-- ========== LOGO 25: Cartridge Stack ========== -->
+<div class="logo-section" id="logo-25">
+  <div class="logo-header">
+    <span class="logo-number">25</span>
+    <h2>Cartridge Stack</h2>
+  </div>
+  <p class="logo-desc">Three cartridges stacked at a slight fan angle, like a hand of cards. Represents a library, a collection, the joy of choosing which game to play next. Each cartridge has a different subtle detail on its label.</p>
+  <div class="color-grid" id="cart-stack-grid"></div>
+</div>
+
+<!-- ========== LOGO 26: Glowing Cartridge ========== -->
+<div class="logo-section" id="logo-26">
+  <div class="logo-header">
+    <span class="logo-number">26</span>
+    <h2>Glowing Cartridge</h2>
+  </div>
+  <p class="logo-desc">A front-facing cartridge radiating energy lines and sparkle particles. The cartridge is alive with power, glowing from within like it contains something magical. The label area pulses with light.</p>
+  <div class="color-grid" id="cart-glow-grid"></div>
+</div>
+
+<!-- ========== LOGO 27: Bite-Mark Cartridge ========== -->
+<div class="logo-section" id="logo-27">
+  <div class="logo-header">
+    <span class="logo-number">27</span>
+    <h2>Bite-Mark Cartridge</h2>
+  </div>
+  <p class="logo-desc">A cartridge with a playful pixel-art bite taken out of one corner, like a cookie or the Apple logo. Irreverent, fun, memorable. Suggests the cartridge is so good you could eat it. A cheeky nod to blowing on cartridges.</p>
+  <div class="color-grid" id="cart-bite-grid"></div>
+</div>
+
+<!-- ========== THEME B: ANIME-STYLE CHARACTERS ========== -->
+<div class="theme-divider">
+  <span class="theme-badge character">THEME B</span>
+  <h2>Anime-Style Characters</h2>
+  <p>Cute mascot characters that could become the face of Replay Control.</p>
+</div>
+
+<!-- ========== LOGO 28: Chibi Mascot with Headphones ========== -->
+<div class="logo-section" id="logo-28">
+  <div class="logo-header">
+    <span class="logo-number">28</span>
+    <h2>Chibi Gamer</h2>
+  </div>
+  <p class="logo-desc">A chibi-style character with oversized headphones and starry eyes, rendered in pixel art. The headphones have a small antenna, and the character flashes a peace sign. Friendly, approachable, unmistakably gaming-focused.</p>
+  <div class="color-grid" id="chibi-grid"></div>
+</div>
+
+<!-- ========== LOGO 29: Cat Companion ========== -->
+<div class="logo-section" id="logo-29">
+  <div class="logo-header">
+    <span class="logo-number">29</span>
+    <h2>Pixel Cat</h2>
+  </div>
+  <p class="logo-desc">A cute pixel-art cat with pointed ears and a curled tail, sitting attentively. The cat's eyes are bright and playful, with a tiny pixel collar. Cats and gaming go together like save points and relief.</p>
+  <div class="color-grid" id="cat-grid"></div>
+</div>
+
+<!-- ========== LOGO 30: Robot Buddy ========== -->
+<div class="logo-section" id="logo-30">
+  <div class="logo-header">
+    <span class="logo-number">30</span>
+    <h2>Robot Buddy</h2>
+  </div>
+  <p class="logo-desc">A friendly retro robot with a CRT-screen face showing a play symbol, boxy pixel-art body, and antenna on top. Part R.O.B., part helper -- the perfect companion for managing your retro game library.</p>
+  <div class="color-grid" id="robot-grid"></div>
+</div>
+
+<!-- ========== LOGO 31: Pixel Warrior ========== -->
+<div class="logo-section" id="logo-31">
+  <div class="logo-header">
+    <span class="logo-number">31</span>
+    <h2>Pixel Warrior</h2>
+  </div>
+  <p class="logo-desc">A tiny pixel-art hero character in a classic adventure pose with a small sword raised high. Think the protagonist of every 8-bit RPG. Heroic, nostalgic, full of determination. The champion of your game library.</p>
+  <div class="color-grid" id="warrior-grid"></div>
+</div>
+
+<!-- ========== THEME C: MIX OF BOTH ========== -->
+<div class="theme-divider">
+  <span class="theme-badge mixed">THEME C</span>
+  <h2>Characters + Cartridges</h2>
+  <p>The best of both worlds: mascot characters interacting with game cartridges.</p>
+</div>
+
+<!-- ========== LOGO 32: Character Riding a Cartridge ========== -->
+<div class="logo-section" id="logo-32">
+  <div class="logo-header">
+    <span class="logo-number">32</span>
+    <h2>Cartridge Rider</h2>
+  </div>
+  <p class="logo-desc">A chibi character riding a game cartridge like a surfboard or skateboard, with motion lines and sparkles trailing behind. Adventure, speed, fun. The cartridge becomes a vehicle for play.</p>
+  <div class="color-grid" id="rider-grid"></div>
+</div>
+
+<!-- ========== LOGO 33: Cat Popping Out of Cartridge ========== -->
+<div class="logo-section" id="logo-33">
+  <div class="logo-header">
+    <span class="logo-number">33</span>
+    <h2>Cartridge Cat</h2>
+  </div>
+  <p class="logo-desc">A playful cat peeking out from the top of a game cartridge, ears and paws visible above the label area. Like a cat in a box, but the box is a cartridge. Curiosity, surprise, delight.</p>
+  <div class="color-grid" id="catcart-grid"></div>
+</div>
+
+<!-- ========== LOGO 34: Robot Loading a Cartridge ========== -->
+<div class="logo-section" id="logo-34">
+  <div class="logo-header">
+    <span class="logo-number">34</span>
+    <h2>Robot Loader</h2>
+  </div>
+  <p class="logo-desc">A small robot holding up a game cartridge, about to insert it. The robot's screen-face shows a happy expression. Helpful, purposeful, the perfect metaphor for a companion app that manages your games.</p>
+  <div class="color-grid" id="robotload-grid"></div>
+</div>
+
+<!-- ========== LOGO 35: Character Bursting from Cartridge ========== -->
+<div class="logo-section" id="logo-35">
+  <div class="logo-header">
+    <span class="logo-number">35</span>
+    <h2>Cartridge Burst</h2>
+  </div>
+  <p class="logo-desc">A pixel warrior bursting upward out of a cartridge with an explosion of pixel particles, arms raised in triumph. The game comes to life. Energy, excitement, the magic moment when you press start.</p>
+  <div class="color-grid" id="burst-grid"></div>
+</div>
+
+</div><!-- .container -->
+
+<!-- ========== TOP PICKS ========== -->
+<div class="container">
+  <div class="context-section">
+    <div style="text-align:center">
+      <span class="top-picks-label">TOP PICKS — BATCH 3</span>
+    </div>
+    <h2>Best in Context</h2>
+    <p>Four standout logos from this batch shown in real-world usage contexts.</p>
+
+    <!-- Pick 1: Cartridge Cat -->
+    <div class="top-pick-section">
+      <div class="top-pick-header">
+        <div class="top-pick-rank">1</div>
+        <h3>#33 Cartridge Cat — Charming, memorable, instantly recognizable</h3>
+      </div>
+      <div class="context-grid" id="pick1-contexts"></div>
+    </div>
+
+    <!-- Pick 2: Cartridge Shield -->
+    <div class="top-pick-section">
+      <div class="top-pick-header">
+        <div class="top-pick-rank">2</div>
+        <h3>#24 Cartridge Shield — Bold, professional, scales beautifully</h3>
+      </div>
+      <div class="context-grid" id="pick2-contexts"></div>
+    </div>
+
+    <!-- Pick 3: Robot Loader -->
+    <div class="top-pick-section">
+      <div class="top-pick-header">
+        <div class="top-pick-rank">3</div>
+        <h3>#34 Robot Loader — Purposeful mascot, perfect app metaphor</h3>
+      </div>
+      <div class="context-grid" id="pick3-contexts"></div>
+    </div>
+
+    <!-- Pick 4: Glowing Cartridge -->
+    <div class="top-pick-section">
+      <div class="top-pick-header">
+        <div class="top-pick-rank">4</div>
+        <h3>#26 Glowing Cartridge — Magical, eye-catching, clean at small sizes</h3>
+      </div>
+      <div class="context-grid" id="pick4-contexts"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ========== SVG LOGO GENERATORS ==========
+// Each returns an SVG string for a given color, drawn at viewBox 0 0 120 120
+
+const logos = {
+
+  // 24 — Cartridge Shield: cartridge merged with heraldic shield shape
+  cartShield(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Shield / cartridge body -->
+      <path d="M 34 14 L 86 14 Q 92 14 92 20 L 92 70 Q 92 82 60 104 Q 28 82 28 70 L 28 20 Q 28 14 34 14 Z"
+            fill="${c}" opacity="0.2" stroke="${c}" stroke-width="2.5"/>
+      <!-- Top edge (cartridge grip) -->
+      <rect x="28" y="14" width="64" height="6" rx="3" fill="${c}" opacity="0.5"/>
+      <!-- Grip ridges -->
+      <rect x="42" y="15" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="50" y="15" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="58" y="15" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="66" y="15" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="74" y="15" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <!-- Label area (inner shield) -->
+      <path d="M 40 28 L 80 28 L 80 60 Q 80 70 60 84 Q 40 70 40 60 Z"
+            fill="${c}" opacity="0.12" stroke="${c}" stroke-width="1.5"/>
+      <!-- Play triangle coat of arms -->
+      <polygon points="52,40 52,68 74,54" fill="${c}"/>
+      <!-- Connector pins at bottom (shield base) -->
+      <rect x="44" y="92" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="52" y="92" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="60" y="92" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="68" y="92" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <!-- Cross detail on shield -->
+      <rect x="58" y="30" width="4" height="52" fill="${c}" opacity="0.08"/>
+      <rect x="42" y="50" width="36" height="4" fill="${c}" opacity="0.08"/>
+      <!-- Sparkles -->
+      <rect x="16" y="18" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="10" y="12" width="3" height="3" fill="${lite}" opacity="0.25"/>
+      <rect x="100" y="16" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="106" y="10" width="3" height="3" fill="${lite}" opacity="0.25"/>
+    `;
+  },
+
+  // 25 — Cartridge Stack: three cartridges fanned like cards
+  cartStack(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Back cartridge (rotated left) -->
+      <g transform="rotate(-12, 60, 60)">
+        <rect x="34" y="22" width="52" height="68" rx="4" fill="${c}" opacity="0.15" stroke="${c}" stroke-width="1.5" stroke-opacity="0.4"/>
+        <rect x="40" y="30" width="40" height="24" rx="2" fill="${c}" opacity="0.06"/>
+        <rect x="48" y="38" width="6" height="6" fill="${c}" opacity="0.15"/>
+      </g>
+      <!-- Middle cartridge (rotated right) -->
+      <g transform="rotate(8, 60, 60)">
+        <rect x="34" y="22" width="52" height="68" rx="4" fill="${c}" opacity="0.2" stroke="${c}" stroke-width="1.5" stroke-opacity="0.5"/>
+        <rect x="40" y="30" width="40" height="24" rx="2" fill="${c}" opacity="0.08"/>
+        <circle cx="60" cy="42" r="5" fill="${c}" opacity="0.2"/>
+      </g>
+      <!-- Front cartridge (center) -->
+      <rect x="34" y="20" width="52" height="70" rx="4" fill="${c}" opacity="0.25" stroke="${c}" stroke-width="2.5"/>
+      <!-- Top grip -->
+      <rect x="34" y="20" width="52" height="6" rx="2" fill="${c}" opacity="0.5"/>
+      <rect x="44" y="21" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="52" y="21" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="60" y="21" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="68" y="21" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <!-- Label area on front -->
+      <rect x="40" y="32" width="40" height="26" rx="2" fill="${c}" opacity="0.1" stroke="${c}" stroke-width="1.5"/>
+      <!-- Play symbol on label -->
+      <polygon points="54,38 54,54 68,46" fill="${c}"/>
+      <!-- Connector pins -->
+      <rect x="42" y="82" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="50" y="82" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="58" y="82" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="66" y="82" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <!-- Corner detail -->
+      <rect x="38" y="66" width="8" height="2" fill="${c}" opacity="0.15"/>
+      <rect x="38" y="70" width="6" height="2" fill="${c}" opacity="0.1"/>
+      <!-- Sparkles -->
+      <rect x="94" y="14" width="5" height="5" fill="${lite}" opacity="0.4"/>
+      <rect x="100" y="8" width="3" height="3" fill="${lite}" opacity="0.25"/>
+      <rect x="14" y="20" width="4" height="4" fill="${lite}" opacity="0.3"/>
+    `;
+  },
+
+  // 26 — Glowing Cartridge: front-facing cartridge radiating energy
+  cartGlow(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Glow aura behind cartridge -->
+      <rect x="24" y="12" width="72" height="84" rx="10" fill="${c}" opacity="0.06"/>
+      <rect x="20" y="8" width="80" height="92" rx="14" fill="${c}" opacity="0.03"/>
+      <!-- Cartridge body -->
+      <rect x="30" y="18" width="60" height="76" rx="4" fill="${c}" opacity="0.22" stroke="${c}" stroke-width="2.5"/>
+      <!-- Top grip -->
+      <rect x="30" y="18" width="60" height="7" rx="2" fill="${c}" opacity="0.55"/>
+      <rect x="42" y="19" width="4" height="4" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="50" y="19" width="4" height="4" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="58" y="19" width="4" height="4" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="66" y="19" width="4" height="4" rx="1" fill="${lite}" opacity="0.3"/>
+      <!-- Label area with inner glow -->
+      <rect x="36" y="32" width="48" height="30" rx="3" fill="${c}" opacity="0.15" stroke="${c}" stroke-width="1.5"/>
+      <!-- Glowing play symbol -->
+      <polygon points="52,38 52,58 70,48" fill="${c}"/>
+      <polygon points="52,38 52,58 70,48" fill="${lite}" opacity="0.3"/>
+      <!-- Energy rays radiating outward -->
+      <rect x="14" y="44" width="12" height="3" rx="1" fill="${c}" opacity="0.4"/>
+      <rect x="6" y="44" width="6" height="3" rx="1" fill="${c}" opacity="0.2"/>
+      <rect x="94" y="44" width="12" height="3" rx="1" fill="${c}" opacity="0.4"/>
+      <rect x="108" y="44" width="6" height="3" rx="1" fill="${c}" opacity="0.2"/>
+      <rect x="18" y="30" width="8" height="3" rx="1" fill="${c}" opacity="0.3" transform="rotate(-30, 22, 31)"/>
+      <rect x="94" y="30" width="8" height="3" rx="1" fill="${c}" opacity="0.3" transform="rotate(30, 98, 31)"/>
+      <rect x="18" y="60" width="8" height="3" rx="1" fill="${c}" opacity="0.3" transform="rotate(30, 22, 61)"/>
+      <rect x="94" y="60" width="8" height="3" rx="1" fill="${c}" opacity="0.3" transform="rotate(-30, 98, 61)"/>
+      <!-- Connector pins -->
+      <rect x="40" y="86" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="48" y="86" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="56" y="86" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="64" y="86" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="72" y="86" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <!-- Sparkle particles -->
+      <rect x="12" y="16" width="5" height="5" fill="${lite}" opacity="0.5"/>
+      <rect x="6" y="10" width="3" height="3" fill="${lite}" opacity="0.3"/>
+      <rect x="102" y="14" width="5" height="5" fill="${lite}" opacity="0.5"/>
+      <rect x="108" y="8" width="3" height="3" fill="${lite}" opacity="0.3"/>
+      <rect x="56" y="4" width="4" height="4" fill="${lite}" opacity="0.4"/>
+      <rect x="48" y="8" width="3" height="3" fill="${lite}" opacity="0.25"/>
+      <rect x="68" y="6" width="3" height="3" fill="${lite}" opacity="0.25"/>
+      <!-- Label text lines -->
+      <rect x="40" y="68" width="16" height="2" fill="${c}" opacity="0.2"/>
+      <rect x="40" y="72" width="12" height="2" fill="${c}" opacity="0.15"/>
+    `;
+  },
+
+  // 27 — Bite-Mark Cartridge: cartridge with pixel bite taken out
+  cartBite(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Cartridge body with bite cut out of top-right -->
+      <path d="M 30 18 L 76 18 L 76 24 L 82 24 L 82 30 L 88 30 L 88 94 Q 88 96 86 96 L 34 96 Q 30 96 30 92 Z"
+            fill="${c}" opacity="0.22" stroke="${c}" stroke-width="2.5"/>
+      <!-- Top grip (partial, bite removes corner) -->
+      <rect x="30" y="18" width="46" height="6" rx="2" fill="${c}" opacity="0.5"/>
+      <rect x="40" y="19" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="48" y="19" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="56" y="19" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="64" y="19" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <!-- Bite mark pixels (semicircular scallop) -->
+      <rect x="78" y="18" width="6" height="6" fill="${bg}"/>
+      <rect x="84" y="18" width="6" height="6" fill="${bg}"/>
+      <rect x="84" y="24" width="6" height="6" fill="${bg}"/>
+      <!-- Tooth marks / crumbs (pixel dots near bite) -->
+      <rect x="92" y="14" width="4" height="4" fill="${c}" opacity="0.5"/>
+      <rect x="98" y="10" width="3" height="3" fill="${c}" opacity="0.35"/>
+      <rect x="90" y="8" width="3" height="3" fill="${c}" opacity="0.25"/>
+      <rect x="96" y="20" width="3" height="3" fill="${c}" opacity="0.3"/>
+      <!-- Label area -->
+      <rect x="36" y="34" width="46" height="28" rx="2" fill="${c}" opacity="0.1" stroke="${c}" stroke-width="1.5"/>
+      <!-- Play symbol -->
+      <polygon points="50,40 50,58 66,49" fill="${c}"/>
+      <!-- Label text lines -->
+      <rect x="40" y="68" width="18" height="2" fill="${c}" opacity="0.2"/>
+      <rect x="40" y="72" width="14" height="2" fill="${c}" opacity="0.15"/>
+      <rect x="40" y="76" width="10" height="2" fill="${c}" opacity="0.1"/>
+      <!-- Connector pins -->
+      <rect x="40" y="88" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="48" y="88" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="56" y="88" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="64" y="88" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="72" y="88" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <!-- Corner sticker (bottom-left) -->
+      <rect x="34" y="82" width="10" height="10" rx="2" fill="${c}" opacity="0.12"/>
+      <rect x="36" y="84" width="6" height="6" fill="${lite}" opacity="0.15"/>
+      <!-- Sparkles -->
+      <rect x="14" y="22" width="5" height="5" fill="${lite}" opacity="0.4"/>
+      <rect x="8" y="16" width="3" height="3" fill="${lite}" opacity="0.25"/>
+    `;
+  },
+
+  // 28 — Chibi Gamer: chibi character with oversized headphones
+  chibi(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Hair / top of head -->
+      <rect x="42" y="10" width="8" height="8" fill="${c}"/>
+      <rect x="50" y="10" width="8" height="8" fill="${c}"/>
+      <rect x="58" y="10" width="8" height="8" fill="${c}"/>
+      <rect x="66" y="10" width="8" height="8" fill="${c}"/>
+      <rect x="38" y="14" width="6" height="6" fill="${c}" opacity="0.7"/>
+      <rect x="74" y="14" width="6" height="6" fill="${c}" opacity="0.7"/>
+      <!-- Head -->
+      <rect x="40" y="18" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="48" y="18" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="56" y="18" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="64" y="18" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Face row -->
+      <rect x="38" y="26" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="46" y="26" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="54" y="26" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="62" y="26" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="70" y="26" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Eyes (starry / sparkle eyes) -->
+      <rect x="44" y="28" width="4" height="4" fill="${lite}"/>
+      <rect x="42" y="26" width="2" height="2" fill="${lite}" opacity="0.6"/>
+      <rect x="48" y="26" width="2" height="2" fill="${lite}" opacity="0.6"/>
+      <rect x="64" y="28" width="4" height="4" fill="${lite}"/>
+      <rect x="62" y="26" width="2" height="2" fill="${lite}" opacity="0.6"/>
+      <rect x="68" y="26" width="2" height="2" fill="${lite}" opacity="0.6"/>
+      <!-- Mouth (smile) -->
+      <rect x="52" y="32" width="4" height="2" fill="${lite}" opacity="0.5"/>
+      <rect x="56" y="32" width="4" height="2" fill="${lite}" opacity="0.5"/>
+      <!-- Headphones band -->
+      <rect x="36" y="16" width="4" height="4" fill="${c}"/>
+      <rect x="78" y="16" width="4" height="4" fill="${c}"/>
+      <rect x="40" y="12" width="4" height="4" fill="${c}" opacity="0.8"/>
+      <rect x="74" y="12" width="4" height="4" fill="${c}" opacity="0.8"/>
+      <!-- Headphone ear cups -->
+      <rect x="28" y="20" width="12" height="16" rx="3" fill="${c}"/>
+      <rect x="30" y="24" width="8" height="8" rx="2" fill="${lite}" opacity="0.2"/>
+      <rect x="78" y="20" width="12" height="16" rx="3" fill="${c}"/>
+      <rect x="80" y="24" width="8" height="8" rx="2" fill="${lite}" opacity="0.2"/>
+      <!-- Antenna on headphones -->
+      <rect x="84" y="10" width="3" height="10" fill="${c}" opacity="0.7"/>
+      <circle cx="85" cy="8" r="3" fill="${lite}" opacity="0.6"/>
+      <!-- Body -->
+      <rect x="42" y="38" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <rect x="50" y="38" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <rect x="58" y="38" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <rect x="66" y="38" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <rect x="42" y="46" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <rect x="50" y="46" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <rect x="58" y="46" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <rect x="66" y="46" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <!-- Arms -->
+      <rect x="34" y="40" width="8" height="8" fill="${c}" opacity="0.2"/>
+      <rect x="74" y="40" width="8" height="8" fill="${c}" opacity="0.2"/>
+      <!-- Peace sign hand (right) -->
+      <rect x="76" y="34" width="3" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="80" y="34" width="3" height="6" fill="${c}" opacity="0.4"/>
+      <!-- Legs -->
+      <rect x="44" y="54" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="58" y="54" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Shoes -->
+      <rect x="42" y="62" width="12" height="6" rx="2" fill="${c}" opacity="0.5"/>
+      <rect x="56" y="62" width="12" height="6" rx="2" fill="${c}" opacity="0.5"/>
+      <!-- "RC" on shirt -->
+      <rect x="48" y="42" width="2" height="6" fill="${c}" opacity="0.5"/>
+      <rect x="50" y="42" width="3" height="2" fill="${c}" opacity="0.5"/>
+      <rect x="50" y="44" width="2" height="2" fill="${c}" opacity="0.4"/>
+      <rect x="56" y="42" width="2" height="6" fill="${c}" opacity="0.5"/>
+      <rect x="58" y="42" width="3" height="2" fill="${c}" opacity="0.5"/>
+      <rect x="58" y="46" width="3" height="2" fill="${c}" opacity="0.5"/>
+    `;
+  },
+
+  // 29 — Pixel Cat: cute sitting cat with pointed ears
+  cat(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Left ear -->
+      <rect x="34" y="14" width="6" height="6" fill="${c}"/>
+      <rect x="38" y="8" width="6" height="6" fill="${c}"/>
+      <rect x="42" y="14" width="6" height="6" fill="${c}"/>
+      <!-- Inner ear -->
+      <rect x="40" y="14" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <!-- Right ear -->
+      <rect x="68" y="14" width="6" height="6" fill="${c}"/>
+      <rect x="72" y="8" width="6" height="6" fill="${c}"/>
+      <rect x="76" y="14" width="6" height="6" fill="${c}"/>
+      <!-- Inner ear -->
+      <rect x="72" y="14" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <!-- Head -->
+      <rect x="34" y="20" width="48" height="8" fill="${c}"/>
+      <rect x="30" y="28" width="56" height="8" fill="${c}"/>
+      <rect x="30" y="36" width="56" height="8" fill="${c}"/>
+      <!-- Eyes -->
+      <rect x="40" y="30" width="6" height="6" fill="${lite}"/>
+      <rect x="42" y="32" width="3" height="3" fill="${bg}"/>
+      <rect x="68" y="30" width="6" height="6" fill="${lite}"/>
+      <rect x="70" y="32" width="3" height="3" fill="${bg}"/>
+      <!-- Nose -->
+      <rect x="56" y="36" width="4" height="3" fill="${lite}" opacity="0.5"/>
+      <!-- Whiskers -->
+      <rect x="22" y="34" width="8" height="2" fill="${c}" opacity="0.4"/>
+      <rect x="24" y="38" width="6" height="2" fill="${c}" opacity="0.3"/>
+      <rect x="86" y="34" width="8" height="2" fill="${c}" opacity="0.4"/>
+      <rect x="86" y="38" width="6" height="2" fill="${c}" opacity="0.3"/>
+      <!-- Collar -->
+      <rect x="36" y="44" width="44" height="4" fill="${c}" opacity="0.7"/>
+      <circle cx="58" cy="46" r="3" fill="${lite}" opacity="0.5"/>
+      <!-- Body -->
+      <rect x="34" y="48" width="48" height="8" fill="${c}" opacity="0.8"/>
+      <rect x="32" y="56" width="52" height="8" fill="${c}" opacity="0.7"/>
+      <rect x="30" y="64" width="56" height="8" fill="${c}" opacity="0.6"/>
+      <rect x="30" y="72" width="56" height="8" fill="${c}" opacity="0.5"/>
+      <!-- Front paws -->
+      <rect x="34" y="76" width="10" height="6" rx="2" fill="${c}" opacity="0.7"/>
+      <rect x="72" y="76" width="10" height="6" rx="2" fill="${c}" opacity="0.7"/>
+      <!-- Paw details -->
+      <rect x="36" y="78" width="3" height="2" fill="${lite}" opacity="0.2"/>
+      <rect x="40" y="78" width="3" height="2" fill="${lite}" opacity="0.2"/>
+      <rect x="74" y="78" width="3" height="2" fill="${lite}" opacity="0.2"/>
+      <rect x="78" y="78" width="3" height="2" fill="${lite}" opacity="0.2"/>
+      <!-- Tail (curled up on right side) -->
+      <rect x="86" y="60" width="6" height="6" fill="${c}" opacity="0.6"/>
+      <rect x="90" y="54" width="6" height="6" fill="${c}" opacity="0.55"/>
+      <rect x="92" y="48" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <rect x="96" y="42" width="6" height="6" fill="${c}" opacity="0.45"/>
+      <rect x="96" y="36" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <!-- Tail tip curl -->
+      <rect x="92" y="32" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <!-- Sparkle -->
+      <rect x="14" y="10" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="8" y="6" width="3" height="3" fill="${lite}" opacity="0.25"/>
+    `;
+  },
+
+  // 30 — Robot Buddy: retro robot with CRT face showing play symbol
+  robot(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Antenna -->
+      <rect x="57" y="4" width="6" height="14" fill="${c}" opacity="0.6"/>
+      <circle cx="60" cy="4" r="5" fill="${c}"/>
+      <circle cx="60" cy="4" r="3" fill="${lite}" opacity="0.5"/>
+      <!-- Antenna signal dots -->
+      <rect x="48" y="2" width="3" height="3" fill="${lite}" opacity="0.3"/>
+      <rect x="70" y="2" width="3" height="3" fill="${lite}" opacity="0.3"/>
+      <!-- Head (CRT monitor shape) -->
+      <rect x="30" y="18" width="60" height="40" rx="6" fill="${c}" opacity="0.25" stroke="${c}" stroke-width="2.5"/>
+      <!-- Screen -->
+      <rect x="36" y="24" width="48" height="28" rx="4" fill="${c}" opacity="0.12"/>
+      <!-- Screen scan lines -->
+      <rect x="36" y="32" width="48" height="1" fill="${lite}" opacity="0.06"/>
+      <rect x="36" y="38" width="48" height="1" fill="${lite}" opacity="0.06"/>
+      <rect x="36" y="44" width="48" height="1" fill="${lite}" opacity="0.06"/>
+      <!-- Play symbol on screen -->
+      <polygon points="52,30 52,46 66,38" fill="${c}"/>
+      <polygon points="52,30 52,46 66,38" fill="${lite}" opacity="0.2"/>
+      <!-- Screen glow -->
+      <rect x="38" y="26" width="10" height="3" rx="1" fill="${lite}" opacity="0.1"/>
+      <!-- Side buttons on head -->
+      <rect x="30" y="30" width="4" height="4" rx="1" fill="${c}" opacity="0.5"/>
+      <rect x="30" y="38" width="4" height="4" rx="1" fill="${c}" opacity="0.4"/>
+      <!-- Neck -->
+      <rect x="52" y="58" width="16" height="6" fill="${c}" opacity="0.4"/>
+      <!-- Body -->
+      <rect x="34" y="64" width="52" height="32" rx="4" fill="${c}" opacity="0.2" stroke="${c}" stroke-width="2"/>
+      <!-- Chest panel -->
+      <rect x="42" y="70" width="36" height="18" rx="2" fill="${c}" opacity="0.1" stroke="${c}" stroke-width="1"/>
+      <!-- Chest buttons / lights -->
+      <circle cx="50" cy="76" r="3" fill="${c}" opacity="0.6"/>
+      <circle cx="60" cy="76" r="3" fill="${lite}" opacity="0.5"/>
+      <circle cx="70" cy="76" r="3" fill="${c}" opacity="0.4"/>
+      <!-- Chest vent lines -->
+      <rect x="46" y="82" width="28" height="2" fill="${c}" opacity="0.15"/>
+      <rect x="46" y="86" width="28" height="2" fill="${c}" opacity="0.1"/>
+      <!-- Arms -->
+      <rect x="22" y="66" width="12" height="6" rx="2" fill="${c}" opacity="0.4"/>
+      <rect x="18" y="72" width="8" height="16" rx="2" fill="${c}" opacity="0.3"/>
+      <rect x="16" y="86" width="12" height="6" rx="3" fill="${c}" opacity="0.4"/>
+      <rect x="86" y="66" width="12" height="6" rx="2" fill="${c}" opacity="0.4"/>
+      <rect x="94" y="72" width="8" height="16" rx="2" fill="${c}" opacity="0.3"/>
+      <rect x="92" y="86" width="12" height="6" rx="3" fill="${c}" opacity="0.4"/>
+      <!-- Legs / treads -->
+      <rect x="40" y="96" width="14" height="8" rx="2" fill="${c}" opacity="0.5"/>
+      <rect x="66" y="96" width="14" height="8" rx="2" fill="${c}" opacity="0.5"/>
+      <!-- Tread details -->
+      <rect x="42" y="100" width="10" height="2" fill="${lite}" opacity="0.15"/>
+      <rect x="68" y="100" width="10" height="2" fill="${lite}" opacity="0.15"/>
+    `;
+  },
+
+  // 31 — Pixel Warrior: 8-bit RPG hero with sword raised
+  warrior(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Sword (held high in right hand) -->
+      <rect x="72" y="4" width="4" height="6" fill="${lite}" opacity="0.7"/>
+      <rect x="70" y="10" width="8" height="4" fill="${lite}" opacity="0.8"/>
+      <rect x="72" y="14" width="4" height="18" fill="${lite}" opacity="0.6"/>
+      <!-- Sword guard -->
+      <rect x="66" y="28" width="16" height="4" fill="${c}" opacity="0.7"/>
+      <!-- Helmet / hair -->
+      <rect x="44" y="20" width="8" height="8" fill="${c}"/>
+      <rect x="52" y="20" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="20" width="8" height="8" fill="${c}"/>
+      <rect x="40" y="24" width="6" height="6" fill="${c}" opacity="0.7"/>
+      <!-- Helmet plume -->
+      <rect x="42" y="14" width="6" height="8" fill="${c}" opacity="0.5"/>
+      <rect x="40" y="12" width="4" height="6" fill="${c}" opacity="0.35"/>
+      <!-- Head -->
+      <rect x="44" y="28" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="52" y="28" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="60" y="28" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Eyes -->
+      <rect x="48" y="30" width="4" height="4" fill="${lite}"/>
+      <rect x="58" y="30" width="4" height="4" fill="${lite}"/>
+      <!-- Mouth -->
+      <rect x="52" y="34" width="6" height="2" fill="${lite}" opacity="0.4"/>
+      <!-- Cape (behind body, flowing left) -->
+      <rect x="30" y="40" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="26" y="48" width="8" height="8" fill="${c}" opacity="0.25"/>
+      <rect x="22" y="56" width="8" height="8" fill="${c}" opacity="0.2"/>
+      <rect x="18" y="64" width="8" height="8" fill="${c}" opacity="0.15"/>
+      <!-- Body / armor -->
+      <rect x="42" y="38" width="8" height="8" fill="${c}" opacity="0.5"/>
+      <rect x="50" y="38" width="8" height="8" fill="${c}" opacity="0.5"/>
+      <rect x="58" y="38" width="8" height="8" fill="${c}" opacity="0.5"/>
+      <rect x="42" y="46" width="8" height="8" fill="${c}" opacity="0.45"/>
+      <rect x="50" y="46" width="8" height="8" fill="${c}" opacity="0.45"/>
+      <rect x="58" y="46" width="8" height="8" fill="${c}" opacity="0.45"/>
+      <!-- Belt -->
+      <rect x="42" y="54" width="26" height="4" fill="${c}" opacity="0.6"/>
+      <rect x="52" y="53" width="6" height="6" fill="${lite}" opacity="0.3"/>
+      <!-- Shield (left arm) -->
+      <rect x="30" y="38" width="12" height="16" rx="2" fill="${c}" opacity="0.6"/>
+      <rect x="32" y="40" width="8" height="4" fill="${lite}" opacity="0.2"/>
+      <rect x="34" y="44" width="4" height="4" fill="${lite}" opacity="0.15"/>
+      <!-- Sword arm (right) -->
+      <rect x="66" y="32" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Legs -->
+      <rect x="44" y="58" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="56" y="58" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="44" y="66" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="56" y="66" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Boots -->
+      <rect x="42" y="74" width="12" height="6" rx="2" fill="${c}" opacity="0.55"/>
+      <rect x="54" y="74" width="12" height="6" rx="2" fill="${c}" opacity="0.55"/>
+      <!-- Sparkle effects -->
+      <rect x="80" y="6" width="5" height="5" fill="${lite}" opacity="0.5"/>
+      <rect x="86" y="2" width="3" height="3" fill="${lite}" opacity="0.3"/>
+      <rect x="10" y="30" width="4" height="4" fill="${lite}" opacity="0.3"/>
+    `;
+  },
+
+  // 32 — Cartridge Rider: chibi character surfing on a cartridge
+  rider(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Cartridge (tilted like a surfboard) -->
+      <g transform="rotate(-8, 60, 72)">
+        <rect x="24" y="62" width="72" height="24" rx="3" fill="${c}" opacity="0.25" stroke="${c}" stroke-width="2"/>
+        <!-- Label on cartridge -->
+        <rect x="30" y="66" width="36" height="14" rx="2" fill="${c}" opacity="0.1" stroke="${c}" stroke-width="1"/>
+        <!-- Play symbol on label -->
+        <polygon points="40,69 40,77 50,73" fill="${c}" opacity="0.6"/>
+        <!-- Connector pins (bottom) -->
+        <rect x="72" y="66" width="3" height="6" fill="${c}" opacity="0.3"/>
+        <rect x="78" y="66" width="3" height="6" fill="${c}" opacity="0.3"/>
+        <rect x="84" y="66" width="3" height="6" fill="${c}" opacity="0.3"/>
+        <rect x="90" y="66" width="3" height="6" fill="${c}" opacity="0.3"/>
+      </g>
+      <!-- Character standing on cartridge -->
+      <!-- Head -->
+      <rect x="50" y="14" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="58" y="14" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="48" y="22" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="56" y="22" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="64" y="22" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <!-- Hair -->
+      <rect x="48" y="10" width="8" height="6" fill="${c}"/>
+      <rect x="56" y="10" width="8" height="6" fill="${c}"/>
+      <rect x="64" y="10" width="6" height="6" fill="${c}" opacity="0.7"/>
+      <rect x="46" y="14" width="4" height="4" fill="${c}" opacity="0.5"/>
+      <!-- Eyes -->
+      <rect x="52" y="24" width="4" height="4" fill="${lite}"/>
+      <rect x="62" y="24" width="4" height="4" fill="${lite}"/>
+      <!-- Smile -->
+      <rect x="56" y="28" width="6" height="2" fill="${lite}" opacity="0.4"/>
+      <!-- Body -->
+      <rect x="50" y="32" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="58" y="32" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="50" y="40" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="58" y="40" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Arms spread for balance -->
+      <rect x="38" y="34" width="12" height="6" fill="${c}" opacity="0.25"/>
+      <rect x="66" y="34" width="12" height="6" fill="${c}" opacity="0.25"/>
+      <!-- Hands -->
+      <rect x="34" y="32" width="6" height="6" fill="${c}" opacity="0.35"/>
+      <rect x="78" y="32" width="6" height="6" fill="${c}" opacity="0.35"/>
+      <!-- Legs (bent, surfing pose) -->
+      <rect x="50" y="48" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="60" y="48" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Feet on cartridge -->
+      <rect x="48" y="56" width="10" height="5" rx="2" fill="${c}" opacity="0.5"/>
+      <rect x="60" y="56" width="10" height="5" rx="2" fill="${c}" opacity="0.5"/>
+      <!-- Motion lines behind cartridge -->
+      <rect x="10" y="76" width="14" height="2" fill="${lite}" opacity="0.25"/>
+      <rect x="6" y="82" width="10" height="2" fill="${lite}" opacity="0.2"/>
+      <rect x="12" y="88" width="8" height="2" fill="${lite}" opacity="0.15"/>
+      <!-- Speed sparkles -->
+      <rect x="16" y="70" width="4" height="4" fill="${lite}" opacity="0.35"/>
+      <rect x="8" y="74" width="3" height="3" fill="${lite}" opacity="0.2"/>
+      <!-- Star above character -->
+      <rect x="80" y="10" width="5" height="5" fill="${lite}" opacity="0.5"/>
+      <rect x="86" y="6" width="3" height="3" fill="${lite}" opacity="0.3"/>
+    `;
+  },
+
+  // 33 — Cartridge Cat: cat peeking out from top of cartridge
+  catCart(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Cartridge body -->
+      <rect x="28" y="44" width="64" height="56" rx="4" fill="${c}" opacity="0.22" stroke="${c}" stroke-width="2.5"/>
+      <!-- Top edge -->
+      <rect x="28" y="44" width="64" height="6" rx="2" fill="${c}" opacity="0.5"/>
+      <!-- Grip ridges -->
+      <rect x="40" y="45" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="48" y="45" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="56" y="45" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="64" y="45" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="72" y="45" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <!-- Label area -->
+      <rect x="34" y="56" width="52" height="24" rx="2" fill="${c}" opacity="0.1" stroke="${c}" stroke-width="1.5"/>
+      <!-- Play symbol on label -->
+      <polygon points="52,60 52,76 66,68" fill="${c}" opacity="0.5"/>
+      <!-- Label text -->
+      <rect x="38" y="82" width="18" height="2" fill="${c}" opacity="0.2"/>
+      <rect x="38" y="86" width="14" height="2" fill="${c}" opacity="0.15"/>
+      <!-- Connector pins -->
+      <rect x="38" y="94" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="46" y="94" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="54" y="94" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="62" y="94" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="70" y="94" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <rect x="78" y="94" width="4" height="6" fill="${c}" opacity="0.4"/>
+      <!-- Cat ears poking above cartridge -->
+      <rect x="36" y="26" width="6" height="6" fill="${c}"/>
+      <rect x="40" y="20" width="6" height="6" fill="${c}"/>
+      <rect x="44" y="26" width="6" height="6" fill="${c}"/>
+      <rect x="42" y="28" width="4" height="3" fill="${lite}" opacity="0.3"/>
+      <rect x="68" y="26" width="6" height="6" fill="${c}"/>
+      <rect x="72" y="20" width="6" height="6" fill="${c}"/>
+      <rect x="76" y="26" width="6" height="6" fill="${c}"/>
+      <rect x="74" y="28" width="4" height="3" fill="${lite}" opacity="0.3"/>
+      <!-- Cat head (peeking over top of cartridge) -->
+      <rect x="38" y="32" width="44" height="6" fill="${c}"/>
+      <rect x="36" y="38" width="48" height="8" fill="${c}"/>
+      <!-- Cat eyes -->
+      <rect x="44" y="36" width="6" height="6" fill="${lite}"/>
+      <rect x="46" y="38" width="3" height="3" fill="${bg}"/>
+      <rect x="68" y="36" width="6" height="6" fill="${lite}"/>
+      <rect x="70" y="38" width="3" height="3" fill="${bg}"/>
+      <!-- Cat nose -->
+      <rect x="58" y="40" width="4" height="3" fill="${lite}" opacity="0.5"/>
+      <!-- Paws resting on cartridge top edge -->
+      <rect x="34" y="44" width="10" height="6" rx="2" fill="${c}" opacity="0.8"/>
+      <rect x="36" y="46" width="3" height="2" fill="${lite}" opacity="0.2"/>
+      <rect x="40" y="46" width="3" height="2" fill="${lite}" opacity="0.2"/>
+      <rect x="76" y="44" width="10" height="6" rx="2" fill="${c}" opacity="0.8"/>
+      <rect x="78" y="46" width="3" height="2" fill="${lite}" opacity="0.2"/>
+      <rect x="82" y="46" width="3" height="2" fill="${lite}" opacity="0.2"/>
+      <!-- Whiskers -->
+      <rect x="26" y="38" width="8" height="2" fill="${c}" opacity="0.35"/>
+      <rect x="28" y="42" width="6" height="2" fill="${c}" opacity="0.25"/>
+      <rect x="84" y="38" width="8" height="2" fill="${c}" opacity="0.35"/>
+      <rect x="84" y="42" width="6" height="2" fill="${c}" opacity="0.25"/>
+      <!-- Sparkles -->
+      <rect x="14" y="14" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="8" y="10" width="3" height="3" fill="${lite}" opacity="0.25"/>
+      <rect x="100" y="12" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="106" y="8" width="3" height="3" fill="${lite}" opacity="0.25"/>
+    `;
+  },
+
+  // 34 — Robot Loader: small robot holding up a cartridge
+  robotLoad(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Cartridge being held up -->
+      <rect x="38" y="6" width="44" height="34" rx="3" fill="${c}" opacity="0.2" stroke="${c}" stroke-width="2"/>
+      <!-- Cartridge top grip -->
+      <rect x="38" y="6" width="44" height="5" rx="2" fill="${c}" opacity="0.5"/>
+      <rect x="46" y="7" width="3" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="53" y="7" width="3" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="60" y="7" width="3" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="67" y="7" width="3" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <!-- Cartridge label -->
+      <rect x="44" y="14" width="32" height="16" rx="2" fill="${c}" opacity="0.1" stroke="${c}" stroke-width="1"/>
+      <!-- Play symbol on cartridge -->
+      <polygon points="54,18 54,28 64,23" fill="${c}" opacity="0.6"/>
+      <!-- Cartridge pins -->
+      <rect x="46" y="34" width="3" height="4" fill="${c}" opacity="0.3"/>
+      <rect x="52" y="34" width="3" height="4" fill="${c}" opacity="0.3"/>
+      <rect x="58" y="34" width="3" height="4" fill="${c}" opacity="0.3"/>
+      <rect x="64" y="34" width="3" height="4" fill="${c}" opacity="0.3"/>
+      <rect x="70" y="34" width="3" height="4" fill="${c}" opacity="0.3"/>
+      <!-- Robot arms reaching up to hold cartridge -->
+      <rect x="34" y="40" width="6" height="18" rx="2" fill="${c}" opacity="0.4"/>
+      <rect x="80" y="40" width="6" height="18" rx="2" fill="${c}" opacity="0.4"/>
+      <!-- Robot hands gripping cartridge bottom -->
+      <rect x="32" y="36" width="10" height="6" rx="2" fill="${c}" opacity="0.5"/>
+      <rect x="78" y="36" width="10" height="6" rx="2" fill="${c}" opacity="0.5"/>
+      <!-- Robot head (CRT screen) -->
+      <rect x="40" y="50" width="40" height="28" rx="5" fill="${c}" opacity="0.25" stroke="${c}" stroke-width="2"/>
+      <!-- Screen -->
+      <rect x="46" y="54" width="28" height="18" rx="3" fill="${c}" opacity="0.1"/>
+      <!-- Happy face on screen ^_^ -->
+      <rect x="52" y="58" width="4" height="2" fill="${lite}" opacity="0.7"/>
+      <rect x="50" y="56" width="2" height="2" fill="${lite}" opacity="0.7"/>
+      <rect x="56" y="56" width="2" height="2" fill="${lite}" opacity="0.5"/>
+      <rect x="64" y="58" width="4" height="2" fill="${lite}" opacity="0.7"/>
+      <rect x="62" y="56" width="2" height="2" fill="${lite}" opacity="0.7"/>
+      <rect x="68" y="56" width="2" height="2" fill="${lite}" opacity="0.5"/>
+      <!-- Smile -->
+      <rect x="56" y="64" width="8" height="2" fill="${lite}" opacity="0.5"/>
+      <rect x="54" y="62" width="2" height="2" fill="${lite}" opacity="0.3"/>
+      <rect x="64" y="62" width="2" height="2" fill="${lite}" opacity="0.3"/>
+      <!-- Antenna -->
+      <rect x="58" y="44" width="4" height="6" fill="${c}" opacity="0.5"/>
+      <circle cx="60" cy="43" r="3" fill="${lite}" opacity="0.5"/>
+      <!-- Body -->
+      <rect x="44" y="78" width="32" height="18" rx="3" fill="${c}" opacity="0.2" stroke="${c}" stroke-width="1.5"/>
+      <!-- Chest detail -->
+      <circle cx="54" cy="86" r="2.5" fill="${c}" opacity="0.5"/>
+      <circle cx="60" cy="86" r="2.5" fill="${lite}" opacity="0.4"/>
+      <circle cx="66" cy="86" r="2.5" fill="${c}" opacity="0.4"/>
+      <!-- Vent -->
+      <rect x="50" y="90" width="20" height="1.5" fill="${c}" opacity="0.15"/>
+      <rect x="50" y="93" width="20" height="1.5" fill="${c}" opacity="0.1"/>
+      <!-- Legs / treads -->
+      <rect x="46" y="96" width="12" height="8" rx="2" fill="${c}" opacity="0.45"/>
+      <rect x="62" y="96" width="12" height="8" rx="2" fill="${c}" opacity="0.45"/>
+      <rect x="48" y="100" width="8" height="2" fill="${lite}" opacity="0.1"/>
+      <rect x="64" y="100" width="8" height="2" fill="${lite}" opacity="0.1"/>
+      <!-- Sparkles around cartridge -->
+      <rect x="22" y="8" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="16" y="4" width="3" height="3" fill="${lite}" opacity="0.25"/>
+      <rect x="94" y="6" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="100" y="2" width="3" height="3" fill="${lite}" opacity="0.25"/>
+      <rect x="26" y="22" width="4" height="4" fill="${lite}" opacity="0.3"/>
+    `;
+  },
+
+  // 35 — Cartridge Burst: pixel warrior bursting up out of a cartridge
+  burst(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Cartridge at bottom -->
+      <rect x="24" y="70" width="72" height="34" rx="4" fill="${c}" opacity="0.22" stroke="${c}" stroke-width="2"/>
+      <!-- Cartridge top edge -->
+      <rect x="24" y="70" width="72" height="5" rx="2" fill="${c}" opacity="0.5"/>
+      <!-- Cartridge label -->
+      <rect x="32" y="80" width="56" height="14" rx="2" fill="${c}" opacity="0.1" stroke="${c}" stroke-width="1"/>
+      <!-- Label lines -->
+      <rect x="38" y="84" width="20" height="2" fill="${c}" opacity="0.2"/>
+      <rect x="38" y="88" width="16" height="2" fill="${c}" opacity="0.15"/>
+      <!-- Connector pins at very bottom -->
+      <rect x="36" y="98" width="4" height="5" fill="${c}" opacity="0.35"/>
+      <rect x="44" y="98" width="4" height="5" fill="${c}" opacity="0.35"/>
+      <rect x="52" y="98" width="4" height="5" fill="${c}" opacity="0.35"/>
+      <rect x="60" y="98" width="4" height="5" fill="${c}" opacity="0.35"/>
+      <rect x="68" y="98" width="4" height="5" fill="${c}" opacity="0.35"/>
+      <rect x="76" y="98" width="4" height="5" fill="${c}" opacity="0.35"/>
+      <!-- Character bursting upward from cartridge -->
+      <!-- Head -->
+      <rect x="50" y="18" width="8" height="8" fill="${c}" opacity="0.4"/>
+      <rect x="58" y="18" width="8" height="8" fill="${c}" opacity="0.4"/>
+      <rect x="48" y="26" width="8" height="8" fill="${c}" opacity="0.4"/>
+      <rect x="56" y="26" width="8" height="8" fill="${c}" opacity="0.4"/>
+      <rect x="64" y="26" width="8" height="8" fill="${c}" opacity="0.4"/>
+      <!-- Helmet/hair -->
+      <rect x="50" y="14" width="8" height="6" fill="${c}" opacity="0.7"/>
+      <rect x="58" y="14" width="8" height="6" fill="${c}" opacity="0.7"/>
+      <rect x="48" y="18" width="4" height="4" fill="${c}" opacity="0.5"/>
+      <!-- Eyes -->
+      <rect x="52" y="28" width="4" height="4" fill="${lite}"/>
+      <rect x="62" y="28" width="4" height="4" fill="${lite}"/>
+      <!-- Body (emerging from cartridge) -->
+      <rect x="48" y="36" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="56" y="36" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="64" y="36" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="48" y="44" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="56" y="44" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="64" y="44" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <!-- Arms raised in triumph -->
+      <rect x="34" y="32" width="8" height="6" fill="${c}" opacity="0.3"/>
+      <rect x="28" y="26" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="24" y="20" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <rect x="76" y="32" width="8" height="6" fill="${c}" opacity="0.3"/>
+      <rect x="84" y="26" width="8" height="8" fill="${c}" opacity="0.3"/>
+      <rect x="88" y="20" width="8" height="8" fill="${c}" opacity="0.35"/>
+      <!-- Fists at top -->
+      <rect x="22" y="16" width="8" height="6" fill="${c}" opacity="0.45"/>
+      <rect x="90" y="16" width="8" height="6" fill="${c}" opacity="0.45"/>
+      <!-- Lower body disappearing into cartridge -->
+      <rect x="48" y="52" width="8" height="8" fill="${c}" opacity="0.2"/>
+      <rect x="56" y="52" width="8" height="8" fill="${c}" opacity="0.2"/>
+      <rect x="64" y="52" width="8" height="8" fill="${c}" opacity="0.2"/>
+      <rect x="48" y="60" width="24" height="10" fill="${c}" opacity="0.12"/>
+      <!-- Explosion particles around character -->
+      <rect x="38" y="10" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <rect x="76" y="8" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <rect x="32" y="44" width="5" height="5" fill="${c}" opacity="0.4"/>
+      <rect x="84" y="42" width="5" height="5" fill="${c}" opacity="0.4"/>
+      <!-- Pixel sparkle debris -->
+      <rect x="16" y="6" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="10" y="2" width="3" height="3" fill="${lite}" opacity="0.3"/>
+      <rect x="100" y="4" width="5" height="5" fill="${lite}" opacity="0.45"/>
+      <rect x="106" y="0" width="3" height="3" fill="${lite}" opacity="0.3"/>
+      <rect x="20" y="50" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <rect x="96" y="48" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <rect x="44" y="4" width="4" height="4" fill="${lite}" opacity="0.35"/>
+      <rect x="74" y="2" width="4" height="4" fill="${lite}" opacity="0.35"/>
+      <!-- Energy lines from cartridge opening -->
+      <rect x="40" y="68" width="3" height="4" fill="${lite}" opacity="0.2"/>
+      <rect x="48" y="66" width="3" height="6" fill="${lite}" opacity="0.25"/>
+      <rect x="70" y="66" width="3" height="6" fill="${lite}" opacity="0.25"/>
+      <rect x="78" y="68" width="3" height="4" fill="${lite}" opacity="0.2"/>
+    `;
+  }
+};
+
+// ========== COLOR CONFIGS ==========
+const colors = [
+  { name: 'Replay Indigo', cls: 'indigo', fill: '#6366f1', lite: '#818cf8', bg: 'rgba(99,102,241,0.10)' },
+  { name: 'Astro Green',   cls: 'green',  fill: '#00b543', lite: '#33cc66', bg: 'rgba(0,181,67,0.08)' },
+  { name: 'MVS Red',       cls: 'red',    fill: '#e00000', lite: '#ff4444', bg: 'rgba(224,0,0,0.08)' },
+  { name: 'Unicolors Gold', cls: 'gold',  fill: '#c8a848', lite: '#e0c060', bg: 'rgba(200,168,72,0.08)' },
+];
+
+// ========== GRID RENDERING ==========
+const gridConfig = [
+  { id: 'cart-shield-grid', fn: 'cartShield' },
+  { id: 'cart-stack-grid',  fn: 'cartStack' },
+  { id: 'cart-glow-grid',   fn: 'cartGlow' },
+  { id: 'cart-bite-grid',   fn: 'cartBite' },
+  { id: 'chibi-grid',       fn: 'chibi' },
+  { id: 'cat-grid',         fn: 'cat' },
+  { id: 'robot-grid',       fn: 'robot' },
+  { id: 'warrior-grid',     fn: 'warrior' },
+  { id: 'rider-grid',       fn: 'rider' },
+  { id: 'catcart-grid',     fn: 'catCart' },
+  { id: 'robotload-grid',   fn: 'robotLoad' },
+  { id: 'burst-grid',       fn: 'burst' },
+];
+
+function svgWrap(w, h, inner) {
+  return `<svg width="${w}" height="${h}" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+}
+
+function renderGrid(gridId, fnName) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  const fn = logos[fnName];
+
+  colors.forEach(col => {
+    const inner = fn(col.fill, col.lite, col.bg);
+    const card = document.createElement('div');
+    card.className = `color-card ${col.cls}`;
+    card.innerHTML = `
+      <span class="color-label">${col.name}</span>
+      <div class="size-row">
+        <div class="size-item">
+          ${svgWrap(120, 120, inner)}
+          <span class="size-label">120px</span>
+        </div>
+        <div class="size-item">
+          ${svgWrap(48, 48, inner)}
+          <span class="size-label">48px</span>
+        </div>
+        <div class="size-item">
+          ${svgWrap(24, 24, inner)}
+          <span class="size-label">24px</span>
+        </div>
+      </div>
+      <div class="wordmark-row">
+        ${svgWrap(24, 24, inner)}
+        <span class="wm-text" style="color:${col.fill}">Replay Control</span>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+gridConfig.forEach(g => renderGrid(g.id, g.fn));
+
+// ========== TOP PICKS CONTEXT RENDERING ==========
+function renderContexts(containerId, fnName) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const fn = logos[fnName];
+  const c = colors[0]; // indigo for context demos
+  const inner = fn(c.fill, c.lite, c.bg);
+
+  container.innerHTML = `
+    <div class="context-card">
+      <div class="context-card-header"><h3>Mobile App Bar</h3></div>
+      <div class="context-card-body">
+        <div class="app-bar">
+          ${svgWrap(28, 28, inner)}
+          <span class="title">Replay Control</span>
+          <div class="hamburger"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="context-card">
+      <div class="context-card-header"><h3>PWA Home Screen</h3></div>
+      <div class="context-card-body">
+        <div>
+          <div class="pwa-icon indigo">
+            ${svgWrap(48, 48, inner)}
+          </div>
+          <div class="pwa-label">Replay Control</div>
+        </div>
+      </div>
+    </div>
+    <div class="context-card">
+      <div class="context-card-header"><h3>Browser Tab Favicon</h3></div>
+      <div class="context-card-body">
+        <div class="favicon-row">
+          ${svgWrap(16, 16, inner)}
+          <span class="tab-title">Replay Control</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+renderContexts('pick1-contexts', 'catCart');
+renderContexts('pick2-contexts', 'cartShield');
+renderContexts('pick3-contexts', 'robotLoad');
+renderContexts('pick4-contexts', 'cartGlow');
+</script>
+
+</body>
+</html>

@@ -1,391 +1,640 @@
-# Game Metadata Sources Research
+# Game Metadata
 
-Research document for external game metadata APIs and databases that can be used in the Replay project to fetch rich metadata (box art, descriptions, ratings, etc.) for retro games.
+How game metadata works in Replay today, what's missing, and the plan for enriching it with external sources.
 
 **Last updated:** March 2026
 
 ---
 
-## Summary Comparison Table
+## 1. Current State
 
-| Source | API Type | Auth | Rate Limits | Multi-lang | Retro Coverage | Media Types | Matching | Cost |
-|--------|----------|------|-------------|------------|----------------|-------------|----------|------|
-| **ScreenScraper** | REST API v2 | Dev credentials + user account | ~50K req/day; thread-limited | EN, FR, ES, DE, IT, PT + more | Excellent (218+ systems) | Box art (2D/3D), screenshots, video, fanart, manual, wheel, marquee | Hash (MD5/SHA1/CRC) + filename | Free (donations for more threads) |
-| **IGDB** | REST API v4 | Twitch OAuth2 (Client ID + Secret) | 4 req/sec | Limited (game_localizations endpoint) | Good (all platforms in DB) | Cover art, screenshots, artworks | Name search, platform filter | Free (non-commercial); commercial requires partnership |
-| **TheGamesDB** | REST API v2 | API key (forum request) | 3K/month (public) or 6K (private, one-time) | English only | Good (broad platform list) | Box art, screenshots, fanart, banners, clearlogo | Name search, platform filter | Free |
-| **MobyGames** | REST API v2 | API key (paid subscription) | 720 req/hr (hobbyist); 1 req/sec max | English only | Excellent (300K+ games, retro strong) | Cover art, screenshots | Name search, platform filter | Paid ($9.99+/mo) |
-| **LaunchBox** | XML dump download | None (public download) | N/A (offline data) | English only | Excellent (108K+ games) | Box art, screenshots, 3D boxes, clear logos, banners | Name/title matching | Free (metadata); images via scraping |
-| **RetroAchievements** | REST API v1 | API key (free account) | Fair burst limit | English only | Very good (52+ systems, retro-focused) | Game icons, title screens, in-game screenshots, box art | Hash-based (per-system methods) | Free |
-| **OpenVGDB** | SQLite DB download | None | N/A (offline data) | English only | Good (many cart-based systems) | Cover art links | ROM hash (MD5/SHA1/CRC) | Free (open source) |
-| **Arcade Italia** | REST JSON API | None required | 1 connection/IP recommended | EN, IT (+ lang param) | Arcade-only: 49K+ machines | Screenshots, title screens, marquees, videos, box art | MAME ROM name (zip filename) | Free |
-| **No-Intro / DAT-o-Matic** | DAT file downloads | Account (free) | N/A (offline data) | N/A (identification only) | Excellent (console/handheld) | None (identification only) | Hash-based (CRC/MD5/SHA1) | Free |
-| **MAME / FBNeo DATs** | DAT file downloads | None | N/A (offline data) | N/A (identification only) | Arcade: comprehensive | None (identification only) | ROM name + hash | Free |
-| **Wikidata** | SPARQL + REST API | None (anonymous OK) | Soft limits on SPARQL queries | 400+ languages (labels/descriptions) | Moderate (110K+ games, gaps in retro) | None (links to Wikimedia Commons) | Wikidata ID, external IDs | Free (CC0) |
-| **Hasheous** | REST API | None required | Not published (generous) | English (proxies IGDB) | Good (uses No-Intro/Redump/TOSEC/MAME DATs) | Proxies IGDB cover art | Hash-based (MD5/SHA1) | Free (open source) |
-| **SteamGridDB** | REST API v2 | API key (free account) | Not published | N/A (artwork only) | Moderate (community-driven) | Grid images, heroes, logos, icons | Name search, Steam App ID | Free |
+### Embedded Databases
+
+Replay ships two embedded metadata databases, compiled into the binary at build time via PHF maps. They are separate modules with different data models and build pipelines (see `arcade-db-unification-analysis.md` for the rationale).
+
+**game_db** (non-arcade systems, ~34K ROM entries across 20+ systems):
+- Two-level model: `CanonicalGame` (shared per game) + `GameEntry` (per ROM variant)
+- Fields: `display_name`, `year` (u16), `genre`, `developer`, `players`, `region`, `crc32`, `normalized_genre`
+- Sources: No-Intro DATs (ROM identification), TheGamesDB JSON (metadata), libretro-database DATs (genre, players)
+- Lookup: filename stem match, CRC32 fallback, normalized title fallback
+
+**arcade_db** (all arcade systems, ~25K+ entries in a single flat map):
+- Single struct: `ArcadeGameInfo`
+- Fields: `rom_name`, `display_name`, `year` (&str), `manufacturer`, `players`, `rotation`, `status`, `is_clone`, `parent`, `category`, `normalized_genre`
+- Sources: Flycast CSV, FBNeo DAT, MAME 2003+ XML, MAME current XML, catver.ini files
+- Lookup: ROM zip stem (e.g., "mslug6")
+
+Both databases have a `normalized_genre` field mapped to a shared taxonomy of ~18 genres at build time (Action, Adventure, Beat'em Up, Board & Card, Driving, Educational, Fighting, Maze, Music, Pinball, Platform, Puzzle, Quiz, Role-Playing, Shooter, Simulation, Sports, Strategy, Other).
+
+### Unified GameInfo at the API Layer
+
+Server functions return a single `GameInfo` struct regardless of whether data comes from arcade_db or game_db. The `resolve_game_info()` function in `server_fns.rs` is the only place that branches on system type. UI components work with `GameInfo` exclusively and never need to know the data source.
+
+```rust
+pub struct GameInfo {
+    // Identity (always present)
+    pub system: String,
+    pub system_display: String,
+    pub rom_filename: String,
+    pub rom_path: String,
+    pub display_name: String,       // always resolved, never empty
+
+    // Common metadata
+    pub year: String,               // "1991", "198?", or ""
+    pub genre: String,              // normalized genre
+    pub developer: String,          // manufacturer (arcade) or developer (console)
+    pub players: u8,                // 0 = unknown
+
+    // Arcade-specific (None for non-arcade)
+    pub rotation: Option<String>,
+    pub driver_status: Option<String>,
+    pub is_clone: Option<bool>,
+    pub parent_rom: Option<String>,
+    pub arcade_category: Option<String>,
+
+    // Console-specific (None for arcade)
+    pub region: Option<String>,
+}
+```
+
+### What's Missing
+
+The embedded databases cover identification and basic metadata well, but lack:
+
+- **Descriptions/synopses** -- no text summaries of games
+- **Box art / cover images** -- no visual assets
+- **Screenshots** -- no in-game or title screen images
+- **Ratings** -- no community or critic scores
+- **Publisher** -- available for arcade (via manufacturer), not tracked separately for console
+
+These are all things that external metadata sources can provide.
 
 ---
 
-## Detailed Source Analysis
+## 2. External Metadata Sources
 
-### 1. ScreenScraper (screenscraper.fr)
+### Summary Comparison
+
+| Source | Type | Auth | Bulk Download | Multi-lang | Retro Coverage | Media | Matching | Cost | License |
+|--------|------|------|---------------|------------|----------------|-------|----------|------|---------|
+| **ScreenScraper** | REST API v2 | Dev ID + user account | No (API only) | EN, FR, ES, DE, IT, PT+ | Excellent (218+ systems) | Box art, screenshots, video, fanart, manual, wheel, marquee | Hash (MD5/SHA1/CRC) + filename | Free | CC (media), community |
+| **IGDB** | REST API v4 | Twitch OAuth2 | No | Limited | Good | Cover art, screenshots, artworks | Name search | Free (non-commercial) | Twitch TOS, no long-term cache |
+| **TheGamesDB** | REST API v2 | API key | No | English only | Good | Box art, screenshots, fanart, banners | Name search | Free (very low limits) | Free, attribution |
+| **MobyGames** | REST API v2 | API key (paid) | No | English only | Excellent (300K+) | Cover art, screenshots | Name search | Paid ($9.99+/mo) | Proprietary, paid API |
+| **LaunchBox** | XML download | None | Yes (metadata only) | English only | Excellent (108K+) | Box art, screenshots (no download API) | Name matching | Free (metadata) | Free download, personal use |
+| **RetroAchievements** | REST API v1 | API key (free) | No | English only | Very good (52+ systems) | Icons, title/in-game screenshots, box art | Hash-based | Free | Free, open API |
+| **OpenVGDB** | SQLite download | None | Yes | English only | Good (cart systems) | Cover art links | Hash-based | Free | Open source |
+| **Arcade Italia** | REST JSON | None | Export packs | EN, IT | Arcade only (49K+) | Screenshots, marquees, videos | MAME ROM name | Free | Free, attribution |
+| **libretro-thumbnails** | Git repos | None | Yes (git clone) | N/A (images only) | Excellent | Box art, title screens, screenshots | No-Intro name matching | Free | Community, free redistribution |
+| **Wikidata** | SPARQL + REST | None | Dumps available | 400+ languages | Moderate (110K+) | None (links only) | External IDs | Free (CC0) | CC0 (public domain) |
+| **Hasheous** | REST API | None | No | English (proxies IGDB) | Good | Proxies IGDB | Hash-based | Free | Open source |
+| **progetto-SNAPS** | Bulk downloads | None | Yes | N/A (images only) | Arcade: comprehensive | Snapshots, cabinets, marquees, flyers | MAME ROM name | Free | Free, personal use |
+
+### Detailed Evaluation
+
+#### ScreenScraper (screenscraper.fr) -- BEST OVERALL
 
 - **URL:** https://screenscraper.fr/
-- **API Docs:** https://screenscraper.fr/webapi2.php (API v2 documentation page)
-- **API Type:** REST API v2, returns JSON/XML
-- **Authentication:** Requires three levels of credentials:
-  1. Developer ID and password (for the application)
-  2. Software name and version
-  3. User credentials (username + password, registered on screenscraper.fr)
-- **Rate Limits:**
-  - Up to ~50,000 requests/day total
-  - Thread-based system: non-registered users get 0 threads (blocked); registered users get 1 thread; active contributors and donors get more threads (up to 4+)
-  - When server load is high, lower-priority users are rate-limited first
-- **Multi-language Support:** Best in class for retro databases. Supports at minimum: English (en), French (fr), Spanish (es), German (de), Italian (it), Portuguese (pt). Game descriptions, genres/tags are translated. Language is selectable via API parameter.
-- **Systems Coverage:** 218+ systems as of last count. Covers virtually all retro systems: NES, SNES, N64, Game Boy/GBC/GBA, Mega Drive/Genesis, Master System, Saturn, Dreamcast, PlayStation 1/2/PSP, PC Engine, Neo Geo, Amiga, Amstrad CPC, Atari (2600/7800/ST/Lynx/Jaguar), DOS, MAME arcade, FBNeo, MSX, Commodore 64, ZX Spectrum, Vectrex, and many more obscure systems.
-- **Media Types:** Box art (2D front/back, 3D rendered), screenshots (in-game), title screens, videos (short gameplay clips), fanart, wheels/logos, marquees, manuals, cartridge/disc media scans, bezels, system overlays. Also provides "mix" composite images combining multiple art types.
-- **Matching:** Primary: ROM hash (CRC32, MD5, SHA1 -- tries all three). Fallback: exact filename match (without extension). The hash-based matching leverages an enormous database of verified ROM dumps.
-- **Data Fields:** Title, description/synopsis, genre, release date, developer, publisher, number of players, rating, region, language, ROM filename, ROM size, system, family/series.
-- **License/Terms:** Free to use. Community-driven under Creative Commons licensing for media. Requires attribution. Donations and contributions encouraged (and grant improved access). No explicit commercial restriction documented, but commercial users should contact the team.
-- **Community/Maintenance:** Very actively maintained. Large French-speaking community with global contributors. Regularly updated with new games, media, and system support. Backed by Patreon funding.
+- **API Docs:** https://screenscraper.fr/webapi2.php (API v2)
+- **Authentication:** Three levels: developer ID/password, software name/version, user credentials (registered on screenscraper.fr)
+- **Rate limits:** ~50K req/day total. Thread-based: free users get 1 thread; donors get up to 4+. Lower-priority users are rate-limited first under high server load
+- **Multi-language:** Best in class -- EN, FR, ES, DE, IT, PT at minimum. Descriptions and genres are translated. Language selectable via API parameter
+- **Systems coverage:** 218+ systems covering virtually all retro platforms (NES, SNES, N64, GB/GBC/GBA, Mega Drive, Master System, Saturn, Dreamcast, PS1/PS2/PSP, PC Engine, Neo Geo, Amiga, Amstrad CPC, Atari, DOS, MAME, FBNeo, MSX, C64, ZX Spectrum, and many more)
+- **Media:** Box art (2D/3D), screenshots, title screens, videos, fanart, wheels/logos, marquees, manuals, bezels, "mix" composites
+- **Matching:** Primary: ROM hash (CRC32, MD5, SHA1). Fallback: exact filename match
+- **Data fields:** Title, description, genre, release date, developer, publisher, players, rating, region, language, family/series
+- **Licensing:** Free, Creative Commons for media. Attribution required. Community-driven, Patreon-funded
 
-**Verdict:** The single best source for retro game metadata due to hash-based matching, multi-language support, and breadth of media types.
+**Verdict:** The single best source for retro game metadata. Hash-based matching is ideal since we already have CRC32 in game_db. The thread limit means bulk downloads will be slow for large libraries (a 5000-game library at 1 req/sec = ~1.5 hours), but since we cache locally this is a one-time cost.
 
----
+#### libretro-thumbnails (github.com/libretro-thumbnails) -- BEST FOR IMAGES
 
-### 2. IGDB (igdb.com)
+- **URL:** https://github.com/libretro-thumbnails
+- **Type:** Git repos of PNG images, one repo per system
+- **Organization:** Three directories per system: `Named_Boxarts/`, `Named_Snaps/` (in-game screenshots), `Named_Titles/` (title screens)
+- **Naming:** Follows No-Intro naming convention (matches our game_db filenames directly)
+- **Bulk download:** `git clone` per system repo
+- **Storage:** Each system repo is typically 50-300 MB. Total for all systems: ~5-10 GB. Can be selective (clone only systems the user has ROMs for)
+- **Licensing:** Community-contributed, freely redistributable
 
-- **URL:** https://www.igdb.com/
-- **API Docs:** https://api-docs.igdb.com/
-- **API Type:** REST API v4, Protobuf or JSON responses. Uses Apicalypse query language in POST body.
-- **Authentication:** Requires Twitch Developer account. Register an application at dev.twitch.tv to obtain a Client ID and Client Secret. Authenticate via OAuth2 client credentials flow to get a Bearer token.
-- **Rate Limits:** 4 requests/second, max 8 concurrent open requests. Exceeding returns HTTP 429.
-- **Multi-language Support:** Limited. A `game_localizations` endpoint exists and is being expanded, primarily providing localized cover art and game names by region. Descriptions/summaries are predominantly English. Multi-language support is a known gap that Twitch/IGDB is working on.
-- **Systems Coverage:** Broad platform database covering both modern and retro. Good for major consoles (NES, SNES, N64, PlayStation, etc.) but can have gaps for more obscure retro/computer systems (e.g., less coverage for Amstrad CPC, MSX, or obscure handhelds compared to ScreenScraper).
-- **Media Types:** Cover art, screenshots, artworks (promotional art). No videos, manuals, or marquees.
-- **Matching:** Name-based search only. No hash or filename-based matching. Search by game name with platform filter. Fuzzy matching available. You query `POST https://api.igdb.com/v4/games` with fields and filters.
-- **Data Fields:** Title, summary, storyline, genre, themes, game modes, player perspectives, release dates (per platform/region), developer, publisher, franchise/collection, age ratings, aggregated rating, total rating, cover, screenshots, artworks, videos (YouTube links), websites, similar games, involved companies, platforms.
-- **License/Terms:** Free for non-commercial use under Twitch Developer Service Agreement. Commercial use requires a partnership agreement (contact partner@igdb.com). Data cannot be cached indefinitely -- must refresh periodically.
-- **Community/Maintenance:** Actively maintained by Twitch/Amazon. Large community of contributors. Very good for modern and well-known retro titles.
+**Verdict:** The best source for images because it supports bulk download and uses No-Intro naming that matches our game_db. Complements ScreenScraper (text metadata) or can be used standalone for an images-only approach.
 
-**Verdict:** Excellent data richness and well-documented API, but limited multi-language support and no hash-based matching make it a strong secondary source rather than primary for our use case.
-
----
-
-### 3. TheGamesDB (thegamesdb.net)
-
-- **URL:** https://thegamesdb.net/
-- **API Docs:** https://api.thegamesdb.net/
-- **API Type:** REST API v2, JSON responses
-- **Authentication:** API key required. Must register on the forums and request a key. Two key types:
-  - Public key: 1,000 requests/month per unique IP
-  - Private key: 6,000 total requests (one-time, never resets)
-- **Rate Limits:** Very restrictive. Public key: ~1,000 calls/month. Private key: 6,000 lifetime calls. The response includes `remaining_monthly_allowance` or remaining total for tracking.
-- **Multi-language Support:** English only. No multi-language game descriptions or localized metadata.
-- **Systems Coverage:** Good breadth: covers major consoles (NES, SNES, N64, GameCube, Wii), Sega systems (Genesis, Saturn, Dreamcast, Master System, Game Gear, SG-1000, 32X, CD), Sony (PS1-PS5, PSP, Vita), Atari, Neo Geo, 3DO, and more. Also covers PC, Mac, and some computers.
-- **Media Types:** Box art (front/back, by region), fanart, banners, clearlogo, screenshots, title screens.
-- **Matching:** Name search via `/Games/ByGameName` endpoint with optional platform filter. Also search by game ID. No hash-based matching.
-- **Data Fields:** Title, overview/description, release date, platform, developer, publisher, genre, players, rating, YouTube link, ESRB rating, cooperative support.
-- **License/Terms:** Open database, community-contributed. Free API with registration. Terms are relatively permissive for non-commercial use.
-- **Community/Maintenance:** Community-maintained wiki-style database. Had a major redesign. Still active but smaller community than ScreenScraper or IGDB.
-
-**Verdict:** Decent fallback source with good media variety, but very low rate limits and English-only make it unsuitable as a primary source.
-
----
-
-### 4. MobyGames (mobygames.com)
-
-- **URL:** https://www.mobygames.com/
-- **API Docs:** https://www.mobygames.com/info/api/
-- **API Type:** REST API v2, JSON responses
-- **Authentication:** API key required. Obtained through paid MobyPro subscription.
-- **Rate Limits:**
-  - Hobbyist ($9.99/mo): 0.2 requests/second
-  - Bronze ($99.99/mo): 1 request/second, commercial use
-  - Non-commercial legacy keys: 720 req/hr, max 1 req/sec
-- **Multi-language Support:** English only for descriptions. MobyGames is an English-language database. No localized game descriptions available.
-- **Systems Coverage:** Excellent. 300,000+ game entries across hundreds of platforms. Particularly strong for retro and obscure systems including DOS, Amiga, early computers, and niche consoles.
-- **Media Types:** Cover art (front/back, by platform/region), screenshots (in-game), promo art. No videos, manuals, or wheels.
-- **Matching:** Name search with platform filter. API endpoints: `/games`, `/games/{id}`, `/games/{id}/platforms/{pid}/screenshots`, `/games/{id}/platforms/{pid}/covers`. No hash-based matching.
-- **Data Fields:** Title, description, genre (multi-faceted genre system), release date, developer, publisher, platforms, number of players, perspective, ESRB rating, critic/user ratings, alternate titles.
-- **License/Terms:** Paid API access required. Commercial use requires Bronze tier or higher. Data usage subject to MobyGames terms.
-- **Community/Maintenance:** One of the oldest and most respected game databases (since 1999). Very actively maintained with high data quality standards. Curated by dedicated community.
-
-**Verdict:** High-quality, comprehensive data -- especially for retro and obscure systems -- but the paid API requirement and English-only descriptions are significant drawbacks.
-
----
-
-### 5. OpenVGDB
-
-- **URL:** https://github.com/OpenVGDB/OpenVGDB
-- **API Type:** Downloadable SQLite database file (no REST API)
-- **Authentication:** None required
-- **Rate Limits:** N/A (offline database)
-- **Multi-language Support:** English only
-- **Systems Coverage:** Focused on cartridge-based consoles. Supports NES, SNES, N64, Game Boy/GBC/GBA, Mega Drive/Genesis, Master System, Game Gear, Atari systems, Neo Geo Pocket, WonderSwan, Virtual Boy, GameCube (added in v27), and others. Less coverage for computer platforms and disc-based systems.
-- **Media Types:** Cover art image URLs (links to external sources). No screenshots, videos, or other media hosted directly.
-- **Matching:** ROM hash-based matching (CRC32, MD5, SHA1). The database maps ROM hashes to game entries. This is the primary lookup method.
-- **Data Fields:** Game name, description, region, release date, publisher, developer, genre, ROM filename, ROM size, system. Database tables include ROMs, RELEASES, and CHEATS.
-- **License/Terms:** Open source. Free to use and redistribute. Used by OpenEmu (macOS) for game identification.
-- **Community/Maintenance:** Actively maintained (latest release v29.0, November 2025). Regular updates adding new games and system support.
-
-**Verdict:** Excellent for offline hash-based ROM identification on cartridge systems. Lightweight and easy to integrate as a local lookup. Limited media and English-only descriptions.
-
----
-
-### 6. LaunchBox Games Database (gamesdb.launchbox-app.com)
+#### LaunchBox Games Database (gamesdb.launchbox-app.com) -- BEST FOR OFFLINE TEXT
 
 - **URL:** https://gamesdb.launchbox-app.com/
-- **API Type:** Downloadable XML/ZIP file (no REST API). Download from https://gamesdb.launchbox-app.com/Metadata.zip
-- **Authentication:** None for metadata download. No API keys.
-- **Rate Limits:** N/A for the metadata file. Image scraping from the website may be subject to undocumented limits.
-- **Multi-language Support:** English only
-- **Systems Coverage:** Excellent. 108,000+ games across all major retro and modern platforms. Covers consoles, handhelds, computers, and arcade.
-- **Media Types:** Box art (2D front/back, 3D rendered), screenshots (in-game, title screen), clear logos, banners, disc/cartridge media scans. Images are hosted on the LaunchBox website but there is no public API for programmatic image download.
-- **Matching:** Name/title-based matching against the XML database. The `Metadata.xml` file contains game names organized by platform. No hash-based matching.
-- **Data Fields:** Title (Name), description (Notes), release date, developer, publisher, genre, max players, rating (community rating), video URL, Wikipedia URL, series, cooperative support.
-- **License/Terms:** The metadata XML is freely downloadable. However, there is no official public API, and scraping images from the website may violate terms of service. The database content is community-contributed.
-- **Community/Maintenance:** Large, active community (LaunchBox is a popular frontend). Database is actively curated and regularly updated.
+- **Type:** Downloadable XML/ZIP (https://gamesdb.launchbox-app.com/Metadata.zip). No API
+- **Coverage:** 108K+ games across all major retro and modern platforms, including consoles, handhelds, computers, and arcade
+- **Data fields:** Title, description (Notes), release date, developer, publisher, genre, max players, community rating, video URL, Wikipedia URL, series, cooperative support
+- **Media:** Box art, screenshots, clear logos, banners -- but images are hosted on the website with no public download API
+- **Matching:** Name/title-based against the XML database. No hash-based matching
+- **Licensing:** Metadata XML freely downloadable. Image scraping may violate terms
 
-**Verdict:** Large, well-maintained database with rich data. The lack of a proper API and inability to programmatically download images are major limitations. Best used as an offline reference dataset.
+**Verdict:** Excellent offline text metadata source. The downloadable XML is a major advantage over API-only sources. Can serve as the primary description/rating source with no API calls needed.
 
----
+#### IGDB (igdb.com)
 
-### 7. RetroAchievements (retroachievements.org)
+- **URL:** https://www.igdb.com/ | **Docs:** https://api-docs.igdb.com/
+- **Auth:** Twitch OAuth2 (Client ID + Secret from dev.twitch.tv)
+- **Rate limits:** 4 req/sec, 8 max concurrent
+- **Multi-language:** Limited -- `game_localizations` endpoint being expanded, descriptions mainly English
+- **Strengths:** Rich data (summaries, storylines, themes, age ratings, aggregated ratings), well-documented API
+- **Weaknesses:** Name-only matching, caching restriction (data cannot be cached indefinitely), commercial use requires partnership
+- **Licensing:** Free for non-commercial use under Twitch Developer Service Agreement
 
-- **URL:** https://retroachievements.org/
-- **API Docs:** https://api-docs.retroachievements.org/
-- **API Type:** REST API v1, JSON responses
-- **Authentication:** Free API key from user account control panel. No paid tiers.
-- **Rate Limits:** Fair burst limit (exact numbers not published). Users with higher needs can request adjustments via Discord.
-- **Multi-language Support:** English only
-- **Systems Coverage:** 52+ retro systems. Strong coverage for: NES, SNES, N64, Game Boy/GBC/GBA, Genesis/Mega Drive, Master System, Game Gear, Saturn, Dreamcast, PS1, PS2, PSP, DS, PC Engine, Neo Geo, Atari (2600/7800/Lynx/Jaguar), Amstrad CPC, Arcade, Apple II, MSX, PC-8800, 3DO, Virtual Boy, ColecoVision, Intellivision, Vectrex, and more. Does NOT cover all retro systems (no Amiga, no DOS as of last check).
-- **Media Types:** Game icons, title screen screenshots, in-game screenshots, box art. All stored as paths like `/Images/XXXXXX.png` on the RetroAchievements CDN.
-- **Matching:** Hash-based matching using system-specific hashing methods. Different systems use different algorithms (e.g., MD5 for most cartridge systems, custom hashes for CD-based systems). The API endpoint `GET /API_GetGameHashes.php?i={gameId}` returns all linked hashes for a game. Also provides a full game list per system with hashes.
-- **Data Fields:** Title, console/system, number of achievements, number of players, genre (limited), release date (limited), image paths (icon, title, in-game, box art), rich URL, game ID.
-- **License/Terms:** Free to use. API is for community projects. No explicit commercial restrictions documented, but the project is community/volunteer-driven.
-- **Community/Maintenance:** Extremely active community. Rapidly growing (reached 1 million achievements milestone). Very well-maintained with regular additions of new systems, games, and achievements.
+**Verdict:** Strong secondary source for descriptions and ratings, but the caching restriction and name-only matching make it unsuitable as primary for an offline-first approach.
 
-**Verdict:** Excellent hash-based matching and free API. Game metadata is more limited than dedicated databases (focused on achievements rather than comprehensive game info). Useful as a supplementary source and for ROM identification.
+#### Arcade Italia + progetto-SNAPS -- BEST FOR ARCADE
 
----
+- **Arcade Italia URL:** http://adb.arcadeitalia.net/ | **API:** http://adb.arcadeitalia.net/service_scraper.php
+- **Type:** REST JSON API (no auth required). 1 connection/IP recommended
+- **Coverage:** All MAME-emulated machines (49K+). Detailed descriptions, screenshots, title screens, wheels, marquees, videos
+- **Matching:** MAME ROM name (zip filename) -- matches our arcade_db directly
+- **Multi-language:** EN + IT via `lang` parameter
+- **Export formats:** XML, CSV, ClrMamePro DAT, HyperSpin XML, EmulationStation XML
+- **progetto-SNAPS URL:** https://www.progettosnaps.net/
+- **progetto-SNAPS type:** Bulk-downloadable media packs (snapshots, cabinets, marquees, flyers, icons, artworks, video snaps, manuals). Updated per MAME release
 
-### 8. No-Intro / DAT-o-Matic
+**Verdict:** The definitive source for arcade-specific metadata and media. Natural complement to our arcade_db since both use MAME ROM names as keys.
 
-- **URL:** https://no-intro.org/ and https://datomatic.no-intro.org/
-- **API Type:** DAT file downloads (XML/ClrMamePro format). No REST API.
-- **Authentication:** Free account required for DAT-o-Matic downloads.
-- **Rate Limits:** N/A (file downloads)
-- **Multi-language Support:** N/A (ROM identification only, no descriptive metadata)
-- **Systems Coverage:** Comprehensive for cartridge-based consoles and handhelds: NES, SNES, N64, Game Boy/GBC/GBA, DS, Mega Drive/Genesis, Master System, Game Gear, Saturn, Atari systems, Neo Geo Pocket, WonderSwan, and many more.
-- **Media Types:** None. This is purely a ROM identification database.
-- **Matching:** Hash-based (CRC32, MD5, SHA1). DAT files contain verified checksums for every known good dump. ROMs are categorized as verified, not-verified, or bad.
-- **Data Fields:** ROM name (following No-Intro naming convention), region, languages, revision, size, CRC32, MD5, SHA1, status (verified/unverified).
-- **License/Terms:** Free to download and use. DAT files can be used in ROM managers and identification tools.
-- **Community/Maintenance:** Actively maintained by the No-Intro group. Regular DAT updates (daily packs available). The gold standard for console ROM identification and naming.
+#### Other Sources
 
-**Verdict:** Essential for ROM identification and hash-to-name mapping. Not a metadata source itself, but critical infrastructure for matching ROMs to entries in other databases.
+- **MobyGames:** Highest data quality (300K+ games, strong for retro/obscure) but paid API ($9.99+/mo) -- not viable for an open-source project
+- **TheGamesDB:** Good media variety but rate limits are too restrictive (1K/month public, 6K lifetime private)
+- **RetroAchievements:** Free hash-based matching, good for ROM identification and game icons. Metadata is limited (focused on achievements). 52+ retro systems
+- **OpenVGDB:** Downloadable SQLite DB with hash-based matching for cart systems. Lightweight but limited metadata depth. Open source, used by OpenEmu
+- **Wikidata:** Unmatched multi-language coverage (400+ languages, CC0). Useful as a translation source and cross-reference hub (stores IDs for IGDB, MobyGames, ScreenScraper, etc.). Not sufficient alone due to incomplete coverage and no media
+- **Hasheous:** Open-source middleware for hash-to-metadata resolution. Proxies No-Intro, Redump, TOSEC, MAME DATs and IGDB. Good for batch identification but inherits IGDB's limitations
+- **SteamGridDB:** Community artwork database (grids, heroes, logos, icons). Useful for high-quality artwork but not a metadata source
+- **No-Intro / DAT-o-Matic:** Gold standard for console ROM identification (hash-based). Already used in our build pipeline. Not a metadata source itself
+- **MAME / FBNeo DATs:** Definitive arcade ROM identification. Already used in our build pipeline. Basic metadata only (name, year, manufacturer, players, clone/parent)
+- **Libretro Database:** Compiles No-Intro/Redump/MAME DATs into RetroArch's .rdb format. Already used in our build pipeline for genre/players data
 
 ---
 
-### 9. MAME / FBNeo DATs
+## 3. Multi-Language Support
 
-- **MAME URL:** https://www.mamedev.org/ and https://www.progettosnaps.net/dats/MAME/
-- **FBNeo URL:** https://github.com/libretro/FBNeo/tree/master/dats
-- **API Type:** DAT file downloads (ClrMamePro XML format) and MAME's built-in XML output (`mame -listxml`)
-- **Authentication:** None
-- **Rate Limits:** N/A (file downloads)
-- **Multi-language Support:** N/A (identification and basic metadata only)
-- **Systems Coverage:** Arcade: comprehensive. MAME 0.286 covers 49,538+ emulated machines and 139,958+ software list programs. FBNeo covers a subset focused on arcade and select consoles (Neo Geo, CPS1/2/3, etc.).
-- **Media Types:** None in the DATs themselves. progetto-SNAPS (progettosnaps.net) provides companion media: snapshots, cabinets, marquees, flyers, icons, artworks, video snaps, manuals. These are downloadable in bulk packs.
-- **Matching:** ROM set name (the zip filename, e.g., `pacman.zip`, `sf2.zip`). MAME ROM names are the universal identifier for arcade games. Also includes CRC/SHA1 for individual ROM chips within sets.
-- **Data Fields:** Game name, description, year, manufacturer, driver/emulation status, players, cloneof (parent/clone relationships), ROM/CHD file details, software lists.
-- **License/Terms:** MAME is open source (GPL/BSD). DATs are freely available. progetto-SNAPS media is community-contributed and freely downloadable.
-- **Community/Maintenance:** MAME is one of the most actively developed emulation projects. New versions released monthly with updated DATs.
+### Option A: English Only
 
-**Verdict:** The definitive source for arcade game identification and basic metadata. Must be combined with Arcade Italia or ScreenScraper for rich metadata and media.
+| Aspect | Details |
+|--------|---------|
+| **Implementation** | Fetch descriptions and metadata in English only. Single field per game |
+| **Storage** | Minimal -- one description, one set of names per game |
+| **Sources needed** | Any source works (all support English) |
+| **Effort** | Low -- straightforward single-language pipeline |
+| **Consistency** | Matches current i18n approach (English-first, UI strings in English) |
+| **User experience** | Good for English speakers. Non-English users see English game descriptions alongside their localized UI |
 
----
+### Option B: Multi-Language
 
-### 10. Arcade Italia / Arcade Database (adb.arcadeitalia.net)
+| Aspect | Details |
+|--------|---------|
+| **Implementation** | Fetch descriptions in multiple languages, store per-language variants |
+| **Sources needed** | ScreenScraper (6+ languages for descriptions) + Wikidata (400+ languages for titles) |
+| **Storage** | 3-6x more text storage per game (one description per language) |
+| **Effort** | Medium-High -- multi-language schema, language selection logic, fallback chains |
+| **Data model impact** | `GameInfo` needs per-locale description storage or a separate lookup by locale |
+| **Integration** | Hooks into the existing i18n system to select the right language |
+| **Coverage gaps** | ScreenScraper has good EN/FR/ES/DE/IT/PT coverage. Other languages would have significant gaps |
+| **Language tiers** | Tier 1: Wikidata (400+ languages, labels only). Tier 2: ScreenScraper (6+ languages, full descriptions). Tier 3: IGDB (limited localizations). Tier 4: Arcade Italia (EN + IT only) |
 
-- **URL:** http://adb.arcadeitalia.net/
-- **API Docs:** http://adb.arcadeitalia.net/service_scraper.php
-- **API Type:** REST JSON API
-- **Authentication:** None required
-- **Rate Limits:** Recommended: 1 connection per IP at a time (single-threaded). No published hard limits but respectful usage expected.
-- **Multi-language Support:** Supports a `lang` parameter. At minimum English (`en`) and Italian (`it`). Other languages may be available.
-- **Systems Coverage:** Arcade only. Covers all MAME-emulated machines (49,538+ as of MAME 0.284) plus software lists.
-- **Media Types:** Screenshots, title screens, wheels/logos, 2D box art, marquees, videos (VideoSnaps project provides short gameplay clips for most games). Manuals available for some games.
-- **Matching:** MAME ROM name (the zip filename). Query via `?game_name=romname` parameter. This is the standard arcade game identifier.
-- **Data Fields:** Game name, description (detailed, technical/historical), year, manufacturer, genre, number of players, game type, emulation status, driver info, screen type/orientation, controls, clone/parent relationships, history.
-- **License/Terms:** Free to use for scrapers and frontends. Created and maintained by Motoschifo. Attribution appreciated.
-- **Community/Maintenance:** Actively maintained by a dedicated individual (Motoschifo). Updated with each MAME release. One of the most comprehensive arcade game databases.
-- **Data Export Formats:** XML, CSV, ClrMamePro DAT, HyperSpin XML, EmulationStation XML, Attract-Mode, Excel.
+### Comparison
 
-**Verdict:** The best dedicated source for arcade game metadata and media. Excellent complement to MAME DATs. The VideoSnaps project is a unique asset.
+| Criterion | Option A (English Only) | Option B (Multi-Language) |
+|-----------|------------------------|--------------------------|
+| Implementation effort | Low (~1 week) | Medium-High (~3 weeks) |
+| Storage per game (text) | ~2 KB | ~8-12 KB |
+| Total storage (10K games) | ~20 MB | ~80-120 MB |
+| Source requirements | Any source | ScreenScraper required |
+| User reach | English speakers | Broader audience |
+| Maintenance | Simple | Complex (language fallback, coverage gaps) |
+| Future i18n alignment | Can add later | Built-in from day one |
+| Risk | Low | Medium (incomplete translations, inconsistent quality) |
 
----
+### Assessment
 
-### 11. Wikidata / Wikipedia
-
-- **URL:** https://www.wikidata.org/ (WikiProject Video Games: https://www.wikidata.org/wiki/Wikidata:WikiProject_Video_games)
-- **API Type:** SPARQL endpoint (https://query.wikidata.org/sparql) + REST API (Wikibase REST API)
-- **Authentication:** None required for read access (anonymous queries allowed)
-- **Rate Limits:** Soft limits on SPARQL query frequency per IP. No published hard numbers. Action API has per-user rate limits.
-- **Multi-language Support:** Exceptional. Labels and descriptions available in 400+ languages. All items can have multilingual labels, descriptions, and aliases. This is Wikidata's strongest feature for our use case.
-- **Systems Coverage:** Moderate. 110,000+ video game items as of 2024/2025. Good coverage for well-known titles across all eras. Gaps exist for obscure retro titles, regional releases, and homebrew. ~89% have platform data, ~67% have genre, ~50% have developer/publisher.
-- **Media Types:** No direct media hosting. Items may link to Wikimedia Commons images (which may have box art, screenshots under free licenses). The connection is indirect.
-- **Matching:** By Wikidata item ID (Q-number). Also stores hundreds of external identifiers (IGDB ID, MobyGames ID, ScreenScraper ID, etc.) enabling cross-referencing. No hash-based or filename-based matching.
-- **Data Fields (Properties):** Title (label), description, platform (P400), genre (P136), developer (P178), publisher (P123), publication date (P577), game mode (P404), ESRB rating, PEGI rating. Plus 533+ video-game-related external identifiers linking to other databases.
-- **License/Terms:** CC0 (public domain dedication). Data is completely free to use for any purpose without attribution (though attribution is appreciated).
-- **Community/Maintenance:** Active WikiProject Video Games community. Regular data imports from other databases (e.g., Steam). Continuously growing.
-
-**Verdict:** Unmatched multi-language support and free licensing. Useful as a translation/localization source and as a cross-reference hub linking IDs across databases. Not sufficient as a primary metadata source due to incomplete coverage and lack of media.
+Option A (English Only) is the pragmatic choice for the initial implementation. The current app UI is English-only, game names in the embedded databases are English, and all sources provide English data. Multi-language metadata can be added later as an enhancement without rearchitecting -- it just means storing additional description fields per game.
 
 ---
 
-### 12. Additional Sources
+## 4. Local Storage Design
 
-#### Hasheous
+All external metadata should be stored locally on-device. The Pi runs offline or on slow networks, so network calls during normal browsing must be avoided. Metadata is fetched once (or periodically updated) and served from local storage.
 
-- **URL:** https://github.com/gaseous-project/hasheous
-- **API Type:** REST API (open source, self-hostable or use community instance)
-- **Authentication:** None required
-- **Cost:** Free, open source
-- **What it does:** Accepts ROM file hashes (MD5, SHA1) and returns matched metadata by cross-referencing No-Intro, Redump, TOSEC, MAME, and MESS DATs. Proxies IGDB for cover art, descriptions, and titles. Also provides RetroAchievements IDs.
-- **Verdict:** Excellent middleware service for hash-to-metadata resolution without needing individual API keys for each upstream source.
+### Storage Format Options
 
-#### SteamGridDB
+| Format | Pros | Cons | Best For |
+|--------|------|------|----------|
+| **SQLite DB** | Queryable, efficient for text lookups, single file, well-supported in Rust (rusqlite) | Additional dependency, more complex than flat files | Text metadata (descriptions, ratings) |
+| **Flat files (JSON/TOML)** | Simple, human-readable, easy to debug | Slow for large datasets, no indexing | Small datasets, configuration |
+| **Embedded binary (PHF)** | Fastest lookup, zero runtime overhead | Requires rebuild, not user-updatable | Already used for game_db/arcade_db |
+| **Filesystem with naming convention** | Natural for images, easy to manage | Requires path conventions, many small files | Images (box art, screenshots) |
 
-- **URL:** https://www.steamgriddb.com/
-- **API Docs:** https://www.steamgriddb.com/api/v2
-- **API Type:** REST API v2
-- **Authentication:** Free API key (account required)
-- **What it does:** Community-driven artwork database. Provides grid images, hero banners, logos, and icons. Not limited to Steam games -- covers many retro titles.
-- **Verdict:** Useful supplementary source for high-quality artwork/logos. Not a metadata source (no descriptions, genres, etc.).
+### Recommended: SQLite for Text + Filesystem for Images
 
-#### Libretro Database
+### Storage Location Strategy
 
-- **URL:** https://github.com/libretro/libretro-database
-- **API Type:** Downloadable RDB files + DATs
-- **What it does:** Compiles No-Intro, Redump, MAME, and TOSEC DATs into RetroArch's .rdb format. Used for ROM validation, naming, and thumbnail matching. CRC-based matching for cartridge games, serial-based for disc games.
-- **Verdict:** Useful for ROM identification and as a reference for hash databases. The RDB format is RetroArch-specific but the underlying DATs are universal.
+RePlayOS supports multiple storage backends — the user can choose SD card, USB drive, or NFS share for their ROM collection. Metadata and asset files need to be split across two locations:
 
-#### progetto-SNAPS
+**ROM storage** (`<rom_storage>/.replay-control/`) — follows the user's ROM collection:
+- `metadata.db` — per-game text metadata (descriptions, ratings). Travels with the ROMs so metadata stays associated with the collection regardless of which storage device is active
+- `media/` — per-game images (box art, screenshots). Same reasoning — if the user moves their USB drive to another Pi, the metadata comes along
 
-- **URL:** https://www.progettosnaps.net/
-- **What it does:** Provides bulk-downloadable MAME media packs: snapshots, cabinets, marquees, flyers, icons, artworks, video snaps, manuals, PCB scans. Updated with each MAME release.
-- **Verdict:** Essential companion to MAME DATs for arcade media. Not an API -- bulk download packs only.
+**System storage** (`/var/lib/replay-control/`) — stays on the SD card:
+- `sources/` — bulk reference data (LaunchBox XML, libretro-thumbnails repos, progetto-SNAPS packs). These are NOT per-game — they're lookup databases used during the processing/import step. They don't need to follow the ROM collection
+- App config, credentials, RA cache
+
+This split matters because:
+- **NFS users** shouldn't have source blobs on the network share (slow reads, bandwidth waste, shared storage)
+- **USB users** benefit from metadata traveling with the drive, but source blobs don't need to
+- **SD-only users** — everything ends up on the same device anyway
+
+**Text metadata** (descriptions, ratings, publisher): stored in a SQLite database at `<rom_storage>/.replay-control/metadata.db`.
+
+Schema:
+
+```sql
+CREATE TABLE game_metadata (
+    system TEXT NOT NULL,
+    rom_filename TEXT NOT NULL,
+    description TEXT,
+    rating REAL,          -- 0.0-5.0 scale, normalized from source
+    publisher TEXT,
+    box_art_path TEXT,    -- relative path to image file
+    screenshot_path TEXT, -- relative path to image file
+    source TEXT NOT NULL, -- "screenscraper", "launchbox", etc.
+    fetched_at INTEGER NOT NULL, -- Unix timestamp
+    PRIMARY KEY (system, rom_filename)
+);
+```
+
+**Images** (box art, screenshots): stored on ROM storage under `<rom_storage>/.replay-control/media/<system>/`.
+
+**Source blobs** (optional): stored on the SD card under `/var/lib/replay-control/sources/`.
+
+```
+# On ROM storage (SD, USB, or NFS — follows the ROM collection)
+<rom_storage>/.replay-control/
+  metadata.db
+  media/
+    nintendo_snes/
+      boxart/
+        Super Mario World (USA).png
+      snap/
+        Super Mario World (USA).png
+    arcade_mame/
+      boxart/
+        sf2.png
+      snap/
+        sf2.png
+
+# On SD card (system storage — never on USB/NFS)
+/var/lib/replay-control/
+  sources/              (optional, configurable)
+    launchbox/
+      Metadata.xml
+    libretro-thumbnails/
+      Nintendo - Super Nintendo Entertainment System/
+        Named_Boxarts/
+        Named_Snaps/
+    progetto-snaps/
+      snap/
+      titles/
+```
+
+Image filenames match ROM filename stems, making lookup trivial from `GameInfo.rom_filename`.
+
+### Using /tmp for Source Blobs
+
+An alternative to persisting source blobs on the SD card is using `/tmp` as a temporary processing area.
+
+**How /tmp works on RePlayOS (typical Pi Linux):**
+- Usually a `tmpfs` mount (RAM-backed), meaning contents are lost on reboot
+- Size is typically limited to 50% of RAM. On a Pi 4 with 1-4 GB RAM, that's 512 MB - 2 GB available
+- On some configurations, `/tmp` is a regular directory on the root filesystem (SD card)
+
+**Analysis:**
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Persist on SD** (`/var/lib/`) | Survives reboots, no re-download needed, no RAM pressure | Uses SD card space (1.5-4 GB), SD wear from writes |
+| **Use /tmp** (tmpfs) | Auto-cleanup, no permanent disk usage, no SD wear | Lost on reboot (must re-download), RAM constrained (~512 MB-2 GB), source blobs (1.5-4 GB) often exceed available /tmp space |
+| **Use /tmp** (disk-backed) | Auto-cleanup on reboot | Effectively same SD usage as persist, but no control over cleanup timing |
+| **Transient processing** (download → process → delete) | Minimal space: only one source at a time in /tmp | Slow: must re-download on every refresh, no offline re-processing |
+
+**Recommendation: Transient processing as default, persistent on SD as opt-in.**
+
+- **Default behavior:** Download a source blob to `/tmp`, process it (extract metadata into `metadata.db` + images into `media/`), then delete the blob. Only one source blob in `/tmp` at a time — LaunchBox XML (~300 MB) is the largest single file, which fits in most `/tmp` configurations. libretro-thumbnails repos can be processed per-system (50-300 MB each)
+- **"Full" quality tier:** If the user explicitly opts for the Full tier in Metadata Management, source blobs are persisted to `/var/lib/replay-control/sources/` on the SD card for offline re-processing. This tier is only recommended for 32 GB+ cards
+- **Fallback:** If `/tmp` is too small for a source blob (detected before download), fall back to a temporary directory on the SD card (`/var/lib/replay-control/tmp/`) and clean up after processing
+
+### Storage Size Estimates
+
+#### Processed Metadata (descriptions in SQLite, resized images)
+
+| Content | Per Game | 10K Games | 50K Games |
+|---------|----------|-----------|-----------|
+| Text only (description, rating) | ~2 KB | ~20 MB | ~100 MB |
+| Box art (resized to 256px wide) | ~30 KB | ~300 MB | ~1.5 GB |
+| Screenshots (resized to 320px) | ~40 KB | ~400 MB | ~2 GB |
+| All combined | ~72 KB | ~720 MB | ~3.6 GB |
+
+#### Source Blobs (optional, on SD card at `/var/lib/replay-control/sources/`)
+
+| Source | Size | Notes |
+|--------|------|-------|
+| LaunchBox `Metadata.xml` (from Metadata.zip) | ~250-300 MB | XML with 108K+ games |
+| libretro-thumbnails (per system repo) | 50-300 MB each | Typical setup with 10-15 systems: ~1-3 GB. Only clone systems the user has ROMs for |
+| progetto-SNAPS packs (screenshots + titles) | ~200-500 MB | Varies by MAME version |
+| catver.ini / MAME XMLs | < 10 MB | Negligible |
+| **Total source blobs** | **~1.5-4 GB** | Depends on number of systems and packs selected |
+
+#### Combined Total (split by storage location)
+
+| Scenario | ROM Storage (SD/USB/NFS) | SD Card (system) | Temp (/tmp during processing) |
+|----------|--------------------------|-------------------|-------------------------------|
+| Text metadata only (5K games) | ~10 MB | 0 | ~300 MB peak (LaunchBox XML) |
+| Text + images (5K games) | ~360 MB | 0 | ~300 MB peak |
+| Text + images, sources persisted (5K games, 10 systems) | ~360 MB | ~2 GB | 0 (already on disk) |
+| Full (10K games, 15 systems, sources persisted) | ~720 MB | ~3.5 GB | 0 |
+
+For a typical RePlayOS setup with 2K-5K games, expect 150-360 MB on ROM storage for metadata+images. Text-only metadata is negligible at 4-10 MB. Source blobs are transient by default (processed in `/tmp` then deleted) and only persist on SD if the user chooses the Full tier.
+
+#### Storage Budget Analysis
+
+On a **16 GB SD card** (minimum recommended by RePlayOS):
+
+| Component | Size |
+|-----------|------|
+| OS + system | ~1.5 GB |
+| ROMs (if stored on SD) | ~8-10 GB |
+| **Available for metadata** | **~4-6 GB** |
+| Processed metadata (text only) | ~10 MB |
+| Processed metadata (text + images) | ~360 MB |
+| Persisted source blobs | ~2-4 GB (would consume most headroom) |
+
+When ROMs are on USB/NFS, the SD card has much more headroom (~14 GB free), making persistent source blobs feasible even on 16 GB cards.
+
+**Recommendations by setup:**
+
+- **16 GB SD, ROMs on SD:** Text metadata only, transient blob processing via `/tmp`. Keep metadata under ~50 MB
+- **16 GB SD, ROMs on USB/NFS:** Text + images on ROM storage, transient blob processing. SD card has plenty of headroom
+- **32 GB+ SD, any ROM location:** Full tier viable — text + images on ROM storage, persistent source blobs on SD
+
+**Configurable in Metadata Management page:** Expose a "Metadata quality" option with three tiers:
+
+- **Text Only** — descriptions and ratings in SQLite on ROM storage, no images, transient blob processing (~10 MB on ROM storage)
+- **Text + Images** — adds resized box art and screenshots on ROM storage, transient blob processing (~360 MB on ROM storage for 5K games)
+- **Full** — same as above, plus persistent source cache on SD card for offline re-processing (~2-4 GB additional on SD)
+
+### Clear Metadata Operation
+
+Clear operations target different storage locations. Exposed on the Metadata Management page:
+
+```rust
+/// Clear processed metadata (on ROM storage)
+pub fn clear_processed_metadata(rom_storage: &Path) -> Result<()> {
+    let rc_dir = rom_storage.join(".replay-control");
+    let db_path = rc_dir.join("metadata.db");
+    let media_dir = rc_dir.join("media");
+    if db_path.exists() { fs::remove_file(&db_path)?; }
+    if media_dir.exists() { fs::remove_dir_all(&media_dir)?; }
+    Ok(())
+}
+
+/// Clear source blobs (on SD card system storage)
+pub fn clear_source_cache() -> Result<()> {
+    let sources_dir = Path::new("/var/lib/replay-control/sources");
+    if sources_dir.exists() { fs::remove_dir_all(sources_dir)?; }
+    Ok(())
+}
+```
 
 ---
 
-## Multi-Language Support Analysis
+## 5. Integration with GameInfo
 
-Multi-language metadata is critical for Replay. Here is the ranking of sources by language support:
+### Extending GameInfo
 
-### Tier 1: Excellent Multi-Language Support
-1. **Wikidata** -- Labels and descriptions in 400+ languages. Best source for translating game titles and short descriptions into Spanish, French, German, Japanese, and virtually any other language. However, descriptions are brief (one line) rather than full synopses.
-2. **ScreenScraper** -- Game descriptions available in at least English, French, Spanish, German, Italian, and Portuguese. The best source for full multi-language game synopses/descriptions among dedicated game databases.
+External metadata adds new fields to `GameInfo`:
 
-### Tier 2: Limited Multi-Language Support
-3. **IGDB** -- Has a `game_localizations` endpoint being expanded. Primarily English with some regional cover art variants. Localized descriptions are sparse.
-4. **Arcade Italia** -- Supports English and Italian via `lang` parameter. Limited to two languages.
+```rust
+pub struct GameInfo {
+    // ... existing fields ...
 
-### Tier 3: English Only
-5. **TheGamesDB** -- English only
-6. **MobyGames** -- English only
-7. **LaunchBox** -- English only
-8. **RetroAchievements** -- English only
-9. **OpenVGDB** -- English only
+    // External metadata (from local cache, None if not yet fetched)
+    pub description: Option<String>,
+    pub rating: Option<f32>,         // 0.0-5.0
+    pub box_art_url: Option<String>, // served via /media/<system>/boxart/<stem>.png
+    pub screenshot_url: Option<String>,
+}
+```
 
-### Recommended Multi-Language Strategy
+These fields are `Option` because external metadata may not have been downloaded yet, or may not exist for a given game. The UI renders them conditionally with `<Show>`.
 
-For the Replay project's English + Spanish minimum requirement:
+### Resolution Chain
 
-1. **Primary descriptions (EN/ES/FR/DE/IT/PT):** ScreenScraper -- provides the most languages for full game descriptions.
-2. **Game title translations:** Wikidata -- use SPARQL queries to fetch labels in target language. Since Wikidata uses external identifiers, you can cross-reference ScreenScraper IDs, IGDB IDs, etc.
-3. **Fallback for untranslated descriptions:** IGDB for English descriptions, with Wikidata short descriptions as a last resort.
+`resolve_game_info()` extends to a three-level fallback:
 
----
+1. **Embedded DB** (always available, zero cost): display name, year, genre, developer, players, rotation, status, region. This is the current behavior.
+2. **Local metadata cache** (available after download): description, rating, box art path, screenshot path. Queried from SQLite.
+3. **Fallback/placeholder**: if no cached metadata, fields are `None`. The UI shows the game without description or images.
 
-## Recommendations
+```rust
+fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameInfo {
+    // Step 1: Build GameInfo from embedded DB (existing code)
+    let mut info = resolve_from_embedded_db(system, rom_filename, rom_path);
 
-### Primary Source: Console / Handheld / Computer Games
+    // Step 2: Enrich from local metadata cache
+    if let Ok(Some(cached)) = metadata_cache::lookup(system, rom_filename) {
+        info.description = cached.description;
+        info.rating = cached.rating;
+        info.box_art_url = cached.box_art_path
+            .map(|p| format!("/media/{system}/boxart/{p}"));
+        info.screenshot_url = cached.screenshot_path
+            .map(|p| format!("/media/{system}/snap/{p}"));
+    }
 
-**ScreenScraper** is the recommended primary source because:
-- Hash-based matching (MD5/SHA1/CRC) works directly with ROM files -- no need to parse filenames
-- Multi-language descriptions (EN, ES, FR, DE, IT, PT)
-- Richest media collection (box art, screenshots, videos, manuals, wheels, marquees)
-- 218+ systems covering virtually all retro platforms relevant to RePlayOS
-- Free to use (with registration)
-- Community-driven with active maintenance
+    info
+}
+```
 
-### Primary Source: Arcade Games
-
-**Arcade Italia (adb.arcadeitalia.net)** combined with **MAME DATs** is recommended:
-- Arcade Italia provides rich metadata, screenshots, videos, and detailed descriptions keyed by MAME ROM name
-- MAME DATs provide the definitive ROM identification and parent/clone relationships
-- Together they cover 49,000+ arcade machines comprehensively
-- Free, no API key required
-
-**ScreenScraper** is also excellent for arcade and can serve as the unified source if a single-source approach is preferred.
-
-### Fallback Sources (Priority Order)
-
-1. **IGDB** -- Good general game data, well-documented API, free for non-commercial use. Use when ScreenScraper has no match.
-2. **TheGamesDB** -- Additional media types (fanart, banners). Use sparingly due to low rate limits.
-3. **RetroAchievements** -- Hash-based matching provides alternative ROM identification. Useful cross-reference for game icons and achievement counts.
-4. **Hasheous** -- Free hash-based identification middleware that proxies multiple sources. Good for batch identification without managing multiple API keys.
-5. **LaunchBox XML** -- Offline fallback with 108K+ games. Good for filling gaps when online APIs are unavailable.
-
-### Recommended Matching Strategy
-
-A layered approach is recommended:
-
-**Step 1: Hash-based identification (most accurate)**
-- Compute CRC32, MD5, and SHA1 of each ROM file
-- For arcade: use the zip filename as the MAME ROM name
-- Query ScreenScraper API with all three hashes
-- Cross-reference with No-Intro/Redump DATs (via Hasheous or local DB) for game name normalization
-
-**Step 2: Filename-based fallback**
-- If hash matching fails, parse the ROM filename following No-Intro naming convention: `Game Name (Region) (Languages) (Revision).ext`
-- For MAME/FBNeo: the zip filename (without extension) is the ROM name identifier
-- Query ScreenScraper by filename (they support this as a fallback)
-
-**Step 3: Name search fallback**
-- Extract the clean game name from the filename
-- Query IGDB or TheGamesDB by name + platform
-- Apply fuzzy matching to handle naming variations
-
-**Step 4: Metadata enrichment**
-- Once a game is identified, fetch descriptions in multiple languages from ScreenScraper
-- Supplement with Wikidata for additional language translations
-- Fetch additional artwork from IGDB (artworks, alternative covers)
-
-### Data Architecture Suggestion
-
-- **Local cache:** Store a local SQLite database with No-Intro, Redump, and MAME DATs for fast hash-based lookups
-- **API calls:** Use ScreenScraper as the primary API, falling back to IGDB
-- **Media cache:** Download and cache images locally to avoid repeated API calls
-- **Identifier cross-reference:** Store multiple external IDs per game (ScreenScraper ID, IGDB ID, Wikidata Q-number, RetroAchievements ID) to enable future cross-referencing
+The embedded DB lookup is always fast (PHF map, ~nanoseconds). The SQLite lookup adds ~microseconds. No network calls happen during page rendering.
 
 ---
 
-## API Credential Requirements Summary
+## 6. Download/Sync Strategy
+
+### Initial Bulk Download
+
+On first run or when triggered from Settings:
+
+1. Scan all ROM directories to build a list of `(system, rom_filename)` pairs
+2. For each game without cached metadata, queue a fetch from the chosen source
+3. Download text metadata first (fast, small), then images (slow, large)
+4. Store results in SQLite + filesystem as described in section 4
+
+### Incremental Updates
+
+When new ROMs are added (detected via filesystem scan):
+
+1. Compare current ROM list against metadata DB entries
+2. Fetch metadata only for ROMs that have no entry in the cache
+3. Skip ROMs that already have cached metadata (unless user forces a refresh)
+
+### Progress Tracking
+
+Bulk download needs visible progress since it can take 30+ minutes for large libraries:
+
+- Server-sent events (SSE) or polling endpoint for progress
+- UI shows: games processed / total games, current game name, estimated time remaining
+- Download can be paused/resumed (track which games are done in the DB)
+
+### Bandwidth Considerations
+
+The Pi may be on WiFi (2.4 GHz, shared bandwidth) or Ethernet:
+
+- **Text only:** ~2 KB/game = 10 MB for 5K games. Trivial even on slow WiFi
+- **With images:** ~70 KB/game = 350 MB for 5K games. Takes ~10 min on a 5 Mbps connection
+- **Rate limiting:** Respect source API limits (ScreenScraper: 1 thread for free users)
+- **Retry logic:** Network failures are expected -- retry with exponential backoff
+
+---
+
+## 7. Metadata Management Page (`/more/metadata`)
+
+Due to data licensing restrictions (metadata can't be bundled in the binary, some sources require user credentials, storage varies by SD card size), metadata management needs its own dedicated page rather than a small section in Settings.
+
+The page is accessible from the More menu and provides:
+
+- **Status overview** — coverage stats (games with descriptions, box art, screenshots), storage breakdown, last sync time
+- **Download/sync** — bulk download with progress bar, quality tier selector (Text Only / Text + Images / Full), per-system toggles, cancel button
+- **Credentials** — ScreenScraper account (username + password + dev ID), RetroAchievements account (username + API key), with "Test Connection" buttons
+- **Cache management** — clear all metadata, clear images only, clear source cache. Each with confirmation and space-to-be-freed estimate
+- **Attribution** — visible source credits as required by data licenses
+
+See `docs/features.md` (Metadata Management section) for the full feature breakdown and future ideas.
+
+---
+
+## 8. Implementation Plan
+
+### Phase 1: Text Metadata (descriptions, ratings)
+
+**Source:** LaunchBox XML (bulk download, no API calls, 108K+ games) + ScreenScraper API (for gaps).
+
+**Scope:**
+- Add `metadata.db` SQLite schema and basic CRUD operations
+- Parse LaunchBox `Metadata.xml` and populate the local DB for matching games
+- Extend `GameInfo` with `description` and `rating` fields
+- Extend `resolve_game_info()` to query the metadata cache
+- Add description display to the game detail page
+- Add "Download Metadata" and "Clear Cache" to Settings
+
+**Effort:** ~2-3 weeks.
+
+### Phase 2: Images (box art, screenshots)
+
+**Source:** libretro-thumbnails (git clone per system, No-Intro naming matches game_db) + progetto-SNAPS (for arcade).
+
+**Scope:**
+- Download/clone libretro-thumbnails repos for systems the user has
+- Download progetto-SNAPS packs for arcade systems
+- Map thumbnail filenames to ROM filenames (handle naming differences)
+- Serve images via the existing Axum static file handler
+- Add box art display to game list and detail pages
+- Add screenshot display to detail page
+- Progress tracking for image downloads
+
+**Effort:** ~2-3 weeks.
+
+### Phase 3: Multi-Language Support (optional)
+
+**Source:** ScreenScraper (descriptions in 6+ languages) + Wikidata (title translations).
+
+**Scope:**
+- Extend metadata DB schema for per-language descriptions
+- Add language preference to Settings
+- Integrate with i18n system for language selection
+- Implement language fallback chain (user language -> English -> any available)
+
+**Effort:** ~2-3 weeks.
+
+---
+
+## 9. Recommendations
+
+### Metadata Sources
+
+**Primary for text metadata:** LaunchBox XML. It provides descriptions, ratings, genres, and player counts for 108K+ games in a single downloadable ZIP. No API calls, no rate limits, no authentication. Parse once and populate the local SQLite DB.
+
+**Primary for images:** libretro-thumbnails (console/handheld) + progetto-SNAPS (arcade). Git repos / bulk packs of images that can be downloaded without API calls. libretro-thumbnails follows No-Intro naming (matches game_db), progetto-SNAPS uses MAME ROM names (matches arcade_db).
+
+**Secondary/fallback:** ScreenScraper API. When LaunchBox or libretro-thumbnails don't have a match, fall back to ScreenScraper's hash-based lookup. Best-in-class retro coverage but requires API calls and rate-limited.
+
+### Language
+
+**English only** for the initial implementation. Multi-language can be added in Phase 3 without rearchitecting. ScreenScraper is the clear choice if/when multi-language is needed.
+
+### Storage Format
+
+**SQLite + filesystem.** SQLite for text metadata (queryable, single file, efficient). Filesystem for images (natural fit, easy to serve via Axum, easy to clear). Both stored under `<storage_root>/.replay-control/`.
+
+### Data Licensing
+
+All metadata sources used must have licenses compatible with Replay Control's use case (local caching on user's device, no redistribution of data). Key considerations:
+
+| Source | License | Redistribution OK? | Local Cache OK? | Notes |
+|--------|---------|---------------------|-----------------|-------|
+| **LaunchBox** | Free metadata download, proprietary terms | No (metadata only for personal use) | Yes | Cannot bundle in app binary or redistribute XML |
+| **ScreenScraper** | CC for media, community-contributed | Attribution required | Yes | Must credit ScreenScraper in app |
+| **libretro-thumbnails** | Community-contributed, freely redistributable | Generally yes | Yes | No explicit license on most repos — treat as fair use for local caching |
+| **progetto-SNAPS** | Free for personal use | No redistribution | Yes | Download packs for local use only |
+| **Wikidata** | CC0 (public domain) | Yes | Yes | Best license — no restrictions |
+| **IGDB** | Twitch Developer Agreement | No long-term caching | Restricted | Data must not be cached indefinitely — problematic for offline-first |
+| **Arcade Italia** | Free for scraper use | Attribution expected | Yes | Generous terms for front-end apps |
+
+**Key principles:**
+- **Never bundle external metadata in the binary.** Embedded databases (game_db, arcade_db) use our own build pipeline from open DAT files. External metadata is always fetched at runtime and cached locally on the user's device.
+- **Attribution in the app.** The Settings/About page should credit metadata sources (ScreenScraper, LaunchBox, libretro-thumbnails, etc.) when their data is cached locally.
+- **No redistribution.** The cached `.replay-control/` directory is local to each device. The app never uploads, shares, or serves cached metadata to other devices.
+- **Respect rate limits and terms.** API sources (ScreenScraper, IGDB) have usage terms that must be followed — especially thread limits and request quotas.
+- **Prefer open/CC0 sources.** When multiple sources provide the same data, prefer the one with the most permissive license (e.g., Wikidata for titles, libretro-thumbnails for images).
+
+---
+
+## Appendix A: API Credential Requirements
 
 | Source | Credentials Needed | How to Obtain |
 |--------|--------------------|---------------|
 | ScreenScraper | Dev ID/password + User account | Register at screenscraper.fr; request dev credentials |
 | IGDB | Twitch Client ID + Secret | Register app at dev.twitch.tv |
-| TheGamesDB | API key | Register on forums.thegamesdb.net, request key |
-| MobyGames | API key | Paid subscription at mobygames.com ($9.99+/mo) |
+| TheGamesDB | API key | Register on forums, request key |
+| MobyGames | API key | Paid subscription ($9.99+/mo) |
 | RetroAchievements | API key | Free account, key in control panel |
 | Arcade Italia | None | Open access |
-| SteamGridDB | API key | Free account at steamgriddb.com |
-| Hasheous | None | Open access |
-| Wikidata | None | Open access (anonymous) |
-| OpenVGDB | None | Download from GitHub |
+| libretro-thumbnails | None | Public git repos |
 | LaunchBox | None | Download metadata.zip |
-| No-Intro | Account | Free registration at datomatic.no-intro.org |
+| OpenVGDB | None | Download from GitHub |
+| Wikidata | None | Open access |
+| Hasheous | None | Open access |
+| progetto-SNAPS | None | Download from progettosnaps.net |
+
+## Appendix B: Matching Strategy
+
+For games not already identified by the embedded databases, a layered matching approach:
+
+**Step 1: Hash-based identification (most accurate)**
+- CRC32 is already available in game_db. MD5/SHA1 can be computed on demand
+- For arcade: the zip filename is the MAME ROM name (no hashing needed)
+- Query ScreenScraper API with hash(es)
+
+**Step 2: Filename-based fallback**
+- Parse ROM filename following No-Intro naming convention: `Game Name (Region) (Languages) (Revision).ext`
+- For MAME/FBNeo: the zip filename (without extension) is the ROM name identifier
+- Match against LaunchBox XML by cleaned title + platform
+
+**Step 3: Name search fallback**
+- Extract clean game name from filename (strip tags, normalize)
+- Query IGDB or ScreenScraper by name + platform with fuzzy matching
+
+In practice, step 1 covers the vast majority of games since our embedded databases already identify 25K+ arcade and 34K+ console ROMs. External metadata fetching primarily needs to map these already-identified games to descriptions and images in external sources, which can be done by exact title + platform matching against LaunchBox XML.

@@ -19,6 +19,7 @@ Tracking document for Replay Control. Organized by page/area.
 - **Last Seen** games section — track which games the user has browsed in the web UI (separate from play history)
 - Quick-launch favorite games from the home page
 - Disk usage breakdown by system (visual chart)
+- **RetroAchievements summary** — if RA is configured, show user's total points, rank, and recently earned achievements
 
 ---
 
@@ -47,10 +48,111 @@ Tracking document for Replay Control. Organized by page/area.
 - URL-encoded filenames in links to handle spaces, parentheses, etc.
 
 ### Planned
+- **Screenshots gallery** — display screenshots taken on RePlayOS for the current game. Screenshots are discovered from the `captures/` directory by matching the ROM filename prefix. Shown as a horizontal scrollable gallery below the metadata section. See `docs/screenshots-analysis.md`.
 - **Game metadata integration** — cover images, descriptions, screenshots from external metadata providers
+- **RetroAchievements integration** — show achievements for the current game if the user has configured their RA account. Displays: achievement list with icons, earned/locked status, earn dates, total points, and completion percentage. Data fetched from RA API and cached locally. See details in the RetroAchievements section below.
 - **Video search** — link to gameplay videos on YouTube and other sources
 - **Manual viewer** — display game manuals in-browser
 - **Soundtrack player** — play game music tracks
+
+---
+
+## Screenshots (`/screenshots`)
+
+### Planned
+- **Browse all screenshots** — dedicated page accessible from the More section listing all screenshots taken on RePlayOS
+- **Grouped display** — screenshots grouped by system, with game name and timestamp for each
+- **Game navigation** — each screenshot links to its game detail page
+- **Delete screenshots** — delete individual screenshots with confirmation step
+- **Pagination** — paginated or infinite-scroll loading for large collections
+
+### Future ideas
+- Bulk delete (multi-select)
+- Filter by system or date range
+- Fullscreen lightbox viewer
+
+---
+
+## RetroAchievements Integration (nice to have)
+
+Integration with [RetroAchievements](https://retroachievements.org/) to show achievement data per game.
+
+### Configuration
+
+- **Username** — the user's RetroAchievements username (public, required)
+- **Web API Key** — obtained from the user's RA control panel at retroachievements.org (required, stored securely in app config)
+- **No password needed** — the RA API authenticates with username + API key only
+
+Settings page gets a "RetroAchievements" section where the user enters their username and API key. A "Test Connection" button verifies the credentials are valid.
+
+### Game Detail Integration
+
+When RA is configured, the game detail page shows an "Achievements" section:
+- **Achievement list** — each achievement with icon, title, description, points, and earned/locked status
+- **Completion bar** — visual progress (e.g., "12/47 achievements — 25%")
+- **Total points** — points earned for this game vs. total available
+- **Earn dates** — when each achievement was unlocked (for earned ones)
+- **Hardcore vs. softcore** — distinguish between hardcore and casual completions
+
+### API Details
+
+- **Auth:** username + web API key (base64 encoded). No OAuth, no password
+- **Key endpoints:**
+  - `getGameInfoAndUserProgress` — game metadata + user's achievement progress for a specific game
+  - `getUserProgress` — batch progress check across multiple games
+  - `getGame` — game metadata and achievement list (without user progress)
+- **Matching:** RA uses its own game IDs. Match via hash-based lookup (RA supports MD5) or game title + platform search
+- **Rate limits:** reasonable for individual use; cache responses locally to minimize calls
+- **Caching:** store RA responses in the metadata SQLite DB (`metadata.db`), refresh on game detail page visit if data is older than configurable TTL (default: 1 hour)
+
+### Future ideas
+- Achievement notifications — poll for newly earned achievements
+- Leaderboard display — show user's ranking on RA leaderboards per game
+- RA user profile summary on home page (total points, rank, recent unlocks)
+- Badge/mastery indicators on game list items
+
+---
+
+## Metadata Management (`/more/metadata`)
+
+Dedicated page for managing external game metadata (descriptions, images, ratings). Accessible from the More section. Needed because of data licensing restrictions — metadata can't be bundled with the app and must be fetched/cached per device.
+
+### Planned (minimal set)
+
+**Status overview:**
+- **Coverage summary** — at a glance: "2,340 / 3,500 games have descriptions", "1,890 have box art", "0 have screenshots"
+- **Storage usage** — breakdown of metadata cache: text DB size, images size, source cache size, total. Visual bar showing usage relative to available disk space
+- **Last sync** — timestamp of the last metadata download. "Never" if no sync has happened yet
+
+**Download/sync:**
+- **"Download Metadata" button** — starts bulk download with visible progress bar (games processed / total, current game name, estimated time). Uses the background task system
+- **Quality tier selector** — three options controlling what gets downloaded:
+  - *Text Only* — descriptions and ratings (~2 KB/game, ~10 MB for 5K games)
+  - *Text + Images* — adds resized box art and screenshots (~72 KB/game, ~360 MB for 5K games)
+  - *Full* — includes source cache for offline re-processing (~2-4 GB additional)
+- **Per-system toggle** — choose which systems to fetch metadata for (useful on 16 GB cards where space is tight — skip systems with few games or low interest)
+- **Cancel** — stop an in-progress download. Already-fetched games are kept
+
+**Credentials:**
+- **ScreenScraper account** — username, password, and developer ID fields. Required for API-based metadata fetching. "Test Connection" button to verify credentials before starting a download
+- **RetroAchievements account** — username and web API key fields (see RA section above). "Test Connection" button
+- Credentials stored in the app config file (not `replay.cfg`). Passwords/keys masked in the UI
+
+**Cache management:**
+- **"Clear All Metadata"** — deletes `metadata.db`, `media/`, and `sources/` directories. Confirmation required ("This will remove all cached descriptions, images, and source files. X MB will be freed.")
+- **"Clear Images Only"** — keeps text metadata (descriptions, ratings) but removes images. Useful to reclaim space while preserving the most useful data
+- **"Clear Source Cache"** — removes `sources/` directory only. Keeps processed metadata intact. Source blobs can be re-downloaded later if needed
+
+**Attribution:**
+- **Source credits** — visible attribution line at the bottom: "Metadata provided by ScreenScraper, LaunchBox, libretro-thumbnails, and RetroAchievements" (only showing sources that are actually in use). Required by some data licenses
+
+### Future ideas
+- Per-source enable/disable toggles (e.g., disable ScreenScraper, use only LaunchBox)
+- Auto-sync on new ROM detection (fetch metadata automatically when new games appear)
+- Metadata export/import (backup metadata cache to a file for transfer between devices)
+- Per-game manual metadata refresh from the game detail page
+- Metadata quality indicators on game list (icon showing which games have descriptions/images)
+- Source priority ordering (drag to reorder which source is checked first)
 
 ---
 
@@ -128,6 +230,8 @@ Tracking document for Replay Control. Organized by page/area.
 - **System Info** section showing: storage type, storage path, disk total, disk used, disk available
 
 ### Planned
+- **Screenshots browser** — menu item linking to `/screenshots` page for browsing and managing all RePlayOS screenshots (see `docs/screenshots-analysis.md`)
+- **Metadata management** — menu item linking to `/more/metadata` for downloading, configuring, and managing external game metadata (see Metadata Management section above and `docs/game-metadata.md`)
 - **Background task system** — task manager with progress reporting, cancellation, and polling-based UI updates (see `docs/background-tasks.md`). Includes library scan trigger and task status display.
 - **Wi-Fi configuration** — configure Wi-Fi networks from the web UI (currently a placeholder menu item)
 - **NFS share settings** — configure NFS v4 share from the web UI (currently a placeholder menu item)
@@ -169,7 +273,7 @@ Tracking document for Replay Control. Organized by page/area.
 ### Future ideas
 - **SQLite cache layer** — replace filesystem scanning with indexed database, populated by background scan, updated via inotify
 - **ROM hash computation** — MD5/SHA1/CRC32 for hash-based identification and metadata matching
-- **RetroAchievements integration** — connect user's RA account, show earned achievements per game
+- **RetroAchievements integration** — connect user's RA account, show earned achievements per game (see dedicated section above for full details)
 - **Authentication** — pairing token or password-based auth (middleware designed but not implemented)
 - **Remote control** — trigger actions on RePlayOS from the web UI
 - **Backup & sync** — backup ROM library, save states, configuration

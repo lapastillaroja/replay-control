@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Replay Control — Logo Proposals (Batch 2)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Press+Start+2P&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1115;
+    --bg-card: #16181d;
+    --bg-card-hover: #1c1f26;
+    --border: #2a2d35;
+    --text: #e4e4e7;
+    --text-muted: #71717a;
+    --indigo: #6366f1;
+    --green: #00b543;
+    --red: #e00000;
+    --gold: #c8a848;
+    --indigo-bg: #1a1640;
+    --green-bg: #0a2010;
+    --red-bg: #2a0a0a;
+    --gold-bg: #2a2210;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    padding: 0;
+  }
+
+  .page-header {
+    text-align: center;
+    padding: 60px 24px 48px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #14161c 0%, var(--bg) 100%);
+  }
+
+  .page-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, #818cf8, #6366f1, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    max-width: 580px;
+    margin: 0 auto;
+  }
+
+  .page-header .batch-badge {
+    display: inline-block;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    color: var(--gold);
+    background: rgba(200,168,72,0.15);
+    padding: 5px 14px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    letter-spacing: 0.05em;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Logo section */
+  .logo-section {
+    padding: 56px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo-section:last-of-type { border-bottom: none; }
+
+  .logo-header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+
+  .logo-number {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.7rem;
+    color: var(--indigo);
+    background: rgba(99, 102, 241, 0.12);
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .logo-header h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .logo-desc {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    max-width: 600px;
+    margin-bottom: 32px;
+    padding-left: 0;
+  }
+
+  /* Color variant grid */
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 0;
+  }
+
+  @media (max-width: 900px) {
+    .color-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .color-card {
+    border-radius: 12px;
+    padding: 28px 20px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .color-card.indigo { background: var(--indigo-bg); border-color: rgba(99,102,241,0.2); }
+  .color-card.green  { background: var(--green-bg);  border-color: rgba(0,181,67,0.2); }
+  .color-card.red    { background: var(--red-bg);     border-color: rgba(224,0,0,0.2); }
+  .color-card.gold   { background: var(--gold-bg);    border-color: rgba(200,168,72,0.2); }
+
+  .color-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  .size-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .size-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .size-label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .icon-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Wordmark row */
+  .wordmark-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .wordmark-row .wm-text {
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+
+  /* Context section */
+  .context-section {
+    padding: 56px 0 72px;
+    border-top: 1px solid var(--border);
+  }
+
+  .context-section h2 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+
+  .context-section > p {
+    text-align: center;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+  }
+
+  .context-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  @media (max-width: 900px) {
+    .context-grid { grid-template-columns: 1fr; }
+  }
+
+  .context-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .context-card-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .context-card-header h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .context-card-body {
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+  }
+
+  /* Mobile app bar mock */
+  .app-bar {
+    background: #1a1c24;
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+    border: 1px solid #2a2d35;
+  }
+
+  .app-bar .title {
+    font-weight: 600;
+    font-size: 1rem;
+    flex: 1;
+  }
+
+  .app-bar .hamburger {
+    width: 20px;
+    height: 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .app-bar .hamburger span {
+    display: block;
+    height: 2px;
+    background: var(--text-muted);
+    border-radius: 1px;
+  }
+
+  /* PWA icon mock */
+  .pwa-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .pwa-icon.indigo { background: linear-gradient(135deg, #4f46e5, #6366f1); }
+
+  .pwa-label {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  /* Favicon mock */
+  .favicon-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #1e2028;
+    border-radius: 8px;
+    padding: 10px 16px;
+    border: 1px solid #2a2d35;
+  }
+
+  .favicon-row .tab-title {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .top-picks-label {
+    display: inline-block;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.65rem;
+    color: var(--gold);
+    background: rgba(200,168,72,0.12);
+    padding: 4px 12px;
+    border-radius: 4px;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+
+  .top-pick-section {
+    margin-bottom: 48px;
+  }
+
+  .top-pick-section:last-child { margin-bottom: 0; }
+
+  .top-pick-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .top-pick-rank {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.6rem;
+    background: linear-gradient(135deg, var(--gold), #e0c060);
+    color: #1a1a0a;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+  }
+
+  .top-pick-header h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .nav-link {
+    display: inline-block;
+    color: var(--indigo);
+    text-decoration: none;
+    font-size: 0.9rem;
+    margin-top: 12px;
+    border-bottom: 1px solid rgba(99,102,241,0.3);
+    padding-bottom: 1px;
+  }
+  .nav-link:hover { border-bottom-color: var(--indigo); }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="batch-badge">BATCH 2 OF 3</div>
+  <h1>Replay Control — Logo Proposals</h1>
+  <p>Thirteen more logo concepts exploring the joy, nostalgia, and tactile memories of retro gaming. Companion app for RePlayOS on Raspberry Pi.</p>
+  <div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap">
+    <a class="nav-link" href="logo-proposals.html">View Batch 1 (concepts 01-10)</a>
+    <a class="nav-link" href="logo-proposals-3.html">View Batch 3 (concepts 24-35)</a>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ========== LOGO 11: Power On ========== -->
+<div class="logo-section" id="logo-11">
+  <div class="logo-header">
+    <span class="logo-number">11</span>
+    <h2>Power On</h2>
+  </div>
+  <p class="logo-desc">A pixelated power button symbol (circle with line) with spark/electricity effects. The moment of turning on the console — pure anticipation and excitement.</p>
+  <div class="color-grid" id="power-grid"></div>
+</div>
+
+<!-- ========== LOGO 12: Cartridge ========== -->
+<div class="logo-section" id="logo-12">
+  <div class="logo-header">
+    <span class="logo-number">12</span>
+    <h2>Cartridge</h2>
+  </div>
+  <p class="logo-desc">A minimalist side-view silhouette of a game cartridge being inserted — half in, half out. The tactile satisfaction of clicking a cartridge in. Clean geometric shape.</p>
+  <div class="color-grid" id="cartridge-grid"></div>
+</div>
+
+<!-- ========== LOGO 13: 1UP ========== -->
+<div class="logo-section" id="logo-13">
+  <div class="logo-header">
+    <span class="logo-number">13</span>
+    <h2>1UP</h2>
+  </div>
+  <p class="logo-desc">The iconic "1UP" text from classic games, stylized as a logo mark with pixel blocks and a small mushroom accent. Getting another chance — the essence of "replay."</p>
+  <div class="color-grid" id="oneup-grid"></div>
+</div>
+
+<!-- ========== LOGO 14: Cassette Tape ========== -->
+<div class="logo-section" id="logo-14">
+  <div class="logo-header">
+    <span class="logo-number">14</span>
+    <h2>Cassette Tape</h2>
+  </div>
+  <p class="logo-desc">A retro cassette tape shape with a play symbol on the label area. Nostalgia crossover between music and gaming culture of the 80s/90s. The mixtape of your favourite games.</p>
+  <div class="color-grid" id="cassette-grid"></div>
+</div>
+
+<!-- ========== LOGO 15: TV Antenna ========== -->
+<div class="logo-section" id="logo-15">
+  <div class="logo-header">
+    <span class="logo-number">15</span>
+    <h2>TV Antenna</h2>
+  </div>
+  <p class="logo-desc">Old-school rabbit ear antenna on top of a minimal CRT TV shape. The simple joy of sitting in front of the TV to play. Very evocative, minimal lines.</p>
+  <div class="color-grid" id="tv-grid"></div>
+</div>
+
+<!-- ========== LOGO 16: Pixel Ghost ========== -->
+<div class="logo-section" id="logo-16">
+  <div class="logo-header">
+    <span class="logo-number">16</span>
+    <h2>Pixel Ghost</h2>
+  </div>
+  <p class="logo-desc">A friendly Pac-Man-style ghost rendered in pixel art with "RC" letter eyes. Cute, recognizable, universally associated with retro gaming joy.</p>
+  <div class="color-grid" id="ghost-grid"></div>
+</div>
+
+<!-- ========== LOGO 17: Checkpoint Flag ========== -->
+<div class="logo-section" id="logo-17">
+  <div class="logo-header">
+    <span class="logo-number">17</span>
+    <h2>Checkpoint Flag</h2>
+  </div>
+  <p class="logo-desc">A racing checkpoint flag in pixel-art style, waving on a pole. Represents progress, milestones, the satisfaction of reaching a save point.</p>
+  <div class="color-grid" id="flag-grid"></div>
+</div>
+
+<!-- ========== LOGO 18: D-Pad Rose ========== -->
+<div class="logo-section" id="logo-18">
+  <div class="logo-header">
+    <span class="logo-number">18</span>
+    <h2>D-Pad Rose</h2>
+  </div>
+  <p class="logo-desc">A D-pad (directional pad) shape reimagined as a compass rose with decorative points. Geometric, clean, represents navigation and control without being a full gamepad.</p>
+  <div class="color-grid" id="dpad-grid"></div>
+</div>
+
+<!-- ========== LOGO 19: Pixel Explosion ========== -->
+<div class="logo-section" id="logo-19">
+  <div class="logo-header">
+    <span class="logo-number">19</span>
+    <h2>Pixel Explosion</h2>
+  </div>
+  <p class="logo-desc">An expanding burst of pixels, like defeating a boss or completing a level. Celebration, triumph, joy. A radial pattern of small squares shooting outward.</p>
+  <div class="color-grid" id="explosion-grid"></div>
+</div>
+
+<!-- ========== LOGO 20: Trophy / High Score ========== -->
+<div class="logo-section" id="logo-20">
+  <div class="logo-header">
+    <span class="logo-number">20</span>
+    <h2>Trophy / High Score</h2>
+  </div>
+  <p class="logo-desc">A pixel-art trophy cup with a star on it. The universal symbol of achievement and the pride of earning a high score. Simple, celebratory silhouette.</p>
+  <div class="color-grid" id="trophy-grid"></div>
+</div>
+
+<!-- ========== LOGO 21: Floppy Disk ========== -->
+<div class="logo-section" id="logo-21">
+  <div class="logo-header">
+    <span class="logo-number">21</span>
+    <h2>Floppy Disk / Save Icon</h2>
+  </div>
+  <p class="logo-desc">The universal save icon reimagined with pixel art edges and a play symbol on the label. Nostalgic computing meets gaming — save your progress, replay your favourites.</p>
+  <div class="color-grid" id="floppy-grid"></div>
+</div>
+
+<!-- ========== LOGO 22: Lightning Bolt ========== -->
+<div class="logo-section" id="logo-22">
+  <div class="logo-header">
+    <span class="logo-number">22</span>
+    <h2>Lightning Bolt</h2>
+  </div>
+  <p class="logo-desc">A pixel-art zigzag lightning bolt like a power-up. Energy, speed, excitement. Simple silhouette that works at any size with strong diagonal energy.</p>
+  <div class="color-grid" id="lightning-grid"></div>
+</div>
+
+<!-- ========== LOGO 23: Replay Arrow ========== -->
+<div class="logo-section" id="logo-23">
+  <div class="logo-header">
+    <span class="logo-number">23</span>
+    <h2>Replay Arrow</h2>
+  </div>
+  <p class="logo-desc">A circular replay/refresh arrow (like a &#8635; symbol) with a small play triangle in the center. The definitive "replay" icon — clean, universally understood, and perfectly encapsulates both the concept of replaying and the play action. The circular arrow is in the accent color, the play triangle in white.</p>
+  <div class="color-grid" id="replay-arrow-grid"></div>
+</div>
+
+</div><!-- .container -->
+
+<!-- ========== TOP PICKS ========== -->
+<div class="container">
+  <div class="context-section">
+    <div style="text-align:center">
+      <span class="top-picks-label">TOP PICKS — BATCH 2</span>
+    </div>
+    <h2>Best in Context</h2>
+    <p>Four standout logos from this batch shown in real-world usage contexts.</p>
+
+    <!-- Pick 1: Replay Arrow -->
+    <div class="top-pick-section">
+      <div class="top-pick-header">
+        <div class="top-pick-rank">1</div>
+        <h3>#23 Replay Arrow — The definitive replay icon, clean and universal</h3>
+      </div>
+      <div class="context-grid" id="pick1-contexts"></div>
+    </div>
+
+    <!-- Pick 2: Cartridge -->
+    <div class="top-pick-section">
+      <div class="top-pick-header">
+        <div class="top-pick-rank">2</div>
+        <h3>#12 Cartridge — Clean, iconic, scales perfectly</h3>
+      </div>
+      <div class="context-grid" id="pick2-contexts"></div>
+    </div>
+
+    <!-- Pick 3: 1UP -->
+    <div class="top-pick-section">
+      <div class="top-pick-header">
+        <div class="top-pick-rank">3</div>
+        <h3>#13 1UP — Playful, universally recognized, ties to "replay"</h3>
+      </div>
+      <div class="context-grid" id="pick3-contexts"></div>
+    </div>
+
+    <!-- Pick 4: Lightning Bolt -->
+    <div class="top-pick-section">
+      <div class="top-pick-header">
+        <div class="top-pick-rank">4</div>
+        <h3>#22 Lightning Bolt — Bold, energetic, reads at any size</h3>
+      </div>
+      <div class="context-grid" id="pick4-contexts"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ========== SVG LOGO GENERATORS ==========
+// Each returns an SVG string for a given color, drawn at viewBox 0 0 120 120
+
+const logos = {
+
+  // 11 — Power On: pixelated power symbol with spark effects
+  power(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Power circle (pixelated arc) -->
+      <rect x="35" y="28" width="8" height="8" fill="${c}"/>
+      <rect x="27" y="36" width="8" height="8" fill="${c}"/>
+      <rect x="22" y="44" width="8" height="8" fill="${c}"/>
+      <rect x="20" y="54" width="8" height="8" fill="${c}"/>
+      <rect x="22" y="64" width="8" height="8" fill="${c}"/>
+      <rect x="27" y="72" width="8" height="8" fill="${c}"/>
+      <rect x="35" y="80" width="8" height="8" fill="${c}"/>
+      <rect x="45" y="84" width="8" height="8" fill="${c}"/>
+      <rect x="55" y="86" width="8" height="8" fill="${c}"/>
+      <rect x="65" y="84" width="8" height="8" fill="${c}"/>
+      <rect x="75" y="80" width="8" height="8" fill="${c}"/>
+      <rect x="83" y="72" width="8" height="8" fill="${c}"/>
+      <rect x="88" y="64" width="8" height="8" fill="${c}"/>
+      <rect x="90" y="54" width="8" height="8" fill="${c}"/>
+      <rect x="88" y="44" width="8" height="8" fill="${c}"/>
+      <rect x="83" y="36" width="8" height="8" fill="${c}"/>
+      <rect x="75" y="28" width="8" height="8" fill="${c}"/>
+      <!-- Power line (top center) -->
+      <rect x="56" y="22" width="8" height="8" fill="${c}"/>
+      <rect x="56" y="32" width="8" height="8" fill="${c}"/>
+      <rect x="56" y="42" width="8" height="8" fill="${c}"/>
+      <rect x="56" y="52" width="8" height="8" fill="${c}"/>
+      <!-- Spark effects -->
+      <rect x="14" y="30" width="5" height="5" fill="${lite}" opacity="0.6"/>
+      <rect x="8" y="24" width="4" height="4" fill="${lite}" opacity="0.35"/>
+      <rect x="100" y="28" width="5" height="5" fill="${lite}" opacity="0.6"/>
+      <rect x="107" y="22" width="4" height="4" fill="${lite}" opacity="0.35"/>
+      <rect x="52" y="10" width="4" height="4" fill="${lite}" opacity="0.5"/>
+      <rect x="64" y="12" width="3" height="3" fill="${lite}" opacity="0.3"/>
+    `;
+  },
+
+  // 12 — Cartridge: side-view silhouette, half inserted
+  cartridge(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Cartridge body (top part, visible above slot) -->
+      <rect x="28" y="16" width="64" height="48" rx="3" fill="${c}"/>
+      <!-- Label area inset -->
+      <rect x="34" y="22" width="52" height="28" rx="2" fill="${bg}" stroke="${lite}" stroke-width="1.5" opacity="0.6"/>
+      <!-- Grip ridges at top -->
+      <rect x="44" y="18" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="52" y="18" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="60" y="18" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <rect x="68" y="18" width="4" height="3" rx="1" fill="${lite}" opacity="0.3"/>
+      <!-- Connector pins (bottom of cartridge) -->
+      <rect x="36" y="64" width="4" height="8" fill="${c}" opacity="0.7"/>
+      <rect x="44" y="64" width="4" height="8" fill="${c}" opacity="0.7"/>
+      <rect x="52" y="64" width="4" height="8" fill="${c}" opacity="0.7"/>
+      <rect x="60" y="64" width="4" height="8" fill="${c}" opacity="0.7"/>
+      <rect x="68" y="64" width="4" height="8" fill="${c}" opacity="0.7"/>
+      <rect x="76" y="64" width="4" height="8" fill="${c}" opacity="0.7"/>
+      <!-- Slot / console top edge -->
+      <rect x="18" y="76" width="84" height="4" rx="1" fill="${c}" opacity="0.35"/>
+      <rect x="18" y="82" width="84" height="22" rx="3" fill="${c}" opacity="0.2"/>
+      <!-- Slot opening -->
+      <rect x="30" y="76" width="60" height="4" fill="${c}" opacity="0.5"/>
+      <!-- Motion lines (being inserted) -->
+      <rect x="40" y="90" width="12" height="2" fill="${lite}" opacity="0.25"/>
+      <rect x="66" y="92" width="10" height="2" fill="${lite}" opacity="0.2"/>
+      <rect x="48" y="96" width="8" height="2" fill="${lite}" opacity="0.15"/>
+    `;
+  },
+
+  // 13 — 1UP: pixel block text with mushroom accent
+  oneup(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- "1" -->
+      <rect x="16" y="36" width="8" height="8" fill="${c}" opacity="0.5"/>
+      <rect x="24" y="36" width="8" height="8" fill="${c}"/>
+      <rect x="24" y="44" width="8" height="8" fill="${c}"/>
+      <rect x="24" y="52" width="8" height="8" fill="${c}"/>
+      <rect x="24" y="60" width="8" height="8" fill="${c}"/>
+      <rect x="24" y="68" width="8" height="8" fill="${c}"/>
+      <rect x="16" y="68" width="8" height="8" fill="${c}"/>
+      <rect x="32" y="68" width="8" height="8" fill="${c}"/>
+      <!-- "U" -->
+      <rect x="46" y="36" width="8" height="8" fill="${c}"/>
+      <rect x="46" y="44" width="8" height="8" fill="${c}"/>
+      <rect x="46" y="52" width="8" height="8" fill="${c}"/>
+      <rect x="46" y="60" width="8" height="8" fill="${c}"/>
+      <rect x="46" y="68" width="8" height="8" fill="${c}"/>
+      <rect x="54" y="68" width="8" height="8" fill="${c}"/>
+      <rect x="62" y="68" width="8" height="8" fill="${c}"/>
+      <rect x="70" y="36" width="8" height="8" fill="${c}"/>
+      <rect x="70" y="44" width="8" height="8" fill="${c}"/>
+      <rect x="70" y="52" width="8" height="8" fill="${c}"/>
+      <rect x="70" y="60" width="8" height="8" fill="${c}"/>
+      <rect x="70" y="68" width="8" height="8" fill="${c}"/>
+      <!-- "P" -->
+      <rect x="84" y="36" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="44" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="52" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="60" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="68" width="8" height="8" fill="${c}"/>
+      <rect x="92" y="36" width="8" height="8" fill="${c}"/>
+      <rect x="100" y="36" width="8" height="8" fill="${c}"/>
+      <rect x="100" y="44" width="8" height="8" fill="${c}"/>
+      <rect x="92" y="52" width="8" height="8" fill="${c}"/>
+      <rect x="100" y="52" width="8" height="8" fill="${c}"/>
+      <!-- Mushroom above the "1" -->
+      <rect x="18" y="16" width="8" height="8" fill="${lite}" opacity="0.7"/>
+      <rect x="26" y="16" width="8" height="8" fill="${lite}" opacity="0.7"/>
+      <rect x="14" y="20" width="6" height="6" fill="${lite}" opacity="0.5"/>
+      <rect x="34" y="20" width="6" height="6" fill="${lite}" opacity="0.5"/>
+      <rect x="22" y="24" width="4" height="4" fill="${lite}" opacity="0.4"/>
+      <!-- Sparkle -->
+      <rect x="104" y="26" width="5" height="5" fill="${lite}" opacity="0.5"/>
+      <rect x="110" y="20" width="3" height="3" fill="${lite}" opacity="0.3"/>
+    `;
+  },
+
+  // 14 — Cassette Tape: retro tape with play symbol
+  cassette(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Cassette body -->
+      <rect x="14" y="28" width="92" height="60" rx="6" fill="${c}" opacity="0.2" stroke="${c}" stroke-width="2"/>
+      <!-- Top edge detail -->
+      <rect x="24" y="28" width="72" height="3" fill="${c}" opacity="0.4"/>
+      <!-- Label area -->
+      <rect x="24" y="36" width="72" height="24" rx="3" fill="${c}" opacity="0.15" stroke="${c}" stroke-width="1.5"/>
+      <!-- Play triangle on label -->
+      <polygon points="52,42 52,56 66,49" fill="${c}"/>
+      <!-- Label lines -->
+      <rect x="30" y="40" width="16" height="1.5" fill="${c}" opacity="0.3"/>
+      <rect x="30" y="44" width="14" height="1.5" fill="${c}" opacity="0.25"/>
+      <rect x="30" y="48" width="16" height="1.5" fill="${c}" opacity="0.2"/>
+      <rect x="30" y="52" width="12" height="1.5" fill="${c}" opacity="0.15"/>
+      <!-- Tape reels -->
+      <circle cx="42" cy="74" r="8" fill="none" stroke="${c}" stroke-width="2"/>
+      <circle cx="42" cy="74" r="3" fill="${c}" opacity="0.5"/>
+      <circle cx="78" cy="74" r="8" fill="none" stroke="${c}" stroke-width="2"/>
+      <circle cx="78" cy="74" r="3" fill="${c}" opacity="0.5"/>
+      <!-- Tape window -->
+      <rect x="48" y="68" width="24" height="12" rx="2" fill="${c}" opacity="0.1" stroke="${c}" stroke-width="1"/>
+      <!-- Tape visible through window -->
+      <line x1="50" y1="74" x2="70" y2="74" stroke="${c}" stroke-width="1" opacity="0.3"/>
+      <!-- Screw holes -->
+      <circle cx="22" cy="34" r="2" fill="${c}" opacity="0.3"/>
+      <circle cx="98" cy="34" r="2" fill="${c}" opacity="0.3"/>
+      <circle cx="22" cy="82" r="2" fill="${c}" opacity="0.3"/>
+      <circle cx="98" cy="82" r="2" fill="${c}" opacity="0.3"/>
+    `;
+  },
+
+  // 15 — TV Antenna: rabbit ears on mini CRT
+  tv(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Rabbit ear antennas -->
+      <line x1="60" y1="42" x2="36" y2="14" stroke="${c}" stroke-width="3" stroke-linecap="round"/>
+      <line x1="60" y1="42" x2="84" y2="14" stroke="${c}" stroke-width="3" stroke-linecap="round"/>
+      <!-- Antenna tips -->
+      <circle cx="36" cy="14" r="4" fill="${c}"/>
+      <circle cx="84" cy="14" r="4" fill="${c}"/>
+      <!-- Signal dots -->
+      <circle cx="30" cy="10" r="2" fill="${lite}" opacity="0.4"/>
+      <circle cx="90" cy="10" r="2" fill="${lite}" opacity="0.4"/>
+      <circle cx="25" cy="16" r="1.5" fill="${lite}" opacity="0.25"/>
+      <circle cx="95" cy="16" r="1.5" fill="${lite}" opacity="0.25"/>
+      <!-- TV body -->
+      <rect x="24" y="42" width="72" height="54" rx="8" fill="${c}" opacity="0.2" stroke="${c}" stroke-width="2.5"/>
+      <!-- Screen -->
+      <rect x="30" y="48" width="48" height="36" rx="4" fill="${c}" opacity="0.12"/>
+      <!-- Screen glow highlight -->
+      <rect x="32" y="50" width="12" height="4" rx="2" fill="${lite}" opacity="0.15"/>
+      <!-- Scan line hint -->
+      <line x1="30" y1="60" x2="78" y2="60" stroke="${lite}" stroke-width="0.5" opacity="0.15"/>
+      <line x1="30" y1="66" x2="78" y2="66" stroke="${lite}" stroke-width="0.5" opacity="0.1"/>
+      <line x1="30" y1="72" x2="78" y2="72" stroke="${lite}" stroke-width="0.5" opacity="0.1"/>
+      <!-- Control knobs on right -->
+      <circle cx="86" cy="56" r="4" fill="${c}" opacity="0.5"/>
+      <circle cx="86" cy="68" r="4" fill="${c}" opacity="0.4"/>
+      <circle cx="86" cy="80" r="3" fill="${c}" opacity="0.3"/>
+      <!-- Legs -->
+      <rect x="34" y="96" width="4" height="8" rx="1" fill="${c}" opacity="0.4"/>
+      <rect x="82" y="96" width="4" height="8" rx="1" fill="${c}" opacity="0.4"/>
+    `;
+  },
+
+  // 16 — Pixel Ghost: friendly pac-man ghost with RC eyes
+  ghost(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Ghost body (pixel art) -->
+      <!-- Top row -->
+      <rect x="40" y="18" width="8" height="8" fill="${c}"/>
+      <rect x="48" y="18" width="8" height="8" fill="${c}"/>
+      <rect x="56" y="18" width="8" height="8" fill="${c}"/>
+      <rect x="64" y="18" width="8" height="8" fill="${c}"/>
+      <!-- Row 2 -->
+      <rect x="32" y="26" width="8" height="8" fill="${c}"/>
+      <rect x="40" y="26" width="8" height="8" fill="${c}"/>
+      <rect x="48" y="26" width="8" height="8" fill="${c}"/>
+      <rect x="56" y="26" width="8" height="8" fill="${c}"/>
+      <rect x="64" y="26" width="8" height="8" fill="${c}"/>
+      <rect x="72" y="26" width="8" height="8" fill="${c}"/>
+      <!-- Row 3 (eyes row) -->
+      <rect x="28" y="34" width="8" height="8" fill="${c}"/>
+      <rect x="36" y="34" width="8" height="8" fill="${c}"/>
+      <rect x="44" y="34" width="8" height="8" fill="#0f1115"/>
+      <rect x="52" y="34" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="34" width="8" height="8" fill="${c}"/>
+      <rect x="68" y="34" width="8" height="8" fill="#0f1115"/>
+      <rect x="76" y="34" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="34" width="8" height="8" fill="${c}"/>
+      <!-- Row 4 (eye pupils — R and C) -->
+      <rect x="28" y="42" width="8" height="8" fill="${c}"/>
+      <rect x="36" y="42" width="8" height="8" fill="${c}"/>
+      <rect x="44" y="42" width="8" height="8" fill="${lite}" opacity="0.9"/>
+      <rect x="52" y="42" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="42" width="8" height="8" fill="${c}"/>
+      <rect x="68" y="42" width="8" height="8" fill="${lite}" opacity="0.9"/>
+      <rect x="76" y="42" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="42" width="8" height="8" fill="${c}"/>
+      <!-- Row 5-8 body -->
+      <rect x="28" y="50" width="8" height="8" fill="${c}"/>
+      <rect x="36" y="50" width="8" height="8" fill="${c}"/>
+      <rect x="44" y="50" width="8" height="8" fill="${c}"/>
+      <rect x="52" y="50" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="50" width="8" height="8" fill="${c}"/>
+      <rect x="68" y="50" width="8" height="8" fill="${c}"/>
+      <rect x="76" y="50" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="50" width="8" height="8" fill="${c}"/>
+      <!-- Row 6 -->
+      <rect x="28" y="58" width="8" height="8" fill="${c}"/>
+      <rect x="36" y="58" width="8" height="8" fill="${c}"/>
+      <rect x="44" y="58" width="8" height="8" fill="${c}"/>
+      <rect x="52" y="58" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="58" width="8" height="8" fill="${c}"/>
+      <rect x="68" y="58" width="8" height="8" fill="${c}"/>
+      <rect x="76" y="58" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="58" width="8" height="8" fill="${c}"/>
+      <!-- Row 7 -->
+      <rect x="28" y="66" width="8" height="8" fill="${c}"/>
+      <rect x="36" y="66" width="8" height="8" fill="${c}"/>
+      <rect x="44" y="66" width="8" height="8" fill="${c}"/>
+      <rect x="52" y="66" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="66" width="8" height="8" fill="${c}"/>
+      <rect x="68" y="66" width="8" height="8" fill="${c}"/>
+      <rect x="76" y="66" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="66" width="8" height="8" fill="${c}"/>
+      <!-- Row 8 -->
+      <rect x="28" y="74" width="8" height="8" fill="${c}"/>
+      <rect x="36" y="74" width="8" height="8" fill="${c}"/>
+      <rect x="44" y="74" width="8" height="8" fill="${c}"/>
+      <rect x="52" y="74" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="74" width="8" height="8" fill="${c}"/>
+      <rect x="68" y="74" width="8" height="8" fill="${c}"/>
+      <rect x="76" y="74" width="8" height="8" fill="${c}"/>
+      <rect x="84" y="74" width="8" height="8" fill="${c}"/>
+      <!-- Wavy bottom (ghost tentacles) -->
+      <rect x="28" y="82" width="8" height="8" fill="${c}"/>
+      <rect x="44" y="82" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="82" width="8" height="8" fill="${c}"/>
+      <rect x="76" y="82" width="8" height="8" fill="${c}"/>
+      <rect x="28" y="90" width="8" height="8" fill="${c}"/>
+      <rect x="60" y="90" width="8" height="8" fill="${c}"/>
+    `;
+  },
+
+  // 17 — Checkpoint Flag: pixel racing/save flag
+  flag(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Flag pole -->
+      <rect x="32" y="14" width="4" height="90" fill="${c}" opacity="0.6"/>
+      <!-- Pole base -->
+      <rect x="24" y="98" width="20" height="6" rx="2" fill="${c}" opacity="0.4"/>
+      <!-- Pole top ball -->
+      <circle cx="34" cy="14" r="4" fill="${c}"/>
+      <!-- Flag body (checkerboard pattern) -->
+      <!-- Row 1 -->
+      <rect x="38" y="18" width="10" height="10" fill="${c}"/>
+      <rect x="48" y="18" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <rect x="58" y="18" width="10" height="10" fill="${c}"/>
+      <rect x="68" y="18" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <rect x="78" y="18" width="10" height="10" fill="${c}"/>
+      <!-- Row 2 -->
+      <rect x="38" y="28" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <rect x="48" y="28" width="10" height="10" fill="${c}"/>
+      <rect x="58" y="28" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <rect x="68" y="28" width="10" height="10" fill="${c}"/>
+      <rect x="78" y="28" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <!-- Row 3 -->
+      <rect x="38" y="38" width="10" height="10" fill="${c}"/>
+      <rect x="48" y="38" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <rect x="58" y="38" width="10" height="10" fill="${c}"/>
+      <rect x="68" y="38" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <rect x="78" y="38" width="10" height="10" fill="${c}"/>
+      <!-- Row 4 -->
+      <rect x="38" y="48" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <rect x="48" y="48" width="10" height="10" fill="${c}"/>
+      <rect x="58" y="48" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <rect x="68" y="48" width="10" height="10" fill="${c}"/>
+      <rect x="78" y="48" width="10" height="10" fill="${c}" opacity="0.35"/>
+      <!-- Wave sparkle -->
+      <rect x="86" y="24" width="5" height="5" fill="${lite}" opacity="0.4"/>
+      <rect x="92" y="18" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <rect x="88" y="44" width="4" height="4" fill="${lite}" opacity="0.3"/>
+    `;
+  },
+
+  // 18 — D-Pad Rose: compass rose from D-pad shape
+  dpad(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- D-pad cross shape -->
+      <!-- Center -->
+      <rect x="46" y="46" width="28" height="28" rx="2" fill="${c}" opacity="0.6"/>
+      <!-- Up -->
+      <rect x="48" y="18" width="24" height="30" rx="3" fill="${c}"/>
+      <!-- Down -->
+      <rect x="48" y="72" width="24" height="30" rx="3" fill="${c}"/>
+      <!-- Left -->
+      <rect x="18" y="48" width="30" height="24" rx="3" fill="${c}"/>
+      <!-- Right -->
+      <rect x="72" y="48" width="30" height="24" rx="3" fill="${c}"/>
+      <!-- Compass rose points (diagonal decorative triangles) -->
+      <polygon points="38,38 28,28 38,28" fill="${c}" opacity="0.4"/>
+      <polygon points="82,38 92,28 82,28" fill="${c}" opacity="0.4"/>
+      <polygon points="38,82 28,92 38,92" fill="${c}" opacity="0.4"/>
+      <polygon points="82,82 92,92 82,92" fill="${c}" opacity="0.4"/>
+      <!-- Directional arrows etched in -->
+      <polygon points="60,24 55,32 65,32" fill="${lite}" opacity="0.3"/>
+      <polygon points="60,96 55,88 65,88" fill="${lite}" opacity="0.3"/>
+      <polygon points="24,60 32,55 32,65" fill="${lite}" opacity="0.3"/>
+      <polygon points="96,60 88,55 88,65" fill="${lite}" opacity="0.3"/>
+      <!-- Center dot -->
+      <circle cx="60" cy="60" r="5" fill="${lite}" opacity="0.25"/>
+      <!-- Decorative outer dots -->
+      <circle cx="60" cy="8" r="3" fill="${lite}" opacity="0.35"/>
+      <circle cx="60" cy="112" r="3" fill="${lite}" opacity="0.35"/>
+      <circle cx="8" cy="60" r="3" fill="${lite}" opacity="0.35"/>
+      <circle cx="112" cy="60" r="3" fill="${lite}" opacity="0.35"/>
+    `;
+  },
+
+  // 19 — Pixel Explosion: radial burst of pixel squares
+  explosion(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Center core -->
+      <rect x="52" y="52" width="16" height="16" fill="${c}"/>
+      <rect x="48" y="48" width="8" height="8" fill="${c}" opacity="0.8"/>
+      <rect x="64" y="48" width="8" height="8" fill="${c}" opacity="0.8"/>
+      <rect x="48" y="64" width="8" height="8" fill="${c}" opacity="0.8"/>
+      <rect x="64" y="64" width="8" height="8" fill="${c}" opacity="0.8"/>
+      <!-- Ring 1 -->
+      <rect x="56" y="32" width="8" height="8" fill="${c}" opacity="0.9"/>
+      <rect x="56" y="80" width="8" height="8" fill="${c}" opacity="0.9"/>
+      <rect x="32" y="56" width="8" height="8" fill="${c}" opacity="0.9"/>
+      <rect x="80" y="56" width="8" height="8" fill="${c}" opacity="0.9"/>
+      <rect x="38" y="38" width="7" height="7" fill="${c}" opacity="0.8"/>
+      <rect x="76" y="38" width="7" height="7" fill="${c}" opacity="0.8"/>
+      <rect x="38" y="76" width="7" height="7" fill="${c}" opacity="0.8"/>
+      <rect x="76" y="76" width="7" height="7" fill="${c}" opacity="0.8"/>
+      <!-- Ring 2 (outer particles) -->
+      <rect x="56" y="14" width="6" height="6" fill="${c}" opacity="0.6"/>
+      <rect x="56" y="100" width="6" height="6" fill="${c}" opacity="0.6"/>
+      <rect x="14" y="56" width="6" height="6" fill="${c}" opacity="0.6"/>
+      <rect x="100" y="56" width="6" height="6" fill="${c}" opacity="0.6"/>
+      <rect x="26" y="26" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <rect x="90" y="26" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <rect x="26" y="90" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <rect x="90" y="90" width="6" height="6" fill="${c}" opacity="0.5"/>
+      <!-- Ring 3 (furthest sparkles) -->
+      <rect x="58" y="4" width="4" height="4" fill="${lite}" opacity="0.4"/>
+      <rect x="58" y="112" width="4" height="4" fill="${lite}" opacity="0.4"/>
+      <rect x="4" y="58" width="4" height="4" fill="${lite}" opacity="0.4"/>
+      <rect x="112" y="58" width="4" height="4" fill="${lite}" opacity="0.4"/>
+      <rect x="16" y="16" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <rect x="100" y="16" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <rect x="16" y="100" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <rect x="100" y="100" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <!-- Extra scatter -->
+      <rect x="42" y="18" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <rect x="78" y="18" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <rect x="18" y="42" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <rect x="98" y="42" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <rect x="18" y="78" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <rect x="98" y="78" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <rect x="42" y="100" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <rect x="78" y="100" width="4" height="4" fill="${lite}" opacity="0.25"/>
+    `;
+  },
+
+  // 20 — Trophy: pixel art trophy with star
+  trophy(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Cup rim -->
+      <rect x="30" y="16" width="60" height="8" rx="2" fill="${c}"/>
+      <!-- Cup body -->
+      <rect x="34" y="24" width="52" height="28" fill="${c}"/>
+      <rect x="38" y="52" width="44" height="8" fill="${c}"/>
+      <rect x="44" y="60" width="32" height="6" fill="${c}"/>
+      <!-- Handles -->
+      <rect x="18" y="20" width="14" height="6" rx="3" fill="${c}" opacity="0.7"/>
+      <rect x="18" y="26" width="6" height="16" rx="3" fill="${c}" opacity="0.7"/>
+      <rect x="18" y="40" width="14" height="6" rx="3" fill="${c}" opacity="0.7"/>
+      <rect x="88" y="20" width="14" height="6" rx="3" fill="${c}" opacity="0.7"/>
+      <rect x="96" y="26" width="6" height="16" rx="3" fill="${c}" opacity="0.7"/>
+      <rect x="88" y="40" width="14" height="6" rx="3" fill="${c}" opacity="0.7"/>
+      <!-- Star on cup -->
+      <polygon points="60,28 63,36 72,37 66,43 67,52 60,48 53,52 54,43 48,37 57,36" fill="${lite}" opacity="0.6"/>
+      <!-- Stem -->
+      <rect x="54" y="66" width="12" height="14" fill="${c}" opacity="0.7"/>
+      <!-- Base -->
+      <rect x="38" y="80" width="44" height="6" rx="2" fill="${c}"/>
+      <rect x="34" y="86" width="52" height="8" rx="3" fill="${c}" opacity="0.8"/>
+      <!-- Sparkles -->
+      <rect x="16" y="10" width="5" height="5" fill="${lite}" opacity="0.4"/>
+      <rect x="10" y="6" width="3" height="3" fill="${lite}" opacity="0.25"/>
+      <rect x="100" y="8" width="5" height="5" fill="${lite}" opacity="0.4"/>
+      <rect x="108" y="4" width="3" height="3" fill="${lite}" opacity="0.25"/>
+    `;
+  },
+
+  // 21 — Floppy Disk: save icon with play symbol
+  floppy(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Disk body -->
+      <rect x="20" y="16" width="80" height="88" rx="5" fill="${c}" opacity="0.2" stroke="${c}" stroke-width="2.5"/>
+      <!-- Metal slider at top -->
+      <rect x="38" y="16" width="44" height="22" rx="2" fill="${c}" opacity="0.4"/>
+      <!-- Slider window -->
+      <rect x="56" y="20" width="18" height="14" rx="1" fill="#0f1115" opacity="0.8"/>
+      <!-- Label area -->
+      <rect x="30" y="54" width="60" height="38" rx="3" fill="${c}" opacity="0.12" stroke="${c}" stroke-width="1.5"/>
+      <!-- Play symbol on label -->
+      <polygon points="50,64 50,82 68,73" fill="${c}"/>
+      <!-- Label lines -->
+      <rect x="36" y="58" width="10" height="1.5" fill="${c}" opacity="0.3"/>
+      <rect x="36" y="62" width="8" height="1.5" fill="${c}" opacity="0.2"/>
+      <!-- Corner notch (write protect) -->
+      <rect x="20" y="16" width="10" height="10" fill="${c}" opacity="0.15"/>
+      <rect x="22" y="18" width="6" height="6" fill="#0f1115" opacity="0.5"/>
+      <!-- Pixel accent on edges -->
+      <rect x="16" y="46" width="4" height="4" fill="${lite}" opacity="0.2"/>
+      <rect x="100" y="46" width="4" height="4" fill="${lite}" opacity="0.2"/>
+      <!-- Sparkle -->
+      <rect x="96" y="10" width="5" height="5" fill="${lite}" opacity="0.4"/>
+      <rect x="102" y="6" width="3" height="3" fill="${lite}" opacity="0.25"/>
+    `;
+  },
+
+  // 22 — Lightning Bolt: pixel zigzag
+  lightning(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Lightning bolt (pixel-art zigzag) -->
+      <rect x="56" y="8" width="10" height="10" fill="${c}"/>
+      <rect x="50" y="16" width="10" height="10" fill="${c}"/>
+      <rect x="44" y="24" width="10" height="10" fill="${c}"/>
+      <rect x="38" y="32" width="10" height="10" fill="${c}"/>
+      <rect x="32" y="40" width="10" height="10" fill="${c}"/>
+      <!-- Horizontal bar -->
+      <rect x="42" y="48" width="10" height="10" fill="${c}"/>
+      <rect x="52" y="48" width="10" height="10" fill="${c}"/>
+      <rect x="62" y="48" width="10" height="10" fill="${c}"/>
+      <rect x="72" y="48" width="10" height="10" fill="${c}"/>
+      <!-- Lower zigzag -->
+      <rect x="66" y="56" width="10" height="10" fill="${c}"/>
+      <rect x="60" y="64" width="10" height="10" fill="${c}"/>
+      <rect x="54" y="72" width="10" height="10" fill="${c}"/>
+      <rect x="48" y="80" width="10" height="10" fill="${c}"/>
+      <rect x="42" y="88" width="10" height="10" fill="${c}"/>
+      <rect x="36" y="96" width="10" height="10" fill="${c}"/>
+      <!-- Glow/energy accents -->
+      <rect x="64" y="10" width="6" height="6" fill="${lite}" opacity="0.5"/>
+      <rect x="70" y="6" width="4" height="4" fill="${lite}" opacity="0.3"/>
+      <rect x="24" y="42" width="6" height="6" fill="${lite}" opacity="0.4"/>
+      <rect x="82" y="50" width="5" height="5" fill="${lite}" opacity="0.4"/>
+      <rect x="30" y="98" width="5" height="5" fill="${lite}" opacity="0.35"/>
+      <rect x="52" y="100" width="4" height="4" fill="${lite}" opacity="0.25"/>
+      <!-- Extra energy sparks -->
+      <rect x="18" y="36" width="3" height="3" fill="${lite}" opacity="0.2"/>
+      <rect x="88" y="54" width="3" height="3" fill="${lite}" opacity="0.2"/>
+      <rect x="68" y="4" width="3" height="3" fill="${lite}" opacity="0.2"/>
+    `;
+  },
+
+  // 23 — Replay Arrow: circular refresh arrow with play triangle in center
+  replayArrow(c, lite, bg) {
+    return `
+      <rect width="120" height="120" rx="16" fill="${bg}"/>
+      <!-- Circular arrow (replay/refresh arc) -->
+      <path d="M 60 14
+               A 46 46 0 1 1 24.5 83"
+            fill="none" stroke="${c}" stroke-width="8" stroke-linecap="round"/>
+      <!-- Arrowhead at the end of the arc -->
+      <polygon points="16,72 26,88 36,76" fill="${c}"/>
+      <!-- Play triangle in center (white) -->
+      <polygon points="50,42 50,78 78,60" fill="#e4e6ea"/>
+    `;
+  }
+};
+
+// ========== COLOR CONFIGS ==========
+const colors = [
+  { name: 'Replay Indigo', cls: 'indigo', fill: '#6366f1', lite: '#818cf8', bg: 'rgba(99,102,241,0.10)' },
+  { name: 'Astro Green',   cls: 'green',  fill: '#00b543', lite: '#33cc66', bg: 'rgba(0,181,67,0.08)' },
+  { name: 'MVS Red',       cls: 'red',    fill: '#e00000', lite: '#ff4444', bg: 'rgba(224,0,0,0.08)' },
+  { name: 'Unicolors Gold', cls: 'gold',  fill: '#c8a848', lite: '#e0c060', bg: 'rgba(200,168,72,0.08)' },
+];
+
+// ========== GRID RENDERING ==========
+const gridConfig = [
+  { id: 'power-grid',     fn: 'power' },
+  { id: 'cartridge-grid', fn: 'cartridge' },
+  { id: 'oneup-grid',     fn: 'oneup' },
+  { id: 'cassette-grid',  fn: 'cassette' },
+  { id: 'tv-grid',        fn: 'tv' },
+  { id: 'ghost-grid',     fn: 'ghost' },
+  { id: 'flag-grid',      fn: 'flag' },
+  { id: 'dpad-grid',      fn: 'dpad' },
+  { id: 'explosion-grid', fn: 'explosion' },
+  { id: 'trophy-grid',    fn: 'trophy' },
+  { id: 'floppy-grid',    fn: 'floppy' },
+  { id: 'lightning-grid',fn: 'lightning' },
+  { id: 'replay-arrow-grid', fn: 'replayArrow' },
+];
+
+function svgWrap(w, h, inner) {
+  return `<svg width="${w}" height="${h}" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+}
+
+function renderGrid(gridId, fnName) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  const fn = logos[fnName];
+
+  colors.forEach(col => {
+    const inner = fn(col.fill, col.lite, col.bg);
+    const card = document.createElement('div');
+    card.className = `color-card ${col.cls}`;
+    card.innerHTML = `
+      <span class="color-label">${col.name}</span>
+      <div class="size-row">
+        <div class="size-item">
+          ${svgWrap(120, 120, inner)}
+          <span class="size-label">120px</span>
+        </div>
+        <div class="size-item">
+          ${svgWrap(48, 48, inner)}
+          <span class="size-label">48px</span>
+        </div>
+        <div class="size-item">
+          ${svgWrap(24, 24, inner)}
+          <span class="size-label">24px</span>
+        </div>
+      </div>
+      <div class="wordmark-row">
+        ${svgWrap(24, 24, inner)}
+        <span class="wm-text" style="color:${col.fill}">Replay Control</span>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+gridConfig.forEach(g => renderGrid(g.id, g.fn));
+
+// ========== TOP PICKS CONTEXT RENDERING ==========
+function renderContexts(containerId, fnName) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const fn = logos[fnName];
+  const c = colors[0]; // indigo for context demos
+  const inner = fn(c.fill, c.lite, c.bg);
+
+  container.innerHTML = `
+    <div class="context-card">
+      <div class="context-card-header"><h3>Mobile App Bar</h3></div>
+      <div class="context-card-body">
+        <div class="app-bar">
+          ${svgWrap(28, 28, inner)}
+          <span class="title">Replay Control</span>
+          <div class="hamburger"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="context-card">
+      <div class="context-card-header"><h3>PWA Home Screen</h3></div>
+      <div class="context-card-body">
+        <div>
+          <div class="pwa-icon indigo">
+            ${svgWrap(48, 48, inner)}
+          </div>
+          <div class="pwa-label">Replay Control</div>
+        </div>
+      </div>
+    </div>
+    <div class="context-card">
+      <div class="context-card-header"><h3>Browser Tab Favicon</h3></div>
+      <div class="context-card-body">
+        <div class="favicon-row">
+          ${svgWrap(16, 16, inner)}
+          <span class="tab-title">Replay Control</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+renderContexts('pick1-contexts', 'replayArrow');
+renderContexts('pick2-contexts', 'cartridge');
+renderContexts('pick3-contexts', 'oneup');
+renderContexts('pick4-contexts', 'lightning');
+</script>
+
+</body>
+</html>
