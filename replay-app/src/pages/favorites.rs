@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+use leptos_router::hooks::use_params_map;
 use server_fn::ServerFnError;
 
 use crate::i18n::{use_i18n, t};
@@ -173,7 +174,7 @@ where
                     <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.by_system")}</h2>
                     <div class="systems-grid">
                         {move || system_cards().into_iter().map(|(display_name, system, count, latest, _)| {
-                            let href = format!("/games/{system}");
+                            let href = format!("/favorites/{system}");
                             let count_label = move || {
                                 let locale = i18n.locale.get();
                                 format!("{count} {}", t(locale, "stats.favorites").to_lowercase())
@@ -335,5 +336,85 @@ where
                 </div>
             </Show>
         </div>
+    }
+}
+
+/// `/favorites/:system` — favorites list filtered to a single system.
+#[component]
+pub fn SystemFavoritesPage() -> impl IntoView {
+    let i18n = use_i18n();
+    let params = use_params_map();
+    let system = move || params.read().get("system").unwrap_or_default();
+
+    let favorites = Resource::new(
+        move || system(),
+        |sys| server_fns::get_system_favorites(sys),
+    );
+
+    view! {
+        <div class="page favorites-page">
+            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    {move || Suspend::new(async move {
+                        let favs = favorites.await?;
+                        Ok::<_, ServerFnError>(view! { <SystemFavoritesContent favs /> })
+                    })}
+                </Suspense>
+            </ErrorBoundary>
+        </div>
+    }
+}
+
+/// Inner content for the system-specific favorites page.
+#[component]
+fn SystemFavoritesContent(favs: Vec<Favorite>) -> impl IntoView {
+    let i18n = use_i18n();
+    let favorites = RwSignal::new(favs);
+    let confirm_remove = RwSignal::new(Option::<String>::None);
+
+    // Derive the system display name from the first favorite.
+    let system_display = favorites.read().first()
+        .map(|f| f.game.system_display.clone())
+        .unwrap_or_default();
+
+    let total_count = move || favorites.read().len();
+    let is_empty = move || favorites.read().is_empty();
+
+    let remove_fav = move |fav_filename: String, subfolder: String| {
+        favorites.update(|list| {
+            list.retain(|f| f.marker_filename != fav_filename);
+        });
+        confirm_remove.set(None);
+        let sub = if subfolder.is_empty() { None } else { Some(subfolder) };
+        leptos::task::spawn_local(async move {
+            let _ = server_fns::remove_favorite(fav_filename, sub).await;
+        });
+    };
+
+    view! {
+        <div class="rom-header">
+            <A href="/favorites" attr:class="back-btn">
+                {move || t(i18n.locale.get(), "games.back")}
+            </A>
+            <h2 class="page-title">{system_display}</h2>
+        </div>
+        <p class="rom-count">{move || {
+            let count = total_count();
+            let locale = i18n.locale.get();
+            format!("{count} {}", t(locale, "stats.favorites").to_lowercase())
+        }}</p>
+        <Show when=move || !is_empty() fallback=move || view! {
+            <p class="empty-state">{t(i18n.locale.get(), "favorites.empty")}</p>
+        }>
+            <div class="fav-list">
+                <For
+                    each=move || favorites.get()
+                    key=|fav| fav.marker_filename.clone()
+                    let:fav
+                >
+                    <FavItem fav show_system=false confirm_remove remove_fav=remove_fav.clone() />
+                </For>
+            </div>
+        </Show>
     }
 }

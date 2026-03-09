@@ -139,7 +139,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                 </div>
                 <div class="game-meta-item">
                     <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.filename")}</span>
-                    <span class="game-meta-value">{filename_sv.get_value()}</span>
+                    <span class="game-meta-value">{relative_path_sv.get_value()}</span>
                 </div>
                 <div class="game-meta-item">
                     <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.file_size")}</span>

@@ -1,5 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+use leptos_router::hooks::query_signal_with_options;
+use leptos_router::NavigateOptions;
 
 use crate::i18n::{use_i18n, t};
 use crate::server_fns::{self, RomEntry, PAGE_SIZE};
@@ -11,12 +13,23 @@ pub fn RomList(system: String) -> impl IntoView {
     let i18n = use_i18n();
     let sys = StoredValue::new(system.clone());
 
-    // Search: raw input updates immediately, debounced_search drives the Resource.
-    // On SSR the initial empty string is correct; debounce only matters after hydration.
-    let (search_input, set_search_input) = signal(String::new());
-    let debounced_search = RwSignal::new(String::new());
-    // search_input is read in the #[cfg(feature = "hydrate")] block below.
-    let _ = &search_input;
+    // Search: synced with URL query param `?search=...`.
+    // Use replace mode so each keystroke doesn't add a history entry.
+    let (search_query, set_search_query) = query_signal_with_options::<String>(
+        "search",
+        NavigateOptions {
+            replace: true,
+            scroll: false,
+            ..Default::default()
+        },
+    );
+    // set_search_query is used in the hydrate block below.
+    let _ = &set_search_query;
+
+    // Local input signal tracks what the user is typing (immediate), while
+    // debounced_search drives the Resource (delayed).
+    let search_input = RwSignal::new(search_query.get_untracked().unwrap_or_default());
+    let debounced_search = RwSignal::new(search_query.get_untracked().unwrap_or_default());
 
     #[cfg(feature = "hydrate")]
     {
@@ -32,6 +45,12 @@ pub fn RomList(system: String) -> impl IntoView {
             }
             let cb = Closure::<dyn Fn()>::new(move || {
                 debounced_search.set(val.clone());
+                // Sync to URL query param.
+                if val.is_empty() {
+                    set_search_query.set(None);
+                } else {
+                    set_search_query.set(Some(val.clone()));
+                }
             });
             if let Some(window) = web_sys::window() {
                 if let Ok(handle) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
@@ -42,6 +61,15 @@ pub fn RomList(system: String) -> impl IntoView {
                 }
             }
             cb.forget();
+        });
+
+        // Sync from URL -> input when query param changes externally (e.g., back button).
+        Effect::new(move || {
+            let url_val = search_query.get().unwrap_or_default();
+            if url_val != search_input.get_untracked() {
+                search_input.set(url_val.clone());
+                debounced_search.set(url_val);
+            }
         });
 
         // Clean up pending timer on unmount.
@@ -142,8 +170,20 @@ pub fn RomList(system: String) -> impl IntoView {
         });
     }
 
+    // The search bar is rendered outside the Suspense/Transition block so that the
+    // input element is never recreated when search results update, which preserves
+    // keyboard focus while typing.
     view! {
-        <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "games.loading_roms")}</div> }>
+        <div class="search-bar">
+            <input
+                type="text"
+                placeholder=move || t(i18n.locale.get(), "games.search_placeholder")
+                class="search-input"
+                prop:value=move || search_input.get()
+                on:input=move |ev| search_input.set(event_target_value(&ev))
+            />
+        </div>
+        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "games.loading_roms")}</div> }>
             {move || Suspend::new(async move {
                 let locale = i18n.locale.get();
                 match first_page.await {
@@ -167,14 +207,6 @@ pub fn RomList(system: String) -> impl IntoView {
                                     {t(locale, "games.back")}
                                 </A>
                                 <h2 class="page-title">{display_name}</h2>
-                            </div>
-                            <div class="search-bar">
-                                <input
-                                    type="text"
-                                    placeholder=move || t(i18n.locale.get(), "games.search_placeholder")
-                                    class="search-input"
-                                    on:input=move |ev| set_search_input.set(event_target_value(&ev))
-                                />
                             </div>
                             <p class="rom-count">{count_text}</p>
                             <div class="rom-list">
@@ -228,7 +260,7 @@ pub fn RomList(system: String) -> impl IntoView {
                     }
                 }
             })}
-        </Suspense>
+        </Transition>
     }
 }
 
@@ -251,7 +283,26 @@ fn RomItem(
     let is_fav = RwSignal::new(rom.is_favorite);
     let size = format_size(rom.size_bytes);
     let ext = format!(".{}", rom.game.rom_filename.rsplit('.').next().unwrap_or(""));
-    let path_display = rom.game.rom_path.clone();
+    let path_display = {
+        // Strip the system prefix (e.g. "/roms/sega_smd/") and show the rest.
+        // If there's no subfolder, this is just the filename.
+        let p = rom.game.rom_path.as_str();
+        let mut slashes = 0;
+        let stripped = p
+            .char_indices()
+            .find_map(|(i, c)| {
+                if c == '/' {
+                    slashes += 1;
+                    // Skip leading slash + "roms" + system folder = 3 slashes
+                    if slashes == 3 {
+                        return Some(&p[i + 1..]);
+                    }
+                }
+                None
+            })
+            .unwrap_or(&rom.game.rom_filename);
+        stripped.to_string()
+    };
 
     let game_href = {
         let sys = rom.game.system.clone();

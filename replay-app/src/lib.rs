@@ -14,7 +14,7 @@ use leptos_router::path;
 
 use components::nav::BottomNav;
 use i18n::{provide_i18n, use_i18n, t};
-use pages::favorites::FavoritesPage;
+use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
 use pages::games::{GamesPage, SystemRomView};
 use pages::home::HomePage;
@@ -77,6 +77,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/games/:system") view=SystemRomView />
                         <Route path=path!("/games/:system/:filename") view=GameDetailPage />
                         <Route path=path!("/favorites") view=FavoritesPage />
+                        <Route path=path!("/favorites/:system") view=SystemFavoritesPage />
                         <Route path=path!("/more") view=MorePage />
                     </Routes>
                 </main>

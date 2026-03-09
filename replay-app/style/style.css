@@ -873,7 +873,6 @@ a, a:visited, a:hover, a:active {
 
 .rom-name-link:hover {
     color: var(--accent);
-    text-decoration: underline;
 }
 
 /* Screenshots gallery placeholder (future grid) */
