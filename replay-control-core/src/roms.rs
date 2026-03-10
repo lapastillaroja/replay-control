@@ -41,7 +41,7 @@ pub fn scan_systems(storage: &StorageLocation) -> Vec<SystemSummary> {
     let roms_dir = storage.roms_dir();
     let mut summaries = Vec::new();
 
-    for system in systems::SYSTEMS {
+    for system in systems::visible_systems() {
         let system_dir = roms_dir.join(system.folder_name);
         let (count, size) = if system_dir.exists() {
             count_roms_recursive(&system_dir, system)
@@ -155,7 +155,7 @@ pub fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
     let roms_dir = storage.roms_dir();
     let mut all_roms: Vec<RomEntry> = Vec::new();
 
-    for system in systems::SYSTEMS {
+    for system in systems::visible_systems() {
         let system_dir = roms_dir.join(system.folder_name);
         if system_dir.exists() {
             collect_roms_recursive(&system_dir, &roms_dir, system, &mut all_roms);

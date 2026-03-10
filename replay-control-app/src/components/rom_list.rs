@@ -3,6 +3,7 @@ use leptos_router::NavigateOptions;
 use leptos_router::components::A;
 use leptos_router::hooks::{query_signal_with_options, use_query_map};
 
+use crate::components::genre_dropdown::GenreDropdown;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, PAGE_SIZE, RomEntry};
 use crate::util::format_size;
@@ -118,6 +119,10 @@ pub fn RomList(system: String) -> impl IntoView {
         });
 
         // Immediate update for filter toggle changes (no debounce needed).
+        // Skip the first run: URL already reflects initial values and the
+        // Router's pushState hasn't completed yet. Calling replaceState before
+        // pushState would overwrite the previous page's history entry.
+        let filters_initialized = StoredValue::new(false);
         Effect::new(move || {
             let hh = hide_hacks.get();
             let ht = hide_translations.get();
@@ -125,6 +130,10 @@ pub fn RomList(system: String) -> impl IntoView {
             let hc = hide_clones.get();
             let g = genre_filter.get();
             debounced_genre.set(g.clone());
+            if !filters_initialized.get_value() {
+                filters_initialized.set_value(true);
+                return;
+            }
             update_filter_url(
                 sys.get_value(),
                 hh,
@@ -419,29 +428,6 @@ pub fn RomList(system: String) -> impl IntoView {
     }
 }
 
-/// Genre dropdown filter for ROM list.
-#[component]
-fn GenreDropdown(genre: RwSignal<String>, genre_list: Vec<String>) -> impl IntoView {
-    let i18n = use_i18n();
-
-    view! {
-        <select
-            class="filter-genre-select"
-            on:change=move |ev| genre.set(event_target_value(&ev))
-            prop:value=move || genre.get()
-        >
-            <option value="">{move || t(i18n.locale.get(), "filter.genre_all")}</option>
-            {genre_list
-                .into_iter()
-                .map(|g| {
-                    let g2 = g.clone();
-                    view! { <option value=g>{g2}</option> }
-                })
-                .collect::<Vec<_>>()}
-        </select>
-    }
-}
-
 /// A single ROM row with favorite toggle, rename, and delete actions.
 #[component]
 fn RomItem(
@@ -527,11 +513,13 @@ fn RomItem(
         <div class="rom-item">
             <button class="rom-fav-btn" on:click=on_toggle_fav>{star}</button>
 
-            <Show when=move || has_box_art>
-                <A href=game_href.get_value() attr:class="rom-thumb-link">
-                    <img class="rom-thumb" src=box_art_url.get_value() loading="lazy" />
-                </A>
-            </Show>
+            <A href=game_href.get_value() attr:class="rom-thumb-link">
+                {if has_box_art {
+                    view! { <img class="rom-thumb" src=box_art_url.get_value() loading="lazy" /> }.into_any()
+                } else {
+                    view! { <div class="rom-thumb-placeholder"></div> }.into_any()
+                }}
+            </A>
 
             <div class="rom-info">
                 <Show when=is_renaming fallback=move || view! {

@@ -74,58 +74,9 @@ pub fn App() -> impl IntoView {
     provide_i18n();
     let i18n = use_i18n();
 
-    // Global keyboard shortcut: "/" navigates to /search.
-    #[cfg(feature = "hydrate")]
-    {
-        use wasm_bindgen::prelude::*;
-        use wasm_bindgen::JsCast;
-
-        Effect::new(move || {
-            let window = match web_sys::window() {
-                Some(w) => w,
-                None => return,
-            };
-            let cb = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
-                if ev.key() != "/" {
-                    return;
-                }
-                // Don't intercept if user is typing in an input or textarea.
-                if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-                    if let Some(active) = doc.active_element() {
-                        let tag = active.tag_name().to_uppercase();
-                        if tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" {
-                            return;
-                        }
-                    }
-                }
-                ev.prevent_default();
-                // Navigate to /search (or focus input if already there).
-                if let Some(w) = web_sys::window() {
-                    let href = w.location().pathname().unwrap_or_default();
-                    if href == "/search" {
-                        // Already on search page — focus the input.
-                        if let Some(doc) = w.document() {
-                            if let Some(el) = doc.query_selector(".search-page-input").ok().flatten() {
-                                if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
-                                    let _ = input.focus();
-                                }
-                            }
-                        }
-                    } else {
-                        let _ = w.location().set_href("/search");
-                    }
-                }
-            });
-            let _ = window.add_event_listener_with_callback(
-                "keydown",
-                cb.as_ref().unchecked_ref(),
-            );
-            cb.forget();
-        });
-    }
-
     view! {
         <Router>
+            <SearchShortcut />
             <div class="app">
                 <header class="top-bar">
                     <h1 class="app-title">
@@ -162,6 +113,69 @@ pub fn App() -> impl IntoView {
                 <BottomNav />
             </div>
         </Router>
+    }
+}
+
+/// Invisible component that installs the "/" keyboard shortcut for search.
+/// Must be rendered inside `<Router>` so `use_navigate` has access to the
+/// router context.
+#[component]
+fn SearchShortcut() -> impl IntoView {
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen::JsCast;
+
+        let navigate = leptos_router::hooks::use_navigate();
+        Effect::new(move || {
+            let navigate = navigate.clone();
+            let window = match web_sys::window() {
+                Some(w) => w,
+                None => return,
+            };
+            let cb = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(
+                move |ev: web_sys::KeyboardEvent| {
+                    if ev.key() != "/" {
+                        return;
+                    }
+                    // Don't intercept if user is typing in an input or textarea.
+                    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                        if let Some(active) = doc.active_element() {
+                            let tag = active.tag_name().to_uppercase();
+                            if tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" {
+                                return;
+                            }
+                        }
+                    }
+                    ev.prevent_default();
+                    // Navigate to /search (or focus input if already there).
+                    if let Some(w) = web_sys::window() {
+                        let href = w.location().pathname().unwrap_or_default();
+                        if href == "/search" {
+                            // Already on search page -- focus the input.
+                            if let Some(doc) = w.document() {
+                                if let Some(el) =
+                                    doc.query_selector(".search-page-input").ok().flatten()
+                                {
+                                    if let Some(input) =
+                                        el.dyn_ref::<web_sys::HtmlInputElement>()
+                                    {
+                                        let _ = input.focus();
+                                    }
+                                }
+                            }
+                        } else {
+                            navigate("/search", Default::default());
+                        }
+                    }
+                },
+            );
+            let _ = window.add_event_listener_with_callback(
+                "keydown",
+                cb.as_ref().unchecked_ref(),
+            );
+            cb.forget();
+        });
     }
 }
 

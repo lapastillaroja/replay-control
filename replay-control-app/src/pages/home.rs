@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
-use leptos_router::hooks::use_navigate;
 use server_fn::ServerFnError;
 
+use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::system_card::SystemCard;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
@@ -16,45 +16,14 @@ pub fn HomePage() -> impl IntoView {
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new(|| (), |_| server_fns::get_systems());
 
-    let home_search = RwSignal::new(String::new());
-
-    let on_search_submit = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        let q = home_search.get_untracked();
-        if !q.is_empty() {
-            let navigate = use_navigate();
-            navigate(
-                &format!("/search?q={}", urlencoding::encode(&q)),
-                Default::default(),
-            );
-        }
-    };
-
-    let on_search_keydown = move |ev: leptos::ev::KeyboardEvent| {
-        if ev.key() == "Enter" {
-            let q = home_search.get_untracked();
-            if !q.is_empty() {
-                let navigate = use_navigate();
-                navigate(
-                    &format!("/search?q={}", urlencoding::encode(&q)),
-                    Default::default(),
-                );
-            }
-        }
-    };
-
     view! {
         <div class="page home-page">
             <section class="section home-search-section">
-                <form class="home-search-form" on:submit=on_search_submit>
-                    <input
-                        type="text"
-                        class="home-search-input"
-                        placeholder=move || t(i18n.locale.get(), "search.placeholder")
-                        bind:value=home_search
-                        on:keydown=on_search_keydown
-                    />
-                </form>
+                <A href="/search" attr:class="home-search-link">
+                    <span class="home-search-placeholder">
+                        {move || t(i18n.locale.get(), "search.placeholder")}
+                    </span>
+                </A>
             </section>
 
             <section class="section">
@@ -68,20 +37,9 @@ pub fn HomePage() -> impl IntoView {
                                 let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
                                 let sys = last.entry.game.system_display.clone();
                                 let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
-                                let has_art = last.box_art_url.is_some();
                                 let art_url = last.box_art_url.clone();
                                 view! {
-                                    <A href=href attr:class="hero-card rom-name-link">
-                                        {if has_art {
-                                            view! { <img class="hero-thumb" src=art_url loading="lazy" /> }.into_any()
-                                        } else {
-                                            view! { <div class="hero-thumb-placeholder"></div> }.into_any()
-                                        }}
-                                        <div class="hero-info">
-                                            <h3 class="hero-title">{name}</h3>
-                                            <p class="hero-system">{sys}</p>
-                                        </div>
-                                    </A>
+                                    <HeroCard href name system=sys box_art_url=art_url />
                                 }.into_any()
                             } else {
                                 view! { <p class="empty-state">{t(locale, "home.no_games_played")}</p> }.into_any()
@@ -107,18 +65,10 @@ pub fn HomePage() -> impl IntoView {
                                         {items.into_iter().map(|item| {
                                             let name = item.entry.game.display_name.clone().unwrap_or_else(|| item.entry.game.rom_filename.clone());
                                             let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
-                                            let has_art = item.box_art_url.is_some();
                                             let art_url = item.box_art_url.clone();
+                                            let system = item.entry.game.system_display.clone();
                                             view! {
-                                                <A href=href attr:class="recent-item rom-name-link">
-                                                    {if has_art {
-                                                        view! { <img class="recent-thumb" src=art_url loading="lazy" /> }.into_any()
-                                                    } else {
-                                                        view! { <div class="recent-thumb-placeholder"></div> }.into_any()
-                                                    }}
-                                                    <div class="recent-name">{name}</div>
-                                                    <div class="recent-system">{item.entry.game.system_display.clone()}</div>
-                                                </A>
+                                                <GameScrollCard href name system box_art_url=art_url />
                                             }
                                         }).collect::<Vec<_>>()}
                                     </div>

@@ -319,6 +319,26 @@ pub static SYSTEMS: &[System] = &[
     },
 ];
 
+/// Systems hidden from the UI.
+///
+/// Alpha Player is a libretro video player core — its "ROMs" are video files
+/// (mkv, avi, mp4, etc.), not games.  The current game-centric UI (metadata,
+/// box art, "games" labels) doesn't fit, so we hide it until a dedicated
+/// media section is built.
+const HIDDEN_SYSTEMS: &[&str] = &["alpha_player"];
+
+impl System {
+    /// Whether this system should be excluded from UI-facing lists.
+    pub fn is_hidden(&self) -> bool {
+        HIDDEN_SYSTEMS.contains(&self.folder_name)
+    }
+}
+
+/// All systems that should be shown in the UI (excludes hidden ones).
+pub fn visible_systems() -> impl Iterator<Item = &'static System> {
+    SYSTEMS.iter().filter(|s| !s.is_hidden())
+}
+
 /// Look up a system by its folder name.
 pub fn find_system(folder_name: &str) -> Option<&'static System> {
     SYSTEMS.iter().find(|s| s.folder_name == folder_name)

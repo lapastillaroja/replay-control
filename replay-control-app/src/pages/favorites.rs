@@ -3,10 +3,11 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 use server_fn::ServerFnError;
 
+use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
-use crate::server_fns::{Favorite, FavoriteWithArt, OrganizeCriteria};
+use crate::server_fns::{FavoriteWithArt, OrganizeCriteria};
 
 #[component]
 pub fn FavoritesPage() -> impl IntoView {
@@ -139,20 +140,11 @@ where
                 <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.latest_added")}</h2>
                 {move || featured().map(|f| {
                     let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
-                    let has_art = f.box_art_url.is_some();
-                    let art_url = f.box_art_url.clone();
+                    let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
+                    let system = f.fav.game.system_display.clone();
+                    let box_art_url = f.box_art_url.clone();
                     view! {
-                        <A href=href attr:class="hero-card rom-name-link">
-                            {if has_art {
-                                view! { <img class="hero-thumb" src=art_url loading="lazy" /> }.into_any()
-                            } else {
-                                view! { <div class="hero-thumb-placeholder"></div> }.into_any()
-                            }}
-                            <div class="hero-info">
-                                <h3 class="hero-title">{f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone())}</h3>
-                                <p class="hero-system">{f.fav.game.system_display.clone()}</p>
-                            </div>
-                        </A>
+                        <HeroCard href name system box_art_url />
                     }
                 })}
             </section>
@@ -164,18 +156,11 @@ where
                     <div class="recent-scroll">
                         {move || recent_items().into_iter().map(|f| {
                             let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
-                            let has_art = f.box_art_url.is_some();
-                            let art_url = f.box_art_url.clone();
+                            let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
+                            let system = f.fav.game.system_display.clone();
+                            let box_art_url = f.box_art_url.clone();
                             view! {
-                                <A href=href attr:class="recent-item rom-name-link">
-                                    {if has_art {
-                                        view! { <img class="recent-thumb" src=art_url loading="lazy" /> }.into_any()
-                                    } else {
-                                        view! { <div class="recent-thumb-placeholder"></div> }.into_any()
-                                    }}
-                                    <div class="recent-name">{f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone())}</div>
-                                    <div class="recent-system">{f.fav.game.system_display.clone()}</div>
-                                </A>
+                                <GameScrollCard href name system box_art_url />
                             }
                         }).collect::<Vec<_>>()}
                     </div>
@@ -257,7 +242,7 @@ where
                 key=|f| f.fav.marker_filename.clone()
                 let:f
             >
-                <FavItem fav=f.fav show_system=true confirm_remove remove_fav=remove_fav.clone() />
+                <FavItem fav=f.fav box_art_url=f.box_art_url show_system=true confirm_remove remove_fav=remove_fav.clone() />
             </For>
         </div>
     }
@@ -302,7 +287,7 @@ where
                             </h3>
                             {favs.into_iter().map(|f| {
                                 let remove_fav = remove_fav.clone();
-                                view! { <FavItem fav=f.fav show_system=false confirm_remove remove_fav /> }
+                                view! { <FavItem fav=f.fav box_art_url=f.box_art_url show_system=false confirm_remove remove_fav /> }
                             }).collect::<Vec<_>>()}
                         </div>
                     }
@@ -314,7 +299,8 @@ where
 
 #[component]
 fn FavItem<F>(
-    fav: Favorite,
+    fav: crate::server_fns::Favorite,
+    box_art_url: Option<String>,
     show_system: bool,
     confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
@@ -327,7 +313,10 @@ where
         fav.game.system,
         urlencoding::encode(&fav.game.rom_filename)
     );
+    let game_href = StoredValue::new(game_href);
 
+    let has_box_art = box_art_url.is_some();
+    let box_art = StoredValue::new(box_art_url);
     let fav_filename = StoredValue::new(fav.marker_filename.clone());
     let subfolder = StoredValue::new(fav.subfolder.clone());
     let rom_name = fav.game.display_name.unwrap_or(fav.game.rom_filename);
@@ -357,8 +346,13 @@ where
 
     view! {
         <div class="fav-item">
+            <Show when=move || has_box_art>
+                <A href=game_href.get_value() attr:class="rom-thumb-link">
+                    <img class="rom-thumb" src=box_art.get_value() loading="lazy" />
+                </A>
+            </Show>
             <div class="fav-info">
-                <A href=game_href attr:class="fav-name rom-name-link">{rom_name}</A>
+                <A href=game_href.get_value() attr:class="fav-name rom-name-link">{rom_name}</A>
                 {system_display.map(|s| view! { <span class="fav-system">{s}</span> })}
             </div>
             <Show when=is_confirming fallback=move || view! {
@@ -631,7 +625,7 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
                     key=|f| f.fav.marker_filename.clone()
                     let:f
                 >
-                    <FavItem fav=f.fav show_system=false confirm_remove remove_fav=remove_fav.clone() />
+                    <FavItem fav=f.fav box_art_url=f.box_art_url show_system=false confirm_remove remove_fav=remove_fav.clone() />
                 </For>
             </div>
         </Show>

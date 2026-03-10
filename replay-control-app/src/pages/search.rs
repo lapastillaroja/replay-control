@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_query_map;
 
+use crate::components::genre_dropdown::GenreDropdown;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, GlobalSearchResult, GlobalSearchResults, SystemSearchGroup};
 
@@ -60,10 +61,8 @@ pub fn SearchPage() -> impl IntoView {
     let debounced_genre = RwSignal::new(initial_genre);
 
     // Recent searches (client-side, loaded from localStorage).
-    // Initialize synchronously during hydrate to avoid empty flash.
-    #[cfg(feature = "hydrate")]
-    let recent_searches: RwSignal<Vec<String>> = RwSignal::new(load_recent_searches());
-    #[cfg(not(feature = "hydrate"))]
+    // Start empty on both SSR and hydrate so the DOM matches during hydration.
+    // An Effect below populates the signal post-hydration from localStorage.
     let recent_searches: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
 
     // Random game navigation state.
@@ -72,10 +71,25 @@ pub fn SearchPage() -> impl IntoView {
     // Genre list resource.
     let genres_resource = Resource::new(|| (), |_| server_fns::get_all_genres());
 
+    // Load recent searches from localStorage after hydration.
+    // This runs as a one-shot effect so SSR and hydration both see an empty
+    // vec (no DOM mismatch), then the UI updates reactively once loaded.
+    #[cfg(feature = "hydrate")]
+    Effect::new(move || {
+        recent_searches.set(load_recent_searches());
+    });
+
     // Debounce the search input (400ms) + save to recent searches.
     #[cfg(feature = "hydrate")]
     {
         use wasm_bindgen::prelude::*;
+
+        // Skip the very first update_url_params call from the filter Effect.
+        // On mount, the Leptos Router's pushState hasn't fired yet (it's deferred
+        // via an async channel). If we call replaceState before pushState, we
+        // overwrite the *previous* page's history entry with /search, making the
+        // browser back button go from /search to /search (i.e., "nothing happens").
+        let filters_initialized = StoredValue::new(false);
 
         let timer_handle: StoredValue<Option<i32>> = StoredValue::new(None);
         Effect::new(move || {
@@ -123,6 +137,12 @@ pub fn SearchPage() -> impl IntoView {
             let hc = hide_clones.get();
             let g = genre.get();
             debounced_genre.set(g.clone());
+            // Skip the first run: URL already reflects initial values and the
+            // Router's pushState hasn't completed yet.
+            if !filters_initialized.get_value() {
+                filters_initialized.set_value(true);
+                return;
+            }
             update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, &g);
         });
 
@@ -394,29 +414,6 @@ fn RecentSearches(
     }
 }
 
-/// Genre dropdown filter.
-#[component]
-fn GenreDropdown(genre: RwSignal<String>, genre_list: Vec<String>) -> impl IntoView {
-    let i18n = use_i18n();
-
-    view! {
-        <select
-            class="filter-genre-select"
-            on:change=move |ev| genre.set(event_target_value(&ev))
-            prop:value=move || genre.get()
-        >
-            <option value="">{move || t(i18n.locale.get(), "filter.genre_all")}</option>
-            {genre_list
-                .into_iter()
-                .map(|g| {
-                    let g2 = g.clone();
-                    view! { <option value=g>{g2}</option> }
-                })
-                .collect::<Vec<_>>()}
-        </select>
-    }
-}
-
 /// Display search results grouped by system.
 #[component]
 fn SearchResults(
@@ -531,7 +528,7 @@ fn SystemGroup(
     }
 }
 
-/// A single search result row.
+/// A single search result row with optional thumbnail and quick-favorite toggle.
 #[component]
 fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
     let href = format!(
@@ -542,22 +539,46 @@ fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
     let href = StoredValue::new(href);
     let has_box_art = result.box_art_url.is_some();
     let box_art = StoredValue::new(result.box_art_url.clone());
-    let star = if result.is_favorite {
-        "\u{2605}"
-    } else {
-        ""
-    };
     let genre = StoredValue::new(result.genre.clone());
     let has_genre = !result.genre.is_empty();
     let display_name = result.display_name.clone();
 
+    // Quick-favorite toggle state.
+    let is_fav = RwSignal::new(result.is_favorite);
+    let system = StoredValue::new(result.system.clone());
+    let rom_filename = StoredValue::new(result.rom_filename.clone());
+    let rom_path = StoredValue::new(result.rom_path.clone());
+
+    let on_toggle_fav = move |_| {
+        let fav = is_fav.get();
+        is_fav.set(!fav);
+        let fname = rom_filename.get_value();
+        let sys = system.get_value();
+        let rp = rom_path.get_value();
+        if fav {
+            let fav_filename = format!("{sys}@{fname}.fav");
+            leptos::task::spawn_local(async move {
+                let _ = server_fns::remove_favorite(fav_filename, None).await;
+            });
+        } else {
+            leptos::task::spawn_local(async move {
+                let _ = server_fns::add_favorite(sys, rp, false).await;
+            });
+        }
+    };
+
+    let star = move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" };
+
     view! {
         <div class="search-result-item">
-            <Show when=move || has_box_art>
-                <A href=href.get_value() attr:class="search-result-thumb-link">
-                    <img class="search-result-thumb" src=box_art.get_value() loading="lazy" />
-                </A>
-            </Show>
+            <button class="rom-fav-btn" on:click=on_toggle_fav>{star}</button>
+            <A href=href.get_value() attr:class="search-result-thumb-link">
+                {if has_box_art {
+                    view! { <img class="search-result-thumb" src=box_art.get_value() loading="lazy" /> }.into_any()
+                } else {
+                    view! { <div class="search-result-thumb-placeholder"></div> }.into_any()
+                }}
+            </A>
             <div class="search-result-info">
                 <A href=href.get_value() attr:class="search-result-name rom-name-link">
                     {display_name}
@@ -565,9 +586,6 @@ fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
                 <div class="search-result-badges">
                     <Show when=move || has_genre>
                         <span class="search-badge search-badge-genre">{genre.get_value()}</span>
-                    </Show>
-                    <Show when=move || !star.is_empty()>
-                        <span class="search-badge search-badge-fav">{star}</span>
                     </Show>
                 </div>
             </div>

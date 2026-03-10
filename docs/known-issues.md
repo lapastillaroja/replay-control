@@ -36,3 +36,26 @@ logged but not block the rename.
 ### Priority
 Medium — affects users who rename ROMs and have screenshots/videos for them.
 The workaround is to re-take screenshots or re-pin videos after renaming.
+
+## Alpha Player Hidden from UI
+
+The "Alpha Player" system (`alpha_player`) is a libretro video player core
+whose "ROMs" are video files (mkv, avi, mp4, mp3, flac, ogg), not games. The
+current game-centric UI — metadata fields, box art, "games"/"ROMs" labels —
+does not make sense for video content.
+
+### Current behavior
+Alpha Player is listed in `HIDDEN_SYSTEMS` in `systems.rs` and filtered out by
+`visible_systems()`, which is used by `scan_systems()` and `find_duplicates()`
+in `roms.rs`. It will not appear in the systems list, global search results, or
+duplicate detection. The system definition is still present in `SYSTEMS` and
+`find_system()` still resolves it (needed if RePlayOS references it in
+favorites/recents).
+
+### Recommended future work
+Build a dedicated "Media" section with video-appropriate UI. See
+`docs/reference/alpha-player-analysis.md` for a full analysis.
+
+### Priority
+Low — Alpha Player is a niche feature and hiding it has no user-facing
+downside. Revisit when media features are planned.
