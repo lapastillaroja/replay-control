@@ -1919,3 +1919,103 @@ button.skin-card:disabled {
     font-size: 0.85rem;
     padding: 0;
 }
+
+/* ── Search page: empty state panel ───────────────────────────── */
+.search-empty-panel {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Recent searches */
+.recent-searches {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.recent-searches-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.recent-searches-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.recent-chip {
+    display: inline-flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.recent-chip:hover {
+    border-color: var(--accent);
+}
+
+.recent-chip-text {
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 0.8rem;
+    padding: 6px 4px 6px 14px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.recent-chip-remove {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    padding: 6px 10px 6px 4px;
+    cursor: pointer;
+    transition: color 0.15s;
+    line-height: 1;
+}
+
+.recent-chip-remove:hover {
+    color: var(--error);
+}
+
+/* Random game button */
+.random-game-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+    padding: 10px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.random-game-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}
+
+.random-game-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.random-game-icon {
+    font-size: 1.1rem;
+}
+

@@ -315,6 +315,11 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "filter.genre_all" => "All Genres",
         "filter.clear_filters" => "Clear Filters",
 
+        // Search extras (Phase 2)
+        "search.random_game" => "Random Game",
+        "search.recent_searches" => "Recent Searches",
+        "search.clear_recent" => "Clear",
+
         // Common
         "common.loading" => "Loading...",
         "common.error" => "Error",

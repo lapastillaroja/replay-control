@@ -74,6 +74,56 @@ pub fn App() -> impl IntoView {
     provide_i18n();
     let i18n = use_i18n();
 
+    // Global keyboard shortcut: "/" navigates to /search.
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen::JsCast;
+
+        Effect::new(move || {
+            let window = match web_sys::window() {
+                Some(w) => w,
+                None => return,
+            };
+            let cb = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+                if ev.key() != "/" {
+                    return;
+                }
+                // Don't intercept if user is typing in an input or textarea.
+                if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                    if let Some(active) = doc.active_element() {
+                        let tag = active.tag_name().to_uppercase();
+                        if tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" {
+                            return;
+                        }
+                    }
+                }
+                ev.prevent_default();
+                // Navigate to /search (or focus input if already there).
+                if let Some(w) = web_sys::window() {
+                    let href = w.location().pathname().unwrap_or_default();
+                    if href == "/search" {
+                        // Already on search page — focus the input.
+                        if let Some(doc) = w.document() {
+                            if let Some(el) = doc.query_selector(".search-page-input").ok().flatten() {
+                                if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
+                                    let _ = input.focus();
+                                }
+                            }
+                        }
+                    } else {
+                        let _ = w.location().set_href("/search");
+                    }
+                }
+            });
+            let _ = window.add_event_listener_with_callback(
+                "keydown",
+                cb.as_ref().unchecked_ref(),
+            );
+            cb.forget();
+        });
+    }
+
     view! {
         <Router>
             <div class="app">
@@ -82,6 +132,9 @@ pub fn App() -> impl IntoView {
                         <A href="/" attr:class="app-title-link">{move || t(i18n.locale.get(), "app.title")}</A>
                     </h1>
                     <div class="top-actions">
+                        <A href="/search" attr:class="icon-btn" attr:title="Search">
+                            {icon_search()}
+                        </A>
                         <A href="/favorites" attr:class="icon-btn" attr:title="Favorites">
                             {icon_star()}
                         </A>
@@ -110,6 +163,12 @@ pub fn App() -> impl IntoView {
                 <BottomNav />
             </div>
         </Router>
+    }
+}
+
+fn icon_search() -> impl leptos::IntoView {
+    leptos::prelude::view! {
+        <span inner_html="<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>" />
     }
 }
 

@@ -1558,6 +1558,58 @@ pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
     Ok(genres.into_iter().collect())
 }
 
+// ── Random Game ─────────────────────────────────────────────────
+
+/// Pick a random game across all systems.
+/// Weighted by system game count so larger collections get proportionally more picks.
+/// Returns (system_folder_name, rom_filename).
+#[server(prefix = "/sfn")]
+pub async fn random_game() -> Result<(String, String), ServerFnError> {
+    use rand::Rng;
+
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let systems = state.cache.get_systems(&storage);
+
+    // Build a weighted list: (system_folder, game_count).
+    let weighted: Vec<(String, usize)> = systems
+        .iter()
+        .filter(|s| s.game_count > 0)
+        .map(|s| (s.folder_name.clone(), s.game_count))
+        .collect();
+
+    if weighted.is_empty() {
+        return Err(ServerFnError::new("No games available"));
+    }
+
+    let total: usize = weighted.iter().map(|(_, c)| c).sum();
+    let mut rng = rand::rng();
+    let pick = rng.random_range(0..total);
+
+    let mut cumulative = 0;
+    let mut chosen_system = &weighted[0].0;
+    for (sys, count) in &weighted {
+        cumulative += count;
+        if pick < cumulative {
+            chosen_system = sys;
+            break;
+        }
+    }
+
+    let roms = state
+        .cache
+        .get_roms(&storage, chosen_system)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if roms.is_empty() {
+        return Err(ServerFnError::new("No ROMs in selected system"));
+    }
+
+    let idx = rng.random_range(0..roms.len());
+    let rom = &roms[idx];
+    Ok((chosen_system.clone(), rom.game.rom_filename.clone()))
+}
+
 // ── Game Videos ──────────────────────────────────────────────────
 
 #[cfg(not(feature = "ssr"))]
