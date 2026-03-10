@@ -227,9 +227,45 @@ mod ssr {
             }
         });
 
+        // Captures handler: serves user screenshots from <storage>/captures/<system>/<file>
+        let captures_state = app_state.clone();
+        let captures_handler = axum::routing::get(
+            move |axum::extract::Path(path): axum::extract::Path<String>| {
+                let state = captures_state.clone();
+                async move {
+                    use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
+
+                    if path.contains("..") {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+
+                    let storage = state.storage();
+                    let file_path = storage.captures_dir().join(&path);
+
+                    match tokio::fs::read(&file_path).await {
+                        Ok(data) => (
+                            StatusCode::OK,
+                            [
+                                ("content-type", "image/png"),
+                                (
+                                    "cache-control",
+                                    "public, max-age=31536000, immutable",
+                                ),
+                            ],
+                            data,
+                        )
+                            .into_response(),
+                        Err(_) => StatusCode::NOT_FOUND.into_response(),
+                    }
+                }
+            },
+        );
+
         let app = Router::new()
             .nest("/api", api_routes)
             .route("/sse/image-progress", sse_handler)
+            .route("/captures/*path", captures_handler)
             .route("/media/*path", media_handler)
             .route(
                 "/sfn/*fn_name",

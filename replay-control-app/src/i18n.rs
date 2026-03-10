@@ -228,6 +228,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.no_captures" => {
             "Take screenshots during gameplay on your RePlayOS \u{2014} they'll appear here!"
         }
+        "game_detail.view_all_captures" => "View all",
         "game_detail.manual" => "Manual",
         "game_detail.no_manual" => "No manual available",
         "game_detail.launch" => "Launch on TV",

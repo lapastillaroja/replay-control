@@ -677,6 +677,13 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
     Ok("Game launching".into())
 }
 
+/// A user-taken screenshot URL for the game detail page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenshotUrl {
+    pub url: String,
+    pub timestamp: Option<i64>,
+}
+
 /// Detailed ROM info including unified game metadata and favorite status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomDetail {
@@ -684,6 +691,7 @@ pub struct RomDetail {
     pub size_bytes: u64,
     pub is_m3u: bool,
     pub is_favorite: bool,
+    pub user_screenshots: Vec<ScreenshotUrl>,
 }
 
 #[server(prefix = "/sfn")]
@@ -704,11 +712,22 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     let game = resolve_game_info(&system, &filename, &rom.game.rom_path);
 
+    let user_screenshots = replay_control_core::screenshots::find_screenshots_for_rom(
+        &storage, &system, &filename,
+    )
+    .into_iter()
+    .map(|s| ScreenshotUrl {
+        url: format!("/captures/{}/{}", system, s.filename),
+        timestamp: s.timestamp,
+    })
+    .collect();
+
     Ok(RomDetail {
         game,
         size_bytes: rom.size_bytes,
         is_m3u: rom.is_m3u,
         is_favorite,
+        user_screenshots,
     })
 }
 

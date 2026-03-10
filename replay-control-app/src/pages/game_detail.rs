@@ -4,7 +4,7 @@ use server_fn::ServerFnError;
 
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
-use crate::server_fns::{self, RomDetail, VideoEntry, VideoRecommendation};
+use crate::server_fns::{self, RomDetail, ScreenshotUrl, VideoEntry, VideoRecommendation};
 use crate::util::format_size;
 
 #[component]
@@ -126,6 +126,12 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let has_box_art = game.box_art_url.is_some();
     let screenshot_url = StoredValue::new(game.screenshot_url.clone());
     let has_screenshot = game.screenshot_url.is_some();
+
+    // User captures
+    let user_screenshots = StoredValue::new(detail.user_screenshots.clone());
+    let has_user_screenshots = !detail.user_screenshots.is_empty();
+    let captures_show_all = RwSignal::new(false);
+    let lightbox_index = RwSignal::new(Option::<usize>::None);
 
     // Delete confirmation state
     let confirming_delete = RwSignal::new(false);
@@ -311,6 +317,50 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                 <div class="game-screenshots">
                     <img class="game-screenshot-img" src=screenshot_url.get_value() alt="Screenshot" />
                 </div>
+            </Show>
+        </section>
+
+        // User Captures
+        <section class="section game-section">
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.user_captures")}</h2>
+            <Show when=move || has_user_screenshots
+                fallback=move || view! { <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_captures")}</p> }
+            >
+                <div class="user-captures-gallery">
+                    {move || {
+                        let all = user_screenshots.get_value();
+                        let show_all = captures_show_all.get();
+                        let visible = if show_all || all.len() <= INITIAL_CAPTURE_COUNT {
+                            all.clone()
+                        } else {
+                            all[..INITIAL_CAPTURE_COUNT].to_vec()
+                        };
+                        visible.into_iter().enumerate().map(|(i, s)| {
+                            let url = s.url.clone();
+                            view! {
+                                <img
+                                    class="user-capture-thumb"
+                                    src=url
+                                    alt="Capture"
+                                    on:click=move |_| lightbox_index.set(Some(i))
+                                />
+                            }
+                        }).collect::<Vec<_>>()
+                    }}
+                </div>
+                <Show when=move || { user_screenshots.get_value().len() > INITIAL_CAPTURE_COUNT && !captures_show_all.get() }>
+                    <button
+                        class="game-action-btn captures-show-all"
+                        on:click=move |_| captures_show_all.set(true)
+                    >
+                        {move || t(i18n.locale.get(), "game_detail.view_all_captures")}
+                        {move || format!(" ({})", user_screenshots.get_value().len())}
+                    </button>
+                </Show>
+                <CapturesLightbox
+                    screenshots=user_screenshots.get_value()
+                    current_index=lightbox_index
+                />
             </Show>
         </section>
 
@@ -537,6 +587,101 @@ fn GameDeleteAction(
                 <button class="game-action-btn" on:click=move |_| confirming_delete.set(false)>
                     {move || t(i18n.locale.get(), "games.cancel")}
                 </button>
+            </div>
+        </Show>
+    }
+}
+
+// ── User Captures Section ───────────────────────────────────────
+
+/// Maximum number of capture thumbnails shown before "View all".
+const INITIAL_CAPTURE_COUNT: usize = 12;
+
+/// Fullscreen lightbox for browsing user captures.
+#[component]
+fn CapturesLightbox(
+    screenshots: Vec<ScreenshotUrl>,
+    current_index: RwSignal<Option<usize>>,
+) -> impl IntoView {
+    let count = screenshots.len();
+    let screenshots_sv = StoredValue::new(screenshots);
+
+    let on_prev = move |ev: leptos::ev::MouseEvent| {
+        ev.stop_propagation();
+        current_index.update(|idx| {
+            if let Some(i) = idx {
+                *i = if *i == 0 { count - 1 } else { *i - 1 };
+            }
+        });
+    };
+
+    let on_next = move |ev: leptos::ev::MouseEvent| {
+        ev.stop_propagation();
+        current_index.update(|idx| {
+            if let Some(i) = idx {
+                *i = if *i + 1 >= count { 0 } else { *i + 1 };
+            }
+        });
+    };
+
+    let on_close = move |_: leptos::ev::MouseEvent| {
+        current_index.set(None);
+    };
+
+    let on_close_btn = move |ev: leptos::ev::MouseEvent| {
+        ev.stop_propagation();
+        current_index.set(None);
+    };
+
+    // Keyboard navigation (hydrate-only)
+    #[cfg(feature = "hydrate")]
+    {
+        use leptos::ev;
+        let handle = leptos::prelude::window_event_listener(ev::keydown, move |ev: ev::KeyboardEvent| {
+            if current_index.get().is_none() {
+                return;
+            }
+            match ev.key().as_str() {
+                "Escape" => current_index.set(None),
+                "ArrowLeft" => current_index.update(|idx| {
+                    if let Some(i) = idx {
+                        *i = if *i == 0 { count - 1 } else { *i - 1 };
+                    }
+                }),
+                "ArrowRight" => current_index.update(|idx| {
+                    if let Some(i) = idx {
+                        *i = if *i + 1 >= count { 0 } else { *i + 1 };
+                    }
+                }),
+                _ => {}
+            }
+        });
+        on_cleanup(move || drop(handle));
+    }
+
+    let current_url = move || {
+        current_index.get().and_then(|i| {
+            screenshots_sv.get_value().get(i).map(|s| s.url.clone())
+        })
+    };
+
+    view! {
+        <Show when=move || current_index.get().is_some()>
+            <div class="lightbox-overlay" on:click=on_close>
+                <button class="lightbox-close" on:click=on_close_btn>
+                    {"\u{2715}"}
+                </button>
+                <Show when=move || { count > 1 }>
+                    <button class="lightbox-nav lightbox-prev" on:click=on_prev>
+                        {"\u{2039}"}
+                    </button>
+                </Show>
+                <img class="lightbox-img" src=current_url alt="Capture" />
+                <Show when=move || { count > 1 }>
+                    <button class="lightbox-nav lightbox-next" on:click=on_next>
+                        {"\u{203A}"}
+                    </button>
+                </Show>
             </div>
         </Show>
     }

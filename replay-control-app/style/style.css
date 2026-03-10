@@ -1389,6 +1389,85 @@ select.form-input option {
     color: var(--accent);
 }
 
+/* User captures gallery — wrapping grid */
+.user-captures-gallery {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+}
+
+.user-capture-thumb {
+    max-height: 160px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.user-capture-thumb:hover {
+    border-color: var(--accent);
+}
+
+/* Captures "View all" toggle */
+.captures-show-all {
+    margin-top: 4px;
+}
+
+/* Lightbox overlay */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.lightbox-img {
+    max-width: 90vw;
+    max-height: 85vh;
+    image-rendering: pixelated;
+    object-fit: contain;
+}
+
+.lightbox-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    color: white;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    font-size: 2rem;
+    padding: 16px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.lightbox-nav:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.lightbox-prev {
+    left: 8px;
+}
+
+.lightbox-next {
+    right: 8px;
+}
+
 /* Screenshots gallery placeholder (future grid) */
 .game-screenshots-grid {
     display: grid;

@@ -25,8 +25,8 @@ Screenshots              <- metadata (from libretro-thumbnails)
   "No official screenshots" fallback
 
 Your Captures            <- user-taken on RePlayOS
-  [horizontal scroll gallery, newest first]
-  [timestamp per image]
+  [wrapping gallery, newest first, capped at 12 with "View all" toggle]
+  Click thumbnail to open fullscreen lightbox with prev/next navigation
   "Take screenshots during gameplay on your RePlayOS — they'll appear here!"
 ```
 
@@ -52,7 +52,7 @@ on overlapping prefixes.
 
 ## Implementation
 
-### Phase 1: Game detail integration
+### Phase 1: Game detail integration — DONE
 
 **Core** (`replay-control-core/src/screenshots.rs`):
 - `UserScreenshot` struct: `{ filename, timestamp: Option<NaiveDateTime> }`
@@ -61,38 +61,42 @@ on overlapping prefixes.
 - Sort by timestamp descending (newest first)
 
 **Server function**:
-- Add `user_screenshots: Vec<ScreenshotInfo>` to `RomDetail`
-- `ScreenshotInfo`: `{ url: String, timestamp: Option<i64> }`
-- Populate in `get_rom_detail()` by calling core function
+- `user_screenshots: Vec<ScreenshotUrl>` in `RomDetail`
+- `ScreenshotUrl`: `{ url: String, timestamp: Option<i64> }`
+- Populated in `get_rom_detail()` by calling core function
 
 **Serving**:
-- Add `/captures/:system/:filename` static file handler (or extend existing media handler)
+- `/captures/:system/:filename` static file handler
 - Cache headers: `Cache-Control: public, max-age=31536000, immutable`
 
 **UI** (`game_detail.rs`):
-- New "Your Captures" section below metadata screenshots
-- Horizontal scroll gallery (`.user-screenshots-gallery`)
-- Each thumbnail shows timestamp below
+- "Your Captures" section below metadata screenshots
+- Wrapping gallery (`.user-captures-gallery`), capped at 12 thumbnails by default
+- "View all (N)" button expands to show all captures
+- Click any thumbnail to open fullscreen lightbox (`CapturesLightbox` component)
+- Lightbox: dark overlay, full-size image with `image-rendering: pixelated`, prev/next arrows, close button, keyboard navigation (Escape, Left/Right arrows)
 - Empty state: encouraging message to take screenshots
 
 **No thumbnail generation needed** — retro PNGs are already tiny.
 
-### Phase 2: Standalone gallery page
-- `/screenshots` route with pagination and system grouping
-- Link each screenshot back to game detail
+### ~~Phase 2: Standalone gallery page~~ — DISCARDED
+
+Not needed. The fullscreen lightbox on the game detail page provides sufficient
+browsing capability for captures. A standalone `/captures` route would add
+navigation complexity without meaningful benefit.
 
 ### Phase 3: Delete/management
 - Delete button with confirmation per screenshot
 - Optimistic removal from gallery
 
-## Files to Modify
+## Files Modified
 
 | File | Change |
 |------|--------|
-| `replay-control-core/src/screenshots.rs` | New: screenshot discovery + matching |
-| `replay-control-core/src/lib.rs` | Add `pub mod screenshots;` |
-| `replay-control-app/src/server_fns.rs` | Extend `RomDetail`, add screenshot info |
-| `replay-control-app/src/pages/game_detail.rs` | Add "Your Captures" gallery section |
-| `replay-control-app/src/main.rs` | Add captures file serving route |
-| `replay-control-app/src/i18n.rs` | Add screenshot i18n keys |
-| `replay-control-app/style/style.css` | Gallery styles |
+| `replay-control-core/src/screenshots.rs` | Screenshot discovery + matching |
+| `replay-control-core/src/lib.rs` | `pub mod screenshots;` |
+| `replay-control-app/src/server_fns.rs` | `ScreenshotUrl` struct, extend `RomDetail` |
+| `replay-control-app/src/pages/game_detail.rs` | "Your Captures" gallery + lightbox + cap at 12 |
+| `replay-control-app/src/main.rs` | Captures file serving route |
+| `replay-control-app/src/i18n.rs` | Screenshot i18n keys |
+| `replay-control-app/style/style.css` | Gallery + lightbox styles |

@@ -12,6 +12,7 @@ pub mod metadata_db;
 pub mod recents;
 pub mod rom_tags;
 pub mod roms;
+pub mod screenshots;
 pub mod skins;
 pub mod storage;
 pub mod systems;
