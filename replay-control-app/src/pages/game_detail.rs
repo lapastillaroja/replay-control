@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
@@ -61,7 +60,28 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         .next()
         .unwrap_or("")
         .to_uppercase();
-    let back_href = format!("/games/{system}");
+    // Use browser history for back navigation when available (preserves scroll position
+    // and works correctly regardless of where the user came from — home, favorites, etc.)
+    #[cfg(feature = "hydrate")]
+    let go_back = {
+        let back_href = format!("/games/{system}");
+        move |ev: leptos::ev::MouseEvent| {
+            ev.prevent_default();
+            if let Some(window) = web_sys::window() {
+                let history = window.history().ok();
+                // Only use history.back() if there's actual history to go back to
+                if history.as_ref().is_some_and(|h| h.length().unwrap_or(0) > 1) {
+                    let _ = history.unwrap().back();
+                } else {
+                    // Fallback: navigate to the system page
+                    let nav = leptos_router::hooks::use_navigate();
+                    nav(&back_href, Default::default());
+                }
+            }
+        }
+    };
+    #[cfg(not(feature = "hydrate"))]
+    let go_back = move |_: leptos::ev::MouseEvent| {};
 
     let is_favorite = RwSignal::new(detail.is_favorite);
 
@@ -148,9 +168,9 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     view! {
         // Header
         <div class="rom-header">
-            <A href=back_href attr:class="back-btn">
+            <button class="back-btn" on:click=go_back>
                 {move || t(i18n.locale.get(), "games.back")}
-            </A>
+            </button>
             <h2 class="page-title">{game_name.clone()}</h2>
         </div>
 

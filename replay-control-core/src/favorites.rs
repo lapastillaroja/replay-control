@@ -190,6 +190,7 @@ pub enum OrganizeCriteria {
     System,
     Genre,
     Players,
+    Rating,
     Alphabetical,
 }
 
@@ -211,6 +212,7 @@ pub fn organize_favorites(
     primary: OrganizeCriteria,
     secondary: Option<OrganizeCriteria>,
     keep_originals: bool,
+    ratings: Option<&std::collections::HashMap<(String, String), f64>>,
 ) -> Result<OrganizeResult> {
     let favs_dir = storage.favorites_dir();
     if !favs_dir.exists() {
@@ -253,10 +255,10 @@ pub fn organize_favorites(
             .unwrap_or("");
 
         // Determine the subfolder path.
-        let primary_folder = criteria_folder(primary, system, rom_filename);
+        let primary_folder = criteria_folder(primary, system, rom_filename, ratings);
         let subfolder = match secondary {
             Some(sec) => {
-                let secondary_folder = criteria_folder(sec, system, rom_filename);
+                let secondary_folder = criteria_folder(sec, system, rom_filename, ratings);
                 PathBuf::from(&primary_folder).join(&secondary_folder)
             }
             None => PathBuf::from(&primary_folder),
@@ -294,12 +296,22 @@ fn sanitize_folder_name(name: &str) -> String {
 }
 
 /// Determine the subfolder name for a favorite based on the given criteria.
-fn criteria_folder(criteria: OrganizeCriteria, system: &str, rom_filename: &str) -> String {
-    let raw = criteria_folder_raw(criteria, system, rom_filename);
+fn criteria_folder(
+    criteria: OrganizeCriteria,
+    system: &str,
+    rom_filename: &str,
+    ratings: Option<&std::collections::HashMap<(String, String), f64>>,
+) -> String {
+    let raw = criteria_folder_raw(criteria, system, rom_filename, ratings);
     sanitize_folder_name(&raw)
 }
 
-fn criteria_folder_raw(criteria: OrganizeCriteria, system: &str, rom_filename: &str) -> String {
+fn criteria_folder_raw(
+    criteria: OrganizeCriteria,
+    system: &str,
+    rom_filename: &str,
+    ratings: Option<&std::collections::HashMap<(String, String), f64>>,
+) -> String {
     let is_arcade = systems::find_system(system)
         .is_some_and(|s| s.category == systems::SystemCategory::Arcade);
 
@@ -378,6 +390,19 @@ fn criteria_folder_raw(criteria: OrganizeCriteria, system: &str, rom_filename: &
                     2 => "2 Players".to_string(),
                     n => format!("{n} Players"),
                 }
+            }
+        }
+        OrganizeCriteria::Rating => {
+            let rating = ratings
+                .and_then(|m| m.get(&(system.to_string(), rom_filename.to_string())))
+                .copied();
+            match rating {
+                Some(r) if r >= 4.5 => "\u{2605}\u{2605}\u{2605}\u{2605}\u{2605}".to_string(),
+                Some(r) if r >= 3.5 => "\u{2605}\u{2605}\u{2605}\u{2605}".to_string(),
+                Some(r) if r >= 2.5 => "\u{2605}\u{2605}\u{2605}".to_string(),
+                Some(r) if r >= 1.5 => "\u{2605}\u{2605}".to_string(),
+                Some(r) if r >= 0.5 => "\u{2605}".to_string(),
+                _ => "Not Rated".to_string(),
             }
         }
         OrganizeCriteria::Alphabetical => {
@@ -656,7 +681,7 @@ mod tests {
         add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
 
         let result =
-            organize_favorites(&storage, OrganizeCriteria::System, None, false).unwrap();
+            organize_favorites(&storage, OrganizeCriteria::System, None, false, None).unwrap();
         assert_eq!(result.organized, 2);
 
         // Files should be in system-named subfolders.
@@ -683,7 +708,7 @@ mod tests {
         add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
 
         let result =
-            organize_favorites(&storage, OrganizeCriteria::System, None, true).unwrap();
+            organize_favorites(&storage, OrganizeCriteria::System, None, true, None).unwrap();
         assert_eq!(result.organized, 1);
 
         // File should exist both at root and in subfolder.
@@ -704,7 +729,7 @@ mod tests {
         add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
         add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
 
-        organize_favorites(&storage, OrganizeCriteria::System, None, false).unwrap();
+        organize_favorites(&storage, OrganizeCriteria::System, None, false, None).unwrap();
         let moved = flatten_favorites(&storage).unwrap();
         assert_eq!(moved, 2);
 
@@ -721,7 +746,7 @@ mod tests {
         add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
 
         let result =
-            organize_favorites(&storage, OrganizeCriteria::Alphabetical, None, false).unwrap();
+            organize_favorites(&storage, OrganizeCriteria::Alphabetical, None, false, None).unwrap();
         assert_eq!(result.organized, 2);
 
         let favs = list_favorites(&storage).unwrap();
@@ -742,6 +767,7 @@ mod tests {
             OrganizeCriteria::Alphabetical,
             Some(OrganizeCriteria::System),
             false,
+            None,
         )
         .unwrap();
         assert_eq!(result.organized, 1);
@@ -775,7 +801,7 @@ mod tests {
         .unwrap();
 
         let result =
-            organize_favorites(&storage, OrganizeCriteria::System, None, false).unwrap();
+            organize_favorites(&storage, OrganizeCriteria::System, None, false, None).unwrap();
         assert_eq!(result.organized, 2);
 
         // The subfolder should NOT create nested dirs from the `/`.
@@ -810,6 +836,7 @@ mod tests {
             OrganizeCriteria::Alphabetical,
             Some(OrganizeCriteria::System),
             false,
+            None,
         )
         .unwrap();
 

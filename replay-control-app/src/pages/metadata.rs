@@ -334,7 +334,7 @@ fn ImageSection() -> impl IntoView {
             </Suspense>
         </ErrorBoundary>
 
-        // Download All button
+        // Download All / Stop buttons
         {
             let on_download_all = move |_| {
                 if img_importing.get() { return; }
@@ -353,18 +353,33 @@ fn ImageSection() -> impl IntoView {
                     }
                 });
             };
+            let on_cancel = move |_| {
+                leptos::task::spawn_local(async move {
+                    let _ = server_fns::cancel_image_import().await;
+                });
+            };
             view! {
-                <button
-                    class="metadata-download-btn"
-                    on:click=on_download_all
-                    disabled=move || img_importing.get()
-                >
-                    {move || if img_importing.get() {
-                        t(i18n.locale.get(), "metadata.downloading_all")
-                    } else {
-                        t(i18n.locale.get(), "metadata.download_all")
-                    }}
-                </button>
+                <div class="image-action-row">
+                    <button
+                        class="metadata-download-btn"
+                        on:click=on_download_all
+                        disabled=move || img_importing.get()
+                    >
+                        {move || if img_importing.get() {
+                            t(i18n.locale.get(), "metadata.downloading_all")
+                        } else {
+                            t(i18n.locale.get(), "metadata.download_all")
+                        }}
+                    </button>
+                    <Show when=move || img_importing.get()>
+                        <button
+                            class="form-btn form-btn-secondary"
+                            on:click=on_cancel
+                        >
+                            {move || t(i18n.locale.get(), "metadata.stop")}
+                        </button>
+                    </Show>
+                </div>
             }
         }
 
@@ -468,7 +483,7 @@ async fn poll_image_progress(
                 let is_multi = p.total_systems > 1;
                 let is_last = p.current_system >= p.total_systems;
                 let done = match p.state {
-                    ImageImportState::Failed => true,
+                    ImageImportState::Failed | ImageImportState::Cancelled => true,
                     ImageImportState::Complete => !is_multi || is_last,
                     _ => false,
                 };
@@ -486,6 +501,11 @@ async fn poll_image_progress(
                                 p.system_display, p.boxart_copied, p.snap_copied, p.elapsed_secs,
                             )));
                         }
+                    } else if p.state == ImageImportState::Cancelled {
+                        message.set(Some(format!(
+                            "Cancelled after {}s ({} boxart, {} snaps imported)",
+                            p.elapsed_secs, p.boxart_copied, p.snap_copied,
+                        )));
                     } else {
                         message.set(Some(format!(
                             "Failed: {}",
@@ -562,6 +582,13 @@ fn ImageProgressDisplay(
                                 sys_prefix,
                                 t(locale, "metadata.import_failed"),
                                 p.error.as_deref().unwrap_or(""),
+                            ),
+                            ImageImportState::Cancelled => format!(
+                                "{}{}: {} boxart, {} snaps",
+                                sys_prefix,
+                                t(locale, "metadata.import_cancelled"),
+                                p.boxart_copied,
+                                p.snap_copied,
                             ),
                         };
                         let elapsed = format!("{}s", p.elapsed_secs);

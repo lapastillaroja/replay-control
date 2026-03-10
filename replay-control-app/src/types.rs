@@ -8,6 +8,7 @@ pub enum OrganizeCriteria {
     System,
     Genre,
     Players,
+    Rating,
     Alphabetical,
 }
 
@@ -38,6 +39,8 @@ pub struct RomEntry {
     pub is_m3u: bool,
     #[serde(default)]
     pub is_favorite: bool,
+    #[serde(default)]
+    pub box_art_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

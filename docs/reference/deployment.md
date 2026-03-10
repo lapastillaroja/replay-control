@@ -148,7 +148,7 @@ RePlayOS uses well-known public credentials. The installer automates SSH login w
 **Credentials** (stored as constants in the scripts):
 
 - User: `root`
-- Password: the publicly known RePlayOS root password
+- Password: `replayos`
 
 **All platforms** use the built-in OpenSSH client (`ssh` / `scp`). Windows 10 (1809+) and Windows 11 ship with these. macOS and Linux have them preinstalled.
 

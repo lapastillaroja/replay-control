@@ -35,49 +35,53 @@ impl ThumbnailKind {
 }
 
 /// Map RePlayOS system folder names to libretro-thumbnails repo names.
-pub fn thumbnail_repo_name(system: &str) -> Option<&'static str> {
+/// Returns one or more repo names (primary first). Multiple repos are tried
+/// in order during import, so ROMs not found in the primary repo can be
+/// matched against fallback repos.
+pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
     match system {
-        "atari_2600" => Some("Atari - 2600"),
-        "atari_5200" => Some("Atari - 5200"),
-        "atari_7800" => Some("Atari - 7800 ProSystem"),
-        "atari_jaguar" => Some("Atari - Jaguar"),
-        "atari_lynx" => Some("Atari - Lynx"),
-        "amstrad_cpc" => Some("Amstrad - CPC"),
-        "commodore_ami" => Some("Commodore - Amiga"),
-        "commodore_c64" => Some("Commodore - 64"),
-        "ibm_pc" => Some("DOS"),
-        "microsoft_msx" => Some("Microsoft - MSX"),
-        "nec_pce" => Some("NEC - PC Engine - TurboGrafx 16"),
-        "nec_pcecd" => Some("NEC - PC Engine CD - TurboGrafx-CD"),
-        "nintendo_ds" => Some("Nintendo - Nintendo DS"),
-        "nintendo_gb" => Some("Nintendo - Game Boy"),
-        "nintendo_gba" => Some("Nintendo - Game Boy Advance"),
-        "nintendo_gbc" => Some("Nintendo - Game Boy Color"),
-        "nintendo_n64" => Some("Nintendo - Nintendo 64"),
-        "nintendo_nes" => Some("Nintendo - Nintendo Entertainment System"),
-        "nintendo_snes" => Some("Nintendo - Super Nintendo Entertainment System"),
-        "panasonic_3do" => Some("The 3DO Company - 3DO"),
-        "philips_cdi" => Some("Philips - CDi"),
-        "sega_32x" => Some("Sega - 32X"),
-        "sega_cd" => Some("Sega - Mega-CD - Sega CD"),
-        "sega_dc" => Some("Sega - Dreamcast"),
-        "sega_gg" => Some("Sega - Game Gear"),
-        "sega_sg" => Some("Sega - SG-1000"),
-        "sega_smd" => Some("Sega - Mega Drive - Genesis"),
-        "sega_sms" => Some("Sega - Master System - Mark III"),
-        "sega_st" => Some("Sega - Saturn"),
-        "sharp_x68k" => Some("Sharp - X68000"),
-        "sinclair_zx" => Some("Sinclair - ZX Spectrum"),
-        "snk_ng" => Some("SNK - Neo Geo"),
-        "snk_ngcd" => Some("SNK - Neo Geo CD"),
-        "snk_ngp" => Some("SNK - Neo Geo Pocket"),
-        "sony_psx" => Some("Sony - PlayStation"),
+        "atari_2600" => Some(&["Atari - 2600"]),
+        "atari_5200" => Some(&["Atari - 5200"]),
+        "atari_7800" => Some(&["Atari - 7800 ProSystem"]),
+        "atari_jaguar" => Some(&["Atari - Jaguar"]),
+        "atari_lynx" => Some(&["Atari - Lynx"]),
+        "amstrad_cpc" => Some(&["Amstrad - CPC"]),
+        "commodore_ami" => Some(&["Commodore - Amiga"]),
+        "commodore_c64" => Some(&["Commodore - 64"]),
+        "ibm_pc" => Some(&["DOS"]),
+        "microsoft_msx" => Some(&["Microsoft - MSX"]),
+        "nec_pce" => Some(&["NEC - PC Engine - TurboGrafx 16"]),
+        "nec_pcecd" => Some(&["NEC - PC Engine CD - TurboGrafx-CD"]),
+        "nintendo_ds" => Some(&["Nintendo - Nintendo DS"]),
+        "nintendo_gb" => Some(&["Nintendo - Game Boy"]),
+        "nintendo_gba" => Some(&["Nintendo - Game Boy Advance"]),
+        "nintendo_gbc" => Some(&["Nintendo - Game Boy Color"]),
+        "nintendo_n64" => Some(&["Nintendo - Nintendo 64"]),
+        "nintendo_nes" => Some(&["Nintendo - Nintendo Entertainment System"]),
+        "nintendo_snes" => Some(&["Nintendo - Super Nintendo Entertainment System"]),
+        "panasonic_3do" => Some(&["The 3DO Company - 3DO"]),
+        "philips_cdi" => Some(&["Philips - CDi"]),
+        "sega_32x" => Some(&["Sega - 32X"]),
+        "sega_cd" => Some(&["Sega - Mega-CD - Sega CD"]),
+        "sega_dc" => Some(&["Sega - Dreamcast"]),
+        "sega_gg" => Some(&["Sega - Game Gear"]),
+        "sega_sg" => Some(&["Sega - SG-1000"]),
+        "sega_smd" => Some(&["Sega - Mega Drive - Genesis"]),
+        "sega_sms" => Some(&["Sega - Master System - Mark III"]),
+        "sega_st" => Some(&["Sega - Saturn"]),
+        "sharp_x68k" => Some(&["Sharp - X68000"]),
+        "sinclair_zx" => Some(&["Sinclair - ZX Spectrum"]),
+        "snk_ng" => Some(&["SNK - Neo Geo"]),
+        "snk_ngcd" => Some(&["SNK - Neo Geo CD"]),
+        "snk_ngp" => Some(&["SNK - Neo Geo Pocket"]),
+        "sony_psx" => Some(&["Sony - PlayStation"]),
         // Arcade systems — libretro-thumbnails uses display names as filenames,
         // so import_system_thumbnails() translates MAME codenames via arcade_db.
-        "arcade_mame" => Some("MAME"),
-        "arcade_fbneo" => Some("FBNeo - Arcade Games"),
-        "arcade_mame_2k3p" => Some("MAME"),
-        "arcade_dc" => Some("Atomiswave"),
+        "arcade_mame" => Some(&["MAME"]),
+        "arcade_fbneo" => Some(&["FBNeo - Arcade Games"]),
+        "arcade_mame_2k3p" => Some(&["MAME"]),
+        // arcade_dc covers Atomiswave + Naomi + Naomi 2 hardware
+        "arcade_dc" => Some(&["Atomiswave", "Sega - Naomi", "Sega - Naomi 2"]),
         _ => None,
     }
 }
@@ -93,6 +97,40 @@ pub fn thumbnail_filename(rom_stem: &str) -> String {
             _ => c,
         })
         .collect()
+}
+
+/// Copy a PNG from a cloned repo, resolving "fake symlinks" created by git on
+/// filesystems that don't support symlinks (e.g., exFAT). On such filesystems,
+/// git writes the symlink target path as a small text file instead of creating
+/// a real symlink. We detect these by checking for the PNG magic bytes.
+fn copy_png(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let real_src = resolve_fake_symlink(src)?;
+    std::fs::copy(&real_src, dst)?;
+    Ok(())
+}
+
+/// If `path` is a small file without PNG magic bytes, treat it as a git "fake
+/// symlink" — read its text content as a relative path and resolve it.
+fn resolve_fake_symlink(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
+
+    let meta = std::fs::metadata(path)?;
+    // Real PNGs are almost always > 200 bytes; fake symlinks are short text.
+    if meta.len() < 200 {
+        let bytes = std::fs::read(path)?;
+        if !bytes.starts_with(&PNG_MAGIC) {
+            // Content is the relative target path (utf-8 text).
+            let target = std::str::from_utf8(&bytes)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+                .trim();
+            let resolved = path.parent().unwrap_or(Path::new(".")).join(target);
+            if resolved.exists() {
+                // Recursively resolve in case of chained symlinks.
+                return resolve_fake_symlink(&resolved);
+            }
+        }
+    }
+    Ok(path.to_path_buf())
 }
 
 /// Stats from an image import operation.
@@ -114,31 +152,70 @@ fn strip_tags(name: &str) -> &str {
         .trim()
 }
 
+/// Strip GDI/TOSEC version strings from a name for fuzzy matching.
+/// `"Sonic Adventure 2 v1.008"` → `"Sonic Adventure 2"`
+/// `"Sega Rally 2 v1 001"` → `"Sega Rally 2"`
+/// Returns the original string if no version pattern is found.
+fn strip_version(name: &str) -> &str {
+    // Look for " v" followed by a digit, then optional digits/dots/spaces/underscores
+    let bytes = name.as_bytes();
+    let mut i = 0;
+    let mut last_version_start = None;
+    while i + 2 < bytes.len() {
+        if bytes[i] == b' ' && bytes[i + 1] == b'v' && bytes.get(i + 2).is_some_and(|b| b.is_ascii_digit()) {
+            // Check that everything after " v\d" is digits, dots, spaces, or underscores
+            let rest = &bytes[i + 2..];
+            if rest.iter().all(|b| b.is_ascii_digit() || *b == b'.' || *b == b' ' || *b == b'_') {
+                last_version_start = Some(i);
+            }
+        }
+        i += 1;
+    }
+    match last_version_start {
+        Some(pos) => name[..pos].trim(),
+        None => name,
+    }
+}
+
+/// Fuzzy lookup index built from a repo image directory.
+/// Contains two tiers: stripped-tags keys and version-stripped keys.
+struct FuzzyIndex {
+    /// Maps `lowercase(strip_tags(stem))` → original stem
+    by_tags: std::collections::HashMap<String, String>,
+    /// Maps `lowercase(strip_version(strip_tags(stem)))` → original stem
+    by_version: std::collections::HashMap<String, String>,
+}
+
 /// Build a fuzzy index from a repo image directory.
-/// Maps lowercase stripped base names to the actual filenames (without .png).
-fn build_fuzzy_index(dir: &Path) -> std::collections::HashMap<String, String> {
-    let mut index = std::collections::HashMap::new();
+fn build_fuzzy_index(dir: &Path) -> FuzzyIndex {
+    let mut by_tags = std::collections::HashMap::new();
+    let mut by_version = std::collections::HashMap::new();
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return index,
+        Err(_) => return FuzzyIndex { by_tags, by_version },
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if let Some(stem) = name.strip_suffix(".png") {
-            let key = strip_tags(stem).to_lowercase();
+            let stripped = strip_tags(stem);
+            let key = stripped.to_lowercase();
             // Only keep the first match per key (avoid collisions).
-            index.entry(key).or_insert_with(|| stem.to_string());
+            by_tags.entry(key.clone()).or_insert_with(|| stem.to_string());
+            let version_key = strip_version(&key);
+            if version_key.len() < key.len() {
+                by_version.entry(version_key.to_string()).or_insert_with(|| stem.to_string());
+            }
         }
     }
-    index
+    FuzzyIndex { by_tags, by_version }
 }
 
-/// Try to find a thumbnail file: first exact match, then fuzzy (stripped tags).
+/// Try to find a thumbnail file: exact match → fuzzy (stripped tags) → version-stripped.
 fn find_thumbnail(
     repo_subdir: &Path,
     thumb_name: &str,
-    fuzzy_index: &std::collections::HashMap<String, String>,
+    fuzzy_index: &FuzzyIndex,
 ) -> Option<(std::path::PathBuf, String)> {
     // 1. Exact match
     let exact = repo_subdir.join(format!("{thumb_name}.png"));
@@ -148,10 +225,24 @@ fn find_thumbnail(
 
     // 2. Fuzzy: strip tags from ROM stem, look up in index
     let key = strip_tags(thumb_name).to_lowercase();
-    if let Some(repo_stem) = fuzzy_index.get(&key) {
+    if let Some(repo_stem) = fuzzy_index.by_tags.get(&key) {
         let path = repo_subdir.join(format!("{repo_stem}.png"));
         if path.exists() {
             return Some((path, repo_stem.clone()));
+        }
+    }
+
+    // 3. Version-stripped: handles GDI/TOSEC names like "Sonic Adventure 2 v1.008"
+    let version_key = strip_version(&key);
+    if version_key.len() < key.len() {
+        // Look in both the tags index (repo entry has no version) and version index (repo entry also has a version)
+        if let Some(repo_stem) = fuzzy_index.by_tags.get(version_key)
+            .or_else(|| fuzzy_index.by_version.get(version_key))
+        {
+            let path = repo_subdir.join(format!("{repo_stem}.png"));
+            if path.exists() {
+                return Some((path, repo_stem.clone()));
+            }
         }
     }
 
@@ -168,7 +259,7 @@ pub fn import_system_thumbnails(
     storage_root: &Path,
     db: &mut MetadataDb,
     rom_filenames: &[String],
-    mut on_progress: impl FnMut(usize, usize),
+    mut on_progress: impl FnMut(usize, usize) -> bool,
 ) -> Result<ImageImportStats> {
     let media_base = storage_root
         .join(crate::metadata_db::RC_DIR)
@@ -205,25 +296,42 @@ pub fn import_system_thumbnails(
         // For arcade systems, ROM filenames are MAME codenames (e.g. "sf2")
         // but libretro-thumbnails uses display names (e.g. "Street Fighter II_ The World Warrior").
         // Translate through arcade_db.
-        let thumb_name = if is_arcade {
-            if let Some(info) = arcade_db::lookup_arcade_game(stem) {
-                thumbnail_filename(info.display_name)
-            } else {
-                thumbnail_filename(stem)
-            }
+        let display_name = if is_arcade {
+            arcade_db::lookup_arcade_game(stem).map(|info| info.display_name)
         } else {
-            thumbnail_filename(stem)
+            None
+        };
+        let thumb_name = thumbnail_filename(display_name.unwrap_or(stem));
+
+        // Build colon-variant names for fallback matching.
+        // thumbnail_filename() replaces `:` with `_`, but libretro-thumbnails contributors
+        // sometimes used ` -` or dropped the colon entirely instead.
+        let has_colon = display_name.unwrap_or(stem).contains(':');
+        let colon_variants: Vec<String> = if has_colon {
+            let source = display_name.unwrap_or(stem);
+            vec![
+                // Dash variant: "Title: Subtitle" → "Title - Subtitle"
+                thumbnail_filename(&source.replace(": ", " - ").replace(':', " -")),
+                // Dropped variant: "Title: Subtitle" → "Title Subtitle"
+                thumbnail_filename(&source.replace(": ", " ").replace(':', "")),
+            ]
+        } else {
+            Vec::new()
         };
 
         let mut boxart_rel: Option<String> = None;
         let mut snap_rel: Option<String> = None;
 
-        // Try boxart (exact then fuzzy)
-        if let Some((src, matched_stem)) = find_thumbnail(&boxart_repo_dir, &thumb_name, &boxart_index) {
+        // Try boxart (exact then fuzzy, with colon-variant fallbacks)
+        let boxart_match = find_thumbnail(&boxart_repo_dir, &thumb_name, &boxart_index)
+            .or_else(|| {
+                colon_variants.iter().find_map(|v| find_thumbnail(&boxart_repo_dir, v, &boxart_index))
+            });
+        if let Some((src, matched_stem)) = boxart_match {
             let dst_name = format!("{matched_stem}.png");
             let dst = boxart_dir.join(&dst_name);
             if !dst.exists() {
-                if let Err(e) = std::fs::copy(&src, &dst) {
+                if let Err(e) = copy_png(&src, &dst) {
                     tracing::debug!("Failed to copy boxart for {rom_filename}: {e}");
                 } else {
                     stats.boxart_copied += 1;
@@ -235,12 +343,16 @@ pub fn import_system_thumbnails(
             }
         }
 
-        // Try snap (exact then fuzzy)
-        if let Some((src, matched_stem)) = find_thumbnail(&snap_repo_dir, &thumb_name, &snap_index) {
+        // Try snap (exact then fuzzy, with colon-variant fallbacks)
+        let snap_match = find_thumbnail(&snap_repo_dir, &thumb_name, &snap_index)
+            .or_else(|| {
+                colon_variants.iter().find_map(|v| find_thumbnail(&snap_repo_dir, v, &snap_index))
+            });
+        if let Some((src, matched_stem)) = snap_match {
             let dst_name = format!("{matched_stem}.png");
             let dst = snap_dir.join(&dst_name);
             if !dst.exists() {
-                if let Err(e) = std::fs::copy(&src, &dst) {
+                if let Err(e) = copy_png(&src, &dst) {
                     tracing::debug!("Failed to copy snap for {rom_filename}: {e}");
                 } else {
                     stats.snap_copied += 1;
@@ -261,8 +373,14 @@ pub fn import_system_thumbnails(
             ));
         }
 
-        if (i + 1) % 100 == 0 {
-            on_progress(i + 1, stats.boxart_copied + stats.snap_copied);
+        if (i + 1) % 10 == 0 {
+            if !on_progress(i + 1, stats.boxart_copied + stats.snap_copied) {
+                // Cancelled — flush what we have so far and return.
+                if !db_updates.is_empty() {
+                    let _ = db.bulk_update_image_paths(&db_updates);
+                }
+                return Ok(stats);
+            }
         }
     }
 

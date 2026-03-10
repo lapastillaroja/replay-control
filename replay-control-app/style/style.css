@@ -402,6 +402,21 @@ a, a:visited, a:hover, a:active {
     display: none;
 }
 
+/* ROM thumbnail in list — fixed height, aspect ratio adapts to image */
+.rom-thumb-link {
+    flex-shrink: 0;
+    margin-right: 10px;
+    line-height: 0;
+}
+
+.rom-thumb {
+    height: 40px;
+    width: auto;
+    max-width: 56px;
+    object-fit: contain;
+    border-radius: 3px;
+}
+
 .rom-info {
     flex: 1;
     min-width: 0;
@@ -987,11 +1002,17 @@ select.form-input option {
     border: 1px solid var(--border);
 }
 
+.image-action-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+}
+
 .metadata-download-btn {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    margin-top: 16px;
     padding: 10px 20px;
     background: var(--accent);
     color: var(--bg);
@@ -1420,4 +1441,31 @@ button.skin-card:disabled {
     .skin-grid {
         grid-template-columns: repeat(4, 1fr);
     }
+}
+
+/* Logs page */
+.logs-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+}
+.logs-source-select {
+    flex: 1;
+    max-width: 220px;
+}
+.logs-output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 70vh;
+    overflow-y: auto;
+    color: var(--text-secondary);
+    margin: 0;
 }

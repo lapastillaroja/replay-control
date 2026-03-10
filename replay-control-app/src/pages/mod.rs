@@ -3,6 +3,7 @@ pub mod game_detail;
 pub mod games;
 pub mod home;
 pub mod hostname;
+pub mod logs;
 pub mod metadata;
 pub mod more;
 pub mod nfs;

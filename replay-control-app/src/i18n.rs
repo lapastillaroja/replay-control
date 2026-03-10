@@ -104,6 +104,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "organize.system" => "By System",
         "organize.genre" => "By Genre",
         "organize.players" => "By Players",
+        "organize.rating" => "By Rating",
         "organize.alphabetical" => "Alphabetical",
         "organize.keep_originals" => "Keep originals at root",
         "organize.keep_hint" => "Maintains compatibility with ReplayOS UI",
@@ -260,9 +261,19 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.cloning_repo" => "Downloading",
         "metadata.copying_images" => "Copying",
         "metadata.images_found" => "found",
+        "metadata.stop" => "Stop",
+        "metadata.import_cancelled" => "Cancelled",
 
         "metadata.attribution" => "Attribution",
         "metadata.attribution_text" => "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails. Data is cached locally for offline use and is not redistributed.",
+
+        // Logs
+        "more.logs" => "System Logs",
+        "logs.title" => "System Logs",
+        "logs.refresh" => "Refresh",
+        "logs.source_all" => "All Services",
+        "logs.source_companion" => "Replay Control",
+        "logs.source_replay" => "RePlayOS UI",
 
         // Common
         "common.loading" => "Loading...",

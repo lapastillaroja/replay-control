@@ -23,6 +23,161 @@
 /// - Hacker credits in brackets: [T-Spa1.0v_Wave] -> shown as "ES" not the full tag
 /// - Language codes already in the region: (En,Fr,De) merged with region
 
+/// Classification tier for sorting ROMs — lower value = shown first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RomTier {
+    /// Clean original ROM.
+    Original = 0,
+    /// Revision of an original (Rev 1, Rev A).
+    Revision = 1,
+    /// Non-primary region variant.
+    RegionVariant = 2,
+    /// Translation patch applied.
+    Translation = 3,
+    /// Unlicensed but commercial.
+    Unlicensed = 4,
+    /// Homebrew / aftermarket.
+    Homebrew = 5,
+    /// ROM hack.
+    Hack = 6,
+    /// Beta, prototype, or demo.
+    PreRelease = 7,
+    /// Pirate / bootleg.
+    Pirate = 8,
+}
+
+/// Region priority for sorting — lower = shown first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RegionPriority {
+    World = 0,
+    Usa = 1,
+    Europe = 2,
+    Japan = 3,
+    Other = 4,
+    Unknown = 5,
+}
+
+/// Classify a ROM filename into a tier and region priority for sorting.
+pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
+    let stem = filename
+        .rfind('.')
+        .map(|i| &filename[..i])
+        .unwrap_or(filename);
+
+    let mut has_region = false;
+    let mut region_priority = RegionPriority::Unknown;
+    let mut has_revision = false;
+    let mut has_translation = false;
+    let mut is_hack = false;
+    let mut is_beta = false;
+    let mut is_proto = false;
+    let mut is_demo = false;
+    let mut is_unlicensed = false;
+    let mut is_aftermarket = false;
+    let mut is_pirate = false;
+
+    for tag in ParenTags::new(stem) {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let lower = trimmed.to_lowercase();
+
+        if lower.starts_with("rev ") || (lower.starts_with("rev") && trimmed.len() <= 6) {
+            if parse_revision(trimmed).is_some() {
+                has_revision = true;
+                continue;
+            }
+        }
+        if parse_translation_paren(trimmed).is_some() {
+            has_translation = true;
+            continue;
+        }
+        if lower == "hack" || lower == "smw hack" || lower == "sa-1 smw hack"
+            || lower == "smw2 hack" || lower == "smrpg hack" || lower == "smk hack"
+            || lower.ends_with(" hack")
+        {
+            is_hack = true;
+            continue;
+        }
+        if lower == "beta" || lower.starts_with("beta ") {
+            is_beta = true;
+            continue;
+        }
+        if lower == "proto" || lower == "prototype" || lower.starts_with("proto ") {
+            is_proto = true;
+            continue;
+        }
+        if lower == "demo" || lower.starts_with("demo ") {
+            is_demo = true;
+            continue;
+        }
+        if lower == "unl" || lower == "unlicensed" {
+            is_unlicensed = true;
+            continue;
+        }
+        if lower == "aftermarket" || lower == "homebrew" {
+            is_aftermarket = true;
+            continue;
+        }
+        if lower == "pirate" {
+            is_pirate = true;
+            continue;
+        }
+        if !is_noise_tag(&lower) && looks_like_region(trimmed) {
+            has_region = true;
+            region_priority = region_to_priority(trimmed);
+        }
+    }
+
+    // Check bracketed translation tags too
+    for tag in BracketTags::new(stem) {
+        if parse_translation_bracket(tag.trim()).is_some() {
+            has_translation = true;
+        }
+    }
+
+    let tier = if is_pirate {
+        RomTier::Pirate
+    } else if is_beta || is_proto || is_demo {
+        RomTier::PreRelease
+    } else if is_hack {
+        RomTier::Hack
+    } else if is_aftermarket {
+        RomTier::Homebrew
+    } else if is_unlicensed {
+        RomTier::Unlicensed
+    } else if has_translation {
+        RomTier::Translation
+    } else if has_revision {
+        RomTier::Revision
+    } else if has_region && matches!(region_priority, RegionPriority::Other) {
+        RomTier::RegionVariant
+    } else {
+        RomTier::Original
+    };
+
+    (tier, region_priority)
+}
+
+/// Map a region tag to a sort priority.
+fn region_to_priority(tag: &str) -> RegionPriority {
+    let lower = tag.to_lowercase();
+    let parts: Vec<&str> = lower.split(',').map(|s| s.trim()).collect();
+    let first = parts.first().copied().unwrap_or("");
+    match first {
+        "world" | "w" => RegionPriority::World,
+        "usa" | "u" => RegionPriority::Usa,
+        "usa, europe" | "ue" => RegionPriority::Usa,
+        "europe" | "e" => RegionPriority::Europe,
+        "japan" | "j" => RegionPriority::Japan,
+        _ if first.contains("usa") => RegionPriority::Usa,
+        _ if first.contains("europe") => RegionPriority::Europe,
+        _ if first.contains("japan") => RegionPriority::Japan,
+        _ => RegionPriority::Other,
+    }
+}
+
 /// Extract a concise display suffix from a ROM filename.
 ///
 /// Returns an empty string if no useful tags are found, or a string like

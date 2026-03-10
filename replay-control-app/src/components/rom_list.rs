@@ -280,6 +280,8 @@ fn RomItem(
     let display_name = StoredValue::new(rom.game.display_name.clone());
     let relative_path = StoredValue::new(rom.game.rom_path.clone());
     let system = StoredValue::new(rom.game.system.clone());
+    let box_art_url = StoredValue::new(rom.box_art_url.clone());
+    let has_box_art = rom.box_art_url.is_some();
     let is_fav = RwSignal::new(rom.is_favorite);
     let size = format_size(rom.size_bytes);
     let ext = format!(".{}", rom.game.rom_filename.rsplit('.').next().unwrap_or(""));
@@ -341,6 +343,12 @@ fn RomItem(
     view! {
         <div class="rom-item">
             <button class="rom-fav-btn" on:click=on_toggle_fav>{star}</button>
+
+            <Show when=move || has_box_art>
+                <A href=game_href.get_value() attr:class="rom-thumb-link">
+                    <img class="rom-thumb" src=box_art_url.get_value() loading="lazy" />
+                </A>
+            </Show>
 
             <div class="rom-info">
                 <Show when=is_renaming fallback=move || view! {

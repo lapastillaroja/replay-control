@@ -137,6 +137,8 @@ pub struct AppState {
     pub import_progress: Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
     /// Progress of the current image import (None = no import running).
     pub image_import_progress: Arc<std::sync::RwLock<Option<crate::server_fns::ImageImportProgress>>>,
+    /// Set to `true` to request cancellation of the current image import.
+    pub image_import_cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
@@ -197,6 +199,7 @@ impl AppState {
             metadata_db: Arc::new(std::sync::Mutex::new(None)),
             import_progress: Arc::new(std::sync::RwLock::new(None)),
             image_import_progress: Arc::new(std::sync::RwLock::new(None)),
+            image_import_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }
 
@@ -586,61 +589,17 @@ impl AppState {
             .map(|s| s.display_name.to_string())
             .unwrap_or_else(|| system.to_string());
 
-        let repo_name = match replay_control_core::thumbnails::thumbnail_repo_name(system) {
-            Some(name) => name.to_string(),
+        let repo_names = match replay_control_core::thumbnails::thumbnail_repo_names(system) {
+            Some(names) => names,
             None => {
                 tracing::warn!("No thumbnail repo for {system}, skipping");
                 return;
             }
         };
 
-        // Set cloning progress.
-        {
-            let mut guard = self.image_import_progress.write().expect("lock");
-            *guard = Some(ImageImportProgress {
-                state: ImageImportState::Cloning,
-                system: system.to_string(),
-                system_display: system_display.clone(),
-                processed: 0,
-                total: 0,
-                boxart_copied: 0,
-                snap_copied: 0,
-                elapsed_secs: start.elapsed().as_secs(),
-                error: None,
-                current_system,
-                total_systems,
-            });
-        }
-
         let storage_root = self.storage().root.clone();
-
-        // Clone to a temp dir on the storage device (Pi's /tmp is too small).
         let clone_base = storage_root.join(replay_control_core::metadata_db::RC_DIR).join("tmp");
-        let repo_dir = match replay_control_core::thumbnails::clone_thumbnail_repo(&repo_name, Some(&clone_base)) {
-            Ok(dir) => dir,
-            Err(e) => {
-                let mut guard = self.image_import_progress.write().expect("lock");
-                if let Some(ref mut p) = *guard {
-                    p.state = ImageImportState::Failed;
-                    p.error = Some(format!("Clone failed: {e}"));
-                    p.elapsed_secs = start.elapsed().as_secs();
-                }
-                return;
-            }
-        };
-
-        // Get ROM filenames.
         let rom_filenames = replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
-
-        // Update progress to Copying.
-        {
-            let mut guard = self.image_import_progress.write().expect("lock");
-            if let Some(ref mut p) = *guard {
-                p.state = ImageImportState::Copying;
-                p.total = rom_filenames.len();
-                p.elapsed_secs = start.elapsed().as_secs();
-            }
-        }
 
         // Take DB from state.
         let db = {
@@ -663,22 +622,133 @@ impl AppState {
             },
         };
 
-        let progress_ref = self.image_import_progress.clone();
-        let result = replay_control_core::thumbnails::import_system_thumbnails(
-            &repo_dir,
-            system,
-            &storage_root,
-            &mut db,
-            &rom_filenames,
-            |processed, images_found| {
-                let mut guard = progress_ref.write().expect("lock");
+        let mut total_boxart = 0usize;
+        let mut total_snap = 0usize;
+        let mut last_error: Option<String> = None;
+
+        // Import from each repo in order. import_system_thumbnails skips ROMs
+        // that already have images, so later repos only fill gaps.
+        for (repo_idx, repo_name) in repo_names.iter().enumerate() {
+            // Check for cancellation before each repo.
+            if self.image_import_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut guard = self.image_import_progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
-                    p.processed = processed;
-                    p.boxart_copied = images_found;
+                    p.state = ImageImportState::Cancelled;
                     p.elapsed_secs = start.elapsed().as_secs();
                 }
-            },
-        );
+                break;
+            }
+
+            let label = if repo_names.len() > 1 {
+                format!("{system_display} ({repo_name})")
+            } else {
+                system_display.clone()
+            };
+
+            // Set cloning progress.
+            {
+                let mut guard = self.image_import_progress.write().expect("lock");
+                *guard = Some(ImageImportProgress {
+                    state: ImageImportState::Cloning,
+                    system: system.to_string(),
+                    system_display: label.clone(),
+                    processed: 0,
+                    total: rom_filenames.len(),
+                    boxart_copied: total_boxart,
+                    snap_copied: total_snap,
+                    elapsed_secs: start.elapsed().as_secs(),
+                    error: None,
+                    current_system,
+                    total_systems,
+                });
+            }
+
+            let repo_dir = match replay_control_core::thumbnails::clone_thumbnail_repo(repo_name, Some(&clone_base)) {
+                Ok(dir) => dir,
+                Err(e) => {
+                    tracing::warn!("Clone failed for {repo_name}: {e}");
+                    // For multi-repo systems, continue to next repo instead of failing entirely
+                    if repo_idx == 0 && repo_names.len() == 1 {
+                        let mut guard = self.image_import_progress.write().expect("lock");
+                        if let Some(ref mut p) = *guard {
+                            p.state = ImageImportState::Failed;
+                            p.error = Some(format!("Clone failed: {e}"));
+                            p.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    } else {
+                        last_error = Some(format!("Clone failed for {repo_name}: {e}"));
+                    }
+                    continue;
+                }
+            };
+
+            // Check for cancellation after clone.
+            if self.image_import_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut guard = self.image_import_progress.write().expect("lock");
+                if let Some(ref mut p) = *guard {
+                    p.state = ImageImportState::Cancelled;
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+                let _ = std::fs::remove_dir_all(&repo_dir);
+                break;
+            }
+
+            // Update progress to Copying.
+            {
+                let mut guard = self.image_import_progress.write().expect("lock");
+                if let Some(ref mut p) = *guard {
+                    p.state = ImageImportState::Copying;
+                    p.system_display = label;
+                    p.total = rom_filenames.len();
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+            }
+
+            let progress_ref = self.image_import_progress.clone();
+            let cancel_ref = self.image_import_cancel.clone();
+            let prev_boxart = total_boxart;
+            let result = replay_control_core::thumbnails::import_system_thumbnails(
+                &repo_dir,
+                system,
+                &storage_root,
+                &mut db,
+                &rom_filenames,
+                |processed, images_found| {
+                    let mut guard = progress_ref.write().expect("lock");
+                    if let Some(ref mut p) = *guard {
+                        p.processed = processed;
+                        p.boxart_copied = prev_boxart + images_found;
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                    !cancel_ref.load(std::sync::atomic::Ordering::Relaxed)
+                },
+            );
+
+            match result {
+                Ok(stats) => {
+                    total_boxart += stats.boxart_copied;
+                    total_snap += stats.snap_copied;
+                }
+                Err(e) => {
+                    last_error = Some(e.to_string());
+                }
+            }
+
+            // Clean up cloned repo to save disk space.
+            let _ = std::fs::remove_dir_all(&repo_dir);
+
+            // Check for cancellation after copy.
+            if self.image_import_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut guard = self.image_import_progress.write().expect("lock");
+                if let Some(ref mut p) = *guard {
+                    p.state = ImageImportState::Cancelled;
+                    p.boxart_copied = total_boxart;
+                    p.snap_copied = total_snap;
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+                break;
+            }
+        }
 
         // Put DB back.
         {
@@ -686,37 +756,34 @@ impl AppState {
             *guard = Some(db);
         }
 
-        // Update final progress for this system.
+        // Update final progress for this system (skip if already cancelled).
         {
             let mut guard = self.image_import_progress.write().expect("lock");
-            match result {
-                Ok(stats) => {
+            let already_cancelled = guard.as_ref().map(|p| p.state == ImageImportState::Cancelled).unwrap_or(false);
+            if !already_cancelled {
+                if last_error.is_some() && total_boxart == 0 && total_snap == 0 {
+                    if let Some(ref mut p) = *guard {
+                        p.state = ImageImportState::Failed;
+                        p.error = last_error;
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                } else {
                     *guard = Some(ImageImportProgress {
                         state: ImageImportState::Complete,
                         system: system.to_string(),
                         system_display,
-                        processed: stats.total_roms,
-                        total: stats.total_roms,
-                        boxart_copied: stats.boxart_copied,
-                        snap_copied: stats.snap_copied,
+                        processed: rom_filenames.len(),
+                        total: rom_filenames.len(),
+                        boxart_copied: total_boxart,
+                        snap_copied: total_snap,
                         elapsed_secs: start.elapsed().as_secs(),
                         error: None,
                         current_system,
                         total_systems,
                     });
                 }
-                Err(e) => {
-                    if let Some(ref mut p) = *guard {
-                        p.state = ImageImportState::Failed;
-                        p.error = Some(e.to_string());
-                        p.elapsed_secs = start.elapsed().as_secs();
-                    }
-                }
             }
         }
-
-        // Clean up cloned repo to save disk space.
-        let _ = std::fs::remove_dir_all(&repo_dir);
     }
 
     /// Start a background image import for a single system.
@@ -726,6 +793,7 @@ impl AppState {
             return false;
         }
 
+        self.image_import_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
         let state = self.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
@@ -748,7 +816,7 @@ impl AppState {
         let supported: Vec<String> = systems
             .into_iter()
             .filter(|s| s.game_count > 0)
-            .filter(|s| replay_control_core::thumbnails::thumbnail_repo_name(&s.folder_name).is_some())
+            .filter(|s| replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some())
             .map(|s| s.folder_name)
             .collect();
 
@@ -756,6 +824,7 @@ impl AppState {
             return false;
         }
 
+        self.image_import_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
         let state = self.clone();
         let total = supported.len();
         tokio::task::spawn_blocking(move || {
@@ -763,12 +832,12 @@ impl AppState {
             for (i, system) in supported.iter().enumerate() {
                 state.import_system_images_blocking(system, i + 1, total, start);
 
-                // If the last system failed, stop the whole batch.
+                // If the last system failed or was cancelled, stop the whole batch.
                 {
                     use crate::server_fns::ImageImportState;
                     let guard = state.image_import_progress.read().expect("lock");
                     if let Some(ref p) = *guard {
-                        if p.state == ImageImportState::Failed {
+                        if matches!(p.state, ImageImportState::Failed | ImageImportState::Cancelled) {
                             break;
                         }
                     }

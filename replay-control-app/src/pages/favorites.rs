@@ -428,6 +428,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<Favorite>>) -> impl IntoView {
                             <option value="genre">{move || t(i18n.locale.get(), "organize.genre")}</option>
                             <option value="system">{move || t(i18n.locale.get(), "organize.system")}</option>
                             <option value="players">{move || t(i18n.locale.get(), "organize.players")}</option>
+                            <option value="rating">{move || t(i18n.locale.get(), "organize.rating")}</option>
                             <option value="alphabetical">{move || t(i18n.locale.get(), "organize.alphabetical")}</option>
                         </select>
                     </div>
@@ -440,6 +441,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<Favorite>>) -> impl IntoView {
                                 ("genre", "organize.genre"),
                                 ("system", "organize.system"),
                                 ("players", "organize.players"),
+                                ("rating", "organize.rating"),
                                 ("alphabetical", "organize.alphabetical"),
                             ]
                             .into_iter()
@@ -507,6 +509,7 @@ fn parse_criteria(value: &str) -> Option<OrganizeCriteria> {
         "system" => Some(OrganizeCriteria::System),
         "genre" => Some(OrganizeCriteria::Genre),
         "players" => Some(OrganizeCriteria::Players),
+        "rating" => Some(OrganizeCriteria::Rating),
         "alphabetical" => Some(OrganizeCriteria::Alphabetical),
         _ => None,
     }

@@ -299,6 +299,28 @@ impl MetadataDb {
         })
     }
 
+    /// Get all ratings as a map of `(system, rom_filename) -> rating`.
+    pub fn all_ratings(&self) -> Result<std::collections::HashMap<(String, String), f64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT system, rom_filename, rating FROM game_metadata WHERE rating IS NOT NULL")
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+        let mut map = std::collections::HashMap::new();
+        for row in rows.flatten() {
+            map.insert((row.0, row.1), row.2);
+        }
+        Ok(map)
+    }
+
     /// Delete all cached metadata.
     pub fn clear(&self) -> Result<()> {
         self.conn

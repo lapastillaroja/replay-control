@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::game_ref::GameRef;
+use crate::rom_tags;
 use crate::storage::StorageLocation;
 use crate::systems::{self, System};
 
@@ -19,6 +20,9 @@ pub struct RomEntry {
     /// Whether this ROM is in the user's favorites
     #[serde(default)]
     pub is_favorite: bool,
+    /// Box art image URL (relative path under /media/), populated by the app layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub box_art_url: Option<String>,
 }
 
 /// Summary of a system's ROM collection.
@@ -78,11 +82,15 @@ pub fn list_roms(storage: &StorageLocation, system_folder: &str) -> Result<Vec<R
     let mut roms = Vec::new();
     collect_roms_recursive(&system_dir, &storage.roms_dir(), system, &mut roms);
 
-    // Sort alphabetically by display name (if available) or filename.
+    // Sort by display name, then by tier (originals before hacks), then by region.
     roms.sort_by(|a, b| {
         let a_name = a.game.display_name.as_deref().unwrap_or(&a.game.rom_filename);
         let b_name = b.game.display_name.as_deref().unwrap_or(&b.game.rom_filename);
+        let (a_tier, a_region) = rom_tags::classify(&a.game.rom_filename);
+        let (b_tier, b_region) = rom_tags::classify(&b.game.rom_filename);
         a_name.to_lowercase().cmp(&b_name.to_lowercase())
+            .then(a_tier.cmp(&b_tier))
+            .then(a_region.cmp(&b_region))
     });
 
     Ok(roms)
@@ -227,6 +235,7 @@ fn collect_roms_recursive(
                 size_bytes,
                 is_m3u,
                 is_favorite: false,
+                box_art_url: None,
             });
         }
     }

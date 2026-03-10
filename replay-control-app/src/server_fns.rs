@@ -294,6 +294,7 @@ fn enrich_from_metadata_cache(info: &mut GameInfo) {
 }
 
 /// Try to find an image file on disk for a ROM, checking exact and fuzzy name matches.
+/// Skips broken files (< 200 bytes) that are git fake-symlink artifacts.
 #[cfg(feature = "ssr")]
 fn find_image_on_disk(media_base: &std::path::Path, kind: &str, rom_filename: &str) -> Option<String> {
     use replay_control_core::thumbnails::thumbnail_filename;
@@ -308,31 +309,32 @@ fn find_image_on_disk(media_base: &std::path::Path, kind: &str, rom_filename: &s
 
     // 1. Exact match
     let exact = kind_dir.join(format!("{thumb_name}.png"));
-    if exact.exists() {
+    if exact.exists() && is_valid_image(&exact) {
         return Some(format!("{kind}/{thumb_name}.png"));
     }
 
-    // 2. Fuzzy match: strip parenthesized tags from ROM stem and look for
-    //    an image whose stripped name matches.
-    let stripped = stem.find(" (")
-        .or_else(|| stem.find(" ["))
-        .map(|i| &stem[..i])
-        .unwrap_or(stem)
-        .trim()
-        .to_lowercase();
+    // 2. Fuzzy match: strip parenthesized tags and special separators, then
+    //    compare base titles. Use thumbnail_filename() on ROM stem so that
+    //    special chars (&, *, etc.) are normalized to _ just like the image files.
+    let base_title = |s: &str| -> String {
+        // Handle tilde dual-names: "Name1 ~ Name2" → use Name2 (usually the intl name)
+        let s = s.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(s);
+        s.find(" (")
+            .or_else(|| s.find(" ["))
+            .map(|i| &s[..i])
+            .unwrap_or(s)
+            .trim()
+            .to_lowercase()
+    };
+
+    let rom_base = base_title(&thumb_name);
 
     if let Ok(entries) = std::fs::read_dir(&kind_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if let Some(img_stem) = name.strip_suffix(".png") {
-                let img_stripped = img_stem.find(" (")
-                    .or_else(|| img_stem.find(" ["))
-                    .map(|i| &img_stem[..i])
-                    .unwrap_or(img_stem)
-                    .trim()
-                    .to_lowercase();
-                if img_stripped == stripped {
+                if base_title(img_stem) == rom_base && is_valid_image(&entry.path()) {
                     return Some(format!("{kind}/{name}"));
                 }
             }
@@ -340,6 +342,13 @@ fn find_image_on_disk(media_base: &std::path::Path, kind: &str, rom_filename: &s
     }
 
     None
+}
+
+/// Quick check that a file is likely a real image (not a git fake-symlink text file).
+#[cfg(feature = "ssr")]
+fn is_valid_image(path: &std::path::Path) -> bool {
+    // Real PNGs are almost always > 200 bytes.
+    path.metadata().map(|m| m.len() >= 200).unwrap_or(false)
 }
 
 #[server(prefix = "/sfn")]
@@ -416,6 +425,58 @@ pub struct RomPage {
     pub system_display: String,
 }
 
+/// Compute a relevance score for a ROM against a search query.
+/// Higher = more relevant. Returns 0 for no match.
+#[cfg(feature = "ssr")]
+fn search_score(query: &str, display_name: &str, filename: &str) -> u32 {
+    let display_lower = display_name.to_lowercase();
+    let filename_lower = filename.to_lowercase();
+
+    // Base score from match type
+    let base = if display_lower == *query {
+        10_000 // exact match on display name
+    } else if display_lower.starts_with(query) {
+        5_000 // display name starts with query
+    } else if display_lower.split_whitespace().any(|w| w.starts_with(query)) {
+        2_000 // a word in display name starts with query
+    } else if display_lower.contains(query) {
+        1_000 // display name contains query
+    } else if filename_lower.contains(query) {
+        500 // only filename contains query
+    } else {
+        return 0;
+    };
+
+    // Shorter names are more likely the original game
+    let length_bonus: u32 = if display_name.len() < 40 { 100 } else { 0 };
+
+    // Tier penalty: deprioritize non-original ROMs
+    let (tier, region) = replay_control_core::rom_tags::classify(filename);
+    let tier_penalty = match tier {
+        replay_control_core::rom_tags::RomTier::Original => 0,
+        replay_control_core::rom_tags::RomTier::Revision => 5,
+        replay_control_core::rom_tags::RomTier::RegionVariant => 10,
+        replay_control_core::rom_tags::RomTier::Translation => 50,
+        replay_control_core::rom_tags::RomTier::Unlicensed => 60,
+        replay_control_core::rom_tags::RomTier::Homebrew => 100,
+        replay_control_core::rom_tags::RomTier::Hack => 200,
+        replay_control_core::rom_tags::RomTier::PreRelease => 250,
+        replay_control_core::rom_tags::RomTier::Pirate => 300,
+    };
+
+    // Region bonus: prefer common regions
+    let region_bonus = match region {
+        replay_control_core::rom_tags::RegionPriority::World => 20,
+        replay_control_core::rom_tags::RegionPriority::Usa => 15,
+        replay_control_core::rom_tags::RegionPriority::Europe => 10,
+        replay_control_core::rom_tags::RegionPriority::Japan => 5,
+        replay_control_core::rom_tags::RegionPriority::Other => 0,
+        replay_control_core::rom_tags::RegionPriority::Unknown => 0,
+    };
+
+    (base + length_bonus + region_bonus).saturating_sub(tier_penalty)
+}
+
 #[server(prefix = "/sfn")]
 pub async fn get_roms_page(
     system: String,
@@ -435,11 +496,16 @@ pub async fn get_roms_page(
         all_roms
     } else {
         let q = search.to_lowercase();
-        all_roms.into_iter().filter(|r| {
-            let display = r.game.display_name.as_deref().unwrap_or(&r.game.rom_filename);
-            display.to_lowercase().contains(&q)
-                || r.game.rom_filename.to_lowercase().contains(&q)
-        }).collect()
+        let mut scored: Vec<(u32, RomEntry)> = all_roms
+            .into_iter()
+            .filter_map(|r| {
+                let display = r.game.display_name.as_deref().unwrap_or(&r.game.rom_filename);
+                let score = search_score(&q, display, &r.game.rom_filename);
+                if score > 0 { Some((score, r)) } else { None }
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.into_iter().map(|(_, r)| r).collect()
     };
 
     let total = filtered.len();
@@ -447,6 +513,16 @@ pub async fn get_roms_page(
     let has_more = offset + roms.len() < total;
 
     replay_control_core::roms::mark_favorites(&storage, &system, &mut roms);
+
+    // Populate box art URLs for the returned page (only for the visible ROMs).
+    let media_base = storage.root
+        .join(replay_control_core::metadata_db::RC_DIR)
+        .join("media")
+        .join(&system);
+    for rom in &mut roms {
+        rom.box_art_url = find_image_on_disk(&media_base, "boxart", &rom.game.rom_filename)
+            .map(|path| format!("/media/{system}/{path}"));
+    }
 
     Ok(RomPage { roms, total, has_more, system_display })
 }
@@ -824,11 +900,21 @@ pub async fn organize_favorites(
     keep_originals: bool,
 ) -> Result<OrganizeResult, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    let needs_ratings = primary == OrganizeCriteria::Rating
+        || secondary == Some(OrganizeCriteria::Rating);
+    let ratings = if needs_ratings {
+        replay_control_core::metadata_db::MetadataDb::open(&state.storage().root)
+            .ok()
+            .and_then(|db| db.all_ratings().ok())
+    } else {
+        None
+    };
     let result = replay_control_core::favorites::organize_favorites(
         &state.storage(),
         primary,
         secondary,
         keep_originals,
+        ratings.as_ref(),
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(OrganizeResult {
@@ -994,6 +1080,7 @@ pub enum ImageImportState {
     Copying,
     Complete,
     Failed,
+    Cancelled,
 }
 
 /// Image coverage per system.
@@ -1024,6 +1111,14 @@ pub async fn import_all_images() -> Result<(), ServerFnError> {
     if !state.start_all_images_import() {
         return Err(ServerFnError::new("An image import is already running"));
     }
+    Ok(())
+}
+
+/// Cancel the current image import.
+#[server(prefix = "/sfn")]
+pub async fn cancel_image_import() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    state.image_import_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
     Ok(())
 }
 
@@ -1059,7 +1154,7 @@ pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
         .filter(|s| s.game_count > 0)
         .map(|s| {
             let (with_boxart, with_snap) = img_map.remove(&s.folder_name).unwrap_or((0, 0));
-            let has_repo = replay_control_core::thumbnails::thumbnail_repo_name(&s.folder_name).is_some();
+            let has_repo = replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some();
             ImageCoverage {
                 system: s.folder_name,
                 display_name: s.display_name,
@@ -1087,6 +1182,30 @@ pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let storage = state.storage();
     let media_size = replay_control_core::thumbnails::media_dir_size(&storage.root);
     Ok((with_boxart, with_snap, media_size))
+}
+
+/// Read system logs from journalctl.
+#[server(prefix = "/sfn")]
+pub async fn get_system_logs(source: String, lines: usize) -> Result<String, ServerFnError> {
+    let lines = lines.min(500);
+    let mut cmd = std::process::Command::new("journalctl");
+    cmd.args(["--no-pager", "--lines", &lines.to_string(), "--reverse"]);
+
+    match source.as_str() {
+        "replay-companion" => { cmd.args(["-u", "replay-companion"]); }
+        "replay" => { cmd.args(["-u", "replay"]); }
+        _ => {} // "all" — no unit filter
+    }
+
+    let output = cmd.output()
+        .map_err(|e| ServerFnError::new(format!("Failed to read logs: {e}")))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        // journalctl may not exist on dev machines
+        Ok("journalctl not available or no logs found.".to_string())
+    }
 }
 
 /// Clear all images.
