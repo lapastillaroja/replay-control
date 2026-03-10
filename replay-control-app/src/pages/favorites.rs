@@ -6,7 +6,7 @@ use server_fn::ServerFnError;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
-use crate::server_fns::{Favorite, OrganizeCriteria};
+use crate::server_fns::{Favorite, FavoriteWithArt, OrganizeCriteria};
 
 #[component]
 pub fn FavoritesPage() -> impl IntoView {
@@ -40,7 +40,7 @@ pub fn FavoritesPage() -> impl IntoView {
 /// Inner content — full favorites page with hero, recent scroll, system cards, and full list.
 #[component]
 fn FavoritesContent<F>(
-    favs: Vec<Favorite>,
+    favs: Vec<FavoriteWithArt>,
     grouped_view: RwSignal<bool>,
     toggle_label: F,
 ) -> impl IntoView
@@ -56,7 +56,7 @@ where
     let remove_fav = move |fav_filename: String, subfolder: String| {
         // Optimistically remove from local state.
         favorites.update(|list| {
-            list.retain(|f| f.marker_filename != fav_filename);
+            list.retain(|f| f.fav.marker_filename != fav_filename);
         });
         confirm_remove.set(None);
         // Call server to persist.
@@ -75,8 +75,8 @@ where
     let system_count = move || {
         let favs = favorites.read();
         let mut systems = std::collections::HashSet::new();
-        for fav in favs.iter() {
-            systems.insert(fav.game.system.clone());
+        for f in favs.iter() {
+            systems.insert(f.fav.game.system.clone());
         }
         systems.len()
     };
@@ -85,7 +85,7 @@ where
     let by_date = move || {
         let favs = favorites.read();
         let mut sorted: Vec<_> = favs.iter().cloned().collect();
-        sorted.sort_by(|a, b| b.date_added.cmp(&a.date_added));
+        sorted.sort_by(|a, b| b.fav.date_added.cmp(&a.fav.date_added));
         sorted
     };
 
@@ -103,11 +103,11 @@ where
         let favs = favorites.read();
         let mut map: std::collections::BTreeMap<String, (String, String, usize, String, u64)> =
             std::collections::BTreeMap::new();
-        for fav in favs.iter() {
-            let entry = map.entry(fav.game.system.clone()).or_insert_with(|| {
+        for f in favs.iter() {
+            let entry = map.entry(f.fav.game.system.clone()).or_insert_with(|| {
                 (
-                    fav.game.system_display.clone(),
-                    fav.game.system.clone(),
+                    f.fav.game.system_display.clone(),
+                    f.fav.game.system.clone(),
                     0,
                     String::new(),
                     0,
@@ -115,13 +115,13 @@ where
             });
             entry.2 += 1;
             // Track the most recently added favorite for this system.
-            if fav.date_added >= entry.4 {
-                entry.3 = fav
+            if f.fav.date_added >= entry.4 {
+                entry.3 = f.fav
                     .game
                     .display_name
                     .clone()
-                    .unwrap_or_else(|| fav.game.rom_filename.clone());
-                entry.4 = fav.date_added;
+                    .unwrap_or_else(|| f.fav.game.rom_filename.clone());
+                entry.4 = f.fav.date_added;
             }
         }
         map.into_values().collect::<Vec<_>>()
@@ -137,13 +137,20 @@ where
             // Featured / Latest Added — hero card
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.latest_added")}</h2>
-                {move || featured().map(|fav| {
-                    let href = format!("/games/{}/{}", fav.game.system, urlencoding::encode(&fav.game.rom_filename));
+                {move || featured().map(|f| {
+                    let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
+                    let has_art = f.box_art_url.is_some();
+                    let art_url = f.box_art_url.clone();
                     view! {
                         <A href=href attr:class="hero-card rom-name-link">
+                            {if has_art {
+                                view! { <img class="hero-thumb" src=art_url loading="lazy" /> }.into_any()
+                            } else {
+                                view! { <div class="hero-thumb-placeholder"></div> }.into_any()
+                            }}
                             <div class="hero-info">
-                                <h3 class="hero-title">{fav.game.display_name.clone().unwrap_or_else(|| fav.game.rom_filename.clone())}</h3>
-                                <p class="hero-system">{fav.game.system_display.clone()}</p>
+                                <h3 class="hero-title">{f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone())}</h3>
+                                <p class="hero-system">{f.fav.game.system_display.clone()}</p>
                             </div>
                         </A>
                     }
@@ -155,12 +162,19 @@ where
                 <section class="section">
                     <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.recently_added")}</h2>
                     <div class="recent-scroll">
-                        {move || recent_items().into_iter().map(|fav| {
-                            let href = format!("/games/{}/{}", fav.game.system, urlencoding::encode(&fav.game.rom_filename));
+                        {move || recent_items().into_iter().map(|f| {
+                            let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
+                            let has_art = f.box_art_url.is_some();
+                            let art_url = f.box_art_url.clone();
                             view! {
                                 <A href=href attr:class="recent-item rom-name-link">
-                                    <div class="recent-name">{fav.game.display_name.clone().unwrap_or_else(|| fav.game.rom_filename.clone())}</div>
-                                    <div class="recent-system">{fav.game.system_display.clone()}</div>
+                                    {if has_art {
+                                        view! { <img class="recent-thumb" src=art_url loading="lazy" /> }.into_any()
+                                    } else {
+                                        view! { <div class="recent-thumb-placeholder"></div> }.into_any()
+                                    }}
+                                    <div class="recent-name">{f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone())}</div>
+                                    <div class="recent-system">{f.fav.game.system_display.clone()}</div>
                                 </A>
                             }
                         }).collect::<Vec<_>>()}
@@ -229,7 +243,7 @@ where
 
 #[component]
 fn FlatFavorites<F>(
-    favorites: RwSignal<Vec<Favorite>>,
+    favorites: RwSignal<Vec<FavoriteWithArt>>,
     confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
 ) -> impl IntoView
@@ -240,10 +254,10 @@ where
         <div class="fav-list">
             <For
                 each=move || favorites.get()
-                key=|fav| fav.marker_filename.clone()
-                let:fav
+                key=|f| f.fav.marker_filename.clone()
+                let:f
             >
-                <FavItem fav show_system=true confirm_remove remove_fav=remove_fav.clone() />
+                <FavItem fav=f.fav show_system=true confirm_remove remove_fav=remove_fav.clone() />
             </For>
         </div>
     }
@@ -251,7 +265,7 @@ where
 
 #[component]
 fn GroupedFavorites<F>(
-    favorites: RwSignal<Vec<Favorite>>,
+    favorites: RwSignal<Vec<FavoriteWithArt>>,
     confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
 ) -> impl IntoView
@@ -260,12 +274,12 @@ where
 {
     let groups = move || {
         let favs = favorites.get();
-        let mut map: std::collections::BTreeMap<String, Vec<Favorite>> =
+        let mut map: std::collections::BTreeMap<String, Vec<FavoriteWithArt>> =
             std::collections::BTreeMap::new();
-        for fav in favs {
-            map.entry(fav.game.system_display.clone())
+        for f in favs {
+            map.entry(f.fav.game.system_display.clone())
                 .or_default()
-                .push(fav);
+                .push(f);
         }
         map.into_iter().collect::<Vec<_>>()
     };
@@ -286,9 +300,9 @@ where
                             <h3 class="fav-group-title">
                                 {system_name} " " <span class="fav-group-count">{"("}{count}{")"}</span>
                             </h3>
-                            {favs.into_iter().map(|fav| {
+                            {favs.into_iter().map(|f| {
                                 let remove_fav = remove_fav.clone();
-                                view! { <FavItem fav show_system=false confirm_remove remove_fav /> }
+                                view! { <FavItem fav=f.fav show_system=false confirm_remove remove_fav /> }
                             }).collect::<Vec<_>>()}
                         </div>
                     }
@@ -367,7 +381,7 @@ where
 
 /// Collapsible panel for organizing favorites into subfolders.
 #[component]
-fn OrganizePanel(favorites: RwSignal<Vec<Favorite>>) -> impl IntoView {
+fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
     let i18n = use_i18n();
     let expanded = RwSignal::new(false);
     let primary = RwSignal::new("genre".to_string());
@@ -566,7 +580,7 @@ pub fn SystemFavoritesPage() -> impl IntoView {
 
 /// Inner content for the system-specific favorites page.
 #[component]
-fn SystemFavoritesContent(favs: Vec<Favorite>) -> impl IntoView {
+fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
     let i18n = use_i18n();
     let favorites = RwSignal::new(favs);
     let confirm_remove = RwSignal::new(Option::<String>::None);
@@ -575,7 +589,7 @@ fn SystemFavoritesContent(favs: Vec<Favorite>) -> impl IntoView {
     let system_display = favorites
         .read()
         .first()
-        .map(|f| f.game.system_display.clone())
+        .map(|f| f.fav.game.system_display.clone())
         .unwrap_or_default();
 
     let total_count = move || favorites.read().len();
@@ -583,7 +597,7 @@ fn SystemFavoritesContent(favs: Vec<Favorite>) -> impl IntoView {
 
     let remove_fav = move |fav_filename: String, subfolder: String| {
         favorites.update(|list| {
-            list.retain(|f| f.marker_filename != fav_filename);
+            list.retain(|f| f.fav.marker_filename != fav_filename);
         });
         confirm_remove.set(None);
         let sub = if subfolder.is_empty() {
@@ -614,10 +628,10 @@ fn SystemFavoritesContent(favs: Vec<Favorite>) -> impl IntoView {
             <div class="fav-list">
                 <For
                     each=move || favorites.get()
-                    key=|fav| fav.marker_filename.clone()
-                    let:fav
+                    key=|f| f.fav.marker_filename.clone()
+                    let:f
                 >
-                    <FavItem fav show_system=false confirm_remove remove_fav=remove_fav.clone() />
+                    <FavItem fav=f.fav show_system=false confirm_remove remove_fav=remove_fav.clone() />
                 </For>
             </div>
         </Show>

@@ -69,6 +69,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "stats.favorites" => "Favorites",
         "stats.used" => "Used",
         "stats.storage" => "Storage",
+        "stats.storage_used" => "Storage Used",
 
         // Games page
         "games.systems" => "Systems",

@@ -7,7 +7,7 @@ use crate::components::system_card::SystemCard;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
-use crate::util::format_size;
+use crate::util::format_size_short;
 
 #[component]
 pub fn HomePage() -> impl IntoView {
@@ -65,11 +65,18 @@ pub fn HomePage() -> impl IntoView {
                             let locale = i18n.locale.get();
                             let entries = recents.await?;
                             Ok::<_, ServerFnError>(if let Some(last) = entries.first() {
-                                let name = last.game.display_name.clone().unwrap_or_else(|| last.game.rom_filename.clone());
-                                let sys = last.game.system_display.clone();
-                                let href = format!("/games/{}/{}", last.game.system, urlencoding::encode(&last.game.rom_filename));
+                                let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
+                                let sys = last.entry.game.system_display.clone();
+                                let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
+                                let has_art = last.box_art_url.is_some();
+                                let art_url = last.box_art_url.clone();
                                 view! {
                                     <A href=href attr:class="hero-card rom-name-link">
+                                        {if has_art {
+                                            view! { <img class="hero-thumb" src=art_url loading="lazy" /> }.into_any()
+                                        } else {
+                                            view! { <div class="hero-thumb-placeholder"></div> }.into_any()
+                                        }}
                                         <div class="hero-info">
                                             <h3 class="hero-title">{name}</h3>
                                             <p class="hero-system">{sys}</p>
@@ -97,13 +104,20 @@ pub fn HomePage() -> impl IntoView {
                             } else {
                                 view! {
                                     <div class="recent-scroll">
-                                        {items.into_iter().map(|entry| {
-                                            let name = entry.game.display_name.clone().unwrap_or_else(|| entry.game.rom_filename.clone());
-                                            let href = format!("/games/{}/{}", entry.game.system, urlencoding::encode(&entry.game.rom_filename));
+                                        {items.into_iter().map(|item| {
+                                            let name = item.entry.game.display_name.clone().unwrap_or_else(|| item.entry.game.rom_filename.clone());
+                                            let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
+                                            let has_art = item.box_art_url.is_some();
+                                            let art_url = item.box_art_url.clone();
                                             view! {
                                                 <A href=href attr:class="recent-item rom-name-link">
+                                                    {if has_art {
+                                                        view! { <img class="recent-thumb" src=art_url loading="lazy" /> }.into_any()
+                                                    } else {
+                                                        view! { <div class="recent-thumb-placeholder"></div> }.into_any()
+                                                    }}
                                                     <div class="recent-name">{name}</div>
-                                                    <div class="recent-system">{entry.game.system_display.clone()}</div>
+                                                    <div class="recent-system">{item.entry.game.system_display.clone()}</div>
                                                 </A>
                                             }
                                         }).collect::<Vec<_>>()}
@@ -122,18 +136,27 @@ pub fn HomePage() -> impl IntoView {
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let info = info.await?;
-                            let storage_value = {
-                                let used = format_size(info.disk_used_bytes);
-                                let total = format_size(info.disk_total_bytes);
+                            let storage_pct = if info.disk_total_bytes > 0 {
+                                ((info.disk_used_bytes as f64 / info.disk_total_bytes as f64) * 100.0).round() as u8
+                            } else {
+                                0
+                            };
+                            let storage_label = {
                                 let kind = info.storage_kind.to_uppercase();
-                                format!("{used} / {total} {kind}")
+                                let (used_num, used_unit) = format_size_short(info.disk_used_bytes);
+                                let (total_num, total_unit) = format_size_short(info.disk_total_bytes);
+                                if used_unit == total_unit {
+                                    format!("{used_num} / {total_num} {total_unit} {kind}")
+                                } else {
+                                    format!("{used_num} {used_unit} / {total_num} {total_unit} {kind}")
+                                }
                             };
                             Ok::<_, ServerFnError>(view! {
                                 <div class="stats-grid">
                                     <StatCard value=info.total_games.to_string() label=t(locale, "stats.games") />
                                     <StatCard value=info.systems_with_games.to_string() label=t(locale, "stats.systems") />
                                     <StatCard value=info.total_favorites.to_string() label=t(locale, "stats.favorites") />
-                                    <StatCard value=storage_value label=t(locale, "stats.storage") compact=true />
+                                    <StorageBarCard pct=storage_pct detail=storage_label />
                                 </div>
                             })
                         })}
@@ -178,6 +201,20 @@ fn StatCard(
         <div class=class>
             <div class="stat-value">{value}</div>
             <div class="stat-label">{label}</div>
+        </div>
+    }
+}
+
+#[component]
+fn StorageBarCard(pct: u8, detail: String) -> impl IntoView {
+    let width = format!("width:{}%", pct);
+    view! {
+        <div class="stat-card">
+            <div class="storage-bar">
+                <div class="storage-bar-fill" style=width></div>
+            </div>
+            <div class="stat-value">{format!("{}%", pct)}</div>
+            <div class="stat-label">{detail}</div>
         </div>
     }
 }

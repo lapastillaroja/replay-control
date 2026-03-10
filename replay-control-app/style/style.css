@@ -181,11 +181,30 @@ a, a:visited, a:hover, a:active {
 
 /* Hero card (last played) */
 .hero-card {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 16px;
     background: var(--surface);
     border-radius: var(--radius);
     padding: 20px;
     border: 1px solid var(--border);
+}
+
+.hero-thumb {
+    height: 56px;
+    width: auto;
+    max-width: 80px;
+    object-fit: contain;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.hero-thumb-placeholder {
+    width: 56px;
+    height: 56px;
+    background: var(--border);
+    border-radius: 4px;
+    flex-shrink: 0;
 }
 
 .hero-title {
@@ -210,9 +229,11 @@ a, a:visited, a:hover, a:active {
 }
 
 .recent-item {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     flex-shrink: 0;
-    width: 140px;
+    width: 130px;
     background: var(--surface);
     border-radius: var(--radius-sm);
     padding: 12px;
@@ -225,6 +246,23 @@ a, a:visited, a:hover, a:active {
     border-color: var(--accent);
 }
 
+.recent-thumb {
+    height: 80px;
+    width: auto;
+    max-width: 100px;
+    object-fit: contain;
+    border-radius: 3px;
+    margin-bottom: 8px;
+}
+
+.recent-thumb-placeholder {
+    width: 56px;
+    height: 80px;
+    background: var(--border);
+    border-radius: 3px;
+    margin-bottom: 8px;
+}
+
 .recent-name {
     font-size: 0.8rem;
     font-weight: 500;
@@ -232,11 +270,14 @@ a, a:visited, a:hover, a:active {
     overflow: hidden;
     text-overflow: ellipsis;
     margin-bottom: 4px;
+    width: 100%;
+    text-align: center;
 }
 
 .recent-system {
     font-size: 0.7rem;
     color: var(--text-secondary);
+    text-align: center;
 }
 
 /* Stats grid */
@@ -270,6 +311,22 @@ a, a:visited, a:hover, a:active {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-top: 4px;
+}
+
+.storage-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.storage-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.3s;
 }
 
 /* Systems grid */
@@ -372,6 +429,10 @@ a, a:visited, a:hover, a:active {
 
 .search-input:focus {
     border-color: var(--accent);
+}
+
+.rom-list-filters {
+    margin-bottom: 12px;
 }
 
 .search-input::placeholder {

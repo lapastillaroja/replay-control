@@ -20,13 +20,43 @@ pub fn RomList(system: String) -> impl IntoView {
         .get("hide_hacks")
         .map(|v| v == "true")
         .unwrap_or(false);
+    let initial_hide_translations = query_map
+        .read_untracked()
+        .get("hide_translations")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let initial_hide_betas = query_map
+        .read_untracked()
+        .get("hide_betas")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let initial_hide_clones = query_map
+        .read_untracked()
+        .get("hide_clones")
+        .map(|v| v == "true")
+        .unwrap_or(false);
     let initial_genre = query_map
         .read_untracked()
         .get("genre")
         .map(|s| s.to_string())
         .unwrap_or_default();
+
     let hide_hacks = RwSignal::new(initial_hide_hacks);
-    let genre_filter = RwSignal::new(initial_genre);
+    let hide_translations = RwSignal::new(initial_hide_translations);
+    let hide_betas = RwSignal::new(initial_hide_betas);
+    let hide_clones = RwSignal::new(initial_hide_clones);
+    let genre_filter = RwSignal::new(initial_genre.clone());
+    let debounced_genre = RwSignal::new(initial_genre);
+
+    // Track whether the system is arcade (set from first page response).
+    let is_arcade = RwSignal::new(false);
+
+    // Genre list resource for this system.
+    let sys_for_genres = system.clone();
+    let genres_resource = Resource::new(
+        move || sys_for_genres.clone(),
+        |system| server_fns::get_system_genres(system),
+    );
 
     // Search: synced with URL query param `?search=...`.
     // Use replace mode so each keystroke doesn't add a history entry.
@@ -87,6 +117,25 @@ pub fn RomList(system: String) -> impl IntoView {
             }
         });
 
+        // Immediate update for filter toggle changes (no debounce needed).
+        Effect::new(move || {
+            let hh = hide_hacks.get();
+            let ht = hide_translations.get();
+            let hb = hide_betas.get();
+            let hc = hide_clones.get();
+            let g = genre_filter.get();
+            debounced_genre.set(g.clone());
+            update_filter_url(
+                sys.get_value(),
+                hh,
+                ht,
+                hb,
+                hc,
+                &g,
+                &debounced_search.get_untracked(),
+            );
+        });
+
         // Clean up pending timer on unmount.
         on_cleanup(move || {
             if let Some(handle) = timer_handle.get_value() {
@@ -106,28 +155,32 @@ pub fn RomList(system: String) -> impl IntoView {
     // Version bump to trigger re-fetch after delete/rename.
     let (version, set_version) = signal(0u32);
 
-    // First page — resolves during SSR.
+    // First page -- resolves during SSR.
     let first_page = Resource::new(
         move || {
             (
                 sys.get_value(),
                 debounced_search.get(),
                 hide_hacks.get(),
-                genre_filter.get(),
+                hide_translations.get(),
+                hide_betas.get(),
+                hide_clones.get(),
+                debounced_genre.get(),
                 version.get(),
             )
         },
-        move |(system, query, hh, gf, _)| {
-            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, gf)
+        move |(system, query, hh, ht, hb, hc, gf, _)| {
+            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf)
         },
     );
 
-    // When first page changes, reset extra roms and update has_more.
+    // When first page changes, reset extra roms and update has_more + is_arcade.
     Effect::new(move || {
         if let Some(Ok(page)) = first_page.get() {
             set_has_more.set(page.has_more);
             set_extra_roms.set(Vec::new());
             set_offset.set(PAGE_SIZE);
+            is_arcade.set(page.is_arcade);
         }
     });
 
@@ -141,10 +194,14 @@ pub fn RomList(system: String) -> impl IntoView {
         let query = debounced_search.get_untracked();
         let current_offset = offset.get_untracked();
         let hh = hide_hacks.get_untracked();
-        let gf = genre_filter.get_untracked();
+        let ht = hide_translations.get_untracked();
+        let hb = hide_betas.get_untracked();
+        let hc = hide_clones.get_untracked();
+        let gf = debounced_genre.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) =
-                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, gf).await
+                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, ht, hb, hc, gf)
+                    .await
             {
                 set_extra_roms.update(|roms| roms.extend(page.roms));
                 set_has_more.set(page.has_more);
@@ -198,55 +255,9 @@ pub fn RomList(system: String) -> impl IntoView {
         });
     }
 
-    // Derived: whether any filter from the global search is active.
-    let has_active_filters = move || {
-        hide_hacks.get() || !genre_filter.read().is_empty() || !debounced_search.read().is_empty()
-    };
-
-    // Clear individual filters by updating the signal and the URL query params.
-    let clear_search = move |_| {
-        search_input.set(String::new());
-        debounced_search.set(String::new());
-        #[cfg(feature = "hydrate")]
-        set_search_query.set(None);
-        update_filter_url_if_hydrate(
-            sys.get_value(),
-            hide_hacks.get_untracked(),
-            &genre_filter.get_untracked(),
-            "",
-        );
-    };
-    let clear_hide_hacks = move |_| {
-        hide_hacks.set(false);
-        update_filter_url_if_hydrate(
-            sys.get_value(),
-            false,
-            &genre_filter.get_untracked(),
-            &debounced_search.get_untracked(),
-        );
-    };
-    let clear_genre = move |_| {
-        genre_filter.set(String::new());
-        update_filter_url_if_hydrate(
-            sys.get_value(),
-            hide_hacks.get_untracked(),
-            "",
-            &debounced_search.get_untracked(),
-        );
-    };
-    let clear_all_filters = move |_| {
-        search_input.set(String::new());
-        debounced_search.set(String::new());
-        hide_hacks.set(false);
-        genre_filter.set(String::new());
-        #[cfg(feature = "hydrate")]
-        set_search_query.set(None);
-        update_filter_url_if_hydrate(sys.get_value(), false, "", "");
-    };
-
-    // The search bar is rendered outside the Suspense/Transition block so that the
-    // input element is never recreated when search results update, which preserves
-    // keyboard focus while typing.
+    // The search bar and filter bar are rendered outside the Suspense/Transition block
+    // so that the input element is never recreated when search results update, which
+    // preserves keyboard focus while typing.
     view! {
         <div class="search-bar">
             <input
@@ -257,45 +268,82 @@ pub fn RomList(system: String) -> impl IntoView {
                 on:input=move |ev| search_input.set(event_target_value(&ev))
             />
         </div>
-        <Show when=has_active_filters>
-            <div class="active-filters">
-                <Show when=move || !debounced_search.read().is_empty()>
-                    <button class="filter-chip filter-chip-active" on:click=clear_search>
-                        {move || format!(
-                            "{}: {}",
-                            t(i18n.locale.get(), "filter.active_search"),
-                            debounced_search.get()
-                        )}
-                        " \u{2715}"
-                    </button>
-                </Show>
-                <Show when=move || hide_hacks.get()>
-                    <button class="filter-chip filter-chip-active" on:click=clear_hide_hacks>
-                        {move || t(i18n.locale.get(), "filter.hide_hacks")}
-                        " \u{2715}"
-                    </button>
-                </Show>
-                <Show when=move || !genre_filter.read().is_empty()>
-                    <button class="filter-chip filter-chip-active" on:click=clear_genre>
-                        {move || format!(
-                            "{}: {}",
-                            t(i18n.locale.get(), "filter.genre"),
-                            genre_filter.get()
-                        )}
-                        " \u{2715}"
-                    </button>
-                </Show>
-                <button class="filter-chip filter-chip-clear" on:click=clear_all_filters>
-                    {move || t(i18n.locale.get(), "filter.clear_filters")}
+        <div class="search-filters rom-list-filters">
+            <button
+                class=move || {
+                    if hide_hacks.get() {
+                        "filter-chip filter-chip-active"
+                    } else {
+                        "filter-chip"
+                    }
+                }
+                on:click=move |_| hide_hacks.update(|v| *v = !*v)
+            >
+                {move || t(i18n.locale.get(), "filter.hide_hacks")}
+                {move || if hide_hacks.get() { " \u{2715}" } else { "" }}
+            </button>
+
+            <button
+                class=move || {
+                    if hide_translations.get() {
+                        "filter-chip filter-chip-active"
+                    } else {
+                        "filter-chip"
+                    }
+                }
+                on:click=move |_| hide_translations.update(|v| *v = !*v)
+            >
+                {move || t(i18n.locale.get(), "filter.hide_translations")}
+                {move || if hide_translations.get() { " \u{2715}" } else { "" }}
+            </button>
+
+            <button
+                class=move || {
+                    if hide_betas.get() {
+                        "filter-chip filter-chip-active"
+                    } else {
+                        "filter-chip"
+                    }
+                }
+                on:click=move |_| hide_betas.update(|v| *v = !*v)
+            >
+                {move || t(i18n.locale.get(), "filter.hide_betas")}
+                {move || if hide_betas.get() { " \u{2715}" } else { "" }}
+            </button>
+
+            <Show when=move || is_arcade.get()>
+                <button
+                    class=move || {
+                        if hide_clones.get() {
+                            "filter-chip filter-chip-active"
+                        } else {
+                            "filter-chip"
+                        }
+                    }
+                    on:click=move |_| hide_clones.update(|v| *v = !*v)
+                >
+                    {move || t(i18n.locale.get(), "filter.hide_clones")}
+                    {move || if hide_clones.get() { " \u{2715}" } else { "" }}
                 </button>
-            </div>
-        </Show>
+            </Show>
+
+            {move || {
+                genres_resource.get().and_then(|res| res.ok()).map(|genre_list| {
+                    if genre_list.is_empty() {
+                        None
+                    } else {
+                        Some(view! { <GenreDropdown genre=genre_filter genre_list /> })
+                    }
+                }).flatten()
+            }}
+        </div>
         <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "games.loading_roms")}</div> }>
             {move || Suspend::new(async move {
                 let locale = i18n.locale.get();
                 match first_page.await {
                     Ok(page) => {
                         set_has_more.set(page.has_more);
+                        is_arcade.set(page.is_arcade);
                         let total = page.total;
                         let first_page_len = page.roms.len();
                         let display_name = page.system_display.clone();
@@ -368,6 +416,29 @@ pub fn RomList(system: String) -> impl IntoView {
                 }
             })}
         </Transition>
+    }
+}
+
+/// Genre dropdown filter for ROM list.
+#[component]
+fn GenreDropdown(genre: RwSignal<String>, genre_list: Vec<String>) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <select
+            class="filter-genre-select"
+            on:change=move |ev| genre.set(event_target_value(&ev))
+            prop:value=move || genre.get()
+        >
+            <option value="">{move || t(i18n.locale.get(), "filter.genre_all")}</option>
+            {genre_list
+                .into_iter()
+                .map(|g| {
+                    let g2 = g.clone();
+                    view! { <option value=g>{g2}</option> }
+                })
+                .collect::<Vec<_>>()}
+        </select>
     }
 }
 
@@ -560,9 +631,17 @@ fn DeleteConfirm(
 }
 
 /// Update the URL query params for the ROM list page (replace, no navigation).
-/// Keeps `search`, `hide_hacks`, and `genre` in sync with the current filter state.
+/// Keeps all filter state in sync with the URL.
 #[cfg(feature = "hydrate")]
-fn update_filter_url(system: String, hide_hacks: bool, genre: &str, search: &str) {
+fn update_filter_url(
+    system: String,
+    hide_hacks: bool,
+    hide_translations: bool,
+    hide_betas: bool,
+    hide_clones: bool,
+    genre: &str,
+    search: &str,
+) {
     if let Some(window) = web_sys::window() {
         let mut params = Vec::new();
         if !search.is_empty() {
@@ -570,6 +649,15 @@ fn update_filter_url(system: String, hide_hacks: bool, genre: &str, search: &str
         }
         if hide_hacks {
             params.push("hide_hacks=true".to_string());
+        }
+        if hide_translations {
+            params.push("hide_translations=true".to_string());
+        }
+        if hide_betas {
+            params.push("hide_betas=true".to_string());
+        }
+        if hide_clones {
+            params.push("hide_clones=true".to_string());
         }
         if !genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(genre)));
@@ -584,11 +672,4 @@ fn update_filter_url(system: String, hide_hacks: bool, genre: &str, search: &str
             .history()
             .and_then(|h| h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url)));
     }
-}
-
-/// Wrapper that compiles on both targets.
-#[allow(unused_variables)]
-fn update_filter_url_if_hydrate(system: String, hide_hacks: bool, genre: &str, search: &str) {
-    #[cfg(feature = "hydrate")]
-    update_filter_url(system, hide_hacks, genre, search);
 }

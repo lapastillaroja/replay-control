@@ -60,6 +60,10 @@ pub fn SearchPage() -> impl IntoView {
     let debounced_genre = RwSignal::new(initial_genre);
 
     // Recent searches (client-side, loaded from localStorage).
+    // Initialize synchronously during hydrate to avoid empty flash.
+    #[cfg(feature = "hydrate")]
+    let recent_searches: RwSignal<Vec<String>> = RwSignal::new(load_recent_searches());
+    #[cfg(not(feature = "hydrate"))]
     let recent_searches: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
 
     // Random game navigation state.
@@ -72,12 +76,6 @@ pub fn SearchPage() -> impl IntoView {
     #[cfg(feature = "hydrate")]
     {
         use wasm_bindgen::prelude::*;
-
-        // Load recent searches from localStorage on mount.
-        Effect::new(move || {
-            let loaded = load_recent_searches();
-            recent_searches.set(loaded);
-        });
 
         let timer_handle: StoredValue<Option<i32>> = StoredValue::new(None);
         Effect::new(move || {

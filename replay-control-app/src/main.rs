@@ -119,6 +119,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameVideos>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GlobalSearch>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetAllGenres>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemGenres>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RandomGame>();
 
         let leptos_options = LeptosOptions::builder()

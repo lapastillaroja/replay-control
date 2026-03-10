@@ -302,6 +302,34 @@ fn enrich_from_metadata_cache(info: &mut GameInfo) {
     }
 }
 
+/// Resolve a box art URL for a ROM, checking metadata DB first, then filesystem.
+#[cfg(feature = "ssr")]
+fn resolve_box_art_url(
+    state: &crate::api::AppState,
+    system: &str,
+    rom_filename: &str,
+) -> Option<String> {
+    // 1. Try metadata DB
+    if let Some(guard) = state.metadata_db() {
+        if let Some(db) = guard.as_ref() {
+            if let Ok(Some(meta)) = db.lookup(system, rom_filename) {
+                if let Some(ref path) = meta.box_art_path {
+                    return Some(format!("/media/{system}/{path}"));
+                }
+            }
+        }
+    }
+    // 2. Filesystem fallback
+    let storage = state.storage();
+    let media_base = storage
+        .root
+        .join(replay_control_core::metadata_db::RC_DIR)
+        .join("media")
+        .join(system);
+    find_image_on_disk(&media_base, "boxart", rom_filename)
+        .map(|path| format!("/media/{system}/{path}"))
+}
+
 /// Try to find an image file on disk for a ROM, checking exact and fuzzy name matches.
 /// Skips broken files (< 200 bytes) that are git fake-symlink artifacts.
 #[cfg(feature = "ssr")]
@@ -430,6 +458,22 @@ pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     Ok(state.cache.get_systems(&state.storage()))
 }
 
+/// A recent entry enriched with box art URL for the home page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentWithArt {
+    #[serde(flatten)]
+    pub entry: RecentEntry,
+    pub box_art_url: Option<String>,
+}
+
+/// A favorite enriched with box art URL.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FavoriteWithArt {
+    #[serde(flatten)]
+    pub fav: Favorite,
+    pub box_art_url: Option<String>,
+}
+
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomPage {
@@ -439,6 +483,9 @@ pub struct RomPage {
     /// Human-readable system name (e.g., "Arcade (Atomiswave/Naomi)")
     #[serde(default)]
     pub system_display: String,
+    /// Whether this system is an arcade system (for clone filter visibility).
+    #[serde(default)]
+    pub is_arcade: bool,
 }
 
 /// Compute a relevance score for a ROM against a search query.
@@ -505,28 +552,56 @@ pub async fn get_roms_page(
     #[server(default)]
     hide_hacks: bool,
     #[server(default)]
+    hide_translations: bool,
+    #[server(default)]
+    hide_betas: bool,
+    #[server(default)]
+    hide_clones: bool,
+    #[server(default)]
     genre: String,
 ) -> Result<RomPage, ServerFnError> {
     use replay_control_core::rom_tags;
+    use replay_control_core::systems::{self as sys_db, SystemCategory};
 
     let state = expect_context::<crate::api::AppState>();
-    let system_display = replay_control_core::systems::find_system(&system)
+    let sys_info = sys_db::find_system(&system);
+    let system_display = sys_info
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| system.clone());
+    let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
     let storage = state.storage();
     let all_roms = state
         .cache
         .get_roms(&storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Apply hack and genre filters before search scoring.
+    // Apply tier-based, clone, and genre filters before search scoring.
     let pre_filtered: Vec<RomEntry> = all_roms
         .into_iter()
         .filter(|r| {
-            if hide_hacks {
+            if hide_hacks || hide_translations || hide_betas {
                 let (tier, _) = rom_tags::classify(&r.game.rom_filename);
-                if tier == rom_tags::RomTier::Hack {
+                if hide_hacks && tier == rom_tags::RomTier::Hack {
                     return false;
+                }
+                if hide_translations && tier == rom_tags::RomTier::Translation {
+                    return false;
+                }
+                if hide_betas && tier == rom_tags::RomTier::PreRelease {
+                    return false;
+                }
+            }
+            if hide_clones && is_arcade {
+                use replay_control_core::arcade_db;
+                let stem = r
+                    .game
+                    .rom_filename
+                    .strip_suffix(".zip")
+                    .unwrap_or(&r.game.rom_filename);
+                if let Some(info) = arcade_db::lookup_arcade_game(stem) {
+                    if info.is_clone {
+                        return false;
+                    }
                 }
             }
             true
@@ -566,15 +641,9 @@ pub async fn get_roms_page(
 
     replay_control_core::roms::mark_favorites(&storage, &system, &mut roms);
 
-    // Populate box art URLs for the returned page (only for the visible ROMs).
-    let media_base = storage
-        .root
-        .join(replay_control_core::metadata_db::RC_DIR)
-        .join("media")
-        .join(&system);
+    // Populate box art URLs.
     for rom in &mut roms {
-        rom.box_art_url = find_image_on_disk(&media_base, "boxart", &rom.game.rom_filename)
-            .map(|path| format!("/media/{system}/{path}"));
+        rom.box_art_url = resolve_box_art_url(&state, &system, &rom.game.rom_filename);
     }
 
     Ok(RomPage {
@@ -582,21 +651,44 @@ pub async fn get_roms_page(
         total,
         has_more,
         system_display,
+        is_arcade,
     })
 }
 
 #[server(prefix = "/sfn")]
-pub async fn get_favorites() -> Result<Vec<Favorite>, ServerFnError> {
+pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::favorites::list_favorites(&state.storage())
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    let favs = replay_control_core::favorites::list_favorites(&state.storage())
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(favs
+        .into_iter()
+        .map(|fav| {
+            let box_art_url = resolve_box_art_url(&state, &fav.game.system, &fav.game.rom_filename);
+            FavoriteWithArt { fav, box_art_url }
+        })
+        .collect())
 }
 
 #[server(prefix = "/sfn")]
-pub async fn get_recents() -> Result<Vec<RecentEntry>, ServerFnError> {
+pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::recents::list_recents(&state.storage())
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    let storage = state.storage();
+    let entries = replay_control_core::recents::list_recents(&storage)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let enriched = entries
+        .into_iter()
+        .map(|entry| {
+            let box_art_url =
+                resolve_box_art_url(&state, &entry.game.system, &entry.game.rom_filename);
+            RecentWithArt {
+                entry,
+                box_art_url,
+            }
+        })
+        .collect();
+
+    Ok(enriched)
 }
 
 #[server(prefix = "/sfn")]
@@ -639,10 +731,17 @@ pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
 }
 
 #[server(prefix = "/sfn")]
-pub async fn get_system_favorites(system: String) -> Result<Vec<Favorite>, ServerFnError> {
+pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    let favs = replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(favs
+        .into_iter()
+        .map(|fav| {
+            let box_art_url = resolve_box_art_url(&state, &fav.game.system, &fav.game.rom_filename);
+            FavoriteWithArt { fav, box_art_url }
+        })
+        .collect())
 }
 
 #[server(prefix = "/sfn")]
@@ -1608,6 +1707,29 @@ pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
             if !g.is_empty() {
                 genres.insert(g);
             }
+        }
+    }
+
+    Ok(genres.into_iter().collect())
+}
+
+/// Get genres available for a specific system.
+#[server(prefix = "/sfn")]
+pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnError> {
+    use std::collections::BTreeSet;
+
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let roms = state
+        .cache
+        .get_roms(&storage, &system)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let mut genres = BTreeSet::new();
+    for rom in &roms {
+        let g = lookup_genre(&system, &rom.game.rom_filename);
+        if !g.is_empty() {
+            genres.insert(g);
         }
     }
 
