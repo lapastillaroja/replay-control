@@ -195,6 +195,8 @@ pub fn import_launchbox(
                     },
                     source: "launchbox".to_string(),
                     fetched_at: now,
+                    box_art_path: None,
+                    screenshot_path: None,
                 };
                 batch.push((system_folder.to_string(), filename.clone(), meta));
             }
@@ -313,6 +315,63 @@ fn parse_xml<R: BufRead>(
     }
 
     Ok(())
+}
+
+/// The LaunchBox metadata download URL.
+const METADATA_URL: &str = "https://gamesdb.launchbox-app.com/Metadata.zip";
+
+/// Download LaunchBox Metadata.zip and extract Metadata.xml to the given directory.
+///
+/// Uses `curl` for download and `unzip` for extraction (available on all targets).
+/// Returns the path to the extracted Metadata.xml.
+pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
+    std::fs::create_dir_all(dest_dir)
+        .map_err(|e| Error::Other(format!("Cannot create directory {}: {e}", dest_dir.display())))?;
+
+    let zip_path = dest_dir.join("Metadata.zip");
+    let xml_path = dest_dir.join("Metadata.xml");
+
+    // Download with curl.
+    tracing::info!("Downloading LaunchBox metadata from {METADATA_URL}");
+    let output = std::process::Command::new("curl")
+        .args(["-fSL", "-o"])
+        .arg(&zip_path)
+        .arg(METADATA_URL)
+        .output()
+        .map_err(|e| Error::Other(format!("Failed to run curl: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Clean up partial download.
+        let _ = std::fs::remove_file(&zip_path);
+        return Err(Error::Other(format!("Download failed: {stderr}")));
+    }
+
+    // Extract just Metadata.xml from the zip.
+    tracing::info!("Extracting Metadata.xml from {}", zip_path.display());
+    let output = std::process::Command::new("unzip")
+        .args(["-o", "-j"]) // overwrite, junk paths
+        .arg(&zip_path)
+        .arg("Metadata.xml")
+        .arg("-d")
+        .arg(dest_dir)
+        .output()
+        .map_err(|e| Error::Other(format!("Failed to run unzip: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::Other(format!("Extraction failed: {stderr}")));
+    }
+
+    // Remove the zip to save space.
+    let _ = std::fs::remove_file(&zip_path);
+
+    if !xml_path.exists() {
+        return Err(Error::Other("Metadata.xml not found in archive".to_string()));
+    }
+
+    tracing::info!("Metadata.xml extracted to {}", xml_path.display());
+    Ok(xml_path)
 }
 
 /// Build a ROM index from the filesystem: maps `(system_folder, normalized_title)` → `[rom_filename]`.

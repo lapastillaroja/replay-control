@@ -16,6 +16,10 @@ tracing = { workspace = true }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 quick-xml = { version = "0.37", optional = true }
 
+[[bin]]
+name = "metadata_report"
+required-features = ["metadata"]
+
 [build-dependencies]
 csv = "1"
 phf_codegen = "0.11"

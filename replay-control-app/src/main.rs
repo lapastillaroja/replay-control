@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 #[cfg(feature = "ssr")]
 mod ssr {
     use axum::Router;
@@ -92,8 +94,16 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportLaunchboxMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearMetadata>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RegenerateMetadata>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImportProgress>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemCoverage>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportSystemImages>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportAllImages>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageImportProgress>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageCoverage>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageStats>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
@@ -127,8 +137,55 @@ mod ssr {
 
         let site_root = cli.site_root.clone();
 
+        // Media handler: serves images from <storage>/.replay-control/media/<system>/<kind>/<file>
+        let media_state = app_state.clone();
+        let media_handler = axum::routing::get(
+            move |axum::extract::Path(path): axum::extract::Path<String>| {
+                let state = media_state.clone();
+                async move {
+                    use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
+
+                    // Prevent path traversal.
+                    if path.contains("..") {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+
+                    let storage = state.storage();
+                    let file_path = storage
+                        .root
+                        .join(replay_control_core::metadata_db::RC_DIR)
+                        .join("media")
+                        .join(&path);
+
+                    match tokio::fs::read(&file_path).await {
+                        Ok(data) => {
+                            let content_type = if path.ends_with(".png") {
+                                "image/png"
+                            } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+                                "image/jpeg"
+                            } else {
+                                "application/octet-stream"
+                            };
+                            (
+                                StatusCode::OK,
+                                [
+                                    ("content-type", content_type),
+                                    ("cache-control", "public, max-age=86400"),
+                                ],
+                                data,
+                            )
+                                .into_response()
+                        }
+                        Err(_) => StatusCode::NOT_FOUND.into_response(),
+                    }
+                }
+            },
+        );
+
         let app = Router::new()
             .nest("/api", api_routes)
+            .route("/media/*path", media_handler)
             .route(
                 "/sfn/*fn_name",
                 axum::routing::post(

@@ -15,6 +15,7 @@ const DB_FILE: &str = "metadata.db";
 /// State of a metadata import operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ImportState {
+    Downloading,
     BuildingIndex,
     Parsing,
     Complete,
@@ -49,6 +50,8 @@ pub struct GameMetadata {
     pub publisher: Option<String>,
     pub source: String,
     pub fetched_at: i64,
+    pub box_art_path: Option<String>,
+    pub screenshot_path: Option<String>,
 }
 
 /// Import statistics.
@@ -130,7 +133,7 @@ impl MetadataDb {
         Ok(conn)
     }
 
-    /// Create tables if they don't exist.
+    /// Create tables if they don't exist, and run migrations.
     fn init(&self) -> Result<()> {
         self.conn
             .execute_batch(
@@ -146,6 +149,15 @@ impl MetadataDb {
                 );",
             )
             .map_err(|e| Error::Other(format!("Failed to create metadata table: {e}")))?;
+
+        // Migration: add image path columns (idempotent — ignore "duplicate column" errors).
+        let _ = self
+            .conn
+            .execute_batch("ALTER TABLE game_metadata ADD COLUMN box_art_path TEXT;");
+        let _ = self
+            .conn
+            .execute_batch("ALTER TABLE game_metadata ADD COLUMN screenshot_path TEXT;");
+
         Ok(())
     }
 
@@ -154,7 +166,7 @@ impl MetadataDb {
         let result = self
             .conn
             .query_row(
-                "SELECT description, rating, publisher, source, fetched_at
+                "SELECT description, rating, publisher, source, fetched_at, box_art_path, screenshot_path
                  FROM game_metadata WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
                 |row| {
@@ -164,6 +176,8 @@ impl MetadataDb {
                         publisher: row.get(2)?,
                         source: row.get(3)?,
                         fetched_at: row.get(4)?,
+                        box_art_path: row.get(5)?,
+                        screenshot_path: row.get(6)?,
                     })
                 },
             )
@@ -325,6 +339,104 @@ impl MetadataDb {
             result.push(row);
         }
         Ok(result)
+    }
+
+    /// Bulk update image paths for games within a single transaction.
+    /// Each entry is `(system, rom_filename, box_art_path, screenshot_path)`.
+    pub fn bulk_update_image_paths(
+        &mut self,
+        entries: &[(String, String, Option<String>, Option<String>)],
+    ) -> Result<usize> {
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+
+        let mut count = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE game_metadata SET box_art_path = ?3, screenshot_path = ?4
+                     WHERE system = ?1 AND rom_filename = ?2",
+                )
+                .map_err(|e| Error::Other(format!("Prepare failed: {e}")))?;
+
+            // Also prepare an INSERT for games that might not have a metadata row yet.
+            let mut insert_stmt = tx
+                .prepare(
+                    "INSERT OR IGNORE INTO game_metadata (system, rom_filename, source, fetched_at, box_art_path, screenshot_path)
+                     VALUES (?1, ?2, 'thumbnails', ?3, ?4, ?5)",
+                )
+                .map_err(|e| Error::Other(format!("Prepare insert failed: {e}")))?;
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+
+            for (system, rom_filename, box_art, screenshot) in entries {
+                let updated = stmt
+                    .execute(params![system, rom_filename, box_art, screenshot])
+                    .map_err(|e| Error::Other(format!("Image path update failed: {e}")))?;
+                if updated == 0 {
+                    // No existing row — insert a minimal one with image paths.
+                    insert_stmt
+                        .execute(params![system, rom_filename, now, box_art, screenshot])
+                        .map_err(|e| Error::Other(format!("Image path insert failed: {e}")))?;
+                }
+                count += 1;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(count)
+    }
+
+    /// Count entries that have image paths.
+    pub fn image_stats(&self) -> Result<(usize, usize)> {
+        let with_boxart: usize = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM game_metadata WHERE box_art_path IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Image stats query failed: {e}")))?;
+        let with_screenshot: usize = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM game_metadata WHERE screenshot_path IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Image stats query failed: {e}")))?;
+        Ok((with_boxart, with_screenshot))
+    }
+
+    /// Count image entries per system.
+    pub fn images_per_system(&self) -> Result<Vec<(String, usize, usize)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system,
+                        SUM(CASE WHEN box_art_path IS NOT NULL THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN screenshot_path IS NOT NULL THEN 1 ELSE 0 END)
+                 FROM game_metadata GROUP BY system",
+            )
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, usize>(1)?,
+                    row.get::<_, usize>(2)?,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+
+        Ok(rows.flatten().collect())
     }
 
     /// Get path to the database file.

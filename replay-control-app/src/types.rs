@@ -78,6 +78,7 @@ pub struct MetadataStats {
 /// Mirror of `replay_control_core::metadata_db::ImportState` for WASM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImportState {
+    Downloading,
     BuildingIndex,
     Parsing,
     Complete,
@@ -103,4 +104,5 @@ pub struct SystemCoverage {
     pub total_games: usize,
     pub with_metadata: usize,
 }
+
 

@@ -41,6 +41,10 @@ pub struct GameInfo {
     pub description: Option<String>,
     pub rating: Option<f32>,
     pub publisher: Option<String>,
+
+    // --- Image URLs (relative paths under /media/) ---
+    pub box_art_url: Option<String>,
+    pub screenshot_url: Option<String>,
 }
 
 /// System info returned by get_info server function.
@@ -131,6 +135,8 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
                     description: None,
                     rating: None,
                     publisher: None,
+                    box_art_url: None,
+                    screenshot_url: None,
                 }
             }
             None => GameInfo {
@@ -152,6 +158,8 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
                 description: None,
                 rating: None,
                 publisher: None,
+                box_art_url: None,
+                screenshot_url: None,
             },
         }
     } else {
@@ -171,7 +179,16 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
         } else if let Some(dn) = game_db::game_display_name(system, rom_filename) {
             rom_tags::display_name_with_tags(dn, rom_filename)
         } else {
-            rom_filename.to_string()
+            // No DB match — derive a clean display name from the filename.
+            // Strip extension and parenthesized/bracketed tags for the base name,
+            // then let display_name_with_tags re-append the useful tags.
+            let stem = rom_filename.rfind('.').map(|i| &rom_filename[..i]).unwrap_or(rom_filename);
+            let base = stem.find(" (")
+                .or_else(|| stem.find(" ["))
+                .map(|i| stem[..i].trim())
+                .unwrap_or(stem);
+            let name = if base.is_empty() { stem } else { base };
+            rom_tags::display_name_with_tags(name, rom_filename)
         };
 
         // For metadata, also try normalized title fallback
@@ -215,6 +232,8 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
             description: None,
             rating: None,
             publisher: None,
+            box_art_url: None,
+            screenshot_url: None,
         }
     };
 
@@ -237,6 +256,12 @@ fn enrich_from_metadata_cache(info: &mut GameInfo) {
                     if meta.publisher.is_some() {
                         info.publisher = meta.publisher;
                     }
+                    if let Some(ref path) = meta.box_art_path {
+                        info.box_art_url = Some(format!("/media/{}/{path}", info.system));
+                    }
+                    if let Some(ref path) = meta.screenshot_path {
+                        info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+                    }
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -245,6 +270,76 @@ fn enrich_from_metadata_cache(info: &mut GameInfo) {
             }
         }
     }
+
+    // Filesystem fallback: if no image URLs from DB, check if images exist on disk.
+    // This handles the case where images were downloaded but the DB was cleared/regenerated.
+    if info.box_art_url.is_none() || info.screenshot_url.is_none() {
+        let storage = state.storage();
+        let media_base = storage.root
+            .join(replay_control_core::metadata_db::RC_DIR)
+            .join("media")
+            .join(&info.system);
+
+        if info.box_art_url.is_none() {
+            if let Some(path) = find_image_on_disk(&media_base, "boxart", &info.rom_filename) {
+                info.box_art_url = Some(format!("/media/{}/{path}", info.system));
+            }
+        }
+        if info.screenshot_url.is_none() {
+            if let Some(path) = find_image_on_disk(&media_base, "snap", &info.rom_filename) {
+                info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+            }
+        }
+    }
+}
+
+/// Try to find an image file on disk for a ROM, checking exact and fuzzy name matches.
+#[cfg(feature = "ssr")]
+fn find_image_on_disk(media_base: &std::path::Path, kind: &str, rom_filename: &str) -> Option<String> {
+    use replay_control_core::thumbnails::thumbnail_filename;
+
+    let kind_dir = media_base.join(kind);
+    if !kind_dir.exists() {
+        return None;
+    }
+
+    let stem = rom_filename.rfind('.').map(|i| &rom_filename[..i]).unwrap_or(rom_filename);
+    let thumb_name = thumbnail_filename(stem);
+
+    // 1. Exact match
+    let exact = kind_dir.join(format!("{thumb_name}.png"));
+    if exact.exists() {
+        return Some(format!("{kind}/{thumb_name}.png"));
+    }
+
+    // 2. Fuzzy match: strip parenthesized tags from ROM stem and look for
+    //    an image whose stripped name matches.
+    let stripped = stem.find(" (")
+        .or_else(|| stem.find(" ["))
+        .map(|i| &stem[..i])
+        .unwrap_or(stem)
+        .trim()
+        .to_lowercase();
+
+    if let Ok(entries) = std::fs::read_dir(&kind_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if let Some(img_stem) = name.strip_suffix(".png") {
+                let img_stripped = img_stem.find(" (")
+                    .or_else(|| img_stem.find(" ["))
+                    .map(|i| &img_stem[..i])
+                    .unwrap_or(img_stem)
+                    .trim()
+                    .to_lowercase();
+                if img_stripped == stripped {
+                    return Some(format!("{kind}/{name}"));
+                }
+            }
+        }
+    }
+
+    None
 }
 
 #[server(prefix = "/sfn")]
@@ -851,4 +946,154 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
     let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
     db.clear().map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+/// Clear metadata DB and trigger re-import from Metadata.xml.
+/// The import runs in the background; poll `get_import_progress` for status.
+#[server(prefix = "/sfn")]
+pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    state.regenerate_metadata().map_err(ServerFnError::new)
+}
+
+/// Download LaunchBox metadata from the internet, extract, and import.
+/// The entire process runs in the background; poll `get_import_progress` for status.
+#[server(prefix = "/sfn")]
+pub async fn download_metadata() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.start_metadata_download() {
+        return Err(ServerFnError::new("A metadata operation is already running"));
+    }
+    Ok(())
+}
+
+// ── Image management ──────────────────────────────────────────────
+
+/// Image import progress.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageImportProgress {
+    pub state: ImageImportState,
+    pub system: String,
+    pub system_display: String,
+    pub processed: usize,
+    pub total: usize,
+    pub boxart_copied: usize,
+    pub snap_copied: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+    /// For "download all": which system number we're on (1-based).
+    pub current_system: usize,
+    /// For "download all": total number of systems to process.
+    pub total_systems: usize,
+}
+
+/// Image import state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImageImportState {
+    Cloning,
+    Copying,
+    Complete,
+    Failed,
+}
+
+/// Image coverage per system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageCoverage {
+    pub system: String,
+    pub display_name: String,
+    pub total_games: usize,
+    pub with_boxart: usize,
+    pub with_snap: usize,
+    pub has_repo: bool,
+}
+
+/// Start downloading and importing images for a system.
+#[server(prefix = "/sfn")]
+pub async fn import_system_images(system: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.start_image_import(system.clone()) {
+        return Err(ServerFnError::new("An image import is already running"));
+    }
+    Ok(())
+}
+
+/// Start downloading images for all supported systems sequentially.
+#[server(prefix = "/sfn")]
+pub async fn import_all_images() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.start_all_images_import() {
+        return Err(ServerFnError::new("An image import is already running"));
+    }
+    Ok(())
+}
+
+/// Get current image import progress.
+#[server(prefix = "/sfn")]
+pub async fn get_image_import_progress() -> Result<Option<ImageImportProgress>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let guard = state.image_import_progress.read().expect("image_import_progress lock poisoned");
+    Ok(guard.clone())
+}
+
+/// Get image coverage per system.
+#[server(prefix = "/sfn")]
+pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+
+    let images_per_system = {
+        let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+        let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+        db.images_per_system().map_err(|e| ServerFnError::new(e.to_string()))?
+    };
+
+    let storage = state.storage();
+    let systems = state.cache.get_systems(&storage);
+
+    let mut img_map: std::collections::HashMap<String, (usize, usize)> = images_per_system
+        .into_iter()
+        .map(|(s, b, sn)| (s, (b, sn)))
+        .collect();
+
+    let mut coverage: Vec<ImageCoverage> = systems
+        .into_iter()
+        .filter(|s| s.game_count > 0)
+        .map(|s| {
+            let (with_boxart, with_snap) = img_map.remove(&s.folder_name).unwrap_or((0, 0));
+            let has_repo = replay_control_core::thumbnails::thumbnail_repo_name(&s.folder_name).is_some();
+            ImageCoverage {
+                system: s.folder_name,
+                display_name: s.display_name,
+                total_games: s.game_count,
+                with_boxart,
+                with_snap,
+                has_repo,
+            }
+        })
+        .collect();
+
+    coverage.sort_by(|a, b| (b.with_boxart + b.with_snap).cmp(&(a.with_boxart + a.with_snap)));
+    Ok(coverage)
+}
+
+/// Get image stats.
+#[server(prefix = "/sfn")]
+pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let (with_boxart, with_snap) = {
+        let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+        let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+        db.image_stats().map_err(|e| ServerFnError::new(e.to_string()))?
+    };
+    let storage = state.storage();
+    let media_size = replay_control_core::thumbnails::media_dir_size(&storage.root);
+    Ok((with_boxart, with_snap, media_size))
+}
+
+/// Clear all images.
+#[server(prefix = "/sfn")]
+pub async fn clear_images() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    replay_control_core::thumbnails::clear_media(&storage.root)
+        .map_err(|e| ServerFnError::new(e.to_string()))
 }

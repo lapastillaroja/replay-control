@@ -153,6 +153,10 @@ a, a:visited, a:hover, a:active {
     margin-bottom: 24px;
 }
 
+.metadata-page .section {
+    margin-bottom: 32px;
+}
+
 .section-title {
     font-size: 0.85rem;
     font-weight: 600;
@@ -961,6 +965,73 @@ select.form-input option {
     word-break: break-word;
 }
 
+.game-cover-img {
+    max-width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+    border-radius: var(--radius);
+}
+
+.game-screenshots {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 4px 0;
+}
+
+.game-screenshot-img {
+    max-width: 100%;
+    max-height: 240px;
+    object-fit: contain;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+
+.metadata-download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 10px 20px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.metadata-download-btn:hover {
+    background: var(--accent-hover);
+}
+
+.metadata-download-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.image-systems-grid {
+    margin-top: 16px;
+}
+
+.image-system-row .info-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.image-download-btn {
+    font-size: 0.8rem;
+    padding: 4px 12px;
+}
+
+.image-count-none {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
 .game-meta-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -1015,7 +1086,56 @@ select.form-input option {
     white-space: pre-line;
 }
 
+/* Settings hints and feedback */
+.settings-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.settings-saved {
+    font-size: 0.85rem;
+    color: var(--success);
+    margin-top: 8px;
+}
+
 /* Metadata management page */
+.manage-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+@media (min-width: 600px) {
+    .manage-actions {
+        flex-direction: row;
+    }
+    .manage-actions > .manage-action-card {
+        flex: 1;
+    }
+}
+
+.manage-action-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+}
+
+.manage-action-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    line-height: 1.5;
+}
+
+.manage-action-result {
+    font-size: 0.85rem;
+    color: var(--success);
+    margin-top: 8px;
+}
+
 .metadata-import-form {
     display: flex;
     flex-direction: column;
@@ -1034,6 +1154,59 @@ select.form-input option {
         width: auto;
         white-space: nowrap;
     }
+}
+
+/* Auto-import hint — prominent callout */
+.auto-import-hint {
+    font-size: 0.85rem;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+/* Manual import collapsible toggle */
+.manual-import-toggle {
+    margin-top: 4px;
+}
+
+.manual-import-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.2s;
+}
+
+.manual-import-btn:hover {
+    color: var(--text);
+}
+
+.manual-import-chevron {
+    display: inline-block;
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+}
+
+.manual-import-chevron.open {
+    transform: rotate(90deg);
+}
+
+.manual-import-panel {
+    margin-top: 8px;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
 }
 
 .import-progress {

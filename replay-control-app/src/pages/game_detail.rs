@@ -98,6 +98,12 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let has_publisher = game.publisher.as_ref().is_some_and(|p| !p.is_empty());
     let publisher = StoredValue::new(game.publisher.clone().unwrap_or_default());
 
+    // Images
+    let box_art_url = StoredValue::new(game.box_art_url.clone());
+    let has_box_art = game.box_art_url.is_some();
+    let screenshot_url = StoredValue::new(game.screenshot_url.clone());
+    let has_screenshot = game.screenshot_url.is_some();
+
     // Delete confirmation state
     let confirming_delete = RwSignal::new(false);
 
@@ -151,7 +157,11 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         // Hero / Cover Art
         <section class="section">
             <div class="game-cover">
-                <span class="game-cover-text">{game_name_sv.get_value()}</span>
+                <Show when=move || has_box_art
+                    fallback=move || view! { <span class="game-cover-text">{game_name_sv.get_value()}</span> }
+                >
+                    <img class="game-cover-img" src=box_art_url.get_value() alt=game_name_sv.get_value() />
+                </Show>
             </div>
         </section>
 
@@ -263,7 +273,13 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         // Screenshots Gallery
         <section class="section game-section">
             <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.screenshots")}</h2>
-            <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_screenshots")}</p>
+            <Show when=move || has_screenshot
+                fallback=move || view! { <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_screenshots")}</p> }
+            >
+                <div class="game-screenshots">
+                    <img class="game-screenshot-img" src=screenshot_url.get_value() alt="Screenshot" />
+                </div>
+            </Show>
         </section>
 
         // Videos

@@ -8,6 +8,8 @@ pub mod game_ref;
 pub mod launchbox;
 #[cfg(feature = "metadata")]
 pub mod metadata_db;
+#[cfg(feature = "metadata")]
+pub mod thumbnails;
 pub mod recents;
 pub mod rom_tags;
 pub mod roms;

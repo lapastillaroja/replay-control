@@ -135,6 +135,8 @@ pub struct AppState {
     metadata_db: Arc<std::sync::Mutex<Option<replay_control_core::metadata_db::MetadataDb>>>,
     /// Progress of the current metadata import (None = no import running).
     pub import_progress: Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
+    /// Progress of the current image import (None = no import running).
+    pub image_import_progress: Arc<std::sync::RwLock<Option<crate::server_fns::ImageImportProgress>>>,
 }
 
 impl AppState {
@@ -194,6 +196,7 @@ impl AppState {
             skin_override: Arc::new(std::sync::RwLock::new(None)),
             metadata_db: Arc::new(std::sync::Mutex::new(None)),
             import_progress: Arc::new(std::sync::RwLock::new(None)),
+            image_import_progress: Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -309,7 +312,7 @@ impl AppState {
         {
             let guard = self.import_progress.read().expect("import_progress lock poisoned");
             if let Some(ref p) = *guard {
-                if p.state == ImportState::BuildingIndex || p.state == ImportState::Parsing {
+                if matches!(p.state, ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing) {
                     return false;
                 }
             }
@@ -331,87 +334,7 @@ impl AppState {
         let state = self.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            let storage_root = state.storage().root.clone();
-
-            // Build ROM index.
-            let rom_index = replay_control_core::launchbox::build_rom_index(&storage_root);
-
-            // Update progress to Parsing.
-            {
-                let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
-                if let Some(ref mut p) = *guard {
-                    p.state = ImportState::Parsing;
-                    p.elapsed_secs = start.elapsed().as_secs();
-                }
-            }
-
-            // Take DB from state (so we don't hold the mutex during import).
-            let db = {
-                let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-                guard.take()
-            };
-            let mut db = match db {
-                Some(db) => db,
-                None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
-                    Ok(db) => db,
-                    Err(e) => {
-                        let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
-                        if let Some(ref mut p) = *guard {
-                            p.state = ImportState::Failed;
-                            p.error = Some(format!("Cannot open metadata DB: {e}"));
-                            p.elapsed_secs = start.elapsed().as_secs();
-                        }
-                        return;
-                    }
-                },
-            };
-
-            let progress_ref = state.import_progress.clone();
-            let start_ref = start;
-            let result = replay_control_core::launchbox::import_launchbox(
-                &xml_path,
-                &mut db,
-                &rom_index,
-                |processed, matched, inserted| {
-                    let mut guard = progress_ref.write().expect("import_progress lock poisoned");
-                    if let Some(ref mut p) = *guard {
-                        p.processed = processed;
-                        p.matched = matched;
-                        p.inserted = inserted;
-                        p.elapsed_secs = start_ref.elapsed().as_secs();
-                    }
-                },
-            );
-
-            // Put DB back.
-            {
-                let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-                *guard = Some(db);
-            }
-
-            // Update final progress.
-            {
-                let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
-                match result {
-                    Ok(stats) => {
-                        *guard = Some(ImportProgress {
-                            state: ImportState::Complete,
-                            processed: stats.total_source,
-                            matched: stats.matched,
-                            inserted: stats.inserted,
-                            elapsed_secs: start.elapsed().as_secs(),
-                            error: None,
-                        });
-                    }
-                    Err(e) => {
-                        if let Some(ref mut p) = *guard {
-                            p.state = ImportState::Failed;
-                            p.error = Some(e.to_string());
-                            p.elapsed_secs = start.elapsed().as_secs();
-                        }
-                    }
-                }
-            }
+            state.run_import_blocking(xml_path, start);
         });
 
         true
@@ -448,6 +371,412 @@ impl AppState {
             );
             self.start_import(xml_path);
         }
+    }
+
+    /// Clear metadata DB and re-import from Metadata.xml if present.
+    /// Returns an error message if Metadata.xml is not found.
+    pub fn regenerate_metadata(&self) -> Result<(), String> {
+        use replay_control_core::metadata_db::RC_DIR;
+
+        // Clear existing metadata.
+        if let Some(guard) = self.metadata_db() {
+            if let Some(db) = guard.as_ref() {
+                db.clear().map_err(|e| e.to_string())?;
+            }
+        }
+
+        // Find Metadata.xml and trigger re-import.
+        let storage_root = self.storage().root.clone();
+        let xml_path = storage_root.join(RC_DIR).join("Metadata.xml");
+        if !xml_path.exists() {
+            return Err("No Metadata.xml found. Place it in the .replay-control folder to enable re-import.".to_string());
+        }
+
+        self.start_import(xml_path);
+        Ok(())
+    }
+
+    /// Download LaunchBox Metadata.zip, extract, clear DB, and re-import.
+    /// Runs entirely in a background thread. Returns false if an import is
+    /// already running.
+    pub fn start_metadata_download(&self) -> bool {
+        use replay_control_core::metadata_db::{ImportProgress, ImportState, RC_DIR};
+
+        // Check if already running.
+        {
+            let guard = self.import_progress.read().expect("import_progress lock poisoned");
+            if let Some(ref p) = *guard {
+                if matches!(p.state, ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing) {
+                    return false;
+                }
+            }
+        }
+
+        // Set initial progress to Downloading.
+        {
+            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            *guard = Some(ImportProgress {
+                state: ImportState::Downloading,
+                processed: 0,
+                matched: 0,
+                inserted: 0,
+                elapsed_secs: 0,
+                error: None,
+            });
+        }
+
+        let state = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let start = std::time::Instant::now();
+            let storage_root = state.storage().root.clone();
+            let rc_dir = storage_root.join(RC_DIR);
+
+            // Download and extract.
+            let xml_path = match replay_control_core::launchbox::download_metadata(&rc_dir) {
+                Ok(path) => path,
+                Err(e) => {
+                    let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
+                    if let Some(ref mut p) = *guard {
+                        p.state = ImportState::Failed;
+                        p.error = Some(format!("Download failed: {e}"));
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                    return;
+                }
+            };
+
+            // Clear existing metadata before re-import.
+            if let Some(guard) = state.metadata_db() {
+                if let Some(db) = guard.as_ref() {
+                    if let Err(e) = db.clear() {
+                        tracing::warn!("Failed to clear metadata DB before re-import: {e}");
+                    }
+                }
+            }
+
+            // Update elapsed before starting import.
+            {
+                let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
+                if let Some(ref mut p) = *guard {
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+            }
+
+            // Now run the import (this updates import_progress internally).
+            state.run_import_blocking(xml_path, start);
+        });
+
+        true
+    }
+
+    /// Run the metadata import synchronously (called from spawn_blocking).
+    /// Separated from start_import to allow reuse from start_metadata_download.
+    fn run_import_blocking(&self, xml_path: PathBuf, start: std::time::Instant) {
+        use replay_control_core::metadata_db::{ImportProgress, ImportState};
+
+        // Build ROM index.
+        let storage_root = self.storage().root.clone();
+        {
+            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            if let Some(ref mut p) = *guard {
+                p.state = ImportState::BuildingIndex;
+                p.elapsed_secs = start.elapsed().as_secs();
+            }
+        }
+
+        let rom_index = replay_control_core::launchbox::build_rom_index(&storage_root);
+
+        // Update progress to Parsing.
+        {
+            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            if let Some(ref mut p) = *guard {
+                p.state = ImportState::Parsing;
+                p.elapsed_secs = start.elapsed().as_secs();
+            }
+        }
+
+        // Take DB from state.
+        let db = {
+            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+            guard.take()
+        };
+        let mut db = match db {
+            Some(db) => db,
+            None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
+                Ok(db) => db,
+                Err(e) => {
+                    let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+                    if let Some(ref mut p) = *guard {
+                        p.state = ImportState::Failed;
+                        p.error = Some(format!("Cannot open metadata DB: {e}"));
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                    return;
+                }
+            },
+        };
+
+        let progress_ref = self.import_progress.clone();
+        let start_ref = start;
+        let result = replay_control_core::launchbox::import_launchbox(
+            &xml_path,
+            &mut db,
+            &rom_index,
+            |processed, matched, inserted| {
+                let mut guard = progress_ref.write().expect("import_progress lock poisoned");
+                if let Some(ref mut p) = *guard {
+                    p.processed = processed;
+                    p.matched = matched;
+                    p.inserted = inserted;
+                    p.elapsed_secs = start_ref.elapsed().as_secs();
+                }
+            },
+        );
+
+        // Put DB back.
+        {
+            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+            *guard = Some(db);
+        }
+
+        // Update final progress.
+        {
+            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            match result {
+                Ok(stats) => {
+                    *guard = Some(ImportProgress {
+                        state: ImportState::Complete,
+                        processed: stats.total_source,
+                        matched: stats.matched,
+                        inserted: stats.inserted,
+                        elapsed_secs: start.elapsed().as_secs(),
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    if let Some(ref mut p) = *guard {
+                        p.state = ImportState::Failed;
+                        p.error = Some(e.to_string());
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if an image import is already running.
+    fn is_image_import_running(&self) -> bool {
+        use crate::server_fns::ImageImportState;
+        let guard = self.image_import_progress.read().expect("image_import_progress lock poisoned");
+        guard.as_ref().is_some_and(|p| matches!(p.state, ImageImportState::Cloning | ImageImportState::Copying))
+    }
+
+    /// Import images for a single system (blocking, runs on current thread).
+    /// Updates `image_import_progress` as it goes. Returns the import result.
+    fn import_system_images_blocking(
+        &self,
+        system: &str,
+        current_system: usize,
+        total_systems: usize,
+        start: std::time::Instant,
+    ) {
+        use crate::server_fns::{ImageImportProgress, ImageImportState};
+
+        let system_display = replay_control_core::systems::find_system(system)
+            .map(|s| s.display_name.to_string())
+            .unwrap_or_else(|| system.to_string());
+
+        let repo_name = match replay_control_core::thumbnails::thumbnail_repo_name(system) {
+            Some(name) => name.to_string(),
+            None => {
+                tracing::warn!("No thumbnail repo for {system}, skipping");
+                return;
+            }
+        };
+
+        // Set cloning progress.
+        {
+            let mut guard = self.image_import_progress.write().expect("lock");
+            *guard = Some(ImageImportProgress {
+                state: ImageImportState::Cloning,
+                system: system.to_string(),
+                system_display: system_display.clone(),
+                processed: 0,
+                total: 0,
+                boxart_copied: 0,
+                snap_copied: 0,
+                elapsed_secs: start.elapsed().as_secs(),
+                error: None,
+                current_system,
+                total_systems,
+            });
+        }
+
+        let storage_root = self.storage().root.clone();
+
+        // Clone to a temp dir on the storage device (Pi's /tmp is too small).
+        let clone_base = storage_root.join(replay_control_core::metadata_db::RC_DIR).join("tmp");
+        let repo_dir = match replay_control_core::thumbnails::clone_thumbnail_repo(&repo_name, Some(&clone_base)) {
+            Ok(dir) => dir,
+            Err(e) => {
+                let mut guard = self.image_import_progress.write().expect("lock");
+                if let Some(ref mut p) = *guard {
+                    p.state = ImageImportState::Failed;
+                    p.error = Some(format!("Clone failed: {e}"));
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+                return;
+            }
+        };
+
+        // Get ROM filenames.
+        let rom_filenames = replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
+
+        // Update progress to Copying.
+        {
+            let mut guard = self.image_import_progress.write().expect("lock");
+            if let Some(ref mut p) = *guard {
+                p.state = ImageImportState::Copying;
+                p.total = rom_filenames.len();
+                p.elapsed_secs = start.elapsed().as_secs();
+            }
+        }
+
+        // Take DB from state.
+        let db = {
+            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+            guard.take()
+        };
+        let mut db = match db {
+            Some(db) => db,
+            None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
+                Ok(db) => db,
+                Err(e) => {
+                    let mut guard = self.image_import_progress.write().expect("lock");
+                    if let Some(ref mut p) = *guard {
+                        p.state = ImageImportState::Failed;
+                        p.error = Some(format!("Cannot open metadata DB: {e}"));
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                    return;
+                }
+            },
+        };
+
+        let progress_ref = self.image_import_progress.clone();
+        let result = replay_control_core::thumbnails::import_system_thumbnails(
+            &repo_dir,
+            system,
+            &storage_root,
+            &mut db,
+            &rom_filenames,
+            |processed, images_found| {
+                let mut guard = progress_ref.write().expect("lock");
+                if let Some(ref mut p) = *guard {
+                    p.processed = processed;
+                    p.boxart_copied = images_found;
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+            },
+        );
+
+        // Put DB back.
+        {
+            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+            *guard = Some(db);
+        }
+
+        // Update final progress for this system.
+        {
+            let mut guard = self.image_import_progress.write().expect("lock");
+            match result {
+                Ok(stats) => {
+                    *guard = Some(ImageImportProgress {
+                        state: ImageImportState::Complete,
+                        system: system.to_string(),
+                        system_display,
+                        processed: stats.total_roms,
+                        total: stats.total_roms,
+                        boxart_copied: stats.boxart_copied,
+                        snap_copied: stats.snap_copied,
+                        elapsed_secs: start.elapsed().as_secs(),
+                        error: None,
+                        current_system,
+                        total_systems,
+                    });
+                }
+                Err(e) => {
+                    if let Some(ref mut p) = *guard {
+                        p.state = ImageImportState::Failed;
+                        p.error = Some(e.to_string());
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                }
+            }
+        }
+
+        // Clean up cloned repo to save disk space.
+        let _ = std::fs::remove_dir_all(&repo_dir);
+    }
+
+    /// Start a background image import for a single system.
+    /// Returns `false` if an import is already running.
+    pub fn start_image_import(&self, system: String) -> bool {
+        if self.is_image_import_running() {
+            return false;
+        }
+
+        let state = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let start = std::time::Instant::now();
+            state.import_system_images_blocking(&system, 1, 1, start);
+        });
+
+        true
+    }
+
+    /// Start a background image import for all supported systems.
+    /// Returns `false` if an import is already running.
+    pub fn start_all_images_import(&self) -> bool {
+        if self.is_image_import_running() {
+            return false;
+        }
+
+        // Collect systems that have a thumbnail repo and games on disk.
+        let storage = self.storage();
+        let systems = self.cache.get_systems(&storage);
+        let supported: Vec<String> = systems
+            .into_iter()
+            .filter(|s| s.game_count > 0)
+            .filter(|s| replay_control_core::thumbnails::thumbnail_repo_name(&s.folder_name).is_some())
+            .map(|s| s.folder_name)
+            .collect();
+
+        if supported.is_empty() {
+            return false;
+        }
+
+        let state = self.clone();
+        let total = supported.len();
+        tokio::task::spawn_blocking(move || {
+            let start = std::time::Instant::now();
+            for (i, system) in supported.iter().enumerate() {
+                state.import_system_images_blocking(system, i + 1, total, start);
+
+                // If the last system failed, stop the whole batch.
+                {
+                    use crate::server_fns::ImageImportState;
+                    let guard = state.image_import_progress.read().expect("lock");
+                    if let Some(ref p) = *guard {
+                        if p.state == ImageImportState::Failed {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        true
     }
 
     /// Spawn a background task that watches `replay.cfg` for changes and

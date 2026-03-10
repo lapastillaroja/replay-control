@@ -21,6 +21,15 @@ pub struct GameRef {
     pub rom_path: String,
 }
 
+/// Strip parenthesized/bracketed tags from a filename stem.
+/// `"Indiana Jones and the Fate of Atlantis (Spanish)"` → `"Indiana Jones and the Fate of Atlantis"`
+fn strip_filename_tags(stem: &str) -> &str {
+    stem.find(" (")
+        .or_else(|| stem.find(" ["))
+        .map(|i| stem[..i].trim())
+        .unwrap_or(stem)
+}
+
 impl GameRef {
     /// Create a new GameRef, resolving display_name from the appropriate DB.
     ///
@@ -34,21 +43,30 @@ impl GameRef {
             .map(|s| s.display_name.to_string())
             .unwrap_or_else(|| system.to_string());
 
-        let display_name = sys_info.and_then(|s| {
-            if s.category == SystemCategory::Arcade {
-                // Arcade: use arcade DB (zip filename without extension)
-                let resolved = arcade_db::arcade_display_name(&rom_filename);
-                if resolved != rom_filename {
-                    Some(resolved.to_string())
-                } else {
-                    None
-                }
+        let display_name = if sys_info.is_some_and(|s| s.category == SystemCategory::Arcade) {
+            // Arcade: use arcade DB (zip filename without extension)
+            let resolved = arcade_db::arcade_display_name(&rom_filename);
+            if resolved != rom_filename {
+                Some(resolved.to_string())
             } else {
-                // Non-arcade: try game DB first, then append useful filename tags
-                game_db::game_display_name(system, &rom_filename)
-                    .map(|name| rom_tags::display_name_with_tags(name, &rom_filename))
+                None
             }
-        });
+        } else {
+            // Non-arcade: try game DB first, then append useful filename tags.
+            // Fall back to deriving a clean name from the filename for systems
+            // without game DB coverage (e.g., ibm_pc, commodore_ami) or unknown systems.
+            game_db::game_display_name(system, &rom_filename)
+                .map(|name| rom_tags::display_name_with_tags(name, &rom_filename))
+                .or_else(|| {
+                    let stem = rom_filename.rfind('.').map(|i| &rom_filename[..i]).unwrap_or(&rom_filename);
+                    // Always return a display name from the stem (without extension).
+                    // Use the tag-stripped base as the display name, or the full
+                    // stem if there are no tags to strip.
+                    let base = strip_filename_tags(stem);
+                    let name = if base.is_empty() { stem } else { base };
+                    Some(rom_tags::display_name_with_tags(name, &rom_filename))
+                })
+        };
 
         Self {
             system: system.to_string(),
