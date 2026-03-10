@@ -49,7 +49,11 @@ pub fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>> {
 
         let rom_filename = filename
             .split_once('@')
-            .map(|(_, rest)| rest.trim_end_matches(".rec").to_string())
+            .map(|(_, rest)| {
+                rest.trim_end_matches(".rec")
+                    .trim_end_matches(".fav")
+                    .to_string()
+            })
             .unwrap_or_default();
 
         let last_played = entry
@@ -69,6 +73,12 @@ pub fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>> {
 
     // Sort by most recently played
     recents.sort_by(|a, b| b.last_played.cmp(&a.last_played));
+
+    // Deduplicate: a game launched via .fav symlink and directly produces
+    // two .rec markers with the same underlying ROM. Keep only the most
+    // recent entry per (system, rom_filename).
+    let mut seen = std::collections::HashSet::new();
+    recents.retain(|e| seen.insert((e.game.system.clone(), e.game.rom_filename.clone())));
 
     Ok(recents)
 }
@@ -113,5 +123,51 @@ mod tests {
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].game.system, "sega_smd");
         assert_eq!(recents[0].game.rom_filename, "Sonic.md");
+    }
+
+    #[test]
+    fn fav_suffix_stripped_from_rom_filename() {
+        let tmp = std::env::temp_dir().join(format!("replay-rec-fav-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let recent_dir = tmp.join("roms/_recent");
+        std::fs::create_dir_all(&recent_dir).unwrap();
+
+        // Marker created when game is launched via .fav symlink
+        std::fs::write(
+            recent_dir.join("arcade_fbneo@chelnov.zip.fav.rec"),
+            "/roms/arcade_fbneo/chelnov.zip",
+        )
+        .unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
+        let recents = list_recents(&storage).unwrap();
+        assert_eq!(recents.len(), 1);
+        assert_eq!(recents[0].game.rom_filename, "chelnov.zip");
+    }
+
+    #[test]
+    fn fav_and_non_fav_deduplicated() {
+        let tmp = std::env::temp_dir().join(format!("replay-rec-dedup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let recent_dir = tmp.join("roms/_recent");
+        std::fs::create_dir_all(&recent_dir).unwrap();
+
+        // Both markers for the same game
+        std::fs::write(
+            recent_dir.join("arcade_fbneo@chelnov.zip.rec"),
+            "/roms/arcade_fbneo/chelnov.zip",
+        )
+        .unwrap();
+        std::fs::write(
+            recent_dir.join("arcade_fbneo@chelnov.zip.fav.rec"),
+            "/roms/arcade_fbneo/chelnov.zip",
+        )
+        .unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
+        let recents = list_recents(&storage).unwrap();
+        // Should deduplicate to one entry
+        assert_eq!(recents.len(), 1);
+        assert_eq!(recents[0].game.rom_filename, "chelnov.zip");
     }
 }
