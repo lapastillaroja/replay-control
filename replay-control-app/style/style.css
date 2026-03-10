@@ -378,6 +378,26 @@ a, a:visited, a:hover, a:active {
     color: var(--text-secondary);
 }
 
+.active-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.filter-chip-clear {
+    background: none;
+    border: 1px dashed var(--border);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.filter-chip-clear:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
 .rom-count {
     font-size: 0.8rem;
     color: var(--text-secondary);

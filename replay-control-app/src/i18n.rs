@@ -324,7 +324,12 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "filter.hide_hacks" => "Hide Hacks",
         "filter.genre" => "Genre",
         "filter.genre_all" => "All Genres",
+        "filter.hide_translations" => "Hide Translations",
+        "filter.hide_betas" => "Hide Betas",
+        "filter.hide_clones" => "Hide Clones",
         "filter.clear_filters" => "Clear Filters",
+        "filter.active_search" => "Search",
+        "filter.filtered_results" => "Filtered results",
 
         // Search extras (Phase 2)
         "search.random_game" => "Random Game",

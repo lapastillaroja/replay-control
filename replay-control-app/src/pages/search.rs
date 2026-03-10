@@ -26,6 +26,21 @@ pub fn SearchPage() -> impl IntoView {
         .get("hide_hacks")
         .map(|v| v == "true")
         .unwrap_or(false);
+    let initial_hide_translations = query_map
+        .read_untracked()
+        .get("hide_translations")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let initial_hide_betas = query_map
+        .read_untracked()
+        .get("hide_betas")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let initial_hide_clones = query_map
+        .read_untracked()
+        .get("hide_clones")
+        .map(|v| v == "true")
+        .unwrap_or(false);
     let initial_genre = query_map
         .read_untracked()
         .get("genre")
@@ -35,6 +50,9 @@ pub fn SearchPage() -> impl IntoView {
     // Signals for user input.
     let search_input = RwSignal::new(initial_query.clone());
     let hide_hacks = RwSignal::new(initial_hide_hacks);
+    let hide_translations = RwSignal::new(initial_hide_translations);
+    let hide_betas = RwSignal::new(initial_hide_betas);
+    let hide_clones = RwSignal::new(initial_hide_clones);
     let genre = RwSignal::new(initial_genre.clone());
 
     // Debounced search query that drives the resource.
@@ -71,7 +89,14 @@ pub fn SearchPage() -> impl IntoView {
             }
             let cb = Closure::<dyn Fn()>::new(move || {
                 debounced_query.set(val.clone());
-                update_url_params(&val, hide_hacks.get_untracked(), &genre.get_untracked());
+                update_url_params(
+                    &val,
+                    hide_hacks.get_untracked(),
+                    hide_translations.get_untracked(),
+                    hide_betas.get_untracked(),
+                    hide_clones.get_untracked(),
+                    &genre.get_untracked(),
+                );
                 // Save to recent searches if non-empty.
                 if !val.trim().is_empty() {
                     save_recent_search(&val);
@@ -95,9 +120,12 @@ pub fn SearchPage() -> impl IntoView {
         // Immediate update for filter changes (no debounce needed).
         Effect::new(move || {
             let hh = hide_hacks.get();
+            let ht = hide_translations.get();
+            let hb = hide_betas.get();
+            let hc = hide_clones.get();
             let g = genre.get();
             debounced_genre.set(g.clone());
-            update_url_params(&debounced_query.get_untracked(), hh, &g);
+            update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, &g);
         });
 
         on_cleanup(move || {
@@ -115,10 +143,13 @@ pub fn SearchPage() -> impl IntoView {
             (
                 debounced_query.get(),
                 hide_hacks.get(),
+                hide_translations.get(),
+                hide_betas.get(),
+                hide_clones.get(),
                 debounced_genre.get(),
             )
         },
-        |(q, hh, g)| server_fns::global_search(q, hh, g, 3),
+        |(q, hh, ht, hb, hc, g)| server_fns::global_search(q, hh, ht, hb, hc, g, 3),
     );
 
     // Derived: show the "empty state" panel (recent searches + random game).
@@ -134,7 +165,14 @@ pub fn SearchPage() -> impl IntoView {
     let on_recent_click = move |query: String| {
         search_input.set(query.clone());
         debounced_query.set(query.clone());
-        update_url_params_if_hydrate(&query, hide_hacks.get_untracked(), &genre.get_untracked());
+        update_url_params_if_hydrate(
+            &query,
+            hide_hacks.get_untracked(),
+            hide_translations.get_untracked(),
+            hide_betas.get_untracked(),
+            hide_clones.get_untracked(),
+            &genre.get_untracked(),
+        );
     };
 
     // Handler: remove a single recent search.
@@ -235,6 +273,48 @@ pub fn SearchPage() -> impl IntoView {
                     {move || if hide_hacks.get() { " \u{2715}" } else { "" }}
                 </button>
 
+                <button
+                    class=move || {
+                        if hide_translations.get() {
+                            "filter-chip filter-chip-active"
+                        } else {
+                            "filter-chip"
+                        }
+                    }
+                    on:click=move |_| hide_translations.update(|v| *v = !*v)
+                >
+                    {move || t(i18n.locale.get(), "filter.hide_translations")}
+                    {move || if hide_translations.get() { " \u{2715}" } else { "" }}
+                </button>
+
+                <button
+                    class=move || {
+                        if hide_betas.get() {
+                            "filter-chip filter-chip-active"
+                        } else {
+                            "filter-chip"
+                        }
+                    }
+                    on:click=move |_| hide_betas.update(|v| *v = !*v)
+                >
+                    {move || t(i18n.locale.get(), "filter.hide_betas")}
+                    {move || if hide_betas.get() { " \u{2715}" } else { "" }}
+                </button>
+
+                <button
+                    class=move || {
+                        if hide_clones.get() {
+                            "filter-chip filter-chip-active"
+                        } else {
+                            "filter-chip"
+                        }
+                    }
+                    on:click=move |_| hide_clones.update(|v| *v = !*v)
+                >
+                    {move || t(i18n.locale.get(), "filter.hide_clones")}
+                    {move || if hide_clones.get() { " \u{2715}" } else { "" }}
+                </button>
+
                 {move || {
                     genres_resource.get().and_then(|res| res.ok()).map(|genre_list| {
                         view! { <GenreDropdown genre genre_list /> }
@@ -250,9 +330,12 @@ pub fn SearchPage() -> impl IntoView {
                     let data = results.await?;
                     let q = debounced_query.get_untracked();
                     let hh = hide_hacks.get_untracked();
+                    let ht = hide_translations.get_untracked();
+                    let hb = hide_betas.get_untracked();
+                    let hc = hide_clones.get_untracked();
                     let g = debounced_genre.get_untracked();
                     Ok::<_, server_fn::ServerFnError>(view! {
-                        <SearchResults data locale query=q hide_hacks=hh genre=g />
+                        <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc genre=g />
                     })
                 })}
             </Transition>
@@ -343,6 +426,9 @@ fn SearchResults(
     locale: crate::i18n::Locale,
     query: String,
     hide_hacks: bool,
+    hide_translations: bool,
+    hide_betas: bool,
+    hide_clones: bool,
     genre: String,
 ) -> impl IntoView {
     let has_results = !data.groups.is_empty();
@@ -380,6 +466,15 @@ fn SearchResults(
         }
         if hide_hacks {
             params.push("hide_hacks=true".to_string());
+        }
+        if hide_translations {
+            params.push("hide_translations=true".to_string());
+        }
+        if hide_betas {
+            params.push("hide_betas=true".to_string());
+        }
+        if hide_clones {
+            params.push("hide_clones=true".to_string());
         }
         if !genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(&genre)));
@@ -484,7 +579,14 @@ fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
 
 /// Update URL query params without navigating (replace mode).
 #[cfg(feature = "hydrate")]
-fn update_url_params(query: &str, hide_hacks: bool, genre: &str) {
+fn update_url_params(
+    query: &str,
+    hide_hacks: bool,
+    hide_translations: bool,
+    hide_betas: bool,
+    hide_clones: bool,
+    genre: &str,
+) {
     if let Some(window) = web_sys::window() {
         let mut params = Vec::new();
         if !query.is_empty() {
@@ -492,6 +594,15 @@ fn update_url_params(query: &str, hide_hacks: bool, genre: &str) {
         }
         if hide_hacks {
             params.push("hide_hacks=true".to_string());
+        }
+        if hide_translations {
+            params.push("hide_translations=true".to_string());
+        }
+        if hide_betas {
+            params.push("hide_betas=true".to_string());
+        }
+        if hide_clones {
+            params.push("hide_clones=true".to_string());
         }
         if !genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(genre)));
@@ -510,9 +621,16 @@ fn update_url_params(query: &str, hide_hacks: bool, genre: &str) {
 
 /// Wrapper that compiles on both targets — calls the real function only on hydrate.
 #[allow(unused_variables)]
-fn update_url_params_if_hydrate(query: &str, hide_hacks: bool, genre: &str) {
+fn update_url_params_if_hydrate(
+    query: &str,
+    hide_hacks: bool,
+    hide_translations: bool,
+    hide_betas: bool,
+    hide_clones: bool,
+    genre: &str,
+) {
     #[cfg(feature = "hydrate")]
-    update_url_params(query, hide_hacks, genre);
+    update_url_params(query, hide_hacks, hide_translations, hide_betas, hide_clones, genre);
 }
 
 // ── localStorage helpers for recent searches ──────────────────────

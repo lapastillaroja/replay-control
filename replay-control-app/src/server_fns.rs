@@ -1427,10 +1427,14 @@ fn lookup_genre(system: &str, rom_filename: &str) -> String {
 pub async fn global_search(
     query: String,
     hide_hacks: bool,
+    hide_translations: bool,
+    hide_betas: bool,
+    hide_clones: bool,
     genre: String,
     per_system_limit: usize,
 ) -> Result<GlobalSearchResults, ServerFnError> {
     use replay_control_core::rom_tags;
+    use replay_control_core::systems::{self as sys_db, SystemCategory};
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
@@ -1446,6 +1450,9 @@ pub async fn global_search(
             continue;
         }
 
+        let is_arcade = sys_db::find_system(&sys.folder_name)
+            .is_some_and(|s| s.category == SystemCategory::Arcade);
+
         let all_roms = match state.cache.get_roms(&storage, &sys.folder_name) {
             Ok(roms) => roms,
             Err(_) => continue,
@@ -1454,11 +1461,28 @@ pub async fn global_search(
         let mut scored: Vec<(u32, RomEntry)> = all_roms
             .into_iter()
             .filter(|r| {
-                // Apply hack filter.
-                if hide_hacks {
+                // Apply tier-based filters (hacks, translations, betas/protos).
+                if hide_hacks || hide_translations || hide_betas {
                     let (tier, _) = rom_tags::classify(&r.game.rom_filename);
-                    if tier == rom_tags::RomTier::Hack {
+                    if hide_hacks && tier == rom_tags::RomTier::Hack {
                         return false;
+                    }
+                    if hide_translations && tier == rom_tags::RomTier::Translation {
+                        return false;
+                    }
+                    if hide_betas && tier == rom_tags::RomTier::PreRelease {
+                        return false;
+                    }
+                }
+                // Apply clone filter (arcade only).
+                if hide_clones && is_arcade {
+                    use replay_control_core::arcade_db;
+                    let stem = r.game.rom_filename.strip_suffix(".zip")
+                        .unwrap_or(&r.game.rom_filename);
+                    if let Some(info) = arcade_db::lookup_arcade_game(stem) {
+                        if info.is_clone {
+                            return false;
+                        }
                     }
                 }
                 true

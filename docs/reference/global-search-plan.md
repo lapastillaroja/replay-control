@@ -315,7 +315,7 @@ pub struct GlobalSearchResult {
 
 ## Implementation Phases
 
-### Phase 1 (core feature):
+### Phase 1 (core feature) — DONE
 1. Add result types and mirror types
 2. Implement `global_search()` server function
 3. Modify `get_roms_page()` to accept filter params
@@ -328,15 +328,17 @@ pub struct GlobalSearchResult {
 10. Add i18n keys and CSS styles
 
 ### Phase 2 (enhancements):
-- `get_all_genres()` for dynamic genre list
-- Search suggestions / autocomplete dropdown
-- Recent searches in localStorage
-- Random game button
-- Keyboard shortcut (`/` to focus search)
+- `get_all_genres()` for dynamic genre list — DONE
+- Recent searches in localStorage — DONE
+- Random game button — DONE
+- Keyboard shortcut (`/` to focus search) — DONE
+- Search suggestions / autocomplete dropdown — LOW PRIORITY (parked)
 
 ### Phase 3 (polish):
-- Hide translations / hide betas filter toggles
-- Hide clones toggle for arcade systems
-- Favorite toggle directly in search results
-- Background cache pre-warming on startup
-- Search result animations / transitions
+- Hide translations filter — DONE
+- Hide betas filter — DONE
+- Hide clones filter (arcade only) — DONE
+- Filter persistence to ROM list — DONE
+- ~~Favorite toggle directly in search results~~ — DISCARDED
+- Background cache pre-warming on startup — NOT STARTED (low priority)
+- ~~Search result animations / transitions~~ — DISCARDED

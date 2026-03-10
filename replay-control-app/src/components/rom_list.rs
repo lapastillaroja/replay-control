@@ -15,18 +15,18 @@ pub fn RomList(system: String) -> impl IntoView {
 
     // Read filter params from URL query (passed from global search "See all" links).
     let query_map = use_query_map();
-    let hide_hacks = query_map
+    let initial_hide_hacks = query_map
         .read_untracked()
         .get("hide_hacks")
         .map(|v| v == "true")
         .unwrap_or(false);
-    let genre_filter = query_map
+    let initial_genre = query_map
         .read_untracked()
         .get("genre")
         .map(|s| s.to_string())
         .unwrap_or_default();
-    let hide_hacks = StoredValue::new(hide_hacks);
-    let genre_filter = StoredValue::new(genre_filter);
+    let hide_hacks = RwSignal::new(initial_hide_hacks);
+    let genre_filter = RwSignal::new(initial_genre);
 
     // Search: synced with URL query param `?search=...`.
     // Use replace mode so each keystroke doesn't add a history entry.
@@ -108,10 +108,16 @@ pub fn RomList(system: String) -> impl IntoView {
 
     // First page — resolves during SSR.
     let first_page = Resource::new(
-        move || (sys.get_value(), debounced_search.get(), version.get()),
-        move |(system, query, _)| {
-            let hh = hide_hacks.get_value();
-            let gf = genre_filter.get_value();
+        move || {
+            (
+                sys.get_value(),
+                debounced_search.get(),
+                hide_hacks.get(),
+                genre_filter.get(),
+                version.get(),
+            )
+        },
+        move |(system, query, hh, gf, _)| {
             server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, gf)
         },
     );
@@ -134,8 +140,8 @@ pub fn RomList(system: String) -> impl IntoView {
         let system = sys.get_value();
         let query = debounced_search.get_untracked();
         let current_offset = offset.get_untracked();
-        let hh = hide_hacks.get_value();
-        let gf = genre_filter.get_value();
+        let hh = hide_hacks.get_untracked();
+        let gf = genre_filter.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) =
                 server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, gf).await
@@ -192,6 +198,52 @@ pub fn RomList(system: String) -> impl IntoView {
         });
     }
 
+    // Derived: whether any filter from the global search is active.
+    let has_active_filters = move || {
+        hide_hacks.get() || !genre_filter.read().is_empty() || !debounced_search.read().is_empty()
+    };
+
+    // Clear individual filters by updating the signal and the URL query params.
+    let clear_search = move |_| {
+        search_input.set(String::new());
+        debounced_search.set(String::new());
+        #[cfg(feature = "hydrate")]
+        set_search_query.set(None);
+        update_filter_url_if_hydrate(
+            sys.get_value(),
+            hide_hacks.get_untracked(),
+            &genre_filter.get_untracked(),
+            "",
+        );
+    };
+    let clear_hide_hacks = move |_| {
+        hide_hacks.set(false);
+        update_filter_url_if_hydrate(
+            sys.get_value(),
+            false,
+            &genre_filter.get_untracked(),
+            &debounced_search.get_untracked(),
+        );
+    };
+    let clear_genre = move |_| {
+        genre_filter.set(String::new());
+        update_filter_url_if_hydrate(
+            sys.get_value(),
+            hide_hacks.get_untracked(),
+            "",
+            &debounced_search.get_untracked(),
+        );
+    };
+    let clear_all_filters = move |_| {
+        search_input.set(String::new());
+        debounced_search.set(String::new());
+        hide_hacks.set(false);
+        genre_filter.set(String::new());
+        #[cfg(feature = "hydrate")]
+        set_search_query.set(None);
+        update_filter_url_if_hydrate(sys.get_value(), false, "", "");
+    };
+
     // The search bar is rendered outside the Suspense/Transition block so that the
     // input element is never recreated when search results update, which preserves
     // keyboard focus while typing.
@@ -205,6 +257,39 @@ pub fn RomList(system: String) -> impl IntoView {
                 on:input=move |ev| search_input.set(event_target_value(&ev))
             />
         </div>
+        <Show when=has_active_filters>
+            <div class="active-filters">
+                <Show when=move || !debounced_search.read().is_empty()>
+                    <button class="filter-chip filter-chip-active" on:click=clear_search>
+                        {move || format!(
+                            "{}: {}",
+                            t(i18n.locale.get(), "filter.active_search"),
+                            debounced_search.get()
+                        )}
+                        " \u{2715}"
+                    </button>
+                </Show>
+                <Show when=move || hide_hacks.get()>
+                    <button class="filter-chip filter-chip-active" on:click=clear_hide_hacks>
+                        {move || t(i18n.locale.get(), "filter.hide_hacks")}
+                        " \u{2715}"
+                    </button>
+                </Show>
+                <Show when=move || !genre_filter.read().is_empty()>
+                    <button class="filter-chip filter-chip-active" on:click=clear_genre>
+                        {move || format!(
+                            "{}: {}",
+                            t(i18n.locale.get(), "filter.genre"),
+                            genre_filter.get()
+                        )}
+                        " \u{2715}"
+                    </button>
+                </Show>
+                <button class="filter-chip filter-chip-clear" on:click=clear_all_filters>
+                    {move || t(i18n.locale.get(), "filter.clear_filters")}
+                </button>
+            </div>
+        </Show>
         <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "games.loading_roms")}</div> }>
             {move || Suspend::new(async move {
                 let locale = i18n.locale.get();
@@ -472,4 +557,38 @@ fn DeleteConfirm(
             {"\u{2715}"}
         </button>
     }
+}
+
+/// Update the URL query params for the ROM list page (replace, no navigation).
+/// Keeps `search`, `hide_hacks`, and `genre` in sync with the current filter state.
+#[cfg(feature = "hydrate")]
+fn update_filter_url(system: String, hide_hacks: bool, genre: &str, search: &str) {
+    if let Some(window) = web_sys::window() {
+        let mut params = Vec::new();
+        if !search.is_empty() {
+            params.push(format!("search={}", urlencoding::encode(search)));
+        }
+        if hide_hacks {
+            params.push("hide_hacks=true".to_string());
+        }
+        if !genre.is_empty() {
+            params.push(format!("genre={}", urlencoding::encode(genre)));
+        }
+        let qs = if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        };
+        let url = format!("/games/{system}{qs}");
+        let _ = window
+            .history()
+            .and_then(|h| h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url)));
+    }
+}
+
+/// Wrapper that compiles on both targets.
+#[allow(unused_variables)]
+fn update_filter_url_if_hydrate(system: String, hide_hacks: bool, genre: &str, search: &str) {
+    #[cfg(feature = "hydrate")]
+    update_filter_url(system, hide_hacks, genre, search);
 }
