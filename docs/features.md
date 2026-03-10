@@ -26,8 +26,8 @@ Tracking document for Replay Control. Organized by page/area.
 ## Game Detail (`/games/:system/:filename`)
 
 ### Implemented
-- **Header** with back button (returns to system ROM list) and game title (display name or filename)
-- **Cover art placeholder** — styled 4:3 aspect ratio box with game name centered; CSS class ready for future image integration
+- **Header** with back button (browser history back navigation) and game title (display name or filename)
+- **Box art display** — shows imported box art thumbnail when available; falls back to styled placeholder with game name
 - **Game info card** — metadata grid showing system, filename, file size, and format/extension
 - **Arcade metadata** — for arcade games, shows year, manufacturer, players, rotation, category, and parent ROM (if clone)
 - **Placeholder sections** for future content:
@@ -117,34 +117,30 @@ When RA is configured, the game detail page shows an "Achievements" section:
 
 Dedicated page for managing external game metadata (descriptions, images, ratings). Accessible from the More section. Needed because of data licensing restrictions — metadata can't be bundled with the app and must be fetched/cached per device.
 
-### Planned (minimal set)
+### Implemented
 
-**Status overview:**
-- **Coverage summary** — at a glance: "2,340 / 3,500 games have descriptions", "1,890 have box art", "0 have screenshots"
-- **Storage usage** — breakdown of metadata cache: text DB size, images size, source cache size, total. Visual bar showing usage relative to available disk space
-- **Last sync** — timestamp of the last metadata download. "Never" if no sync has happened yet
+**Text metadata (LaunchBox):**
+- **Auto-download** — "Download Metadata" button fetches LaunchBox XML from the internet, extracts, and imports into SQLite. Background task with real-time progress (downloading, parsing, matching)
+- **Coverage stats** — per-system breakdown of matched/unmatched games
+- **Clear metadata** — delete the SQLite cache and start fresh
 
-**Download/sync:**
-- **"Download Metadata" button** — starts bulk download with visible progress bar (games processed / total, current game name, estimated time). Uses the background task system
-- **Quality tier selector** — three options controlling what gets downloaded:
-  - *Text Only* — descriptions and ratings (~2 KB/game, ~10 MB for 5K games)
-  - *Text + Images* — adds resized box art and screenshots (~72 KB/game, ~360 MB for 5K games)
-  - *Full* — includes source cache for offline re-processing (~2-4 GB additional)
-- **Per-system toggle** — choose which systems to fetch metadata for (useful on 16 GB cards where space is tight — skip systems with few games or low interest)
-- **Cancel** — stop an in-progress download. Already-fetched games are kept
-
-**Credentials:**
-- **ScreenScraper account** — username, password, and developer ID fields. Required for API-based metadata fetching. "Test Connection" button to verify credentials before starting a download
-- **RetroAchievements account** — username and web API key fields (see RA section above). "Test Connection" button
-- Credentials stored in the app config file (not `replay.cfg`). Passwords/keys masked in the UI
+**Image metadata (libretro-thumbnails):**
+- **Per-system download** — download box art and screenshots for a specific system from libretro-thumbnails GitHub repos
+- **Download All** — batch download images for all supported systems
+- **Stop/Cancel button** — cancel in-progress image imports immediately (kills git clone subprocess, stops copy loop). "Cancelling..." feedback on the button
+- **Real-time SSE progress** — `/sse/image-progress` endpoint streams progress every 200ms via Server-Sent Events. Client uses `EventSource` instead of polling for near-instant UI updates
+- **Optimistic UI** — progress bar appears instantly on click, before the server responds
+- **Per-system coverage grid** — shows box art count vs total games for each system, with per-system download/update buttons
+- **Image stats** — total box art count, screenshot count, and media disk usage
+- **Pulsing animation** — disabled download buttons pulse to signal activity
+- **exFAT symlink resolution** — handles fake symlinks on exFAT filesystems (git writes symlink targets as text files)
+- **Fuzzy image matching** — normalized filename matching with tilde dual-name handling
 
 **Cache management:**
-- **"Clear All Metadata"** — deletes `metadata.db`, `media/`, and `sources/` directories. Confirmation required ("This will remove all cached descriptions, images, and source files. X MB will be freed.")
-- **"Clear Images Only"** — keeps text metadata (descriptions, ratings) but removes images. Useful to reclaim space while preserving the most useful data
-- **"Clear Source Cache"** — removes `sources/` directory only. Keeps processed metadata intact. Source blobs can be re-downloaded later if needed
+- **Clear Images** — removes all imported images with confirmation step
 
 **Attribution:**
-- **Source credits** — visible attribution line at the bottom: "Metadata provided by ScreenScraper, LaunchBox, libretro-thumbnails, and RetroAchievements" (only showing sources that are actually in use). Required by some data licenses
+- Source credits line: "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails."
 
 ### Future ideas
 - Per-source enable/disable toggles (e.g., disable ScreenScraper, use only LaunchBox)
@@ -152,7 +148,7 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - Metadata export/import (backup metadata cache to a file for transfer between devices)
 - Per-game manual metadata refresh from the game detail page
 - Metadata quality indicators on game list (icon showing which games have descriptions/images)
-- Source priority ordering (drag to reorder which source is checked first)
+- ScreenScraper API integration for richer media (screenshots, videos)
 
 ---
 
@@ -170,6 +166,7 @@ Dedicated page for managing external game metadata (descriptions, images, rating
   - Per-ROM rename (inline text input, Enter to confirm, Escape to cancel)
   - Per-ROM delete with confirmation step (delete button swaps to confirm/cancel)
   - ROM metadata display: filename, relative path, file size, file extension badge
+  - Box art thumbnails in ROM list items (when imported images are available)
   - Only one delete confirmation or rename operation active at a time
 - **Arcade display names** — full arcade DB with 28,593 unique entries covering Flycast/Naomi/Atomiswave (301), FBNeo (8,108), MAME 2003+ (5,272), and MAME current (26,777), deduplicated at build time via embedded PHF database. Display names appear in ROM lists, home page recents, favorites, and game detail pages. See `docs/arcade-db-design.md`.
 - **`display_name` propagation** — `RomEntry`, `RecentEntry`, and `Favorite` all carry an optional `display_name` populated from the arcade DB for arcade systems. Search matches on both filename and display name.
@@ -226,8 +223,9 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 ## More / Settings (`/more`)
 
 ### Implemented
-- **Menu items** linking to: Skin/Theme, Wi-Fi Configuration, NFS Share Settings, Hostname, Metadata
+- **Menu items** linking to: Skin/Theme, Wi-Fi Configuration, NFS Share Settings, Hostname, Metadata, System Logs
 - **System Info** section showing: storage type, storage path, disk total, disk used, disk available, ethernet IP, Wi-Fi IP
+- **System Logs page** (`/more/logs`) — view RePlayOS system logs (journalctl) with source filter (all, companion app, RePlayOS) and refresh button. Useful for troubleshooting.
 - **Skin/theme sync** — browse and apply RePlayOS skins from the web UI; optionally sync the app's color scheme to the active skin (see `docs/skin-theming-analysis.md`)
 - **Hostname configuration** — view and change the Pi's hostname from the web UI; updates mDNS address
 - **Wi-Fi configuration** — view and edit Wi-Fi settings (SSID, password, country, mode) from the web UI
@@ -236,7 +234,6 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 
 ### Planned
 - **Screenshots browser** — menu item linking to `/screenshots` page for browsing and managing all RePlayOS screenshots (see `docs/reference/screenshots-analysis.md`)
-- **Background task system** — task manager with progress reporting, cancellation, and polling-based UI updates (see `docs/reference/background-tasks.md`). Includes library scan trigger and task status display.
 
 ### Future ideas
 - RePlayOS config editor (replay.cfg settings)
@@ -266,16 +263,15 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Mirror types** — client-side type definitions matching server-side `replay-control-core` types for serialization
 - **Server function registration** — explicit registration for library-crate server functions to prevent linker stripping
 - **ROM filename parser** — regex-based parser (`rom_tags` module) for No-Intro and GoodTools naming conventions, extracting title, region, revision, flags (see `docs/rom-identification.md`)
-- **Game metadata system** — SQLite metadata cache (`metadata_db`) with LaunchBox XML import (`launchbox` module) and libretro-thumbnails image import (`thumbnails` module). Coverage stats, per-system breakdown, auto-download with progress tracking. See `docs/game-metadata.md`.
+- **Game metadata system** — SQLite metadata cache (`metadata_db`) with LaunchBox XML import (`launchbox` module) and libretro-thumbnails image import (`thumbnails` module). Coverage stats, per-system breakdown, auto-download with progress tracking. Cancellable git clone (subprocess kill), cooperative cancellation via `AtomicBool`, SSE real-time progress streaming. See `docs/game-metadata.md`.
 - **Non-arcade game database** — embedded PHF maps for ~34K ROM entries across 20+ systems (`game_db` module). Two-level model: `CanonicalGame` + `GameEntry`. Sources: No-Intro DATs, TheGamesDB JSON, libretro-database DATs.
 - **Skin sync** — read RePlayOS skin index from `replay.cfg`, extract dominant colors from skin PNG images, apply as CSS custom properties for theme synchronization (`skins` module)
+- **Cross-compilation** — `./build.sh aarch64` for ARM (aarch64) Raspberry Pi binary
+- **Install/deployment script** — `install.sh` supporting SSH deployment to Pi (see `docs/reference/deployment.md`)
+- **SSE (Server-Sent Events)** — `/sse/image-progress` endpoint for real-time progress streaming (200ms interval). Used by the metadata page for image import progress instead of polling.
 
 ### Planned
-- **Background task manager** — `TaskManager` with `DashMap`, progress via `AtomicU32`, cancellation via `CancellationToken`, polling-based UI (see `docs/reference/background-tasks.md`)
 - **Game launching** — launch games on RePlayOS from the web UI. Recommended approach: `_autostart` folder manipulation + process restart. Needs testing on real hardware. See `docs/reference/game-launching.md`.
-
-- **Cross-compilation** — `build.sh --target aarch64` for ARM (aarch64) Raspberry Pi binary
-- **Install/deployment script** — `install.sh` supporting SSH and SD card deployment (see `docs/reference/deployment.md`)
 
 ### Future ideas
 - **SQLite cache layer** — replace filesystem scanning with indexed database, populated by background scan, updated via inotify

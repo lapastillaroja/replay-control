@@ -84,14 +84,13 @@ See `docs/features.md` for detailed per-page tracking of implemented, planned, a
 - **ROM filename parsing** — regex parser for No-Intro and GoodTools naming conventions (title, region, revision, flags)
 - **Favorites management** — view, add, remove, with hero card, grouped/flat views, optimistic UI
 - **Game detail page** — metadata grid, arcade-specific info, favorite toggle, rename, delete
-- **Game metadata** — SQLite cache with LaunchBox XML import (auto-download + parse), libretro-thumbnails box art import, per-system coverage stats
-- **Settings pages** — skin/theme sync, Wi-Fi, NFS, hostname, metadata management
+- **Game metadata** — SQLite cache with LaunchBox XML import (auto-download + parse), libretro-thumbnails box art import with cancel/stop support, per-system coverage stats, real-time SSE progress
+- **Settings pages** — skin/theme sync, Wi-Fi, NFS, hostname, metadata management, system logs viewer
 - **Home page** — last played, recently played, library stats, systems overview
 - **Installation** — `install.sh` supports SSH and SD card deployment methods
 
 ### Not Yet Implemented
 - **Screenshots browser** — browsing and managing RePlayOS screenshots (see `docs/reference/screenshots-analysis.md`)
-- **Background task manager** — generic task system with progress/cancellation (see `docs/reference/background-tasks.md`)
 - **Game launching** — launching games from the web UI (see `docs/reference/game-launching.md`)
 - **Remote control** — triggering actions on RePlayOS from the web UI
 - **Backup & sync** — backup ROM library, save states, config
@@ -132,6 +131,7 @@ See `docs/features.md` for detailed per-page tracking of implemented, planned, a
 - `/more/nfs` — NFS share settings
 - `/more/hostname` — Hostname configuration
 - `/more/metadata` — Metadata import, coverage, and cache management
+- `/more/logs` — System logs viewer (journalctl)
 
 ### Internationalization (i18n)
 - Built-in i18n support with English as default language
