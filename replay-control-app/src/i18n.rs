@@ -262,6 +262,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.copying_images" => "Copying",
         "metadata.images_found" => "found",
         "metadata.stop" => "Stop",
+        "metadata.cancelling" => "Cancelling...",
         "metadata.import_cancelled" => "Cancelled",
 
         "metadata.attribution" => "Attribution",

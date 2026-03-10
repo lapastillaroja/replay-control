@@ -407,7 +407,13 @@ pub fn import_system_thumbnails(
 ///
 /// `clone_base` is the parent directory for clones (e.g. `<storage>/.replay-control/tmp`).
 /// Falls back to `/tmp` if `None`.
-pub fn clone_thumbnail_repo(repo_name: &str, clone_base: Option<&Path>) -> Result<std::path::PathBuf> {
+///
+/// If `cancel` is provided, the clone subprocess is killed when the flag becomes `true`.
+pub fn clone_thumbnail_repo(
+    repo_name: &str,
+    clone_base: Option<&Path>,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<std::path::PathBuf> {
     let url = format!(
         "https://github.com/libretro-thumbnails/{}.git",
         repo_name.replace(' ', "_")
@@ -432,19 +438,48 @@ pub fn clone_thumbnail_repo(repo_name: &str, clone_base: Option<&Path>) -> Resul
     }
 
     tracing::info!("Cloning {url} ...");
-    let output = std::process::Command::new("git")
+    let mut child = std::process::Command::new("git")
         .args(["clone", "--depth", "1", &url, &dest.to_string_lossy()])
-        .output()
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| Error::Other(format!("Failed to run git: {e}")))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Other(format!(
-            "git clone failed for {repo_name}: {stderr}"
-        )));
+    // Poll the child process, checking for cancellation every 200ms.
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    let stderr = child.stderr.take()
+                        .map(|mut s| {
+                            let mut buf = String::new();
+                            use std::io::Read;
+                            let _ = s.read_to_string(&mut buf);
+                            buf
+                        })
+                        .unwrap_or_default();
+                    return Err(Error::Other(format!(
+                        "git clone failed for {repo_name}: {stderr}"
+                    )));
+                }
+                return Ok(dest);
+            }
+            Ok(None) => {
+                // Still running — check cancel flag.
+                if cancel.map_or(false, |c| c.load(std::sync::atomic::Ordering::Relaxed)) {
+                    tracing::info!("Cancelling git clone for {repo_name}");
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = std::fs::remove_dir_all(&dest);
+                    return Err(Error::Other("Cancelled".to_string()));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Err(e) => {
+                return Err(Error::Other(format!("Failed to wait for git: {e}")));
+            }
+        }
     }
-
-    Ok(dest)
 }
 
 /// Build a list of ROM filenames for a system from the filesystem.

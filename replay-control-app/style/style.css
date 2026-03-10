@@ -1031,6 +1031,12 @@ select.form-input option {
 .metadata-download-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+    animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-opacity {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.9; }
 }
 
 .image-systems-grid {
@@ -1046,6 +1052,10 @@ select.form-input option {
 .image-download-btn {
     font-size: 0.8rem;
     padding: 4px 12px;
+}
+
+.image-download-btn:disabled {
+    animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
 .image-count-none {

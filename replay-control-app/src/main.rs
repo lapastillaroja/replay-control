@@ -185,8 +185,37 @@ mod ssr {
             },
         );
 
+        // SSE endpoint for real-time image import progress.
+        let sse_state = app_state.clone();
+        let sse_handler = axum::routing::get(move || {
+            let state = sse_state.clone();
+            async move {
+                use axum::response::sse::{Event, Sse};
+                use std::convert::Infallible;
+                use tokio_stream::StreamExt;
+
+                let stream = tokio_stream::wrappers::IntervalStream::new(
+                    tokio::time::interval(std::time::Duration::from_millis(200)),
+                )
+                .map(move |_| {
+                    let guard = state.image_import_progress.read().expect("lock");
+                    let json = match &*guard {
+                        Some(p) => serde_json::to_string(p).unwrap_or_default(),
+                        None => "null".to_string(),
+                    };
+                    Ok::<_, Infallible>(Event::default().data(json))
+                });
+
+                Sse::new(stream).keep_alive(
+                    axum::response::sse::KeepAlive::new()
+                        .interval(std::time::Duration::from_secs(15)),
+                )
+            }
+        });
+
         let app = Router::new()
             .nest("/api", api_routes)
+            .route("/sse/image-progress", sse_handler)
             .route("/media/*path", media_handler)
             .route(
                 "/sfn/*fn_name",

@@ -32,6 +32,7 @@ tracing-subscriber = { workspace = true, optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 any_spawner = { version = "0.2", features = ["tokio"], optional = true }
 notify = { version = "8", optional = true }
+tokio-stream = { version = "0.1", optional = true }
 
 # Hydrate-only
 web-sys = { version = "0.3", features = [
@@ -39,6 +40,8 @@ web-sys = { version = "0.3", features = [
     "IntersectionObserver",
     "IntersectionObserverInit",
     "IntersectionObserverEntry",
+    "EventSource",
+    "MessageEvent",
 ], optional = true }
 gloo-timers = { version = "0.3", features = ["futures"], optional = true }
 
@@ -64,4 +67,5 @@ ssr = [
     "dep:clap",
     "dep:any_spawner",
     "dep:notify",
+    "dep:tokio-stream",
 ]

@@ -663,9 +663,18 @@ impl AppState {
                 });
             }
 
-            let repo_dir = match replay_control_core::thumbnails::clone_thumbnail_repo(repo_name, Some(&clone_base)) {
+            let repo_dir = match replay_control_core::thumbnails::clone_thumbnail_repo(repo_name, Some(&clone_base), Some(&self.image_import_cancel)) {
                 Ok(dir) => dir,
                 Err(e) => {
+                    // If cancelled during clone, set Cancelled state and stop.
+                    if self.image_import_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                        let mut guard = self.image_import_progress.write().expect("lock");
+                        if let Some(ref mut p) = *guard {
+                            p.state = ImageImportState::Cancelled;
+                            p.elapsed_secs = start.elapsed().as_secs();
+                        }
+                        break;
+                    }
                     tracing::warn!("Clone failed for {repo_name}: {e}");
                     // For multi-repo systems, continue to next repo instead of failing entirely
                     if repo_idx == 0 && repo_names.len() == 1 {
@@ -793,7 +802,25 @@ impl AppState {
             return false;
         }
 
+        use crate::server_fns::{ImageImportProgress, ImageImportState};
         self.image_import_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        // Write initial progress before spawning so the first poll never returns None.
+        {
+            let mut guard = self.image_import_progress.write().expect("lock");
+            *guard = Some(ImageImportProgress {
+                state: ImageImportState::Cloning,
+                system: system.clone(),
+                system_display: system.clone(),
+                processed: 0,
+                total: 0,
+                boxart_copied: 0,
+                snap_copied: 0,
+                elapsed_secs: 0,
+                error: None,
+                current_system: 1,
+                total_systems: 1,
+            });
+        }
         let state = self.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
@@ -824,7 +851,26 @@ impl AppState {
             return false;
         }
 
+        use crate::server_fns::{ImageImportProgress, ImageImportState};
         self.image_import_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        // Write initial progress before spawning so the first poll never returns None.
+        {
+            let total = supported.len();
+            let mut guard = self.image_import_progress.write().expect("lock");
+            *guard = Some(ImageImportProgress {
+                state: ImageImportState::Cloning,
+                system: supported[0].clone(),
+                system_display: String::new(),
+                processed: 0,
+                total: 0,
+                boxart_copied: 0,
+                snap_copied: 0,
+                elapsed_secs: 0,
+                error: None,
+                current_system: 1,
+                total_systems: total,
+            });
+        }
         let state = self.clone();
         let total = supported.len();
         tokio::task::spawn_blocking(move || {

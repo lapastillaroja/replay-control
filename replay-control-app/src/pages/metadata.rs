@@ -190,7 +190,7 @@ async fn poll_progress(
     let mut empty_polls = 0u32;
     loop {
         #[cfg(target_arch = "wasm32")]
-        gloo_timers::future::TimeoutFuture::new(1_000).await;
+        gloo_timers::future::TimeoutFuture::new(500).await;
         #[cfg(not(target_arch = "wasm32"))]
         break;
 
@@ -288,6 +288,8 @@ fn ImageSection() -> impl IntoView {
     let img_progress = RwSignal::new(Option::<server_fns::ImageImportProgress>::None);
     let img_message = RwSignal::new(Option::<String>::None);
 
+    let img_cancelling = RwSignal::new(false);
+
     // Check for in-progress image import on load.
     Effect::new(move || {
         leptos::task::spawn_local(async move {
@@ -295,7 +297,7 @@ fn ImageSection() -> impl IntoView {
                 if matches!(p.state, ImageImportState::Cloning | ImageImportState::Copying) {
                     img_progress.set(Some(p));
                     img_importing.set(true);
-                    poll_image_progress(img_importing, img_progress, img_message, image_coverage, image_stats).await;
+                    watch_image_progress(img_importing, img_progress, img_message, img_cancelling, image_coverage, image_stats);
                 }
             }
         });
@@ -339,12 +341,26 @@ fn ImageSection() -> impl IntoView {
             let on_download_all = move |_| {
                 if img_importing.get() { return; }
                 img_importing.set(true);
+                img_cancelling.set(false);
                 img_message.set(None);
-                img_progress.set(None);
+                // Optimistic: show progress bar immediately
+                img_progress.set(Some(server_fns::ImageImportProgress {
+                    state: ImageImportState::Cloning,
+                    system: String::new(),
+                    system_display: String::new(),
+                    processed: 0,
+                    total: 0,
+                    boxart_copied: 0,
+                    snap_copied: 0,
+                    elapsed_secs: 0,
+                    error: None,
+                    current_system: 0,
+                    total_systems: 0,
+                }));
                 leptos::task::spawn_local(async move {
                     match server_fns::import_all_images().await {
                         Ok(()) => {
-                            poll_image_progress(img_importing, img_progress, img_message, image_coverage, image_stats).await;
+                            watch_image_progress(img_importing, img_progress, img_message, img_cancelling, image_coverage, image_stats);
                         }
                         Err(e) => {
                             img_message.set(Some(format!("Error: {e}")));
@@ -354,6 +370,7 @@ fn ImageSection() -> impl IntoView {
                 });
             };
             let on_cancel = move |_| {
+                img_cancelling.set(true);
                 leptos::task::spawn_local(async move {
                     let _ = server_fns::cancel_image_import().await;
                 });
@@ -375,8 +392,13 @@ fn ImageSection() -> impl IntoView {
                         <button
                             class="form-btn form-btn-secondary"
                             on:click=on_cancel
+                            disabled=move || img_cancelling.get()
                         >
-                            {move || t(i18n.locale.get(), "metadata.stop")}
+                            {move || if img_cancelling.get() {
+                                t(i18n.locale.get(), "metadata.cancelling")
+                            } else {
+                                t(i18n.locale.get(), "metadata.stop")
+                            }}
                         </button>
                     </Show>
                 </div>
@@ -407,16 +429,30 @@ fn ImageSection() -> impl IntoView {
                         let rows = systems_with_repo.into_iter().map(|c| {
                             let system = StoredValue::new(c.system.clone());
                             let has_images = c.with_boxart > 0 || c.with_snap > 0;
+                            let display_name = StoredValue::new(c.display_name.clone());
                             let on_download = move |_| {
                                 if img_importing.get() { return; }
                                 img_importing.set(true);
                                 img_message.set(None);
-                                img_progress.set(None);
+                                // Optimistic: show progress bar immediately
+                                img_progress.set(Some(server_fns::ImageImportProgress {
+                                    state: ImageImportState::Cloning,
+                                    system: system.get_value(),
+                                    system_display: display_name.get_value(),
+                                    processed: 0,
+                                    total: 0,
+                                    boxart_copied: 0,
+                                    snap_copied: 0,
+                                    elapsed_secs: 0,
+                                    error: None,
+                                    current_system: 1,
+                                    total_systems: 1,
+                                }));
                                 let sys = system.get_value();
                                 leptos::task::spawn_local(async move {
                                     match server_fns::import_system_images(sys).await {
                                         Ok(()) => {
-                                            poll_image_progress(img_importing, img_progress, img_message, image_coverage, image_stats).await;
+                                            watch_image_progress(img_importing, img_progress, img_message, img_cancelling, image_coverage, image_stats);
                                         }
                                         Err(e) => {
                                             img_message.set(Some(format!("Error: {e}")));
@@ -461,76 +497,85 @@ fn ImageSection() -> impl IntoView {
     }
 }
 
-/// Polls image import progress until complete.
+/// Watches image import progress via SSE, falling back to polling.
 #[allow(unused_variables, unreachable_code)]
-async fn poll_image_progress(
+fn watch_image_progress(
     importing: RwSignal<bool>,
     progress: RwSignal<Option<server_fns::ImageImportProgress>>,
     message: RwSignal<Option<String>>,
+    cancelling: RwSignal<bool>,
     coverage: Resource<Result<Vec<server_fns::ImageCoverage>, ServerFnError>>,
     stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
 ) {
-    let mut empty_polls = 0u32;
-    loop {
-        #[cfg(target_arch = "wasm32")]
-        gloo_timers::future::TimeoutFuture::new(1_000).await;
-        #[cfg(not(target_arch = "wasm32"))]
-        break;
+    #[cfg(not(target_arch = "wasm32"))]
+    return;
 
-        match server_fns::get_image_import_progress().await {
-            Ok(Some(p)) => {
-                empty_polls = 0;
-                let is_multi = p.total_systems > 1;
-                let is_last = p.current_system >= p.total_systems;
-                let done = match p.state {
-                    ImageImportState::Failed | ImageImportState::Cancelled => true,
-                    ImageImportState::Complete => !is_multi || is_last,
-                    _ => false,
-                };
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::prelude::*;
 
-                if done {
-                    if p.state == ImageImportState::Complete {
-                        if is_multi {
-                            message.set(Some(format!(
-                                "All {} systems done ({}s)",
-                                p.total_systems, p.elapsed_secs,
-                            )));
-                        } else {
-                            message.set(Some(format!(
-                                "{}: {} boxart, {} snaps ({}s)",
-                                p.system_display, p.boxart_copied, p.snap_copied, p.elapsed_secs,
-                            )));
-                        }
-                    } else if p.state == ImageImportState::Cancelled {
+        let es = match web_sys::EventSource::new("/sse/image-progress") {
+            Ok(es) => es,
+            Err(_) => return,
+        };
+
+        let es_clone = es.clone();
+        let on_message = Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+            let data = event.data().as_string().unwrap_or_default();
+            if data == "null" || data.is_empty() {
+                return;
+            }
+            let p: server_fns::ImageImportProgress = match serde_json::from_str(&data) {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+
+            let is_multi = p.total_systems > 1;
+            let is_last = p.current_system >= p.total_systems;
+            let done = match p.state {
+                ImageImportState::Failed | ImageImportState::Cancelled => true,
+                ImageImportState::Complete => !is_multi || is_last,
+                _ => false,
+            };
+
+            if done {
+                cancelling.set(false);
+                if p.state == ImageImportState::Complete {
+                    if is_multi {
                         message.set(Some(format!(
-                            "Cancelled after {}s ({} boxart, {} snaps imported)",
-                            p.elapsed_secs, p.boxart_copied, p.snap_copied,
+                            "All {} systems done ({}s)",
+                            p.total_systems, p.elapsed_secs,
                         )));
                     } else {
                         message.set(Some(format!(
-                            "Failed: {}",
-                            p.error.as_deref().unwrap_or("unknown error"),
+                            "{}: {} boxart, {} snaps ({}s)",
+                            p.system_display, p.boxart_copied, p.snap_copied, p.elapsed_secs,
                         )));
                     }
-                    progress.set(Some(p));
-                    importing.set(false);
-                    coverage.refetch();
-                    stats.refetch();
-                    break;
+                } else if p.state == ImageImportState::Cancelled {
+                    message.set(Some(format!(
+                        "Cancelled after {}s ({} boxart, {} snaps imported)",
+                        p.elapsed_secs, p.boxart_copied, p.snap_copied,
+                    )));
+                } else {
+                    message.set(Some(format!(
+                        "Failed: {}",
+                        p.error.as_deref().unwrap_or("unknown error"),
+                    )));
                 }
-
                 progress.set(Some(p));
+                importing.set(false);
+                coverage.refetch();
+                stats.refetch();
+                es_clone.close();
+                return;
             }
-            Ok(None) => {
-                // Background task hasn't written progress yet — keep trying.
-                empty_polls += 1;
-                if empty_polls > 30 {
-                    importing.set(false);
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
+
+            progress.set(Some(p));
+        });
+
+        es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+        on_message.forget(); // intentional: prevent drop while EventSource is alive
     }
 }
 
