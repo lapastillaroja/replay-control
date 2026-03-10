@@ -5,6 +5,7 @@
 
 use std::path::Path;
 
+use crate::arcade_db;
 use crate::error::{Error, Result};
 use crate::metadata_db::MetadataDb;
 
@@ -71,7 +72,12 @@ pub fn thumbnail_repo_name(system: &str) -> Option<&'static str> {
         "snk_ngcd" => Some("SNK - Neo Geo CD"),
         "snk_ngp" => Some("SNK - Neo Geo Pocket"),
         "sony_psx" => Some("Sony - PlayStation"),
-        // Arcade systems use progetto-SNAPS, not libretro-thumbnails
+        // Arcade systems — libretro-thumbnails uses display names as filenames,
+        // so import_system_thumbnails() translates MAME codenames via arcade_db.
+        "arcade_mame" => Some("MAME"),
+        "arcade_fbneo" => Some("FBNeo - Arcade Games"),
+        "arcade_mame_2k3p" => Some("MAME"),
+        "arcade_dc" => Some("Atomiswave"),
         _ => None,
     }
 }
@@ -188,12 +194,26 @@ pub fn import_system_thumbnails(
 
     let mut db_updates: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
 
+    let is_arcade = matches!(system, "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc");
+
     for (i, rom_filename) in rom_filenames.iter().enumerate() {
         let stem = match rom_filename.rfind('.') {
             Some(i) => &rom_filename[..i],
             None => rom_filename,
         };
-        let thumb_name = thumbnail_filename(stem);
+
+        // For arcade systems, ROM filenames are MAME codenames (e.g. "sf2")
+        // but libretro-thumbnails uses display names (e.g. "Street Fighter II_ The World Warrior").
+        // Translate through arcade_db.
+        let thumb_name = if is_arcade {
+            if let Some(info) = arcade_db::lookup_arcade_game(stem) {
+                thumbnail_filename(info.display_name)
+            } else {
+                thumbnail_filename(stem)
+            }
+        } else {
+            thumbnail_filename(stem)
+        };
 
         let mut boxart_rel: Option<String> = None;
         let mut snap_rel: Option<String> = None;
