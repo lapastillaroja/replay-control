@@ -1,5 +1,7 @@
 # Scroll Restoration & Back-Navigation Analysis
 
+> **Status**: Ready to implement. Recommended approach: global `PageCache` context (see below). Validated by Leptos maintainer.
+
 ## Problem Statement
 
 When the user navigates from a long, scrolled page (e.g., a system ROM list at `/games/snes` after loading several pages via infinite scroll) to a detail page (`/games/snes/SuperMario.zip`) and then presses the browser back button, the ROM list page:
@@ -73,6 +75,37 @@ let _ = history.unwrap().back();
 ```
 
 This is a good instinct — `history.back()` triggers a `popstate` event which the Leptos router intercepts. However, because the router still remounts the target route's component (cause #1), this does not help with state preservation. The `history.back()` approach correctly avoids pushing a new history entry, but the component lifecycle problem remains.
+
+---
+
+## Upstream Leptos Status
+
+Research into the Leptos GitHub repository confirms that this is a known limitation with no planned framework-level fix.
+
+### Issue #2352 — "Route component without re-render its view" (CLOSED)
+
+- **URL**: https://github.com/leptos-rs/leptos/issues/2352
+- A user reported exactly this problem: infinite scroll with pagination resets on back-navigation.
+- **Maintainer response (gbj)**: "create a resource that lives in the root of the app, to cache the data, and provide it via context." No `<LeakRoute>` or `<KeepAlive>` component is planned.
+- Another user commented (Jan 2025): "sad to see this isn't planned, I do like the idea of `<LeakRoute/>` and can definitely see uses for it like a social media app with a home feed."
+- gbj reiterated the same workaround in Jan 2025 — the position has not changed.
+
+### Issue #2666 — "Add scroll prop to `<A>`" (CLOSED)
+
+- **URL**: https://github.com/leptos-rs/leptos/issues/2666
+- This issue only controls scroll-to-top behavior on link clicks, **not** back-navigation scroll restoration.
+- The `noscroll` attribute was broken in Leptos 0.7, fixed in PR #3333 which added a `scroll` prop to `<A>`.
+- **Not relevant to our problem** — it addresses forward-navigation scroll control, not back-nav full page redraw.
+
+### Issue #2164 — Route state lost on back/forward navigation
+
+- **URL**: https://github.com/leptos-rs/leptos/issues/2164
+- `NavigateOptions::state` is lost on browser back/forward navigation.
+- Related but different — this is about route-level `state` (the `State` field in `NavigateOptions`), not component-level reactive state or scroll position.
+
+### Conclusion
+
+Leptos will **not** add `KeepAlive`, `LeakRoute`, or any route-level component caching mechanism. The maintainer's official recommendation is exactly the approach described in Solution B below: a global cache context provided above `<Router>` that preserves data across navigations. This validates our recommended approach.
 
 ---
 
@@ -282,7 +315,9 @@ Modern browsers can snapshot the entire page state (DOM, JS heap, scroll positio
 
 ## Recommended Approach
 
-**Combine Solution B (Global Signal Store) with manual scroll restoration**, implemented in phases:
+**Combine Solution B (Global Signal Store) with manual scroll restoration**, implemented in phases.
+
+> **Note**: This approach is validated by the Leptos maintainer's official recommendation. In [issue #2352](https://github.com/leptos-rs/leptos/issues/2352), gbj explicitly recommends "a resource that lives in the root of the app, to cache the data, and provide it via context" as the solution to this class of problem. No framework-level alternative is planned.
 
 ### Phase 1: Global ROM List Cache (Solves data loss)
 

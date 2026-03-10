@@ -172,12 +172,23 @@ pub fn SearchPage() -> impl IntoView {
         }
     };
 
+    // Focus the search input on mount (autofocus only works on full page load,
+    // not on client-side router navigation).
+    let input_ref = NodeRef::<leptos::html::Input>::new();
+    #[cfg(feature = "hydrate")]
+    Effect::new(move || {
+        if let Some(el) = input_ref.get() {
+            let _ = el.focus();
+        }
+    });
+
     view! {
         <div class="page search-page">
             <div class="search-page-bar">
                 <input
                     type="text"
                     class="search-page-input"
+                    node_ref=input_ref
                     placeholder=move || t(i18n.locale.get(), "search.placeholder")
                     prop:value=move || search_input.get()
                     on:input=move |ev| search_input.set(event_target_value(&ev))
@@ -224,16 +235,11 @@ pub fn SearchPage() -> impl IntoView {
                     {move || if hide_hacks.get() { " \u{2715}" } else { "" }}
                 </button>
 
-                <ErrorBoundary fallback=|_| ()>
-                    <Suspense fallback=|| ()>
-                        {move || Suspend::new(async move {
-                            let genre_list = genres_resource.await?;
-                            Ok::<_, server_fn::ServerFnError>(view! {
-                                <GenreDropdown genre genre_list />
-                            })
-                        })}
-                    </Suspense>
-                </ErrorBoundary>
+                {move || {
+                    genres_resource.get().and_then(|res| res.ok()).map(|genre_list| {
+                        view! { <GenreDropdown genre genre_list /> }
+                    })
+                }}
             </div>
 
             <Transition fallback=move || view! {
@@ -348,13 +354,23 @@ fn SearchResults(
         .into_any();
     }
 
-    let summary = format!(
+    let count_summary = format!(
         "{} {} {} {}",
         data.total_results,
         t(locale, "search.results_summary"),
         data.total_systems,
         t(locale, "search.systems")
     );
+    let summary = if query.is_empty() && !genre.is_empty() {
+        format!(
+            "{} {} — {}",
+            t(locale, "search.browsing_genre"),
+            genre,
+            count_summary
+        )
+    } else {
+        count_summary
+    };
 
     // Build query string for "See all" links.
     let filter_qs = StoredValue::new({

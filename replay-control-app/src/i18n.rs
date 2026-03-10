@@ -224,8 +224,17 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.pin_video" => "Pin",
         "game_detail.pinned" => "Pinned",
         "game_detail.show_all_videos" => "Show all",
+        "game_detail.user_captures" => "Your Captures",
+        "game_detail.no_captures" => {
+            "Take screenshots during gameplay on your RePlayOS \u{2014} they'll appear here!"
+        }
         "game_detail.manual" => "Manual",
         "game_detail.no_manual" => "No manual available",
+        "game_detail.launch" => "Launch on TV",
+        "game_detail.launching" => "Launching...",
+        "game_detail.launched" => "Launched!",
+        "game_detail.launch_error" => "Failed to launch",
+        "game_detail.launch_not_replayos" => "Not running on RePlayOS",
         "game_detail.actions" => "Actions",
         "game_detail.favorite" => "Favorite",
         "game_detail.unfavorite" => "Unfavorite",
@@ -307,6 +316,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "search.no_results_with_filters" => "No results. Try removing some filters.",
         "search.results_summary" => "results across",
         "search.systems" => "systems",
+        "search.browsing_genre" => "Browsing all",
         "search.see_all" => "See all",
 
         // Filters
