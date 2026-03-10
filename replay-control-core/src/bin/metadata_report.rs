@@ -11,14 +11,38 @@ use std::path::PathBuf;
 
 use replay_control_core::arcade_db;
 use replay_control_core::game_db;
+use replay_control_core::launchbox;
 use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::roms;
 use replay_control_core::storage::{StorageKind, StorageLocation};
 use replay_control_core::systems::{self, SystemCategory};
 
 fn main() {
-    let storage_path = parse_args();
+    let (storage_path, import_xml) = parse_args();
     let storage = StorageLocation::from_path(storage_path, StorageKind::Usb);
+
+    // Optional: re-import LaunchBox metadata before generating the report.
+    if let Some(xml_path) = import_xml {
+        eprintln!("Building ROM index...");
+        let rom_index = launchbox::build_rom_index(&storage.root);
+        eprintln!("ROM index: {} entries", rom_index.len());
+
+        eprintln!("Opening metadata DB...");
+        let mut db = MetadataDb::open(&storage.root).expect("Failed to open metadata DB");
+
+        eprintln!("Importing LaunchBox XML from {}...", xml_path.display());
+        let stats = launchbox::import_launchbox(
+            &xml_path,
+            &mut db,
+            &rom_index,
+            |total, matched, inserted| {
+                eprint!("\r  Progress: {total} scanned, {matched} matched, {inserted} inserted");
+            },
+        ).expect("Import failed");
+
+        eprintln!("\nImport complete: {} source, {} matched, {} inserted, {} skipped",
+            stats.total_source, stats.matched, stats.inserted, stats.skipped);
+    }
 
     // Open external metadata DB (may not exist yet).
     let meta_db = MetadataDb::open(&storage.root).ok();
@@ -228,9 +252,10 @@ fn main() {
     println!("╚══════════════════════════════════════════════════════════════════════════════╝");
 }
 
-fn parse_args() -> PathBuf {
+fn parse_args() -> (PathBuf, Option<PathBuf>) {
     let args: Vec<String> = std::env::args().collect();
     let mut storage_path = None;
+    let mut import_xml = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -241,29 +266,37 @@ fn parse_args() -> PathBuf {
                     storage_path = Some(PathBuf::from(&args[i]));
                 }
             }
+            "--import" => {
+                i += 1;
+                if i < args.len() {
+                    import_xml = Some(PathBuf::from(&args[i]));
+                }
+            }
             "--help" | "-h" => {
-                eprintln!("Usage: metadata_report --storage-path <PATH>");
+                eprintln!("Usage: metadata_report --storage-path <PATH> [--import <XML>]");
                 eprintln!();
                 eprintln!("Generates a metadata coverage report for all systems with ROMs.");
                 eprintln!();
                 eprintln!("Options:");
                 eprintln!("  -s, --storage-path <PATH>  Path to storage root (e.g., /media/usb)");
+                eprintln!("      --import <XML>         Import LaunchBox Metadata.xml before report");
                 std::process::exit(0);
             }
             other => {
                 eprintln!("Unknown argument: {other}");
-                eprintln!("Usage: metadata_report --storage-path <PATH>");
+                eprintln!("Usage: metadata_report --storage-path <PATH> [--import <XML>]");
                 std::process::exit(1);
             }
         }
         i += 1;
     }
 
-    storage_path.unwrap_or_else(|| {
+    let path = storage_path.unwrap_or_else(|| {
         eprintln!("Error: --storage-path is required");
-        eprintln!("Usage: metadata_report --storage-path <PATH>");
+        eprintln!("Usage: metadata_report --storage-path <PATH> [--import <XML>]");
         std::process::exit(1);
-    })
+    });
+    (path, import_xml)
 }
 
 fn pct(n: usize, total: usize) -> f64 {

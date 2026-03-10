@@ -10,63 +10,75 @@ use std::path::Path;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
+use crate::arcade_db;
 use crate::error::{Error, Result};
 use crate::metadata_db::{GameMetadata, ImportStats, MetadataDb};
 
 /// Mapping from LaunchBox platform names to our system folder names.
-fn platform_map() -> HashMap<&'static str, &'static str> {
-    let mut m = HashMap::new();
-    // Arcade
-    m.insert("Arcade", "arcade_mame");
+/// A single platform can map to multiple system folders (e.g. "Arcade" covers
+/// arcade_mame, arcade_fbneo, and arcade_mame_2k3p).
+fn platform_map() -> HashMap<&'static str, Vec<&'static str>> {
+    let mut m: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut ins = |platform: &'static str, folder: &'static str| {
+        m.entry(platform).or_default().push(folder);
+    };
+    // Arcade — all arcade folders share the same MAME-style naming
+    ins("Arcade", "arcade_mame");
+    ins("Arcade", "arcade_fbneo");
+    ins("Arcade", "arcade_mame_2k3p");
+    // Sega arcade boards → arcade_dc
+    ins("Sammy Atomiswave", "arcade_dc");
+    ins("Sega Naomi", "arcade_dc");
+    ins("Sega Naomi 2", "arcade_dc");
     // Atari
-    m.insert("Atari 2600", "atari_2600");
-    m.insert("Atari 5200", "atari_5200");
-    m.insert("Atari 7800", "atari_7800");
-    m.insert("Atari Jaguar", "atari_jaguar");
-    m.insert("Atari Lynx", "atari_lynx");
+    ins("Atari 2600", "atari_2600");
+    ins("Atari 5200", "atari_5200");
+    ins("Atari 7800", "atari_7800");
+    ins("Atari Jaguar", "atari_jaguar");
+    ins("Atari Lynx", "atari_lynx");
     // Computers
-    m.insert("Amstrad CPC", "amstrad_cpc");
-    m.insert("Commodore Amiga", "commodore_ami");
-    m.insert("Commodore 64", "commodore_c64");
-    m.insert("MS-DOS", "ibm_pc");
-    m.insert("Microsoft MSX", "microsoft_msx");
-    m.insert("Microsoft MSX2", "microsoft_msx");
-    m.insert("Sharp X68000", "sharp_x68k");
-    m.insert("Sinclair ZX Spectrum", "sinclair_zx");
+    ins("Amstrad CPC", "amstrad_cpc");
+    ins("Commodore Amiga", "commodore_ami");
+    ins("Commodore 64", "commodore_c64");
+    ins("MS-DOS", "ibm_pc");
+    ins("Microsoft MSX", "microsoft_msx");
+    ins("Microsoft MSX2", "microsoft_msx");
+    ins("Sharp X68000", "sharp_x68k");
+    ins("Sinclair ZX Spectrum", "sinclair_zx");
     // NEC
-    m.insert("NEC TurboGrafx-16", "nec_pce");
-    m.insert("NEC TurboGrafx-CD", "nec_pcecd");
-    m.insert("NEC PC Engine", "nec_pce");
-    m.insert("NEC PC Engine CD-ROM", "nec_pcecd");
+    ins("NEC TurboGrafx-16", "nec_pce");
+    ins("NEC TurboGrafx-CD", "nec_pcecd");
+    ins("NEC PC Engine", "nec_pce");
+    ins("NEC PC Engine CD-ROM", "nec_pcecd");
     // Nintendo
-    m.insert("Nintendo DS", "nintendo_ds");
-    m.insert("Nintendo Game Boy", "nintendo_gb");
-    m.insert("Nintendo Game Boy Advance", "nintendo_gba");
-    m.insert("Nintendo Game Boy Color", "nintendo_gbc");
-    m.insert("Nintendo 64", "nintendo_n64");
-    m.insert("Nintendo Entertainment System", "nintendo_nes");
-    m.insert("Super Nintendo Entertainment System", "nintendo_snes");
+    ins("Nintendo DS", "nintendo_ds");
+    ins("Nintendo Game Boy", "nintendo_gb");
+    ins("Nintendo Game Boy Advance", "nintendo_gba");
+    ins("Nintendo Game Boy Color", "nintendo_gbc");
+    ins("Nintendo 64", "nintendo_n64");
+    ins("Nintendo Entertainment System", "nintendo_nes");
+    ins("Super Nintendo Entertainment System", "nintendo_snes");
     // Panasonic / Philips
-    m.insert("3DO Interactive Multiplayer", "panasonic_3do");
-    m.insert("Philips CD-i", "philips_cdi");
+    ins("3DO Interactive Multiplayer", "panasonic_3do");
+    ins("Philips CD-i", "philips_cdi");
     // Sega
-    m.insert("Sega 32X", "sega_32x");
-    m.insert("Sega CD", "sega_cd");
-    m.insert("Sega Dreamcast", "sega_dc");
-    m.insert("Sega Game Gear", "sega_gg");
-    m.insert("Sega Genesis", "sega_smd");
-    m.insert("Sega Mega Drive", "sega_smd");
-    m.insert("Sega Master System", "sega_sms");
-    m.insert("Sega Saturn", "sega_st");
-    m.insert("Sega SG-1000", "sega_sg");
+    ins("Sega 32X", "sega_32x");
+    ins("Sega CD", "sega_cd");
+    ins("Sega Dreamcast", "sega_dc");
+    ins("Sega Game Gear", "sega_gg");
+    ins("Sega Genesis", "sega_smd");
+    ins("Sega Mega Drive", "sega_smd");
+    ins("Sega Master System", "sega_sms");
+    ins("Sega Saturn", "sega_st");
+    ins("Sega SG-1000", "sega_sg");
     // SNK
-    m.insert("SNK Neo Geo AES", "snk_ng");
-    m.insert("SNK Neo Geo MVS", "snk_ng");
-    m.insert("SNK Neo Geo CD", "snk_ngcd");
-    m.insert("SNK Neo Geo Pocket", "snk_ngp");
-    m.insert("SNK Neo Geo Pocket Color", "snk_ngp");
+    ins("SNK Neo Geo AES", "snk_ng");
+    ins("SNK Neo Geo MVS", "snk_ng");
+    ins("SNK Neo Geo CD", "snk_ngcd");
+    ins("SNK Neo Geo Pocket", "snk_ngp");
+    ins("SNK Neo Geo Pocket Color", "snk_ngp");
     // Sony
-    m.insert("Sony Playstation", "sony_psx");
+    ins("Sony Playstation", "sony_psx");
     m
 }
 
@@ -236,9 +248,12 @@ pub fn import_launchbox(
 
 /// Stream-parse the LaunchBox XML, calling `on_game` for each game entry
 /// whose platform maps to one of our systems.
+///
+/// When a platform maps to multiple system folders, `on_game` is called once
+/// per folder so the caller can match against all of them.
 fn parse_xml<R: BufRead>(
     reader: R,
-    platforms: &HashMap<&str, &str>,
+    platforms: &HashMap<&str, Vec<&str>>,
     mut on_game: impl FnMut(&LbGame, &str),
 ) -> Result<()> {
     let mut xml = Reader::from_reader(reader);
@@ -291,7 +306,7 @@ fn parse_xml<R: BufRead>(
                 let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
                 if tag == "Game" && in_game {
                     in_game = false;
-                    if let Some(system_folder) = platforms.get(platform.as_str()) {
+                    if let Some(system_folders) = platforms.get(platform.as_str()) {
                         let game = LbGame {
                             name: std::mem::take(&mut name),
                             platform: std::mem::take(&mut platform),
@@ -299,7 +314,9 @@ fn parse_xml<R: BufRead>(
                             rating,
                             publisher: std::mem::take(&mut publisher),
                         };
-                        on_game(&game, system_folder);
+                        for folder in system_folders {
+                            on_game(&game, folder);
+                        }
                     }
                 }
                 current_tag.clear();
@@ -404,12 +421,21 @@ pub fn build_rom_index(storage_root: &Path) -> HashMap<(String, String), Vec<Str
     index
 }
 
+/// System folders that use MAME-style ROM zip naming (codenames, not human titles).
+const ARCADE_SYSTEMS: &[&str] = &["arcade_mame", "arcade_fbneo", "arcade_mame_2k3p", "arcade_dc"];
+
 /// Recursively scan a directory for ROM files, adding them to the index.
+///
+/// For arcade systems, ROM filenames are MAME codenames (e.g. `sf2.zip`) that
+/// don't match LaunchBox's human-readable titles. We use `arcade_db` to look up
+/// the display name and normalize that instead. For clones, we also index under
+/// the parent ROM's display name so they match the parent's LaunchBox entry.
 fn scan_rom_dir_recursive(
     dir: &Path,
     system: &str,
     index: &mut HashMap<(String, String), Vec<String>>,
 ) {
+    let is_arcade = ARCADE_SYSTEMS.contains(&system);
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -431,9 +457,35 @@ fn scan_rom_dir_recursive(
                 None => &filename,
             };
 
-            let norm = normalize_title(stem);
-            let key = (system.to_string(), norm);
-            index.entry(key).or_default().push(filename);
+            if is_arcade {
+                // Use arcade_db to get the human-readable display name.
+                if let Some(info) = arcade_db::lookup_arcade_game(stem) {
+                    let norm = normalize_title(info.display_name);
+                    let key = (system.to_string(), norm);
+                    index.entry(key).or_default().push(filename.clone());
+
+                    // For clones, also index under the parent's display name
+                    // so they can match the parent's LaunchBox entry.
+                    if info.is_clone && !info.parent.is_empty() {
+                        if let Some(parent_info) = arcade_db::lookup_arcade_game(info.parent) {
+                            let parent_norm = normalize_title(parent_info.display_name);
+                            if parent_norm != normalize_title(info.display_name) {
+                                let parent_key = (system.to_string(), parent_norm);
+                                index.entry(parent_key).or_default().push(filename);
+                            }
+                        }
+                    }
+                } else {
+                    // ROM not in arcade_db — fall back to normalizing the stem directly.
+                    let norm = normalize_title(stem);
+                    let key = (system.to_string(), norm);
+                    index.entry(key).or_default().push(filename);
+                }
+            } else {
+                let norm = normalize_title(stem);
+                let key = (system.to_string(), norm);
+                index.entry(key).or_default().push(filename);
+            }
         }
     }
 }
