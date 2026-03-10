@@ -107,7 +107,7 @@ $RECYCLE.BIN/
 
 # Project-specific
 server_debug.log
-reference/
+/reference/
 
 # Downloaded arcade source data (large files, not checked in)
 # Populate with: ./scripts/download-arcade-data.sh

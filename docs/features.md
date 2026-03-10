@@ -48,7 +48,7 @@ Tracking document for Replay Control. Organized by page/area.
 - URL-encoded filenames in links to handle spaces, parentheses, etc.
 
 ### Planned
-- **Screenshots gallery** — display screenshots taken on RePlayOS for the current game. Screenshots are discovered from the `captures/` directory by matching the ROM filename prefix. Shown as a horizontal scrollable gallery below the metadata section. See `docs/screenshots-analysis.md`.
+- **Screenshots gallery** — display screenshots taken on RePlayOS for the current game. Screenshots are discovered from the `captures/` directory by matching the ROM filename prefix. Shown as a horizontal scrollable gallery below the metadata section. See `docs/reference/screenshots-analysis.md`.
 - **Game metadata integration** — cover images, descriptions, screenshots from external metadata providers
 - **RetroAchievements integration** — show achievements for the current game if the user has configured their RA account. Displays: achievement list with icons, earned/locked status, earn dates, total points, and completion percentage. Data fetched from RA API and cached locally. See details in the RetroAchievements section below.
 - **Video search** — link to gameplay videos on YouTube and other sources
@@ -216,7 +216,7 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 
 ### Future ideas
 - Search within favorites
-- Quick-launch favorites (depends on game launching — see `docs/game-launching.md`)
+- Quick-launch favorites (depends on game launching — see `docs/reference/game-launching.md`)
 - Drag-to-reorder favorites
 - Export/import favorites list
 - Per-favorite notes or tags
@@ -226,15 +226,17 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 ## More / Settings (`/more`)
 
 ### Implemented
-- **Menu items** for: Backup & Restore, Wi-Fi Configuration, NFS Share Settings (UI only, not functional)
-- **System Info** section showing: storage type, storage path, disk total, disk used, disk available
+- **Menu items** linking to: Skin/Theme, Wi-Fi Configuration, NFS Share Settings, Hostname, Metadata
+- **System Info** section showing: storage type, storage path, disk total, disk used, disk available, ethernet IP, Wi-Fi IP
+- **Skin/theme sync** — browse and apply RePlayOS skins from the web UI; optionally sync the app's color scheme to the active skin (see `docs/skin-theming-analysis.md`)
+- **Hostname configuration** — view and change the Pi's hostname from the web UI; updates mDNS address
+- **Wi-Fi configuration** — view and edit Wi-Fi settings (SSID, password, country, mode) from the web UI
+- **NFS share settings** — view and edit NFS v4 share configuration (server IP, share path, version) from the web UI
+- **Metadata management** — dedicated page at `/more/metadata` for importing LaunchBox metadata (auto-download + parse), viewing per-system coverage stats, importing libretro-thumbnails box art, clearing metadata/images, and regenerating the metadata DB (see `docs/game-metadata.md`)
 
 ### Planned
-- **Screenshots browser** — menu item linking to `/screenshots` page for browsing and managing all RePlayOS screenshots (see `docs/screenshots-analysis.md`)
-- **Metadata management** — menu item linking to `/more/metadata` for downloading, configuring, and managing external game metadata (see Metadata Management section above and `docs/game-metadata.md`)
-- **Background task system** — task manager with progress reporting, cancellation, and polling-based UI updates (see `docs/background-tasks.md`). Includes library scan trigger and task status display.
-- **Wi-Fi configuration** — configure Wi-Fi networks from the web UI (currently a placeholder menu item)
-- **NFS share settings** — configure NFS v4 share from the web UI (currently a placeholder menu item)
+- **Screenshots browser** — menu item linking to `/screenshots` page for browsing and managing all RePlayOS screenshots (see `docs/reference/screenshots-analysis.md`)
+- **Background task system** — task manager with progress reporting, cancellation, and polling-based UI updates (see `docs/reference/background-tasks.md`). Includes library scan trigger and task status display.
 
 ### Future ideas
 - RePlayOS config editor (replay.cfg settings)
@@ -262,13 +264,18 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Storage abstraction** — supports local filesystem and USB-mounted storage, auto-detects storage root
 - **Caching layer** — in-memory cache for system summaries with TTL-based expiration
 - **Mirror types** — client-side type definitions matching server-side `replay-control-core` types for serialization
+- **Server function registration** — explicit registration for library-crate server functions to prevent linker stripping
+- **ROM filename parser** — regex-based parser (`rom_tags` module) for No-Intro and GoodTools naming conventions, extracting title, region, revision, flags (see `docs/rom-identification.md`)
+- **Game metadata system** — SQLite metadata cache (`metadata_db`) with LaunchBox XML import (`launchbox` module) and libretro-thumbnails image import (`thumbnails` module). Coverage stats, per-system breakdown, auto-download with progress tracking. See `docs/game-metadata.md`.
+- **Non-arcade game database** — embedded PHF maps for ~34K ROM entries across 20+ systems (`game_db` module). Two-level model: `CanonicalGame` + `GameEntry`. Sources: No-Intro DATs, TheGamesDB JSON, libretro-database DATs.
+- **Skin sync** — read RePlayOS skin index from `replay.cfg`, extract dominant colors from skin PNG images, apply as CSS custom properties for theme synchronization (`skins` module)
 
 ### Planned
-- **ROM filename parser** — regex-based parser for No-Intro and GoodTools naming conventions, extracting title, region, revision, flags (see `docs/rom-identification.md`)
-- **Background task manager** — `TaskManager` with `DashMap`, progress via `AtomicU32`, cancellation via `CancellationToken`, polling-based UI (see `docs/background-tasks.md`)
-- **Game metadata integration** — pluggable metadata providers for box art, descriptions, ratings. ScreenScraper recommended as primary source for console games, Arcade Italia for arcade (see `docs/game-metadata-sources.md`)
-- **Server function registration** — explicit registration for library-crate server functions to prevent linker stripping
-- **Game launching** — launch games on RePlayOS from the web UI. Recommended approach: `_autostart` folder manipulation + process restart. Needs testing on real hardware. See `docs/game-launching.md`.
+- **Background task manager** — `TaskManager` with `DashMap`, progress via `AtomicU32`, cancellation via `CancellationToken`, polling-based UI (see `docs/reference/background-tasks.md`)
+- **Game launching** — launch games on RePlayOS from the web UI. Recommended approach: `_autostart` folder manipulation + process restart. Needs testing on real hardware. See `docs/reference/game-launching.md`.
+
+- **Cross-compilation** — `build.sh --target aarch64` for ARM (aarch64) Raspberry Pi binary
+- **Install/deployment script** — `install.sh` supporting SSH and SD card deployment (see `docs/reference/deployment.md`)
 
 ### Future ideas
 - **SQLite cache layer** — replace filesystem scanning with indexed database, populated by background scan, updated via inotify
@@ -281,9 +288,8 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Non-installed game search** — discover games not in the library
 - **Game videos** — search for related gameplay videos from YouTube or other sources
 - **Game manuals viewer** — read game manuals from the web UI
-- **Cross-compilation** — ARM (aarch64) binary for Raspberry Pi deployment
 - **systemd integration** — run as a system service on RePlayOS
 - **mDNS/Avahi** — auto-discovery via `replaypi.local`
 - **CLI mode** — command-line interface for scripting and power users (same binary)
+- **CI/CD pipeline** — automated builds and GitHub Releases (see `docs/reference/binary-distribution.md`)
 - **App-specific configuration file** — Replay Control should NOT write to `replay.cfg`, which is reserved for official RePlayOS system configurations (Wi-Fi, NFS, video output, etc.). Instead, the app needs its own config file (e.g., `replay-companion.cfg` or `replay-control-app.conf`) for storing user preferences such as preferred region, language, theme, and other app-level settings. The format should be plain text and user-editable, similar to `replay.cfg` (key = "value" pairs). This file would live alongside `replay.cfg` in the storage config directory.
-- **Install/deployment script** — a setup script for deploying Replay Control on RePlayOS (systemd service file, binary installation, permissions, etc.). Note: "setup" in this project refers to deployment/installation tooling, not an in-app first-run wizard. The app itself should work out of the box without requiring an initial setup flow.

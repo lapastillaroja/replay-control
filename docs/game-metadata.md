@@ -10,7 +10,7 @@ How game metadata works in Replay today, what's missing, and the plan for enrich
 
 ### Embedded Databases
 
-Replay ships two embedded metadata databases, compiled into the binary at build time via PHF maps. They are separate modules with different data models and build pipelines (see `arcade-db-unification-analysis.md` for the rationale).
+Replay ships two embedded metadata databases, compiled into the binary at build time via PHF maps. They are separate modules with different data models and build pipelines (see `reference/arcade-db-unification-analysis.md` for the rationale).
 
 **game_db** (non-arcade systems, ~34K ROM entries across 20+ systems):
 - Two-level model: `CanonicalGame` (shared per game) + `GameEntry` (per ROM variant)

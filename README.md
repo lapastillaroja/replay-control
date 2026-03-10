@@ -73,65 +73,31 @@ RePlayOS is a **Linux distribution** featuring a custom **libretro frontend** de
 
 ---
 
-## Feature Priorities
+## Current Status
 
-### Phase 1 — Core (MVP)
-- **ROM management & organization** — browse, add, remove, rename, organize ROMs on the Pi
-  - View ROM library by system/category
-  - Upload ROMs from any device via browser
-  - Rename, move, delete ROMs
-  - Detect duplicates
-  - M3U multi-disc management
-- **Favorites management**
-  - View, add, remove favorites
-  - Organize favorites by system — user can enable "group by system" which creates subfolders inside `_favorites/` (e.g., `_favorites/sega_smd/`, `_favorites/nintendo_n64/`)
-  - When enabled, existing `.fav` files in the root `_favorites/` folder are automatically moved to the matching system subfolder (based on the `<system>@` prefix in the filename)
-  - `.fav` filename convention stays the same inside subfolders
-  - Reversible: user can disable grouping and flatten back to root
-- **Game navigation** — browse and search installed games across all systems
-  - Filter by system, name, format
-  - Quick search
+See `docs/features.md` for detailed per-page tracking of implemented, planned, and future features.
 
-### Phase 2 — Enhancements
-- **Remote control** — trigger actions on RePlayOS from the web UI
+### Implemented
+- **ROM browsing & management** — browse by system, search, rename, delete, favorite toggle, infinite scroll with pagination
+- **Arcade display names** — embedded PHF database with 28,593 entries (Flycast, FBNeo, MAME 2003+, MAME current)
+- **Non-arcade game database** — embedded PHF maps for ~34K ROM entries across 20+ systems (No-Intro DATs, TheGamesDB, libretro-database)
+- **ROM filename parsing** — regex parser for No-Intro and GoodTools naming conventions (title, region, revision, flags)
+- **Favorites management** — view, add, remove, with hero card, grouped/flat views, optimistic UI
+- **Game detail page** — metadata grid, arcade-specific info, favorite toggle, rename, delete
+- **Game metadata** — SQLite cache with LaunchBox XML import (auto-download + parse), libretro-thumbnails box art import, per-system coverage stats
+- **Settings pages** — skin/theme sync, Wi-Fi, NFS, hostname, metadata management
+- **Home page** — last played, recently played, library stats, systems overview
+- **Installation** — `install.sh` supports SSH and SD card deployment methods
+
+### Not Yet Implemented
+- **Screenshots browser** — browsing and managing RePlayOS screenshots (see `docs/reference/screenshots-analysis.md`)
+- **Background task manager** — generic task system with progress/cancellation (see `docs/reference/background-tasks.md`)
+- **Game launching** — launching games from the web UI (see `docs/reference/game-launching.md`)
+- **Remote control** — triggering actions on RePlayOS from the web UI
 - **Backup & sync** — backup ROM library, save states, config
-- **Game metadata** — box art, descriptions, ratings (pluggable sources)
-- **RetroAchievements integration** — connect user's RetroAchievements account, show earned achievements per game while browsing the library
-
-### Nice to Have
-- **Wi-Fi & NFS configuration** — configure Wi-Fi networks and NFS share settings from the web UI (instead of manually editing replay.cfg)
-- **Game recommendations** — suggest games based on user's library, favorites, play history, or genre/system preferences
-- **Non-installed game search** — discover games not yet in the library (future)
-- **Game videos** — on the game detail page, search for related videos (trailers, longplays, 1CC runs) from YouTube or other sources
-
-### Installation / Setup
-
-**RePlayOS first-boot process:**
-- On first boot, RePlayOS creates and expands a new exFAT partition on the SD card
-- This partition holds ROMs, BIOS, saves, and config (`/media/sd/config/replay.cfg`)
-- Before first boot, only a FAT boot partition exists
-- First boot is silent (black screen) and can take time — user must not power off
-
-**Our setup approach:** Post-first-boot, SD-based installer
-1. User burns RePlayOS image to SD card
-2. User boots Pi — RePlayOS does first-boot setup (partitions, folders)
-3. User removes SD card, plugs into computer
-4. User runs our installer tool (simple CLI or script) which writes the binary + systemd service to the SD card's exFAT partition
-5. User re-inserts SD, boots Pi — our app starts automatically
-
-**Alternative (ideal, future):** Partner with RePlayOS to bundle the app in the image, or provide a hook in the FAT boot partition that runs post-first-boot setup automatically.
-
-**Option B: SSH/SCP install (network)**
-1. Pi is connected via ethernet or Wi-Fi is already configured
-2. User transfers binary via SCP: `scp replay-control-app pi@<ip>:/path/`
-3. User SSHs in and runs the setup script: `ssh pi@<ip> ./setup.sh`
-4. App starts automatically
-
-Both options (SD card and SSH/SCP) should be supported and documented.
-
-### Phase 3 — Future
-- **Game manuals viewer** — read game manuals directly from the web UI. Sources: internet downloads + official manual list from the RePlayOS Telegram group. Details TBD.
-- Additional features TBD as the app matures
+- **RetroAchievements integration** — show earned achievements per game
+- **Game manuals viewer** — read game manuals from the web UI
+- **CI/CD pipeline** — automated cross-compilation and GitHub Releases (see `docs/reference/binary-distribution.md`, `docs/reference/deployment.md`)
 
 ---
 
@@ -157,8 +123,15 @@ Both options (SD card and SSH/SCP) should be supported and documented.
 - `/` — Home (last played, recents, library stats, systems overview)
 - `/games` — Systems grid (all systems with game counts)
 - `/games/:system` — ROM list for a system (search, favorite toggle, rename, delete)
+- `/games/:system/:filename` — Game detail (metadata, actions, arcade info)
 - `/favorites` — Favorites (flat and grouped views)
+- `/favorites/:system` — System-specific favorites
 - `/more` — Settings and system info
+- `/more/skin` — Skin/theme selection and sync
+- `/more/wifi` — Wi-Fi configuration
+- `/more/nfs` — NFS share settings
+- `/more/hostname` — Hostname configuration
+- `/more/metadata` — Metadata import, coverage, and cache management
 
 ### Internationalization (i18n)
 - Built-in i18n support with English as default language
@@ -275,25 +248,24 @@ Output:
 
 - **Frontend:** Leptos SSR (Server-Side Rendering + WASM hydration) — full-stack Rust, no JavaScript dependency
 - **Internationalization:** Built-in i18n with English default; all UI strings are translation-ready
-- **Metadata:** Yes — show game info (box art, descriptions, ratings) for installed games and for discovery. RePlayOS already includes some metadata. Source TBD (ScreenScraper likely). Design the metadata layer to be pluggable.
-- **Authentication:** Will have auth, specific mechanism TBD (pairing token, password, etc.). Design the API with auth middleware from the start but implement it later.
+- **Metadata:** LaunchBox XML as primary text metadata source (descriptions, ratings, publisher). libretro-thumbnails for box art images. Both are free, bulk-downloadable, and work offline. ScreenScraper as a potential future API-based source for richer media.
+- **Authentication:** TBD (pairing token, password, etc.)
 
 ## Data Strategy
 
-- **Filesystem is the source of truth** for what ROMs exist — no local database required for MVP
-- All ROM lists, favorites, and recents are scanned from the filesystem on each request
-- **Future: SQLite cache layer** — populated by a background scan on startup, updated incrementally via inotify when files change; needed when we add metadata or if performance becomes an issue on large libraries
-- **Metadata fetched lazily** — when a user views a game detail page for the first time, fetch metadata from the configured provider and cache it in the DB
-- No metadata integration or local DB until the core browsing experience is solid
+- **Filesystem is the source of truth** for what ROMs exist
+- ROM lists, favorites, and recents are scanned from the filesystem on each request, with in-memory TTL caching
+- **Embedded metadata** — arcade DB (~28K entries) and non-arcade game DB (~34K entries) are compiled into the binary as PHF maps, providing display names, year, genre, developer, and players without any external data
+- **SQLite metadata cache** — `metadata.db` at `<storage>/.replay-control/metadata.db` stores imported text metadata (LaunchBox XML) and image references (libretro-thumbnails). Uses `nolock` VFS fallback for NFS mounts.
+- **Future: full SQLite cache** — replace filesystem scanning with an indexed database, populated by background scan, updated via inotify
 
 ## How RePlayOS Manages Game Lists
 
 - **Non-arcade systems:** no database — games are read directly from the filesystem, displayed by filename
 - **Arcade (MAME/FBNeo):** internal DB embedded in the `replay` binary, auto-generated from FBNeo/MAME DAT files + adb.arcadeitalia.net. Maps ROM zip names to display names, orientation, players, buttons, controller type. Not user-editable.
 - **Our app** scans the filesystem independently — no dependency on RePlayOS's internal DB
-- For arcade metadata, we can use the same public sources (MAME DATs, Arcade Italia)
+- For arcade metadata, we use the same public sources (MAME DATs, FBNeo DATs, Flycast CSV, catver.ini)
 
 ## Open Questions
 
 - Backup format: tarball, incremental, or custom?
-- Metadata source: ScreenScraper, IGDB, No-Intro DATs, Arcade Italia, or combination?
