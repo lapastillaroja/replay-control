@@ -10,8 +10,7 @@ pub fn BottomNav() -> impl IntoView {
     let location = use_location();
 
     let tabs = [
-        ("/", "nav.home", "\u{1F3E0}"),
-        ("/games", "nav.games", "\u{1F3AE}"),
+        ("/", "nav.games", "\u{1F3AE}"),
         ("/favorites", "nav.favorites", "\u{2B50}"),
         ("/more", "nav.more", "\u{2261}"),
     ];
@@ -21,7 +20,11 @@ pub fn BottomNav() -> impl IntoView {
             {tabs.into_iter().map(|(href, label_key, icon)| {
                 let class = move || {
                     let path = location.pathname.get();
-                    let active = if href == "/" { path == "/" } else { path.starts_with(href) };
+                    let active = if href == "/" {
+                        path == "/" || path.starts_with("/games")
+                    } else {
+                        path.starts_with(href)
+                    };
                     if active { "nav-tab active" } else { "nav-tab" }
                 };
 

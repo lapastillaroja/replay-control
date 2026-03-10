@@ -18,7 +18,7 @@ use components::nav::BottomNav;
 use i18n::{provide_i18n, t, use_i18n};
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
-use pages::games::{GamesPage, SystemRomView};
+use pages::games::SystemRomView;
 use pages::home::HomePage;
 use pages::hostname::HostnamePage;
 use pages::logs::LogsPage;
@@ -144,7 +144,6 @@ pub fn App() -> impl IntoView {
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
                         <Route path=path!("/") view=HomePage />
-                        <Route path=path!("/games") view=GamesPage />
                         <Route path=path!("/games/:system") view=SystemRomView />
                         <Route path=path!("/games/:system/:filename") view=GameDetailPage />
                         <Route path=path!("/favorites") view=FavoritesPage />

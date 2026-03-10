@@ -260,6 +260,10 @@ a, a:visited, a:hover, a:active {
     color: var(--accent);
 }
 
+.stat-card.compact .stat-value {
+    font-size: 1rem;
+}
+
 .stat-label {
     font-size: 0.75rem;
     color: var(--text-secondary);

@@ -1,5 +1,7 @@
 # Games Tab Analysis
 
+**Status: Implemented** — Games tab merged into Home, deploy complete.
+
 ## Decision: Option B — Merge Games into Home
 
 Decided 2026-03-11. The Games tab is removed; Home becomes the browsing hub.

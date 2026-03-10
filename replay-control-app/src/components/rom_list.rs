@@ -225,7 +225,7 @@ pub fn RomList(system: String) -> impl IntoView {
 
                         view! {
                             <div class="rom-header">
-                                <A href="/games" attr:class="back-btn">
+                                <A href="/" attr:class="back-btn">
                                     {t(locale, "games.back")}
                                 </A>
                                 <h2 class="page-title">{display_name}</h2>

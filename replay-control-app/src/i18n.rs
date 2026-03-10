@@ -49,7 +49,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
     match key {
         // App chrome
         "app.title" => "Replay Control",
-        "nav.home" => "Home",
+        "nav.home" => "Games",
         "nav.games" => "Games",
         "nav.favorites" => "Favs",
         "nav.more" => "More",

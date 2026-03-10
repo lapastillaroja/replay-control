@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use server_fn::ServerFnError;
 
+use crate::components::system_card::SystemCard;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
@@ -121,13 +122,18 @@ pub fn HomePage() -> impl IntoView {
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let info = info.await?;
+                            let storage_value = {
+                                let used = format_size(info.disk_used_bytes);
+                                let total = format_size(info.disk_total_bytes);
+                                let kind = info.storage_kind.to_uppercase();
+                                format!("{used} / {total} {kind}")
+                            };
                             Ok::<_, ServerFnError>(view! {
                                 <div class="stats-grid">
                                     <StatCard value=info.total_games.to_string() label=t(locale, "stats.games") />
                                     <StatCard value=info.systems_with_games.to_string() label=t(locale, "stats.systems") />
                                     <StatCard value=info.total_favorites.to_string() label=t(locale, "stats.favorites") />
-                                    <StatCard value=format_size(info.disk_used_bytes) label=t(locale, "stats.used") />
-                                    <StatCard value=info.storage_kind.to_uppercase() label=t(locale, "stats.storage") />
+                                    <StatCard value=storage_value label=t(locale, "stats.storage") compact=true />
                                 </div>
                             })
                         })}
@@ -140,27 +146,18 @@ pub fn HomePage() -> impl IntoView {
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                     <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
-                            let locale = i18n.locale.get();
                             let systems = systems.await?;
-                            let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
-                            Ok::<_, ServerFnError>(if with_games.is_empty() {
-                                view! { <p class="empty-state">{t(locale, "home.no_systems")}</p> }.into_any()
-                            } else {
-                                view! {
-                                    <div class="systems-grid">
-                                        {with_games.into_iter().map(|sys| {
-                                            let href = format!("/games/{}", sys.folder_name);
-                                            let name = sys.display_name.clone();
-                                            let count = format!("{} {}", sys.game_count, t(locale, "stats.games").to_lowercase());
-                                            view! {
-                                                <A href=href attr:class="system-card">
-                                                    <div class="system-card-name">{name}</div>
-                                                    <div class="system-card-count">{count}</div>
-                                                </A>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-                                }.into_any()
+                            Ok::<_, ServerFnError>(view! {
+                                <div class="systems-grid">
+                                    {systems.iter().map(|sys| {
+                                        let href = format!("/games/{}", sys.folder_name);
+                                        if sys.game_count > 0 {
+                                            view! { <SystemCard system=sys.clone() href /> }.into_any()
+                                        } else {
+                                            view! { <EmptySystemCard system=sys.clone() /> }.into_any()
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                </div>
                             })
                         })}
                     </Suspense>
@@ -171,11 +168,33 @@ pub fn HomePage() -> impl IntoView {
 }
 
 #[component]
-fn StatCard(value: String, label: &'static str) -> impl IntoView {
+fn StatCard(
+    value: String,
+    label: &'static str,
+    #[prop(optional)] compact: bool,
+) -> impl IntoView {
+    let class = if compact { "stat-card compact" } else { "stat-card" };
     view! {
-        <div class="stat-card">
+        <div class=class>
             <div class="stat-value">{value}</div>
             <div class="stat-label">{label}</div>
+        </div>
+    }
+}
+
+/// An inert, greyed-out system card for systems with no games.
+/// Not clickable — just a plain div with the `.empty` class.
+#[component]
+fn EmptySystemCard(system: crate::server_fns::SystemSummary) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <div class="system-card empty">
+            <div class="system-card-name">{system.display_name.clone()}</div>
+            <div class="system-card-manufacturer">{system.manufacturer.clone()}</div>
+            <div class="system-card-count">
+                {move || t(i18n.locale.get(), "games.no_games").to_string()}
+            </div>
         </div>
     }
 }
