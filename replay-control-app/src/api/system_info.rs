@@ -23,11 +23,13 @@ async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
     let summaries = state.cache.get_systems(&storage);
     let favorites = replay_control_core::favorites::list_favorites(&storage).unwrap_or_default();
 
-    let disk = storage.disk_usage().unwrap_or(replay_control_core::storage::DiskUsage {
-        total_bytes: 0,
-        available_bytes: 0,
-        used_bytes: 0,
-    });
+    let disk = storage
+        .disk_usage()
+        .unwrap_or(replay_control_core::storage::DiskUsage {
+            total_bytes: 0,
+            available_bytes: 0,
+            used_bytes: 0,
+        });
 
     let systems_with_games = summaries.iter().filter(|s| s.game_count > 0).count();
     let total_games: usize = summaries.iter().map(|s| s.game_count).sum();

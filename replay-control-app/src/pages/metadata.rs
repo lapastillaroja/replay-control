@@ -2,9 +2,9 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::i18n::{use_i18n, t};
+use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
-use crate::server_fns::{self, ImportState, ImageImportState};
+use crate::server_fns::{self, ImageImportState, ImportState};
 use crate::util::format_size;
 
 #[component]
@@ -22,7 +22,10 @@ pub fn MetadataPage() -> impl IntoView {
     Effect::new(move || {
         leptos::task::spawn_local(async move {
             if let Ok(Some(p)) = server_fns::get_import_progress().await {
-                if matches!(p.state, ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing) {
+                if matches!(
+                    p.state,
+                    ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
+                ) {
                     progress.set(Some(p));
                     importing.set(true);
                     poll_progress(importing, progress, import_message, stats, coverage).await;
@@ -32,7 +35,9 @@ pub fn MetadataPage() -> impl IntoView {
     });
 
     let on_download = move |_| {
-        if importing.get() { return; }
+        if importing.get() {
+            return;
+        }
         importing.set(true);
         import_message.set(None);
         progress.set(None);
@@ -187,6 +192,7 @@ async fn poll_progress(
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
 ) {
+    #[allow(unused_mut)]
     let mut empty_polls = 0u32;
     loop {
         #[cfg(target_arch = "wasm32")]
@@ -232,9 +238,7 @@ async fn poll_progress(
 
 /// Displays real-time import progress.
 #[component]
-fn ImportProgressDisplay(
-    progress: RwSignal<Option<server_fns::ImportProgress>>,
-) -> impl IntoView {
+fn ImportProgressDisplay(progress: RwSignal<Option<server_fns::ImportProgress>>) -> impl IntoView {
     let i18n = use_i18n();
 
     view! {
@@ -277,7 +281,6 @@ fn ImportProgressDisplay(
     }
 }
 
-
 /// Images section: shows per-system image coverage and download buttons.
 #[component]
 fn ImageSection() -> impl IntoView {
@@ -294,10 +297,20 @@ fn ImageSection() -> impl IntoView {
     Effect::new(move || {
         leptos::task::spawn_local(async move {
             if let Ok(Some(p)) = server_fns::get_image_import_progress().await {
-                if matches!(p.state, ImageImportState::Cloning | ImageImportState::Copying) {
+                if matches!(
+                    p.state,
+                    ImageImportState::Cloning | ImageImportState::Copying
+                ) {
                     img_progress.set(Some(p));
                     img_importing.set(true);
-                    watch_image_progress(img_importing, img_progress, img_message, img_cancelling, image_coverage, image_stats);
+                    watch_image_progress(
+                        img_importing,
+                        img_progress,
+                        img_message,
+                        img_cancelling,
+                        image_coverage,
+                        image_stats,
+                    );
                 }
             }
         });
@@ -520,59 +533,60 @@ fn watch_image_progress(
         };
 
         let es_clone = es.clone();
-        let on_message = Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-            let data = event.data().as_string().unwrap_or_default();
-            if data == "null" || data.is_empty() {
-                return;
-            }
-            let p: server_fns::ImageImportProgress = match serde_json::from_str(&data) {
-                Ok(p) => p,
-                Err(_) => return,
-            };
+        let on_message =
+            Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+                let data = event.data().as_string().unwrap_or_default();
+                if data == "null" || data.is_empty() {
+                    return;
+                }
+                let p: server_fns::ImageImportProgress = match serde_json::from_str(&data) {
+                    Ok(p) => p,
+                    Err(_) => return,
+                };
 
-            let is_multi = p.total_systems > 1;
-            let is_last = p.current_system >= p.total_systems;
-            let done = match p.state {
-                ImageImportState::Failed | ImageImportState::Cancelled => true,
-                ImageImportState::Complete => !is_multi || is_last,
-                _ => false,
-            };
+                let is_multi = p.total_systems > 1;
+                let is_last = p.current_system >= p.total_systems;
+                let done = match p.state {
+                    ImageImportState::Failed | ImageImportState::Cancelled => true,
+                    ImageImportState::Complete => !is_multi || is_last,
+                    _ => false,
+                };
 
-            if done {
-                cancelling.set(false);
-                if p.state == ImageImportState::Complete {
-                    if is_multi {
+                if done {
+                    cancelling.set(false);
+                    if p.state == ImageImportState::Complete {
+                        if is_multi {
+                            message.set(Some(format!(
+                                "All {} systems done ({}s)",
+                                p.total_systems, p.elapsed_secs,
+                            )));
+                        } else {
+                            message.set(Some(format!(
+                                "{}: {} boxart, {} snaps ({}s)",
+                                p.system_display, p.boxart_copied, p.snap_copied, p.elapsed_secs,
+                            )));
+                        }
+                    } else if p.state == ImageImportState::Cancelled {
                         message.set(Some(format!(
-                            "All {} systems done ({}s)",
-                            p.total_systems, p.elapsed_secs,
+                            "Cancelled after {}s ({} boxart, {} snaps imported)",
+                            p.elapsed_secs, p.boxart_copied, p.snap_copied,
                         )));
                     } else {
                         message.set(Some(format!(
-                            "{}: {} boxart, {} snaps ({}s)",
-                            p.system_display, p.boxart_copied, p.snap_copied, p.elapsed_secs,
+                            "Failed: {}",
+                            p.error.as_deref().unwrap_or("unknown error"),
                         )));
                     }
-                } else if p.state == ImageImportState::Cancelled {
-                    message.set(Some(format!(
-                        "Cancelled after {}s ({} boxart, {} snaps imported)",
-                        p.elapsed_secs, p.boxart_copied, p.snap_copied,
-                    )));
-                } else {
-                    message.set(Some(format!(
-                        "Failed: {}",
-                        p.error.as_deref().unwrap_or("unknown error"),
-                    )));
+                    progress.set(Some(p));
+                    importing.set(false);
+                    coverage.refetch();
+                    stats.refetch();
+                    es_clone.close();
+                    return;
                 }
-                progress.set(Some(p));
-                importing.set(false);
-                coverage.refetch();
-                stats.refetch();
-                es_clone.close();
-                return;
-            }
 
-            progress.set(Some(p));
-        });
+                progress.set(Some(p));
+            });
 
         es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         on_message.forget(); // intentional: prevent drop while EventSource is alive
@@ -665,7 +679,9 @@ fn ClearImagesSection() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match server_fns::clear_images().await {
                 Ok(()) => {
-                    result.set(Some(t(i18n.locale.get(), "metadata.cleared_images").to_string()));
+                    result.set(Some(
+                        t(i18n.locale.get(), "metadata.cleared_images").to_string(),
+                    ));
                 }
                 Err(e) => {
                     result.set(Some(format!("Error: {e}")));

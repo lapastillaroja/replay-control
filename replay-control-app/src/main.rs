@@ -9,11 +9,14 @@ mod ssr {
     use tower_http::cors::CorsLayer;
     use tower_http::services::ServeDir;
 
-    use replay_control_app::api;
     use replay_control_app::Shell;
+    use replay_control_app::api;
 
     #[derive(Parser)]
-    #[command(name = "replay-control-app", about = "Replay Control — companion app for RePlayOS")]
+    #[command(
+        name = "replay-control-app",
+        about = "Replay Control — companion app for RePlayOS"
+    )]
     struct Cli {
         /// Port to listen on
         #[arg(short, long, default_value = "8080")]
@@ -35,8 +38,11 @@ mod ssr {
     pub async fn run() {
         tracing_subscriber::fmt()
             .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "replay_control_app=info,replay_control_core=info".parse().unwrap()),
+                tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                    "replay_control_app=info,replay_control_core=info"
+                        .parse()
+                        .unwrap()
+                }),
             )
             .init();
 
@@ -50,9 +56,7 @@ mod ssr {
             Ok(state) => state,
             Err(e) => {
                 tracing::error!("Failed to initialize: {e}");
-                tracing::info!(
-                    "Hint: use --storage-path to point to a RePlayOS storage location"
-                );
+                tracing::info!("Hint: use --storage-path to point to a RePlayOS storage location");
                 std::process::exit(1);
             }
         };
@@ -92,7 +96,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataStats>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportLaunchboxMetadata>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportLaunchboxMetadata>(
+        );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RegenerateMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadMetadata>();
@@ -100,12 +105,17 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemCoverage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportSystemImages>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportAllImages>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageImportProgress>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageImportProgress>(
+        );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageCoverage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemLogs>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelImageImport>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameVideos>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::AddGameVideo>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveGameVideo>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameVideos>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
@@ -194,9 +204,9 @@ mod ssr {
                 use std::convert::Infallible;
                 use tokio_stream::StreamExt;
 
-                let stream = tokio_stream::wrappers::IntervalStream::new(
-                    tokio::time::interval(std::time::Duration::from_millis(200)),
-                )
+                let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
+                    std::time::Duration::from_millis(200),
+                ))
                 .map(move |_| {
                     let guard = state.image_import_progress.read().expect("lock");
                     let json = match &*guard {
@@ -219,19 +229,17 @@ mod ssr {
             .route("/media/*path", media_handler)
             .route(
                 "/sfn/*fn_name",
-                axum::routing::post(
-                    move |req: axum::http::Request<axum::body::Body>| {
-                        let state = state_for_sfn.clone();
-                        async move {
-                            let ctx_state = state.clone();
-                            leptos_axum::handle_server_fns_with_context(
-                                move || provide_context(ctx_state.clone()),
-                                req,
-                            )
-                            .await
-                        }
-                    },
-                ),
+                axum::routing::post(move |req: axum::http::Request<axum::body::Body>| {
+                    let state = state_for_sfn.clone();
+                    async move {
+                        let ctx_state = state.clone();
+                        leptos_axum::handle_server_fns_with_context(
+                            move || provide_context(ctx_state.clone()),
+                            req,
+                        )
+                        .await
+                    }
+                }),
             )
             .nest_service("/pkg", ServeDir::new(format!("{site_root}/pkg")))
             .nest_service("/icons", ServeDir::new(format!("{site_root}/icons")))

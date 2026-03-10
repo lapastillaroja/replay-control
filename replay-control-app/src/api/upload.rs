@@ -23,10 +23,7 @@ async fn upload_rom(
             .map(String::from)
             .unwrap_or_else(|| "unknown".to_string());
 
-        let data = field
-            .bytes()
-            .await
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
 
         let dest = system_dir.join(&filename);
         tokio::fs::write(&dest, &data)
@@ -48,9 +45,7 @@ async fn upload_rom(
     Ok(Json(serde_json::json!({ "uploaded": uploaded })))
 }
 
-async fn list_upload_targets(
-    State(state): State<AppState>,
-) -> Json<Vec<serde_json::Value>> {
+async fn list_upload_targets(State(state): State<AppState>) -> Json<Vec<serde_json::Value>> {
     let summaries = state.cache.get_systems(&state.storage());
     Json(
         summaries

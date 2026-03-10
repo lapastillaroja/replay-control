@@ -38,10 +38,13 @@ fn main() {
             |total, matched, inserted| {
                 eprint!("\r  Progress: {total} scanned, {matched} matched, {inserted} inserted");
             },
-        ).expect("Import failed");
+        )
+        .expect("Import failed");
 
-        eprintln!("\nImport complete: {} source, {} matched, {} inserted, {} skipped",
-            stats.total_source, stats.matched, stats.inserted, stats.skipped);
+        eprintln!(
+            "\nImport complete: {} source, {} matched, {} inserted, {} skipped",
+            stats.total_source, stats.matched, stats.inserted, stats.skipped
+        );
     }
 
     // Open external metadata DB (may not exist yet).
@@ -51,7 +54,10 @@ fn main() {
     let active: Vec<_> = summaries.iter().filter(|s| s.game_count > 0).collect();
 
     if active.is_empty() {
-        eprintln!("No systems with games found at {}", storage.roms_dir().display());
+        eprintln!(
+            "No systems with games found at {}",
+            storage.roms_dir().display()
+        );
         std::process::exit(1);
     }
 
@@ -60,7 +66,10 @@ fn main() {
     println!("╠══════════════════════════════════════════════════════════════════════════════╣");
     println!("║ Storage: {:<67}║", storage.root.display());
     println!("║ Systems with games: {:<56}║", active.len());
-    println!("║ Total ROMs: {:<64}║", active.iter().map(|s| s.game_count).sum::<usize>());
+    println!(
+        "║ Total ROMs: {:<64}║",
+        active.iter().map(|s| s.game_count).sum::<usize>()
+    );
     println!("╚══════════════════════════════════════════════════════════════════════════════╝");
     println!();
 
@@ -183,20 +192,43 @@ fn main() {
         }
 
         // Print system report
-        println!("┌──────────────────────────────────────────────────────────────────────────────┐");
-        println!("│ {:<40} {:>5} ROMs {:>20} │",
-            summary.display_name, total,
-            if is_arcade { "(arcade)" } else { "" });
-        println!("├──────────────────────────────────────────────────────────────────────────────┤");
+        println!(
+            "┌──────────────────────────────────────────────────────────────────────────────┐"
+        );
+        println!(
+            "│ {:<40} {:>5} ROMs {:>20} │",
+            summary.display_name,
+            total,
+            if is_arcade { "(arcade)" } else { "" }
+        );
+        println!(
+            "├──────────────────────────────────────────────────────────────────────────────┤"
+        );
 
         // Embedded section
         println!("│  EMBEDDED (compiled game_db / arcade_db)                                    │");
-        println!("│  ─────────────────────────────────────────────────                           │");
+        println!(
+            "│  ─────────────────────────────────────────────────                           │"
+        );
 
         print_field("│", "Display Name", embedded.display_name, total);
         print_field("│", "Year", embedded.year, total);
-        print_field("│", if is_arcade { "Category" } else { "Genre" }, embedded.genre, total);
-        print_field("│", if is_arcade { "Manufacturer" } else { "Developer" }, embedded.developer, total);
+        print_field(
+            "│",
+            if is_arcade { "Category" } else { "Genre" },
+            embedded.genre,
+            total,
+        );
+        print_field(
+            "│",
+            if is_arcade {
+                "Manufacturer"
+            } else {
+                "Developer"
+            },
+            embedded.developer,
+            total,
+        );
         print_field("│", "Players", embedded.players, total);
         if !is_arcade {
             print_field("│", "Region", embedded.region, total);
@@ -204,11 +236,17 @@ fn main() {
         print_field("│", "Normalized Genre", embedded.normalized_genre, total);
         print_field_bold("│", "Any Embedded", embedded.any, total);
 
-        println!("│                                                                              │");
+        println!(
+            "│                                                                              │"
+        );
 
         // External section
-        println!("│  EXTERNAL (LaunchBox / libretro-thumbnails)                                  │");
-        println!("│  ─────────────────────────────────────────────────────                        │");
+        println!(
+            "│  EXTERNAL (LaunchBox / libretro-thumbnails)                                  │"
+        );
+        println!(
+            "│  ─────────────────────────────────────────────────────                        │"
+        );
         print_field("│", "Description", external.description, total);
         print_field("│", "Rating", external.rating, total);
         print_field("│", "Publisher", external.publisher, total);
@@ -216,7 +254,9 @@ fn main() {
         print_field("│", "Screenshot", external.screenshot, total);
         print_field_bold("│", "Any External", external.any, total);
 
-        println!("└──────────────────────────────────────────────────────────────────────────────┘");
+        println!(
+            "└──────────────────────────────────────────────────────────────────────────────┘"
+        );
         println!();
 
         // Accumulate grand totals
@@ -239,7 +279,11 @@ fn main() {
     print_field_boxed("Developer / Mfr", grand_totals.embedded.developer, t);
     print_field_boxed("Players", grand_totals.embedded.players, t);
     print_field_boxed("Region", grand_totals.embedded.region, t);
-    print_field_boxed("Normalized Genre", grand_totals.embedded.normalized_genre, t);
+    print_field_boxed(
+        "Normalized Genre",
+        grand_totals.embedded.normalized_genre,
+        t,
+    );
     print_field_boxed_bold("Any Embedded", grand_totals.embedded.any, t);
     println!("║                                                                              ║");
     println!("║  EXTERNAL                                                                    ║");
@@ -279,7 +323,9 @@ fn parse_args() -> (PathBuf, Option<PathBuf>) {
                 eprintln!();
                 eprintln!("Options:");
                 eprintln!("  -s, --storage-path <PATH>  Path to storage root (e.g., /media/usb)");
-                eprintln!("      --import <XML>         Import LaunchBox Metadata.xml before report");
+                eprintln!(
+                    "      --import <XML>         Import LaunchBox Metadata.xml before report"
+                );
                 std::process::exit(0);
             }
             other => {
@@ -300,7 +346,11 @@ fn parse_args() -> (PathBuf, Option<PathBuf>) {
 }
 
 fn pct(n: usize, total: usize) -> f64 {
-    if total == 0 { 0.0 } else { 100.0 * n as f64 / total as f64 }
+    if total == 0 {
+        0.0
+    } else {
+        100.0 * n as f64 / total as f64
+    }
 }
 
 fn bar(n: usize, total: usize) -> String {
@@ -313,28 +363,44 @@ fn bar(n: usize, total: usize) -> String {
 fn print_field(prefix: &str, label: &str, count: usize, total: usize) {
     println!(
         "{prefix}    {:<20} {:>5}/{:<5} {:>5.1}%  {}                  {prefix}",
-        label, count, total, pct(count, total), bar(count, total)
+        label,
+        count,
+        total,
+        pct(count, total),
+        bar(count, total)
     );
 }
 
 fn print_field_bold(prefix: &str, label: &str, count: usize, total: usize) {
     println!(
         "{prefix}    \x1b[1m{:<20} {:>5}/{:<5} {:>5.1}%  {}\x1b[0m                  {prefix}",
-        label, count, total, pct(count, total), bar(count, total)
+        label,
+        count,
+        total,
+        pct(count, total),
+        bar(count, total)
     );
 }
 
 fn print_field_boxed(label: &str, count: usize, total: usize) {
     println!(
         "║    {:<20} {:>5}/{:<5} {:>5.1}%  {}                  ║",
-        label, count, total, pct(count, total), bar(count, total)
+        label,
+        count,
+        total,
+        pct(count, total),
+        bar(count, total)
     );
 }
 
 fn print_field_boxed_bold(label: &str, count: usize, total: usize) {
     println!(
         "║    \x1b[1m{:<20} {:>5}/{:<5} {:>5.1}%  {}\x1b[0m                  ║",
-        label, count, total, pct(count, total), bar(count, total)
+        label,
+        count,
+        total,
+        pct(count, total),
+        bar(count, total)
     );
 }
 

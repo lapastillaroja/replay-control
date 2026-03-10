@@ -3,7 +3,7 @@ use leptos_router::hooks::use_params_map;
 
 use crate::components::rom_list::RomList;
 use crate::components::system_card::SystemCard;
-use crate::i18n::{use_i18n, t};
+use crate::i18n::{t, use_i18n};
 use crate::server_fns;
 use server_fn::ServerFnError;
 

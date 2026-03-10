@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::Path;
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::arcade_db;
 use crate::error::{Error, Result};
@@ -127,7 +127,8 @@ fn normalize_title(name: &str) -> String {
         let first_word = &after_comma[..first_word_end];
         let first_word_lower = first_word.to_ascii_lowercase();
         if first_word_lower == "the" || first_word_lower == "a" || first_word_lower == "an" {
-            let rest = after_comma[first_word_end..].trim_start_matches(|c: char| c == ' ' || c == '-');
+            let rest =
+                after_comma[first_word_end..].trim_start_matches(|c: char| c == ' ' || c == '-');
             if rest.is_empty() {
                 format!("{first_word} {before}")
             } else {
@@ -158,8 +159,7 @@ pub fn import_launchbox(
     rom_index: &HashMap<(String, String), Vec<String>>,
     mut on_progress: impl FnMut(usize, usize, usize),
 ) -> Result<ImportStats> {
-    let file = std::fs::File::open(xml_path)
-        .map_err(|e| Error::io(xml_path, e))?;
+    let file = std::fs::File::open(xml_path).map_err(|e| Error::io(xml_path, e))?;
     let reader = std::io::BufReader::with_capacity(256 * 1024, file);
 
     let platforms = platform_map();
@@ -342,8 +342,12 @@ const METADATA_URL: &str = "https://gamesdb.launchbox-app.com/Metadata.zip";
 /// Uses `curl` for download and `unzip` for extraction (available on all targets).
 /// Returns the path to the extracted Metadata.xml.
 pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
-    std::fs::create_dir_all(dest_dir)
-        .map_err(|e| Error::Other(format!("Cannot create directory {}: {e}", dest_dir.display())))?;
+    std::fs::create_dir_all(dest_dir).map_err(|e| {
+        Error::Other(format!(
+            "Cannot create directory {}: {e}",
+            dest_dir.display()
+        ))
+    })?;
 
     let zip_path = dest_dir.join("Metadata.zip");
     let xml_path = dest_dir.join("Metadata.xml");
@@ -384,7 +388,9 @@ pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
     let _ = std::fs::remove_file(&zip_path);
 
     if !xml_path.exists() {
-        return Err(Error::Other("Metadata.xml not found in archive".to_string()));
+        return Err(Error::Other(
+            "Metadata.xml not found in archive".to_string(),
+        ));
     }
 
     tracing::info!("Metadata.xml extracted to {}", xml_path.display());
@@ -416,13 +422,22 @@ pub fn build_rom_index(storage_root: &Path) -> HashMap<(String, String), Vec<Str
     }
 
     let total: usize = index.values().map(|v| v.len()).sum();
-    tracing::info!("ROM index: {} unique titles, {} total files", index.len(), total);
+    tracing::info!(
+        "ROM index: {} unique titles, {} total files",
+        index.len(),
+        total
+    );
 
     index
 }
 
 /// System folders that use MAME-style ROM zip naming (codenames, not human titles).
-const ARCADE_SYSTEMS: &[&str] = &["arcade_mame", "arcade_fbneo", "arcade_mame_2k3p", "arcade_dc"];
+const ARCADE_SYSTEMS: &[&str] = &[
+    "arcade_mame",
+    "arcade_fbneo",
+    "arcade_mame_2k3p",
+    "arcade_dc",
+];
 
 /// Recursively scan a directory for ROM files, adding them to the index.
 ///

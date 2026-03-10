@@ -1,11 +1,11 @@
 use leptos::prelude::*;
-use server_fn::ServerFnError;
 use serde::{Deserialize, Serialize};
+use server_fn::ServerFnError;
 
-#[cfg(feature = "ssr")]
-pub use replay_control_core::favorites::OrganizeCriteria;
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::OrganizeCriteria;
+#[cfg(feature = "ssr")]
+pub use replay_control_core::favorites::OrganizeCriteria;
 
 pub const PAGE_SIZE: usize = 100;
 
@@ -182,8 +182,12 @@ fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameIn
             // No DB match — derive a clean display name from the filename.
             // Strip extension and parenthesized/bracketed tags for the base name,
             // then let display_name_with_tags re-append the useful tags.
-            let stem = rom_filename.rfind('.').map(|i| &rom_filename[..i]).unwrap_or(rom_filename);
-            let base = stem.find(" (")
+            let stem = rom_filename
+                .rfind('.')
+                .map(|i| &rom_filename[..i])
+                .unwrap_or(rom_filename);
+            let base = stem
+                .find(" (")
                 .or_else(|| stem.find(" ["))
                 .map(|i| stem[..i].trim())
                 .unwrap_or(stem);
@@ -265,7 +269,11 @@ fn enrich_from_metadata_cache(info: &mut GameInfo) {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    tracing::debug!("Metadata lookup failed for {}/{}: {e}", info.system, info.rom_filename);
+                    tracing::debug!(
+                        "Metadata lookup failed for {}/{}: {e}",
+                        info.system,
+                        info.rom_filename
+                    );
                 }
             }
         }
@@ -275,7 +283,8 @@ fn enrich_from_metadata_cache(info: &mut GameInfo) {
     // This handles the case where images were downloaded but the DB was cleared/regenerated.
     if info.box_art_url.is_none() || info.screenshot_url.is_none() {
         let storage = state.storage();
-        let media_base = storage.root
+        let media_base = storage
+            .root
             .join(replay_control_core::metadata_db::RC_DIR)
             .join("media")
             .join(&info.system);
@@ -296,7 +305,11 @@ fn enrich_from_metadata_cache(info: &mut GameInfo) {
 /// Try to find an image file on disk for a ROM, checking exact and fuzzy name matches.
 /// Skips broken files (< 200 bytes) that are git fake-symlink artifacts.
 #[cfg(feature = "ssr")]
-fn find_image_on_disk(media_base: &std::path::Path, kind: &str, rom_filename: &str) -> Option<String> {
+fn find_image_on_disk(
+    media_base: &std::path::Path,
+    kind: &str,
+    rom_filename: &str,
+) -> Option<String> {
     use replay_control_core::thumbnails::thumbnail_filename;
 
     let kind_dir = media_base.join(kind);
@@ -304,7 +317,10 @@ fn find_image_on_disk(media_base: &std::path::Path, kind: &str, rom_filename: &s
         return None;
     }
 
-    let stem = rom_filename.rfind('.').map(|i| &rom_filename[..i]).unwrap_or(rom_filename);
+    let stem = rom_filename
+        .rfind('.')
+        .map(|i| &rom_filename[..i])
+        .unwrap_or(rom_filename);
     let thumb_name = thumbnail_filename(stem);
 
     // 1. Exact match
@@ -437,7 +453,10 @@ fn search_score(query: &str, display_name: &str, filename: &str) -> u32 {
         10_000 // exact match on display name
     } else if display_lower.starts_with(query) {
         5_000 // display name starts with query
-    } else if display_lower.split_whitespace().any(|w| w.starts_with(query)) {
+    } else if display_lower
+        .split_whitespace()
+        .any(|w| w.starts_with(query))
+    {
         2_000 // a word in display name starts with query
     } else if display_lower.contains(query) {
         1_000 // display name contains query
@@ -489,7 +508,9 @@ pub async fn get_roms_page(
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| system.clone());
     let storage = state.storage();
-    let all_roms = state.cache.get_roms(&storage, &system)
+    let all_roms = state
+        .cache
+        .get_roms(&storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let filtered: Vec<RomEntry> = if search.is_empty() {
@@ -499,7 +520,11 @@ pub async fn get_roms_page(
         let mut scored: Vec<(u32, RomEntry)> = all_roms
             .into_iter()
             .filter_map(|r| {
-                let display = r.game.display_name.as_deref().unwrap_or(&r.game.rom_filename);
+                let display = r
+                    .game
+                    .display_name
+                    .as_deref()
+                    .unwrap_or(&r.game.rom_filename);
                 let score = search_score(&q, display, &r.game.rom_filename);
                 if score > 0 { Some((score, r)) } else { None }
             })
@@ -515,7 +540,8 @@ pub async fn get_roms_page(
     replay_control_core::roms::mark_favorites(&storage, &system, &mut roms);
 
     // Populate box art URLs for the returned page (only for the visible ROMs).
-    let media_base = storage.root
+    let media_base = storage
+        .root
         .join(replay_control_core::metadata_db::RC_DIR)
         .join("media")
         .join(&system);
@@ -524,7 +550,12 @@ pub async fn get_roms_page(
             .map(|path| format!("/media/{system}/{path}"));
     }
 
-    Ok(RomPage { roms, total, has_more, system_display })
+    Ok(RomPage {
+        roms,
+        total,
+        has_more,
+        system_display,
+    })
 }
 
 #[server(prefix = "/sfn")]
@@ -558,8 +589,12 @@ pub async fn remove_favorite(
     subfolder: Option<String>,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::favorites::remove_favorite(&state.storage(), &filename, subfolder.as_deref())
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    replay_control_core::favorites::remove_favorite(
+        &state.storage(),
+        &filename,
+        subfolder.as_deref(),
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[server(prefix = "/sfn")]
@@ -591,10 +626,14 @@ pub async fn delete_rom(relative_path: String) -> Result<(), ServerFnError> {
 }
 
 #[server(prefix = "/sfn")]
-pub async fn rename_rom(relative_path: String, new_filename: String) -> Result<String, ServerFnError> {
+pub async fn rename_rom(
+    relative_path: String,
+    new_filename: String,
+) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let new_path = replay_control_core::roms::rename_rom(&state.storage(), &relative_path, &new_filename)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let new_path =
+        replay_control_core::roms::rename_rom(&state.storage(), &relative_path, &new_filename)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(new_path.display().to_string())
 }
 
@@ -611,7 +650,9 @@ pub struct RomDetail {
 pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let all_roms = state.cache.get_roms(&storage, &system)
+    let all_roms = state
+        .cache
+        .get_roms(&storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let rom = all_roms
@@ -727,9 +768,7 @@ pub async fn restart_replay_ui() -> Result<String, ServerFnError> {
         Ok("ReplayOS restarted".to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(ServerFnError::new(format!(
-            "Restart failed: {stderr}"
-        )))
+        Err(ServerFnError::new(format!("Restart failed: {stderr}")))
     }
 }
 
@@ -750,9 +789,7 @@ pub async fn reboot_system() -> Result<String, ServerFnError> {
         Ok("Rebooting...".to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(ServerFnError::new(format!(
-            "Reboot failed: {stderr}"
-        )))
+        Err(ServerFnError::new(format!("Reboot failed: {stderr}")))
     }
 }
 
@@ -776,9 +813,14 @@ pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
         return Err(ServerFnError::new("Hostname must be 1-63 characters"));
     }
     if hostname.starts_with('-') || hostname.ends_with('-') {
-        return Err(ServerFnError::new("Hostname must not start or end with a hyphen"));
+        return Err(ServerFnError::new(
+            "Hostname must not start or end with a hyphen",
+        ));
     }
-    if !hostname.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !hostname
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return Err(ServerFnError::new(
             "Hostname must contain only lowercase letters, digits, and hyphens",
         ));
@@ -837,7 +879,11 @@ pub struct SkinInfo {
 pub async fn get_skins() -> Result<(u32, bool, Vec<SkinInfo>), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let current = state.effective_skin();
-    let sync = state.skin_override.read().expect("skin lock poisoned").is_none();
+    let sync = state
+        .skin_override
+        .read()
+        .expect("skin lock poisoned")
+        .is_none();
 
     let skins = replay_control_core::skins::SKIN_NAMES
         .iter()
@@ -900,8 +946,8 @@ pub async fn organize_favorites(
     keep_originals: bool,
 ) -> Result<OrganizeResult, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let needs_ratings = primary == OrganizeCriteria::Rating
-        || secondary == Some(OrganizeCriteria::Rating);
+    let needs_ratings =
+        primary == OrganizeCriteria::Rating || secondary == Some(OrganizeCriteria::Rating);
     let ratings = if needs_ratings {
         replay_control_core::metadata_db::MetadataDb::open(&state.storage().root)
             .ok()
@@ -947,17 +993,23 @@ pub async fn refresh_storage() -> Result<RefreshResult, ServerFnError> {
 
 // ── Metadata management ──────────────────────────────────────────
 
-#[cfg(feature = "ssr")]
-pub use replay_control_core::metadata_db::{ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage};
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::{ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage};
+#[cfg(feature = "ssr")]
+pub use replay_control_core::metadata_db::{
+    ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage,
+};
 
 /// Get metadata coverage stats.
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-    let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+    let guard = state
+        .metadata_db()
+        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+    let db = guard
+        .as_ref()
+        .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
     db.stats().map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -984,7 +1036,10 @@ pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnE
 #[server(prefix = "/sfn")]
 pub async fn get_import_progress() -> Result<Option<ImportProgress>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state.import_progress.read().expect("import_progress lock poisoned");
+    let guard = state
+        .import_progress
+        .read()
+        .expect("import_progress lock poisoned");
     Ok(guard.clone())
 }
 
@@ -995,16 +1050,22 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 
     // Get metadata entries per system from DB.
     let entries_per_system = {
-        let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-        let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-        db.entries_per_system().map_err(|e| ServerFnError::new(e.to_string()))?
+        let guard = state
+            .metadata_db()
+            .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+        db.entries_per_system()
+            .map_err(|e| ServerFnError::new(e.to_string()))?
     };
 
     // Get total games per system from ROM cache.
     let storage = state.storage();
     let systems = state.cache.get_systems(&storage);
 
-    let mut meta_map: std::collections::HashMap<String, usize> = entries_per_system.into_iter().collect();
+    let mut meta_map: std::collections::HashMap<String, usize> =
+        entries_per_system.into_iter().collect();
 
     let mut coverage: Vec<SystemCoverage> = systems
         .into_iter()
@@ -1020,8 +1081,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         })
         .collect();
 
-    // Sort by coverage count descending.
-    coverage.sort_by(|a, b| b.with_metadata.cmp(&a.with_metadata));
+    coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
     Ok(coverage)
 }
 
@@ -1029,8 +1089,12 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-    let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+    let guard = state
+        .metadata_db()
+        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+    let db = guard
+        .as_ref()
+        .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
     db.clear().map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -1048,7 +1112,9 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
 pub async fn download_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     if !state.start_metadata_download() {
-        return Err(ServerFnError::new("A metadata operation is already running"));
+        return Err(ServerFnError::new(
+            "A metadata operation is already running",
+        ));
     }
     Ok(())
 }
@@ -1118,7 +1184,9 @@ pub async fn import_all_images() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn cancel_image_import() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state.image_import_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    state
+        .image_import_cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     Ok(())
 }
 
@@ -1126,7 +1194,10 @@ pub async fn cancel_image_import() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_image_import_progress() -> Result<Option<ImageImportProgress>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state.image_import_progress.read().expect("image_import_progress lock poisoned");
+    let guard = state
+        .image_import_progress
+        .read()
+        .expect("image_import_progress lock poisoned");
     Ok(guard.clone())
 }
 
@@ -1136,9 +1207,14 @@ pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
     let images_per_system = {
-        let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-        let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-        db.images_per_system().map_err(|e| ServerFnError::new(e.to_string()))?
+        let guard = state
+            .metadata_db()
+            .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+        db.images_per_system()
+            .map_err(|e| ServerFnError::new(e.to_string()))?
     };
 
     let storage = state.storage();
@@ -1154,7 +1230,8 @@ pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
         .filter(|s| s.game_count > 0)
         .map(|s| {
             let (with_boxart, with_snap) = img_map.remove(&s.folder_name).unwrap_or((0, 0));
-            let has_repo = replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some();
+            let has_repo =
+                replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some();
             ImageCoverage {
                 system: s.folder_name,
                 display_name: s.display_name,
@@ -1166,7 +1243,7 @@ pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
         })
         .collect();
 
-    coverage.sort_by(|a, b| (b.with_boxart + b.with_snap).cmp(&(a.with_boxart + a.with_snap)));
+    coverage.sort_by(|a, b| a.display_name.cmp(&b.display_name));
     Ok(coverage)
 }
 
@@ -1175,9 +1252,14 @@ pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
 pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let (with_boxart, with_snap) = {
-        let guard = state.metadata_db().ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-        let db = guard.as_ref().ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-        db.image_stats().map_err(|e| ServerFnError::new(e.to_string()))?
+        let guard = state
+            .metadata_db()
+            .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+        db.image_stats()
+            .map_err(|e| ServerFnError::new(e.to_string()))?
     };
     let storage = state.storage();
     let media_size = replay_control_core::thumbnails::media_dir_size(&storage.root);
@@ -1192,12 +1274,17 @@ pub async fn get_system_logs(source: String, lines: usize) -> Result<String, Ser
     cmd.args(["--no-pager", "--lines", &lines.to_string(), "--reverse"]);
 
     match source.as_str() {
-        "replay-companion" => { cmd.args(["-u", "replay-companion"]); }
-        "replay" => { cmd.args(["-u", "replay"]); }
+        "replay-companion" => {
+            cmd.args(["-u", "replay-companion"]);
+        }
+        "replay" => {
+            cmd.args(["-u", "replay"]);
+        }
         _ => {} // "all" — no unit filter
     }
 
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| ServerFnError::new(format!("Failed to read logs: {e}")))?;
 
     if output.status.success() {
@@ -1215,4 +1302,320 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     let storage = state.storage();
     replay_control_core::thumbnails::clear_media(&storage.root)
         .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+// ── Game Videos ──────────────────────────────────────────────────
+
+#[cfg(not(feature = "ssr"))]
+pub use crate::types::VideoEntry;
+#[cfg(feature = "ssr")]
+pub use replay_control_core::videos::VideoEntry;
+
+/// A video recommendation from Piped search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoRecommendation {
+    pub url: String,
+    pub title: String,
+    pub thumbnail_url: Option<String>,
+    pub duration_text: Option<String>,
+    pub channel: Option<String>,
+}
+
+/// Get saved videos for a game.
+#[server(prefix = "/sfn")]
+pub async fn get_game_videos(
+    system: String,
+    rom_filename: String,
+) -> Result<Vec<VideoEntry>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let game_key = format!("{system}/{rom_filename}");
+    Ok(replay_control_core::videos::get_videos(
+        &storage.root,
+        &game_key,
+    ))
+}
+
+/// Add a video to a game (from manual paste or recommendation pin).
+#[server(prefix = "/sfn")]
+pub async fn add_game_video(
+    system: String,
+    rom_filename: String,
+    url: String,
+    title: Option<String>,
+    from_recommendation: bool,
+    tag: Option<String>,
+) -> Result<VideoEntry, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let game_key = format!("{system}/{rom_filename}");
+
+    let parsed =
+        replay_control_core::video_url::parse_video_url(&url).map_err(ServerFnError::new)?;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let entry = VideoEntry {
+        id: format!("{}-{}", parsed.platform, parsed.video_id),
+        url: parsed.canonical_url,
+        platform: parsed.platform.as_str().to_string(),
+        video_id: parsed.video_id,
+        title,
+        added_at: now,
+        from_recommendation,
+        tag,
+    };
+
+    replay_control_core::videos::add_video(&storage.root, &game_key, entry.clone())
+        .map_err(ServerFnError::new)?;
+
+    Ok(entry)
+}
+
+/// Remove a saved video from a game.
+#[server(prefix = "/sfn")]
+pub async fn remove_game_video(
+    system: String,
+    rom_filename: String,
+    video_id: String,
+) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let game_key = format!("{system}/{rom_filename}");
+    replay_control_core::videos::remove_video(&storage.root, &game_key, &video_id)
+        .map_err(ServerFnError::new)
+}
+
+/// Search for video recommendations via the Piped API.
+#[server(prefix = "/sfn")]
+pub async fn search_game_videos(
+    system: String,
+    display_name: String,
+    query_type: String,
+) -> Result<Vec<VideoRecommendation>, ServerFnError> {
+    // Normalize the title: strip parenthesized tags like "(USA)", "(World 910522)"
+    let clean_title = {
+        let mut s = display_name.as_str();
+        // Repeatedly strip trailing parenthesized/bracketed tags
+        loop {
+            let trimmed = s.trim();
+            if let Some(pos) = trimmed.rfind(" (") {
+                if trimmed.ends_with(')') {
+                    s = &trimmed[..pos];
+                    continue;
+                }
+            }
+            if let Some(pos) = trimmed.rfind(" [") {
+                if trimmed.ends_with(']') {
+                    s = &trimmed[..pos];
+                    continue;
+                }
+            }
+            break;
+        }
+        s.trim().to_string()
+    };
+
+    // Determine system label: arcade systems → "arcade", others → display name
+    let system_label = if system.starts_with("arcade_") {
+        "arcade".to_string()
+    } else {
+        replay_control_core::systems::find_system(&system)
+            .map(|s| s.display_name.to_string())
+            .unwrap_or_else(|| system.clone())
+    };
+
+    let query_suffix = match query_type.as_str() {
+        "trailer" => "official trailer",
+        "gameplay" => "gameplay",
+        "1cc" => "1cc one credit clear",
+        _ => "",
+    };
+
+    let query = format!("{clean_title} {system_label} {query_suffix}");
+    let encoded_query = urlencoding::encode(&query);
+    tracing::info!("Video search: query=\"{query}\"");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| ServerFnError::new(format!("HTTP client error: {e}")))?;
+
+    // Try Piped instances first, then Invidious instances
+    let piped_instances = [
+        "https://pipedapi.kavin.rocks",
+        "https://pipedapi.leptons.xyz",
+        "https://pipedapi-libre.kavin.rocks",
+    ];
+    let invidious_instances = [
+        "https://invidious.materialio.us",
+        "https://yewtu.be",
+        "https://inv.tux.pizza",
+    ];
+
+    // Try Piped instances
+    for base_url in &piped_instances {
+        let api_url =
+            format!("{base_url}/search?q={encoded_query}&filter=videos");
+        match client.get(&api_url).send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    match resp.json::<serde_json::Value>().await {
+                        Ok(body) => {
+                            let items = body
+                                .get("items")
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            if !items.is_empty() {
+                                tracing::info!(
+                                    "Video search: Piped {base_url} returned {} results",
+                                    items.len()
+                                );
+                                return Ok(parse_piped_results(&items));
+                            }
+                            tracing::warn!("Video search: Piped {base_url} returned empty results");
+                        }
+                        Err(e) => {
+                            tracing::warn!("Video search: Piped {base_url} JSON parse error: {e}");
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "Video search: Piped {base_url} returned status {}",
+                        resp.status()
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Video search: Piped {base_url} request failed: {e}");
+            }
+        }
+    }
+
+    // Try Invidious instances
+    for base_url in &invidious_instances {
+        let api_url =
+            format!("{base_url}/api/v1/search?q={encoded_query}&type=video");
+        match client.get(&api_url).send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    match resp.json::<Vec<serde_json::Value>>().await {
+                        Ok(items) => {
+                            if !items.is_empty() {
+                                tracing::info!(
+                                    "Video search: Invidious {base_url} returned {} results",
+                                    items.len()
+                                );
+                                return Ok(parse_invidious_results(&items));
+                            }
+                            tracing::warn!(
+                                "Video search: Invidious {base_url} returned empty results"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Video search: Invidious {base_url} JSON parse error: {e}"
+                            );
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "Video search: Invidious {base_url} returned status {}",
+                        resp.status()
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Video search: Invidious {base_url} request failed: {e}");
+            }
+        }
+    }
+
+    tracing::error!("Video search: all instances failed for query \"{query}\"");
+    Err(ServerFnError::new(
+        "Video search unavailable. Paste URLs directly.".to_string(),
+    ))
+}
+
+#[cfg(feature = "ssr")]
+fn parse_piped_results(items: &[serde_json::Value]) -> Vec<VideoRecommendation> {
+    items
+        .iter()
+        .filter_map(|item| {
+            let url_path = item.get("url")?.as_str()?;
+            let full_url = if url_path.starts_with("http") {
+                url_path.to_string()
+            } else {
+                format!("https://www.youtube.com{url_path}")
+            };
+            let title = item
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Untitled")
+                .to_string();
+            let thumbnail_url = item
+                .get("thumbnail")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let duration_secs = item.get("duration").and_then(|v| v.as_i64());
+            let duration_text = duration_secs.map(|secs| {
+                let mins = secs / 60;
+                let s = secs % 60;
+                format!("{mins}:{s:02}")
+            });
+            let channel = item
+                .get("uploaderName")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            Some(VideoRecommendation {
+                url: full_url,
+                title,
+                thumbnail_url,
+                duration_text,
+                channel,
+            })
+        })
+        .take(10)
+        .collect()
+}
+
+#[cfg(feature = "ssr")]
+fn parse_invidious_results(items: &[serde_json::Value]) -> Vec<VideoRecommendation> {
+    items
+        .iter()
+        .filter_map(|item| {
+            let video_id = item.get("videoId")?.as_str()?;
+            let full_url = format!("https://www.youtube.com/watch?v={video_id}");
+            let title = item
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Untitled")
+                .to_string();
+            // Use medium-quality thumbnail from YouTube directly
+            let thumbnail_url =
+                Some(format!("https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"));
+            let duration_secs = item.get("lengthSeconds").and_then(|v| v.as_i64());
+            let duration_text = duration_secs.map(|secs| {
+                let mins = secs / 60;
+                let s = secs % 60;
+                format!("{mins}:{s:02}")
+            });
+            let channel = item
+                .get("author")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            Some(VideoRecommendation {
+                url: full_url,
+                title,
+                thumbnail_url,
+                duration_text,
+                channel,
+            })
+        })
+        .take(10)
+        .collect()
 }

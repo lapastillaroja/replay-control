@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_location;
 
-use crate::i18n::{use_i18n, t};
+use crate::i18n::{t, use_i18n};
 
 #[component]
 pub fn BottomNav() -> impl IntoView {

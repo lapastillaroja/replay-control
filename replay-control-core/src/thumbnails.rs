@@ -162,10 +162,16 @@ fn strip_version(name: &str) -> &str {
     let mut i = 0;
     let mut last_version_start = None;
     while i + 2 < bytes.len() {
-        if bytes[i] == b' ' && bytes[i + 1] == b'v' && bytes.get(i + 2).is_some_and(|b| b.is_ascii_digit()) {
+        if bytes[i] == b' '
+            && bytes[i + 1] == b'v'
+            && bytes.get(i + 2).is_some_and(|b| b.is_ascii_digit())
+        {
             // Check that everything after " v\d" is digits, dots, spaces, or underscores
             let rest = &bytes[i + 2..];
-            if rest.iter().all(|b| b.is_ascii_digit() || *b == b'.' || *b == b' ' || *b == b'_') {
+            if rest
+                .iter()
+                .all(|b| b.is_ascii_digit() || *b == b'.' || *b == b' ' || *b == b'_')
+            {
                 last_version_start = Some(i);
             }
         }
@@ -192,7 +198,12 @@ fn build_fuzzy_index(dir: &Path) -> FuzzyIndex {
     let mut by_version = std::collections::HashMap::new();
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return FuzzyIndex { by_tags, by_version },
+        Err(_) => {
+            return FuzzyIndex {
+                by_tags,
+                by_version,
+            };
+        }
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -201,14 +212,21 @@ fn build_fuzzy_index(dir: &Path) -> FuzzyIndex {
             let stripped = strip_tags(stem);
             let key = stripped.to_lowercase();
             // Only keep the first match per key (avoid collisions).
-            by_tags.entry(key.clone()).or_insert_with(|| stem.to_string());
+            by_tags
+                .entry(key.clone())
+                .or_insert_with(|| stem.to_string());
             let version_key = strip_version(&key);
             if version_key.len() < key.len() {
-                by_version.entry(version_key.to_string()).or_insert_with(|| stem.to_string());
+                by_version
+                    .entry(version_key.to_string())
+                    .or_insert_with(|| stem.to_string());
             }
         }
     }
-    FuzzyIndex { by_tags, by_version }
+    FuzzyIndex {
+        by_tags,
+        by_version,
+    }
 }
 
 /// Try to find a thumbnail file: exact match → fuzzy (stripped tags) → version-stripped.
@@ -236,7 +254,9 @@ fn find_thumbnail(
     let version_key = strip_version(&key);
     if version_key.len() < key.len() {
         // Look in both the tags index (repo entry has no version) and version index (repo entry also has a version)
-        if let Some(repo_stem) = fuzzy_index.by_tags.get(version_key)
+        if let Some(repo_stem) = fuzzy_index
+            .by_tags
+            .get(version_key)
             .or_else(|| fuzzy_index.by_version.get(version_key))
         {
             let path = repo_subdir.join(format!("{repo_stem}.png"));
@@ -285,7 +305,10 @@ pub fn import_system_thumbnails(
 
     let mut db_updates: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
 
-    let is_arcade = matches!(system, "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc");
+    let is_arcade = matches!(
+        system,
+        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
+    );
 
     for (i, rom_filename) in rom_filenames.iter().enumerate() {
         let stem = match rom_filename.rfind('.') {
@@ -323,9 +346,11 @@ pub fn import_system_thumbnails(
         let mut snap_rel: Option<String> = None;
 
         // Try boxart (exact then fuzzy, with colon-variant fallbacks)
-        let boxart_match = find_thumbnail(&boxart_repo_dir, &thumb_name, &boxart_index)
-            .or_else(|| {
-                colon_variants.iter().find_map(|v| find_thumbnail(&boxart_repo_dir, v, &boxart_index))
+        let boxart_match =
+            find_thumbnail(&boxart_repo_dir, &thumb_name, &boxart_index).or_else(|| {
+                colon_variants
+                    .iter()
+                    .find_map(|v| find_thumbnail(&boxart_repo_dir, v, &boxart_index))
             });
         if let Some((src, matched_stem)) = boxart_match {
             let dst_name = format!("{matched_stem}.png");
@@ -344,10 +369,11 @@ pub fn import_system_thumbnails(
         }
 
         // Try snap (exact then fuzzy, with colon-variant fallbacks)
-        let snap_match = find_thumbnail(&snap_repo_dir, &thumb_name, &snap_index)
-            .or_else(|| {
-                colon_variants.iter().find_map(|v| find_thumbnail(&snap_repo_dir, v, &snap_index))
-            });
+        let snap_match = find_thumbnail(&snap_repo_dir, &thumb_name, &snap_index).or_else(|| {
+            colon_variants
+                .iter()
+                .find_map(|v| find_thumbnail(&snap_repo_dir, v, &snap_index))
+        });
         if let Some((src, matched_stem)) = snap_match {
             let dst_name = format!("{matched_stem}.png");
             let dst = snap_dir.join(&dst_name);
@@ -429,8 +455,7 @@ pub fn clone_thumbnail_repo(
         return Ok(dest);
     }
 
-    std::fs::create_dir_all(dest.parent().unwrap())
-        .map_err(|e| Error::io(&dest, e))?;
+    std::fs::create_dir_all(dest.parent().unwrap()).map_err(|e| Error::io(&dest, e))?;
 
     // Remove partial clone if exists
     if dest.exists() {
@@ -450,7 +475,9 @@ pub fn clone_thumbnail_repo(
         match child.try_wait() {
             Ok(Some(status)) => {
                 if !status.success() {
-                    let stderr = child.stderr.take()
+                    let stderr = child
+                        .stderr
+                        .take()
                         .map(|mut s| {
                             let mut buf = String::new();
                             use std::io::Read;
@@ -510,9 +537,7 @@ fn collect_rom_filenames_recursive(dir: &Path, filenames: &mut Vec<String>) {
 
 /// Get the total size of the media directory for all systems.
 pub fn media_dir_size(storage_root: &Path) -> u64 {
-    let media_dir = storage_root
-        .join(crate::metadata_db::RC_DIR)
-        .join("media");
+    let media_dir = storage_root.join(crate::metadata_db::RC_DIR).join("media");
     dir_size(&media_dir)
 }
 
@@ -533,12 +558,9 @@ fn dir_size(path: &Path) -> u64 {
 
 /// Delete all media files for all systems.
 pub fn clear_media(storage_root: &Path) -> Result<()> {
-    let media_dir = storage_root
-        .join(crate::metadata_db::RC_DIR)
-        .join("media");
+    let media_dir = storage_root.join(crate::metadata_db::RC_DIR).join("media");
     if media_dir.exists() {
-        std::fs::remove_dir_all(&media_dir)
-            .map_err(|e| Error::io(&media_dir, e))?;
+        std::fs::remove_dir_all(&media_dir).map_err(|e| Error::io(&media_dir, e))?;
     }
     Ok(())
 }

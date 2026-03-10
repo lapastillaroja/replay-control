@@ -84,11 +84,21 @@ pub fn list_roms(storage: &StorageLocation, system_folder: &str) -> Result<Vec<R
 
     // Sort by display name, then by tier (originals before hacks), then by region.
     roms.sort_by(|a, b| {
-        let a_name = a.game.display_name.as_deref().unwrap_or(&a.game.rom_filename);
-        let b_name = b.game.display_name.as_deref().unwrap_or(&b.game.rom_filename);
+        let a_name = a
+            .game
+            .display_name
+            .as_deref()
+            .unwrap_or(&a.game.rom_filename);
+        let b_name = b
+            .game
+            .display_name
+            .as_deref()
+            .unwrap_or(&b.game.rom_filename);
         let (a_tier, a_region) = rom_tags::classify(&a.game.rom_filename);
         let (b_tier, b_region) = rom_tags::classify(&b.game.rom_filename);
-        a_name.to_lowercase().cmp(&b_name.to_lowercase())
+        a_name
+            .to_lowercase()
+            .cmp(&b_name.to_lowercase())
             .then(a_tier.cmp(&b_tier))
             .then(a_region.cmp(&b_region))
     });
@@ -199,12 +209,7 @@ fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
     (count, size)
 }
 
-fn collect_roms_recursive(
-    dir: &Path,
-    roms_root: &Path,
-    system: &System,
-    out: &mut Vec<RomEntry>,
-) {
+fn collect_roms_recursive(dir: &Path, roms_root: &Path, system: &System, out: &mut Vec<RomEntry>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -273,8 +278,7 @@ mod tests {
     fn scan_empty_storage() {
         let tmp = tempdir();
         fs::create_dir_all(tmp.join("roms")).unwrap();
-        let storage =
-            StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let summaries = scan_systems(&storage);
         assert!(!summaries.is_empty());
         assert!(summaries.iter().all(|s| s.game_count == 0));
@@ -289,11 +293,13 @@ mod tests {
         fs::write(nes_dir.join("game2.nes"), "data").unwrap();
         fs::write(nes_dir.join("readme.txt"), "not a rom").unwrap();
 
-        let storage =
-            StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let summaries = scan_systems(&storage);
 
-        let nes = summaries.iter().find(|s| s.folder_name == "nintendo_nes").unwrap();
+        let nes = summaries
+            .iter()
+            .find(|s| s.folder_name == "nintendo_nes")
+            .unwrap();
         assert_eq!(nes.game_count, 2);
 
         // NES should be sorted first (has games)
@@ -305,10 +311,7 @@ mod tests {
 
     fn tempdir() -> PathBuf {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "replay-test-{}-{id}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("replay-test-{}-{id}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

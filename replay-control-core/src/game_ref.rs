@@ -58,7 +58,10 @@ impl GameRef {
             game_db::game_display_name(system, &rom_filename)
                 .map(|name| rom_tags::display_name_with_tags(name, &rom_filename))
                 .or_else(|| {
-                    let stem = rom_filename.rfind('.').map(|i| &rom_filename[..i]).unwrap_or(&rom_filename);
+                    let stem = rom_filename
+                        .rfind('.')
+                        .map(|i| &rom_filename[..i])
+                        .unwrap_or(&rom_filename);
                     // Always return a display name from the stem (without extension).
                     // Use the tag-stripped base as the display name, or the full
                     // stem if there are no tags to strip.

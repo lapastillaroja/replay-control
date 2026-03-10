@@ -93,8 +93,12 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
             has_translation = true;
             continue;
         }
-        if lower == "hack" || lower == "smw hack" || lower == "sa-1 smw hack"
-            || lower == "smw2 hack" || lower == "smrpg hack" || lower == "smk hack"
+        if lower == "hack"
+            || lower == "smw hack"
+            || lower == "sa-1 smw hack"
+            || lower == "smw2 hack"
+            || lower == "smrpg hack"
+            || lower == "smk hack"
             || lower.ends_with(" hack")
         {
             is_hack = true;
@@ -584,10 +588,10 @@ fn looks_like_region(tag: &str) -> bool {
 
     // Multi-region like "USA, Europe" or "USA, Europe, Brazil"
     let parts: Vec<&str> = lower.split(',').map(|s| s.trim()).collect();
-    if parts.iter().all(|p| {
-        REGIONS.contains(p)
-            || is_language_code(p)
-    }) {
+    if parts
+        .iter()
+        .all(|p| REGIONS.contains(p) || is_language_code(p))
+    {
         // If ALL parts are language codes (like "En,Fr,De"), it's not a region
         if parts.iter().all(|p| is_language_code(p)) {
             return false;
@@ -602,8 +606,28 @@ fn looks_like_region(tag: &str) -> bool {
 fn is_language_code(s: &str) -> bool {
     matches!(
         s,
-        "en" | "fr" | "de" | "es" | "it" | "ja" | "pt" | "nl" | "sv" | "no" | "da" | "fi"
-            | "ko" | "zh" | "ru" | "pl" | "hu" | "cs" | "ca" | "ro" | "tr" | "ar" | "pt-br"
+        "en" | "fr"
+            | "de"
+            | "es"
+            | "it"
+            | "ja"
+            | "pt"
+            | "nl"
+            | "sv"
+            | "no"
+            | "da"
+            | "fi"
+            | "ko"
+            | "zh"
+            | "ru"
+            | "pl"
+            | "hu"
+            | "cs"
+            | "ca"
+            | "ro"
+            | "tr"
+            | "ar"
+            | "pt-br"
     )
 }
 
@@ -870,10 +894,7 @@ mod tests {
 
     #[test]
     fn translation_bracket_t_eng() {
-        assert_eq!(
-            extract_tags("Game (J) T+Eng v1.2 Zoinkity.z64"),
-            "Japan"
-        );
+        assert_eq!(extract_tags("Game (J) T+Eng v1.2 Zoinkity.z64"), "Japan");
         // N64 style doesn't use brackets, so T+Eng isn't picked up from bare text
         // This is fine — the region "Japan" is still useful.
     }
@@ -882,18 +903,12 @@ mod tests {
 
     #[test]
     fn patch_60hz() {
-        assert_eq!(
-            extract_tags("Game (Europe) (60hz).sfc"),
-            "Europe, 60Hz"
-        );
+        assert_eq!(extract_tags("Game (Europe) (60hz).sfc"), "Europe, 60Hz");
     }
 
     #[test]
     fn patch_fastrom() {
-        assert_eq!(
-            extract_tags("Game (USA) (FastRom).sfc"),
-            "USA, FastROM"
-        );
+        assert_eq!(extract_tags("Game (USA) (FastRom).sfc"), "USA, FastROM");
     }
 
     #[test]
@@ -970,10 +985,7 @@ mod tests {
 
     #[test]
     fn virtual_console_ignored() {
-        assert_eq!(
-            extract_tags("Game (USA) (Virtual Console).sfc"),
-            "USA"
-        );
+        assert_eq!(extract_tags("Game (USA) (Virtual Console).sfc"), "USA");
     }
 
     #[test]
@@ -1012,7 +1024,10 @@ mod tests {
     #[test]
     fn display_with_translation() {
         assert_eq!(
-            display_name_with_tags("Super Mario World", "Super Mario World (USA) (Traducido Es).smc"),
+            display_name_with_tags(
+                "Super Mario World",
+                "Super Mario World (USA) (Traducido Es).smc"
+            ),
             "Super Mario World (USA, ES Translation)"
         );
     }
@@ -1037,18 +1052,12 @@ mod tests {
 
     #[test]
     fn real_snes_clean() {
-        assert_eq!(
-            extract_tags("ActRaiser (USA).sfc"),
-            "USA"
-        );
+        assert_eq!(extract_tags("ActRaiser (USA).sfc"), "USA");
     }
 
     #[test]
     fn real_snes_japan_en() {
-        assert_eq!(
-            extract_tags("Acrobat Mission (Japan) (En).sfc"),
-            "Japan"
-        );
+        assert_eq!(extract_tags("Acrobat Mission (Japan) (En).sfc"), "Japan");
     }
 
     #[test]
@@ -1104,10 +1113,7 @@ mod tests {
 
     #[test]
     fn real_snes_europe_brazil() {
-        assert_eq!(
-            extract_tags("Game (Europe, Brazil).sfc"),
-            "Europe, Brazil"
-        );
+        assert_eq!(extract_tags("Game (Europe, Brazil).sfc"), "Europe, Brazil");
     }
 
     #[test]

@@ -53,8 +53,7 @@ fn main() {
 
     // Track Flycast ROM names so we can protect them from being overridden.
     // Flycast entries are hand-curated and should always be preserved.
-    let mut flycast_rom_names: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut flycast_rom_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // 1. Parse Flycast (Naomi/Atomiswave) games — baseline data
     let flycast_path = arcade_dir.join("flycast_games.csv");
@@ -83,9 +82,7 @@ fn main() {
         for entry in fbneo_entries {
             // FBNeo has no players/rotation/status, so it's not "richer" than
             // existing Flycast entries. Only insert if rom_name is new.
-            entries_map
-                .entry(entry.rom_name.clone())
-                .or_insert(entry);
+            entries_map.entry(entry.rom_name.clone()).or_insert(entry);
         }
     }
 
@@ -328,8 +325,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<GameEntry> {
                         }
                     }
                     b"description" | b"year" | b"manufacturer" if in_game => {
-                        current_element =
-                            String::from_utf8_lossy(local_name.as_ref()).into_owned();
+                        current_element = String::from_utf8_lossy(local_name.as_ref()).into_owned();
                     }
                     _ => {}
                 }
@@ -442,8 +438,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<GameEntry> {
                         }
                     }
                     b"description" | b"year" | b"manufacturer" if in_game => {
-                        current_element =
-                            String::from_utf8_lossy(local_name.as_ref()).into_owned();
+                        current_element = String::from_utf8_lossy(local_name.as_ref()).into_owned();
                     }
                     _ => {}
                 }
@@ -474,8 +469,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<GameEntry> {
                     b"driver" => {
                         for attr in e.attributes().filter_map(|a| a.ok()) {
                             if attr.key.local_name().as_ref() == b"status" {
-                                current_status =
-                                    String::from_utf8_lossy(&attr.value).into_owned();
+                                current_status = String::from_utf8_lossy(&attr.value).into_owned();
                             }
                         }
                     }
@@ -602,8 +596,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<GameEntry> {
                                         String::from_utf8_lossy(&attr.value).into_owned();
                                 }
                                 b"rotate" => {
-                                    let val =
-                                        String::from_utf8_lossy(&attr.value).into_owned();
+                                    let val = String::from_utf8_lossy(&attr.value).into_owned();
                                     current_rotate = val;
                                 }
                                 b"players" => {
@@ -619,8 +612,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<GameEntry> {
                         }
                     }
                     b"d" | b"y" | b"f" if in_machine => {
-                        current_element =
-                            String::from_utf8_lossy(local_name.as_ref()).into_owned();
+                        current_element = String::from_utf8_lossy(local_name.as_ref()).into_owned();
                     }
                     _ => {}
                 }
@@ -754,8 +746,8 @@ fn normalize_arcade_genre(category: &str) -> &'static str {
         "Educational" => "Educational",
         "Role-Playing" | "RPG" => "Role-Playing",
         // Non-game categories
-        "System" | "BIOS" | "Utilities" | "Electromechanical" | "Device"
-        | "Rewritable" | "Not Coverage" | "Mature" | "Rhythm" => "Other",
+        "System" | "BIOS" | "Utilities" | "Electromechanical" | "Device" | "Rewritable"
+        | "Not Coverage" | "Mature" | "Rhythm" => "Other",
         _ if category.is_empty() => "",
         _ => "Other",
     }
@@ -777,8 +769,8 @@ fn normalize_console_genre(genre: &str) -> &'static str {
         "Puzzle" => "Puzzle",
         "Quiz" | "Trivia" => "Quiz",
         "Role-Playing" | "Role-playing (RPG)" | "RPG" | "Role-Playing (RPG)" => "Role-Playing",
-        "Shooter" | "Shoot-'Em-Up" | "Shoot'em Up" | "Lightgun Shooter"
-        | "Run & Gun" | "Shoot 'Em Up" => "Shooter",
+        "Shooter" | "Shoot-'Em-Up" | "Shoot'em Up" | "Lightgun Shooter" | "Run & Gun"
+        | "Shoot 'Em Up" => "Shooter",
         "Simulation" | "Flight Simulator" | "Virtual Life" => "Simulation",
         "Sports" | "Fitness" => "Sports",
         "Strategy" => "Strategy",
@@ -1099,12 +1091,11 @@ fn extract_quoted_after(line: &str, keyword: &str) -> Option<String> {
 fn extract_word_after(line: &str, keyword: &str) -> Option<String> {
     let idx = line.find(keyword)?;
     let rest = &line[idx + keyword.len()..];
-    let word: String = rest.chars().take_while(|c| !c.is_whitespace() && *c != ')').collect();
-    if word.is_empty() {
-        None
-    } else {
-        Some(word)
-    }
+    let word: String = rest
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != ')')
+        .collect();
+    if word.is_empty() { None } else { Some(word) }
 }
 
 /// Extract region from a No-Intro game name by looking at parenthesized tags.
@@ -1115,9 +1106,24 @@ fn extract_region_from_name(name: &str) -> String {
             let tag = &name[start + 1..start + end];
             // Check if it's a known region
             let regions = [
-                "USA", "Europe", "Japan", "World", "Australia", "Brazil",
-                "Canada", "China", "France", "Germany", "Hong Kong", "Italy",
-                "Korea", "Netherlands", "Russia", "Spain", "Sweden", "Taiwan",
+                "USA",
+                "Europe",
+                "Japan",
+                "World",
+                "Australia",
+                "Brazil",
+                "Canada",
+                "China",
+                "France",
+                "Germany",
+                "Hong Kong",
+                "Italy",
+                "Korea",
+                "Netherlands",
+                "Russia",
+                "Spain",
+                "Sweden",
+                "Taiwan",
                 "UK",
             ];
             for region in &regions {
@@ -1356,12 +1362,20 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
 
         let genre_ids: Vec<u32> = game["genres"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as u32))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let developer_ids: Vec<u32> = game["developers"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as u32)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as u32))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let normalized = normalize_title_for_tgdb(&title);
@@ -1606,10 +1620,18 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
             sys.folder_name,
             genre_coverage,
             rom_entries.len(),
-            if rom_entries.is_empty() { 0.0 } else { genre_coverage as f64 / rom_entries.len() as f64 * 100.0 },
+            if rom_entries.is_empty() {
+                0.0
+            } else {
+                genre_coverage as f64 / rom_entries.len() as f64 * 100.0
+            },
             players_coverage,
             rom_entries.len(),
-            if rom_entries.is_empty() { 0.0 } else { players_coverage as f64 / rom_entries.len() as f64 * 100.0 },
+            if rom_entries.is_empty() {
+                0.0
+            } else {
+                players_coverage as f64 / rom_entries.len() as f64 * 100.0
+            },
         );
 
         total_roms += rom_entries.len();
@@ -1757,7 +1779,8 @@ fn write_system_code(
         .unwrap();
     } else {
         // Build a map from normalized title -> game_id, deduplicating
-        let mut norm_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut norm_map: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for (game_id, game) in games.iter().enumerate() {
             let normalized = normalize_title(&game.display_name);
             if !normalized.is_empty() {
@@ -1767,7 +1790,8 @@ fn write_system_code(
 
         let mut map = phf_codegen::Map::new();
         // Sort for deterministic output
-        let mut norm_entries: Vec<(&str, usize)> = norm_map.iter().map(|(k, &v)| (k.as_str(), v)).collect();
+        let mut norm_entries: Vec<(&str, usize)> =
+            norm_map.iter().map(|(k, &v)| (k.as_str(), v)).collect();
         norm_entries.sort_by_key(|(k, _)| k.to_string());
         for (norm_title, game_id) in &norm_entries {
             map.entry(*norm_title, &format!("{}u16", game_id));
@@ -1781,7 +1805,8 @@ fn write_system_code(
 
         println!(
             "cargo:warning=Game DB: {} - {} normalized title index entries",
-            prefix, norm_entries.len()
+            prefix,
+            norm_entries.len()
         );
     }
     writeln!(out).unwrap();

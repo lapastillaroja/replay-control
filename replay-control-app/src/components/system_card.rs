@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
-use crate::i18n::{use_i18n, t};
+use crate::i18n::{t, use_i18n};
 use crate::server_fns::SystemSummary;
 use crate::util::format_size;
 
@@ -12,7 +12,11 @@ pub fn SystemCard(system: SystemSummary, href: String) -> impl IntoView {
     let size_display = format_size(system.total_size_bytes);
     let game_count = system.game_count;
 
-    let card_class = if has_games { "system-card" } else { "system-card empty" };
+    let card_class = if has_games {
+        "system-card"
+    } else {
+        "system-card empty"
+    };
 
     view! {
         <A href=href attr:class=card_class>
@@ -34,4 +38,3 @@ pub fn SystemCard(system: SystemSummary, href: String) -> impl IntoView {
         </A>
     }
 }
-

@@ -1,10 +1,10 @@
 use leptos::prelude::*;
+use leptos_router::NavigateOptions;
 use leptos_router::components::A;
 use leptos_router::hooks::query_signal_with_options;
-use leptos_router::NavigateOptions;
 
-use crate::i18n::{use_i18n, t};
-use crate::server_fns::{self, RomEntry, PAGE_SIZE};
+use crate::i18n::{t, use_i18n};
+use crate::server_fns::{self, PAGE_SIZE, RomEntry};
 use crate::util::format_size;
 
 /// ROM list with built-in search, pagination, and infinite scroll.
@@ -116,7 +116,9 @@ pub fn RomList(system: String) -> impl IntoView {
         let query = debounced_search.get_untracked();
         let current_offset = offset.get_untracked();
         leptos::task::spawn_local(async move {
-            if let Ok(page) = server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query).await {
+            if let Ok(page) =
+                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query).await
+            {
                 set_extra_roms.update(|roms| roms.extend(page.roms));
                 set_has_more.set(page.has_more);
                 set_offset.update(|o| *o += PAGE_SIZE);
@@ -155,10 +157,9 @@ pub fn RomList(system: String) -> impl IntoView {
             let opts = web_sys::IntersectionObserverInit::new();
             opts.set_root_margin("200px");
 
-            if let Ok(observer) = web_sys::IntersectionObserver::new_with_options(
-                cb.as_ref().unchecked_ref(),
-                &opts,
-            ) {
+            if let Ok(observer) =
+                web_sys::IntersectionObserver::new_with_options(cb.as_ref().unchecked_ref(), &opts)
+            {
                 let obs_for_cleanup = observer.clone();
                 observer.observe(&el);
                 on_cleanup(move || {
@@ -284,7 +285,10 @@ fn RomItem(
     let has_box_art = rom.box_art_url.is_some();
     let is_fav = RwSignal::new(rom.is_favorite);
     let size = format_size(rom.size_bytes);
-    let ext = format!(".{}", rom.game.rom_filename.rsplit('.').next().unwrap_or(""));
+    let ext = format!(
+        ".{}",
+        rom.game.rom_filename.rsplit('.').next().unwrap_or("")
+    );
     let path_display = {
         // Strip the system prefix (e.g. "/roms/sega_smd/") and show the rest.
         // If there's no subfolder, this is just the filename.
@@ -314,7 +318,9 @@ fn RomItem(
     let game_href = StoredValue::new(game_href);
 
     let shown_name = move || {
-        display_name.get_value().unwrap_or_else(|| filename.get_value())
+        display_name
+            .get_value()
+            .unwrap_or_else(|| filename.get_value())
     };
 
     let is_deleting = move || confirm_delete.get().as_deref() == Some(&*relative_path.get_value());

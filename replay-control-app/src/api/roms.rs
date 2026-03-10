@@ -39,19 +39,21 @@ async fn rename_rom(
     State(state): State<AppState>,
     Json(payload): Json<RenameRomRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    replay_control_core::roms::rename_rom(&state.storage(), &payload.relative_path, &payload.new_filename)
-        .map(|new_path| {
-            state.cache.invalidate();
-            Json(serde_json::json!({
-                "new_path": new_path.display().to_string()
-            }))
-        })
-        .map_err(|_| StatusCode::NOT_FOUND)
+    replay_control_core::roms::rename_rom(
+        &state.storage(),
+        &payload.relative_path,
+        &payload.new_filename,
+    )
+    .map(|new_path| {
+        state.cache.invalidate();
+        Json(serde_json::json!({
+            "new_path": new_path.display().to_string()
+        }))
+    })
+    .map_err(|_| StatusCode::NOT_FOUND)
 }
 
-async fn find_duplicates(
-    State(state): State<AppState>,
-) -> Json<Vec<DuplicateResponse>> {
+async fn find_duplicates(State(state): State<AppState>) -> Json<Vec<DuplicateResponse>> {
     let dupes = replay_control_core::roms::find_duplicates(&state.storage());
     Json(
         dupes

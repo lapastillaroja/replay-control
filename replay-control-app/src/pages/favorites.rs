@@ -3,7 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 use server_fn::ServerFnError;
 
-use crate::i18n::{use_i18n, t};
+use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
 use crate::server_fns::{Favorite, OrganizeCriteria};
@@ -60,7 +60,11 @@ where
         });
         confirm_remove.set(None);
         // Call server to persist.
-        let sub = if subfolder.is_empty() { None } else { Some(subfolder) };
+        let sub = if subfolder.is_empty() {
+            None
+        } else {
+            Some(subfolder)
+        };
         leptos::task::spawn_local(async move {
             let _ = server_fns::remove_favorite(fav_filename, sub).await;
         });
@@ -100,13 +104,23 @@ where
         let mut map: std::collections::BTreeMap<String, (String, String, usize, String, u64)> =
             std::collections::BTreeMap::new();
         for fav in favs.iter() {
-            let entry = map
-                .entry(fav.game.system.clone())
-                .or_insert_with(|| (fav.game.system_display.clone(), fav.game.system.clone(), 0, String::new(), 0));
+            let entry = map.entry(fav.game.system.clone()).or_insert_with(|| {
+                (
+                    fav.game.system_display.clone(),
+                    fav.game.system.clone(),
+                    0,
+                    String::new(),
+                    0,
+                )
+            });
             entry.2 += 1;
             // Track the most recently added favorite for this system.
             if fav.date_added >= entry.4 {
-                entry.3 = fav.game.display_name.clone().unwrap_or_else(|| fav.game.rom_filename.clone());
+                entry.3 = fav
+                    .game
+                    .display_name
+                    .clone()
+                    .unwrap_or_else(|| fav.game.rom_filename.clone());
                 entry.4 = fav.date_added;
             }
         }
@@ -249,7 +263,9 @@ where
         let mut map: std::collections::BTreeMap<String, Vec<Favorite>> =
             std::collections::BTreeMap::new();
         for fav in favs {
-            map.entry(fav.game.system_display.clone()).or_default().push(fav);
+            map.entry(fav.game.system_display.clone())
+                .or_default()
+                .push(fav);
         }
         map.into_iter().collect::<Vec<_>>()
     };
@@ -292,16 +308,23 @@ fn FavItem<F>(
 where
     F: Fn(String, String) + Clone + Send + Sync + 'static,
 {
-    let game_href = format!("/games/{}/{}", fav.game.system, urlencoding::encode(&fav.game.rom_filename));
+    let game_href = format!(
+        "/games/{}/{}",
+        fav.game.system,
+        urlencoding::encode(&fav.game.rom_filename)
+    );
 
     let fav_filename = StoredValue::new(fav.marker_filename.clone());
     let subfolder = StoredValue::new(fav.subfolder.clone());
     let rom_name = fav.game.display_name.unwrap_or(fav.game.rom_filename);
-    let system_display = if show_system { Some(fav.game.system_display) } else { None };
-
-    let is_confirming = move || {
-        confirm_remove.read().as_deref() == Some(&*fav_filename.get_value())
+    let system_display = if show_system {
+        Some(fav.game.system_display)
+    } else {
+        None
     };
+
+    let is_confirming =
+        move || confirm_remove.read().as_deref() == Some(&*fav_filename.get_value());
 
     let on_star_click = move |_| {
         confirm_remove.set(Some(fav_filename.get_value()));
@@ -549,7 +572,9 @@ fn SystemFavoritesContent(favs: Vec<Favorite>) -> impl IntoView {
     let confirm_remove = RwSignal::new(Option::<String>::None);
 
     // Derive the system display name from the first favorite.
-    let system_display = favorites.read().first()
+    let system_display = favorites
+        .read()
+        .first()
         .map(|f| f.game.system_display.clone())
         .unwrap_or_default();
 
@@ -561,7 +586,11 @@ fn SystemFavoritesContent(favs: Vec<Favorite>) -> impl IntoView {
             list.retain(|f| f.marker_filename != fav_filename);
         });
         confirm_remove.set(None);
-        let sub = if subfolder.is_empty() { None } else { Some(subfolder) };
+        let sub = if subfolder.is_empty() {
+            None
+        } else {
+            Some(subfolder)
+        };
         leptos::task::spawn_local(async move {
             let _ = server_fns::remove_favorite(fav_filename, sub).await;
         });

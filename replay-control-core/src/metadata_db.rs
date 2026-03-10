@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
@@ -89,9 +89,7 @@ impl MetadataDb {
         let conn = match Self::try_open(&db_path) {
             Ok(conn) => conn,
             Err(_) => {
-                tracing::info!(
-                    "Standard SQLite open failed (NFS?), retrying with nolock VFS"
-                );
+                tracing::info!("Standard SQLite open failed (NFS?), retrying with nolock VFS");
                 Self::try_open_nolock(&db_path)?
             }
         };
@@ -187,12 +185,7 @@ impl MetadataDb {
     }
 
     /// Insert or update metadata for a game.
-    pub fn upsert(
-        &self,
-        system: &str,
-        rom_filename: &str,
-        meta: &GameMetadata,
-    ) -> Result<()> {
+    pub fn upsert(&self, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
         self.conn
             .execute(
                 "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, source, fetched_at)
@@ -218,10 +211,7 @@ impl MetadataDb {
     }
 
     /// Bulk insert/update metadata within a single transaction.
-    pub fn bulk_upsert(
-        &mut self,
-        entries: &[(String, String, GameMetadata)],
-    ) -> Result<usize> {
+    pub fn bulk_upsert(&mut self, entries: &[(String, String, GameMetadata)]) -> Result<usize> {
         let tx = self
             .conn
             .transaction()
@@ -303,7 +293,9 @@ impl MetadataDb {
     pub fn all_ratings(&self) -> Result<std::collections::HashMap<(String, String), f64>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT system, rom_filename, rating FROM game_metadata WHERE rating IS NOT NULL")
+            .prepare(
+                "SELECT system, rom_filename, rating FROM game_metadata WHERE rating IS NOT NULL",
+            )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
         let rows = stmt
             .query_map([], |row| {

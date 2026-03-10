@@ -108,4 +108,15 @@ pub struct SystemCoverage {
     pub with_metadata: usize,
 }
 
-
+/// Mirror of `replay_control_core::videos::VideoEntry` for WASM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoEntry {
+    pub id: String,
+    pub url: String,
+    pub platform: String,
+    pub video_id: String,
+    pub title: Option<String>,
+    pub added_at: u64,
+    pub from_recommendation: bool,
+    pub tag: Option<String>,
+}

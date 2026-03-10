@@ -134,9 +134,11 @@ pub struct AppState {
     /// Metadata DB handle (lazily opened on first access).
     metadata_db: Arc<std::sync::Mutex<Option<replay_control_core::metadata_db::MetadataDb>>>,
     /// Progress of the current metadata import (None = no import running).
-    pub import_progress: Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
+    pub import_progress:
+        Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
     /// Progress of the current image import (None = no import running).
-    pub image_import_progress: Arc<std::sync::RwLock<Option<crate::server_fns::ImageImportProgress>>>,
+    pub image_import_progress:
+        Arc<std::sync::RwLock<Option<crate::server_fns::ImageImportProgress>>>,
     /// Set to `true` to request cancellation of the current image import.
     pub image_import_cancel: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -158,9 +160,7 @@ impl AppState {
             let config = config_path
                 .as_ref()
                 .and_then(|p| ReplayConfig::from_file(p).ok())
-                .or_else(|| {
-                    ReplayConfig::from_file(&storage_root.join("config/replay.cfg")).ok()
-                })
+                .or_else(|| ReplayConfig::from_file(&storage_root.join("config/replay.cfg")).ok())
                 .unwrap_or_else(|| ReplayConfig::parse("").unwrap());
 
             let kind = match config.storage_mode() {
@@ -183,11 +183,7 @@ impl AppState {
             (storage, config)
         };
 
-        tracing::info!(
-            "Storage: {:?} at {}",
-            storage.kind,
-            storage.root.display()
-        );
+        tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
@@ -211,7 +207,10 @@ impl AppState {
 
     /// Get a lock on the metadata DB, lazily opening it on first access.
     /// Returns None if the DB can't be opened (e.g., storage not available).
-    pub fn metadata_db(&self) -> Option<std::sync::MutexGuard<'_, Option<replay_control_core::metadata_db::MetadataDb>>> {
+    pub fn metadata_db(
+        &self,
+    ) -> Option<std::sync::MutexGuard<'_, Option<replay_control_core::metadata_db::MetadataDb>>>
+    {
         let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
         if guard.is_none() {
             let storage = self.storage();
@@ -233,7 +232,10 @@ impl AppState {
         if let Some(index) = *self.skin_override.read().expect("skin lock poisoned") {
             index
         } else {
-            self.config.read().expect("config lock poisoned").system_skin()
+            self.config
+                .read()
+                .expect("config lock poisoned")
+                .system_skin()
         }
     }
 
@@ -313,9 +315,15 @@ impl AppState {
 
         // Check if already running.
         {
-            let guard = self.import_progress.read().expect("import_progress lock poisoned");
+            let guard = self
+                .import_progress
+                .read()
+                .expect("import_progress lock poisoned");
             if let Some(ref p) = *guard {
-                if matches!(p.state, ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing) {
+                if matches!(
+                    p.state,
+                    ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
+                ) {
                     return false;
                 }
             }
@@ -323,7 +331,10 @@ impl AppState {
 
         // Set initial progress.
         {
-            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .import_progress
+                .write()
+                .expect("import_progress lock poisoned");
             *guard = Some(ImportProgress {
                 state: ImportState::BuildingIndex,
                 processed: 0,
@@ -368,10 +379,7 @@ impl AppState {
         };
 
         if should_import {
-            tracing::info!(
-                "Auto-importing metadata from {}",
-                xml_path.display()
-            );
+            tracing::info!("Auto-importing metadata from {}", xml_path.display());
             self.start_import(xml_path);
         }
     }
@@ -407,9 +415,15 @@ impl AppState {
 
         // Check if already running.
         {
-            let guard = self.import_progress.read().expect("import_progress lock poisoned");
+            let guard = self
+                .import_progress
+                .read()
+                .expect("import_progress lock poisoned");
             if let Some(ref p) = *guard {
-                if matches!(p.state, ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing) {
+                if matches!(
+                    p.state,
+                    ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
+                ) {
                     return false;
                 }
             }
@@ -417,7 +431,10 @@ impl AppState {
 
         // Set initial progress to Downloading.
         {
-            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .import_progress
+                .write()
+                .expect("import_progress lock poisoned");
             *guard = Some(ImportProgress {
                 state: ImportState::Downloading,
                 processed: 0,
@@ -438,7 +455,10 @@ impl AppState {
             let xml_path = match replay_control_core::launchbox::download_metadata(&rc_dir) {
                 Ok(path) => path,
                 Err(e) => {
-                    let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
+                    let mut guard = state
+                        .import_progress
+                        .write()
+                        .expect("import_progress lock poisoned");
                     if let Some(ref mut p) = *guard {
                         p.state = ImportState::Failed;
                         p.error = Some(format!("Download failed: {e}"));
@@ -459,7 +479,10 @@ impl AppState {
 
             // Update elapsed before starting import.
             {
-                let mut guard = state.import_progress.write().expect("import_progress lock poisoned");
+                let mut guard = state
+                    .import_progress
+                    .write()
+                    .expect("import_progress lock poisoned");
                 if let Some(ref mut p) = *guard {
                     p.elapsed_secs = start.elapsed().as_secs();
                 }
@@ -480,7 +503,10 @@ impl AppState {
         // Build ROM index.
         let storage_root = self.storage().root.clone();
         {
-            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .import_progress
+                .write()
+                .expect("import_progress lock poisoned");
             if let Some(ref mut p) = *guard {
                 p.state = ImportState::BuildingIndex;
                 p.elapsed_secs = start.elapsed().as_secs();
@@ -491,7 +517,10 @@ impl AppState {
 
         // Update progress to Parsing.
         {
-            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .import_progress
+                .write()
+                .expect("import_progress lock poisoned");
             if let Some(ref mut p) = *guard {
                 p.state = ImportState::Parsing;
                 p.elapsed_secs = start.elapsed().as_secs();
@@ -508,7 +537,10 @@ impl AppState {
             None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
                 Ok(db) => db,
                 Err(e) => {
-                    let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+                    let mut guard = self
+                        .import_progress
+                        .write()
+                        .expect("import_progress lock poisoned");
                     if let Some(ref mut p) = *guard {
                         p.state = ImportState::Failed;
                         p.error = Some(format!("Cannot open metadata DB: {e}"));
@@ -544,7 +576,10 @@ impl AppState {
 
         // Update final progress.
         {
-            let mut guard = self.import_progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .import_progress
+                .write()
+                .expect("import_progress lock poisoned");
             match result {
                 Ok(stats) => {
                     *guard = Some(ImportProgress {
@@ -570,8 +605,16 @@ impl AppState {
     /// Check if an image import is already running.
     fn is_image_import_running(&self) -> bool {
         use crate::server_fns::ImageImportState;
-        let guard = self.image_import_progress.read().expect("image_import_progress lock poisoned");
-        guard.as_ref().is_some_and(|p| matches!(p.state, ImageImportState::Cloning | ImageImportState::Copying))
+        let guard = self
+            .image_import_progress
+            .read()
+            .expect("image_import_progress lock poisoned");
+        guard.as_ref().is_some_and(|p| {
+            matches!(
+                p.state,
+                ImageImportState::Cloning | ImageImportState::Copying
+            )
+        })
     }
 
     /// Import images for a single system (blocking, runs on current thread).
@@ -598,8 +641,11 @@ impl AppState {
         };
 
         let storage_root = self.storage().root.clone();
-        let clone_base = storage_root.join(replay_control_core::metadata_db::RC_DIR).join("tmp");
-        let rom_filenames = replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
+        let clone_base = storage_root
+            .join(replay_control_core::metadata_db::RC_DIR)
+            .join("tmp");
+        let rom_filenames =
+            replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
 
         // Take DB from state.
         let db = {
@@ -630,7 +676,10 @@ impl AppState {
         // that already have images, so later repos only fill gaps.
         for (repo_idx, repo_name) in repo_names.iter().enumerate() {
             // Check for cancellation before each repo.
-            if self.image_import_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            if self
+                .image_import_cancel
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
                 let mut guard = self.image_import_progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
                     p.state = ImageImportState::Cancelled;
@@ -663,11 +712,18 @@ impl AppState {
                 });
             }
 
-            let repo_dir = match replay_control_core::thumbnails::clone_thumbnail_repo(repo_name, Some(&clone_base), Some(&self.image_import_cancel)) {
+            let repo_dir = match replay_control_core::thumbnails::clone_thumbnail_repo(
+                repo_name,
+                Some(&clone_base),
+                Some(&self.image_import_cancel),
+            ) {
                 Ok(dir) => dir,
                 Err(e) => {
                     // If cancelled during clone, set Cancelled state and stop.
-                    if self.image_import_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    if self
+                        .image_import_cancel
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
                         let mut guard = self.image_import_progress.write().expect("lock");
                         if let Some(ref mut p) = *guard {
                             p.state = ImageImportState::Cancelled;
@@ -692,7 +748,10 @@ impl AppState {
             };
 
             // Check for cancellation after clone.
-            if self.image_import_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            if self
+                .image_import_cancel
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
                 let mut guard = self.image_import_progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
                     p.state = ImageImportState::Cancelled;
@@ -747,7 +806,10 @@ impl AppState {
             let _ = std::fs::remove_dir_all(&repo_dir);
 
             // Check for cancellation after copy.
-            if self.image_import_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            if self
+                .image_import_cancel
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
                 let mut guard = self.image_import_progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
                     p.state = ImageImportState::Cancelled;
@@ -768,7 +830,10 @@ impl AppState {
         // Update final progress for this system (skip if already cancelled).
         {
             let mut guard = self.image_import_progress.write().expect("lock");
-            let already_cancelled = guard.as_ref().map(|p| p.state == ImageImportState::Cancelled).unwrap_or(false);
+            let already_cancelled = guard
+                .as_ref()
+                .map(|p| p.state == ImageImportState::Cancelled)
+                .unwrap_or(false);
             if !already_cancelled {
                 if last_error.is_some() && total_boxart == 0 && total_snap == 0 {
                     if let Some(ref mut p) = *guard {
@@ -803,7 +868,8 @@ impl AppState {
         }
 
         use crate::server_fns::{ImageImportProgress, ImageImportState};
-        self.image_import_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.image_import_cancel
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         // Write initial progress before spawning so the first poll never returns None.
         {
             let mut guard = self.image_import_progress.write().expect("lock");
@@ -843,7 +909,9 @@ impl AppState {
         let supported: Vec<String> = systems
             .into_iter()
             .filter(|s| s.game_count > 0)
-            .filter(|s| replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some())
+            .filter(|s| {
+                replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some()
+            })
             .map(|s| s.folder_name)
             .collect();
 
@@ -852,7 +920,8 @@ impl AppState {
         }
 
         use crate::server_fns::{ImageImportProgress, ImageImportState};
-        self.image_import_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.image_import_cancel
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         // Write initial progress before spawning so the first poll never returns None.
         {
             let total = supported.len();
@@ -883,7 +952,10 @@ impl AppState {
                     use crate::server_fns::ImageImportState;
                     let guard = state.image_import_progress.read().expect("lock");
                     if let Some(ref p) = *guard {
-                        if matches!(p.state, ImageImportState::Failed | ImageImportState::Cancelled) {
+                        if matches!(
+                            p.state,
+                            ImageImportState::Failed | ImageImportState::Cancelled
+                        ) {
                             break;
                         }
                     }
@@ -910,11 +982,8 @@ impl AppState {
         let watcher_config_path = config_path.clone();
 
         tokio::spawn(async move {
-            let watcher_active = Self::try_start_config_watcher(
-                watcher_state,
-                watcher_config_path,
-            )
-            .await;
+            let watcher_active =
+                Self::try_start_config_watcher(watcher_state, watcher_config_path).await;
 
             if watcher_active {
                 tracing::info!("Config file watcher active; 60s poll runs as fallback");
@@ -940,11 +1009,8 @@ impl AppState {
 
     /// Try to set up a `notify` filesystem watcher on the config file.
     /// Returns `true` if the watcher was started successfully.
-    async fn try_start_config_watcher(
-        state: AppState,
-        config_path: PathBuf,
-    ) -> bool {
-        use notify::{recommended_watcher, RecursiveMode, Watcher};
+    async fn try_start_config_watcher(state: AppState, config_path: PathBuf) -> bool {
+        use notify::{RecursiveMode, Watcher, recommended_watcher};
 
         // Watch the parent directory — the file itself may not exist yet, and
         // some editors write to a temp file then rename, which only shows up as
@@ -973,35 +1039,28 @@ impl AppState {
 
         // Create the watcher. The callback sends events through the channel
         // so we can process them on the async side.
-        let mut watcher = match recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-            match res {
+        let mut watcher =
+            match recommended_watcher(move |res: Result<notify::Event, notify::Error>| match res {
                 Ok(event) => {
                     let _ = tx.blocking_send(event);
                 }
                 Err(e) => {
                     tracing::warn!("File watcher error: {e}");
                 }
-            }
-        }) {
-            Ok(w) => w,
-            Err(e) => {
-                tracing::warn!("Failed to create file watcher: {e}");
-                return false;
-            }
-        };
+            }) {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::warn!("Failed to create file watcher: {e}");
+                    return false;
+                }
+            };
 
         if let Err(e) = watcher.watch(&watch_dir, RecursiveMode::NonRecursive) {
-            tracing::warn!(
-                "Failed to watch directory {}: {e}",
-                watch_dir.display()
-            );
+            tracing::warn!("Failed to watch directory {}: {e}", watch_dir.display());
             return false;
         }
 
-        tracing::info!(
-            "Watching {} for config changes",
-            watch_dir.display()
-        );
+        tracing::info!("Watching {} for config changes", watch_dir.display());
 
         // Spawn the event-processing loop. We keep `watcher` alive by moving
         // it into this task — dropping it would stop watching.
@@ -1032,7 +1091,10 @@ impl AppState {
                     match tokio::time::timeout_at(deadline, rx.recv()).await {
                         Ok(Some(ev)) => {
                             if Self::is_config_event(&ev, &config_filename) {
-                                tracing::debug!("Additional config event during debounce ({:?})", ev.kind);
+                                tracing::debug!(
+                                    "Additional config event during debounce ({:?})",
+                                    ev.kind
+                                );
                             }
                         }
                         Ok(None) => {
@@ -1064,12 +1126,10 @@ impl AppState {
 
         // Only react to creates, modifications, and renames (some editors
         // write a temp file then rename it over the original).
-        matches!(
-            event.kind,
-            EventKind::Create(_) | EventKind::Modify(_)
-        ) && event
-            .paths
-            .iter()
-            .any(|p| p.file_name().is_some_and(|n| n == config_filename))
+        matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_))
+            && event
+                .paths
+                .iter()
+                .any(|p| p.file_name().is_some_and(|n| n == config_filename))
     }
 }

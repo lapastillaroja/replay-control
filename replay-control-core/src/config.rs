@@ -15,8 +15,7 @@ pub struct ReplayConfig {
 impl ReplayConfig {
     /// Parse a `replay.cfg` file from the given path.
     pub fn from_file(path: &Path) -> Result<Self> {
-        let content =
-            std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
+        let content = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
         Self::parse(&content)
     }
 
@@ -57,11 +56,10 @@ impl ReplayConfig {
     /// Write the config back to a file, preserving unknown keys
     /// and adding any new ones at the end.
     pub fn write_to_file(&self, original_path: &Path, output_path: &Path) -> Result<()> {
-        let original_content = std::fs::read_to_string(original_path)
-            .map_err(|e| Error::io(original_path, e))?;
+        let original_content =
+            std::fs::read_to_string(original_path).map_err(|e| Error::io(original_path, e))?;
 
-        let mut written_keys: std::collections::HashSet<&str> =
-            std::collections::HashSet::new();
+        let mut written_keys: std::collections::HashSet<&str> = std::collections::HashSet::new();
         let mut output = String::new();
 
         for line in original_content.lines() {
@@ -181,10 +179,8 @@ mod tests {
         use std::io::Write;
 
         let original = "# RePlayOS config\nsystem_storage = \"sd\"\nwifi_name = \"OldWifi\"\n";
-        let tmp_dir = std::env::temp_dir().join(format!(
-            "replay-config-test-{}",
-            std::process::id()
-        ));
+        let tmp_dir =
+            std::env::temp_dir().join(format!("replay-config-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp_dir);
         std::fs::create_dir_all(&tmp_dir).unwrap();
         let original_path = tmp_dir.join("original.cfg");
@@ -202,7 +198,10 @@ mod tests {
         let result = std::fs::read_to_string(&output_path).unwrap();
         assert!(result.contains("# RePlayOS config"), "comment preserved");
         assert!(result.contains("wifi_name = \"NewWifi\""), "value updated");
-        assert!(result.contains("system_storage = \"sd\""), "unchanged key preserved");
+        assert!(
+            result.contains("system_storage = \"sd\""),
+            "unchanged key preserved"
+        );
         assert!(result.contains("video_mode = \"5\""), "new key appended");
     }
 

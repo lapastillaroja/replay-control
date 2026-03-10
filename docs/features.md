@@ -30,11 +30,19 @@ Tracking document for Replay Control. Organized by page/area.
 - **Box art display** — shows imported box art thumbnail when available; falls back to styled placeholder with game name
 - **Game info card** — metadata grid showing system, filename, file size, and format/extension
 - **Arcade metadata** — for arcade games, shows year, manufacturer, players, rotation, category, and parent ROM (if clone)
+- **Videos section** — search and save game-related videos:
+  - **Saved videos** (My Videos) — paste YouTube/Twitch/Vimeo/Dailymotion URLs, embedded inline with responsive 16:9 iframes
+  - **Find Trailers** / **Find Gameplay** / **Find 1CC** buttons — on-demand search via Invidious/Piped APIs (multi-instance fallback)
+  - **Inline preview** — click thumbnail/title in search results to watch without pinning; play icon overlay on thumbnails
+  - **Pin to save** — pin search results to My Videos with tag (trailer/gameplay/1cc)
+  - **Remove** — remove saved videos with overlay button
+  - **Show all** — initial display limited to 3 videos, expandable
+  - URL sanitization — strips tracking params, builds canonical URLs, uses `youtube-nocookie.com` for privacy
+  - Separate `videos.json` storage (survives metadata clears)
+  - Duplicate detection — prevents saving the same video twice
 - **Placeholder sections** for future content:
   - Description ("No description available")
   - Screenshots gallery ("No screenshots available")
-  - Videos ("No videos available")
-  - Music / Soundtrack ("No soundtrack available")
   - Manual ("No manual available")
 - **Actions section** with:
   - Favorite/Unfavorite toggle with optimistic UI
@@ -51,9 +59,7 @@ Tracking document for Replay Control. Organized by page/area.
 - **Screenshots gallery** — display screenshots taken on RePlayOS for the current game. Screenshots are discovered from the `captures/` directory by matching the ROM filename prefix. Shown as a horizontal scrollable gallery below the metadata section. See `docs/reference/screenshots-analysis.md`.
 - **Game metadata integration** — cover images, descriptions, screenshots from external metadata providers
 - **RetroAchievements integration** — show achievements for the current game if the user has configured their RA account. Displays: achievement list with icons, earned/locked status, earn dates, total points, and completion percentage. Data fetched from RA API and cached locally. See details in the RetroAchievements section below.
-- **Video search** — link to gameplay videos on YouTube and other sources
 - **Manual viewer** — display game manuals in-browser
-- **Soundtrack player** — play game music tracks
 
 ---
 
@@ -121,7 +127,7 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 
 **Text metadata (LaunchBox):**
 - **Auto-download** — "Download Metadata" button fetches LaunchBox XML from the internet, extracts, and imports into SQLite. Background task with real-time progress (downloading, parsing, matching)
-- **Coverage stats** — per-system breakdown of matched/unmatched games
+- **Coverage stats** — per-system breakdown of matched/unmatched games, sorted alphabetically by system name
 - **Clear metadata** — delete the SQLite cache and start fresh
 
 **Image metadata (libretro-thumbnails):**
@@ -130,7 +136,7 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Stop/Cancel button** — cancel in-progress image imports immediately (kills git clone subprocess, stops copy loop). "Cancelling..." feedback on the button
 - **Real-time SSE progress** — `/sse/image-progress` endpoint streams progress every 200ms via Server-Sent Events. Client uses `EventSource` instead of polling for near-instant UI updates
 - **Optimistic UI** — progress bar appears instantly on click, before the server responds
-- **Per-system coverage grid** — shows box art count vs total games for each system, with per-system download/update buttons
+- **Per-system coverage grid** — shows box art count vs total games for each system, sorted alphabetically, with per-system download/update buttons
 - **Image stats** — total box art count, screenshot count, and media disk usage
 - **Pulsing animation** — disabled download buttons pulse to signal activity
 - **exFAT symlink resolution** — handles fake symlinks on exFAT filesystems (git writes symlink targets as text files)
@@ -282,7 +288,6 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Backup & sync** — backup ROM library, save states, configuration
 - **Game recommendations** — suggest games based on library, favorites, play history
 - **Non-installed game search** — discover games not in the library
-- **Game videos** — search for related gameplay videos from YouTube or other sources
 - **Game manuals viewer** — read game manuals from the web UI
 - **systemd integration** — run as a system service on RePlayOS
 - **mDNS/Avahi** — auto-discovery via `replaypi.local`

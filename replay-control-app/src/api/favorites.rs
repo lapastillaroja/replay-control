@@ -70,7 +70,8 @@ async fn check_favorite(
     State(state): State<AppState>,
     Path((system, rom_filename)): Path<(String, String)>,
 ) -> Json<serde_json::Value> {
-    let is_fav = replay_control_core::favorites::is_favorite(&state.storage(), &system, &rom_filename);
+    let is_fav =
+        replay_control_core::favorites::is_favorite(&state.storage(), &system, &rom_filename);
     Json(serde_json::json!({ "is_favorite": is_fav }))
 }
 

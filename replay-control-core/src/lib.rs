@@ -8,11 +8,13 @@ pub mod game_ref;
 pub mod launchbox;
 #[cfg(feature = "metadata")]
 pub mod metadata_db;
-#[cfg(feature = "metadata")]
-pub mod thumbnails;
 pub mod recents;
 pub mod rom_tags;
 pub mod roms;
 pub mod skins;
 pub mod storage;
 pub mod systems;
+#[cfg(feature = "metadata")]
+pub mod thumbnails;
+pub mod video_url;
+pub mod videos;

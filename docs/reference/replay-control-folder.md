@@ -27,6 +27,7 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
     ├── config.cfg                 # App-specific settings (region preference, etc.)
     ├── metadata.db                # SQLite database — game metadata cache
     ├── Metadata.xml               # LaunchBox XML dump (downloaded or manually placed)
+    ├── videos.json                # User-saved video links per game
     │
     ├── media/                     # Game images (box art + screenshots)
     │   ├── nintendo_snes/
@@ -78,6 +79,13 @@ The LaunchBox metadata XML dump (~460 MB, ~78K game entries). Either:
 - Placed manually by the user
 
 Parsed during import to populate `metadata.db`. Kept on disk for re-imports.
+
+### `videos.json`
+User-saved video links per game. JSON format with a `games` map keyed by `"{system}/{rom_filename}"`. Each entry stores URL, platform, video ID, title, tag (trailer/gameplay/1cc), and timestamp.
+
+Separate from `metadata.db` so video data survives metadata clears. Written atomically (write `.tmp` then `rename`). Mutex-guarded via AppState.
+
+**Source code**: `replay-control-core/src/videos.rs`, `replay-control-core/src/video_url.rs`
 
 ### `media/<system>/boxart/` and `media/<system>/snap/`
 PNG image files imported from [libretro-thumbnails](https://github.com/libretro-thumbnails) GitHub repos. One subdirectory per system.

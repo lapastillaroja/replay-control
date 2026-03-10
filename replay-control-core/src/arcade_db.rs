@@ -171,10 +171,7 @@ mod tests {
     fn lookup_fbneo_only_game() {
         // 3countba exists in FBNeo but not MAME 2003+ or MAME current
         let info = lookup_arcade_game("3countba").expect("3countba should exist (FBNeo-only)");
-        assert_eq!(
-            info.display_name,
-            "3 Count Bout / Fire Suplex (NGM-043)"
-        );
+        assert_eq!(info.display_name, "3 Count Bout / Fire Suplex (NGM-043)");
         assert_eq!(info.year, "1993");
         assert_eq!(info.manufacturer, "SNK");
         assert!(info.is_clone);
@@ -237,9 +234,6 @@ mod tests {
     fn total_entry_count() {
         // After merging Flycast + FBNeo + MAME 2003+ + MAME current, we should have 25K+ entries
         let count = ARCADE_DB.len();
-        assert!(
-            count >= 25000,
-            "Expected 25000+ entries, got {count}"
-        );
+        assert!(count >= 25000, "Expected 25000+ entries, got {count}");
     }
 }

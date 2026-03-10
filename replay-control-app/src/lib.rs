@@ -11,22 +11,22 @@ pub mod util;
 pub mod api;
 
 use leptos::prelude::*;
-use leptos_router::components::{Route, Router, Routes, A};
+use leptos_router::components::{A, Route, Router, Routes};
 use leptos_router::path;
 
 use components::nav::BottomNav;
-use i18n::{provide_i18n, use_i18n, t};
+use i18n::{provide_i18n, t, use_i18n};
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
 use pages::games::{GamesPage, SystemRomView};
 use pages::home::HomePage;
-use pages::more::MorePage;
-use pages::wifi::WifiPage;
 use pages::hostname::HostnamePage;
-use pages::nfs::NfsPage;
-use pages::metadata::MetadataPage;
 use pages::logs::LogsPage;
+use pages::metadata::MetadataPage;
+use pages::more::MorePage;
+use pages::nfs::NfsPage;
 use pages::skin::SkinPage;
+use pages::wifi::WifiPage;
 
 /// The HTML shell wrapping the App component for SSR.
 #[cfg(feature = "ssr")]

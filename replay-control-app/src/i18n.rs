@@ -120,8 +120,12 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.hostname" => "Hostname",
         "hostname.title" => "Hostname",
         "hostname.label" => "Hostname",
-        "hostname.hint" => "Sets the network name for this RePlayOS system. Use lowercase letters, digits, and hyphens (e.g., replay-living-room).",
-        "hostname.saved" => "Hostname updated. Reboot may be needed for mDNS (.local) to fully update.",
+        "hostname.hint" => {
+            "Sets the network name for this RePlayOS system. Use lowercase letters, digits, and hyphens (e.g., replay-living-room)."
+        }
+        "hostname.saved" => {
+            "Hostname updated. Reboot may be needed for mDNS (.local) to fully update."
+        }
         "hostname.invalid" => "Invalid hostname",
 
         // More page
@@ -204,8 +208,22 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.no_screenshots" => "No screenshots available",
         "game_detail.videos" => "Videos",
         "game_detail.no_videos" => "No videos available",
-        "game_detail.music" => "Music / Soundtrack",
-        "game_detail.no_music" => "No soundtrack available",
+        "game_detail.my_videos" => "My Videos",
+        "game_detail.add_video" => "Add",
+        "game_detail.add_video_placeholder" => "Paste a YouTube or Twitch URL...",
+        "game_detail.add_video_error" => "Invalid URL. Supported: YouTube, Twitch, Vimeo.",
+        "game_detail.add_video_duplicate" => "This video is already saved.",
+        "game_detail.video_added" => "Video added",
+        "game_detail.remove_video" => "Remove",
+        "game_detail.find_trailers" => "Find Trailers",
+        "game_detail.find_gameplay" => "Find Gameplay",
+        "game_detail.find_1cc" => "Find 1CC",
+        "game_detail.searching" => "Searching...",
+        "game_detail.no_results" => "No videos found",
+        "game_detail.search_error" => "Video search unavailable. Paste URLs directly.",
+        "game_detail.pin_video" => "Pin",
+        "game_detail.pinned" => "Pinned",
+        "game_detail.show_all_videos" => "Show all",
         "game_detail.manual" => "Manual",
         "game_detail.no_manual" => "No manual available",
         "game_detail.actions" => "Actions",
@@ -222,7 +240,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.metadata" => "Game Metadata",
         "metadata.title" => "Game Metadata",
         "metadata.descriptions" => "Descriptions & Ratings",
-        "metadata.descriptions_hint" => "Game descriptions, ratings, and publishers from LaunchBox. Downloaded and cached locally.",
+        "metadata.descriptions_hint" => {
+            "Game descriptions, ratings, and publishers from LaunchBox. Downloaded and cached locally."
+        }
         "metadata.total_entries" => "Total Entries",
         "metadata.with_description" => "With Description",
         "metadata.with_rating" => "With Rating",
@@ -247,7 +267,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
 
         // Images
         "metadata.images" => "Images",
-        "metadata.images_hint" => "Download box art and screenshots from libretro-thumbnails. Images are stored on your storage device.",
+        "metadata.images_hint" => {
+            "Download box art and screenshots from libretro-thumbnails. Images are stored on your storage device."
+        }
         "metadata.no_images" => "No images downloaded yet",
         "metadata.no_images_short" => "None",
         "metadata.no_image_systems" => "No supported systems found",
@@ -266,7 +288,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.import_cancelled" => "Cancelled",
 
         "metadata.attribution" => "Attribution",
-        "metadata.attribution_text" => "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails. Data is cached locally for offline use and is not redistributed.",
+        "metadata.attribution_text" => {
+            "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails. Data is cached locally for offline use and is not redistributed."
+        }
 
         // Logs
         "more.logs" => "System Logs",

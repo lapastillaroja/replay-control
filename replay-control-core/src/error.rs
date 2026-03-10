@@ -24,7 +24,10 @@ pub enum Error {
     StorageNotFound,
 
     #[error("duplicate ROM detected: {original} and {duplicate}")]
-    DuplicateRom { original: PathBuf, duplicate: PathBuf },
+    DuplicateRom {
+        original: PathBuf,
+        duplicate: PathBuf,
+    },
 
     #[error("{0}")]
     Other(String),

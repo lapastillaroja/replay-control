@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::i18n::{use_i18n, t};
+use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
 use crate::util::format_size;
@@ -51,7 +51,11 @@ pub fn MorePage() -> impl IntoView {
 }
 
 #[component]
-fn MenuItem(icon: &'static str, label_key: &'static str, href: Option<&'static str>) -> impl IntoView {
+fn MenuItem(
+    icon: &'static str,
+    label_key: &'static str,
+    href: Option<&'static str>,
+) -> impl IntoView {
     let i18n = use_i18n();
     let content = view! {
         <span class="menu-icon">{icon}</span>
@@ -64,13 +68,15 @@ fn MenuItem(icon: &'static str, label_key: &'static str, href: Option<&'static s
                 {content}
                 <span class="menu-chevron">{"\u{203A}"}</span>
             </A>
-        }.into_any()
+        }
+        .into_any()
     } else {
         view! {
             <div class="menu-item menu-item-disabled">
                 {content}
             </div>
-        }.into_any()
+        }
+        .into_any()
     }
 }
 

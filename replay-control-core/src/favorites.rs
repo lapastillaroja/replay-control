@@ -50,10 +50,12 @@ pub fn list_favorites(storage: &StorageLocation) -> Result<Vec<Favorite>> {
         .collect();
 
     favorites.sort_by(|a, b| {
-        a.game
-            .system
-            .cmp(&b.game.system)
-            .then(a.game.rom_filename.to_lowercase().cmp(&b.game.rom_filename.to_lowercase()))
+        a.game.system.cmp(&b.game.system).then(
+            a.game
+                .rom_filename
+                .to_lowercase()
+                .cmp(&b.game.rom_filename.to_lowercase()),
+        )
     });
 
     Ok(favorites)
@@ -65,7 +67,10 @@ pub fn list_favorites_for_system(
     system_folder: &str,
 ) -> Result<Vec<Favorite>> {
     let all = list_favorites(storage)?;
-    Ok(all.into_iter().filter(|f| f.game.system == system_folder).collect())
+    Ok(all
+        .into_iter()
+        .filter(|f| f.game.system == system_folder)
+        .collect())
 }
 
 /// Add a ROM to favorites.
@@ -229,12 +234,7 @@ pub fn organize_favorites(
     let entries: Vec<_> = std::fs::read_dir(&favs_dir)
         .map_err(|e| Error::io(&favs_dir, e))?
         .flatten()
-        .filter(|e| {
-            e.path().is_file()
-                && e.file_name()
-                    .to_string_lossy()
-                    .ends_with(".fav")
-        })
+        .filter(|e| e.path().is_file() && e.file_name().to_string_lossy().ends_with(".fav"))
         .collect();
 
     let mut organized = 0;
@@ -281,18 +281,13 @@ pub fn organize_favorites(
         organized += 1;
     }
 
-    Ok(OrganizeResult {
-        organized,
-        skipped,
-    })
+    Ok(OrganizeResult { organized, skipped })
 }
 
 /// Sanitize a string for use as a directory name.
 /// Replaces `/` and other filesystem-unsafe characters with `-`.
 fn sanitize_folder_name(name: &str) -> String {
-    name.replace('/', "-")
-        .replace('\\', "-")
-        .replace(':', "-")
+    name.replace('/', "-").replace('\\', "-").replace(':', "-")
 }
 
 /// Determine the subfolder name for a favorite based on the given criteria.
@@ -312,21 +307,17 @@ fn criteria_folder_raw(
     rom_filename: &str,
     ratings: Option<&std::collections::HashMap<(String, String), f64>>,
 ) -> String {
-    let is_arcade = systems::find_system(system)
-        .is_some_and(|s| s.category == systems::SystemCategory::Arcade);
+    let is_arcade =
+        systems::find_system(system).is_some_and(|s| s.category == systems::SystemCategory::Arcade);
 
     match criteria {
-        OrganizeCriteria::System => {
-            systems::find_system(system)
-                .map(|s| s.display_name.to_string())
-                .unwrap_or_else(|| system.to_string())
-        }
+        OrganizeCriteria::System => systems::find_system(system)
+            .map(|s| s.display_name.to_string())
+            .unwrap_or_else(|| system.to_string()),
         OrganizeCriteria::Genre => {
             if is_arcade {
                 // Use arcade_db for genre resolution.
-                let stem = rom_filename
-                    .strip_suffix(".zip")
-                    .unwrap_or(rom_filename);
+                let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
                 let genre = crate::arcade_db::lookup_arcade_game(stem)
                     .map(|info| info.normalized_genre)
                     .unwrap_or("");
@@ -359,9 +350,7 @@ fn criteria_folder_raw(
         OrganizeCriteria::Players => {
             if is_arcade {
                 // Use arcade_db for players resolution.
-                let stem = rom_filename
-                    .strip_suffix(".zip")
-                    .unwrap_or(rom_filename);
+                let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
                 let players = crate::arcade_db::lookup_arcade_game(stem)
                     .map(|info| info.players)
                     .unwrap_or(0);
@@ -380,8 +369,7 @@ fn criteria_folder_raw(
                     .map(|e| e.game.players)
                     .or_else(|| {
                         let normalized = game_db::normalize_filename(stem);
-                        game_db::lookup_by_normalized_title(system, &normalized)
-                            .map(|g| g.players)
+                        game_db::lookup_by_normalized_title(system, &normalized).map(|g| g.players)
                     })
                     .unwrap_or(0);
                 match players {
@@ -407,20 +395,13 @@ fn criteria_folder_raw(
         }
         OrganizeCriteria::Alphabetical => {
             let display = if is_arcade {
-                let stem = rom_filename
-                    .strip_suffix(".zip")
-                    .unwrap_or(rom_filename);
-                crate::arcade_db::lookup_arcade_game(stem)
-                    .map(|info| info.display_name)
+                let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+                crate::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name)
             } else {
                 game_db::game_display_name(system, rom_filename)
             };
             let display = display.unwrap_or(rom_filename);
-            let first = display
-                .chars()
-                .next()
-                .unwrap_or('#')
-                .to_ascii_uppercase();
+            let first = display.chars().next().unwrap_or('#').to_ascii_uppercase();
             if first.is_ascii_alphabetic() {
                 first.to_string()
             } else {
@@ -527,11 +508,7 @@ fn find_fav_recursive(dir: &Path, fav_filename: &str) -> bool {
     false
 }
 
-fn collect_favorites(
-    dir: &Path,
-    favs_root: &Path,
-    out: &mut Vec<Favorite>,
-) -> Result<()> {
+fn collect_favorites(dir: &Path, favs_root: &Path, out: &mut Vec<Favorite>) -> Result<()> {
     let entries = std::fs::read_dir(dir).map_err(|e| Error::io(dir, e))?;
 
     for entry in entries.flatten() {
@@ -602,10 +579,7 @@ mod tests {
 
     fn setup_test_storage() -> (PathBuf, StorageLocation) {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp = std::env::temp_dir().join(format!(
-            "replay-fav-test-{}-{id}",
-            std::process::id()
-        ));
+        let tmp = std::env::temp_dir().join(format!("replay-fav-test-{}-{id}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let favs = tmp.join("roms/_favorites");
         std::fs::create_dir_all(&favs).unwrap();
@@ -617,13 +591,7 @@ mod tests {
     fn add_and_list_favorite() {
         let (_tmp, storage) = setup_test_storage();
 
-        add_favorite(
-            &storage,
-            "sega_smd",
-            "/roms/sega_smd/Sonic.md",
-            false,
-        )
-        .unwrap();
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
 
         let favs = list_favorites(&storage).unwrap();
         assert_eq!(favs.len(), 1);
@@ -648,29 +616,41 @@ mod tests {
         let (_tmp, storage) = setup_test_storage();
 
         add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
-        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+        add_favorite(
+            &storage,
+            "nintendo_nes",
+            "/roms/nintendo_nes/Mario.nes",
+            false,
+        )
+        .unwrap();
 
         let moved = group_by_system(&storage).unwrap();
         assert_eq!(moved, 2);
 
         // Verify files moved to subfolders
-        assert!(storage
-            .favorites_dir()
-            .join("sega_smd/sega_smd@Sonic.md.fav")
-            .exists());
-        assert!(storage
-            .favorites_dir()
-            .join("nintendo_nes/nintendo_nes@Mario.nes.fav")
-            .exists());
+        assert!(
+            storage
+                .favorites_dir()
+                .join("sega_smd/sega_smd@Sonic.md.fav")
+                .exists()
+        );
+        assert!(
+            storage
+                .favorites_dir()
+                .join("nintendo_nes/nintendo_nes@Mario.nes.fav")
+                .exists()
+        );
 
         let moved_back = flatten_favorites(&storage).unwrap();
         assert_eq!(moved_back, 2);
 
         // Verify files back at root
-        assert!(storage
-            .favorites_dir()
-            .join("sega_smd@Sonic.md.fav")
-            .exists());
+        assert!(
+            storage
+                .favorites_dir()
+                .join("sega_smd@Sonic.md.fav")
+                .exists()
+        );
     }
 
     #[test]
@@ -678,7 +658,13 @@ mod tests {
         let (_tmp, storage) = setup_test_storage();
 
         add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
-        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+        add_favorite(
+            &storage,
+            "nintendo_nes",
+            "/roms/nintendo_nes/Mario.nes",
+            false,
+        )
+        .unwrap();
 
         let result =
             organize_favorites(&storage, OrganizeCriteria::System, None, false, None).unwrap();
@@ -693,10 +679,7 @@ mod tests {
         let root_favs: Vec<_> = std::fs::read_dir(storage.favorites_dir())
             .unwrap()
             .flatten()
-            .filter(|e| {
-                e.path().is_file()
-                    && e.file_name().to_string_lossy().ends_with(".fav")
-            })
+            .filter(|e| e.path().is_file() && e.file_name().to_string_lossy().ends_with(".fav"))
             .collect();
         assert_eq!(root_favs.len(), 0);
     }
@@ -727,7 +710,13 @@ mod tests {
         let (_tmp, storage) = setup_test_storage();
 
         add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
-        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+        add_favorite(
+            &storage,
+            "nintendo_nes",
+            "/roms/nintendo_nes/Mario.nes",
+            false,
+        )
+        .unwrap();
 
         organize_favorites(&storage, OrganizeCriteria::System, None, false, None).unwrap();
         let moved = flatten_favorites(&storage).unwrap();
@@ -743,10 +732,17 @@ mod tests {
         let (_tmp, storage) = setup_test_storage();
 
         add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
-        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+        add_favorite(
+            &storage,
+            "nintendo_nes",
+            "/roms/nintendo_nes/Mario.nes",
+            false,
+        )
+        .unwrap();
 
         let result =
-            organize_favorites(&storage, OrganizeCriteria::Alphabetical, None, false, None).unwrap();
+            organize_favorites(&storage, OrganizeCriteria::Alphabetical, None, false, None)
+                .unwrap();
         assert_eq!(result.organized, 2);
 
         let favs = list_favorites(&storage).unwrap();
@@ -784,13 +780,7 @@ mod tests {
         let (_tmp, storage) = setup_test_storage();
 
         // Sega Mega Drive / Genesis has a `/` in the display name.
-        add_favorite(
-            &storage,
-            "sega_smd",
-            "/roms/sega_smd/Sonic.md",
-            false,
-        )
-        .unwrap();
+        add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
         // Arcade (Atomiswave/Naomi) also has `/`.
         add_favorite(
             &storage,
@@ -828,7 +818,13 @@ mod tests {
         let (_tmp, storage) = setup_test_storage();
 
         add_favorite(&storage, "sega_smd", "/roms/sega_smd/Sonic.md", false).unwrap();
-        add_favorite(&storage, "nintendo_nes", "/roms/nintendo_nes/Mario.nes", false).unwrap();
+        add_favorite(
+            &storage,
+            "nintendo_nes",
+            "/roms/nintendo_nes/Mario.nes",
+            false,
+        )
+        .unwrap();
 
         // Organize with 2 levels.
         organize_favorites(
@@ -842,7 +838,10 @@ mod tests {
 
         // Verify they're nested.
         let favs = list_favorites(&storage).unwrap();
-        assert!(favs.iter().all(|f| f.subfolder.contains(std::path::MAIN_SEPARATOR)));
+        assert!(
+            favs.iter()
+                .all(|f| f.subfolder.contains(std::path::MAIN_SEPARATOR))
+        );
 
         // Flatten should handle deep nesting.
         let moved = flatten_favorites(&storage).unwrap();

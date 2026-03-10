@@ -65,7 +65,10 @@ pub fn lookup_by_crc(system: &str, crc32: u32) -> Option<&'static GameEntry> {
 /// This is used as a fallback when exact filename matching fails.
 /// The normalized title strips parenthesized tags, lowercases, removes
 /// punctuation, and collapses whitespace.
-pub fn lookup_by_normalized_title(system: &str, normalized: &str) -> Option<&'static CanonicalGame> {
+pub fn lookup_by_normalized_title(
+    system: &str,
+    normalized: &str,
+) -> Option<&'static CanonicalGame> {
     let norm_index = get_system_norm_index(system)?;
     let game_id = norm_index.get(normalized)?;
     let games = get_system_games(system)?;
@@ -256,8 +259,10 @@ mod tests {
                 "USA and Europe variants should share the same display name"
             );
             // They should point to the same CanonicalGame instance
-            assert!(std::ptr::eq(usa.game, eur.game),
-                "USA and Europe variants should point to the same CanonicalGame");
+            assert!(
+                std::ptr::eq(usa.game, eur.game),
+                "USA and Europe variants should point to the same CanonicalGame"
+            );
         }
     }
 
@@ -286,12 +291,12 @@ mod tests {
     #[test]
     fn lookup_by_crc_nes() {
         // Look up Super Mario Bros by its known CRC32
-        let entry = lookup_game("nintendo_nes", "Super Mario Bros. (World)")
-            .expect("SMB should exist");
+        let entry =
+            lookup_game("nintendo_nes", "Super Mario Bros. (World)").expect("SMB should exist");
         let crc = entry.crc32;
         assert!(crc != 0);
-        let by_crc = lookup_by_crc("nintendo_nes", crc)
-            .expect("CRC32 lookup should find Super Mario Bros.");
+        let by_crc =
+            lookup_by_crc("nintendo_nes", crc).expect("CRC32 lookup should find Super Mario Bros.");
         assert_eq!(by_crc.game.display_name, "Super Mario Bros.");
     }
 
@@ -299,8 +304,8 @@ mod tests {
 
     #[test]
     fn nes_has_genre_data() {
-        let entry = lookup_game("nintendo_nes", "Super Mario Bros. (World)")
-            .expect("SMB should exist");
+        let entry =
+            lookup_game("nintendo_nes", "Super Mario Bros. (World)").expect("SMB should exist");
         // Genre should be populated from libretro-database or TGDB
         assert!(
             !entry.game.genre.is_empty(),
@@ -310,8 +315,8 @@ mod tests {
 
     #[test]
     fn snes_has_players_data() {
-        let entry = lookup_game("nintendo_snes", "Super Mario World (USA)")
-            .expect("SMW should exist");
+        let entry =
+            lookup_game("nintendo_snes", "Super Mario World (USA)").expect("SMW should exist");
         assert!(
             entry.game.players > 0,
             "Super Mario World should have players data"
@@ -320,8 +325,8 @@ mod tests {
 
     #[test]
     fn snes_has_year_data() {
-        let entry = lookup_game("nintendo_snes", "Super Mario World (USA)")
-            .expect("SMW should exist");
+        let entry =
+            lookup_game("nintendo_snes", "Super Mario World (USA)").expect("SMW should exist");
         assert!(
             entry.game.year > 0,
             "Super Mario World should have a release year"
@@ -364,10 +369,7 @@ mod tests {
             normalize_filename("Game Name [T-Spa1.0v] (USA)"),
             "game name"
         );
-        assert_eq!(
-            normalize_filename("Game Name [!] (USA)"),
-            "game name"
-        );
+        assert_eq!(normalize_filename("Game Name [!] (USA)"), "game name");
     }
 
     #[test]
@@ -377,18 +379,12 @@ mod tests {
             normalize_filename("Battletoads & Double Dragon"),
             "battletoads double dragon"
         );
-        assert_eq!(
-            normalize_filename("Doom Troopers"),
-            "doom troopers"
-        );
+        assert_eq!(normalize_filename("Doom Troopers"), "doom troopers");
     }
 
     #[test]
     fn normalize_filename_collapses_whitespace() {
-        assert_eq!(
-            normalize_filename("  Game   Name  (USA)  "),
-            "game name"
-        );
+        assert_eq!(normalize_filename("  Game   Name  (USA)  "), "game name");
     }
 
     #[test]
@@ -406,20 +402,14 @@ mod tests {
     #[test]
     fn normalized_fallback_finds_game_with_60hz_tag() {
         // "Super Mario World (Europe) (60hz).sfc" should match via normalized fallback
-        let name = game_display_name(
-            "nintendo_snes",
-            "Super Mario World (Europe) (60hz).sfc",
-        );
+        let name = game_display_name("nintendo_snes", "Super Mario World (Europe) (60hz).sfc");
         assert_eq!(name, Some("Super Mario World"));
     }
 
     #[test]
     fn normalized_fallback_finds_game_with_fastrom_tag() {
         // "Super Mario World (USA) (FastRom).sfc" should match via normalized fallback
-        let name = game_display_name(
-            "nintendo_snes",
-            "Super Mario World (USA) (FastRom).sfc",
-        );
+        let name = game_display_name("nintendo_snes", "Super Mario World (USA) (FastRom).sfc");
         assert_eq!(name, Some("Super Mario World"));
     }
 
@@ -451,7 +441,10 @@ mod tests {
     fn lookup_by_normalized_title_smd() {
         // Sonic should be findable by normalized title
         let game = lookup_by_normalized_title("sega_smd", "sonic the hedgehog");
-        assert!(game.is_some(), "Sonic should be findable by normalized title");
+        assert!(
+            game.is_some(),
+            "Sonic should be findable by normalized title"
+        );
         assert_eq!(game.unwrap().display_name, "Sonic The Hedgehog");
     }
 
