@@ -192,6 +192,11 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             </div>
         </section>
 
+        // Launch on TV (prominent CTA)
+        <section class="game-launch-cta">
+            <GameLaunchAction relative_path=relative_path_sv />
+        </section>
+
         // Game Info Card
         <section class="section">
             <h2 class="section-title">{move || t(i18n.locale.get(), "game_detail.info")}</h2>
@@ -345,6 +350,83 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                 />
             </div>
         </section>
+    }
+}
+
+/// Launch action: "Launch on TV" button with launching/launched/error states.
+#[component]
+fn GameLaunchAction(relative_path: StoredValue<String>) -> impl IntoView {
+    let i18n = use_i18n();
+    let launching = RwSignal::new(false);
+    let launch_result = RwSignal::new(Option::<Result<String, String>>::None);
+
+    // Schedule a 3-second reset timer. Only runs client-side (WASM).
+    let schedule_reset = move || {
+        #[cfg(target_arch = "wasm32")]
+        {
+            gloo_timers::callback::Timeout::new(3_000, move || {
+                launch_result.set(None);
+            })
+            .forget();
+        }
+    };
+
+    let on_launch = move |_| {
+        launching.set(true);
+        launch_result.set(None);
+
+        let rp = relative_path.get_value();
+        leptos::task::spawn_local(async move {
+            let result = server_fns::launch_game(rp).await;
+            launching.set(false);
+            match result {
+                Ok(msg) => {
+                    launch_result.set(Some(Ok(msg)));
+                    schedule_reset();
+                }
+                Err(e) => {
+                    launch_result.set(Some(Err(e.to_string())));
+                    schedule_reset();
+                }
+            }
+        });
+    };
+
+    let is_launched = move || {
+        matches!(launch_result.get(), Some(Ok(ref m)) if !m.contains("simulated"))
+    };
+    let is_simulated = move || {
+        matches!(launch_result.get(), Some(Ok(ref m)) if m.contains("simulated"))
+    };
+    let is_error = move || matches!(launch_result.get(), Some(Err(_)));
+    let is_disabled = move || launching.get() || is_launched();
+
+    let label = move || {
+        let locale = i18n.locale.get();
+        if launching.get() {
+            t(locale, "game_detail.launching")
+        } else if is_launched() {
+            t(locale, "game_detail.launched")
+        } else if is_simulated() {
+            t(locale, "game_detail.launch_not_replayos")
+        } else if is_error() {
+            t(locale, "game_detail.launch_error")
+        } else {
+            t(locale, "game_detail.launch")
+        }
+    };
+
+    view! {
+        <button
+            class="game-action-launch"
+            class:game-action-launch-success=is_launched
+            class:game-action-launch-simulated=is_simulated
+            prop:disabled=is_disabled
+            on:click=on_launch
+        >
+            <span class="game-action-icon">{"\u{25B6}"}</span>
+            {label}
+        </button>
     }
 }
 

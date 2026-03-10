@@ -4,6 +4,7 @@ pub mod error;
 pub mod favorites;
 pub mod game_db;
 pub mod game_ref;
+pub mod launch;
 #[cfg(feature = "metadata")]
 pub mod launchbox;
 #[cfg(feature = "metadata")]

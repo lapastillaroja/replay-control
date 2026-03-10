@@ -664,6 +664,19 @@ pub async fn rename_rom(
     Ok(new_path.display().to_string())
 }
 
+#[server(prefix = "/sfn")]
+pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
+    if !is_replayos() {
+        return Ok("Launch simulated (not on RePlayOS)".into());
+    }
+
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core::launch::launch_game(&state.storage(), &rom_path)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok("Game launching".into())
+}
+
 /// Detailed ROM info including unified game metadata and favorite status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomDetail {
