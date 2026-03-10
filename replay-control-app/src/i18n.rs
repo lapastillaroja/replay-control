@@ -300,6 +300,21 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "logs.source_companion" => "Replay Control",
         "logs.source_replay" => "RePlayOS UI",
 
+        // Search
+        "search.title" => "Search",
+        "search.placeholder" => "Search all games...",
+        "search.no_results" => "No results found",
+        "search.no_results_with_filters" => "No results. Try removing some filters.",
+        "search.results_summary" => "results across",
+        "search.systems" => "systems",
+        "search.see_all" => "See all",
+
+        // Filters
+        "filter.hide_hacks" => "Hide Hacks",
+        "filter.genre" => "Genre",
+        "filter.genre_all" => "All Genres",
+        "filter.clear_filters" => "Clear Filters",
+
         // Common
         "common.loading" => "Loading...",
         "common.error" => "Error",

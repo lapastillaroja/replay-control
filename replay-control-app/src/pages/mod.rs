@@ -7,6 +7,7 @@ pub mod logs;
 pub mod metadata;
 pub mod more;
 pub mod nfs;
+pub mod search;
 pub mod skin;
 pub mod wifi;
 

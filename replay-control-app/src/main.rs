@@ -116,6 +116,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::AddGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameVideos>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GlobalSearch>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetAllGenres>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")

@@ -25,6 +25,7 @@ use pages::logs::LogsPage;
 use pages::metadata::MetadataPage;
 use pages::more::MorePage;
 use pages::nfs::NfsPage;
+use pages::search::SearchPage;
 use pages::skin::SkinPage;
 use pages::wifi::WifiPage;
 
@@ -95,6 +96,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/games/:system/:filename") view=GameDetailPage />
                         <Route path=path!("/favorites") view=FavoritesPage />
                         <Route path=path!("/favorites/:system") view=SystemFavoritesPage />
+                        <Route path=path!("/search") view=SearchPage />
                         <Route path=path!("/more") view=MorePage />
                         <Route path=path!("/more/wifi") view=WifiPage />
                         <Route path=path!("/more/nfs") view=NfsPage />

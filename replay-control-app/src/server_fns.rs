@@ -502,7 +502,13 @@ pub async fn get_roms_page(
     offset: usize,
     limit: usize,
     search: String,
+    #[server(default)]
+    hide_hacks: bool,
+    #[server(default)]
+    genre: String,
 ) -> Result<RomPage, ServerFnError> {
+    use replay_control_core::rom_tags;
+
     let state = expect_context::<crate::api::AppState>();
     let system_display = replay_control_core::systems::find_system(&system)
         .map(|s| s.display_name.to_string())
@@ -513,11 +519,32 @@ pub async fn get_roms_page(
         .get_roms(&storage, &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Apply hack and genre filters before search scoring.
+    let pre_filtered: Vec<RomEntry> = all_roms
+        .into_iter()
+        .filter(|r| {
+            if hide_hacks {
+                let (tier, _) = rom_tags::classify(&r.game.rom_filename);
+                if tier == rom_tags::RomTier::Hack {
+                    return false;
+                }
+            }
+            true
+        })
+        .filter(|r| {
+            if genre.is_empty() {
+                return true;
+            }
+            let rom_genre = lookup_genre(&system, &r.game.rom_filename);
+            rom_genre.eq_ignore_ascii_case(&genre)
+        })
+        .collect();
+
     let filtered: Vec<RomEntry> = if search.is_empty() {
-        all_roms
+        pre_filtered
     } else {
         let q = search.to_lowercase();
-        let mut scored: Vec<(u32, RomEntry)> = all_roms
+        let mut scored: Vec<(u32, RomEntry)> = pre_filtered
             .into_iter()
             .filter_map(|r| {
                 let display = r
@@ -1302,6 +1329,233 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     let storage = state.storage();
     replay_control_core::thumbnails::clear_media(&storage.root)
         .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+// ── Global Search ────────────────────────────────────────────────
+
+/// A single result in global search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobalSearchResult {
+    pub rom_filename: String,
+    pub display_name: String,
+    pub system: String,
+    pub genre: String,
+    pub is_favorite: bool,
+    pub box_art_url: Option<String>,
+}
+
+/// A group of search results for a single system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemSearchGroup {
+    pub system: String,
+    pub system_display: String,
+    pub total_matches: usize,
+    pub top_results: Vec<GlobalSearchResult>,
+}
+
+/// Aggregated global search results across all systems.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobalSearchResults {
+    pub groups: Vec<SystemSearchGroup>,
+    pub total_results: usize,
+    pub total_systems: usize,
+}
+
+/// Look up the normalized genre for a ROM on a given system.
+#[cfg(feature = "ssr")]
+fn lookup_genre(system: &str, rom_filename: &str) -> String {
+    use replay_control_core::arcade_db;
+    use replay_control_core::game_db;
+    use replay_control_core::systems::{self, SystemCategory};
+
+    let is_arcade = systems::find_system(system)
+        .is_some_and(|s| s.category == SystemCategory::Arcade);
+
+    if is_arcade {
+        let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+        arcade_db::lookup_arcade_game(stem)
+            .map(|info| info.normalized_genre.to_string())
+            .unwrap_or_default()
+    } else {
+        let stem = rom_filename
+            .rfind('.')
+            .map(|i| &rom_filename[..i])
+            .unwrap_or(rom_filename);
+        let entry = game_db::lookup_game(system, stem);
+        let game = entry.map(|e| e.game).or_else(|| {
+            let normalized = game_db::normalize_filename(stem);
+            game_db::lookup_by_normalized_title(system, &normalized)
+        });
+        game.map(|g| g.normalized_genre.to_string())
+            .unwrap_or_default()
+    }
+}
+
+#[server(prefix = "/sfn")]
+pub async fn global_search(
+    query: String,
+    hide_hacks: bool,
+    genre: String,
+    per_system_limit: usize,
+) -> Result<GlobalSearchResults, ServerFnError> {
+    use replay_control_core::rom_tags;
+
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let systems = state.cache.get_systems(&storage);
+    let q = query.to_lowercase();
+    let per_system_limit = if per_system_limit == 0 { 3 } else { per_system_limit };
+
+    let mut groups: Vec<SystemSearchGroup> = Vec::new();
+    let mut total_results = 0usize;
+
+    for sys in &systems {
+        if sys.game_count == 0 {
+            continue;
+        }
+
+        let all_roms = match state.cache.get_roms(&storage, &sys.folder_name) {
+            Ok(roms) => roms,
+            Err(_) => continue,
+        };
+
+        let mut scored: Vec<(u32, RomEntry)> = all_roms
+            .into_iter()
+            .filter(|r| {
+                // Apply hack filter.
+                if hide_hacks {
+                    let (tier, _) = rom_tags::classify(&r.game.rom_filename);
+                    if tier == rom_tags::RomTier::Hack {
+                        return false;
+                    }
+                }
+                true
+            })
+            .filter(|r| {
+                // Apply genre filter.
+                if genre.is_empty() {
+                    return true;
+                }
+                let rom_genre = lookup_genre(&sys.folder_name, &r.game.rom_filename);
+                rom_genre.eq_ignore_ascii_case(&genre)
+            })
+            .filter_map(|r| {
+                if q.is_empty() {
+                    // No query: if genre is set, include all matching; otherwise skip.
+                    if !genre.is_empty() {
+                        // Assign a default score based on display name length.
+                        let display = r
+                            .game
+                            .display_name
+                            .as_deref()
+                            .unwrap_or(&r.game.rom_filename);
+                        let score = 1000u32.saturating_sub(display.len() as u32);
+                        Some((score, r))
+                    } else {
+                        None
+                    }
+                } else {
+                    let display = r
+                        .game
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&r.game.rom_filename);
+                    let score = search_score(&q, display, &r.game.rom_filename);
+                    if score > 0 { Some((score, r)) } else { None }
+                }
+            })
+            .collect();
+
+        if scored.is_empty() {
+            continue;
+        }
+
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        let match_count = scored.len();
+        total_results += match_count;
+
+        // Mark favorites for the top results.
+        let mut top_roms: Vec<RomEntry> = scored
+            .into_iter()
+            .take(per_system_limit)
+            .map(|(_, r)| r)
+            .collect();
+
+        replay_control_core::roms::mark_favorites(&storage, &sys.folder_name, &mut top_roms);
+
+        // Populate box art URLs.
+        let media_base = storage
+            .root
+            .join(replay_control_core::metadata_db::RC_DIR)
+            .join("media")
+            .join(&sys.folder_name);
+
+        let top_results: Vec<GlobalSearchResult> = top_roms
+            .into_iter()
+            .map(|mut rom| {
+                rom.box_art_url =
+                    find_image_on_disk(&media_base, "boxart", &rom.game.rom_filename)
+                        .map(|path| format!("/media/{}/{path}", sys.folder_name));
+                let genre_str = lookup_genre(&sys.folder_name, &rom.game.rom_filename);
+                GlobalSearchResult {
+                    display_name: rom
+                        .game
+                        .display_name
+                        .unwrap_or_else(|| rom.game.rom_filename.clone()),
+                    rom_filename: rom.game.rom_filename,
+                    system: sys.folder_name.clone(),
+                    genre: genre_str,
+                    is_favorite: rom.is_favorite,
+                    box_art_url: rom.box_art_url,
+                }
+            })
+            .collect();
+
+        groups.push(SystemSearchGroup {
+            system: sys.folder_name.clone(),
+            system_display: sys.display_name.clone(),
+            total_matches: match_count,
+            top_results,
+        });
+    }
+
+    // Sort systems by match count descending.
+    groups.sort_by(|a, b| b.total_matches.cmp(&a.total_matches));
+    let total_systems = groups.len();
+
+    Ok(GlobalSearchResults {
+        groups,
+        total_results,
+        total_systems,
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
+    use std::collections::BTreeSet;
+
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let systems = state.cache.get_systems(&storage);
+    let mut genres = BTreeSet::new();
+
+    for sys in &systems {
+        if sys.game_count == 0 {
+            continue;
+        }
+        let roms = match state.cache.get_roms(&storage, &sys.folder_name) {
+            Ok(roms) => roms,
+            Err(_) => continue,
+        };
+        for rom in &roms {
+            let g = lookup_genre(&sys.folder_name, &rom.game.rom_filename);
+            if !g.is_empty() {
+                genres.insert(g);
+            }
+        }
+    }
+
+    Ok(genres.into_iter().collect())
 }
 
 // ── Game Videos ──────────────────────────────────────────────────

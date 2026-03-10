@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+use leptos_router::hooks::use_navigate;
 use server_fn::ServerFnError;
 
 use crate::i18n::{t, use_i18n};
@@ -14,8 +15,47 @@ pub fn HomePage() -> impl IntoView {
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new(|| (), |_| server_fns::get_systems());
 
+    let home_search = RwSignal::new(String::new());
+
+    let on_search_submit = move |ev: leptos::ev::SubmitEvent| {
+        ev.prevent_default();
+        let q = home_search.get_untracked();
+        if !q.is_empty() {
+            let navigate = use_navigate();
+            navigate(
+                &format!("/search?q={}", urlencoding::encode(&q)),
+                Default::default(),
+            );
+        }
+    };
+
+    let on_search_keydown = move |ev: leptos::ev::KeyboardEvent| {
+        if ev.key() == "Enter" {
+            let q = home_search.get_untracked();
+            if !q.is_empty() {
+                let navigate = use_navigate();
+                navigate(
+                    &format!("/search?q={}", urlencoding::encode(&q)),
+                    Default::default(),
+                );
+            }
+        }
+    };
+
     view! {
         <div class="page home-page">
+            <section class="section home-search-section">
+                <form class="home-search-form" on:submit=on_search_submit>
+                    <input
+                        type="text"
+                        class="home-search-input"
+                        placeholder=move || t(i18n.locale.get(), "search.placeholder")
+                        bind:value=home_search
+                        on:keydown=on_search_keydown
+                    />
+                </form>
+            </section>
+
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.last_played")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>

@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
 use leptos_router::components::A;
-use leptos_router::hooks::query_signal_with_options;
+use leptos_router::hooks::{query_signal_with_options, use_query_map};
 
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, PAGE_SIZE, RomEntry};
@@ -12,6 +12,21 @@ use crate::util::format_size;
 pub fn RomList(system: String) -> impl IntoView {
     let i18n = use_i18n();
     let sys = StoredValue::new(system.clone());
+
+    // Read filter params from URL query (passed from global search "See all" links).
+    let query_map = use_query_map();
+    let hide_hacks = query_map
+        .read_untracked()
+        .get("hide_hacks")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let genre_filter = query_map
+        .read_untracked()
+        .get("genre")
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    let hide_hacks = StoredValue::new(hide_hacks);
+    let genre_filter = StoredValue::new(genre_filter);
 
     // Search: synced with URL query param `?search=...`.
     // Use replace mode so each keystroke doesn't add a history entry.
@@ -94,7 +109,11 @@ pub fn RomList(system: String) -> impl IntoView {
     // First page — resolves during SSR.
     let first_page = Resource::new(
         move || (sys.get_value(), debounced_search.get(), version.get()),
-        |(system, query, _)| server_fns::get_roms_page(system, 0, PAGE_SIZE, query),
+        move |(system, query, _)| {
+            let hh = hide_hacks.get_value();
+            let gf = genre_filter.get_value();
+            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, gf)
+        },
     );
 
     // When first page changes, reset extra roms and update has_more.
@@ -115,9 +134,11 @@ pub fn RomList(system: String) -> impl IntoView {
         let system = sys.get_value();
         let query = debounced_search.get_untracked();
         let current_offset = offset.get_untracked();
+        let hh = hide_hacks.get_value();
+        let gf = genre_filter.get_value();
         leptos::task::spawn_local(async move {
             if let Ok(page) =
-                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query).await
+                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, gf).await
             {
                 set_extra_roms.update(|roms| roms.extend(page.roms));
                 set_has_more.set(page.has_more);
