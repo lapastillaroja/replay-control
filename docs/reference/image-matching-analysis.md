@@ -1,6 +1,6 @@
 # Image Matching Analysis
 
-Investigation of missing box art in the RePlayOS companion app.
+Investigation of image (boxart/snap) matching across all systems on the Pi.
 
 Last updated: 2026-03-11
 
@@ -20,260 +20,284 @@ Also handles **colon variants** (`:` in display names mapped to `_`, ` -`, or dr
 
 For arcade systems, ROM codenames (e.g., `sf2`) are translated to display names via `arcade_db` before matching.
 
-Matched images are copied via `copy_png()`, which calls `resolve_fake_symlink()` to handle git fake-symlink artifacts (small text files containing a relative path to the real PNG).
-
-Post-clone, `resolve_fake_symlinks_in_dir()` walks the cloned repo and replaces fake symlinks with copies of their targets (where the target exists). This ensures that subsequent `copy_png()` calls get real PNGs.
-
 ### 2. Runtime path (`server_fns.rs` -- `find_image_on_disk`)
 
 Runs on every page load to find the boxart file for a ROM. Uses a 2-tier match:
 
 1. **Exact**: `thumbnail_filename(rom_stem) + ".png"` exists and is >= 200 bytes
-2. **Fuzzy**: Strip tags from both ROM stem and all boxart filenames (via `base_title()`), case-insensitive compare. Also handles tilde dual-names (`Name1 ~ Name2` uses Name2).
-
-Files < 200 bytes are rejected by `is_valid_image()` to filter out git fake-symlink artifacts. When `is_valid_image()` fails, `try_resolve_fake_symlink()` reads the file content and checks if the referenced target exists and is valid.
+2. **Fuzzy**: Strip tags from both ROM stem and all boxart filenames (via `base_title()`), case-insensitive compare
 
 **Notable gaps vs the import path**: The runtime path does NOT use `strip_version()` and does NOT handle colon variants.
 
-## Current Coverage (2026-03-11)
+## Full Coverage Data (Pi, 2026-03-11)
+
+Data source: Pi at <PI_IP>, USB storage at /media/usb/. All 21 thumbnail repos cloned. Disk is 100% full (233G used).
+
+### Coverage Table
+
+"FS ROMs" = filesystem count (from `/api/systems`). "DB Rows" = entries in metadata.db. "Boxart" and "Snap" = DB entries with a non-null image path. "Box%" and "Snap%" are relative to FS ROM count.
+
+| System | Display Name | FS ROMs | DB Rows | DB/FS | Boxart | Box% | Snaps | Snap% |
+|--------|-------------|---------|---------|-------|--------|------|-------|-------|
+| nintendo_snes | Super Nintendo | 7,275 | 5,785 | 80% | 5,545 | 76% | 5,580 | 77% |
+| arcade_mame | Arcade (MAME) | 4,605 | 3,908 | 85% | 1,660 | 36% | 0 | 0% |
+| amstrad_cpc | Amstrad CPC | 4,168 | 3,636 | 87% | 2,910 | 70% | 3,491 | 84% |
+| arcade_fbneo | Arcade (FBNeo) | 4,082 | 4,061 | 99% | 3,241 | 79% | 4,050 | 99% |
+| sharp_x68k | Sharp X68000 | 3,163 | 3,010 | 95% | 1,544 | 49% | 2,884 | 91% |
+| sega_smd | Mega Drive / Genesis | 3,100 | 2,765 | 89% | 2,286 | 74% | 2,289 | 74% |
+| sega_sms | Sega Master System | 1,035 | 904 | 87% | 811 | 78% | 877 | 85% |
+| sega_gg | Sega Game Gear | 729 | 607 | 83% | 595 | 82% | 593 | 81% |
+| nintendo_n64 | Nintendo 64 | 639 | 624 | 98% | 623 | 97% | 615 | 96% |
+| arcade_dc | Arcade (Atomiswave/Naomi) | 211 | 150 | 71% | 124 | 59% | 148 | 70% |
+| sega_sg | Sega SG-1000 | 196 | 180 | 92% | 151 | 77% | 180 | 92% |
+| sega_32x | Sega 32X | 60 | 50 | 83% | 50 | 83% | 50 | 83% |
+| sega_st | Sega Saturn | 55 | 51 | 93% | 48 | 87% | 48 | 87% |
+| sega_dc | Sega Dreamcast | 33 | 27 | 82% | 24 | 73% | 26 | 79% |
+| sega_cd | Sega CD / Mega-CD | 32 | 30 | 94% | 30 | 94% | 30 | 94% |
+| sony_psx | PlayStation | 24 | 22 | 92% | 22 | 92% | 22 | 92% |
+| nintendo_nes | NES | 15 | 15 | 100% | 15 | 100% | 15 | 100% |
+| ibm_pc | IBM PC (DOS) | 8 | 8 | 100% | 8 | 100% | 7 | 88% |
+| commodore_ami | Commodore Amiga | 1 | 0 | 0% | 0 | 0% | 0 | 0% |
+| **TOTAL** | | **29,431** | **25,833** | **88%** | **19,687** | **67%** | **20,905** | **71%** |
+
+### Physical Media Files on Disk
+
+Distinct boxart/snap PNG files in `.replay-control/media/`. Multiple ROMs can share the same image file (e.g., translations, revisions all map to one region variant).
+
+| System | Unique Boxart Files | Unique Snap Files | DB Boxart Refs | DB Snap Refs |
+|--------|-------------------|-------------------|---------------|-------------|
+| nintendo_snes | 3,376 | 3,368 | 5,545 | 5,580 |
+| arcade_fbneo | 2,947 | 3,966 | 3,241 | 4,050 |
+| amstrad_cpc | 1,870 | 2,432 | 2,910 | 3,491 |
+| sega_smd | 1,621 | 1,570 | 2,286 | 2,289 |
+| arcade_mame | 682 | 0 | 1,660 | 0 |
+| sharp_x68k | 507 | 1,201 | 1,544 | 2,884 |
+| nintendo_n64 | 621 | 610 | 623 | 615 |
+| sega_gg | 487 | 460 | 595 | 593 |
+| sega_sms | 447 | 531 | 811 | 877 |
+| arcade_dc | 122 | 144 | 124 | 148 |
+| sega_sg | 74 | 168 | 151 | 180 |
+| sega_32x | 50 | 50 | 50 | 50 |
+| sega_st | 45 | 45 | 48 | 48 |
+| sega_cd | 30 | 30 | 30 | 30 |
+| sega_dc | 24 | 26 | 24 | 26 |
+| sony_psx | 22 | 22 | 22 | 22 |
+| nintendo_nes | 15 | 15 | 15 | 15 |
+| ibm_pc | 8 | 7 | 8 | 7 |
 
-### NFS mount (development)
+### Metadata Source Breakdown
+
+DB entries come from two sources: LaunchBox XML import ("launchbox") and thumbnail import scan ("thumbnails" -- created for ROMs that matched a thumbnail but had no LaunchBox entry).
 
-The NFS mount at `<NFS_MOUNT>/` has media directories for 4 systems. The Pi (production) has thumbnails for 19 systems but was unreachable during this analysis.
+| System | Total DB | LaunchBox | Thumbnails |
+|--------|----------|-----------|------------|
+| nintendo_snes | 5,785 | 4,689 | 1,096 |
+| arcade_fbneo | 4,061 | 3,639 | 422 |
+| arcade_mame | 3,908 | 3,123 | 785 |
+| amstrad_cpc | 3,636 | 2,491 | 1,145 |
+| sharp_x68k | 3,010 | 1,632 | 1,378 |
+| sega_smd | 2,765 | 2,341 | 424 |
+| sega_sms | 904 | 767 | 137 |
+| nintendo_n64 | 624 | 504 | 120 |
+| sega_gg | 607 | 514 | 93 |
+| sega_sg | 180 | 169 | 11 |
+| arcade_dc | 150 | 122 | 28 |
+| sega_st | 51 | 48 | 3 |
+| sega_32x | 50 | 45 | 5 |
+| sega_cd | 30 | 26 | 4 |
+| sega_dc | 27 | 1 | 26 |
+| sony_psx | 22 | 18 | 4 |
+| nintendo_nes | 15 | 15 | 0 |
+| ibm_pc | 8 | 8 | 0 |
+| **TOTAL** | **25,833** | **20,152** | **5,681** |
 
-| System | ROMs | Boxart Files | Valid | Fake Symlinks | Exact | Exact+Symlink | Fuzzy | Matched | Missing | Coverage |
-|--------|------|-------------|-------|---------------|-------|---------------|-------|---------|---------|----------|
-| ibm_pc | 8 | 8 | 8 | 0 | 6 | 0 | 2 | 8 | 0 | 100% |
-| nintendo_n64 | 639 | 621 | 569 | 52 | 568 | 3 | 31 | 602 | 37 | 94.2% |
-| sega_32x | 60 | 50 | 50 | 0 | 50 | 0 | 0 | 50 | 10 | 83.3% |
-| sega_cd | 27 | 25 | 25 | 0 | 24 | 0 | 1 | 25 | 2 | 92.6% |
+3,598 ROMs exist on the filesystem but have no DB entry at all (neither LaunchBox nor thumbnails matched them).
 
-**Note**: ROM count for N64 increased from 637 to 639 since the initial analysis (2 ROMs added). The 3 "Exact+Symlink" matches are ECW Hardcore Revolution (Germany) and two F-Zero X iQue variants -- these are fake symlinks whose targets exist in the media directory, so `try_resolve_fake_symlink()` resolves them at runtime.
+### Cloned Repos on Pi
 
-### Systems without thumbnails on NFS
+21 repos cloned at `/media/usb/.replay-control/tmp/libretro-thumbnails/`:
 
-These 12 systems have ROMs but no imported thumbnails on the NFS mount. All have valid `thumbnail_repo_names` mappings and could have thumbnails imported. Some may already have thumbnails on the Pi (which was unreachable).
+Amstrad - CPC, Atomiswave, Commodore - Amiga, DOS, FBNeo - Arcade Games, MAME, Nintendo - Nintendo 64, Nintendo - Nintendo Entertainment System, Nintendo - Super Nintendo Entertainment System, Sega - 32X, Sega - Dreamcast, Sega - Game Gear, Sega - Master System - Mark III, Sega - Mega-CD - Sega CD, Sega - Mega Drive - Genesis, Sega - Naomi, Sega - Naomi 2, Sega - Saturn, Sega - SG-1000, Sharp - X68000, Sony - PlayStation
 
-| System | ROMs |
-|--------|------|
-| arcade_dc | 204 |
-| arcade_fbneo | 4,082 |
-| arcade_mame | 4,605 |
-| commodore_ami | 1 |
-| nintendo_snes | 4,464 |
-| sega_dc | 119 |
-| sega_gg | 729 |
-| sega_sg | 196 |
-| sega_smd | 3,096 |
-| sega_sms | 1,025 |
-| sega_st | 58 |
-| sharp_x68k | 3,163 |
-| **Total** | **21,742** |
+## Systems with Poor Coverage and Root Causes
 
-## Root Cause Breakdown
+### arcade_mame: 36% boxart, 0% snaps -- WORST PERFORMER
 
-### N64: 37 missing games
+**Snap coverage**: The Pi's MAME clone only has `Named_Boxarts` -- it is missing `Named_Snaps`, `Named_Logos`, and `Named_Titles`. The NFS clone (which has more disk space) has all four directories and achieves 86% snap coverage. **Root cause: Pi disk was full during clone** (233G/233G, 0.15% free). The MAME repo is 6GB total; the Pi only got 5.1GB.
 
-#### Category 1: Fake symlink artifacts (23 games, 62%) -- RECOVERABLE via re-import
+**Boxart coverage (36%)**: Two factors:
 
-These games have boxart files in the media directory that are git fake-symlink text files (< 200 bytes), and ALL files with the same base_title are also fake symlinks. The targets they point to don't exist in the media directory.
+1. **No arcade_db entry (1,111 of 2,248 unmatched)**: These ROMs have MAME codenames (e.g., `280zzzap.zip`) but no entry in the compiled `arcade_db`. Without a display name translation, the codename is used as-is, which never matches the repo's display-name filenames (e.g., `280 Zzzap (280 Zzzap).png`). Many are obscure/niche titles.
 
-**Verified against the libretro-thumbnails repo**: ALL 23 games have valid base images (the non-Rev version) in the repo, ranging from 128KB to 893KB. The `resolve_fake_symlinks_in_dir()` post-clone fix would resolve the fake symlinks in the cloned repo, and the import would successfully copy them. Alternatively, the fuzzy fallback in `copy_png()` (Fix 1) would find the non-Rev version.
+2. **Gambling/slot machines (419 of 2,248)**: Video poker, slot machines, pachinko, etc. Even when they have an arcade_db entry, many don't have thumbnails in the libretro repo. These are not "real" arcade games and often lack any promotional art.
 
-Notably, 29 additional boxart files are ALSO fake symlinks, but happen to have a valid alternative with a different region tag in the media directory that the fuzzy match catches at runtime (e.g., Banjo-Kazooie (USA) (Rev 1) -> Banjo-Kazooie (Europe)).
+3. **Other games (657 of 2,248)**: Games that have arcade_db entries and display names, but no matching thumbnail in the repo. Some are Japan-only titles, quiz games, or uncommon hardware.
 
-**Summary of the 52 fake symlinks**:
-- 29 have valid alternatives in media dir (runtime fuzzy match works)
-- 23 have NO valid alternatives (all files with same base_title are fake)
-- 3 of the 52 have resolvable targets (ECW, F-Zero X iQue) -- handled by `try_resolve_fake_symlink()`
+4. **Clones/bootlegs (61 of 2,248)**: Parent game may have art but the clone-specific variant doesn't.
 
-#### Category 2: Homebrew / Translation hacks (5 games, 14%)
+### sharp_x68k: 49% boxart, 91% snaps
 
-ROMs containing `(PD)` or `T+Eng`/`T-Spa` tags where no matching boxart exists. Note that some translation ROMs (e.g., Custom Robo (J) T+Eng) DO match via fuzzy because the `(J)` tag is stripped and the base title matches the Japanese original's art. The 5 below have no such match.
+**Snap coverage is excellent** (91%) but boxart is poor (49%). The repo has 507 boxart PNGs but 1,201 snap PNGs -- the X68000 libretro-thumbnails community contributed far more screenshots than box art.
 
-- 77a Special Edition (PD)
-- Asteroid Shooter (PD)
-- Yeti3D Pro (PD)
-- Bomberman 64 - Arcade Edition (J) T+Eng -- base title "bomberman 64 - arcade edition" has no match (the official game is just "Bomberman 64")
-- Sin and Punishment Spanish Dubbed (J) T-Spa -- base title doesn't match "Sin and Punishment" (different formatting)
+ROM naming uses TOSEC format: `"Game Name (Year)(Publisher).dim"`. The strip_tags tier handles this well (strips from first ` (`). The version stripping tier also helps with names like `"Adventure Land 2 v0.50 (1994)(Keima)"`.
 
-#### Category 3: N64DD games (8 games, 22%) -- PARTIALLY RECOVERABLE
+Many X68000 titles are Japanese doujin/indie software that simply have no boxart in the libretro-thumbnails database.
 
-ROMs prefixed with `N64DD - `. The prefix prevents matching. Verified against repos:
+Additionally, many ROMs have both `.dim` and `.m3u` files (946 .m3u entries in DB). These are duplicate entries for the same game -- the .m3u is a playlist referencing the .dim files.
 
-| ROM | In N64 repo? | In N64DD repo? |
-|-----|-------------|----------------|
-| N64DD - Dezaemon 3D | Yes (898KB) | No (has "Dezaemon DD" instead) |
-| N64DD - Doshin The Giant | No | Yes (120KB, via "Doshin the Giant (Japan)") |
-| N64DD - Doshin the Giant - Tinkling Toddler... | No | Yes (partial, matches "Doshin the Giant") |
-| N64DD - F-Zero X - Expansion Kit (J) | No | Yes (486KB) |
-| N64DD - Mario Artist Communication Kit | No | Yes (337KB) |
-| N64DD - Mario Artist Polygon Studio | No | Yes (381KB) |
-| N64DD - Mario Artist Talent Studio | No | Yes (337KB) |
-| N64DD - Sim City 64 | No | Yes (565KB) |
+### arcade_fbneo: 79% boxart, 99% snaps
 
-To recover these: (a) strip the `N64DD - ` prefix in the matching logic, and (b) add `"Nintendo - Nintendo 64DD"` as a fallback repo for `nintendo_n64` in `thumbnail_repo_names`. With both, all 8 would get art (1 from N64 repo, 7 from N64DD repo).
+Snap coverage is near-perfect (99%). Boxart gap (79%) is due to:
+- ROMs not in arcade_db (no display name translation)
+- Titles that exist in arcade_db but have no boxart in the FBNeo repo (6,465 boxart PNGs in repo)
+- The FBNeo repo has excellent snap coverage but weaker boxart coverage
 
-#### Category 4: Minor naming differences (1 game, 3%)
+### nintendo_snes: 76% boxart, 77% snaps
 
-`GT64 - Championship Edition (Europe) (En,Fr,De).z64` -- the repo has `GT 64 - Championship Edition` (with a space between GT and 64). Base titles `"gt64 - championship edition"` vs `"gt 64 - championship edition"` don't match.
+The main gap is **1,490 ROMs not in the DB** (filesystem has 7,275 but DB only has 5,785). These are ROMs that matched neither LaunchBox metadata nor any thumbnail.
 
-### Sega 32X: 10 missing games
+Of the 240 DB entries without boxart:
+- Fan translations (61): e.g., `"(Traducido Es)"`, `"(Traduzido Por)"` -- strip_tags matches these to the base game's region variant
+- Prototypes (37): Many have no thumbnails
+- Homebrew/aftermarket (33): No thumbnails expected
+- Pirates (12): No thumbnails expected
+- FastRom variants (7): Usually match, but some have no equivalent in the repo
+- Other (81): Mix of naming mismatches and titles not in the repo
 
-All homebrew (PD). No art expected. No fix needed.
+Specific naming issues found:
+- `"Alien vs. Predator (USA)"` vs repo `"Alien vs Predator (USA)"` (period after "vs" in ROM name)
+- `"Battletoads & Double Dragon"` vs repo `"Battletoads-Double Dragon"` (& gets converted to `_`, but repo uses `-`)
 
-### Sega CD: 2 missing games
+### sega_smd: 74% boxart, 74% snaps
 
-| ROM | Reason | In repo? |
-|-----|--------|----------|
-| Sonic MegaMix (USA) (Unl).chd | Unlicensed homebrew | No |
-| Sing!!\_Sega\_Game\_Music\_...\_Japan.chd | Naming convention mismatch | Yes (511KB) |
+335 ROMs not in DB. Of 479 unmatched DB entries:
+- Aftermarket/homebrew (290): Largest category -- modern homebrew releases with no thumbnails
+- Prototypes (54): No thumbnails expected
+- Unlicensed (44): Many without thumbnails
+- Other (62): Naming mismatches (e.g., `"El. Viento (USA)"` vs repo `"El.Viento (USA)"` -- space difference)
 
-The Sing!! ROM uses underscore-separated CHD naming (`Sing!!_Sega_Game_Music_Presented_by_B_B_Queens_Japan`) while the repo uses No-Intro naming with spaces and dots (`Sing!! Sega Game Music Presented by B. B. Queens (Japan)`). The base_title extraction produces completely different strings. This is the only ROM on the NFS mount using this naming convention.
+### amstrad_cpc: 70% boxart, 84% snaps
 
-## All Games Without Box Art (N64)
+532 ROMs not in DB. The repo has 3,409 boxart PNGs but many CPC titles are obscure European software without box art in the libretro-thumbnails database. TOSEC naming is used and strip_tags handles it well. Snaps have better coverage (84%) than boxart (70%) because the community contributed more screenshots.
 
-### Blocked by fake symlinks -- RECOVERABLE via re-import
+### arcade_dc: 59% boxart, 70% snaps
 
-All 23 games have valid base images in the libretro-thumbnails repo. A clean re-import (delete existing N64 media + re-download from metadata page) would recover all of them.
+61 ROMs not in DB (29% gap). Multi-repo system (Atomiswave + Naomi + Naomi 2). Repos have 33 + 116 + 10 = 159 boxart PNGs total. 26 unmatched DB entries are games where:
+- The ROM codename has no arcade_db entry
+- The game's display name doesn't match any of the three repos
+- Some Naomi/Naomi 2 titles simply don't have thumbnails
 
-| ROM | Fake Symlink Target | Repo Source (fuzzy fallback) |
-|-----|--------------------|-----------------------------|
-| Hoshi no Kirby 64 (Japan) (Rev 3) | ...64 (Japan).png | Hoshi no Kirby 64 (Japan).png (893KB) |
-| Jikkyou J.League 1999 - Perfect Striker 2 (Japan) (Rev 1) | ...(Japan).png | same title (Japan).png (744KB) |
-| Jikkyou Powerful Pro Yakyuu 2000 (Japan) (Rev 1) | ...(Japan).png | same title (Japan).png (518KB) |
-| Jikkyou Powerful Pro Yakyuu 4 (Japan) (Rev 1) | ...(Japan).png | same title (Japan).png (536KB) |
-| Jikkyou Powerful Pro Yakyuu 5 (Japan) (Rev 2) | ...(Japan).png | same title (Japan).png (534KB) |
-| Jikkyou Powerful Pro Yakyuu 6 (Japan) (Rev 2) | ...(Japan).png | same title (Japan).png (545KB) |
-| Jikkyou Powerful Pro Yakyuu - Basic Ban 2001 (Japan) (Rev 1) | ...(Japan).png | same title (Japan).png (370KB) |
-| Jikkyou World Soccer - World Cup France '98 (Japan) (Rev 1) | ...(Japan).png | same title (Japan).png (488KB) |
-| Legend of Zelda, The - Ocarina of Time (Europe) (En,Fr,De) (Rev 1) | ...(En,Fr,De).png | same title (En,Fr,De).png (128KB) |
-| Legend of Zelda, The - Ocarina of Time (USA) (Rev 2) | ...(USA).png | same title (USA).png (167KB) |
-| NFL Blitz 2000 (USA) (Rev 1) | ...(USA).png | same title (USA).png (480KB) |
-| Nushi Zuri 64 (Japan) (Rev 1) | ...(Japan).png | same title (Japan).png (799KB) |
-| Ogre Battle 64 - Person of Lordly Caliber (USA) (Rev 1) | ...(USA).png | same title (Japan)(Rev 1)(Wii VC).png (597KB) |
-| Star Wars - Rogue Squadron (Europe) (En,Fr,De) (Rev 1) | ...(En,Fr,De).png | same title (En,Fr,De).png (344KB) |
-| Star Wars - Rogue Squadron (USA) (Rev 1) | ...(USA).png | same title (USA).png (414KB) |
-| Tony Hawk's Pro Skater (USA) (Rev 1) | ...(USA).png | same title (USA).png (337KB) |
-| Toy Story 2 - Captain Buzz Lightyear auf Rettungsmission! (Germany) (Rev 1) | ...(Germany).png | same title (Germany).png (337KB) |
-| Turok - Dinosaur Hunter (Europe) (Rev 2) | ...(Europe).png | same title (Europe).png (333KB) |
-| Turok - Dinosaur Hunter (Germany) (Rev 2) | ...(Germany).png | same title (Germany).png (333KB) |
-| Turok - Dinosaur Hunter (USA) (Rev 2) | ...(USA).png | same title (USA).png (333KB) |
-| WinBack (Japan) (Rev 1) | ...(Japan).png | same title (Japan).png (391KB) |
-| WWF No Mercy (Europe) (Rev 1) | ...(Europe).png | same title (Europe).png (424KB) |
-| WWF No Mercy (USA) (Rev 1) | ...(USA).png | same title (USA).png (340KB) |
+### sega_dc: 73% boxart, 79% snaps
 
-### Homebrew / Translation hacks (no art expected)
+Only 3 unmatched DB entries:
+- `"Metropolis Street Racer v1.009"` -> strip_version -> `"Metropolis Street Racer"`, but repo has `"MSR - Metropolis Street Racer"` (abbreviated prefix)
+- `"Super Street Fighter IIX for Matching Service"` vs repo `"Super Street Fighter II X"` (missing space between II and X)
+- `"Virtua Tennis 2 v1.009"` -> strip_version -> `"Virtua Tennis 2"`, but repo has `"Virtua Tennis 2 - Sega Professional Tennis"` (subtitle in repo)
 
-- 77a Special Edition (PD)
-- Asteroid Shooter (PD)
-- Bomberman 64 - Arcade Edition (J) T+Eng
-- Sin and Punishment Spanish Dubbed (J) T-Spa
-- Yeti3D Pro (PD)
+### commodore_ami: 0% (1 ROM, 0 matches)
 
-### N64DD games (no matching due to filename prefix)
+Only 1 ROM exists. The Commodore - Amiga repo was cloned but it has 0 boxart files on the Pi (likely another disk space issue during clone -- the media/commodore_ami directory exists but is empty).
 
-All have boxart available in either the N64 or N64DD libretro-thumbnails repos.
+## Common Mismatch Patterns
 
-- N64DD - Dezaemon 3D -- in N64 repo as "Dezaemon 3D (Japan)" (898KB)
-- N64DD - Doshin The Giant -- in N64DD repo as "Doshin the Giant (Japan)" (120KB)
-- N64DD - Doshin the Giant - Tinkling Toddler Liberation Front! Assemble! -- in N64DD repo (partial match)
-- N64DD - F-Zero X - Expansion Kit -- in N64DD repo (486KB)
-- N64DD - Mario Artist Communication Kit -- in N64DD repo (337KB)
-- N64DD - Mario Artist Polygon Studio -- in N64DD repo (381KB)
-- N64DD - Mario Artist Talent Studio -- in N64DD repo (337KB)
-- N64DD - Sim City 64 -- in N64DD repo (565KB)
+### 1. No arcade_db entry for MAME codenames
 
-### Minor naming differences
+The most impactful issue. 1,111 arcade_mame ROMs and an unknown number of arcade_fbneo ROMs lack arcade_db translations. Without a display name, the MAME codename (e.g., `39in1`) is used directly, which never matches the repo's display-name filenames.
 
-- GT64 - Championship Edition (Europe) (En,Fr,De) -- repo has "GT 64" (with space, 370KB)
+### 2. Aftermarket/homebrew ROMs with no thumbnails
 
-### Other systems (32X, Sega CD)
+Across all systems, modern homebrew and aftermarket releases account for a large fraction of unmatched ROMs. These titles simply don't exist in the libretro-thumbnails database. Especially prevalent in sega_smd (290 titles) and nintendo_snes (33 titles).
 
-- **32X**: All 10 missing games are homebrew (PD) -- no art expected.
-- **Sega CD**: 1 unlicensed (Sonic MegaMix), 1 naming convention mismatch (Sing!!).
+### 3. ROMs not in DB at all
 
-## Proposed Improvements
+3,598 ROMs (12% of total) exist on the filesystem but have no DB entry. These are ROMs that matched neither LaunchBox metadata (title normalization) nor any thumbnail filename. They are invisible to the image coverage system.
 
-### Fix 1: Resolve fake symlinks in `copy_png` (import path) -- DONE
+### 4. Abbreviated or alternative title prefixes
 
-**Status**: DONE. `resolve_fake_symlink()` returns an error when the target doesn't exist. `copy_png()` failure triggers a fuzzy-only fallback via `find_thumbnail_fuzzy()`.
+Games where the repo uses an abbreviated form: `"MSR - Metropolis Street Racer"` vs `"Metropolis Street Racer"`. The strip_tags tier cannot handle cases where the base title itself differs.
 
-### Fix 1b: Resolve fake symlinks post-clone -- DONE
+### 5. Special character inconsistencies
 
-**Status**: DONE. `resolve_fake_symlinks_in_dir()` runs after `git clone`, replacing fake symlinks in the cloned repo with copies of their targets. This means `copy_png()` gets real PNGs for exact matches.
+- `&` in ROM names gets converted to `_` by `thumbnail_filename()`, but repos sometimes use `-` instead: `"Battletoads & Double Dragon"` -> `"Battletoads _ Double Dragon"` vs repo `"Battletoads-Double Dragon"`
+- Period/space differences: `"El. Viento"` vs `"El.Viento"`, `"Alien vs. Predator"` vs `"Alien vs Predator"`
+- `IIX` vs `II X` (missing space in Roman numerals)
 
-### Fix 2: Resolve fake symlinks at runtime -- DONE
+### 6. Incomplete repo clones due to disk space
 
-**Status**: DONE. `try_resolve_fake_symlink()` resolves fake symlinks in the media directory when `is_valid_image()` fails. Currently resolves 3 games at runtime (ECW Hardcore Revolution Germany, 2 F-Zero X iQue variants).
+The Pi's disk is 100% full. The MAME repo clone is incomplete (5.1GB vs 6.0GB full), missing Named_Snaps entirely. This directly causes the 0% snap rate for arcade_mame.
 
-### Re-import N64 thumbnails -- ACTION NEEDED
+### 7. Dual-file systems (dim + m3u)
 
-**Status**: Pending user action. Delete existing N64 media + re-download from the metadata page. This will:
-- Resolve all 52 fake symlinks (post-clone fix replaces them in the repo)
-- Recover all 23 currently-blocked games
-- Expected coverage: 625/639 (97.8%), up from 602/639 (94.2%)
+Sharp X68000 has many games with both `.dim` disk images and `.m3u` playlist files. Both get DB entries, inflating the ROM count. The match rate for .m3u files (38% boxart) is worse than .dim files (58% boxart).
 
-### Fix 3: Add `strip_version()` to runtime `find_image_on_disk` -- TODO
+## Is the 3-Tier Matching Effective?
 
-**Problem**: The runtime fuzzy matching does not strip TOSEC version strings (e.g., `v1.009`). This is done during import but not at runtime.
+**Yes, the 3-tier system is working well for its intended purpose.** Evidence:
 
-**Solution**: Add a third matching tier in `find_image_on_disk` that applies `strip_version()` to the base_title. This would fix Dreamcast TOSEC-named ROMs like "Virtua Tennis 2 v1.009" that fail to match at runtime.
+### Tier 1 (Exact match) handles the majority
 
-**Impact**: High for Sega DC (all 119 ROMs use TOSEC naming). Also affects any future system with TOSEC ROMs.
+Most console ROMs use No-Intro naming that matches the repo exactly. Systems like NES (100%), PlayStation (92%), Sega CD (94%), and Sega 32X (83%) achieve high rates from exact matching alone.
 
-### Fix 5: N64DD prefix stripping + fallback repo -- LOW IMPACT, TODO
+### Tier 2 (Strip-tags) is essential for fan translations and regional variants
 
-**Problem**: 8 N64DD games have a `N64DD - ` prefix that prevents matching. Only 1 of 8 exists in the N64 repo; the other 7 are in the separate `Nintendo - Nintendo 64DD` repo.
+Fan translations add tags like `(Traducido Es)` or `(Translated Fre)`. The strip_tags tier matches these to the original game. This is clearly working: many SNES translations (61+ ROMs) and other systems get matched through this tier. Example: `"3 Ninjas Kick Back (USA) (Traducido Es)"` -> matches `"3 Ninjas Kick Back (USA).png"`.
 
-**Solution** (two parts):
-1. Strip `N64DD - ` prefix before matching in `import_system_thumbnails`
-2. Add `"Nintendo - Nintendo 64DD"` as a fallback repo in `thumbnail_repo_names` for `nintendo_n64`
+### Tier 3 (Version-stripped) is critical for TOSEC-named systems
 
-**Impact**: 8 games. Low priority.
+Dreamcast, Sharp X68000, and Amstrad CPC use TOSEC naming with version strings. The version stripping tier successfully handles these. Example: `"Confidential Mission v1.002 (2001)(Sega)(PAL)(M5)[!]"` -> strip tags -> `"Confidential Mission v1.002"` -> strip version -> `"Confidential Mission"` -> matches.
 
-### Fix 7: Underscore-to-space normalization for CHD naming -- VERY LOW IMPACT
+### Colon variant handling helps with arcade display names
 
-**Problem**: 1 Sega CD ROM (`Sing!!_Sega_Game_Music_...`) uses underscore-separated naming instead of spaces. The base_title contains underscores while the repo uses spaces.
+Games with colons (e.g., `"Capcom Vs. SNK: Millennium Fight 2000"`) get `_` substitution, but the repo may use ` -` or drop the colon. The colon variant fallback addresses this.
 
-**Solution**: Normalize underscores to spaces in `base_title()` for the fuzzy match. Very low ROI for 1 game.
+### Where the tiers fall short
 
-## Impact Summary
+The matching fails when the **base title itself differs** between ROM and repo (after all stripping). This includes:
+- Abbreviated prefixes: `"MSR - Metropolis Street Racer"` vs `"Metropolis Street Racer"`
+- Missing words: `"Virtua Tennis 2"` vs `"Virtua Tennis 2 - Sega Professional Tennis"`
+- Completely different names: MAME codenames without arcade_db translation
+- Subtle character differences: `"vs."` vs `"vs"`, `"El."` vs `"El."`
 
-| Fix | Games Recovered | Effort | Priority | Status |
-|-----|----------------|--------|----------|--------|
-| Fix 1: Error on broken fake symlinks + fuzzy fallback | 23 N64 (on re-import) | Low | High | DONE |
-| Fix 1b: Post-clone fake symlink resolution | Enables Fix 1 | Low | High | DONE |
-| Fix 2: Resolve fake symlinks at runtime | 3 N64 (immediate) | Low | High | DONE |
-| **Re-import N64** | **23 N64** | **User action** | **High** | **PENDING** |
-| Fix 3: strip_version in runtime path | DC (119 ROMs), others | Low | Medium | TODO |
-| Fix 5: N64DD prefix + fallback repo | 8 N64DD | Low | Low | TODO |
-| Fix 7: Underscore normalization | 1 Sega CD | Trivial | Very Low | TODO |
+## Recommendations
 
-### Expected coverage after re-import (N64 only)
+### High Priority
 
-| Category | Count | Coverage |
-|----------|-------|----------|
-| Matched (current) | 602 | 94.2% |
-| + Recovered via re-import (fake symlinks) | +23 | |
-| **Matched after re-import** | **625** | **97.8%** |
-| Remaining: Homebrew/translations | 5 | |
-| Remaining: N64DD prefix | 8 | |
-| Remaining: Naming mismatch (GT64) | 1 | |
-| **Total ROMs** | **639** | |
+1. **Free disk space on Pi or use larger storage** -- The 100% full disk caused incomplete MAME repo clone (0% snaps for 4,605 games) and likely the empty Commodore Amiga clone. Clearing the cloned repos after import would reclaim ~40GB+.
 
-With Fix 5 (N64DD), coverage would reach 633/639 (99.1%). The remaining 6 would be 5 homebrew/translations (no art exists) + 1 naming mismatch (GT64).
+2. **Expand arcade_db coverage** -- 1,111 MAME ROMs and an unknown number of FBNeo ROMs lack display name translations. Expanding the database (from a more complete MAME XML) would significantly improve arcade boxart matching. Current coverage: MAME 36% boxart -> could reach ~60-70% with better DB coverage.
 
-## Previously Reported Issues -- Status
+3. **Re-run image import after freeing disk** -- Many systems would benefit from a fresh import with complete repo clones.
 
-### Zelda: Ocarina of Time -- WILL BE RESOLVED by re-import
+### Medium Priority
 
-The 48-byte fake symlink in media dir has no valid target. But the repo has the real `Legend of Zelda, The - Ocarina of Time (USA).png` (167KB). Post-clone resolution would replace the fake symlink in the cloned repo, allowing `copy_png()` to copy the real image. If the exact match still fails, the fuzzy fallback would find the `(Europe) (En,Fr,De).png` variant (128KB).
+4. **Add `strip_version()` to runtime `find_image_on_disk`** -- Currently only the import path uses version stripping. Adding it to the runtime path would fix Dreamcast TOSEC ROMs that fail to find their already-imported boxart at runtime.
 
-### Chelnov (Arcade) -- NEEDS INVESTIGATION (Pi unreachable)
+5. **Substring/prefix matching tier** -- A new tier that checks if the ROM's stripped title is a prefix of (or is contained in) a repo filename would catch:
+   - `"Virtua Tennis 2"` matching `"Virtua Tennis 2 - Sega Professional Tennis"`
+   - `"Metropolis Street Racer"` partially matching `"MSR - Metropolis Street Racer"`
 
-The Pi has 2947 boxart files for arcade_fbneo. Whether Chelnov specifically has art requires checking the Pi, which was unreachable during this analysis.
+### Low Priority
 
-### Virtua Tennis 2 (Dreamcast) -- NEEDS Fix 3
+6. **N64DD prefix stripping + fallback repo** -- Strip `N64DD - ` prefix and add `"Nintendo - Nintendo 64DD"` as fallback. Impact: 8 games.
 
-The Pi has 24 boxart files for sega_dc. Even if the import matched successfully (using `strip_version`), the runtime `find_image_on_disk` does NOT use `strip_version()`, so the TOSEC version string `v1.009` in the ROM name would prevent runtime matching. Fix 3 is needed.
+7. **Normalize periods and `&` symbols** -- `"vs."` -> `"vs"`, `"&"` -> `"and"` or try both `_` and `-`. Would fix a handful of games across multiple systems.
+
+8. **Deduplicate .m3u entries** -- Consider not creating DB entries for .m3u playlist files (or linking them to the same image as their .dim counterpart) to avoid inflating unmatched counts.
+
+## NFS vs Pi Comparison
+
+The NFS mount at `<NFS_MOUNT>/` has fewer cloned repos (7 vs 21 on Pi) but its MAME clone is complete (has Named_Snaps). NFS arcade_mame shows 1,875 boxart (vs Pi's 1,660) and 3,363 snaps (vs Pi's 0) thanks to the complete clone. NFS has more disk space available.
+
+Some systems on the NFS have different ROM counts (e.g., SNES 7,275 on Pi vs 4,457 on NFS-local, sega_cd 32 on Pi vs 27 on NFS-local) because the NFS mount may be a subset or different snapshot of the collection.
+
+## Previously Identified Issues -- Status
+
+| Issue | Status | Notes |
+|-------|--------|-------|
+| Fix 1: Broken fake symlinks + fuzzy fallback | DONE | `resolve_fake_symlink()` + fuzzy fallback in `copy_png()` |
+| Fix 1b: Post-clone fake symlink resolution | DONE | `resolve_fake_symlinks_in_dir()` runs after `git clone` |
+| Fix 2: Runtime fake symlink resolution | DONE | `try_resolve_fake_symlink()` in media directory |
+| Re-import N64 thumbnails | PENDING | Would recover 23 games blocked by fake symlinks |
+| Fix 3: `strip_version` in runtime path | TODO | Needed for Dreamcast TOSEC ROMs |
+| Fix 5: N64DD prefix + fallback repo | TODO | 8 games |
+| Fix 7: Underscore normalization | TODO | 1 Sega CD game |

@@ -211,3 +211,64 @@ impl AppState {
         }
     }
 }
+
+/// Build the application router with API routes, server function handler,
+/// and SSR fallback. Extracted from main.rs so integration tests can reuse
+/// the same router construction.
+pub fn build_router(
+    app_state: AppState,
+    leptos_options: leptos::config::LeptosOptions,
+) -> axum::Router {
+    use axum::Router;
+    use leptos::prelude::*;
+
+    let api_routes = Router::new()
+        .merge(system_info::routes())
+        .merge(roms::routes())
+        .merge(favorites::routes())
+        .merge(upload::routes())
+        .merge(recents::routes());
+
+    let state_for_ssr = app_state.clone();
+    let opts_for_ssr = leptos_options.clone();
+
+    let ssr_handler = leptos_axum::render_app_to_stream_with_context(
+        move || {
+            provide_context(state_for_ssr.clone());
+        },
+        move || {
+            let opts = opts_for_ssr.clone();
+            view! { <crate::Shell options=opts /> }
+        },
+    );
+
+    let state_for_sfn = app_state.clone();
+
+    Router::new()
+        .nest("/api", api_routes)
+        .route(
+            "/sfn/*fn_name",
+            axum::routing::post(move |req: axum::http::Request<axum::body::Body>| {
+                let state = state_for_sfn.clone();
+                async move {
+                    let ctx_state = state.clone();
+                    leptos_axum::handle_server_fns_with_context(
+                        move || provide_context(ctx_state.clone()),
+                        req,
+                    )
+                    .await
+                }
+            }),
+        )
+        .route(
+            "/style.css",
+            axum::routing::get(|| async {
+                (
+                    [("content-type", "text/css")],
+                    include_str!(concat!(env!("OUT_DIR"), "/style.css")),
+                )
+            }),
+        )
+        .fallback(ssr_handler)
+        .with_state(app_state)
+}

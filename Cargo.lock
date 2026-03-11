@@ -2056,6 +2056,7 @@ dependencies = [
  "clap",
  "gloo-timers",
  "http",
+ "http-body-util",
  "leptos",
  "leptos_axum",
  "leptos_router",

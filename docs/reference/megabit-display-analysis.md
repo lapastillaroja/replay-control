@@ -587,3 +587,208 @@ On X68000, 1,005 M3U files reference ~1,863 .dim files. After disc-file hiding, 
 4. **Per-disc breakdown on detail page** (low priority): A future enhancement for the game detail page. Shows disc filenames and individual sizes below the total. No Mbit/MB interaction.
 
 5. **Implementation order**: Implement disc-file hiding and M3U size aggregation (from `m3u-analysis.md` sections 8.1 and 8.2) before or alongside the Mbit formatting change. The Mbit change is independent -- it only affects `format_size_for_system()` calls, which will receive the correct `size_bytes` regardless of whether it comes from a single file or an M3U aggregate.
+
+---
+
+## 14. Size Label Semantics: "File Size" vs "ROM Size"
+
+Now that cartridge systems display Megabit units, the label "File Size" in the game detail page creates a semantic mismatch. Showing "File Size: 16 Mbit" is misleading because Mbit refers to the ROM chip capacity of the original cartridge, not the file on disk. This section analyzes approaches to fix the label and their implications.
+
+### 14.1 The Problem
+
+The game detail page (`game_detail.rs:221`) displays:
+
+```
+File Size: 16 Mbit
+```
+
+using the i18n key `game_detail.file_size` (currently "File Size"). The value comes from `format_size_for_system(detail.size_bytes, &system)`, which converts the on-disk file size in bytes to Mbit for cartridge systems.
+
+Strictly speaking, the file on disk is 2.0 MB. The "16 Mbit" is a reinterpretation of those bytes as ROM chip capacity. Calling it "File Size" conflates two different concepts:
+
+- **File size**: the actual number of bytes the file occupies on disk (2,097,152 bytes = 2.0 MB)
+- **ROM size**: the capacity of the ROM chips in the original cartridge, measured in Megabits (16 Mbit)
+
+For uncompressed cartridge ROMs (.smc, .smd, .z64, .nes, etc.), the file size in bytes maps exactly to the ROM chip capacity in bits (file_bytes * 8 = ROM_bits). The two values are equivalent but expressed in different units with different meanings. The label should match the unit being displayed.
+
+### 14.2 Approaches
+
+#### Approach A: Dynamic label based on system type
+
+Change the label to reflect what the value actually represents:
+
+| System type | Label | Value example |
+|---|---|---|
+| Cartridge (Mbit systems) | **ROM Size** | 16 Mbit |
+| Disc-based | **File Size** | 450 MB |
+| Computer / floppy | **File Size** | 880 KB |
+| Arcade (ROM chips) | **ROM Size** | 160 Mbit |
+| Arcade (disc-based, `arcade_dc`) | **File Size** | 500 MB |
+
+**Implementation**: Add a new i18n key `game_detail.rom_size` ("ROM Size"). In the detail page, choose the label based on `MEGABIT_SYSTEMS.contains(&system)` -- the same check already used for the value formatting.
+
+```rust
+// game_detail.rs -- setup phase
+let size_label_key = if MEGABIT_SYSTEMS.contains(&&*system) {
+    "game_detail.rom_size"
+} else {
+    "game_detail.file_size"
+};
+```
+
+**Pros:**
+- Accurate: Mbit values get the "ROM Size" label, byte-based values get "File Size"
+- Simple: one new i18n key, one conditional in the detail page
+- Consistent with the existing `format_size_for_system` split
+
+**Cons:**
+- For compressed cartridge ROMs (.zip, .7z), the value is the compressed file size converted to Mbit, which is neither the true ROM size nor the true file size. However, this is the same inaccuracy that already exists in the value itself (section 5, "Compressed ROMs"), and applying the "ROM Size" label does not make it worse.
+
+#### Approach B: Two separate fields
+
+Show both the ROM size and the file size as separate metadata items:
+
+```
+ROM Size:  16 Mbit
+File Size: 2.0 MB
+```
+
+**Implementation**: Add a second metadata item in the detail page for cartridge systems. The ROM size uses `format_size_megabit(bytes)` and the file size uses `format_size(bytes)`.
+
+**Pros:**
+- Most accurate: both concepts displayed with correct labels
+- Educational: helps users understand the Mbit/MB relationship
+
+**Cons:**
+- Adds UI clutter: the game info grid already has up to 10 fields (system, filename, size, format, year, developer, publisher, genre, players, rating, plus arcade-specific fields). Adding another field increases density.
+- Redundant information: for uncompressed ROMs, ROM Size and File Size convey the same data in different units. The two fields add no new information -- they just convert between Mbit and MB.
+- For compressed ROMs, the "ROM Size" would still be wrong (it would show the compressed size in Mbit, not the true ROM size), so the supposed accuracy benefit is partially illusory.
+
+#### Approach C: Single field, always "Size"
+
+Use a neutral label "Size" for all systems:
+
+```
+Size: 16 Mbit     (cartridge)
+Size: 450 MB      (disc)
+```
+
+**Implementation**: Change `game_detail.file_size` from "File Size" to "Size".
+
+**Pros:**
+- Simplest change: just update one i18n string, no code changes
+- "Size" is neutral enough to work with both Mbit and MB values
+- Avoids the need for a dynamic label
+
+**Cons:**
+- Less precise than Approach A: "Size" does not tell you whether it is the file on disk or the ROM chip capacity
+- However, in context (a game's metadata grid), "Size" is unambiguous enough -- it is the size of the game, however measured
+
+### 14.3 Recommendation: Approach A (dynamic label)
+
+Use **Approach A** -- a dynamic label that says "ROM Size" for Megabit systems and "File Size" for all others.
+
+**Rationale:**
+
+1. **Semantic accuracy matters in a metadata grid.** The detail page is an information-dense view where each field has a label-value pair. Labels should precisely describe what the value is. "ROM Size: 16 Mbit" correctly identifies the value as the ROM chip capacity. "File Size: 450 MB" correctly identifies the value as the file's disk footprint.
+
+2. **The distinction has educational value.** Retro gaming enthusiasts (the primary audience, per section 9) appreciate the difference between ROM size and file size. Seeing "ROM Size" reinforces that Mbit is about the original cartridge, not the file on disk.
+
+3. **Low implementation cost.** One new i18n key and one conditional in the setup phase of `GameDetailContent`. The `MEGABIT_SYSTEMS` list is already duplicated in `util.rs` for the value formatting, so the label check uses the same mechanism.
+
+4. **Approach B (two fields) is not worth the UI cost.** For uncompressed ROMs, the two fields are redundant. For compressed ROMs, neither field is fully accurate. The added complexity does not pay for itself.
+
+5. **Approach C (neutral "Size") is acceptable but less informative.** If the dynamic label is deemed too clever, "Size" is a reasonable fallback. But since the code already branches on system type for the value formatting, adding a parallel branch for the label is trivial.
+
+### 14.4 The Compressed Format Problem
+
+For compressed cartridge ROMs (.zip, .7z), the displayed Mbit value is the compressed file size converted to bits, which is smaller than the actual ROM chip capacity:
+
+```
+Sonic the Hedgehog.zip    (311 KB on disk)
+Displayed as:             "2.4 Mbit"
+Actual ROM size:          4 Mbit (512 KB uncompressed)
+```
+
+With the "ROM Size" label, this becomes "ROM Size: 2.4 Mbit" -- which is technically wrong (the ROM is 4 Mbit, not 2.4 Mbit).
+
+**However**, this is an existing problem inherited from the value formatting (section 5 of this document). The label change does not make it worse -- "File Size: 2.4 Mbit" was equally wrong, just in a different way (it was not the file size either, since the file is 311 KB). No matter what label we use, showing compressed bytes as Mbit produces an inaccurate number.
+
+**Mitigation options** (all out of scope for the label change, but documented for future reference):
+
+1. **Detect compressed formats**: If the file extension is `.zip` or `.7z`, show MB/GB instead of Mbit even for cartridge systems. This would display "File Size: 311 KB" which is accurate. Downside: loses the Mbit nostalgia for the rare case of zipped cartridge ROMs.
+
+2. **Read uncompressed size from archive metadata**: For ZIP files, read the central directory to get the total uncompressed size. Display that as "ROM Size: 4 Mbit" and optionally show "File Size: 311 KB" alongside. This is the most accurate approach but adds I/O cost.
+
+3. **Accept the inaccuracy**: Compressed cartridge ROMs are uncommon in practice. Most collections store cartridge ROMs uncompressed (.smc, .smd, .z64, .nes, etc.). Arcade ROMs are always compressed but have lower compression ratios for ROM chip data, so the Mbit value is typically within 10-30% of the true board size.
+
+**Recommendation**: Accept the inaccuracy for now (option 3). Document it as a known limitation. If future work adds ZIP metadata reading (section 12, "Future Enhancements"), the label is already correct ("ROM Size") and the value will become accurate.
+
+### 14.5 ROM List Context
+
+The ROM list (`rom_list.rs:515`) displays the size inline without a label:
+
+```
+<span class="rom-size">{size}</span>
+```
+
+This renders as just "16 Mbit" or "2.0 MB" next to the file extension badge. Since there is no label, there is no semantic mismatch to fix. The value alone is clear in context: it is the size of the game.
+
+**Verdict**: No change needed for the ROM list.
+
+### 14.6 i18n Key Changes
+
+**New key:**
+
+```rust
+"game_detail.rom_size" => "ROM Size",
+```
+
+**Existing key (unchanged):**
+
+```rust
+"game_detail.file_size" => "File Size",
+```
+
+When adding more locales in the future, translators should note that "ROM Size" refers to the capacity of the original ROM chips (e.g., "Taille ROM" in French, "ROM-Groesse" in German), not the file on disk.
+
+### 14.7 Implementation Notes
+
+The change touches two files:
+
+1. **`replay-control-app/src/i18n.rs`**: Add the `game_detail.rom_size` key.
+
+2. **`replay-control-app/src/pages/game_detail.rs`**: In the `GameDetailContent` component setup phase (around line 57, after `size_display` is computed), determine the label key:
+
+```rust
+let size_display = format_size_for_system(detail.size_bytes, &system);
+let size_label_key = if crate::util::is_megabit_system(&system) {
+    "game_detail.rom_size"
+} else {
+    "game_detail.file_size"
+};
+```
+
+Then in the view (around line 221), replace the hardcoded key:
+
+```rust
+// Before:
+<span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.file_size")}</span>
+
+// After:
+<span class="game-meta-label">{move || t(i18n.locale.get(), size_label_key)}</span>
+```
+
+A small helper `is_megabit_system(system: &str) -> bool` wrapping `MEGABIT_SYSTEMS.contains(&system)` may be cleaner than exposing the const directly, but either works. The `MEGABIT_SYSTEMS` list is already available in `util.rs`.
+
+### 14.8 Summary
+
+| Question | Answer |
+|---|---|
+| Should the label change based on system type? | **Yes** -- "ROM Size" for Mbit systems, "File Size" for others |
+| Should we show both ROM size and file size? | **No** -- too much UI clutter for redundant information |
+| Does the ROM list need a label change? | **No** -- it has no label, just a value |
+| What about compressed formats? | Accept the inaccuracy for now; document as known limitation |
+| What about arcade ZIPs? | Same treatment as other compressed formats (section 5) |
+| i18n changes needed? | One new key: `game_detail.rom_size` = "ROM Size" |
+| Files to modify? | `i18n.rs` (add key), `game_detail.rs` (dynamic label selection) |

@@ -2,14 +2,11 @@
 
 #[cfg(feature = "ssr")]
 mod ssr {
-    use axum::Router;
     use clap::Parser;
     use leptos::config::LeptosOptions;
-    use leptos::prelude::*;
     use tower_http::cors::CorsLayer;
     use tower_http::services::ServeDir;
 
-    use replay_control_app::Shell;
     use replay_control_app::api;
 
     #[derive(Parser)]
@@ -130,30 +127,6 @@ mod ssr {
             .site_root(cli.site_root.clone())
             .site_pkg_dir("pkg")
             .build();
-
-        // REST API (kept for external access)
-        let api_routes = Router::new()
-            .merge(api::system_info::routes())
-            .merge(api::roms::routes())
-            .merge(api::favorites::routes())
-            .merge(api::upload::routes())
-            .merge(api::recents::routes());
-
-        let state_for_ssr = app_state.clone();
-        let opts_for_ssr = leptos_options.clone();
-
-        let ssr_handler = leptos_axum::render_app_to_stream_with_context(
-            move || {
-                provide_context(state_for_ssr.clone());
-            },
-            move || {
-                let opts = opts_for_ssr.clone();
-                view! { <Shell options=opts /> }
-            },
-        );
-
-        // Server function handler for client-side calls after hydration.
-        let state_for_sfn = app_state.clone();
 
         let site_root = cli.site_root.clone();
 
@@ -335,37 +308,13 @@ mod ssr {
             }
         });
 
-        let app = Router::new()
-            .nest("/api", api_routes)
+        let app = api::build_router(app_state, leptos_options)
             .route("/sse/image-progress", sse_handler)
             .route("/sse/metadata-progress", metadata_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/media/*path", media_handler)
-            .route(
-                "/sfn/*fn_name",
-                axum::routing::post(move |req: axum::http::Request<axum::body::Body>| {
-                    let state = state_for_sfn.clone();
-                    async move {
-                        let ctx_state = state.clone();
-                        leptos_axum::handle_server_fns_with_context(
-                            move || provide_context(ctx_state.clone()),
-                            req,
-                        )
-                        .await
-                    }
-                }),
-            )
             .nest_service("/pkg", ServeDir::new(format!("{site_root}/pkg")))
             .nest_service("/icons", ServeDir::new(format!("{site_root}/icons")))
-            .route(
-                "/style.css",
-                axum::routing::get(|| async {
-                    (
-                        [("content-type", "text/css")],
-                        include_str!(concat!(env!("OUT_DIR"), "/style.css")),
-                    )
-                }),
-            )
             .route(
                 "/manifest.json",
                 axum::routing::get(|| async {
@@ -384,8 +333,6 @@ mod ssr {
                     )
                 }),
             )
-            .fallback(ssr_handler)
-            .with_state(app_state)
             .layer(CorsLayer::permissive());
 
         let addr = format!("0.0.0.0:{}", cli.port);
