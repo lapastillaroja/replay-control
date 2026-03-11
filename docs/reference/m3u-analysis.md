@@ -100,20 +100,22 @@ This affects:
 
 ### 2.1 Systems with M3U Files
 
-Only **Sharp X68000** has M3U files on the current NFS-mounted storage
+Two systems have M3U files on the NFS-mounted storage
 (`<NFS_MOUNT>/`):
 
-| System | M3U files | .dim files | .hdf files | Total files |
-|--------|-----------|-----------|-----------|------------|
-| `sharp_x68k` | 1,005 | 1,863 | 295 | 3,163 |
+| System | M3U files | Game data files | Total storage |
+|--------|-----------|----------------|--------------|
+| `sharp_x68k` | 1,005 | 1,863 .dim + 295 .hdf | -- |
+| `scummvm` | 134 | 105 .svm + 16 .scummvm + ~40K data files across 119 subfolders | ~35 GB |
 
-Other systems that commonly use M3U (PlayStation, Dreamcast, Sega CD, ScummVM,
-IBM PC) have empty ROM folders on this mount.
+Other systems that commonly use M3U (PlayStation, Dreamcast, Sega CD, IBM PC)
+have empty ROM folders on this mount.
 
 ### 2.2 M3U File Structure (X68000)
 
 X68000 M3U files are plain text (ASCII with CRLF line terminators) listing the
-disc image filenames. Examples:
+disc image filenames. References use **relative paths** (bare filenames in the
+same directory).
 
 **Single-disc game** (`15 Puzzle (1991)(Sygnas).m3u`):
 ```
@@ -136,15 +138,127 @@ Alshark (1991)(Right Stuff)(Disk 5 of 5)(Ending).dim
 4th Unit Act 2, The (1988)(Data West)(Disk 3 of 3)(Disk C).dim
 ```
 
-### 2.3 M3U Breakdown
+### 2.3 M3U File Structure (ScummVM)
+
+ScummVM M3U files use **absolute paths** starting with `/media/nfs/roms/scummvm/`
+(the Pi-side mount point). Each M3U references exactly **one** `.svm` or
+`.scummvm` file inside a game subfolder. The M3U is a pure entry point, not a
+multi-disc playlist.
+
+**Typical structure:**
+```
+roms/scummvm/
+  Grim Fandango (CD Spanish)/
+    Grim Fandango (CD Spanish).svm     # Contains ScummVM engine ID: "grim"
+    DATA000.LAB                         # ~29 MB
+    DATA001.LAB                         # ~116 MB
+    DATA002.LAB                         # ~115 MB
+    [more game data files]
+  Grim Fandango (CD Spanish).m3u        # Entry point (single line)
+```
+
+**M3U content** (single line, absolute path):
+```
+/media/nfs/roms/scummvm/Grim Fandango (CD Spanish)/Grim Fandango (CD Spanish).svm
+```
+
+**`.svm` / `.scummvm` file content** -- a single-line ScummVM game engine ID:
+```
+grim
+```
+
+Other examples of engine IDs: `toltecs`, `amazon`, `bladerunner`, `sword1`,
+`sky-1`, `darkseed-cd-es`, `gob1-cd-es`.
+
+### 2.4 ScummVM M3U Breakdown
+
+| Metric | Count |
+|--------|-------|
+| M3U files at root level | 134 |
+| Game subfolders | 119 |
+| .svm files inside subfolders | 105 |
+| .scummvm files inside subfolders | 16 |
+| M3U referencing .svm | 117 |
+| M3U referencing .scummvm | 17 |
+| M3U with missing game data folder | 17 |
+| M3U with present game data folder | 117 |
+| Orphan folders (encoding mismatch) | 2 |
+| Non-ROM files at root (clues/PDFs/TXTs) | 12 |
+
+**All 134 M3U files contain exactly one line** (the referenced .svm/.scummvm
+path). No ScummVM M3U is multi-line or contains comments.
+
+**File sizes** are uniformly small: average 112 bytes, total 15 KB for all 134
+M3U files.
+
+**17 M3U files reference game data that is not yet present on the NFS share**
+(the subfolder does not exist). These are placeholder entries for games still to
+be added. They will show in the ROM list as broken entries since the referenced
+.svm target does not exist.
+
+**2 folders appear orphaned** due to UTF-8 encoding mismatches between the M3U
+filename and the filesystem directory name (e.g., `1 1/2 Ritter` with different
+representations of the "1/2" character). The M3U file does exist, but the path
+inside it uses a different encoding than the actual directory on disk.
+
+### 2.5 ScummVM Naming Patterns
+
+The M3U filenames follow a consistent convention:
+
+```
+Game Title (Media Platform Language).m3u
+```
+
+Tags observed in filenames:
+
+| Tag | Occurrences | Example |
+|-----|-------------|---------|
+| Spanish | 104 | `Full Throttle (CD DOS Spanish).m3u` |
+| DOS | 76 | `Codename Iceman (DOS Spanish).m3u` |
+| CD | 64 | `Blade Runner (CD Spanish).m3u` |
+| Windows | 8 | `Dirty Split (Windows, Spanish).m3u` |
+| Floppy | 4 | `EcoQuest 2 (Floppy DOS Spanish).m3u` |
+| SCI | 4+1 | `Police Quest I (SCI, DOS Spanish).m3u` |
+| FM-Towns | 3 | `Zak McKracken (FM-Towns).m3u` |
+| Multi-lingual | 1 | `Broken Sword 2,5 (Multi-lingual).m3u` |
+| Portuguese | 1 | `Croustibat (DOS, Portuguese).m3u` |
+| AGS | 1 | `Maniac Mansion Deluxe (AGS).m3u` |
+
+The collection is predominantly Spanish-language translations (104/134).
+
+**M3U name vs subfolder name mismatches** occur in 21 out of 134 entries. The
+M3U filename and the subfolder it references often differ slightly:
+
+| M3U stem | Subfolder name |
+|----------|---------------|
+| `Chewy - Esc From F5` | `Chewy - Esc From F5 (CD Spanish)` |
+| `Cruise for a Corpse (DOS Spanish)` | `Cruise for a Corpse (256 DOS, Spanish)` |
+| `Sfinx (CD)` | `Sfinx (Dos Spanish)` |
+| `King's Quest II` | `King's Quest II (Spanish)` |
+
+This means the M3U filename cannot be trivially derived from the subfolder name
+or vice versa -- each is independently named.
+
+### 2.6 ScummVM Non-ROM Files
+
+12 non-ROM files exist at the ScummVM root level alongside the M3U files:
+
+- Copy protection hints/clues: `.TXT`, `.txt`, `.jpg`, `.JPG`, `.pdf` files
+  (e.g., `Bargon Attack - Claves.TXT`, `Laura Bow II - Claves.pdf`)
+
+These are documentation files the user has placed alongside games. The app's
+`is_rom_file()` check correctly ignores them since they have no recognized
+extension and are not `.m3u` files.
+
+### 2.7 X68000 M3U Breakdown
 
 Of the first 100 X68000 M3U files sampled:
 - **62** reference a single disc (single-disc entry point)
 - **38** reference multiple discs (true multi-disc playlists)
 
-### 2.4 File Sizes
+### 2.8 File Sizes
 
-M3U files vary dramatically in size on X68000:
+**X68000 M3U files** vary dramatically in size:
 
 | File | Size |
 |------|------|
@@ -158,7 +272,10 @@ disk image). The `file` command identifies them as "ISO-8859 text, with very lon
 lines" because the binary content happens to be parseable as a very long text
 line.
 
-### 2.5 Systems That Commonly Use M3U (Not Present on This Mount)
+**ScummVM M3U files** are uniformly tiny: 60-200 bytes each (just an absolute
+path string). Total for all 134 files: ~15 KB.
+
+### 2.9 Systems That Commonly Use M3U (Not Present on This Mount)
 
 For reference, these systems typically use M3U in the broader RePlayOS/RetroArch
 ecosystem:
@@ -173,8 +290,6 @@ ecosystem:
 | 3DO (`panasonic_3do`) | Multi-disc games | `.chd`, `.cue` |
 | Neo Geo CD (`snk_ngcd`) | Multi-disc games | `.chd`, `.cue` |
 | IBM PC / DOSBox (`ibm_pc`) | Multi-disc DOS games | Various |
-| ScummVM (`scummvm`) | Game entry point | `.svm` |
-| Sharp X68000 (`sharp_x68k`) | Multi-floppy games | `.dim` |
 
 ---
 
@@ -307,34 +422,114 @@ libretro-thumbnails. The matching pipeline:
 
 ### 6.3 ScummVM Matching
 
-ScummVM game names in M3U files (e.g., `3 Skulls of the Toltecs (CD Spanish).m3u`)
-may not match libretro-thumbnails naming at all, since ScummVM thumbnails use the
-game's internal ScummVM ID or a different naming convention.
+With 134 real ScummVM M3U files now on the NFS share, thumbnail matching
+challenges are concrete:
+
+**Games with English base titles** (e.g., `Full Throttle (CD DOS Spanish).m3u`):
+stripping tags yields `Full Throttle`, which should match. Approximately 50-60
+games fall in this category.
+
+**Games with Spanish titles** (e.g., `La Pantera Rosa - Mision Peligrosa.m3u`,
+`Los Archivos Secretos de Sherlock Holmes`): these have no English equivalent
+in the filename and will not match English libretro-thumbnails entries.
+Approximately 20-30 games are affected.
+
+**Games with near-English titles plus minor differences** (e.g.,
+`Indiana Jones y la ultima cruzada` vs `Indiana Jones and the Last Crusade`):
+fuzzy matching cannot bridge language translations.
+
+libretro-thumbnails has a `ScummVM` system folder that uses display names (not
+engine IDs), so English-titled games should match after tag stripping. The
+`.svm` engine ID (e.g., `grim`, `toltecs`) is not useful for libretro-thumbnails
+matching but could be used for an alternative ScummVM-specific database.
 
 ---
 
 ## 7. ScummVM Specifics
 
-### 7.1 Structure
+### 7.1 Observed Structure (Real Data)
 
-ScummVM games on RePlayOS follow a specific layout:
+134 ScummVM games are present on the NFS share, organized as:
 
 ```
 roms/scummvm/
-  3 Skulls of the Toltecs (CD Spanish)/
-    3 Skulls of the Toltecs (CD Spanish).svm    # Game engine config
-    [game data files]
-  3 Skulls of the Toltecs (CD Spanish).m3u       # Entry point
+  Grim Fandango (CD Spanish)/              # Game subfolder
+    Grim Fandango (CD Spanish).svm         # Engine ID file: "grim"
+    DATA000.LAB                            # Game data (~29 MB)
+    DATA001.LAB                            # Game data (~116 MB)
+    [more data files]
+  Grim Fandango (CD Spanish).m3u           # Entry point (134 bytes)
+  Bargon Attack - Claves.TXT               # User documentation (not a ROM)
 ```
+
+Key structural observations from the 134-game collection:
+
+- **119 subfolders** contain game data files (.svm/.scummvm + game assets)
+- **134 M3U files** at the root level serve as entry points
+- **105 .svm files** + **16 .scummvm files** = 121 engine config files in subfolders
+- Each game folder ranges from a few MB to over 1.5 GB (Blade Runner)
+- Total storage: ~35 GB across ~40,000 game data files
 
 ### 7.2 M3U as Entry Point (Not Multi-Disc)
 
-For ScummVM, the M3U file serves a different purpose than on disc-based systems:
-- It is the **game entry point** that makes the game appear in the RePlayOS menu
-- Without it, the subfolder contents would appear as individual files
-- It references the `.svm` file inside the subfolder
+For ScummVM, the M3U file serves a fundamentally different purpose than on
+disc-based systems:
 
-### 7.3 Current App Limitation
+- It is the **game entry point** that makes the game appear in the RePlayOS menu
+- It always references exactly **one** file (never multi-line)
+- It uses **absolute paths** from the Pi's perspective (`/media/nfs/roms/scummvm/...`)
+- The referenced file is a `.svm` (117 cases) or `.scummvm` (17 cases) file
+  inside the game's subfolder
+
+The `.svm` and `.scummvm` files are functionally identical -- both contain a
+single-line ScummVM engine ID (e.g., `toltecs`, `sky-1`, `gob1-cd-es`). The
+two extensions appear to come from different RePlayOS tooling versions or
+manual creation.
+
+### 7.3 Absolute vs Relative Path Difference
+
+**X68000 M3U files** use relative filenames (just the .dim filename, files are
+in the same directory):
+```
+Alshark (1991)(Right Stuff)(Disk 1 of 5)(System).dim
+```
+
+**ScummVM M3U files** use absolute paths rooted at the Pi mount point:
+```
+/media/nfs/roms/scummvm/Grim Fandango (CD Spanish)/Grim Fandango (CD Spanish).svm
+```
+
+This absolute path convention means:
+- The M3U only works when the storage is mounted at `/media/nfs/` on the Pi
+- If the mount point changes, all M3U files break
+- The companion app (which accesses via NFS at a different mount point) cannot
+  resolve these paths directly -- but since it only displays the M3U entry in
+  the ROM list (not resolving the referenced file), this is not currently a
+  problem for display purposes
+
+**Implication for the `parse_m3u_references()` implementation:** when parsing
+ScummVM M3U files to build the exclusion set, the parser will see an absolute
+path rather than a bare filename. The referenced file is inside a subfolder
+(not alongside the M3U), so it would never appear as a separate entry in the
+ROM list anyway (the scanner processes `roms/scummvm/` at depth 1, not
+recursing into subfolders for top-level M3U-referenced files). No exclusion
+filtering is needed for ScummVM -- the structure is naturally correct.
+
+### 7.4 Incomplete Games (Missing Data)
+
+17 of the 134 M3U files reference subfolders that do not exist yet on the NFS
+share. These are placeholder entries for games that are still being prepared.
+They will appear in the ROM list but will fail to launch since the game data is
+absent.
+
+Notable missing games include:
+- Dirty Split (Windows, Spanish)
+- Dreamweb (CD DOS Spanish)
+- Freddy Pharkas (CD DOS Spanish)
+- Phantasmagoria 1 & 2 (CD Spanish)
+- Zork: Grand Inquisitor (CD Spanish)
+
+### 7.5 Current App Behavior
 
 The ScummVM system definition only accepts `.scummvm` extension files:
 ```rust
@@ -345,12 +540,47 @@ This means:
 - `.svm` files are **not** matched by the extension check
 - `.m3u` files **are** matched by the universal M3U check in `is_rom_file()`
 - The M3U entry will appear in the ROM list
-- But the `.svm` file it references will not (it would need `.svm` in the
-  extensions list, or the M3U handling would need to be aware of it)
+- The `.svm`/`.scummvm` files inside subfolders will **not** appear (they are
+  not at the root scan level, and even if they were, `.svm` is not in the
+  extensions list)
 
 This is actually the correct behavior for ScummVM: the M3U is the only entry
-that should be visible, and the `.svm` file should remain hidden inside its
-subfolder.
+that should be visible, and the `.svm`/`.scummvm` file should remain hidden
+inside its subfolder. The system is accidentally well-behaved because:
+1. The universal M3U check picks up the entry points
+2. The game data lives in subfolders that the flat scanner does not recurse into
+3. Neither `.svm` nor `.scummvm` needs to be in the extensions list
+
+### 7.6 Double-Counting: Not a Problem for ScummVM
+
+Unlike X68000, ScummVM does **not** suffer from double-counting because:
+- The M3U files are at the root of `roms/scummvm/`
+- The `.svm`/`.scummvm` files are inside subfolders
+- The ROM scanner only finds the M3U files (the subfolder contents are not
+  scanned as ROM files since the system does not recurse)
+- Result: each game appears exactly once in the ROM list
+
+The 12 non-ROM files (clues, PDFs) at the root are also correctly ignored.
+
+### 7.7 ScummVM Thumbnail Matching Challenges
+
+ScummVM M3U filenames (e.g., `Full Throttle (CD DOS Spanish).m3u`) present
+specific challenges for thumbnail matching:
+
+1. **Language-specific names**: many games use Spanish titles
+   (`Los Archivos Secretos de Sherlock Holmes`, `La Pantera Rosa`) which
+   will not match English-named thumbnails in libretro-thumbnails
+2. **Platform tags**: `(CD DOS Spanish)`, `(FM-Towns)`, `(SE-Talkie Spanish)`
+   are not standard No-Intro/Redump tags. The fuzzy matching strip-tags tier
+   should remove these, leaving the base title
+3. **English titles with Spanish tags**: `Full Throttle (CD DOS Spanish)` ->
+   stripping tags yields `Full Throttle`, which should match
+4. **Pure Spanish titles**: `La Pantera Rosa - Mision Peligrosa` has no
+   English equivalent in the filename, so thumbnail matching will likely fail
+
+The `.svm` engine ID (e.g., `grim`, `toltecs`) could theoretically be used as
+a fallback lookup key against a ScummVM-specific thumbnail mapping, but this
+would require reading the `.svm` file content during thumbnail resolution.
 
 ---
 
@@ -371,9 +601,16 @@ After collecting all files, do a second pass:
 **Also update** `count_roms_recursive()` with the same logic so that
 `SystemSummary.game_count` is accurate.
 
-**Caveat:** X68000 M3U files that embed binary data after the first line need
-careful parsing -- only extract filenames from text lines that look like valid
-filenames (contain a `.` and end with a known extension).
+**Caveats:**
+
+- X68000 M3U files that embed binary data after the first line need careful
+  parsing -- only extract filenames from text lines that look like valid
+  filenames (contain a `.` and end with a known extension).
+- ScummVM M3U files use absolute paths (`/media/nfs/roms/scummvm/Game/Game.svm`)
+  rather than bare filenames. The parser should extract just the filename from
+  the path. However, since ScummVM referenced files are in subfolders (not
+  alongside other ROMs at the root level), they would never appear in the ROM
+  list anyway -- so ScummVM M3U parsing for exclusion is unnecessary.
 
 **Implementation sketch:**
 
@@ -445,8 +682,28 @@ recognized as valid ROM files. However, this should only be done **after**
 implementing 8.1, otherwise `.svm` files inside subfolders would appear as
 separate entries in the ROM list.
 
-Alternatively, since the current behavior (M3U visible, .svm hidden) is actually
-correct for ScummVM, this change may not be needed at all.
+With the real data now available, this is confirmed as **not needed**: the 134
+M3U entry points work correctly, and the 105 `.svm` + 16 `.scummvm` files
+remain properly hidden inside subfolders. Adding `.svm` to the extensions list
+would only cause problems.
+
+### 8.4b ScummVM Missing Data Validation (Priority: Medium -- New)
+
+**Where:** `collect_roms_recursive()` or a new validation pass
+
+17 ScummVM M3U files reference game data subfolders that do not exist. These
+entries appear in the ROM list but cannot be launched. Options:
+
+1. **Hide M3U entries whose referenced .svm/.scummvm target does not exist.**
+   This requires parsing the M3U content and checking file existence -- more
+   I/O but gives a clean ROM list.
+2. **Show but mark as "incomplete"** with a visual indicator. Less disruptive
+   but adds UI complexity.
+3. **Do nothing** -- the user sees the entry, attempts to launch, and gets an
+   error from RePlayOS. This is the current behavior.
+
+Option 1 is recommended since it is consistent with the "M3U as authoritative
+entry point" model -- if the M3U points to nothing, the game is not available.
 
 ### 8.5 M3U Content Parsing for Game Detail (Priority: Low)
 
@@ -477,23 +734,43 @@ depends on how many .dim files are referenced by M3U files, but roughly:
 This is a ~60% reduction in game count, reflecting the actual number of distinct
 games rather than counting every floppy disk image separately.
 
-### 9.2 PlayStation / Dreamcast / Sega CD (Future Impact)
+### 9.2 ScummVM (Immediate Impact -- New)
+
+With 134 M3U files and the subfolder-based structure, ScummVM is **not affected
+by double-counting** -- each game already appears exactly once. However:
+
+- **17 M3U files reference missing game data** -- these appear as entries that
+  cannot be launched. A validation pass could flag or hide these.
+- **2 entries have encoding mismatches** between the M3U filename (UTF-8) and
+  the filesystem directory name. These may cause issues when the app attempts
+  to resolve the game data path.
+- **Thumbnail matching will be poor** for the ~80% of games with Spanish titles
+  or Spanish-tagged filenames that differ from English libretro-thumbnails names.
+- **Total visible ScummVM game count**: 134 games (correct, no inflation).
+
+### 9.3 PlayStation / Dreamcast / Sega CD (Future Impact)
 
 These systems have empty ROM folders on the current NFS mount but are the most
 common M3U users in the broader retro gaming community. When users add PSX games
 with M3U files, the improvement will prevent the confusing display of 3-4
 entries per game.
 
-### 9.3 Performance Considerations
+### 9.4 Performance Considerations
 
-Parsing M3U files adds I/O during ROM scanning. For 1,005 M3U files on NFS:
-- Each parse reads a small text file (< 1 KB for most)
+Parsing M3U files adds I/O during ROM scanning. For 1,005 + 134 = 1,139 M3U
+files on NFS:
+- X68000: each parse reads a small text file (< 1 KB for most)
+- ScummVM: each parse reads a tiny file (60-200 bytes)
 - The HashSet lookup for filtering is O(1) per ROM
 - Total overhead: negligible compared to the existing `read_dir` traversal
 
 For X68000 M3U files that contain binary data, reading the full file to parse
 could be expensive (1.2 MB per file). The implementation should read only the
 first few KB and parse lines, or use `BufReader` to read line-by-line.
+
+ScummVM M3U files are always small and contain a single line, so parsing is
+trivial. However, the parser needs to handle absolute paths (extracting just
+the filename from the full path) rather than expecting bare filenames.
 
 ---
 
@@ -502,23 +779,36 @@ first few KB and parse lines, or use `BufReader` to read line-by-line.
 1. **`is_m3u` is a dead field** -- it propagates through the entire stack but is
    never consumed by any component or logic.
 
-2. **Double-counting is active** -- every system with M3U files has inflated
-   game counts (both in the system summary and the ROM list).
+2. **Double-counting is active for X68000** -- 1,005 M3U files alongside 1,863
+   .dim files produce ~60% game count inflation.
 
-3. **Sharp X68000 is the only system currently affected** on this storage, with
-   1,005 M3U files producing ~60% count inflation.
+3. **ScummVM has no double-counting problem** -- 134 M3U files serve as entry
+   points, with game data in subfolders that the scanner does not recurse into.
+   Each game appears exactly once.
 
-4. **No disc-file hiding logic exists** -- M3U files and their referenced disc
+4. **Two systems now have M3U files**: Sharp X68000 (1,005) and ScummVM (134),
+   totaling 1,139 M3U files on the NFS share.
+
+5. **M3U path conventions differ by system**: X68000 uses relative filenames,
+   ScummVM uses absolute paths (`/media/nfs/...`). The M3U parser must handle
+   both formats.
+
+6. **No disc-file hiding logic exists** -- M3U files and their referenced disc
    files appear as independent entries everywhere (ROM list, search, game count).
+   However, this only causes visible problems for X68000, not ScummVM.
 
-5. **Box art matching already works** for M3U files via the existing fuzzy
+7. **Box art matching already works** for M3U files via the existing fuzzy
    matching pipeline, since the M3U stem matches the thumbnail naming after tag
-   stripping.
+   stripping. ScummVM thumbnails will be harder to match due to Spanish titles.
 
-6. **ScummVM handling is accidentally correct** -- the `.svm` extension is not in
-   the system's extension list, so only the M3U entry appears (though for the
-   wrong reason).
+8. **ScummVM handling is accidentally correct** -- the `.svm` extension is not in
+   the system's extension list and data lives in subfolders, so only the M3U
+   entry appears. Both `.svm` (105 files) and `.scummvm` (16 files) coexist as
+   engine ID formats in the collection.
 
-7. **The fix is localized** -- the primary change is in `roms.rs` (parsing M3U
-   content and filtering referenced files), with no changes needed to the UI
-   components, server functions, or thumbnail matching.
+9. **17 incomplete ScummVM games** have M3U entry points but missing game data
+   subfolders. These will appear as broken entries in the ROM list.
+
+10. **The fix for X68000 is localized** -- the primary change is in `roms.rs`
+    (parsing M3U content and filtering referenced files). ScummVM needs no
+    disc-hiding fix but would benefit from validation of missing game data.
