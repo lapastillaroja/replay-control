@@ -261,10 +261,28 @@ fn enrich_from_metadata_cache(info: &mut GameInfo) {
                         info.publisher = meta.publisher;
                     }
                     if let Some(ref path) = meta.box_art_path {
-                        info.box_art_url = Some(format!("/media/{}/{path}", info.system));
+                        let storage = state.storage();
+                        let full = storage
+                            .root
+                            .join(replay_control_core::metadata_db::RC_DIR)
+                            .join("media")
+                            .join(&info.system)
+                            .join(path);
+                        if is_valid_image(&full) {
+                            info.box_art_url = Some(format!("/media/{}/{path}", info.system));
+                        }
                     }
                     if let Some(ref path) = meta.screenshot_path {
-                        info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+                        let storage = state.storage();
+                        let full = storage
+                            .root
+                            .join(replay_control_core::metadata_db::RC_DIR)
+                            .join("media")
+                            .join(&info.system)
+                            .join(path);
+                        if is_valid_image(&full) {
+                            info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+                        }
                     }
                 }
                 Ok(None) => {}
@@ -309,23 +327,27 @@ fn resolve_box_art_url(
     system: &str,
     rom_filename: &str,
 ) -> Option<String> {
-    // 1. Try metadata DB
-    if let Some(guard) = state.metadata_db() {
-        if let Some(db) = guard.as_ref() {
-            if let Ok(Some(meta)) = db.lookup(system, rom_filename) {
-                if let Some(ref path) = meta.box_art_path {
-                    return Some(format!("/media/{system}/{path}"));
-                }
-            }
-        }
-    }
-    // 2. Filesystem fallback
     let storage = state.storage();
     let media_base = storage
         .root
         .join(replay_control_core::metadata_db::RC_DIR)
         .join("media")
         .join(system);
+
+    // 1. Try metadata DB — but validate the file on disk (catches git fake-symlink artifacts)
+    if let Some(guard) = state.metadata_db() {
+        if let Some(db) = guard.as_ref() {
+            if let Ok(Some(meta)) = db.lookup(system, rom_filename) {
+                if let Some(ref path) = meta.box_art_path {
+                    let full_path = media_base.join(path);
+                    if is_valid_image(&full_path) {
+                        return Some(format!("/media/{system}/{path}"));
+                    }
+                }
+            }
+        }
+    }
+    // 2. Filesystem fallback (find_image_on_disk already validates)
     find_image_on_disk(&media_base, "boxart", rom_filename)
         .map(|path| format!("/media/{system}/{path}"))
 }
