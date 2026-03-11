@@ -1,12 +1,18 @@
 # Integration Testing Analysis
 
+> Status: Implemented (REST API tests, server function tests, SSR smoke tests)
+
 Analysis of integration testing options for the replay-control-app project (Leptos 0.7 SSR + Axum + WASM hydration).
 
 ## Current State
 
-- **265 unit tests** in `replay-control-core`, zero integration tests
+- **265+ unit tests** in `replay-control-core`, integration tests implemented in the app crate
 - Core tests use manual temp directories with `StorageLocation::from_path()` (no `tempfile` crate)
-- No `tests/` directories in either crate
+- App crate integration tests in `tests/`:
+  - `tests/common/mod.rs` -- shared test helpers
+  - `tests/api_tests.rs` -- REST API endpoint tests
+  - `tests/server_fn_tests.rs` -- server function tests
+  - `tests/ssr_tests.rs` -- SSR rendering smoke tests
 - App crate has a dual-target build: WASM (`hydrate` feature) and native (`ssr` feature)
 - Server functions use `expect_context::<AppState>()` for state access
 - REST API routes use Axum `State(state): State<AppState>` extractors
@@ -448,21 +454,16 @@ test:
 
 ## Recommended Test Architecture
 
-### File Structure
+### File Structure (as implemented)
 
 ```
 replay-control-app/
   tests/
     common/
-      mod.rs          # Test helpers: create_test_storage(), test_app_state(), test_router()
-    api_systems.rs    # REST API: /api/systems, /api/info
-    api_roms.rs       # REST API: /api/systems/:system/roms, /api/roms (delete/rename)
-    api_favorites.rs  # REST API: /api/favorites (CRUD, group, flatten)
-    api_upload.rs     # REST API: /api/upload/:system (multipart)
-    sfn_basic.rs      # Server functions: get_info, get_systems, get_recents
-    sfn_metadata.rs   # Server functions: metadata stats, coverage
-    sse_progress.rs   # SSE endpoints (after handler extraction refactor)
-    ssr_smoke.rs      # SSR page rendering smoke tests
+      mod.rs              # Test helpers: create_test_storage(), test_app_state(), test_api_router(), etc.
+    api_tests.rs          # REST API tests (/api/systems, /api/info, /api/favorites, etc.)
+    server_fn_tests.rs    # Server function tests (/sfn/* endpoints)
+    ssr_tests.rs          # SSR page rendering smoke tests
 ```
 
 All files in `tests/` are integration tests (separate compilation unit). They must use `--features ssr`.
@@ -480,23 +481,23 @@ All files in `tests/` are integration tests (separate compilation unit). They mu
 
 ## Priority Order
 
-| Priority | Category | Value | Effort | Rationale |
-|----------|----------|-------|--------|-----------|
-| 1 | REST API tests (`/api/*`) | High | Low | Most straightforward; tests real HTTP paths that external clients use. No Leptos dependency. |
-| 2 | Server function tests (`/sfn/*`) | High | Medium | Tests the main UI data pipeline. Requires server function registration in test setup. |
-| 3 | Test fixture helpers | High | Low | Foundation for all other tests. Build once, use everywhere. |
-| 4 | SSE endpoint tests | Medium | Medium | Requires extracting inline handlers. Validates real-time progress reporting. |
-| 5 | SSR smoke tests | Medium | Medium | Catches rendering regressions. Requires Leptos runtime initialization. |
-| 6 | Metadata DB integration tests | Low | Low | Core already tests the DB well. App-level adds marginal value. |
-| 7 | Browser/E2E tests | Low | High | Poor cost-benefit for a single-user app. Defer indefinitely. |
+| Priority | Category | Value | Effort | Status |
+|----------|----------|-------|--------|--------|
+| 1 | REST API tests (`/api/*`) | High | Low | **Done** (`tests/api_tests.rs`) |
+| 2 | Server function tests (`/sfn/*`) | High | Medium | **Done** (`tests/server_fn_tests.rs`) |
+| 3 | Test fixture helpers | High | Low | **Done** (`tests/common/mod.rs`) |
+| 4 | SSE endpoint tests | Medium | Medium | Not started |
+| 5 | SSR smoke tests | Medium | Medium | **Done** (`tests/ssr_tests.rs`) |
+| 6 | Metadata DB integration tests | Low | Low | Not started |
+| 7 | Browser/E2E tests | Low | High | Deferred |
 
-### Recommended Implementation Order
+### Implementation Status
 
-1. **Create test infrastructure** (Priority 3): `tests/common/mod.rs` with helpers
-2. **REST API tests** (Priority 1): Start with `/api/systems`, `/api/info`, `/api/favorites`
-3. **Server function tests** (Priority 2): Start with `GetInfo`, `GetSystems`, `GetRomsPage`
-4. **SSE tests** (Priority 4): Extract handlers first, then test
-5. **SSR smoke tests** (Priority 5): Home page, game list page
+1. **Test infrastructure** (Priority 3): `tests/common/mod.rs` with helpers -- Done
+2. **REST API tests** (Priority 1): `/api/systems`, `/api/info`, `/api/favorites` etc. -- Done
+3. **Server function tests** (Priority 2): Server function endpoint tests -- Done
+4. **SSE tests** (Priority 4): Not yet started
+5. **SSR smoke tests** (Priority 5): Page rendering tests -- Done
 
 ### Required Cargo.toml Changes
 

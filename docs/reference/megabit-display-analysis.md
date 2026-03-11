@@ -1,5 +1,7 @@
 # Megabit Display Analysis
 
+> Status: Implemented (core formatting and display), Section 14 dynamic label NOT yet implemented
+
 How to show ROM sizes using historically accurate units -- Megabit (Mbit) for cartridge games, Megabytes (MB/GB) for disc and computer games.
 
 ---
@@ -426,14 +428,13 @@ From the user analysis (`docs/reference/user-analysis.md`):
 
 ## 10. Implementation Checklist
 
-1. Add `uses_megabit()` method to `System` in `replay-control-core/src/systems.rs`
-2. Add `find_system_uses_megabit(folder_name: &str) -> bool` public function for use from the app crate
-3. Add `format_size_megabit(bytes) -> String` to `replay-control-app/src/util.rs`
-4. Add `format_size_for_system(bytes, system) -> String` to `replay-control-app/src/util.rs`
-5. Update `rom_list.rs:476` to use `format_size_for_system(rom.size_bytes, &rom.game.system)`
-6. Update `game_detail.rs:55` to use `format_size_for_system(detail.size_bytes, &detail.game.system)`
-7. Add unit tests for Mbit formatting (edge cases: Kbit, exact Mbit, fractional Mbit, large values)
-8. Do NOT change: system_card.rs, home.rs, more.rs, metadata.rs
+1. ~~Add `uses_megabit()` method to `System` in `replay-control-core/src/systems.rs`~~ -- Instead, a `MEGABIT_SYSTEMS` const list is defined directly in `replay-control-app/src/util.rs` (duplicated so it works in WASM/hydrate builds where the core crate is unavailable). Done.
+2. ~~Add `find_system_uses_megabit(folder_name: &str) -> bool` public function~~ -- Not needed; `MEGABIT_SYSTEMS.contains(&system)` used inline. Done.
+3. Add `format_size_megabit(bytes) -> String` to `replay-control-app/src/util.rs` -- Done.
+4. Add `format_size_for_system(bytes, system) -> String` to `replay-control-app/src/util.rs` -- Done.
+5. Update `game_detail.rs` to use `format_size_for_system(detail.size_bytes, &system)` -- Done (line 57).
+6. Add unit tests for Mbit formatting (edge cases: Kbit, exact Mbit, fractional Mbit, large values) -- Done (comprehensive tests in `util.rs`).
+7. Do NOT change: system_card.rs, home.rs, more.rs, metadata.rs -- Correct, not changed.
 
 ### Test cases
 
@@ -591,6 +592,8 @@ On X68000, 1,005 M3U files reference ~1,863 .dim files. After disc-file hiding, 
 ---
 
 ## 14. Size Label Semantics: "File Size" vs "ROM Size"
+
+> Status: NOT yet implemented. The game detail page (`game_detail.rs:221`) still uses the hardcoded `game_detail.file_size` i18n key for all systems. The `game_detail.rom_size` key does not exist in `i18n.rs` yet.
 
 Now that cartridge systems display Megabit units, the label "File Size" in the game detail page creates a semantic mismatch. Showing "File Size: 16 Mbit" is misleading because Mbit refers to the ROM chip capacity of the original cartridge, not the file on disk. This section analyzes approaches to fix the label and their implications.
 

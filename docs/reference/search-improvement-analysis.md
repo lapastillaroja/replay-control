@@ -1,7 +1,7 @@
 # Search Improvement Analysis
 
-> Status: Implemented (Phases 1-3)
-> Date: 2026-03-10
+> Status: Implemented (Phases 1-3, 5 partial, 6)
+> Date: 2026-03-11
 
 ## Problem Statement
 
@@ -32,18 +32,9 @@ This happens because search results are filtered from an alphabetically sorted l
 
 3. **Caching** (`replay-control-app/src/api/mod.rs` -- `RomCache`): The sorted list is cached for 30 seconds to avoid repeated filesystem scans.
 
-4. **Search filtering** (`replay-control-app/src/server_fns.rs` -- `get_roms_page()`): A simple `contains()` filter on the display name and filename:
+4. **Search scoring** (`replay-control-app/src/server_fns/search.rs` -- `search_score()`): A multi-tier scoring function that assigns a relevance score based on match quality (exact > prefix > word-boundary > substring > filename-only > word-level), with bonuses for short names and preferred region, and penalties for hacks/translations/pre-release ROMs.
 
-```rust
-let q = search.to_lowercase();
-all_roms.into_iter().filter(|r| {
-    let display = r.game.display_name.as_deref().unwrap_or(&r.game.rom_filename);
-    display.to_lowercase().contains(&q)
-        || r.game.rom_filename.to_lowercase().contains(&q)
-}).collect()
-```
-
-5. **Pagination** (`get_roms_page()`): After filtering, the results are paginated with `skip(offset).take(limit)`.
+5. **Pagination** (`server_fns/roms.rs` -- `get_roms_page()`): After scoring and sorting, results are paginated with `skip(offset).take(limit)`.
 
 6. **UI** (`replay-control-app/src/components/rom_list.rs`): The `RomList` component renders results with a debounced search bar (300ms delay), infinite scroll, and URL query param sync.
 
@@ -286,32 +277,19 @@ if !info.year.is_empty() && info.year == query {
 }
 ```
 
-### Phase 5: Search Filters (Future)
+### Phase 5: Search Filters (Partially Implemented)
 
-Add filter chips/toggles in the UI to exclude categories:
+Filter toggles to exclude categories. The following are implemented in both `get_roms_page()` and `global_search()`:
 
-- [ ] Hide hacks
-- [ ] Hide translations
-- [ ] Hide betas/protos
+- [x] Hide hacks (`hide_hacks: bool`)
+- [x] Hide translations (`hide_translations: bool`)
+- [x] Hide betas/protos (`hide_betas: bool`)
+- [x] Hide clones (`hide_clones: bool` -- arcade only, checks `arcade_db`)
+- [x] Genre filter (`genre: String` -- exact match on normalized genre)
+- [x] Multiplayer-only filter (`multiplayer_only: bool` -- players >= 2)
 - [ ] Region filter (USA only, Europe only, etc.)
-- [ ] Genre filter
 
-These filters would be sent as additional parameters to `get_roms_page()` and applied before scoring.
-
-On the server side, filtering before scoring is cheaper:
-
-```rust
-#[server(prefix = "/sfn")]
-pub async fn get_roms_page(
-    system: String,
-    offset: usize,
-    limit: usize,
-    search: String,
-    hide_hacks: bool,
-    hide_translations: bool,
-    hide_prerelease: bool,
-) -> Result<RomPage, ServerFnError> { ... }
-```
+Filters are applied before search scoring on the server side for efficiency.
 
 ---
 
@@ -334,24 +312,23 @@ pub async fn get_roms_page(
 
 ### Step 3: Scored Search ✓
 
-**Where**: `replay-control-app/src/server_fns.rs` -- `search_score()` + `get_roms_page()`
+**Where**: `replay-control-app/src/server_fns/search.rs` -- `search_score()` + `get_roms_page()` in `server_fns/roms.rs`
 
-- Added `search_score(query, display_name, filename) -> u32` with:
-  - Base score: exact match (10K) > starts_with (5K) > word_starts_with (2K) > contains (1K) > filename_only (500)
+- Added `search_score(query, display_name, filename, region_pref) -> u32` with:
+  - Base score: exact match (10K) > starts_with (5K) > word_starts_with (2K) > contains (1K) > filename_only (500) > word-level (400/300)
   - Length bonus: +100 for short names (< 40 chars)
   - Tier penalty: -200 for hacks, -250 for pre-release, -300 for pirate
-  - Region bonus: +20 World, +15 USA, +10 Europe, +5 Japan
+  - Region bonus: based on `RegionPreference` sort_key (+20/+15/+10/+5/+0)
 - `get_roms_page()` now scores and sorts by relevance when a search query is active
+- `global_search()` uses the same scoring across all systems
 
-### Step 4: UI Filters (Optional — Future)
+### Step 4: UI Filters ✓ (Partial)
 
-**Where**: `replay-control-app/src/components/rom_list.rs` + `server_fns.rs`
+**Where**: `replay-control-app/src/components/rom_list.rs` + `server_fns/roms.rs` + `server_fns/search.rs`
 
-- Add filter toggles to the search bar area
-- Pass filter params to `get_roms_page()`
-- Filter before scoring on the server
-
-**Effort**: Medium. UI work + additional server fn params.
+- Filter toggles added to the ROM list and global search pages
+- `get_roms_page()` and `global_search()` accept `hide_hacks`, `hide_translations`, `hide_betas`, `hide_clones`, `genre`, and `multiplayer_only` parameters
+- Filters are applied before scoring on the server
 
 ---
 
@@ -401,12 +378,13 @@ pub async fn get_roms_page(
 
 ## Files to Modify
 
-| File | Change |
-|------|--------|
-| `replay-control-core/src/rom_tags.rs` | Add `RomTier`, `RegionPriority`, `classify()`, `base_title()` |
-| `replay-control-core/src/roms.rs` | Use tiered sort in `list_roms()` |
-| `replay-control-app/src/server_fns.rs` | Replace `contains()` filter with scored search in `get_roms_page()` |
-| `replay-control-app/src/components/rom_list.rs` | (Phase 4+) Add filter toggles |
+| File | Change | Status |
+|------|--------|--------|
+| `replay-control-core/src/rom_tags.rs` | Add `RomTier`, `RegionPriority`, `classify()`, `base_title()` | Done |
+| `replay-control-core/src/roms.rs` | Use tiered sort in `list_roms()` | Done |
+| `replay-control-app/src/server_fns/search.rs` | `search_score()` with word-level matching, `global_search()` | Done |
+| `replay-control-app/src/server_fns/roms.rs` | Scored search in `get_roms_page()` with filter params | Done |
+| `replay-control-app/src/components/rom_list.rs` | Filter toggles in UI | Done |
 
 ---
 
@@ -416,6 +394,379 @@ pub async fn get_roms_page(
 
 2. **Should hacks be hidden by default?** Some users have ROM sets that are almost entirely hacks (e.g., Super Mario World hack collections). Hiding hacks by default would make their collection appear nearly empty. A toggle is safer than a default.
 
-3. **Fuzzy matching**: Should we add Levenshtein distance or similar fuzzy matching? Probably not in Phase 1 -- the normalized title fallback in `game_db.rs` already handles most misspelling cases, and the `contains()` check catches partial matches well. Fuzzy matching adds complexity and can produce surprising results (matching unrelated games).
+3. ~~**Fuzzy matching**: Should we add Levenshtein distance or similar fuzzy matching? Probably not in Phase 1 -- the normalized title fallback in `game_db.rs` already handles most misspelling cases, and the `contains()` check catches partial matches well. Fuzzy matching adds complexity and can produce surprising results (matching unrelated games).~~ **Addressed in Phase 6 below** -- word-level matching (not Levenshtein) solves the real problem.
 
 4. **Cross-system search**: Currently search is per-system (you browse to SNES, then search within SNES). A global search across all systems would be a bigger feature. The scoring approach would still work -- just add a system priority and run the search across all cached ROM lists.
+
+---
+
+## Phase 6: Word-Level Fuzzy Matching
+
+> Status: Implemented
+> Date: 2026-03-11
+
+### Problem
+
+Searching "sonic 3" returns zero results for "Sonic The Hedgehog 3" because the current `search_score()` treats the entire query as a single substring. The string `"sonic 3"` does not appear as a contiguous substring in `"sonic the hedgehog 3"`, so the match fails at every tier and returns 0.
+
+This is the most common complaint pattern for multi-word searches: users type the game name with filler words omitted, expecting the search to find games where all typed words appear somewhere in the title.
+
+**More examples of queries that currently fail:**
+
+| Query | Expected match | Why it fails |
+|-------|---------------|--------------|
+| `sonic 3` | Sonic The Hedgehog 3 | "sonic 3" not a contiguous substring |
+| `mario kart 64` | Super Mario Kart (SNES) / Mario Kart 64 (N64) | "mario kart 64" is not in the SNES title |
+| `street fighter 2` | Street Fighter II - The World Warrior | "2" vs "II" -- different issue (numeral normalization, out of scope) |
+| `zelda link` | The Legend of Zelda - A Link to the Past | "zelda link" not contiguous |
+| `mega man x` | Mega Man X | This one actually works (contiguous substring), included for contrast |
+| `castlevania 4` | Super Castlevania IV | "4" vs "IV" -- numeral normalization, out of scope |
+
+Note: numeral normalization ("2" matching "II", "4" matching "IV") is a separate problem and is explicitly out of scope for this phase. The focus here is on non-contiguous word matching.
+
+### Current Scoring Tiers (for reference)
+
+```
+Tier                    Base Score   Condition
+────────────────────    ──────────   ─────────
+Exact match             10,000       display_lower == query
+Prefix match             5,000       display_lower.starts_with(query)
+Word-boundary match      2,000       any word in display starts with query
+Substring match          1,000       display_lower.contains(query)
+Filename-only match        500       filename_lower.contains(query)
+No match                     0       (filtered out)
+```
+
+All tiers treat the query as a single contiguous string. The proposal adds a new tier between "filename-only" and "no match" for word-level matching.
+
+### Proposed Algorithm
+
+#### When to activate
+
+Word matching only activates when:
+1. The query contains whitespace (i.e., multiple words) -- single-word queries keep current behavior unchanged
+2. The full query did NOT already match via any existing tier (substring or above)
+
+This means word matching is a **fallback**, not a replacement. If "sonic 3" happened to appear as a substring (e.g., in a title like "Sonic 3 & Knuckles"), that would still match at the higher substring tier.
+
+#### Pseudocode
+
+```
+fn search_score(query, display_name, filename, region_pref) -> u32:
+    display_lower = display_name.to_lowercase()
+    filename_lower = filename.to_lowercase()
+
+    // --- Existing tiers (unchanged) ---
+    base = if display_lower == query:          10,000
+           elif display_lower.starts_with(query):  5,000
+           elif word_starts_with(display_lower, query): 2,000
+           elif display_lower.contains(query):  1,000
+           elif filename_lower.contains(query):   500
+           else: 0
+
+    if base > 0:
+        return base + bonuses - penalties   // existing logic, unchanged
+
+    // --- NEW: Word-level matching (fallback) ---
+    if !query.contains(' '):
+        return 0   // single-word query already failed all tiers
+
+    query_words = query.split_whitespace()   // e.g., ["sonic", "3"]
+    if query_words.len() < 2:
+        return 0   // safety check
+
+    // Check display name first, then filename
+    target = display_lower
+    target_words = display_lower.split_whitespace()
+    is_filename_only = false
+
+    matched_count = count of query_words where target.split_whitespace()
+                    .any(|tw| tw.starts_with(qw))
+
+    if matched_count < query_words.len():
+        // Try filename
+        target_words = filename_lower.split_whitespace()
+        matched_count_fn = count of query_words where target_words
+                           .any(|tw| tw.starts_with(qw))
+        if matched_count_fn > matched_count:
+            matched_count = matched_count_fn
+            target_words = filename_lower.split_whitespace()
+            is_filename_only = true
+
+    if matched_count < query_words.len():
+        return 0   // not all query words found
+
+    // --- Scoring ---
+    // All query words matched. Base score = 400 (below filename-only=500,
+    // because word matching is less precise than substring containment).
+    base = if is_filename_only: 300 else: 400
+
+    // Bonus: word order preservation
+    // If query words appear in the same relative order in the title,
+    // it's a stronger signal. E.g., "sonic 3" in "Sonic The Hedgehog 3"
+    // has sonic before 3 -- order preserved.
+    if words_in_order(query_words, target_words):
+        base += 50
+
+    // Bonus: word coverage (what fraction of title words did the query cover?)
+    // "sonic 3" matches 2 of 4 words in "Sonic The Hedgehog 3" = 50%
+    // "sonic hedgehog 3" matches 3 of 4 = 75%
+    // Higher coverage = more specific match = higher score
+    coverage = matched_count as f32 / target_words.len() as f32
+    base += (coverage * 50.0) as u32   // 0-50 bonus
+
+    // Bonus: adjacency -- consecutive query words that are also adjacent
+    // in the title get a bonus. "mario kart" in "Super Mario Kart" has
+    // both words adjacent in the title.
+    // (Implementation detail: iterate query word pairs, check if their
+    // positions in the title are consecutive)
+    adjacent_pairs = count_adjacent_pairs(query_words, target_words)
+    base += adjacent_pairs * 20
+
+    return base + bonuses - penalties   // same tier/region/length bonuses
+```
+
+#### Helper: `words_in_order`
+
+```
+fn words_in_order(query_words, target_words) -> bool:
+    last_pos = -1
+    for qw in query_words:
+        found_pos = target_words.iter().position(|tw| tw.starts_with(qw))
+        if found_pos is None or found_pos <= last_pos:
+            return false
+        last_pos = found_pos
+    return true
+```
+
+Note: uses `starts_with` rather than exact equality for word matching. This means "son" in query would match "sonic" in the title. This is consistent with the existing word-boundary tier which also uses `starts_with`.
+
+### Updated Tier Table
+
+```
+Tier                        Base Score   Condition
+────────────────────────    ──────────   ─────────
+Exact match                 10,000       display_lower == query
+Prefix match                 5,000       display_lower.starts_with(query)
+Word-boundary match          2,000       any word starts with query (single string)
+Substring match              1,000       display_lower.contains(query)
+Filename-only match            500       filename_lower.contains(query)
+All-words match (display)      400       all query words found in display (+ bonuses up to ~520)
+All-words match (filename)     300       all query words found in filename (+ bonuses up to ~420)
+No match                         0       (filtered out)
+```
+
+The gap between tiers is intentional:
+- Substring match (1,000) is significantly above all-words match (400) because a contiguous substring is a stronger signal
+- All-words in display (400) is above all-words in filename (300) for the same reason as the existing display > filename preference
+- The bonuses (order + coverage + adjacency) can add up to ~120 points, which keeps word matches well below substring matches but allows differentiation within the word-match tier
+
+### Ranking Within Word Matches
+
+When multiple games match via word-level matching, the scoring differentiates them:
+
+| Query | Title | Words | Order? | Coverage | Adj. | Total |
+|-------|-------|-------|--------|----------|------|-------|
+| `sonic 3` | Sonic The Hedgehog 3 | 2/2 | yes (+50) | 2/4=50% (+25) | 0 | 475 |
+| `sonic 3` | Sonic 3D Blast | 2/2 | yes (+50) | 2/3=67% (+33) | 1 (+20) | 503 |
+| `sonic 3` | Sonic The Hedgehog 3 (shorter name, +100 length bonus) | 2/2 | yes (+50) | 2/4=50% (+25) | 0 | 575 |
+| `sonic 3` | Sonic 3D Blast (shorter, +100) | 2/2 | yes (+50) | 2/3=67% (+33) | 1 (+20) | 603 |
+
+Hmm -- "Sonic 3D Blast" scores higher than "Sonic The Hedgehog 3" because it has higher word coverage and an adjacency bonus ("sonic 3" -- "3" starts the word "3D" which is adjacent to "sonic"). This is actually a problem: the user searching "sonic 3" almost certainly wants "Sonic The Hedgehog 3", not "Sonic 3D Blast".
+
+**Mitigation**: Add an **exact word match bonus**. When a query word matches a title word exactly (not just starts_with), it gets extra points. In "Sonic The Hedgehog 3", the word "3" matches exactly. In "Sonic 3D Blast", "3" only matches via starts_with ("3D" starts with "3"). This distinction can add +30 per exact word match:
+
+| Query | Title | Exact words | Adjusted total |
+|-------|-------|-------------|----------------|
+| `sonic 3` | Sonic The Hedgehog 3 | 2 (sonic, 3) = +60 | 635 |
+| `sonic 3` | Sonic 3D Blast | 1 (sonic) = +30 | 633 |
+
+Close, but "Sonic The Hedgehog 3" now edges ahead. The length bonus (+100 for short names) also helps since both titles are under 40 characters, so it cancels out here. In practice, the tier/region penalties will further separate results.
+
+**Revised bonus values**: Exact word match bonus should be +30 per word. This makes exact word matches consistently outrank prefix-only matches.
+
+### Edge Cases
+
+#### 1. Short query words matching too broadly
+
+Query `"a 3"` -- the word "a" appears in almost every title. Should this match?
+
+**Decision**: Yes, but it will rank low because the word "a" contributes very little coverage and the overall match quality is poor. The 2-word minimum for activating word matching prevents truly degenerate single-character queries. The existing debounce (300ms) and the fact that users rarely search for "a 3" make this acceptable.
+
+No minimum word length filter is needed. The coverage scoring naturally penalizes short, common words.
+
+#### 2. Duplicate words in query
+
+Query `"sonic sonic"` -- should it match "Sonic The Hedgehog"?
+
+**Decision**: Yes. Each query word is checked independently. Both instances of "sonic" will find a match in the title. This is harmless and not worth special-casing.
+
+#### 3. Query words that are substrings of title words
+
+Query `"son 3"` -- "son" starts the word "Sonic" in "Sonic The Hedgehog 3".
+
+**Decision**: Match. The `starts_with` check is consistent with the existing word-boundary tier. The exact-word-match bonus (+30) won't apply to "son" but will apply to "3", naturally ranking this below "sonic 3".
+
+#### 4. Punctuation and special characters
+
+Query `"mario bros."` -- the period in "bros." doesn't appear in some display names.
+
+**Decision**: The query is already lowercased. Word splitting via `split_whitespace` handles this. The period stays attached to "bros." so `"bros."` would need to start a title word. This could be improved by stripping punctuation from both query and title words before comparison, similar to how `normalize_filename` strips non-alphanumeric characters. **Recommendation**: normalize both query words and title words by stripping trailing punctuation (periods, commas, colons, exclamation marks) before comparison.
+
+#### 5. Numbers as words
+
+Query `"3"` alone -- this is a single-word query, so word matching does NOT activate. It goes through existing tiers. `"3"` as a substring will match many titles (scoring 1,000 for substring match). This is fine -- the user gets many results but they're all relevant.
+
+#### 6. Hyphenated words
+
+Title: `"X-Men - Mutant Apocalypse"` with query `"x men"`.
+
+`split_whitespace` would produce `["X-Men", "-", "Mutant", "Apocalypse"]` for the title. The query word "x" would match "X-Men" (starts_with), and "men" would match... nothing, because no word starts with "men" ("X-Men" starts with "X", not "men").
+
+**Recommendation**: When splitting title words, also split on hyphens. `"X-Men"` becomes `["X", "Men"]`. This allows `"x men"` to match. Apply the same to `" - "` separators (common in subtitles like `"Zelda - A Link to the Past"`).
+
+#### 7. Performance
+
+Word splitting adds minimal overhead. For each ROM that fails all existing tiers (returns 0), we additionally:
+- Split the query into words: O(q) where q = query length (tiny, typically < 30 chars)
+- Split the display name into words: O(n) where n = display name length (typically < 60 chars)
+- For each query word, scan title words: O(qw * tw) where qw = query word count (2-4) and tw = title word count (3-8)
+
+Total additional work per ROM: ~O(30) character comparisons. For a system with 10,000 ROMs where none match via substring (worst case), this adds ~300K character comparisons -- well under 1ms on any hardware, including the Pi.
+
+The word splitting of the query string should be done **once** before the loop, not inside `search_score`. This means either:
+- (a) Pre-split the query and pass `&[&str]` to `search_score`, or
+- (b) Add a wrapper function that pre-splits and calls `search_score` per ROM, or
+- (c) Accept the minor redundancy of re-splitting a 2-4 word query string inside `search_score` (the allocator cost is negligible for such short strings)
+
+**Recommendation**: Option (c) for simplicity. The query is tiny and the allocation is insignificant compared to the I/O and serialization costs of the server function call.
+
+### Implementation Plan
+
+#### Files modified
+
+| File | Change |
+|------|--------|
+| `replay-control-app/src/server_fns/search.rs` | Extended `search_score()` with word-matching fallback, added helper functions |
+
+No changes were needed outside `search_score()`. The function's signature includes `region_pref: RegionPreference` (added by the region preference feature). The `global_search` server function and `get_roms_page` already use `search_score` correctly -- they just get more non-zero results.
+
+#### Implementation steps
+
+1. **Add word-matching logic to `search_score()`** after the existing `return 0` branch:
+   - Check if query contains whitespace (multi-word)
+   - Split query into words
+   - Split display name into words (also splitting on hyphens)
+   - Check if all query words match (via `starts_with`) any title word
+   - If yes, compute score with order/coverage/adjacency/exact-word bonuses
+   - If display name fails, try filename words (lower base score)
+
+2. **Add helper functions** (private, in the same file):
+   - `split_into_words(s: &str) -> Vec<&str>` -- split on whitespace and hyphens, strip trailing punctuation
+   - `words_in_order(query_words: &[&str], title_words: &[&str]) -> bool`
+   - `count_adjacent_pairs(query_words: &[&str], title_words: &[&str]) -> u32`
+   - `count_exact_matches(query_words: &[&str], title_words: &[&str]) -> u32`
+
+3. **Add tests** covering:
+   - `"sonic 3"` matches `"Sonic The Hedgehog 3"` (the motivating case)
+   - `"sonic 3"` ranks `"Sonic The Hedgehog 3"` above `"Sonic 3D Blast"`
+   - `"zelda link"` matches `"The Legend of Zelda - A Link to the Past"`
+   - `"mario kart"` matches `"Super Mario Kart"`
+   - `"x men"` matches `"X-Men - Mutant Apocalypse"` (hyphen splitting)
+   - Single-word queries do NOT activate word matching (unchanged behavior)
+   - Queries that match via substring do NOT fall through to word matching
+   - `"sonic mario"` does NOT match `"Sonic The Hedgehog 3"` (not all words present)
+   - Word-match scores are always below substring-match scores (tier ordering preserved)
+
+### Test Cases (Detailed)
+
+```rust
+// --- Word-level matching (new tier) ---
+
+#[test]
+fn word_match_sonic_3() {
+    let score = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+    assert!(score > 0, "\"sonic 3\" should match \"Sonic The Hedgehog 3\", got {score}");
+    assert!(score < 1000, "Word match ({score}) should be below substring tier (1000)");
+}
+
+#[test]
+fn word_match_zelda_link() {
+    let score = search_score(
+        "zelda link",
+        "The Legend of Zelda - A Link to the Past",
+        "Legend of Zelda, The - A Link to the Past (USA).sfc",
+        PREF,
+    );
+    assert!(score > 0, "\"zelda link\" should match Zelda ALTTP");
+}
+
+#[test]
+fn word_match_ranks_exact_word_above_prefix() {
+    // "sonic 3" should rank "Sonic The Hedgehog 3" (exact "3") above
+    // "Sonic 3D Blast" (prefix "3" matches "3D")
+    let hedgehog = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+    let blast = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF);
+    assert!(hedgehog > blast, "Hedgehog 3 ({hedgehog}) should beat 3D Blast ({blast})");
+}
+
+#[test]
+fn word_match_does_not_activate_for_single_word() {
+    // Single-word query that fails existing tiers should still return 0
+    let score = search_score("zzzznotfound", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+    assert_eq!(score, 0);
+}
+
+#[test]
+fn word_match_requires_all_words() {
+    // "sonic mario" -- "mario" is not in "Sonic The Hedgehog 3"
+    let score = search_score("sonic mario", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+    assert_eq!(score, 0, "Not all query words present, should return 0");
+}
+
+#[test]
+fn word_match_below_substring() {
+    // A substring match should always score higher than a word match
+    let substring = search_score("sonic", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+    let word = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+    assert!(substring > word, "Substring ({substring}) should beat word match ({word})");
+}
+
+#[test]
+fn word_match_x_men_hyphen() {
+    let score = search_score(
+        "x men",
+        "X-Men - Mutant Apocalypse",
+        "X-Men - Mutant Apocalypse (USA).sfc",
+        PREF,
+    );
+    assert!(score > 0, "\"x men\" should match \"X-Men\" via hyphen splitting");
+}
+
+#[test]
+fn word_match_preserves_existing_substring_match() {
+    // "mega man x" is a contiguous substring -- should match at substring tier, not word tier
+    let score = search_score("mega man x", "Mega Man X", "Mega Man X (USA).sfc", PREF);
+    assert!(score >= 5000, "Contiguous match should hit prefix tier, got {score}");
+}
+
+#[test]
+fn word_match_mario_kart() {
+    let score = search_score("mario kart", "Super Mario Kart", "Super Mario Kart (USA).sfc", PREF);
+    // "mario kart" IS a contiguous substring of "Super Mario Kart", so this
+    // should match at substring tier (1000), not word tier.
+    assert!(score >= 1000, "\"mario kart\" is a substring, should score >= 1000, got {score}");
+}
+```
+
+### How Other Retro Gaming UIs Handle This
+
+**LaunchBox** uses a word-tokenized search similar to this proposal. Typing "sonic 3" finds all games where both "sonic" and "3" appear in the title. It also supports field-specific search (e.g., `developer:sega`), but that's beyond what we need.
+
+**EmulationStation (ES-DE v3.x)** uses a simple substring search similar to our current implementation. It does NOT support word-level matching -- typing "sonic 3" will not find "Sonic The Hedgehog 3". This is a known limitation users complain about.
+
+**RetroArch** does not have a text search feature in its standard interfaces (Ozone, XMB). The desktop WIMP interface has database-driven search that operates on metadata fields, not filenames.
+
+**Pegasus Frontend** supports regex-based search, which power users can leverage for word matching but is not user-friendly for casual use.
+
+Our proposed approach matches LaunchBox's behavior, which is widely considered the best search experience among retro gaming frontends.

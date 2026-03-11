@@ -168,6 +168,7 @@ pub fn MetadataPage() -> impl IntoView {
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.images")}</h2>
                 <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.images_hint")}</p>
+                <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.images_performance_notice")}</p>
                 <ImageSection />
             </section>
 

@@ -113,11 +113,13 @@ DB entries come from two sources: LaunchBox XML import ("launchbox") and thumbna
 
 3,598 ROMs exist on the filesystem but have no DB entry at all (neither LaunchBox nor thumbnails matched them).
 
-### Cloned Repos on Pi
+### Cloned Repos on Pi (at time of analysis)
 
-21 repos cloned at `/media/usb/.replay-control/tmp/libretro-thumbnails/`:
+21 repos were cloned at `/media/usb/.replay-control/tmp/libretro-thumbnails/`:
 
 Amstrad - CPC, Atomiswave, Commodore - Amiga, DOS, FBNeo - Arcade Games, MAME, Nintendo - Nintendo 64, Nintendo - Nintendo Entertainment System, Nintendo - Super Nintendo Entertainment System, Sega - 32X, Sega - Dreamcast, Sega - Game Gear, Sega - Master System - Mark III, Sega - Mega-CD - Sega CD, Sega - Mega Drive - Genesis, Sega - Naomi, Sega - Naomi 2, Sega - Saturn, Sega - SG-1000, Sharp - X68000, Sony - PlayStation
+
+**Note**: Repos are now auto-deleted after matching (see `image-download-redesign.md`). New imports will not accumulate repos in `tmp/`.
 
 ## Systems with Poor Coverage and Root Causes
 
@@ -224,7 +226,7 @@ Games where the repo uses an abbreviated form: `"MSR - Metropolis Street Racer"`
 
 ### 6. Incomplete repo clones due to disk space
 
-The Pi's disk is 100% full. The MAME repo clone is incomplete (5.1GB vs 6.0GB full), missing Named_Snaps entirely. This directly causes the 0% snap rate for arcade_mame.
+The Pi's disk was 100% full at time of analysis. The MAME repo clone was incomplete (5.1GB vs 6.0GB full), missing Named_Snaps entirely. This directly caused the 0% snap rate for arcade_mame. **UPDATE**: Repos are now auto-deleted after matching, preventing the disk from filling up with cached repos.
 
 ### 7. Dual-file systems (dim + m3u)
 
@@ -262,11 +264,11 @@ The matching fails when the **base title itself differs** between ROM and repo (
 
 ### High Priority
 
-1. **Free disk space on Pi or use larger storage** -- The 100% full disk caused incomplete MAME repo clone (0% snaps for 4,605 games) and likely the empty Commodore Amiga clone. Clearing the cloned repos after import would reclaim ~40GB+.
+1. **Free disk space on Pi or use larger storage** -- The 100% full disk caused incomplete MAME repo clone (0% snaps for 4,605 games) and likely the empty Commodore Amiga clone. **UPDATE**: Auto-delete of repos after matching is now implemented (see `image-download-redesign.md`), which prevents the 10:1 disk space overhead from recurring. A "Clear Cache" button also allows reclaiming space from any remaining cached repos.
 
 2. **Expand arcade_db coverage** -- 1,111 MAME ROMs and an unknown number of FBNeo ROMs lack display name translations. Expanding the database (from a more complete MAME XML) would significantly improve arcade boxart matching. Current coverage: MAME 36% boxart -> could reach ~60-70% with better DB coverage.
 
-3. **Re-run image import after freeing disk** -- Many systems would benefit from a fresh import with complete repo clones.
+3. **Re-run image import after freeing disk** -- Many systems would benefit from a fresh import with complete repo clones. With the auto-delete feature, re-importing will not fill the disk.
 
 ### Medium Priority
 

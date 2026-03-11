@@ -45,7 +45,7 @@ replay/
 
 The app layer provides:
 - 12 page routes with SSR + client-side hydration
-- 51 server functions across 8 domain modules (RPC calls from client to server)
+- 55 server functions across 8 domain modules (RPC calls from client to server)
 - REST API endpoints for external access
 - SSE (Server-Sent Events) for real-time progress streaming
 - IntersectionObserver-based infinite scroll
@@ -71,7 +71,7 @@ After initial page load, the WASM bundle hydrates and all subsequent navigation 
 
 ### Server Function Registration
 
-Because server functions are defined in a library crate, Rust's linker strips the `inventory` auto-registration entries. All 51 server functions require explicit `register_explicit::<T>()` calls in `main.rs`. This is a known Leptos limitation with the library crate pattern.
+Because server functions are defined in a library crate, Rust's linker strips the `inventory` auto-registration entries. All 55 server functions require explicit `register_explicit::<T>()` calls in `main.rs`. This is a known Leptos limitation with the library crate pattern.
 
 ### State Management
 
@@ -131,7 +131,7 @@ Two separate config files serve different purposes:
 | `RebootButton` | `reboot_button.rs` | Shared reboot button with loading state and result display, used by wifi and nfs pages |
 | `SearchShortcut` | `lib.rs` | Invisible component installing "/" keyboard shortcut for search navigation |
 
-### Server Functions (51 public async functions)
+### Server Functions (55 public async functions)
 
 Split across 8 domain modules in `server_fns/`:
 
@@ -147,14 +147,14 @@ Split across 8 domain modules in `server_fns/`:
 **Search & Filters (4)** -- `search.rs`:
 `global_search`, `get_all_genres`, `get_system_genres`, `random_game`
 
-**Settings (11)** -- `settings.rs`:
-`get_wifi_config`, `save_wifi_config`, `get_nfs_config`, `save_nfs_config`, `get_hostname`, `save_hostname`, `get_skins`, `set_skin`, `set_skin_sync`, `restart_replay_ui`, `reboot_system`
+**Settings (13)** -- `settings.rs`:
+`get_wifi_config`, `save_wifi_config`, `get_nfs_config`, `save_nfs_config`, `get_hostname`, `save_hostname`, `get_skins`, `set_skin`, `set_skin_sync`, `restart_replay_ui`, `reboot_system`, `get_region_preference`, `set_region_preference`
 
 **Metadata (7)** -- `metadata.rs`:
 `get_metadata_stats`, `import_launchbox_metadata`, `download_metadata`, `get_import_progress`, `get_system_coverage`, `clear_metadata`, `regenerate_metadata`
 
-**Images (8)** -- `images.rs`:
-`import_system_images`, `import_all_images`, `rematch_all_images`, `cancel_image_import`, `get_image_import_progress`, `get_image_coverage`, `get_image_stats`, `clear_images`
+**Images (9)** -- `images.rs`:
+`import_system_images`, `import_all_images`, `rematch_all_images`, `cancel_image_import`, `get_image_import_progress`, `get_image_coverage`, `get_image_stats`, `clear_images`, `clear_image_cache`
 
 **Videos (4)** -- `videos.rs`:
 `get_game_videos`, `add_game_video`, `remove_game_video`, `search_game_videos`
@@ -198,6 +198,7 @@ Kept for external tool access (curl, scripts):
 | `launch.rs` | 143 | Game launching via autostart + systemctl with health check |
 | `videos.rs` | 98 | Video storage as JSON in `.replay-control/videos.json` |
 | `game_ref.rs` | 82 | Display name resolution from arcade_db/game_db with tag enrichment |
+| `settings.rs` | 123 | App-specific settings (region preference) with read/write to `.replay-control/settings.cfg` |
 | `error.rs` | 45 | `thiserror`-based error enum |
 | `lib.rs` | 22 | Module declarations, `metadata` feature gate |
 
@@ -240,11 +241,10 @@ Kept for external tool access (curl, scripts):
 - Server functions map core errors via `ServerFnError::new()`
 
 **Testing**:
-- 155 `#[test]` functions in the core crate across 11 modules
-- 6 `#[test]` functions in the app crate (`util.rs` only)
-- No integration tests or end-to-end tests
+- 232 `#[test]` functions in the core crate across 13 modules (including `settings.rs` and `thumbnails.rs`)
+- 50 `#[test]` functions in the app crate (`util.rs` and `server_fns/search.rs`)
 - Core crate has good unit test coverage for data processing logic
-- App crate (components, server functions) has no test coverage
+- App crate has integration-level tests covering REST API endpoints, server function invocation, and SSR smoke tests
 
 ### Code Consistency
 
@@ -265,7 +265,7 @@ Kept for external tool access (curl, scripts):
 
 2. **game_detail.rs at 1,195 lines**: 8+ sub-components for a single page. The video section alone is substantial. Some of these could be extracted to their own files.
 
-3. **No app-layer tests**: The 6 tests in `util.rs` are the only app crate tests. Server functions, components, and the API layer are untested.
+3. **~~No app-layer tests~~ (Addressed)**: The app crate now has 50 tests across `util.rs` and `server_fns/search.rs`, covering REST API endpoints, server function invocation, and SSR smoke tests. Router extracted to `build_router()` for test reuse.
 
 ---
 
@@ -440,9 +440,29 @@ This section documents features and changes added after the initial analysis was
 
 **i18n Simplified**: The locale system was simplified to English-only (single `En` variant). The multi-locale infrastructure (match on locale+key) remains for future expansion but currently has no runtime overhead.
 
-**SSE Progress Streaming**: Image import progress switched from polling to Server-Sent Events at `/sse/image-progress` with 200ms update interval. This provides smoother progress updates compared to the polling approach still used for metadata import.
+**SSE Progress Streaming**: Both image import and metadata import now use Server-Sent Events for real-time progress. Image progress streams at `/sse/image-progress` and metadata progress at `/sse/metadata-progress`, both with 200ms update intervals.
 
 **App-Specific Config**: Introduction of `.replay-control/settings.cfg` for app-specific settings, keeping the `replay.cfg` boundary clean.
+
+**Region Preference**: New dropdown on the More page (USA, Europe, Japan, World). Stored in `.replay-control/settings.cfg` via a dedicated `settings.rs` module in the core crate. Affects ROM sort order in `list_roms()` and region bonus in `search_score()`. New server functions: `get_region_preference`, `set_region_preference`.
+
+**Megabit Size Display**: 24 cartridge-based systems now show ROM sizes in Mbit/Kbit instead of MB. `uses_megabit()` method on `System`, `format_size_megabit()` and `format_size_for_system()` in `util.rs`. Dynamic label: "ROM Size" for cartridge systems, "File Size" for disc/computer systems. Applied in ROM list and game detail page only.
+
+**Image Download Redesign**: Repos auto-deleted after successful matching to prevent disk from filling up (~10:1 overhead eliminated). Download All processes systems sequentially (one at a time). Clear Cache button added to remove `tmp/` repos. Cache size shown in image stats. Re-match is truly offline (no staleness check, no network access).
+
+**Box Art Dedup**: `resolve_box_art_url` shared helper consolidates box art URL resolution across all server functions (ROM list, favorites, recents, search, game detail). Fixed search skipping metadata DB lookup.
+
+**CSS Split**: Single `style.css` split into 17 numbered partials (`_01-base.css` through `_17-responsive.css`) concatenated at build time via `build.rs`.
+
+**Integration Tests**: 15 new integration tests added to the app crate (REST API endpoints, server function invocation, SSR smoke tests). Router extracted to `build_router()` for test reuse. Total app crate tests: 50 (up from 6).
+
+**SSE Metadata Progress**: Metadata import switched from polling to SSE at `/sse/metadata-progress`, matching the pattern already used for image import.
+
+**New Thumbnail Mappings**: `commodore_amicd` maps to two repos (Commodore - CD32, Commodore - CDTV). `scummvm` maps to the ScummVM repo.
+
+**Incremental Release Compilation**: `incremental = true` added to the release profile in workspace `Cargo.toml`.
+
+**.replay-control Renames**: `config.cfg` renamed to `settings.cfg`, `Metadata.xml` renamed to `launchbox-metadata.xml` (old name accepted as fallback). `RC_DIR` deduplicated and moved to `storage.rs`. `StorageLocation::rc_dir()` method added. Filename constants centralized (`SETTINGS_FILE`, `LAUNCHBOX_XML`, `METADATA_DB_FILE`, `VIDEOS_FILE`).
 
 ---
 
@@ -468,13 +488,13 @@ api/
 
 The file has 1,195 lines with 8+ sub-components. The video section (`GameVideoSection`, `VideoEmbed`, `VideoRecommendations`, `RecommendationItem`) could be extracted to `components/video_section.rs`. The captures lightbox could move to `components/captures.rs`.
 
-**3. Unify metadata import progress to SSE**
+**3. ~~Unify metadata import progress to SSE~~ (Done)**
 
-Metadata import still uses polling (`get_import_progress()` server function called on a timer) while image import uses SSE. Both should use SSE for consistency and efficiency.
+Metadata import now uses SSE (`/sse/metadata-progress`) like image import. Both use Server-Sent Events for real-time progress streaming.
 
-**4. Add app-layer tests**
+**4. ~~Add app-layer tests~~ (Done)**
 
-The entire app crate (10,483 lines of Rust) has only 6 tests in `util.rs`. Server function logic -- especially `search_score()`, `resolve_game_info()`, and filter application -- should have unit tests.
+The app crate now has 50 tests covering `util.rs` and `server_fns/search.rs`, including REST API endpoint tests, server function invocation tests, and SSR smoke tests. The router is extracted to `build_router()` for test reuse.
 
 **5. Introduce typed filter state**
 
@@ -482,9 +502,9 @@ Filter state (hide_hacks, hide_translations, hide_betas, hide_clones, multiplaye
 
 ### Low Priority
 
-**6. CSS organization**
+**6. ~~CSS organization~~ (Done)**
 
-The single `style.css` (2,356 lines) could benefit from being split by page/component for maintainability. However, the current approach avoids CSS module complexity and keeps the build simple.
+The single `style.css` has been split into 17 numbered partial files (`_01-base.css` through `_17-responsive.css`) concatenated at build time via `build.rs`. This improves maintainability while keeping the final output as a single CSS file.
 
 **7. ~~Lazy-load embedded databases~~ (Won't implement)**
 
@@ -501,12 +521,12 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 ### Code Duplication
 
 1. **Filter logic** in `rom_list.rs` and `search.rs` -- similar filter chip rendering and state management
-2. **Box art URL resolution** appears in multiple server functions (`get_roms_page`, `get_favorites`, `get_recents`, `get_system_favorites`) with slightly different patterns
+2. **~~Box art URL resolution~~ (Fixed)** — consolidated into a shared `resolve_box_art_url` helper used consistently across `get_roms_page`, `get_favorites`, `get_recents`, `get_system_favorites`, and search
 
 ### Architectural Issues
 
 3. **api/mod.rs monolith** (1,439 lines) -- AppState, caching, background tasks, and import orchestration in one file
-4. **51 register_explicit calls in main.rs** -- Brittle: adding a server function requires remembering to add the registration. Forgetting causes silent runtime failures (function returns 404)
+4. **55 register_explicit calls in main.rs** -- Brittle: adding a server function requires remembering to add the registration. Forgetting causes silent runtime failures (function returns 404)
 5. **Mirror types in types.rs** -- Every core type used in server function signatures must be duplicated. Adding a field to a core type requires updating the mirror. The compiler does not enforce parity.
 
 ### Missing Features
@@ -524,8 +544,8 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 
 ### Testing Gaps
 
-13. **App crate almost untested** -- 10,483 lines of Rust with only 6 tests (`format_size` and `format_size_short`). Server functions, components, and API layer have zero test coverage.
-14. **No integration tests** -- No tests verify the full request flow (HTTP request --> server function --> core crate --> response)
+13. **~~App crate almost untested~~ (Addressed)** -- App crate now has 50 tests across `util.rs` and `server_fns/search.rs`, covering REST API endpoints, server functions, and SSR smoke tests. Router extracted to `build_router()` for test reuse.
+14. **~~No integration tests~~ (Addressed)** -- 15 integration tests verify the full request flow (HTTP request --> server function --> core crate --> response) using Axum `tower::ServiceExt::oneshot()`
 15. **No WASM tests** -- Client-side behavior (hydration, infinite scroll, debounce, keyboard shortcuts) is untested
 
 ---
@@ -557,7 +577,7 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 | `server_fns/metadata.rs` | 127 | Metadata import, download, coverage, clear, regenerate |
 | `server_fns/favorites.rs` | 113 | Favorites CRUD, organize, group, flatten |
 | `api/mod.rs` | 1,439 | AppState, RomCache, background tasks, import orchestration |
-| `main.rs` | 358 | CLI args, 51 register_explicit calls, Axum router setup |
+| `main.rs` | 358 | CLI args, 55 register_explicit calls, Axum router setup, `build_router()` extraction |
 | `api/favorites.rs` | 104 | REST API favorites routes |
 | `api/roms.rs` | 97 | REST API ROM routes |
 | `api/upload.rs` | 68 | REST API upload handler |
@@ -631,22 +651,28 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 
 | Crate | Test Functions | Lines with Tests | Notes |
 |-------|---------------|-----------------|-------|
-| Core | 155 | All major modules | Good coverage of data processing logic |
-| App | 6 | `util.rs` only | No tests for server functions, components, or API |
-| **Total** | **161** | | |
+| Core | 232 | All major modules | Good coverage of data processing logic |
+| App | 50 | `util.rs`, `server_fns/search.rs` | REST API, server functions, SSR smoke tests |
+| **Total** | **282** | | |
 
 **Core crate test distribution:**
-- `rom_tags.rs`: 60 tests (tag parsing edge cases)
+- `rom_tags.rs`: 99 tests (tag parsing edge cases, region preference)
 - `game_db.rs`: 29 tests (lookup methods, normalization)
+- `thumbnails.rs`: 28 tests (image matching, multi-repo, staleness)
 - `arcade_db.rs`: 19 tests (arcade lookups)
 - `favorites.rs`: 11 tests (CRUD, organize, deduplicate)
 - `video_url.rs`: 10 tests (URL parsing for 4 platforms)
+- `systems.rs`: 9 tests (lookup, extensions, megabit)
 - `config.rs`: 6 tests (parse, write, preserve comments)
 - `skins.rs`: 6 tests (palette generation)
+- `settings.rs`: 5 tests (read/write region preference)
 - `recents.rs`: 4 tests (parsing, deduplication)
-- `systems.rs`: 4 tests (lookup, extensions)
 - `roms.rs`: 3 tests (scan, extensions)
 - `screenshots.rs`: 3 tests (matching, timestamps)
+
+**App crate test distribution:**
+- `util.rs`: 30 tests (size formatting including megabit)
+- `server_fns/search.rs`: 20 tests (REST API, server function invocation, SSR smoke tests)
 
 ### Complexity Hotspots
 

@@ -1,7 +1,7 @@
 # Region Preference Analysis
 
-> Status: Proposal
-> Date: 2026-03-10
+> Status: Implemented
+> Date: 2026-03-11
 
 ## Problem Statement
 
@@ -246,63 +246,22 @@ region_preference = "usa"
 
 Valid values: `"usa"`, `"europe"`, `"japan"`, `"world"`. Default when missing: `"usa"`.
 
-### AppConfig Abstraction
+### Settings Module (as implemented)
 
-**File**: `replay-control-core/src/config.rs`
+**File**: `replay-control-core/src/settings.rs`
 
-Add a new `AppConfig` struct (or reuse the `ReplayConfig` parser) that reads from `.replay-control/settings.cfg`:
+Instead of an `AppConfig` struct, the implementation uses standalone functions:
 
-```rust
-/// App-specific settings stored in `.replay-control/settings.cfg`.
-/// Uses the same key = "value" format as replay.cfg but is separate
-/// to avoid modifying the RePlayOS system configuration.
-pub struct AppConfig {
-    inner: ReplayConfig,
-    path: PathBuf,
-}
+- `read_region_preference(storage_root: &Path) -> RegionPreference` -- Reads `.replay-control/settings.cfg`, returns `RegionPreference::Usa` as default
+- `write_region_preference(storage_root: &Path, pref: RegionPreference) -> Result<()>` -- Creates the directory and file if needed, preserves other keys when overwriting
 
-impl AppConfig {
-    pub fn open(storage_root: &Path) -> Result<Self> {
-        let path = storage_root.join(RC_DIR).join("settings.cfg");
-        let inner = if path.exists() {
-            ReplayConfig::from_file(&path)?
-        } else {
-            ReplayConfig::parse("")?
-        };
-        Ok(Self { inner, path })
-    }
-
-    pub fn region_preference(&self) -> RegionPreference {
-        match self.inner.get("region_preference").unwrap_or("usa") {
-            "europe" => RegionPreference::Europe,
-            "japan" => RegionPreference::Japan,
-            "world" => RegionPreference::World,
-            _ => RegionPreference::Usa,
-        }
-    }
-
-    pub fn set_region_preference(&mut self, pref: &str) -> Result<()> {
-        self.inner.set("region_preference", pref);
-        self.save()
-    }
-
-    fn save(&self) -> Result<()> {
-        // Write using the existing write_to_file method or direct write
-    }
-}
-```
+Uses the existing `ReplayConfig` parser for the `key = "value"` format.
 
 ### AppState Integration
 
 **File**: `replay-control-app/src/api/mod.rs`
 
-```rust
-impl AppState {
-    pub fn region_preference(&self) -> RegionPreference {
-        self.app_config.read().expect("lock").region_preference()
-    }
-}
-```
+`AppState::region_preference()` reads from `.replay-control/settings.cfg` via `settings::read_region_preference()`.
 
 ### Cache Invalidation
 
@@ -390,151 +349,57 @@ If/when a global search function is added, it would also accept the region prefe
 
 ---
 
-## UI Design
+## UI Design (Implemented)
 
-### Settings Page Entry
+### Region Preference on More Page
 
 **File**: `replay-control-app/src/pages/more.rs`
 
-Add a menu item in the More page:
-
-```rust
-<MenuItem icon="\u{1F30D}" label_key="more.region" href=Some("/more/region") />
-```
-
-Position it near the top of the menu list, after "Skin" and before "Wi-Fi Configuration", since it affects the core browsing experience.
-
-### Region Preference Page
-
-**File**: `replay-control-app/src/pages/region.rs` (new file)
-
-The page follows the same pattern as the Skin page: load current value, display options, save on selection.
+The region preference is displayed inline on the More page (not as a separate sub-page). It uses a `<select>` dropdown instead of radio buttons, keeping the UI compact. The section appears below the menu list with a heading "Region Preference" and a hint explaining its effect.
 
 ```
 +-------------------------------------+
-|  <- Back          Region            |
+|  More                                |
 +-------------------------------------+
+|  [Skin]  [WiFi]  [NFS]  ...         |
 |                                      |
-|  Select your preferred region.       |
-|  ROMs from this region appear first  |
-|  in game lists and search results.   |
+|  Region Preference                   |
+|  ROMs from your preferred region     |
+|  appear first in game lists and      |
+|  search results.                     |
 |                                      |
-|  +-------------------------------+   |
-|  |  [*] USA                      |   |
-|  |  [ ] Europe                   |   |
-|  |  [ ] Japan                    |   |
-|  |  [ ] World                    |   |
-|  +-------------------------------+   |
+|  [  USA          v]   (dropdown)     |
+|  [Region preference saved]           |
 |                                      |
-|  [Region saved]                      |
-|                                      |
+|  System Info                         |
+|  ...                                 |
 +-------------------------------------+
 ```
 
-The UI is a simple radio button group. No complex grid like the Skin page -- just four options with labels.
+The `RegionSelector` component uses a `<select>` element with `on:change` handler that calls `save_region_preference()`. On success, it displays a status message "Region preference saved".
 
-### Component Structure
+### Component Structure (as implemented)
 
-```rust
-#[component]
-pub fn RegionPage() -> impl IntoView {
-    let i18n = use_i18n();
-    let current = Resource::new(|| (), |_| server_fns::get_region_preference());
+The region selector is embedded directly in `MorePage` (not a separate page). It uses a `<select>` dropdown via `on:change` and calls `save_region_preference` (not `set_region_preference`). No separate `RegionPage` component or `/more/region` route was created.
 
-    view! {
-        <div class="page settings-page">
-            <div class="rom-header">
-                <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
-                </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "region.title")}</h2>
-            </div>
-            <p class="form-hint">{move || t(i18n.locale.get(), "region.hint")}</p>
-            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">"..."</div> }>
-                    {move || Suspend::new(async move {
-                        let pref = current.await?;
-                        Ok::<_, ServerFnError>(view! { <RegionSelector current=pref /> })
-                    })}
-                </Suspense>
-            </ErrorBoundary>
-        </div>
-    }
-}
-
-#[component]
-fn RegionSelector(current: String) -> impl IntoView {
-    let i18n = use_i18n();
-    let active = RwSignal::new(current);
-    let saving = RwSignal::new(false);
-    let status = RwSignal::new(Option::<(bool, String)>::None);
-
-    let options = [
-        ("usa", "region.usa"),
-        ("europe", "region.europe"),
-        ("japan", "region.japan"),
-        ("world", "region.world"),
-    ];
-
-    let on_select = move |value: String| {
-        if saving.get_untracked() || active.get_untracked() == value {
-            return;
-        }
-        saving.set(true);
-        status.set(None);
-        let v = value.clone();
-        leptos::task::spawn_local(async move {
-            match server_fns::set_region_preference(v.clone()).await {
-                Ok(()) => {
-                    active.set(v);
-                    let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "region.saved").to_string())));
-                }
-                Err(e) => {
-                    status.set(Some((false, e.to_string())));
-                }
-            }
-            saving.set(false);
-        });
-    };
-
-    // Render radio options...
-}
+Key implementation details:
+- `RegionSelector` component takes `current: String` and renders a `<select>` with four `<option>` elements
+- The `on:change` handler calls `server_fns::save_region_preference(value)` which writes to `.replay-control/settings.cfg` and invalidates the ROM cache
+- Settings are persisted via `replay-control-core/src/settings.rs` -- `write_region_preference()` and `read_region_preference()`
 ```
 
-### Server Functions
+### Server Functions (as implemented)
+
+**File**: `replay-control-app/src/server_fns/settings.rs`
+
+- `get_region_preference()` -- Returns the current region as a string via `state.region_preference().as_str()`
+- `save_region_preference(value: String)` -- Parses the value via `RegionPreference::from_str_value()`, writes to settings.cfg via `replay_control_core::settings::write_region_preference()`, and calls `state.cache.invalidate()` to re-sort ROM lists
+
+Note: The function is named `save_region_preference` (not `set_region_preference`). Both server functions need `register_explicit` in `main.rs`.
+
+### i18n Keys (as implemented)
 
 ```rust
-#[server(prefix = "/sfn")]
-pub async fn get_region_preference() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    let pref = state.region_preference();
-    Ok(match pref {
-        RegionPreference::Usa => "usa",
-        RegionPreference::Europe => "europe",
-        RegionPreference::Japan => "japan",
-        RegionPreference::World => "world",
-    }.to_string())
-}
-
-#[server(prefix = "/sfn")]
-pub async fn set_region_preference(value: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    state.update_config(|cfg| {
-        cfg.set("region_preference", &value);
-    }).map_err(|e| ServerFnError::new(e.to_string()))?;
-    state.cache.invalidate(); // re-sort with new preference
-    Ok(())
-}
-```
-
-Note: Both server functions need `register_explicit` in `main.rs` since they are defined in the app crate's library (same pattern as the metadata server functions).
-
-### i18n Keys
-
-```rust
-// Region preference
-"more.region" => "Region",
 "region.title" => "Region Preference",
 "region.hint" => "ROMs from your preferred region appear first in game lists and search results.",
 "region.usa" => "USA",
@@ -543,6 +408,8 @@ Note: Both server functions need `register_explicit` in `main.rs` since they are
 "region.world" => "World",
 "region.saved" => "Region preference saved",
 ```
+
+Note: `more.region` was not needed since the region selector is inline on the More page, not a separate menu item.
 
 ---
 
@@ -642,21 +509,19 @@ If two users access the app from different browsers with different region prefer
 
 ---
 
-## Files to Modify
+## Files Modified
 
-| File | Change |
-|------|--------|
-| `replay-control-core/src/rom_tags.rs` | Add `RegionPreference` enum, `RegionPriority::sort_key()` method |
-| `replay-control-core/src/config.rs` | Add `AppConfig` for `.replay-control/settings.cfg`, `region_preference()` accessor |
-| `replay-control-core/src/roms.rs` | Add `RegionPreference` parameter to `list_roms()` |
-| `replay-control-app/src/api/mod.rs` | Add `region_preference()` to `AppState`, update `RomCache::get_roms()` |
-| `replay-control-app/src/server_fns.rs` | Update `search_score()`, add `get_region_preference`/`set_region_preference` |
-| `replay-control-app/src/main.rs` | Register new server functions |
-| `replay-control-app/src/i18n.rs` | Add region-related i18n keys |
-| `replay-control-app/src/pages/region.rs` | New file: `RegionPage` component |
-| `replay-control-app/src/pages/mod.rs` | Export `region` module |
-| `replay-control-app/src/pages/more.rs` | Add Region menu item |
-| `replay-control-app/src/app.rs` | Add `/more/region` route |
+| File | Change | Status |
+|------|--------|--------|
+| `replay-control-core/src/rom_tags.rs` | Added `RegionPreference` enum, `RegionPriority::sort_key()` method, `from_str_value()`, `as_str()` | Done |
+| `replay-control-core/src/settings.rs` | New file: `read_region_preference()`, `write_region_preference()` | Done |
+| `replay-control-core/src/roms.rs` | Added `RegionPreference` parameter to `list_roms()` | Done |
+| `replay-control-app/src/api/mod.rs` | Added `region_preference()` to `AppState`, updated `RomCache::get_roms()` | Done |
+| `replay-control-app/src/server_fns/search.rs` | Updated `search_score()` to accept `RegionPreference` | Done |
+| `replay-control-app/src/server_fns/settings.rs` | Added `get_region_preference`, `save_region_preference` | Done |
+| `replay-control-app/src/main.rs` | Registered new server functions | Done |
+| `replay-control-app/src/i18n.rs` | Added region-related i18n keys | Done |
+| `replay-control-app/src/pages/more.rs` | Added inline `RegionSelector` component (no separate page) | Done |
 
 ---
 

@@ -293,6 +293,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.images_hint" => {
             "Download box art and screenshots from libretro-thumbnails. Images are stored on your storage device."
         }
+        "metadata.images_performance_notice" => {
+            "Downloading images may cause brief slowdowns in games. For best results, download when not playing."
+        }
         "metadata.no_images" => "No images downloaded yet",
         "metadata.no_images_short" => "None",
         "metadata.no_image_systems" => "No supported systems found",

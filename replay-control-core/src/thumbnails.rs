@@ -593,10 +593,19 @@ pub fn clone_thumbnail_repo(
     }
 
     tracing::info!("Cloning {url} ...");
-    let mut child = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", &url, &dest.to_string_lossy()])
+    let dest_str = dest.to_string_lossy().to_string();
+    // Lower scheduling priority so the git subprocess does not compete with
+    // the RePlayOS emulator for CPU time during packfile decompression.
+    // nice 15: CFS gives ~3x more CPU time to normal-priority (nice 0) processes.
+    // ionice -c 2 -n 7: lowest best-effort I/O priority (less aggressive than idle,
+    // which could stall on slow USB drives).
+    let mut cmd = std::process::Command::new("ionice");
+    cmd.args(["-c", "2", "-n", "7", "nice", "-n", "15",
+              "git", "clone", "--depth", "1", &url, &dest_str])
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| Error::Other(format!("Failed to run git: {e}")))?;
 

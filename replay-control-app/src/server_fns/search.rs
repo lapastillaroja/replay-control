@@ -33,6 +33,99 @@ pub struct GlobalSearchResults {
     pub total_systems: usize,
 }
 
+/// Split a string into words on whitespace and hyphens, stripping trailing punctuation.
+#[cfg(feature = "ssr")]
+fn split_into_words(s: &str) -> Vec<&str> {
+    s.split(|c: char| c.is_whitespace() || c == '-')
+        .map(|w| w.trim_end_matches(|c: char| matches!(c, '.' | ',' | ':' | '!' | '?' | ';')))
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Check whether query words appear in the same relative order in target words.
+#[cfg(feature = "ssr")]
+fn words_in_order(query_words: &[&str], title_words: &[&str]) -> bool {
+    let mut last_pos: Option<usize> = None;
+    for qw in query_words {
+        let found = title_words.iter().enumerate().position(|(i, tw)| {
+            tw.starts_with(qw) && last_pos.map_or(true, |lp| i > lp)
+        });
+        match found {
+            Some(pos) => last_pos = Some(pos),
+            None => return false,
+        }
+    }
+    true
+}
+
+/// Count pairs of consecutive query words that are also adjacent in the title.
+#[cfg(feature = "ssr")]
+fn count_adjacent_pairs(query_words: &[&str], title_words: &[&str]) -> u32 {
+    if query_words.len() < 2 {
+        return 0;
+    }
+    let mut pairs = 0u32;
+    // Find positions of each query word in title
+    let positions: Vec<Option<usize>> = query_words
+        .iter()
+        .map(|qw| title_words.iter().position(|tw| tw.starts_with(qw)))
+        .collect();
+    for i in 0..positions.len() - 1 {
+        if let (Some(p1), Some(p2)) = (positions[i], positions[i + 1]) {
+            if p2 == p1 + 1 {
+                pairs += 1;
+            }
+        }
+    }
+    pairs
+}
+
+/// Count query words that match a title word exactly (not just starts_with).
+#[cfg(feature = "ssr")]
+fn count_exact_word_matches(query_words: &[&str], title_words: &[&str]) -> u32 {
+    query_words
+        .iter()
+        .filter(|qw| title_words.iter().any(|tw| tw == *qw))
+        .count() as u32
+}
+
+/// Try word-level matching: all query words must appear (via starts_with) in the target words.
+/// Returns (base_score, is_filename_only) or None if not all words match.
+#[cfg(feature = "ssr")]
+fn try_word_match(query_words: &[&str], display_words: &[&str], filename_words: &[&str]) -> Option<(u32, bool)> {
+    let display_matched = query_words
+        .iter()
+        .filter(|qw| display_words.iter().any(|tw| tw.starts_with(**qw)))
+        .count();
+
+    if display_matched == query_words.len() {
+        // All words found in display name
+        let order_bonus: u32 = if words_in_order(query_words, display_words) { 50 } else { 0 };
+        let coverage = display_matched as f32 / display_words.len().max(1) as f32;
+        let coverage_bonus = (coverage * 50.0) as u32;
+        let adjacency_bonus = count_adjacent_pairs(query_words, display_words) * 20;
+        let exact_bonus = count_exact_word_matches(query_words, display_words) * 30;
+        return Some((400 + order_bonus + coverage_bonus + adjacency_bonus + exact_bonus, false));
+    }
+
+    // Try filename
+    let filename_matched = query_words
+        .iter()
+        .filter(|qw| filename_words.iter().any(|tw| tw.starts_with(**qw)))
+        .count();
+
+    if filename_matched == query_words.len() {
+        let order_bonus: u32 = if words_in_order(query_words, filename_words) { 50 } else { 0 };
+        let coverage = filename_matched as f32 / filename_words.len().max(1) as f32;
+        let coverage_bonus = (coverage * 50.0) as u32;
+        let adjacency_bonus = count_adjacent_pairs(query_words, filename_words) * 20;
+        let exact_bonus = count_exact_word_matches(query_words, filename_words) * 30;
+        return Some((300 + order_bonus + coverage_bonus + adjacency_bonus + exact_bonus, true));
+    }
+
+    None
+}
+
 /// Compute a relevance score for a ROM against a search query.
 /// Higher = more relevant. Returns 0 for no match.
 /// The `region_pref` parameter controls which region gets the highest bonus.
@@ -46,22 +139,86 @@ pub(crate) fn search_score(
     let display_lower = display_name.to_lowercase();
     let filename_lower = filename.to_lowercase();
 
+    // Check whether the match ends at a word boundary (next char is non-alphanumeric or end-of-string).
+    let is_word_boundary_at = |s: &str, offset: usize| -> bool {
+        s[offset..].chars().next().map_or(true, |c| !c.is_alphanumeric())
+    };
+
+    // Check whether `needle` appears in `haystack` at a clean trailing word boundary
+    // (i.e., at least one occurrence where the character after the match is non-alphanumeric or end-of-string).
+    let contains_at_word_boundary = |haystack: &str, needle: &str| -> bool {
+        let mut start = 0;
+        while let Some(pos) = haystack[start..].find(needle) {
+            let abs_pos = start + pos;
+            if is_word_boundary_at(haystack, abs_pos + needle.len()) {
+                return true;
+            }
+            start = abs_pos + 1;
+        }
+        false
+    };
+
     // Base score from match type
     let base = if display_lower == *query {
         10_000 // exact match on display name
-    } else if display_lower.starts_with(query) {
-        5_000 // display name starts with query
-    } else if display_lower
-        .split_whitespace()
-        .any(|w| w.starts_with(query))
-    {
-        2_000 // a word in display name starts with query
+    } else if display_lower.starts_with(query) && is_word_boundary_at(&display_lower, query.len()) {
+        5_000 // display name starts with query (clean word boundary)
+    } else if display_lower.split_whitespace().any(|w| {
+        w.starts_with(query) && is_word_boundary_at(w, query.len())
+    }) {
+        2_000 // a word in display name starts with query (clean word boundary)
     } else if display_lower.contains(query) {
-        1_000 // display name contains query
+        // For multi-word queries, demote mid-word matches (e.g. "sonic 3" in "sonic 3d blast").
+        if query.contains(' ') && !contains_at_word_boundary(&display_lower, query) {
+            500 // multi-word query mid-word match (e.g. "sonic 3" in "sonic 3d blast")
+        } else {
+            1_000
+        }
     } else if filename_lower.contains(query) {
-        500 // only filename contains query
+        if query.contains(' ') && !contains_at_word_boundary(&filename_lower, query) {
+            250 // multi-word query mid-word match in filename
+        } else {
+            500
+        }
     } else {
-        return 0;
+        // Fallback: word-level matching for multi-word queries
+        if !query.contains(' ') {
+            return 0;
+        }
+        let query_words: Vec<&str> = split_into_words(query);
+        if query_words.len() < 2 {
+            return 0;
+        }
+        let display_words: Vec<&str> = split_into_words(&display_lower);
+        let filename_words: Vec<&str> = split_into_words(&filename_lower);
+
+        match try_word_match(&query_words, &display_words, &filename_words) {
+            Some((word_base, _)) => {
+                // Apply the same bonuses/penalties as other tiers
+                let length_bonus: u32 = if display_name.len() < 40 { 100 } else { 0 };
+                let (tier, region) = replay_control_core::rom_tags::classify(filename);
+                let tier_penalty = match tier {
+                    replay_control_core::rom_tags::RomTier::Original => 0,
+                    replay_control_core::rom_tags::RomTier::Revision => 5,
+                    replay_control_core::rom_tags::RomTier::RegionVariant => 10,
+                    replay_control_core::rom_tags::RomTier::Translation => 50,
+                    replay_control_core::rom_tags::RomTier::Unlicensed => 60,
+                    replay_control_core::rom_tags::RomTier::Homebrew => 100,
+                    replay_control_core::rom_tags::RomTier::Hack => 200,
+                    replay_control_core::rom_tags::RomTier::PreRelease => 250,
+                    replay_control_core::rom_tags::RomTier::Pirate => 300,
+                };
+                let region_bonus: u32 = match region.sort_key(region_pref) {
+                    0 => 20,
+                    1 => 15,
+                    2 => 10,
+                    3 => 5,
+                    _ => 0,
+                };
+                return (word_base + length_bonus + region_bonus).saturating_sub(tier_penalty);
+            }
+            None => return 0,
+        }
     };
 
     // Shorter names are more likely the original game
@@ -620,6 +777,117 @@ mod tests {
         assert!(
             europe_score > usa_score,
             "Europe ({europe_score}) should beat USA ({usa_score}) with Europe preference"
+        );
+    }
+
+    // --- Word-level fuzzy matching ---
+
+    #[test]
+    fn word_match_sonic_3() {
+        let score = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        assert!(score > 0, "\"sonic 3\" should match \"Sonic The Hedgehog 3\", got {score}");
+        assert!(score < 1000, "Word match ({score}) should be below substring tier (1000)");
+    }
+
+    #[test]
+    fn word_match_zelda_link() {
+        let score = search_score(
+            "zelda link",
+            "The Legend of Zelda - A Link to the Past",
+            "Legend of Zelda, The - A Link to the Past (USA).sfc",
+            PREF,
+        );
+        assert!(score > 0, "\"zelda link\" should match Zelda ALTTP, got {score}");
+    }
+
+    #[test]
+    fn word_match_ranks_exact_word_above_prefix() {
+        // Both titles fail substring tiers for "sonic 3".
+        // "Sonic The Hedgehog 3" has exact word "3" — should rank higher than
+        // "Sonic Adventures 3D Edition" where "3" only prefix-matches "3D".
+        let hedgehog = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let adventures = search_score("sonic 3", "Sonic Adventures 3D Edition", "Sonic Adventures 3D Edition (USA).md", PREF);
+        assert!(hedgehog > adventures, "Hedgehog 3 ({hedgehog}) should beat Adventures 3D ({adventures})");
+    }
+
+    #[test]
+    fn word_match_does_not_activate_for_single_word() {
+        let score = search_score("zzzznotfound", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn word_match_requires_all_words() {
+        // "sonic mario" — "mario" is not in "Sonic The Hedgehog 3"
+        let score = search_score("sonic mario", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        assert_eq!(score, 0, "Not all query words present, should return 0");
+    }
+
+    #[test]
+    fn word_match_below_substring() {
+        // A substring match should always score higher than a word match
+        let substring = search_score("sonic", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let word = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        assert!(substring > word, "Substring ({substring}) should beat word match ({word})");
+    }
+
+    #[test]
+    fn word_match_x_men_hyphen() {
+        let score = search_score(
+            "x men",
+            "X-Men - Mutant Apocalypse",
+            "X-Men - Mutant Apocalypse (USA).sfc",
+            PREF,
+        );
+        assert!(score > 0, "\"x men\" should match \"X-Men\" via hyphen splitting, got {score}");
+    }
+
+    #[test]
+    fn word_match_preserves_existing_substring_match() {
+        // "mega man x" is a contiguous substring — should match at prefix tier, not word tier
+        let score = search_score("mega man x", "Mega Man X", "Mega Man X (USA).sfc", PREF);
+        assert!(score >= 5000, "Contiguous match should hit prefix tier, got {score}");
+    }
+
+    #[test]
+    fn word_match_mario_kart() {
+        let score = search_score("mario kart", "Super Mario Kart", "Super Mario Kart (USA).sfc", PREF);
+        // "mario kart" IS a contiguous substring of "Super Mario Kart"
+        assert!(score >= 1000, "\"mario kart\" is a substring, should score >= 1000, got {score}");
+    }
+
+    // --- Prefix word-boundary tests ---
+
+    #[test]
+    fn prefix_match_word_boundary() {
+        // "sonic 3" should score "Sonic 3 (Europe)" higher than "Sonic 3D Blast"
+        // because "sonic 3" in "sonic 3d blast" breaks mid-word ("3" → "3d").
+        let clean = search_score("sonic 3", "Sonic 3 (Europe)", "Sonic 3 (Europe).md", PREF);
+        let midword = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF);
+        assert!(
+            clean > midword,
+            "Clean prefix 'Sonic 3 (Europe)' ({clean}) should beat mid-word 'Sonic 3D Blast' ({midword})"
+        );
+    }
+
+    #[test]
+    fn sonic_3_hedgehog_above_3d_blast() {
+        // "sonic 3" should rank "Sonic The Hedgehog 3 (USA)" above "Sonic 3D Blast (USA)"
+        let hedgehog = search_score(
+            "sonic 3",
+            "Sonic The Hedgehog 3",
+            "Sonic The Hedgehog 3 (USA).md",
+            PREF,
+        );
+        let blast = search_score(
+            "sonic 3",
+            "Sonic 3D Blast",
+            "Sonic 3D Blast (USA).md",
+            PREF,
+        );
+        assert!(
+            hedgehog > blast,
+            "Hedgehog 3 ({hedgehog}) should beat 3D Blast ({blast})"
         );
     }
 }

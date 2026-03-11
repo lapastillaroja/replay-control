@@ -85,7 +85,6 @@ fn platform_map() -> HashMap<&'static str, Vec<&'static str>> {
 /// Parsed game entry from LaunchBox XML.
 struct LbGame {
     name: String,
-    platform: String,
     overview: String,
     rating: Option<f64>,
     publisher: String,
@@ -309,7 +308,6 @@ fn parse_xml<R: BufRead>(
                     if let Some(system_folders) = platforms.get(platform.as_str()) {
                         let game = LbGame {
                             name: std::mem::take(&mut name),
-                            platform: std::mem::take(&mut platform),
                             overview: std::mem::take(&mut overview),
                             rating,
                             publisher: std::mem::take(&mut publisher),

@@ -28,7 +28,7 @@ Tracking document for Replay Control. Organized by page/area.
 ### Implemented
 - **Header** with back button (browser history back navigation) and game title (display name or filename)
 - **Box art display** — shows imported box art thumbnail when available; falls back to styled placeholder with game name
-- **Game info card** — metadata grid showing system, filename, file size, and format/extension
+- **Game info card** — metadata grid showing system, filename, file size (Mbit/Kbit for cartridge systems, MB/GB for disc/computer systems), and format/extension. Dynamic label: "ROM Size" for cartridge systems, "File Size" for disc/computer systems
 - **Arcade metadata** — for arcade games, shows year, manufacturer, players, rotation, category, and parent ROM (if clone)
 - **Videos section** — search and save game-related videos:
   - **Saved videos** (My Videos) — paste YouTube/Twitch/Vimeo/Dailymotion URLs, embedded inline with responsive 16:9 iframes
@@ -126,24 +126,28 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 ### Implemented
 
 **Text metadata (LaunchBox):**
-- **Auto-download** — "Download Metadata" button fetches LaunchBox XML from the internet, extracts, and imports into SQLite. Background task with real-time progress (downloading, parsing, matching)
+- **Auto-download** — "Download Metadata" button fetches LaunchBox XML from the internet, extracts, and imports into SQLite. Background task with real-time SSE progress (downloading, parsing, matching) via `/sse/metadata-progress`
 - **Coverage stats** — per-system breakdown of matched/unmatched games, sorted alphabetically by system name
 - **Clear metadata** — delete the SQLite cache and start fresh
 
 **Image metadata (libretro-thumbnails):**
 - **Per-system download** — download box art and screenshots for a specific system from libretro-thumbnails GitHub repos
-- **Download All** — batch download images for all supported systems
+- **Download All** — batch download images for all supported systems, processed sequentially (one system at a time) with auto-deletion of repos after matching to minimize peak disk usage
 - **Stop/Cancel button** — cancel in-progress image imports immediately (kills git clone subprocess, stops copy loop). "Cancelling..." feedback on the button
 - **Real-time SSE progress** — `/sse/image-progress` endpoint streams progress every 200ms via Server-Sent Events. Client uses `EventSource` instead of polling for near-instant UI updates
 - **Optimistic UI** — progress bar appears instantly on click, before the server responds
-- **Per-system coverage grid** — shows box art count vs total games for each system, sorted alphabetically, with per-system download/update buttons
-- **Image stats** — total box art count, screenshot count, and media disk usage
+- **Per-system coverage grid** — shows box art count vs total games for each system, sorted alphabetically, with per-system download/update buttons. Button shows "Update" when repo was previously cloned even with 0 matches
+- **Image stats** — total box art count, screenshot count, media disk usage, and cached repo size
 - **Pulsing animation** — disabled download buttons pulse to signal activity
 - **exFAT symlink resolution** — handles fake symlinks on exFAT filesystems (git writes symlink targets as text files)
 - **Fuzzy image matching** — normalized filename matching with tilde dual-name handling
+- **Auto-delete repos after match** — cloned repos are deleted after successful image matching to prevent disk from filling up (previously kept permanently, causing ~10:1 overhead)
+- **Re-match truly offline** — "Re-match All" no longer checks for staleness or re-clones repos; it is purely local, using whatever repos exist on disk
+- **Box art URL resolution** — shared `resolve_box_art_url` helper used consistently across ROM list, favorites, recents, game detail, and search
 
 **Cache management:**
 - **Clear Images** — removes all imported images with confirmation step
+- **Clear Cache** — removes downloaded thumbnail repo data from `.replay-control/tmp/`, with size shown and confirmation step
 
 **Attribution:**
 - Source credits line: "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails."
@@ -171,7 +175,7 @@ Dedicated page for managing external game metadata (descriptions, images, rating
   - Per-ROM favorite toggle (star button) with optimistic UI update
   - Per-ROM rename (inline text input, Enter to confirm, Escape to cancel)
   - Per-ROM delete with confirmation step (delete button swaps to confirm/cancel)
-  - ROM metadata display: filename, relative path, file size, file extension badge
+  - ROM metadata display: filename, relative path, file size (Mbit/Kbit for 24 cartridge systems, MB/GB for disc/computer systems), file extension badge
   - Box art thumbnails in ROM list items (when imported images are available)
   - Only one delete confirmation or rename operation active at a time
 - **Arcade display names** — full arcade DB with 28,593 unique entries covering Flycast/Naomi/Atomiswave (301), FBNeo (8,108), MAME 2003+ (5,272), and MAME current (26,777), deduplicated at build time via embedded PHF database. Display names appear in ROM lists, home page recents, favorites, and game detail pages. See `docs/arcade-db-design.md`.
@@ -187,7 +191,6 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Duplicate detection** — identify and flag duplicate ROMs across regions/dumps
 
 ### Future ideas
-- **Preferred region** — user selects a preferred region (e.g., USA, Europe, Japan); games matching the preferred region sort to the top of the list, and in grouped view the preferred region variant is shown as the primary entry
 - M3U multi-disc management (create, edit, reorder disc entries)
 - ROM upload from browser (nice-to-have)
 - Batch operations (multi-select delete, move)
@@ -229,7 +232,8 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 ## More / Settings (`/more`)
 
 ### Implemented
-- **Menu items** linking to: Skin/Theme, Wi-Fi Configuration, NFS Share Settings, Hostname, Metadata, System Logs
+- **Menu items** linking to: Skin/Theme, Region, Wi-Fi Configuration, NFS Share Settings, Hostname, Metadata, System Logs
+- **Region preference** — dropdown on the More page to select preferred ROM region (USA, Europe, Japan, World). Stored in `.replay-control/settings.cfg`. Affects ROM sort order in game lists and region bonus in search scoring. Default: USA
 - **System Info** section showing: storage type, storage path, disk total, disk used, disk available, ethernet IP, Wi-Fi IP
 - **System Logs page** (`/more/logs`) — view RePlayOS system logs (journalctl) with source filter (all, companion app, RePlayOS) and refresh button. Useful for troubleshooting.
 - **Skin/theme sync** — browse and apply RePlayOS skins from the web UI; optionally sync the app's color scheme to the active skin (see `docs/skin-theming-analysis.md`)
@@ -245,7 +249,6 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - RePlayOS config editor (replay.cfg settings)
 - Theme/appearance settings
 - **User language preference** — allow the user to choose their preferred language; the app will honor this setting for UI text and when building/fetching game databases. i18n infrastructure is in place (only English currently).
-- **Preferred region** — user selects a preferred region (USA, Europe, Japan, etc.); honored by game list sorting and grouped view default variant selection
 - About page with version info and links
 
 ---
@@ -274,7 +277,12 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Skin sync** — read RePlayOS skin index from `replay.cfg`, extract dominant colors from skin PNG images, apply as CSS custom properties for theme synchronization (`skins` module)
 - **Cross-compilation** — `./build.sh aarch64` for ARM (aarch64) Raspberry Pi binary
 - **Install/deployment script** — `install.sh` supporting SSH deployment to Pi (see `docs/reference/deployment.md`)
-- **SSE (Server-Sent Events)** — `/sse/image-progress` endpoint for real-time progress streaming (200ms interval). Used by the metadata page for image import progress instead of polling.
+- **SSE (Server-Sent Events)** — `/sse/image-progress` and `/sse/metadata-progress` endpoints for real-time progress streaming (200ms interval). Used by the metadata page for both image and metadata import progress instead of polling
+- **Megabit size display** — 24 cartridge-based systems show ROM sizes in Mbit/Kbit instead of MB (historically accurate units matching original packaging). Disc/computer systems continue to show MB/GB. Applied in ROM list and game detail page only; system totals and disk stats remain in MB/GB
+- **CSS partials** — `style.css` split into 17 numbered partial files (`_01-base.css` through `_17-responsive.css`) concatenated at build time via `build.rs`. Improves maintainability without changing the build output
+- **Integration tests** — 15 integration tests covering REST API endpoints, server function invocation, and SSR smoke tests. Router extracted to `build_router()` for test reuse. App crate now has 50 tests (up from 6)
+- **Incremental release compilation** — `incremental = true` in release profile for faster iterative rebuilds
+- **New thumbnail mappings** — `commodore_amicd` (maps to CD32 + CDTV repos) and `scummvm` (maps to ScummVM repo) added to the thumbnail system
 
 ### Planned
 - **Game launching** — launch games on RePlayOS from the web UI. Recommended approach: `_autostart` folder manipulation + process restart. Needs testing on real hardware. See `docs/reference/game-launching.md`.
@@ -293,4 +301,5 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **mDNS/Avahi** — auto-discovery via `replaypi.local`
 - **CLI mode** — command-line interface for scripting and power users (same binary)
 - **CI/CD pipeline** — automated builds and GitHub Releases (see `docs/reference/binary-distribution.md`)
-- **App-specific configuration file** — Replay Control should NOT write to `replay.cfg`, which is reserved for official RePlayOS system configurations (Wi-Fi, NFS, video output, etc.) and lives on the SD card at `/media/sd/config/replay.cfg` (not on ROM storage). Instead, the app uses `.replay-control/settings.cfg` on the ROM storage device for storing user preferences such as preferred region, language, theme, and other app-level settings. The format is plain text and user-editable, using the same `key = "value"` syntax as `replay.cfg`.
+- **App-specific configuration file** — `.replay-control/settings.cfg` on the ROM storage device stores user preferences (currently `region_preference`). Uses the same `key = "value"` syntax as `replay.cfg`. Parsed via the existing `ReplayConfig` parser. Separate from `replay.cfg` (which belongs to RePlayOS on the SD card) to maintain the config boundary
+- **Centralized `.replay-control/` constants** — `RC_DIR`, `SETTINGS_FILE`, `LAUNCHBOX_XML`, `METADATA_DB_FILE`, `VIDEOS_FILE` constants centralized in the core crate. `StorageLocation::rc_dir()` method replaces manual `.join(RC_DIR)` calls. `Metadata.xml` renamed to `launchbox-metadata.xml` (old name accepted as fallback)

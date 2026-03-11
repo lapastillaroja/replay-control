@@ -1,7 +1,7 @@
 # The `.replay-control/` Folder
 
 > Location: `<rom_storage>/.replay-control/`
-> Defined as: `RC_DIR` constant in `replay-control-core/src/storage.rs` (re-exported from `metadata_db.rs`)
+> Defined as: `RC_DIR` constant in `replay-control-core/src/storage.rs`
 
 The `.replay-control/` directory is the companion app's data folder on the ROM storage device (SD card, USB drive, or NFS mount). It stores all app-specific data — metadata, images, settings, and temporary files — separate from both the ROM files and the RePlayOS system configuration.
 
@@ -47,7 +47,7 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
     └── tmp/                       # Cached files (git clones for image import)
         └── libretro-thumbnails/   # Shallow clones of libretro-thumbnails repos
             ├── Sega - Mega Drive - Genesis/
-            └── ...                # Kept on disk between imports; re-cloned when stale
+            └── ...                # Auto-deleted after matching; "Clear Cache" button available
 ```
 
 ## Files and Their Purpose
@@ -99,9 +99,11 @@ Served to the browser at `/media/<system>/boxart/<file>.png` via the Axum media 
 **Source code**: `replay-control-core/src/thumbnails.rs`
 
 ### `tmp/libretro-thumbnails/`
-Shallow git clones of libretro-thumbnails repos, created during image import. Each system's repo is cloned, images are copied to `media/`, and the clone is **kept on disk** for reuse in subsequent imports. On the next import, a staleness check compares the local HEAD against the remote HEAD; only stale repos are re-cloned.
+Shallow git clones of libretro-thumbnails repos, created during image import. Each system's repo is cloned, images are matched and copied to `media/`, and the clone is **auto-deleted after successful matching** to prevent disk from filling up (repos previously caused ~10:1 overhead vs useful image data).
 
-Safe to delete manually at any time -- repos will be re-cloned on the next import.
+A "Clear Cache" button on the metadata page removes any remaining repos in this directory. The "Re-match All" feature works only with repos already on disk (truly offline -- no staleness check, no network access).
+
+Safe to delete manually at any time -- repos will be re-cloned on the next download.
 
 ## Size Considerations
 
@@ -115,7 +117,12 @@ On a typical collection:
 
 | Constant/Function | File | Purpose |
 |---|---|---|
-| `RC_DIR` | `storage.rs` (re-exported from `metadata_db.rs`) | The `.replay-control` directory name |
+| `RC_DIR` | `storage.rs` | The `.replay-control` directory name |
+| `SETTINGS_FILE` | `storage.rs` | `"settings.cfg"` filename constant |
+| `LAUNCHBOX_XML` | `metadata_db.rs` | `"launchbox-metadata.xml"` filename constant |
+| `METADATA_DB_FILE` | `metadata_db.rs` | `"metadata.db"` filename constant |
+| `VIDEOS_FILE` | `storage.rs` | `"videos.json"` filename constant |
+| `StorageLocation::rc_dir()` | `storage.rs` | Returns `<root>/.replay-control` path |
 | `MetadataDb::open()` | `metadata_db.rs:83` | Opens/creates `metadata.db` |
 | `import_system_thumbnails()` | `thumbnails.rs:294` | Copies images from cloned repo to `media/` |
 | `clone_thumbnail_repo()` | `thumbnails.rs:565` | Clones a repo into `tmp/` (reuses existing if not stale) |

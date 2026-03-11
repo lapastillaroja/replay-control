@@ -747,7 +747,7 @@ fn normalize_arcade_genre(category: &str) -> &'static str {
         "Role-Playing" | "RPG" => "Role-Playing",
         // Non-game categories
         "System" | "BIOS" | "Utilities" | "Electromechanical" | "Device" | "Rewritable"
-        | "Not Coverage" | "Mature" | "Rhythm" => "Other",
+        | "Not Coverage" | "Mature" => "Other",
         _ if category.is_empty() => "",
         _ => "Other",
     }

@@ -21,11 +21,7 @@ Total source: ~19K lines Rust + 141K lines generated code
 
 ### Key observation
 
-**Incremental release builds are nearly as slow as clean builds.** Rust disables
-incremental compilation in `release` profile by default, so any change to the
-single-crate app causes a full recompilation. The WASM incremental case (3m 57s)
-is actually *slower* than a clean build (3m 06s) due to artifact lock contention
-from the concurrent SSR build artifacts.
+**Note**: The measurements above were taken before `incremental = true` was enabled for release builds. With incremental release compilation enabled (now in workspace `Cargo.toml`), incremental release rebuilds are significantly faster (~20-30s for a single-file change). The WASM incremental case may still be slower due to artifact lock contention from concurrent SSR build artifacts.
 
 ## Findings
 
@@ -71,18 +67,13 @@ re-runs.
 
 ### 3. Codegen Units
 
-**Current**: Default settings (no `[profile]` sections in any `Cargo.toml`).
-- Release: `codegen-units = 16`, `opt-level = 3`, `lto = false`, `incremental = false`
+**Current**: Workspace `Cargo.toml` has `[profile.release] incremental = true`.
+- Release: `codegen-units = 16`, `opt-level = 3`, `lto = false`, `incremental = true` (explicitly set)
 - Dev: `codegen-units = 256`, `opt-level = 0`, `incremental = true`
 
-**Key problem**: `incremental = false` in release means every change to the app
-crate triggers a full recompilation of that crate. Since the app crate is a
-single monolithic crate with all pages, components, and server functions, this
-is extremely expensive.
+**Previous problem (now resolved)**: `incremental = false` was the Rust default for release, meaning every change to the app crate triggered a full recompilation. This was fixed by adding `incremental = true` to the workspace `Cargo.toml`'s `[profile.release]` section.
 
-Setting `codegen-units = 256` and `incremental = true` for release would
-significantly speed up incremental release builds at the cost of slightly
-less optimized output.
+Further setting `codegen-units = 256` for release would speed up incremental builds even more at the cost of slightly less optimized output.
 
 ### 4. Macro Expansion
 
@@ -151,7 +142,7 @@ This way, changing a server function doesn't recompile all UI code and vice vers
 
 ### 8. Profile Settings
 
-**No custom profiles defined.** The workspace uses pure Rust defaults.
+The workspace `Cargo.toml` has `[profile.release] incremental = true`. No other custom profile settings.
 
 Missing optimizations:
 - No `strip = true` for release (binary is 71MB unstripped)
@@ -202,11 +193,11 @@ CPU contention. On a 16-core machine this should be manageable.
 
 ### Quick Wins (< 30 minutes, high impact)
 
-#### 1. Enable incremental compilation for release builds
+#### 1. Enable incremental compilation for release builds -- DONE
 **Estimated impact**: Reduce incremental release rebuilds from ~2m to ~20-30s.
 **Effort**: 5 minutes.
 
-Add to workspace `Cargo.toml`:
+Added to workspace `Cargo.toml`:
 ```toml
 [profile.release]
 incremental = true
@@ -349,18 +340,18 @@ generated code, saving ~1 minute on every core crate rebuild.
 
 ## Summary Table
 
-| # | Recommendation                        | Impact         | Effort    | Type       |
-|---|---------------------------------------|----------------|-----------|------------|
-| 1 | Incremental release builds            | Very High      | 5 min     | Quick win  |
-| 2 | Parallel WASM + SSR in build.sh       | High           | 15 min    | Quick win  |
-| 3 | Strip release binaries                | Low (size)     | 2 min     | Quick win  |
-| 4 | Release-dev profile                   | High           | 5 min     | Quick win  |
-| 5 | Install mold linker                   | Low            | 30 min    | Medium     |
-| 6 | Install sccache                       | High (CI)      | 1 hour    | Medium     |
-| 7 | Reduce generated code size            | High           | 2-4 hours | Medium     |
-| 8 | Replace reqwest with lighter client   | Moderate       | 1-2 hours | Medium     |
-| 9 | Split app crate                       | High           | 1-2 days  | Large      |
-| 10| Pre-compile data to binary format     | Very High      | 1-2 days  | Large      |
+| # | Recommendation                        | Impact         | Effort    | Type       | Status     |
+|---|---------------------------------------|----------------|-----------|------------|------------|
+| 1 | Incremental release builds            | Very High      | 5 min     | Quick win  | **Done**   |
+| 2 | Parallel WASM + SSR in build.sh       | High           | 15 min    | Quick win  | Not done   |
+| 3 | Strip release binaries                | Low (size)     | 2 min     | Quick win  | Not done   |
+| 4 | Release-dev profile                   | High           | 5 min     | Quick win  | Not done   |
+| 5 | Install mold linker                   | Low            | 30 min    | Medium     | Not done   |
+| 6 | Install sccache                       | High (CI)      | 1 hour    | Medium     | Not done   |
+| 7 | Reduce generated code size            | High           | 2-4 hours | Medium     | Not done   |
+| 8 | Replace reqwest with lighter client   | Moderate       | 1-2 hours | Medium     | Not done   |
+| 9 | Split app crate                       | High           | 1-2 days  | Large      | Not done   |
+| 10| Pre-compile data to binary format     | Very High      | 1-2 days  | Large      | Not done   |
 
 The biggest single win is **recommendation #1** (enabling incremental release builds).
 It takes 5 minutes to implement and should reduce iterative release rebuilds from

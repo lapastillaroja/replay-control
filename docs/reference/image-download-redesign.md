@@ -1,8 +1,9 @@
 # Image Download Redesign
 
-Analysis and proposal for redesigning the image download section on the metadata page.
+Analysis and redesign of the image download section on the metadata page.
 
-Last updated: 2026-03-11
+> Status: Implemented (P0-P2)
+> Last updated: 2026-03-11
 
 ## Current State
 
@@ -28,7 +29,7 @@ import_system_thumbnails()
     │  Updates metadata.db with image paths
     │
     ▼
-Repo stays in tmp/  ← THE PROBLEM
+Auto-delete repo (remove_dir_all)  ← FIXED: repos no longer accumulate
 ```
 
 ### Current UI Layout (Images Section)
@@ -62,17 +63,18 @@ Repo stays in tmp/  ← THE PROBLEM
 
 | Function | Action |
 |---|---|
-| `import_system_images(system)` | Clone repo + match + copy for one system |
-| `import_all_images()` | Clone + match + copy for ALL systems with ROMs |
-| `rematch_all_images()` | Re-match using existing clones (no download), re-clones if stale |
+| `import_system_images(system)` | Clone repo + match + copy + **auto-delete repo** for one system |
+| `import_all_images()` | Clone + match + copy + **auto-delete** for ALL systems sequentially |
+| `rematch_all_images()` | Re-match using existing clones only (truly offline -- no staleness check) |
 | `cancel_image_import()` | Sets cancel flag |
-| `clear_images()` | Deletes `media/` only -- does NOT touch `tmp/` |
+| `clear_images()` | Deletes `media/` only |
+| `clear_image_cache()` | Deletes `tmp/libretro-thumbnails/` (the repo cache) |
+| `get_image_stats()` | Returns `(boxart_count, snap_count, media_size, cache_size)` |
+| `get_cache_size()` | Returns size of `tmp/libretro-thumbnails/` in bytes |
 
-### Current Staleness Check
+### Staleness Check
 
-`is_repo_stale()` compares local `git rev-parse HEAD` against remote `git ls-remote --heads <url> master`. If they differ, the repo is considered stale and is deleted + re-cloned. This runs on both "Download" and "Re-match" paths.
-
-Key observation: "Re-match All" is not purely offline. If a repo is stale, it re-clones it, which requires network access and disk space. The button label "Re-match All" with tooltip "no download needed" is misleading.
+`is_repo_stale()` still exists in `thumbnails.rs` and compares local `git rev-parse HEAD` against remote `git ls-remote --heads <url> master`. It is used on the "Download" path (to decide whether to re-clone). It is **not** used on the "Re-match" path -- re-match is purely offline and only operates on repos already on disk.
 
 ## Problems Identified (with Real Numbers)
 
@@ -263,47 +265,41 @@ Amstrad CPC       2910/4168   [Download]  [Re-match]
 
 ## Implementation Plan
 
-### Phase 1: Auto-Cleanup + Clear Cache Button (High Priority)
+### Phase 1: Auto-Cleanup + Clear Cache Button (High Priority) -- DONE
 
 **Goal**: Prevent disk from filling up; give users a way to reclaim space.
 
-1. **Auto-delete repos after successful match** -- In `import_system_images_blocking()`, after `import_system_thumbnails()` completes successfully for a system, delete the repo directory. This is a ~5-line change in `import.rs`.
+1. **Auto-delete repos after successful match** -- In `import_system_images_blocking()` (`import.rs:487`), after `import_system_thumbnails()` completes successfully for a system, the repo directory is deleted with `remove_dir_all`. Done.
 
-2. **Add `clear_image_cache()` server function** -- Delete `.replay-control/tmp/libretro-thumbnails/`. Register in `main.rs`.
+2. **Add `clear_image_cache()` server function** -- `server_fns/images.rs:clear_image_cache()` deletes `.replay-control/tmp/libretro-thumbnails/`. Delegates to `thumbnails::clear_cache()`. Done.
 
-3. **Add `tmp_dir_size()` function** to `thumbnails.rs` -- Calculate size of `tmp/libretro-thumbnails/`.
+3. **Add `cache_dir_size()` function** to `thumbnails.rs` -- Calculates size of `tmp/libretro-thumbnails/`. Done.
 
-4. **Show cache size** in image stats (add to `get_image_stats()` return value).
+4. **Show cache size** in image stats -- `get_image_stats()` returns a 4-tuple `(boxart_count, snap_count, media_size, cache_size)`. Done.
 
-5. **Add "Clear Cache" button** to Data Management section in `metadata.rs`.
+5. **Add "Clear Cache" button** to Data Management section in metadata page. Done.
 
-6. **Add i18n keys**: `metadata.clear_cache`, `metadata.clearing_cache`, `metadata.cleared_cache`, `metadata.confirm_clear_cache`, `metadata.cache_size`.
+6. **i18n keys** added. Done.
 
-**Estimated effort**: Small -- mostly plumbing. The core change (auto-delete) is trivial.
-
-### Phase 2: Download All Pipeline (Medium Priority)
+### Phase 2: Download All Pipeline (Medium Priority) -- DONE (item 1)
 
 **Goal**: Make "Download All" safe on constrained disks.
 
-1. **Sequential process-and-delete** -- Modify `start_all_images_import()` to delete each repo after its system is processed, before moving to the next system. This ensures peak disk usage is one repo at a time.
+1. **Sequential process-and-delete** -- `start_all_images_import()` processes systems one at a time. Each system's repo is auto-deleted after successful matching (same Phase 1 mechanism), before moving to the next system. Peak disk usage is one repo at a time. Done.
 
-2. **Pre-flight disk check** -- Before starting "Download All", estimate total download size and check available disk space. Show a warning if free space is less than the largest single repo (~15 GB).
+2. **Pre-flight disk check** -- Not yet implemented.
 
-3. **Skip fully-covered systems** -- Add an option to skip systems where coverage is above a threshold (e.g., 90% boxart).
+3. **Skip fully-covered systems** -- Not yet implemented.
 
-**Estimated effort**: Medium -- the sequential delete is straightforward; the pre-flight check requires estimating repo sizes.
-
-### Phase 3: Re-match Improvements (Low Priority)
+### Phase 3: Re-match Improvements (Low Priority) -- DONE (item 1)
 
 **Goal**: Make re-match a first-class operation.
 
-1. **Remove staleness check from re-match path** -- In `rematch_system_images_blocking()`, remove the `is_repo_stale()` check. Re-match should be purely local.
+1. **Remove staleness check from re-match path** -- `rematch_system_images_blocking()` is purely offline. It checks if `repo_dir.join("Named_Boxarts").exists()` and skips repos that are not on disk, with a log message "re-match is offline-only". No `is_repo_stale()` call. Done.
 
-2. **Per-system re-match button** -- Add individual "Re-match" buttons to system rows (only enabled when repo is cached).
+2. **Per-system re-match button** -- Not yet implemented.
 
-3. **Better re-match visibility** -- Move "Re-match All" to be more prominent, with a clearer label like "Re-scan ROM matches" and a description.
-
-**Estimated effort**: Small for the staleness fix; medium for UI changes.
+3. **Better re-match visibility** -- Not yet implemented.
 
 ### Phase 4: Informational Improvements (Low Priority)
 
@@ -341,13 +337,13 @@ No settings file changes needed. The auto-cleanup is a code-level behavior chang
 
 ## Summary
 
-| Change | Impact | Effort | Priority |
-|---|---|---|---|
-| Auto-delete repos after match | Prevents disk fill (saves ~76 GB) | Small | P0 |
-| Add "Clear Cache" button | Lets existing users reclaim space | Small | P0 |
-| Show cache size on page | Makes cost visible | Small | P0 |
-| Sequential process-and-delete for Download All | Peak usage = 1 repo instead of all | Medium | P1 |
-| Remove staleness check from re-match | Makes re-match truly offline | Small | P2 |
-| Per-system re-match button | Convenience | Medium | P3 |
-| Pre-flight disk check for Download All | Safety warning | Medium | P3 |
-| Show per-system repo size | Informed decisions | Medium | P3 |
+| Change | Impact | Effort | Priority | Status |
+|---|---|---|---|---|
+| Auto-delete repos after match | Prevents disk fill (saves ~76 GB) | Small | P0 | **Done** |
+| Add "Clear Cache" button | Lets existing users reclaim space | Small | P0 | **Done** |
+| Show cache size on page | Makes cost visible | Small | P0 | **Done** |
+| Sequential process-and-delete for Download All | Peak usage = 1 repo instead of all | Medium | P1 | **Done** |
+| Remove staleness check from re-match | Makes re-match truly offline | Small | P2 | **Done** |
+| Per-system re-match button | Convenience | Medium | P3 | Not started |
+| Pre-flight disk check for Download All | Safety warning | Medium | P3 | Not started |
+| Show per-system repo size | Informed decisions | Medium | P3 | Not started |
