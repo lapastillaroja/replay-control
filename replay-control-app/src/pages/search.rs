@@ -178,7 +178,7 @@ pub fn SearchPage() -> impl IntoView {
                 debounced_genre.get(),
             )
         },
-        |(q, hh, ht, hb, hc, mp, g)| server_fns::global_search(q, hh, ht, hb, hc, mp, g, 3),
+        |(q, hh, ht, hb, hc, mp, g)| server_fns::global_search(q, hh, ht, hb, hc, mp, None, g, 3),
     );
 
     // Derived: show the "empty state" panel (recent searches + random game).

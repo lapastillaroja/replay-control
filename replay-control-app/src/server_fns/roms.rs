@@ -49,6 +49,8 @@ pub async fn get_roms_page(
     genre: String,
     #[server(default)]
     multiplayer_only: bool,
+    #[server(default)]
+    min_rating: Option<f32>,
 ) -> Result<RomPage, ServerFnError> {
     use replay_control_core::rom_tags;
     use replay_control_core::systems::{self as sys_db, SystemCategory};
@@ -112,6 +114,30 @@ pub async fn get_roms_page(
         })
         .collect();
 
+    // Apply minimum rating filter: batch-load all ratings for the system,
+    // then exclude ROMs below the threshold (unrated games are excluded).
+    let pre_filtered: Vec<RomEntry> = if let Some(threshold) = min_rating {
+        let ratings = if let Some(guard) = state.metadata_db() {
+            if let Some(db) = guard.as_ref() {
+                db.system_ratings(&system).unwrap_or_default()
+            } else {
+                std::collections::HashMap::new()
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+        pre_filtered
+            .into_iter()
+            .filter(|r| {
+                ratings
+                    .get(&r.game.rom_filename)
+                    .is_some_and(|&rating| rating >= threshold as f64)
+            })
+            .collect()
+    } else {
+        pre_filtered
+    };
+
     let filtered: Vec<RomEntry> = if search.is_empty() {
         pre_filtered
     } else {
@@ -124,7 +150,12 @@ pub async fn get_roms_page(
                     .display_name
                     .as_deref()
                     .unwrap_or(&r.game.rom_filename);
-                let score = search_score(&q, display, &r.game.rom_filename, region_pref);
+                let rom_genre = lookup_genre(&system, &r.game.rom_filename);
+                let rom_year = lookup_year(&system, &r.game.rom_filename);
+                let score = search_score(
+                    &q, display, &r.game.rom_filename, region_pref,
+                    &rom_genre, &rom_year,
+                );
                 if score > 0 { Some((score, r)) } else { None }
             })
             .collect();

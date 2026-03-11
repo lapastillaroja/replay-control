@@ -1,6 +1,6 @@
 # Search Improvement Analysis
 
-> Status: Implemented (Phases 1-3, 5 partial, 6)
+> Status: Implemented (Phases 1-3, 4 partial [genre+year], 5 partial, 6)
 > Date: 2026-03-11
 
 ## Problem Statement
@@ -770,3 +770,208 @@ fn word_match_mario_kart() {
 **Pegasus Frontend** supports regex-based search, which power users can leverage for word matching but is not user-friendly for casual use.
 
 Our proposed approach matches LaunchBox's behavior, which is widely considered the best search experience among retro gaming frontends.
+
+---
+
+## Phase 7: Rating-Based Search and Filtering
+
+> Status: Proposed
+> Date: 2026-03-11
+
+### Problem
+
+The app already displays ratings from LaunchBox metadata (0.0-5.0 community rating scale) on game detail pages and carries them through the `RomEntry.rating` field and `GlobalSearchResult.rating` field. However, ratings are purely informational -- users cannot filter or sort by rating, and ratings do not influence search result ranking. A user who wants to find "the best SNES platformers" has no way to express that query.
+
+### Current Rating Data Flow
+
+Ratings originate from the LaunchBox `CommunityRating` XML field (parsed in `launchbox.rs`) and are stored as `REAL` in the `game_metadata` SQLite table (`metadata_db.rs`). The scale is 0.0-5.0. The data flow:
+
+1. **Storage**: `game_metadata.rating REAL` in `metadata_db.rs`, keyed by `(system, rom_filename)`
+2. **Single lookup**: `MetadataDb::lookup()` returns `GameMetadata { rating: Option<f64>, ... }`
+3. **Batch lookup**: `MetadataDb::lookup_ratings()` takes a system + list of filenames, returns `HashMap<String, f64>` for those with non-null ratings. Used by both `get_roms_page()` and `global_search()` to populate results after scoring/filtering
+4. **Full dump**: `MetadataDb::all_ratings()` returns all `(system, rom_filename) -> f64` pairs. Currently used only by `organize_favorites()` for rating-based folder organization
+5. **Display**: `RomEntry.rating: Option<f32>` (core crate) and `GlobalSearchResult.rating: Option<f32>` (search results) carry the rating to the UI, where it is shown as "X.X / 5.0"
+
+**Important architectural detail**: Ratings are currently looked up **after** search scoring and pagination in both `get_roms_page()` (line 176-189) and `global_search()` (line 440-450). The `search_score()` function never sees ratings -- it works purely on display name, filename, and region preference. Ratings are fetched only for the final result set (the page of results being returned to the client).
+
+### Coverage Reality
+
+From the LaunchBox import stats: approximately **70.2%** of matched games have ratings (15,683 out of 22,356 matched entries). This means ~30% of games in a typical collection will have no rating data. Coverage varies significantly by system -- popular consoles (SNES, Genesis, NES) have high coverage while obscure systems may have very low coverage. Arcade games matched via the `arcade_db` display-name bridge also have good coverage since those tend to be well-known titles.
+
+User ratings (from a future `user_metadata` table, see `user-editable-metadata.md`) would use the same 0.0-5.0 scale but are not yet implemented.
+
+### Use Cases
+
+#### 1. Filter by minimum rating
+
+Allow users to set a minimum rating threshold, e.g., "show only games rated 3.5 or higher."
+
+**Parameters**: `min_rating: Option<f32>` added to `get_roms_page()` and `global_search()`.
+
+**Behavior**:
+- When set, exclude all ROMs whose rating is below the threshold
+- Unrated games: **excluded by default** when a minimum rating filter is active, since including them would defeat the purpose of the filter. An optional `include_unrated: bool` toggle could allow users to also see unrated games alongside the filtered results
+- Applied as a pre-filter (before search scoring), same as genre and multiplayer filters
+
+**UI**: A dropdown or slider in the filter panel: "Minimum rating: Any / 3.0+ / 3.5+ / 4.0+ / 4.5+"
+
+#### 2. Sort by rating
+
+Allow users to sort the game list by rating (highest first) instead of the default alphabetical sort.
+
+**Parameters**: `sort_by: SortCriteria` enum (Alphabetical, Rating, ...) added to `get_roms_page()`.
+
+**Behavior**:
+- When active and no search query is present, sort all games by rating descending
+- Unrated games are placed at the end (treated as rating 0.0 for sorting purposes)
+- When a search query IS present, this conflicts with relevance sorting -- the two options should be mutually exclusive (search always sorts by relevance)
+
+**UI**: A sort selector beside the search bar: "Sort by: Name / Rating"
+
+#### 3. Search modifiers (future, speculative)
+
+Natural-language-style query modifiers like "top rated" or "best" that implicitly activate rating filtering or boosting.
+
+**Examples**:
+- `"top rated"` with no other query words -> show all games sorted by rating descending
+- `"best platformers"` -> genre=Platformer + sort by rating
+- `"top snes"` -> within the SNES system, sort by rating
+
+**Feasibility**: Low priority. This requires query parsing to detect modifier keywords and strip them before passing the remaining query to `search_score()`. The modifier vocabulary is hard to define exhaustively and risks false positives (e.g., a game literally called "Top Gear" should not trigger rating sorting). Explicit UI controls (filter + sort dropdowns) are more reliable and discoverable.
+
+**Recommendation**: Do not implement search modifiers initially. Focus on explicit filter/sort controls.
+
+#### 4. Combined with other filters
+
+Rating filters compose naturally with existing filters:
+
+- "4+ star platformers" = `min_rating=4.0` + `genre=Platformer`
+- "Top rated multiplayer games" = `sort_by=Rating` + `multiplayer_only=true`
+- "Best SNES games without hacks" = `min_rating=4.0` + `hide_hacks=true` (within SNES system page)
+
+No special handling needed -- filters are applied sequentially in the existing pipeline.
+
+### Rating Boost for Search Relevance
+
+**Question**: Should highly-rated games rank higher in search results when match quality is equal?
+
+**Analysis**: When a user searches "mario" and gets 50 results across SNES, all matching at the same tier (e.g., word-boundary match at 2,000 base score), should "Super Mario World" (rated 4.5) rank above "Mario Paint" (rated 3.2)?
+
+**Arguments for**:
+- Matches user intent: users searching by name generally want the "best" version of a game
+- LaunchBox and Steam both boost popular/highly-rated results
+
+**Arguments against**:
+- Ratings are subjective and source-dependent (LaunchBox community ratings may not match user preference)
+- Creates a "rich get richer" effect where highly-rated games dominate search results
+- ~30% of games have no rating -- these would be systematically deprioritized
+- The existing scoring already handles the most common case (original clean ROMs rank above hacks) through tier penalties and region bonuses
+- Adds complexity to `search_score()` which currently works without any DB access
+
+**Recommendation**: Do not add a rating boost to `search_score()`. The function should remain a pure function of (query, display_name, filename, region_pref) with no database dependency. Rating-based ranking belongs in the sort layer, not the relevance layer. If a user wants to find highly-rated games, they should use the explicit rating filter/sort.
+
+If a rating boost is ever added, it should be small (e.g., +10 per full star, so a 5.0-rated game gets +50 -- less than the difference between scoring tiers) and should not penalize unrated games (treat them as neutral, not as 0-rated). The boost should only apply as a tiebreaker between results at the same scoring tier.
+
+### Integration with the Search Scoring System
+
+The key design decision is **where** in the pipeline ratings enter:
+
+```
+ROM list
+  -> pre-filter (tier-based, genre, multiplayer, clones)      [existing]
+  -> NEW: pre-filter (min_rating)                              [proposed]
+  -> search scoring (search_score() -- pure, no DB)            [existing, unchanged]
+  -> sort by score (or by rating if sort_by=Rating)            [modified]
+  -> pagination (skip/take)                                    [existing]
+  -> post-enrich (favorites, box art, ratings, players, etc.)  [existing]
+```
+
+Rating filtering happens early (pre-filter) because it eliminates rows before the more expensive search scoring. Rating sorting replaces relevance sorting only when explicitly requested and no search query is active.
+
+**`search_score()` remains unchanged** -- it is a pure function with no side effects and no DB access. This is important for testability and performance (no DB lookup per ROM during scoring).
+
+### Performance Considerations
+
+#### Current lookup pattern
+
+Both `get_roms_page()` and `global_search()` use `lookup_ratings()` as a **post-enrichment** step: they score and paginate first, then fetch ratings only for the final page of results (typically 20-50 ROMs). This is efficient because it minimizes DB queries.
+
+#### Impact of rating as a filter
+
+If `min_rating` is added as a pre-filter, ratings must be available **before** scoring -- for every ROM in the system, not just the final page. Two approaches:
+
+**Option A: Batch pre-load all ratings for the system**
+
+Use `lookup_ratings()` with all ROM filenames in the system, or add a new `MetadataDb::system_ratings(system: &str) -> HashMap<String, f64>` method that fetches all ratings for a system in one query. For a system with 5,000 ROMs, this is a single SQLite query returning ~3,500 rows (70% coverage) -- fast even on the Pi.
+
+Cost: one extra DB query per `get_roms_page()` call when the rating filter is active. The HashMap stays in memory for the duration of the request (not cached across requests).
+
+**Option B: Cache ratings in `RomCache`**
+
+Extend the existing `RomCache` (which caches ROM lists for 30 seconds) to also cache ratings per system. This amortizes the DB cost across multiple requests but adds memory usage and cache invalidation complexity.
+
+**Recommendation**: Option A for simplicity. A single `SELECT system, rom_filename, rating FROM game_metadata WHERE system = ?1 AND rating IS NOT NULL` query is well within acceptable latency for a request-scoped lookup. Only execute this query when a rating filter or rating sort is actually requested.
+
+#### Impact on `global_search()`
+
+Global search iterates over all systems. If a rating filter is active, it would need to fetch ratings for every system -- potentially 20+ DB queries. This is acceptable because:
+- Each query is fast (single indexed lookup on system)
+- Global search already iterates all systems and all ROMs (it's inherently expensive)
+- The rating filter would reduce the number of scored ROMs, offsetting the DB cost
+
+For the sort-by-rating case in global search, the system-level grouping makes it less useful: rating sorting within each system group is meaningful, but cross-system rating comparison is less so (a 4.0 on SNES may not be comparable to a 4.0 on NES). The global search could sort systems by their top-rated match.
+
+### UX Considerations
+
+#### Unrated games
+
+The biggest UX challenge. With ~30% of games unrated, any rating-based feature must handle the "no data" case gracefully:
+
+1. **Filter with min_rating**: Unrated games are excluded. The UI should clearly indicate this: "Showing 847 games rated 4.0+ (2,341 unrated games hidden)". An "Include unrated" toggle provides an escape hatch.
+
+2. **Sort by rating**: Unrated games sort to the bottom. The list effectively becomes "rated games by quality, then unrated games alphabetically." The UI could show a visual separator or label: "--- Unrated ---"
+
+3. **Rating display in results**: Already handled -- `rating: Option<f32>` renders as stars when present, nothing when absent. No change needed.
+
+#### Rating distribution awareness
+
+LaunchBox community ratings tend to cluster in the 2.5-4.5 range. Very few games are rated below 2.0 or at exactly 5.0. The filter thresholds should reflect this:
+- "3.0+" captures most games with ratings (too broad to be useful alone, but good combined with genre)
+- "4.0+" is a meaningful "good games" threshold
+- "4.5+" is "excellent" and will produce a short list
+
+The UI should NOT offer "1.0+" or "2.0+" thresholds -- these would be virtually identical to "show all rated games" and waste dropdown space.
+
+#### System-level variation
+
+Some systems have excellent rating coverage (popular consoles), while others may have near-zero coverage (obscure systems, certain arcade boards). When the user activates a rating filter on a system with poor coverage, they might see an unexpectedly empty list.
+
+**Mitigation**: When the rating filter produces zero results but unfiltered results exist, show a message: "No rated games found for this system. Try removing the rating filter or importing metadata."
+
+#### Discoverability
+
+Rating filter/sort should be in the same filter panel as existing filters (hide hacks, genre, multiplayer). It should not require a separate UI affordance. The filter panel already exists in `rom_list.rs` -- the rating controls would be additional items.
+
+### Files to Modify (When Implemented)
+
+| File | Change |
+|------|--------|
+| `replay-control-app/src/server_fns/roms.rs` | Add `min_rating` and `sort_by` parameters to `get_roms_page()` |
+| `replay-control-app/src/server_fns/search.rs` | Add `min_rating` parameter to `global_search()`; no changes to `search_score()` |
+| `replay-control-core/src/metadata_db.rs` | Optionally add `system_ratings()` method for efficient per-system batch lookup |
+| `replay-control-app/src/components/rom_list.rs` | Add rating filter dropdown and sort selector to the filter panel |
+| `replay-control-app/src/pages/search.rs` | Add rating filter to global search page |
+
+### Dependencies
+
+- **Metadata import**: Rating data requires LaunchBox metadata to be imported. Without import, all games are unrated and rating features are inert. The UI should indicate when metadata is not available.
+- **User ratings (future)**: The `user-editable-metadata.md` proposal describes a `user_metadata` table where users can set their own ratings. When implemented, the rating lookup should merge user ratings (preferred) with LaunchBox ratings (fallback), using the same 0.0-5.0 scale. The filter/sort infrastructure built here would work unchanged with user ratings.
+
+### Summary of Recommendations
+
+1. **Add `min_rating` filter** to `get_roms_page()` and `global_search()` as a pre-filter. Exclude unrated games when the filter is active (with optional include toggle).
+2. **Add `sort_by: Rating`** option to `get_roms_page()` for non-search browsing. Unrated games sort last.
+3. **Do not modify `search_score()`**. Ratings should not influence search relevance scoring. Keep the function pure and DB-free.
+4. **Do not implement search modifiers** ("top rated", "best") -- use explicit UI controls instead.
+5. **Use request-scoped batch lookup** (Option A) rather than caching ratings in `RomCache`.
+6. **Handle unrated games explicitly** in the UI with counts, messages, and an "include unrated" toggle.

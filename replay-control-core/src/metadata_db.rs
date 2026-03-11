@@ -227,6 +227,33 @@ impl MetadataDb {
         Ok(map)
     }
 
+    /// Fetch all ratings for a single system in one query.
+    /// Returns a map of rom_filename -> rating for entries with a non-null rating.
+    /// More efficient than `lookup_ratings()` when filtering all ROMs in a system.
+    pub fn system_ratings(&self, system: &str) -> Result<std::collections::HashMap<String, f64>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, rating FROM game_metadata
+                 WHERE system = ?1 AND rating IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system ratings query: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("System ratings query: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    }
+
     /// Insert or update metadata for a game.
     pub fn upsert(&self, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
         self.conn

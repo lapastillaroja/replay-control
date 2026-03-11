@@ -126,15 +126,58 @@ fn try_word_match(query_words: &[&str], display_words: &[&str], filename_words: 
     None
 }
 
+/// Score a query against metadata fields (genre, year) when title matching fails.
+/// Genre match scores 200, year exact match scores 150. These are intentionally
+/// below all title-based match tiers (word-match minimum is ~300).
+#[cfg(feature = "ssr")]
+fn metadata_score(query: &str, genre: &str, year: &str) -> u32 {
+    // Genre match: check if the query is contained in the normalized genre.
+    // e.g., query "platform" matches genre "Platform", "platform" matches "Platform / Run Jump".
+    if !genre.is_empty() {
+        let genre_lower = genre.to_lowercase();
+        // Check each word in the genre separately (e.g., "Platform / Action" has words
+        // "platform", "action") so that searching "action" matches "Platform / Action".
+        let genre_words: Vec<&str> = genre_lower
+            .split(|c: char| c.is_whitespace() || c == '/')
+            .map(|w| w.trim())
+            .filter(|w| !w.is_empty())
+            .collect();
+        // Exact word match in genre (e.g., "platform" matches word "platform")
+        if genre_words.iter().any(|w| *w == query) {
+            return 200;
+        }
+        // Prefix match in genre (e.g., "plat" matches "platform")
+        if genre_words.iter().any(|w| w.starts_with(query)) {
+            return 150;
+        }
+        // Substring match in full genre string (e.g., "latform" matches "Platform")
+        if genre_lower.contains(query) {
+            return 100;
+        }
+    }
+
+    // Year exact match: query "1991" matches year "1991".
+    if !year.is_empty() && year == query {
+        return 150;
+    }
+
+    0
+}
+
 /// Compute a relevance score for a ROM against a search query.
 /// Higher = more relevant. Returns 0 for no match.
 /// The `region_pref` parameter controls which region gets the highest bonus.
+/// Optional `genre` and `year` parameters enable metadata-enriched search:
+/// when the query doesn't match the title at all, it can still match genre or year
+/// as a lower-scored fallback.
 #[cfg(feature = "ssr")]
 pub(crate) fn search_score(
     query: &str,
     display_name: &str,
     filename: &str,
     region_pref: replay_control_core::rom_tags::RegionPreference,
+    genre: &str,
+    year: &str,
 ) -> u32 {
     let display_lower = display_name.to_lowercase();
     let filename_lower = filename.to_lowercase();
@@ -182,17 +225,20 @@ pub(crate) fn search_score(
         }
     } else {
         // Fallback: word-level matching for multi-word queries
-        if !query.contains(' ') {
-            return 0;
-        }
-        let query_words: Vec<&str> = split_into_words(query);
-        if query_words.len() < 2 {
-            return 0;
-        }
-        let display_words: Vec<&str> = split_into_words(&display_lower);
-        let filename_words: Vec<&str> = split_into_words(&filename_lower);
+        let word_score = if !query.contains(' ') {
+            None
+        } else {
+            let query_words: Vec<&str> = split_into_words(query);
+            if query_words.len() < 2 {
+                None
+            } else {
+                let display_words: Vec<&str> = split_into_words(&display_lower);
+                let filename_words: Vec<&str> = split_into_words(&filename_lower);
+                try_word_match(&query_words, &display_words, &filename_words)
+            }
+        };
 
-        match try_word_match(&query_words, &display_words, &filename_words) {
+        match word_score {
             Some((word_base, _)) => {
                 // Apply the same bonuses/penalties as other tiers
                 let length_bonus: u32 = if display_name.len() < 40 { 100 } else { 0 };
@@ -217,7 +263,10 @@ pub(crate) fn search_score(
                 };
                 return (word_base + length_bonus + region_bonus).saturating_sub(tier_penalty);
             }
-            None => return 0,
+            None => {
+                // No title match at all — try metadata fallback (genre/year).
+                return metadata_score(query, genre, year);
+            }
         }
     };
 
@@ -281,6 +330,43 @@ pub(crate) fn lookup_genre(system: &str, rom_filename: &str) -> String {
     }
 }
 
+/// Look up the release year for a ROM on a given system.
+/// Returns the year as a string (e.g., "1991"), or empty string if unknown.
+#[cfg(feature = "ssr")]
+pub(crate) fn lookup_year(system: &str, rom_filename: &str) -> String {
+    use replay_control_core::arcade_db;
+    use replay_control_core::game_db;
+    use replay_control_core::systems::{self, SystemCategory};
+
+    let is_arcade = systems::find_system(system)
+        .is_some_and(|s| s.category == SystemCategory::Arcade);
+
+    if is_arcade {
+        let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+        arcade_db::lookup_arcade_game(stem)
+            .map(|info| info.year.to_string())
+            .unwrap_or_default()
+    } else {
+        let stem = rom_filename
+            .rfind('.')
+            .map(|i| &rom_filename[..i])
+            .unwrap_or(rom_filename);
+        let entry = game_db::lookup_game(system, stem);
+        let game = entry.map(|e| e.game).or_else(|| {
+            let normalized = game_db::normalize_filename(stem);
+            game_db::lookup_by_normalized_title(system, &normalized)
+        });
+        game.map(|g| {
+            if g.year > 0 {
+                g.year.to_string()
+            } else {
+                String::new()
+            }
+        })
+        .unwrap_or_default()
+    }
+}
+
 /// Look up the max player count for a ROM on a given system.
 /// Returns 0 if unknown.
 #[cfg(feature = "ssr")]
@@ -320,6 +406,8 @@ pub async fn global_search(
     hide_clones: bool,
     #[server(default)]
     multiplayer_only: bool,
+    #[server(default)]
+    min_rating: Option<f32>,
     genre: String,
     per_system_limit: usize,
 ) -> Result<GlobalSearchResults, ServerFnError> {
@@ -347,6 +435,21 @@ pub async fn global_search(
         let all_roms = match state.cache.get_roms(&storage, &sys.folder_name, region_pref) {
             Ok(roms) => roms,
             Err(_) => continue,
+        };
+
+        // Batch-load ratings for this system when a minimum rating filter is active.
+        let system_ratings = if min_rating.is_some() {
+            if let Some(guard) = state.metadata_db() {
+                if let Some(db) = guard.as_ref() {
+                    db.system_ratings(&sys.folder_name).unwrap_or_default()
+                } else {
+                    std::collections::HashMap::new()
+                }
+            } else {
+                std::collections::HashMap::new()
+            }
+        } else {
+            std::collections::HashMap::new()
         };
 
         let mut scored: Vec<(u32, RomEntry)> = all_roms
@@ -392,6 +495,15 @@ pub async fn global_search(
                 }
                 lookup_players(&sys.folder_name, &r.game.rom_filename) >= 2
             })
+            .filter(|r| {
+                if let Some(threshold) = min_rating {
+                    system_ratings
+                        .get(&r.game.rom_filename)
+                        .is_some_and(|&rating| rating >= threshold as f64)
+                } else {
+                    true
+                }
+            })
             .filter_map(|r| {
                 if q.is_empty() {
                     // No query: if genre is set or multiplayer filter active, include all matching; otherwise skip.
@@ -413,7 +525,12 @@ pub async fn global_search(
                         .display_name
                         .as_deref()
                         .unwrap_or(&r.game.rom_filename);
-                    let score = search_score(&q, display, &r.game.rom_filename, region_pref);
+                    let rom_genre = lookup_genre(&sys.folder_name, &r.game.rom_filename);
+                    let rom_year = lookup_year(&sys.folder_name, &r.game.rom_filename);
+                    let score = search_score(
+                        &q, display, &r.game.rom_filename, region_pref,
+                        &rom_genre, &rom_year,
+                    );
                     if score > 0 { Some((score, r)) } else { None }
                 }
             })
@@ -549,24 +666,34 @@ pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnEr
 
 #[cfg(test)]
 mod tests {
-    use super::search_score;
+    use super::{metadata_score, search_score};
     use replay_control_core::rom_tags::RegionPreference;
 
     /// Default preference for tests (matches pre-preference behavior).
     const PREF: RegionPreference = RegionPreference::Usa;
 
+    /// Shorthand for title-only search scoring (no metadata).
+    fn title_score(
+        query: &str,
+        display_name: &str,
+        filename: &str,
+        region_pref: RegionPreference,
+    ) -> u32 {
+        search_score(query, display_name, filename, region_pref, "", "")
+    }
+
     // --- Exact match (10_000 base) ---
 
     #[test]
     fn exact_match_display_name() {
-        let score = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
+        let score = title_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
         assert!(score >= 10_000, "Exact match should score >= 10000, got {score}");
     }
 
     #[test]
     fn exact_match_is_case_insensitive() {
-        let score = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
-        let score2 = search_score("tetris", "TETRIS", "TETRIS.nes", PREF);
+        let score = title_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
+        let score2 = title_score("tetris", "TETRIS", "TETRIS.nes", PREF);
         assert!(score >= 10_000);
         assert!(score2 >= 10_000);
     }
@@ -575,7 +702,7 @@ mod tests {
 
     #[test]
     fn prefix_match() {
-        let score = search_score("super", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let score = title_score("super", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             (5_000..10_000).contains(&score),
             "Prefix match should score in 5000..10000, got {score}"
@@ -586,7 +713,7 @@ mod tests {
 
     #[test]
     fn word_boundary_match() {
-        let score = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let score = title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             (2_000..5_000).contains(&score),
             "Word boundary match should score in 2000..5000, got {score}"
@@ -598,7 +725,7 @@ mod tests {
     #[test]
     fn substring_match() {
         // "ari" is inside "Mario" but doesn't start a word
-        let score = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let score = title_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             (1_000..2_000).contains(&score),
             "Substring match should score in 1000..2000, got {score}"
@@ -610,7 +737,7 @@ mod tests {
     #[test]
     fn filename_only_match() {
         // Query matches filename but not display name
-        let score = search_score("usa", "Tetris", "Tetris (USA).nes", PREF);
+        let score = title_score("usa", "Tetris", "Tetris (USA).nes", PREF);
         assert!(
             (500..1_000).contains(&score),
             "Filename-only match should score in 500..1000, got {score}"
@@ -621,13 +748,13 @@ mod tests {
 
     #[test]
     fn no_match_returns_zero() {
-        let score = search_score("zzzznotfound", "Tetris", "Tetris (USA).nes", PREF);
+        let score = title_score("zzzznotfound", "Tetris", "Tetris (USA).nes", PREF);
         assert_eq!(score, 0);
     }
 
     #[test]
     fn empty_query_no_match() {
-        let score = search_score("", "Tetris", "Tetris (USA).nes", PREF);
+        let score = title_score("", "Tetris", "Tetris (USA).nes", PREF);
         // Empty query matches everything via contains(""), so it should score > 0
         // (exact match since "tetris".contains("") is true, but actually "" == display_lower is false)
         // Let's verify the actual behavior
@@ -638,15 +765,15 @@ mod tests {
 
     #[test]
     fn exact_beats_prefix() {
-        let exact = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
-        let prefix = search_score("tetris", "Tetris Plus", "Tetris Plus (USA).nes", PREF);
+        let exact = title_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
+        let prefix = title_score("tetris", "Tetris Plus", "Tetris Plus (USA).nes", PREF);
         assert!(exact > prefix, "Exact ({exact}) should beat prefix ({prefix})");
     }
 
     #[test]
     fn prefix_beats_word_boundary() {
-        let prefix = search_score("super", "Super Mario World", "Super Mario World (USA).sfc", PREF);
-        let word = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let prefix = title_score("super", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let word = title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             prefix > word,
             "Prefix ({prefix}) should beat word boundary ({word})"
@@ -655,8 +782,8 @@ mod tests {
 
     #[test]
     fn word_boundary_beats_substring() {
-        let word = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
-        let substr = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let word = title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let substr = title_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             word > substr,
             "Word boundary ({word}) should beat substring ({substr})"
@@ -665,8 +792,8 @@ mod tests {
 
     #[test]
     fn substring_beats_filename_only() {
-        let substr = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
-        let filename = search_score("usa", "Tetris", "Tetris (USA).nes", PREF);
+        let substr = title_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let filename = title_score("usa", "Tetris", "Tetris (USA).nes", PREF);
         assert!(
             substr > filename,
             "Substring ({substr}) should beat filename-only ({filename})"
@@ -677,8 +804,8 @@ mod tests {
 
     #[test]
     fn short_name_gets_length_bonus() {
-        let short = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
-        let long = search_score(
+        let short = title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let long = title_score(
             "mario",
             "Super Mario World - Long Subtitle That Makes It Over 40 Characters",
             "Super Mario World - Long Subtitle (USA).sfc",
@@ -694,9 +821,9 @@ mod tests {
 
     #[test]
     fn hack_is_penalized() {
-        let original = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let original = title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         let hack =
-            search_score("mario", "Super Mario World", "Super Mario World (Hack).sfc", PREF);
+            title_score("mario", "Super Mario World", "Super Mario World (Hack).sfc", PREF);
         assert!(
             original > hack,
             "Original ({original}) should beat hack ({hack})"
@@ -705,8 +832,8 @@ mod tests {
 
     #[test]
     fn translation_is_penalized() {
-        let original = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
-        let translated = search_score(
+        let original = title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let translated = title_score(
             "mario",
             "Super Mario World",
             "Super Mario World (Traducido Es).sfc",
@@ -722,7 +849,7 @@ mod tests {
 
     #[test]
     fn special_characters_in_query() {
-        let score = search_score(
+        let score = title_score(
             "asterix & obelix",
             "Asterix & Obelix",
             "Asterix & Obelix (Europe).sfc",
@@ -733,7 +860,7 @@ mod tests {
 
     #[test]
     fn query_with_dash() {
-        let score = search_score(
+        let score = title_score(
             "x-men",
             "X-Men - Mutant Apocalypse",
             "X-Men - Mutant Apocalypse (USA).sfc",
@@ -747,9 +874,9 @@ mod tests {
     #[test]
     fn japan_preference_boosts_japan_roms() {
         let usa_with_usa_pref =
-            search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", RegionPreference::Usa);
+            title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", RegionPreference::Usa);
         let japan_with_japan_pref =
-            search_score("mario", "Super Mario World", "Super Mario World (Japan).sfc", RegionPreference::Japan);
+            title_score("mario", "Super Mario World", "Super Mario World (Japan).sfc", RegionPreference::Japan);
         // Both should get sort_key=1 (preferred region), so equal region bonus.
         assert_eq!(usa_with_usa_pref, japan_with_japan_pref);
     }
@@ -758,9 +885,9 @@ mod tests {
     fn preferred_region_beats_non_preferred() {
         let japan_pref = RegionPreference::Japan;
         let japan_score =
-            search_score("mario", "Super Mario World", "Super Mario World (Japan).sfc", japan_pref);
+            title_score("mario", "Super Mario World", "Super Mario World (Japan).sfc", japan_pref);
         let usa_score =
-            search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", japan_pref);
+            title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", japan_pref);
         assert!(
             japan_score > usa_score,
             "Japan ({japan_score}) should beat USA ({usa_score}) with Japan preference"
@@ -771,9 +898,9 @@ mod tests {
     fn europe_preference_puts_europe_before_usa() {
         let pref = RegionPreference::Europe;
         let europe_score =
-            search_score("mario", "Super Mario World", "Super Mario World (Europe).sfc", pref);
+            title_score("mario", "Super Mario World", "Super Mario World (Europe).sfc", pref);
         let usa_score =
-            search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", pref);
+            title_score("mario", "Super Mario World", "Super Mario World (USA).sfc", pref);
         assert!(
             europe_score > usa_score,
             "Europe ({europe_score}) should beat USA ({usa_score}) with Europe preference"
@@ -784,14 +911,14 @@ mod tests {
 
     #[test]
     fn word_match_sonic_3() {
-        let score = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let score = title_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
         assert!(score > 0, "\"sonic 3\" should match \"Sonic The Hedgehog 3\", got {score}");
         assert!(score < 1000, "Word match ({score}) should be below substring tier (1000)");
     }
 
     #[test]
     fn word_match_zelda_link() {
-        let score = search_score(
+        let score = title_score(
             "zelda link",
             "The Legend of Zelda - A Link to the Past",
             "Legend of Zelda, The - A Link to the Past (USA).sfc",
@@ -805,35 +932,35 @@ mod tests {
         // Both titles fail substring tiers for "sonic 3".
         // "Sonic The Hedgehog 3" has exact word "3" — should rank higher than
         // "Sonic Adventures 3D Edition" where "3" only prefix-matches "3D".
-        let hedgehog = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
-        let adventures = search_score("sonic 3", "Sonic Adventures 3D Edition", "Sonic Adventures 3D Edition (USA).md", PREF);
+        let hedgehog = title_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let adventures = title_score("sonic 3", "Sonic Adventures 3D Edition", "Sonic Adventures 3D Edition (USA).md", PREF);
         assert!(hedgehog > adventures, "Hedgehog 3 ({hedgehog}) should beat Adventures 3D ({adventures})");
     }
 
     #[test]
     fn word_match_does_not_activate_for_single_word() {
-        let score = search_score("zzzznotfound", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let score = title_score("zzzznotfound", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
         assert_eq!(score, 0);
     }
 
     #[test]
     fn word_match_requires_all_words() {
         // "sonic mario" — "mario" is not in "Sonic The Hedgehog 3"
-        let score = search_score("sonic mario", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let score = title_score("sonic mario", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
         assert_eq!(score, 0, "Not all query words present, should return 0");
     }
 
     #[test]
     fn word_match_below_substring() {
         // A substring match should always score higher than a word match
-        let substring = search_score("sonic", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
-        let word = search_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let substring = title_score("sonic", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let word = title_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
         assert!(substring > word, "Substring ({substring}) should beat word match ({word})");
     }
 
     #[test]
     fn word_match_x_men_hyphen() {
-        let score = search_score(
+        let score = title_score(
             "x men",
             "X-Men - Mutant Apocalypse",
             "X-Men - Mutant Apocalypse (USA).sfc",
@@ -845,13 +972,13 @@ mod tests {
     #[test]
     fn word_match_preserves_existing_substring_match() {
         // "mega man x" is a contiguous substring — should match at prefix tier, not word tier
-        let score = search_score("mega man x", "Mega Man X", "Mega Man X (USA).sfc", PREF);
+        let score = title_score("mega man x", "Mega Man X", "Mega Man X (USA).sfc", PREF);
         assert!(score >= 5000, "Contiguous match should hit prefix tier, got {score}");
     }
 
     #[test]
     fn word_match_mario_kart() {
-        let score = search_score("mario kart", "Super Mario Kart", "Super Mario Kart (USA).sfc", PREF);
+        let score = title_score("mario kart", "Super Mario Kart", "Super Mario Kart (USA).sfc", PREF);
         // "mario kart" IS a contiguous substring of "Super Mario Kart"
         assert!(score >= 1000, "\"mario kart\" is a substring, should score >= 1000, got {score}");
     }
@@ -862,8 +989,8 @@ mod tests {
     fn prefix_match_word_boundary() {
         // "sonic 3" should score "Sonic 3 (Europe)" higher than "Sonic 3D Blast"
         // because "sonic 3" in "sonic 3d blast" breaks mid-word ("3" → "3d").
-        let clean = search_score("sonic 3", "Sonic 3 (Europe)", "Sonic 3 (Europe).md", PREF);
-        let midword = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF);
+        let clean = title_score("sonic 3", "Sonic 3 (Europe)", "Sonic 3 (Europe).md", PREF);
+        let midword = title_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF);
         assert!(
             clean > midword,
             "Clean prefix 'Sonic 3 (Europe)' ({clean}) should beat mid-word 'Sonic 3D Blast' ({midword})"
@@ -873,13 +1000,13 @@ mod tests {
     #[test]
     fn sonic_3_hedgehog_above_3d_blast() {
         // "sonic 3" should rank "Sonic The Hedgehog 3 (USA)" above "Sonic 3D Blast (USA)"
-        let hedgehog = search_score(
+        let hedgehog = title_score(
             "sonic 3",
             "Sonic The Hedgehog 3",
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
         );
-        let blast = search_score(
+        let blast = title_score(
             "sonic 3",
             "Sonic 3D Blast",
             "Sonic 3D Blast (USA).md",
@@ -889,6 +1016,171 @@ mod tests {
             hedgehog > blast,
             "Hedgehog 3 ({hedgehog}) should beat 3D Blast ({blast})"
         );
+    }
+
+    // --- Metadata score (genre/year) unit tests ---
+
+    #[test]
+    fn metadata_genre_exact_word_match() {
+        let score = metadata_score("platform", "Platform", "");
+        assert_eq!(score, 200, "Exact genre word match should score 200, got {score}");
+    }
+
+    #[test]
+    fn metadata_genre_case_insensitive() {
+        let score = metadata_score("platform", "platform", "");
+        assert_eq!(score, 200);
+        let score2 = metadata_score("platform", "PLATFORM", "");
+        assert_eq!(score2, 200);
+    }
+
+    #[test]
+    fn metadata_genre_multi_word_genre() {
+        // Genre like "Platform / Action" should match query "action"
+        let score = metadata_score("action", "Platform / Action", "");
+        assert_eq!(score, 200, "Word in multi-genre should match, got {score}");
+    }
+
+    #[test]
+    fn metadata_genre_prefix_match() {
+        // "plat" should prefix-match "platform"
+        let score = metadata_score("plat", "Platform", "");
+        assert_eq!(score, 150, "Genre prefix match should score 150, got {score}");
+    }
+
+    #[test]
+    fn metadata_genre_substring_match() {
+        // "latform" is a substring but not a prefix of any word
+        let score = metadata_score("latform", "Platform", "");
+        assert_eq!(score, 100, "Genre substring match should score 100, got {score}");
+    }
+
+    #[test]
+    fn metadata_genre_no_match() {
+        let score = metadata_score("racing", "Platform", "");
+        assert_eq!(score, 0, "Non-matching genre should score 0, got {score}");
+    }
+
+    #[test]
+    fn metadata_year_exact_match() {
+        let score = metadata_score("1991", "", "1991");
+        assert_eq!(score, 150, "Year exact match should score 150, got {score}");
+    }
+
+    #[test]
+    fn metadata_year_no_match() {
+        let score = metadata_score("1991", "", "1992");
+        assert_eq!(score, 0, "Year mismatch should score 0, got {score}");
+    }
+
+    #[test]
+    fn metadata_year_partial_no_match() {
+        // "199" should NOT match year "1991" (year requires exact match)
+        let score = metadata_score("199", "", "1991");
+        assert_eq!(score, 0, "Partial year should not match, got {score}");
+    }
+
+    #[test]
+    fn metadata_genre_beats_year() {
+        let genre_score = metadata_score("platform", "Platform", "");
+        let year_score = metadata_score("1991", "", "1991");
+        assert!(
+            genre_score >= year_score,
+            "Genre ({genre_score}) should score >= year ({year_score})"
+        );
+    }
+
+    #[test]
+    fn metadata_empty_fields_return_zero() {
+        let score = metadata_score("platform", "", "");
+        assert_eq!(score, 0);
+    }
+
+    // --- Metadata integration with search_score ---
+
+    #[test]
+    fn genre_match_returns_nonzero_score() {
+        // Query "platform" doesn't match title "Sonic The Hedgehog" but matches genre
+        let score = search_score(
+            "platform", "Sonic The Hedgehog", "Sonic The Hedgehog (USA).md",
+            PREF, "Platform", "",
+        );
+        assert!(score > 0, "Genre match should produce nonzero score, got {score}");
+    }
+
+    #[test]
+    fn year_match_returns_nonzero_score() {
+        // Query "1991" doesn't match title "Sonic The Hedgehog" but matches year
+        let score = search_score(
+            "1991", "Sonic The Hedgehog", "Sonic The Hedgehog (USA).md",
+            PREF, "", "1991",
+        );
+        assert!(score > 0, "Year match should produce nonzero score, got {score}");
+    }
+
+    #[test]
+    fn title_match_beats_genre_match() {
+        // Title match should always score higher than genre match
+        let title = title_score("sonic", "Sonic The Hedgehog", "Sonic The Hedgehog (USA).md", PREF);
+        let genre = search_score(
+            "platform", "Sonic The Hedgehog", "Sonic The Hedgehog (USA).md",
+            PREF, "Platform", "",
+        );
+        assert!(
+            title > genre,
+            "Title match ({title}) should beat genre match ({genre})"
+        );
+    }
+
+    #[test]
+    fn title_match_beats_year_match() {
+        let title = title_score("sonic", "Sonic The Hedgehog", "Sonic The Hedgehog (USA).md", PREF);
+        let year = search_score(
+            "1991", "Sonic The Hedgehog", "Sonic The Hedgehog (USA).md",
+            PREF, "", "1991",
+        );
+        assert!(
+            title > year,
+            "Title match ({title}) should beat year match ({year})"
+        );
+    }
+
+    #[test]
+    fn word_match_beats_genre_match() {
+        // Even the lowest title match tier (word match) should beat genre match
+        let word = title_score("sonic 3", "Sonic The Hedgehog 3", "Sonic The Hedgehog 3 (USA).md", PREF);
+        let genre = search_score(
+            "platform", "Unrelated Game", "Unrelated Game (USA).md",
+            PREF, "Platform", "",
+        );
+        assert!(
+            word > genre,
+            "Word match ({word}) should beat genre match ({genre})"
+        );
+    }
+
+    #[test]
+    fn genre_match_with_title_match_uses_title_score() {
+        // When both title and genre match, title score should be used (higher)
+        let with_genre = search_score(
+            "sonic", "Sonic The Hedgehog", "Sonic The Hedgehog (USA).md",
+            PREF, "Platform", "1991",
+        );
+        let without_genre = title_score(
+            "sonic", "Sonic The Hedgehog", "Sonic The Hedgehog (USA).md", PREF,
+        );
+        // Title match score is the same regardless of genre/year (they're only fallback)
+        assert_eq!(with_genre, without_genre, "Title match should not be affected by genre/year fields");
+    }
+
+    #[test]
+    fn platformer_search_finds_platform_genre() {
+        // "platformer" should match "Platform" genre via prefix
+        let score = metadata_score("platformer", "Platform", "");
+        assert_eq!(score, 0, "\"platformer\" is not a prefix of \"platform\"");
+        // But "platform" should match
+        let score2 = metadata_score("platform", "Platform", "");
+        assert_eq!(score2, 200);
     }
 }
 
