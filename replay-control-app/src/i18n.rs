@@ -148,6 +148,18 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.storage_changed" => "Storage updated",
         "more.storage_unchanged" => "Storage unchanged",
 
+        // Region preference
+        "more.region" => "Region",
+        "region.title" => "Region Preference",
+        "region.hint" => {
+            "ROMs from your preferred region appear first in game lists and search results."
+        }
+        "region.usa" => "USA",
+        "region.europe" => "Europe",
+        "region.japan" => "Japan",
+        "region.world" => "World",
+        "region.saved" => "Region preference saved",
+
         // Skin
         "more.skin" => "Skin",
         "skin.title" => "Skin",

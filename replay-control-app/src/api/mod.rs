@@ -124,6 +124,12 @@ impl AppState {
         Some(guard)
     }
 
+    /// Get the user's region preference from `.replay-control/settings.cfg`.
+    pub fn region_preference(&self) -> replay_control_core::rom_tags::RegionPreference {
+        let storage = self.storage();
+        replay_control_core::settings::read_region_preference(&storage.root)
+    }
+
     /// Get the effective skin index: override if set, otherwise from replay.cfg.
     pub fn effective_skin(&self) -> u32 {
         if let Some(index) = *self.skin_override.read().expect("skin lock poisoned") {

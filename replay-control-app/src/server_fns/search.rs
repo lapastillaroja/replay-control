@@ -35,8 +35,14 @@ pub struct GlobalSearchResults {
 
 /// Compute a relevance score for a ROM against a search query.
 /// Higher = more relevant. Returns 0 for no match.
+/// The `region_pref` parameter controls which region gets the highest bonus.
 #[cfg(feature = "ssr")]
-pub(crate) fn search_score(query: &str, display_name: &str, filename: &str) -> u32 {
+pub(crate) fn search_score(
+    query: &str,
+    display_name: &str,
+    filename: &str,
+    region_pref: replay_control_core::rom_tags::RegionPreference,
+) -> u32 {
     let display_lower = display_name.to_lowercase();
     let filename_lower = filename.to_lowercase();
 
@@ -75,14 +81,14 @@ pub(crate) fn search_score(query: &str, display_name: &str, filename: &str) -> u
         replay_control_core::rom_tags::RomTier::Pirate => 300,
     };
 
-    // Region bonus: prefer common regions
-    let region_bonus = match region {
-        replay_control_core::rom_tags::RegionPriority::World => 20,
-        replay_control_core::rom_tags::RegionPriority::Usa => 15,
-        replay_control_core::rom_tags::RegionPriority::Europe => 10,
-        replay_control_core::rom_tags::RegionPriority::Japan => 5,
-        replay_control_core::rom_tags::RegionPriority::Other => 0,
-        replay_control_core::rom_tags::RegionPriority::Unknown => 0,
+    // Region bonus: based on sort_key from user's preference.
+    // Lower sort_key = higher bonus.
+    let region_bonus: u32 = match region.sort_key(region_pref) {
+        0 => 20, // World (or preferred when World is the preference)
+        1 => 15, // User's preferred region
+        2 => 10, // Second-best major region
+        3 => 5,  // Third major region
+        _ => 0,  // Other / Unknown
     };
 
     (base + length_bonus + region_bonus).saturating_sub(tier_penalty)
@@ -165,6 +171,7 @@ pub async fn global_search(
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
+    let region_pref = state.region_preference();
     let systems = state.cache.get_systems(&storage);
     let q = query.to_lowercase();
     let per_system_limit = if per_system_limit == 0 { 3 } else { per_system_limit };
@@ -180,7 +187,7 @@ pub async fn global_search(
         let is_arcade = sys_db::find_system(&sys.folder_name)
             .is_some_and(|s| s.category == SystemCategory::Arcade);
 
-        let all_roms = match state.cache.get_roms(&storage, &sys.folder_name) {
+        let all_roms = match state.cache.get_roms(&storage, &sys.folder_name, region_pref) {
             Ok(roms) => roms,
             Err(_) => continue,
         };
@@ -249,7 +256,7 @@ pub async fn global_search(
                         .display_name
                         .as_deref()
                         .unwrap_or(&r.game.rom_filename);
-                    let score = search_score(&q, display, &r.game.rom_filename);
+                    let score = search_score(&q, display, &r.game.rom_filename, region_pref);
                     if score > 0 { Some((score, r)) } else { None }
                 }
             })
@@ -345,7 +352,7 @@ pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
         if sys.game_count == 0 {
             continue;
         }
-        let roms = match state.cache.get_roms(&storage, &sys.folder_name) {
+        let roms = match state.cache.get_roms(&storage, &sys.folder_name, state.region_preference()) {
             Ok(roms) => roms,
             Err(_) => continue,
         };
@@ -369,7 +376,7 @@ pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnEr
     let storage = state.storage();
     let roms = state
         .cache
-        .get_roms(&storage, &system)
+        .get_roms(&storage, &system, state.region_preference())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let mut genres = BTreeSet::new();
@@ -386,19 +393,23 @@ pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnEr
 #[cfg(test)]
 mod tests {
     use super::search_score;
+    use replay_control_core::rom_tags::RegionPreference;
+
+    /// Default preference for tests (matches pre-preference behavior).
+    const PREF: RegionPreference = RegionPreference::Usa;
 
     // --- Exact match (10_000 base) ---
 
     #[test]
     fn exact_match_display_name() {
-        let score = search_score("tetris", "Tetris", "Tetris (USA).nes");
+        let score = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
         assert!(score >= 10_000, "Exact match should score >= 10000, got {score}");
     }
 
     #[test]
     fn exact_match_is_case_insensitive() {
-        let score = search_score("tetris", "Tetris", "Tetris (USA).nes");
-        let score2 = search_score("tetris", "TETRIS", "TETRIS.nes");
+        let score = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
+        let score2 = search_score("tetris", "TETRIS", "TETRIS.nes", PREF);
         assert!(score >= 10_000);
         assert!(score2 >= 10_000);
     }
@@ -407,7 +418,7 @@ mod tests {
 
     #[test]
     fn prefix_match() {
-        let score = search_score("super", "Super Mario World", "Super Mario World (USA).sfc");
+        let score = search_score("super", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             (5_000..10_000).contains(&score),
             "Prefix match should score in 5000..10000, got {score}"
@@ -418,7 +429,7 @@ mod tests {
 
     #[test]
     fn word_boundary_match() {
-        let score = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let score = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             (2_000..5_000).contains(&score),
             "Word boundary match should score in 2000..5000, got {score}"
@@ -430,7 +441,7 @@ mod tests {
     #[test]
     fn substring_match() {
         // "ari" is inside "Mario" but doesn't start a word
-        let score = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc");
+        let score = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             (1_000..2_000).contains(&score),
             "Substring match should score in 1000..2000, got {score}"
@@ -442,7 +453,7 @@ mod tests {
     #[test]
     fn filename_only_match() {
         // Query matches filename but not display name
-        let score = search_score("usa", "Tetris", "Tetris (USA).nes");
+        let score = search_score("usa", "Tetris", "Tetris (USA).nes", PREF);
         assert!(
             (500..1_000).contains(&score),
             "Filename-only match should score in 500..1000, got {score}"
@@ -453,13 +464,13 @@ mod tests {
 
     #[test]
     fn no_match_returns_zero() {
-        let score = search_score("zzzznotfound", "Tetris", "Tetris (USA).nes");
+        let score = search_score("zzzznotfound", "Tetris", "Tetris (USA).nes", PREF);
         assert_eq!(score, 0);
     }
 
     #[test]
     fn empty_query_no_match() {
-        let score = search_score("", "Tetris", "Tetris (USA).nes");
+        let score = search_score("", "Tetris", "Tetris (USA).nes", PREF);
         // Empty query matches everything via contains(""), so it should score > 0
         // (exact match since "tetris".contains("") is true, but actually "" == display_lower is false)
         // Let's verify the actual behavior
@@ -470,15 +481,15 @@ mod tests {
 
     #[test]
     fn exact_beats_prefix() {
-        let exact = search_score("tetris", "Tetris", "Tetris (USA).nes");
-        let prefix = search_score("tetris", "Tetris Plus", "Tetris Plus (USA).nes");
+        let exact = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
+        let prefix = search_score("tetris", "Tetris Plus", "Tetris Plus (USA).nes", PREF);
         assert!(exact > prefix, "Exact ({exact}) should beat prefix ({prefix})");
     }
 
     #[test]
     fn prefix_beats_word_boundary() {
-        let prefix = search_score("super", "Super Mario World", "Super Mario World (USA).sfc");
-        let word = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let prefix = search_score("super", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let word = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             prefix > word,
             "Prefix ({prefix}) should beat word boundary ({word})"
@@ -487,8 +498,8 @@ mod tests {
 
     #[test]
     fn word_boundary_beats_substring() {
-        let word = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
-        let substr = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc");
+        let word = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let substr = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         assert!(
             word > substr,
             "Word boundary ({word}) should beat substring ({substr})"
@@ -497,8 +508,8 @@ mod tests {
 
     #[test]
     fn substring_beats_filename_only() {
-        let substr = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc");
-        let filename = search_score("usa", "Tetris", "Tetris (USA).nes");
+        let substr = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc", PREF);
+        let filename = search_score("usa", "Tetris", "Tetris (USA).nes", PREF);
         assert!(
             substr > filename,
             "Substring ({substr}) should beat filename-only ({filename})"
@@ -509,11 +520,12 @@ mod tests {
 
     #[test]
     fn short_name_gets_length_bonus() {
-        let short = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let short = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         let long = search_score(
             "mario",
             "Super Mario World - Long Subtitle That Makes It Over 40 Characters",
             "Super Mario World - Long Subtitle (USA).sfc",
+            PREF,
         );
         assert!(
             short > long,
@@ -525,9 +537,9 @@ mod tests {
 
     #[test]
     fn hack_is_penalized() {
-        let original = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let original = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         let hack =
-            search_score("mario", "Super Mario World", "Super Mario World (Hack).sfc");
+            search_score("mario", "Super Mario World", "Super Mario World (Hack).sfc", PREF);
         assert!(
             original > hack,
             "Original ({original}) should beat hack ({hack})"
@@ -536,11 +548,12 @@ mod tests {
 
     #[test]
     fn translation_is_penalized() {
-        let original = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let original = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", PREF);
         let translated = search_score(
             "mario",
             "Super Mario World",
             "Super Mario World (Traducido Es).sfc",
+            PREF,
         );
         assert!(
             original > translated,
@@ -556,6 +569,7 @@ mod tests {
             "asterix & obelix",
             "Asterix & Obelix",
             "Asterix & Obelix (Europe).sfc",
+            PREF,
         );
         assert!(score >= 10_000, "Exact match with special chars should work, got {score}");
     }
@@ -566,8 +580,47 @@ mod tests {
             "x-men",
             "X-Men - Mutant Apocalypse",
             "X-Men - Mutant Apocalypse (USA).sfc",
+            PREF,
         );
         assert!(score > 0, "Query with dash should match");
+    }
+
+    // --- Region preference affects scoring ---
+
+    #[test]
+    fn japan_preference_boosts_japan_roms() {
+        let usa_with_usa_pref =
+            search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", RegionPreference::Usa);
+        let japan_with_japan_pref =
+            search_score("mario", "Super Mario World", "Super Mario World (Japan).sfc", RegionPreference::Japan);
+        // Both should get sort_key=1 (preferred region), so equal region bonus.
+        assert_eq!(usa_with_usa_pref, japan_with_japan_pref);
+    }
+
+    #[test]
+    fn preferred_region_beats_non_preferred() {
+        let japan_pref = RegionPreference::Japan;
+        let japan_score =
+            search_score("mario", "Super Mario World", "Super Mario World (Japan).sfc", japan_pref);
+        let usa_score =
+            search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", japan_pref);
+        assert!(
+            japan_score > usa_score,
+            "Japan ({japan_score}) should beat USA ({usa_score}) with Japan preference"
+        );
+    }
+
+    #[test]
+    fn europe_preference_puts_europe_before_usa() {
+        let pref = RegionPreference::Europe;
+        let europe_score =
+            search_score("mario", "Super Mario World", "Super Mario World (Europe).sfc", pref);
+        let usa_score =
+            search_score("mario", "Super Mario World", "Super Mario World (USA).sfc", pref);
+        assert!(
+            europe_score > usa_score,
+            "Europe ({europe_score}) should beat USA ({usa_score}) with Europe preference"
+        );
     }
 }
 
@@ -609,7 +662,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 
     let roms = state
         .cache
-        .get_roms(&storage, chosen_system)
+        .get_roms(&storage, chosen_system, state.region_preference())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     if roms.is_empty() {

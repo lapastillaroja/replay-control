@@ -60,9 +60,10 @@ pub async fn get_roms_page(
         .unwrap_or_else(|| system.clone());
     let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
     let storage = state.storage();
+    let region_pref = state.region_preference();
     let all_roms = state
         .cache
-        .get_roms(&storage, &system)
+        .get_roms(&storage, &system, region_pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Apply tier-based, clone, and genre filters before search scoring.
@@ -123,7 +124,7 @@ pub async fn get_roms_page(
                     .display_name
                     .as_deref()
                     .unwrap_or(&r.game.rom_filename);
-                let score = search_score(&q, display, &r.game.rom_filename);
+                let score = search_score(&q, display, &r.game.rom_filename, region_pref);
                 if score > 0 { Some((score, r)) } else { None }
             })
             .collect();
@@ -202,7 +203,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let storage = state.storage();
     let all_roms = state
         .cache
-        .get_roms(&storage, &system)
+        .get_roms(&storage, &system, state.region_preference())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let rom = all_roms

@@ -13,6 +13,7 @@ use replay_control_core::arcade_db;
 use replay_control_core::game_db;
 use replay_control_core::launchbox;
 use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core::rom_tags;
 use replay_control_core::roms;
 use replay_control_core::storage::{StorageKind, StorageLocation};
 use replay_control_core::systems::{self, SystemCategory};
@@ -80,7 +81,7 @@ fn main() {
         let sys_info = systems::find_system(system_name);
         let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
 
-        let rom_list = match roms::list_roms(&storage, system_name) {
+        let rom_list = match roms::list_roms(&storage, system_name, rom_tags::RegionPreference::default()) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("  Error listing ROMs for {system_name}: {e}");

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core::roms::{RomEntry, SystemSummary};
 use replay_control_core::storage::StorageLocation;
 
@@ -68,6 +69,7 @@ impl RomCache {
         &self,
         storage: &StorageLocation,
         system: &str,
+        region_pref: RegionPreference,
     ) -> Result<Vec<RomEntry>, replay_control_core::error::Error> {
         let key = system.to_string();
         // Try read lock first.
@@ -79,7 +81,7 @@ impl RomCache {
             }
         }
         // Cache miss — scan and store.
-        let roms = replay_control_core::roms::list_roms(storage, system)?;
+        let roms = replay_control_core::roms::list_roms(storage, system, region_pref)?;
         if let Ok(mut guard) = self.roms.write() {
             guard.insert(key, CacheEntry::new(roms.clone()));
         }

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::game_ref::GameRef;
-use crate::rom_tags;
+use crate::rom_tags::{self, RegionPreference};
 use crate::storage::StorageLocation;
 use crate::systems::{self, System};
 
@@ -80,7 +80,14 @@ pub fn scan_systems(storage: &StorageLocation) -> Vec<SystemSummary> {
 }
 
 /// List ROM files for a specific system.
-pub fn list_roms(storage: &StorageLocation, system_folder: &str) -> Result<Vec<RomEntry>> {
+///
+/// The `region_pref` parameter controls the sort order of region variants:
+/// ROMs from the preferred region sort before others within the same title group.
+pub fn list_roms(
+    storage: &StorageLocation,
+    system_folder: &str,
+    region_pref: RegionPreference,
+) -> Result<Vec<RomEntry>> {
     let system = systems::find_system(system_folder)
         .ok_or_else(|| Error::SystemNotFound(system_folder.to_string()))?;
 
@@ -92,7 +99,8 @@ pub fn list_roms(storage: &StorageLocation, system_folder: &str) -> Result<Vec<R
     let mut roms = Vec::new();
     collect_roms_recursive(&system_dir, &storage.roms_dir(), system, &mut roms);
 
-    // Sort by display name, then by tier (originals before hacks), then by region.
+    // Sort by display name, then by tier (originals before hacks), then by region
+    // (using the user's region preference to determine region ordering).
     roms.sort_by(|a, b| {
         let a_name = a
             .game
@@ -110,7 +118,7 @@ pub fn list_roms(storage: &StorageLocation, system_folder: &str) -> Result<Vec<R
             .to_lowercase()
             .cmp(&b_name.to_lowercase())
             .then(a_tier.cmp(&b_tier))
-            .then(a_region.cmp(&b_region))
+            .then(a_region.sort_key(region_pref).cmp(&b_region.sort_key(region_pref)))
     });
 
     Ok(roms)

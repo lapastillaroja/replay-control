@@ -1414,4 +1414,119 @@ mod tests {
         assert!(RegionPriority::Japan < RegionPriority::Other);
         assert!(RegionPriority::Other < RegionPriority::Unknown);
     }
+
+    // --- RegionPreference + sort_key tests ---
+
+    #[test]
+    fn sort_key_usa_preference_is_default_order() {
+        let pref = RegionPreference::Usa;
+        assert_eq!(RegionPriority::World.sort_key(pref), 0);
+        assert_eq!(RegionPriority::Usa.sort_key(pref), 1);
+        assert_eq!(RegionPriority::Europe.sort_key(pref), 2);
+        assert_eq!(RegionPriority::Japan.sort_key(pref), 3);
+        assert_eq!(RegionPriority::Other.sort_key(pref), 4);
+        assert_eq!(RegionPriority::Unknown.sort_key(pref), 5);
+    }
+
+    #[test]
+    fn sort_key_europe_preference() {
+        let pref = RegionPreference::Europe;
+        assert_eq!(RegionPriority::World.sort_key(pref), 0);
+        assert_eq!(RegionPriority::Europe.sort_key(pref), 1);
+        assert_eq!(RegionPriority::Usa.sort_key(pref), 2);
+        assert_eq!(RegionPriority::Japan.sort_key(pref), 3);
+        assert_eq!(RegionPriority::Other.sort_key(pref), 4);
+        assert_eq!(RegionPriority::Unknown.sort_key(pref), 5);
+    }
+
+    #[test]
+    fn sort_key_japan_preference() {
+        let pref = RegionPreference::Japan;
+        assert_eq!(RegionPriority::World.sort_key(pref), 0);
+        assert_eq!(RegionPriority::Japan.sort_key(pref), 1);
+        assert_eq!(RegionPriority::Usa.sort_key(pref), 2);
+        assert_eq!(RegionPriority::Europe.sort_key(pref), 3);
+        assert_eq!(RegionPriority::Other.sort_key(pref), 4);
+        assert_eq!(RegionPriority::Unknown.sort_key(pref), 5);
+    }
+
+    #[test]
+    fn sort_key_world_preference_matches_usa_order() {
+        // World preference has same order as USA (World already first, then USA/Europe/Japan).
+        let pref = RegionPreference::World;
+        assert_eq!(RegionPriority::World.sort_key(pref), 0);
+        assert_eq!(RegionPriority::Usa.sort_key(pref), 1);
+        assert_eq!(RegionPriority::Europe.sort_key(pref), 2);
+        assert_eq!(RegionPriority::Japan.sort_key(pref), 3);
+    }
+
+    #[test]
+    fn sort_key_world_always_first() {
+        // World should have sort_key 0 regardless of preference.
+        for pref in [
+            RegionPreference::Usa,
+            RegionPreference::Europe,
+            RegionPreference::Japan,
+            RegionPreference::World,
+        ] {
+            assert_eq!(
+                RegionPriority::World.sort_key(pref),
+                0,
+                "World should always be first with preference {pref:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sort_key_preferred_region_always_second() {
+        assert_eq!(RegionPriority::Usa.sort_key(RegionPreference::Usa), 1);
+        assert_eq!(RegionPriority::Europe.sort_key(RegionPreference::Europe), 1);
+        assert_eq!(RegionPriority::Japan.sort_key(RegionPreference::Japan), 1);
+    }
+
+    #[test]
+    fn sort_key_other_and_unknown_always_last() {
+        for pref in [
+            RegionPreference::Usa,
+            RegionPreference::Europe,
+            RegionPreference::Japan,
+            RegionPreference::World,
+        ] {
+            assert_eq!(RegionPriority::Other.sort_key(pref), 4);
+            assert_eq!(RegionPriority::Unknown.sort_key(pref), 5);
+        }
+    }
+
+    // --- RegionPreference parsing ---
+
+    #[test]
+    fn region_preference_from_str() {
+        assert_eq!(RegionPreference::from_str_value("usa"), RegionPreference::Usa);
+        assert_eq!(RegionPreference::from_str_value("europe"), RegionPreference::Europe);
+        assert_eq!(RegionPreference::from_str_value("japan"), RegionPreference::Japan);
+        assert_eq!(RegionPreference::from_str_value("world"), RegionPreference::World);
+        // Unknown values default to Usa.
+        assert_eq!(RegionPreference::from_str_value("brazil"), RegionPreference::Usa);
+        assert_eq!(RegionPreference::from_str_value(""), RegionPreference::Usa);
+    }
+
+    #[test]
+    fn region_preference_as_str() {
+        assert_eq!(RegionPreference::Usa.as_str(), "usa");
+        assert_eq!(RegionPreference::Europe.as_str(), "europe");
+        assert_eq!(RegionPreference::Japan.as_str(), "japan");
+        assert_eq!(RegionPreference::World.as_str(), "world");
+    }
+
+    #[test]
+    fn region_preference_roundtrip() {
+        for pref in [
+            RegionPreference::Usa,
+            RegionPreference::Europe,
+            RegionPreference::Japan,
+            RegionPreference::World,
+        ] {
+            assert_eq!(RegionPreference::from_str_value(pref.as_str()), pref);
+        }
+    }
 }

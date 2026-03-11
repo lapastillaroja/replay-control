@@ -259,3 +259,25 @@ pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
     }
     Ok(())
 }
+
+/// Get the current region preference from `.replay-control/settings.cfg`.
+#[server(prefix = "/sfn")]
+pub async fn get_region_preference() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let pref = state.region_preference();
+    Ok(pref.as_str().to_string())
+}
+
+/// Set the region preference in `.replay-control/settings.cfg`.
+/// Invalidates the ROM cache so lists are re-sorted with the new preference.
+#[server(prefix = "/sfn")]
+pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let pref = replay_control_core::rom_tags::RegionPreference::from_str_value(&value);
+    let storage = state.storage();
+    replay_control_core::settings::write_region_preference(&storage.root, pref)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    // Invalidate cache so ROM lists are re-sorted with the new preference.
+    state.cache.invalidate();
+    Ok(())
+}

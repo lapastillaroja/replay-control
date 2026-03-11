@@ -122,6 +122,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetAllGenres>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemGenres>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RandomGame>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRegionPreference>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveRegionPreference>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")

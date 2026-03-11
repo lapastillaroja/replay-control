@@ -12,12 +12,42 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
+/// Systems whose ROM sizes should be displayed in Megabit (Mbit/Kbit).
+///
+/// Mirrors `MEGABIT_SYSTEMS` in `replay-control-core/src/systems.rs`.
+/// Duplicated here so the function works in WASM (hydrate) builds where
+/// the core crate is not available.
+const MEGABIT_SYSTEMS: &[&str] = &[
+    "atari_2600",
+    "atari_5200",
+    "atari_7800",
+    "atari_jaguar",
+    "atari_lynx",
+    "nintendo_nes",
+    "nintendo_snes",
+    "nintendo_n64",
+    "nintendo_gb",
+    "nintendo_gbc",
+    "nintendo_gba",
+    "sega_sg",
+    "sega_sms",
+    "sega_smd",
+    "sega_32x",
+    "sega_gg",
+    "nec_pce",
+    "snk_ng",
+    "snk_ngp",
+    "arcade_fbneo",
+    "arcade_mame",
+    "arcade_mame_2k3p",
+];
+
 /// Format a byte count using historically appropriate units for the given system.
 ///
 /// Cartridge-based and arcade ROM-chip systems display in Megabit (Mbit) or
 /// Kilobit (Kbit). Disc-based and computer systems display in KB/MB/GB.
 pub fn format_size_for_system(bytes: u64, system: &str) -> String {
-    if replay_control_core::systems::find_system_uses_megabit(system) {
+    if MEGABIT_SYSTEMS.contains(&system) {
         format_size_megabit(bytes)
     } else {
         format_size(bytes)
