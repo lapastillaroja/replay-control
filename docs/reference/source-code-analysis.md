@@ -13,584 +13,679 @@ Comprehensive analysis of the RePlayOS companion app codebase. Based on reading 
 ```
 replay/
   Cargo.toml                  # Workspace root (resolver v2)
-  replay-control-core/        # Library crate — pure logic, no web framework
-  replay-control-app/          # Binary + library crate — Leptos 0.7 SSR app
+  replay-control-core/        # Library crate -- pure logic, no web framework
+  replay-control-app/         # Binary + library crate -- Leptos 0.7 SSR app
 ```
 
 ### Two-Crate Design
 
 **replay-control-core** is a pure Rust library with no web dependencies. It handles:
-- System definitions (41 systems across 5 categories)
+- System definitions (41 visible systems across 5 categories, 1 hidden)
 - ROM scanning, listing, sorting (region/quality tiers)
-- Favorites CRUD with deep nesting and organization by criteria
+- Favorites CRUD with deep nesting and organization by 5 criteria
 - Recents parsing from `.rec` files
 - Config file reading/writing (`replay.cfg` key=value format)
 - Storage detection (SD/USB/NFS) with disk usage via `df`
 - ROM tag parsing (No-Intro/GoodTools naming conventions)
 - Game launching via autostart file + systemctl
-- Screenshot matching by ROM filename prefix
-- Video URL parsing (YouTube/Twitch/Vimeo/Dailymotion)
-- Video storage as JSON files
-- Embedded game databases: arcade (~28K entries via PHF) and non-arcade (~34K entries via PHF)
-- Skin/theme definitions (11 built-in palettes)
-- Thumbnail matching with 3-tier fuzzy fallback
-- SQLite metadata cache with NFS-safe nolock fallback (feature-gated behind `metadata`)
-- LaunchBox XML streaming import with normalized title matching
+- Embedded game databases via PHF (Perfect Hash Function):
+  - `arcade_db`: ~28K arcade game entries with driver status, rotation, category, players
+  - `game_db`: ~34K non-arcade game entries with genre, developer, year, players, CRC32
+- LaunchBox XML metadata import (streaming parser)
+- SQLite metadata cache with NFS nolock VFS fallback
+- Thumbnail matching from libretro-thumbnails repos (3-tier fuzzy matching)
+- Screenshot discovery by ROM filename prefix
+- Video URL parsing (YouTube, Twitch, Vimeo, Dailymotion)
+- Video storage as JSON
+- Skin palette definitions (11 built-in themes via CSS custom properties)
 
-**replay-control-app** is a dual-target crate (cdylib for WASM, rlib+bin for server):
-- `ssr` feature: Axum server, server functions, REST API, SSE, static file serving
-- `hydrate` feature: WASM client-side hydration, IntersectionObserver, EventSource, localStorage
-- Pages: Home, Games (system view), Game Detail, Favorites, Search, More (settings menu), WiFi, NFS, Hostname, Metadata, Skin, Logs
-- Components: BottomNav, SystemCard, RomList
-- Server functions: 50+ `#[server]` functions in a single file
-- REST API: parallel set of endpoints for external access (system info, ROMs, favorites, upload, recents)
-- i18n: manual match-based translation (~200 keys, 3 locales: en/es/pt)
-- Mirror types: client-side type mirrors in `types.rs` for WASM (core types only available under `ssr`)
+**replay-control-app** is a Leptos 0.7 application that compiles in two modes:
+- `--features ssr`: Server binary (Axum web server with SSR rendering)
+- `--features hydrate`: WASM client (hydrates server-rendered HTML in the browser)
 
-### Data Flow
+The app layer provides:
+- 12 page routes with SSR + client-side hydration
+- 51 server functions (RPC calls from client to server)
+- REST API endpoints for external access
+- SSE (Server-Sent Events) for real-time progress streaming
+- IntersectionObserver-based infinite scroll
+- Service worker for PWA installability
+- Keyboard shortcut ("/" for search)
+- Mirror types pattern for WASM (core types unavailable under `hydrate` feature)
+
+### Request Flow
 
 ```
-Browser → WASM hydrate → Server Functions (POST /sfn/*) → AppState → Core Library → Filesystem/SQLite
-                                                                    ↕
-Browser → REST API (GET/POST /api/*) → AppState → Core Library → Filesystem/SQLite
+Browser request
+  --> Axum Router
+    --> Static files (/pkg, /icons, /style.css, /manifest.json, /sw.js)
+    --> REST API (/api/*)
+    --> Server functions (/sfn/*)
+    --> SSE (/sse/image-progress)
+    --> Media files (/media/*)
+    --> User captures (/captures/*)
+    --> SSR fallback (all other routes --> Leptos SSR --> HTML with hydration scripts)
 ```
 
-Server functions and REST API are **redundant** — both paths exist. Server functions are used by the Leptos UI; REST API is kept for external access (e.g., curl, automation).
+After initial page load, the WASM bundle hydrates and all subsequent navigation + data fetching happens client-side via server functions.
 
-### Key Design Decisions
+### Server Function Registration
 
-1. **No cargo-leptos**: Custom `build.sh` handles WASM compilation + server build. `dev.sh` adds file watching and auto-reload.
-2. **Manual server function registration**: `inventory` auto-registration gets stripped by the linker when server functions are in a library crate. Every server function needs `register_explicit::<T>()` in `main.rs`.
-3. **`any_spawner::Executor::init_tokio()`**: Must be called before SSR — Leptos 0.7's `render_app_to_stream_with_context` does not initialize it automatically.
-4. **Mirror types pattern**: Core types are only available under `#[cfg(feature = "ssr")]`. The app defines parallel structs in `types.rs` with `#[cfg(not(feature = "ssr"))]` for WASM.
-5. **Config boundary**: `replay.cfg` belongs to RePlayOS. The app reads it freely but only writes parameters that RePlayOS has no UI for (e.g., skin). App-specific settings go in `.replay-control/config.cfg`.
-6. **PHF embedded databases**: Build scripts generate Perfect Hash Function maps from CSV/XML data files at compile time, embedding ~62K game entries directly into the binary.
+Because server functions are defined in a library crate, Rust's linker strips the `inventory` auto-registration entries. All 54 server functions require explicit `register_explicit::<T>()` calls in `main.rs`. This is a known Leptos limitation with the library crate pattern.
 
----
+### State Management
 
-## 2. Code Quality Assessment
+`AppState` is the central server-side state, held in `Arc`-wrapped fields:
+- `storage: Arc<RwLock<StorageLocation>>` -- hot-swappable storage location
+- `config: Arc<RwLock<ReplayConfig>>` -- replay.cfg contents, re-read on refresh
+- `cache: Arc<RomCache>` -- TTL-based filesystem scan cache (30s expiry)
+- `metadata_db: Arc<Mutex<Option<MetadataDb>>>` -- lazily-opened SQLite handle
+- `import_progress / image_import_progress` -- shared progress for background tasks
+- `image_import_cancel: Arc<AtomicBool>` -- cooperative cancellation flag
+- `skin_override: Arc<RwLock<Option<u32>>>` -- app-specific skin override
+- `storage_path_override: Option<PathBuf>` -- CLI override disables auto-detection
 
-### Strengths
+### Background Tasks
 
-- **Clean separation of concerns**: Core library has zero web dependencies. All filesystem, config, and game logic is testable in isolation.
-- **Extensive test coverage in core**: `rom_tags.rs` (1136 lines with tests), `favorites.rs` (863 lines with extensive tests), `config.rs`, `recents.rs`, `video_url.rs`, `game_db.rs`, and `arcade_db.rs` all have thorough unit tests.
-- **Good use of Leptos 0.7 patterns**: Components consistently use `Suspend` + `ErrorBoundary`, `StoredValue` for non-Copy data, `Show` for conditionals, `bind:value` for two-way binding.
-- **Robust NFS support**: SQLite opens with `nolock` VFS fallback when standard locking fails. Storage detection handles USB/NFS/SD transparently.
-- **Smart caching**: `RomCache` with TTL avoids repeated filesystem traversals on NFS.
-- **Well-structured CSS**: Single file (~2237 lines) using CSS custom properties for theming. Responsive breakpoints at 600px/768px/1024px. Clean BEM-ish naming.
-- **Comprehensive i18n**: All user-visible strings are translated (en/es/pt).
+Two background tasks run at startup:
+1. **Storage watcher** (`spawn_storage_watcher`): Re-detects storage location every 60 seconds (skipped if `--storage-path` CLI override is set)
+2. **Auto-import** (`spawn_auto_import`): If `Metadata.xml` exists in the expected location and the metadata DB is empty, automatically triggers a metadata import
 
-### Weaknesses
+### Config Boundary
 
-- **`server_fns.rs` monolith**: ~1700+ lines, 50+ server functions, 20+ struct definitions. This is the single biggest code quality issue.
-- **Code duplication**: Multiple instances across components (detailed in Section 12).
-- **Inconsistent error handling**: Some server functions use `?` propagation, others use manual `map_err`. Some swallow errors silently (e.g., `let _ = db.clear()`).
-- **`style.css` is a single 2237-line file**: No modular CSS, no CSS modules or scoping. Risk of selector collisions in a growing app.
-- **`game_detail.rs` complexity**: ~1196 lines for a single page with 8 sub-components. The `GameVideoSection` alone is ~300 lines.
-- **No automated integration tests**: Core library has unit tests; the app has none.
-
-### Adherence to CLAUDE.md Conventions
-
-The codebase generally follows the coding rules defined in `CLAUDE.md`:
-- Setup-above-view-below pattern is consistently applied
-- `StoredValue` is used throughout instead of clone explosions
-- `Suspend` + `ErrorBoundary` for async data
-- `Show` for conditionals
-- Signals treated as Copy
-
-**Deviations**: The `on_search_keydown` handler in `home.rs` duplicates the form submit logic (lines 33-43 vs 21-31) instead of extracting a shared function. Several pages (search, rom_list) have inline `.map()` chains that could be extracted into components per CLAUDE.md guidance.
+Two separate config files serve different purposes:
+- `replay.cfg`: Belongs to RePlayOS. The app reads freely and writes only parameters that RePlayOS does not provide its own UI for (e.g., skin index)
+- `.replay-control/config.cfg`: App-specific settings (same key=value format). For settings that do not belong in the RePlayOS config
 
 ---
 
-## 3. `server_fns.rs` Analysis
+## 2. Full Feature Inventory
 
-### Size and Scope
+### Pages (12 routes)
 
-This file contains approximately 1700 lines with:
-- 50+ `#[server]` functions
-- 20+ struct/enum definitions (`GameInfo`, `SystemInfo`, `RomPage`, `RomDetail`, `WifiConfig`, `NfsConfig`, `SkinInfo`, `ImageImportProgress`, `ImageImportState`, `GlobalSearchResults`, `GlobalSearchResult`, `VideoEntry`, `VideoRecommendation`, `ScreenshotUrl`, etc.)
-- Helper functions (`resolve_game_info`, `enrich_from_metadata_cache`, `find_image_on_disk`, `search_score`, `lookup_genre`)
+| Route | Page Component | Description |
+|-------|---------------|-------------|
+| `/` | `HomePage` | Dashboard with last played hero card, recent games scroll, stats grid (games/systems/favorites/storage), systems grid |
+| `/games/:system` | `SystemRomView` | ROM list for a system with search, filters, infinite scroll, inline rename/delete |
+| `/games/:system/:filename` | `GameDetailPage` | Full game detail with metadata, screenshots, videos, captures, launch, favorite, rename, delete |
+| `/favorites` | `FavoritesPage` | Favorites with grouped/flat view toggle, organize panel, filter bar |
+| `/favorites/:system` | `SystemFavoritesPage` | System-scoped favorites view |
+| `/search` | `SearchPage` | Global search with debounce, genre filter, hide hacks/translations/betas/clones, multiplayer filter, recent searches, random game |
+| `/more` | `MorePage` | Settings menu with system info display |
+| `/more/wifi` | `WifiPage` | Wi-Fi SSID/password/country/security config with reboot button |
+| `/more/nfs` | `NfsPage` | NFS server/share/version config with reboot button |
+| `/more/hostname` | `HostnamePage` | Network hostname editor |
+| `/more/metadata` | `MetadataPage` | Metadata import (descriptions/ratings), image import with per-system progress, coverage stats, re-match, clear |
+| `/more/skin` | `SkinPage` | 11 skin palettes with preview cards, sync-with-ReplayOS toggle |
+| `/more/logs` | `LogsPage` | System log viewer (all/companion/replay sources) |
 
-### Functional Groups
+### Shared Components (6)
 
-The functions naturally cluster into these domains:
+| Component | File | Description |
+|-----------|------|-------------|
+| `BottomNav` | `nav.rs` | 3-tab navigation (Games/Favs/More) with active state from URL |
+| `RomList` | `rom_list.rs` | Reusable ROM list with search, 6 filter types, infinite scroll, inline actions |
+| `SystemCard` | `system_card.rs` | Card for systems grid (name/manufacturer/count/size) |
+| `HeroCard` / `GameScrollCard` | `hero_card.rs` | Reusable cards for home and favorites pages |
+| `GenreDropdown` | `genre_dropdown.rs` | Shared genre filter dropdown, used by rom_list and search |
+| `SearchShortcut` | `lib.rs` | Invisible component installing "/" keyboard shortcut for search navigation |
 
-| Group | Functions | ~Lines |
-|-------|-----------|--------|
-| System info | `get_info`, `get_systems` | ~80 |
-| ROM listing/detail | `get_roms_page`, `get_rom_detail`, `delete_rom`, `rename_rom`, `launch_game` | ~200 |
-| Favorites | `get_favorites`, `add_favorite`, `remove_favorite`, `group_favorites`, `flatten_favorites`, `get_system_favorites`, `organize_favorites` | ~150 |
-| Recents | `get_recents` | ~40 |
-| Search | `global_search`, `get_all_genres`, `get_system_genres`, `random_game` | ~200 |
-| Config (WiFi/NFS/Hostname) | `get_wifi_config`, `save_wifi_config`, `get_nfs_config`, `save_nfs_config`, `get_hostname`, `save_hostname` | ~100 |
-| Metadata | `get_metadata_stats`, `import_launchbox_metadata`, `clear_metadata`, `regenerate_metadata`, `download_metadata`, `get_import_progress`, `get_system_coverage` | ~150 |
-| Images | `import_system_images`, `import_all_images`, `get_image_import_progress`, `get_image_coverage`, `get_image_stats`, `clear_images`, `cancel_image_import` | ~200 |
-| Skins | `get_skins`, `set_skin`, `set_skin_sync` | ~80 |
-| System ops | `restart_replay_ui`, `reboot_system`, `refresh_storage`, `get_system_logs` | ~60 |
-| Videos | `get_game_videos`, `add_game_video`, `remove_game_video`, `search_game_videos` | ~150 |
+### Server Functions (51 public async functions)
 
-### Key Helper Functions
+Grouped by domain:
 
-- **`resolve_game_info()`**: Builds a `GameInfo` struct from a `RomEntry` by combining embedded DB lookups (arcade_db/game_db), ROM tag parsing, and metadata cache. This is the central game data resolution function.
-- **`enrich_from_metadata_cache()`**: Adds description, rating, publisher, and image URLs from SQLite metadata DB.
-- **`find_image_on_disk()`**: Scans the media directory for boxart/snap images. **Performance concern**: does filesystem listing per ROM.
-- **`search_score()`**: Multi-factor relevance scoring for global search (name match, favorite bonus, metadata bonus, tag penalties).
-- **`lookup_genre()`**: Resolves normalized genre from arcade_db, game_db, or metadata DB.
+**System & Storage (4)**:
+`get_info`, `get_systems`, `refresh_storage`, `get_system_logs`
 
-### Splitting Recommendation
+**ROM Browsing (3)**:
+`get_roms_page`, `get_rom_detail`, `random_game`
 
-This file should be split into modules matching the functional groups above. Each module would be a file under `src/server_fns/` with a `mod.rs` re-exporting everything. Shared types (`GameInfo`, `SystemInfo`, etc.) would go in a `types.rs` submodule.
+**ROM Actions (2)**:
+`delete_rom`, `rename_rom`
 
----
+**Favorites (6)**:
+`get_favorites`, `get_system_favorites`, `add_favorite`, `remove_favorite`, `organize_favorites`, `group_favorites`, `flatten_favorites`
 
-## 4. Component Analysis
+**Recents (1)**:
+`get_recents`
 
-### Pages (12 total)
+**Search & Filters (3)**:
+`global_search`, `get_all_genres`, `get_system_genres`
 
-| Page | File | Lines | Complexity |
-|------|------|-------|------------|
-| Home | `home.rs` | 238 | Medium — 3 Resources, search bar, hero card, recent scroll, stats, systems grid |
-| Games | `games.rs` | 36 | Low — thin wrapper delegating to RomList |
-| Game Detail | `game_detail.rs` | 1196 | **High** — 8 sub-components (Content, LaunchAction, RenameAction, DeleteAction, CapturesLightbox, VideoSection, VideoEmbed, VideoRecommendations, RecommendationItem) |
-| Favorites | `favorites.rs` | 625 | High — hero card, stats, organize panel with criteria dropdowns, grouped/flat views |
-| Search | `search.rs` | 686 | High — debounced input, URL param sync, filter chips, genre dropdown, recent searches (localStorage), random game, grouped results |
-| More | `more.rs` | 92 | Low — settings menu with MenuItem links |
-| WiFi | `wifi.rs` | 188 | Medium — form with validation, RebootButton |
-| NFS | `nfs.rs` | 154 | Medium — form with validation, RebootButton (duplicated from wifi.rs) |
-| Hostname | `hostname.rs` | 92 | Low — simple form |
-| Metadata | `metadata.rs` | 736 | **High** — description stats, download/import with polling progress, per-system coverage, image section with SSE progress, clear images, attribution |
-| Skin | `skin.rs` | 166 | Medium — grid with preview cards, sync toggle |
-| Logs | `logs.rs` | 73 | Low — source filter dropdown, refresh button, pre-formatted output |
+**Game Launch (1)**:
+`launch_game`
 
-### Shared Components
+**Settings (10)**:
+`get_wifi_config`, `save_wifi_config`, `get_nfs_config`, `save_nfs_config`, `get_hostname`, `save_hostname`, `get_skins`, `set_skin`, `set_skin_sync`, `restart_replay_ui`, `reboot_system`
 
-| Component | File | Lines | Notes |
-|-----------|------|-------|-------|
-| BottomNav | `nav.rs` | 41 | 3 tabs (Home/Favorites/More), active state from URL |
-| SystemCard | `system_card.rs` | 41 | Card for systems grid, shows name/manufacturer/count |
-| RomList | `rom_list.rs` | 676 | **Complex** — search, filters, pagination, infinite scroll (IntersectionObserver), debounce, URL sync, genre dropdown, RomItem with fav toggle/rename/delete |
+**Metadata (8)**:
+`get_metadata_stats`, `import_launchbox_metadata`, `download_metadata`, `get_import_progress`, `get_system_coverage`, `clear_metadata`, `regenerate_metadata`
 
-### Component Quality Notes
+**Images (8)**:
+`import_system_images`, `import_all_images`, `rematch_all_images`, `cancel_image_import`, `get_image_import_progress`, `get_image_coverage`, `get_image_stats`, `clear_images`
 
-- **GameDetailContent** (game_detail.rs): Good use of `StoredValue` for non-Copy data, `Show` for conditionals. The video section is self-contained with its own state management. The lightbox has keyboard navigation. Overall well-structured despite its size.
-- **RomList** (rom_list.rs): The IntersectionObserver-based infinite scroll is correctly implemented with cleanup. The debounce logic uses `gloo_timers` futures. However, the genre dropdown is duplicated from search.rs.
-- **Search** (search.rs): URL param sync via `window().location()` is well-implemented. Recent searches use localStorage correctly. The filter chip UI pattern is duplicated from rom_list.rs.
+**Videos (4)**:
+`get_game_videos`, `add_game_video`, `remove_game_video`, `search_game_videos`
 
----
+### REST API Endpoints (5 route groups)
 
-## 5. CSS Analysis
+Kept for external tool access (curl, scripts):
+- `system_info::routes()` -- system info queries
+- `roms::routes()` -- ROM listing/actions
+- `favorites::routes()` -- favorites CRUD
+- `upload::routes()` -- ROM upload
+- `recents::routes()` -- recent games
 
-### Structure
+### Embedded Databases
 
-Single file: `style/style.css` — 2237 lines. Included via `include_str!()` in main.rs and served at `/style.css`.
+| Database | Entries | Data Source | Lookup Method |
+|----------|---------|-------------|---------------|
+| `arcade_db` | ~28K | MAME | PHF by ROM stem (e.g., "pacman") |
+| `game_db` | ~34K | Screenscraper | PHF by `system~stem`, normalized title fallback, CRC32 fallback, tilde-split fallback |
 
-### Design System
+### Core Library Modules (21 source files)
 
-CSS custom properties defined in `:root`:
-```css
---bg, --surface, --surface-hover, --border
---text, --text-secondary
---accent, --accent-hover
---star, --error, --success
---radius (12px), --radius-sm (8px)
---nav-height (64px), --top-bar-height (56px)
-```
+| Module | Lines | Purpose |
+|--------|-------|---------|
+| `rom_tags.rs` | 1,135 | No-Intro/GoodTools tag parser, tier classification, region detection |
+| `favorites.rs` | 862 | CRUD, organize by 5 criteria, flatten, deduplication, sanitize folder names |
+| `thumbnails.rs` | 761 | libretro-thumbnails import, 3-tier fuzzy matching, fake symlink resolution |
+| `metadata_db.rs` | 511 | SQLite cache with NFS nolock fallback, WAL mode, batch operations |
+| `launchbox.rs` | 506 | Streaming XML parser for LaunchBox Metadata.xml |
+| `game_db.rs` | 470 | PHF map for ~34K games, normalized title fallback, CRC32 lookup |
+| `bin/metadata_report.rs` | 458 | CLI tool for metadata coverage reporting |
+| `systems.rs` | 392 | 42 system definitions (41 visible), categories, extensions |
+| `roms.rs` | 332 | ROM scanning, listing, sorting, delete, rename, duplicate detection |
+| `video_url.rs` | 320 | YouTube/Twitch/Vimeo/Dailymotion URL parsing and embed generation |
+| `skins.rs` | 259 | 11 skin palettes, CSS variable generation |
+| `arcade_db.rs` | 239 | PHF map for ~28K arcade games, DriverStatus, Rotation enums |
+| `config.rs` | 213 | replay.cfg parser with comment-preserving write-back |
+| `recents.rs` | 173 | `.rec` file parsing, deduplication |
+| `storage.rs` | 165 | Storage detection (SD/USB/NFS), disk usage via `df` |
+| `screenshots.rs` | 145 | Screenshot matching by ROM filename prefix |
+| `launch.rs` | 143 | Game launching via autostart + systemctl with health check |
+| `videos.rs` | 98 | Video storage as JSON in `.replay-control/videos.json` |
+| `game_ref.rs` | 82 | Display name resolution from arcade_db/game_db with tag enrichment |
+| `error.rs` | 45 | `thiserror`-based error enum |
+| `lib.rs` | 22 | Module declarations, `metadata` feature gate |
 
-Skin theming overrides these via dynamically generated `<style>` blocks from `skins.rs::theme_css()`.
+### Systems Supported (42 total, 41 visible)
 
-### Responsive Breakpoints
+**Arcade (4)**: arcade, arcade_dc (Atomiswave/Naomi/Naomi2), neo_geo, neo_geo_pocket_color
 
-- `min-width: 600px` — tablet adjustments (skin grid 3-col, manage actions row, metadata import form row)
-- `min-width: 768px` — systems grid 3-col, stats grid 4-col, game meta 3-col, game actions row
-- `min-width: 900px` — skin grid 4-col
-- `min-width: 1024px` — systems grid 4-col, game meta 4-col
+**Console (18)**: Atari 2600/5200/7800, ColecoVision, Intellivision, NES, SNES, N64, N64DD, GameCube, Genesis, Master System, Saturn, Dreamcast, PS1, TG-16, TG-CD, Vectrex, 3DO, Jaguar
 
-### Key Patterns
+**Computer (8)**: Amiga, Amstrad CPC, Atari ST, C64, DOS, MSX, ZX Spectrum, Apple II
 
-- **Safe area handling**: Uses `env(safe-area-inset-*)` for PWA/mobile notch avoidance
-- **Dark-only theme**: No light mode support. All colors are dark-palette.
-- **Hover detection**: Uses `@media (hover: hover)` to hide ROM action buttons on desktop, showing them only on hover
-- **Video embeds**: 16:9 responsive container via `padding-bottom: 56.25%` trick
-- **Lightbox**: Fixed overlay with `z-index: 1000`, pixelated image rendering for retro screenshots
+**Handheld (6)**: Game Boy, GBC, GBA, Game Gear, Lynx, WonderSwan
 
-### Issues
-
-1. **No modular CSS**: Everything in one file. No CSS modules, no scoping. Selector names are globally unique but this is fragile.
-2. **Duplicated input styles**: `.search-input`, `.home-search-input`, `.search-page-input`, `.form-input`, `.rename-input` — similar but slightly different styles for text inputs.
-3. **No animation system**: Only one `@keyframes` definition (`pulse-opacity`). All transitions are inline `transition:` properties.
-4. **Missing dark mode toggle**: The app is dark-only. A `prefers-color-scheme` media query for system theme integration is absent.
-
----
-
-## 6. Core Library Analysis
-
-### Module Breakdown
-
-| Module | Lines | Test Coverage | Notes |
-|--------|-------|---------------|-------|
-| `systems.rs` | 373 | Yes | 41 static system definitions, `find_system()`, `system_from_fav_filename()` |
-| `roms.rs` | ~320 | Yes | Recursive scanning, region/quality tier sorting, favorite marking, delete, rename, duplicate detection |
-| `favorites.rs` | 863 | **Extensive** | CRUD, organize by 5 criteria (system/genre/players/rating/alpha), flatten, deep nesting, deduplication |
-| `recents.rs` | 174 | Yes | `.rec` file parsing, deduplication of favorite/non-favorite entries |
-| `config.rs` | 214 | Yes | `key="value"` parser, write-back preserving comments and unknown keys |
-| `storage.rs` | 166 | No | Storage detection via config + filesystem probing, `df` command for disk usage |
-| `rom_tags.rs` | 1136 | **Extensive** | No-Intro/GoodTools tag parser: regions, revisions, translations, hacks, betas, etc. |
-| `game_ref.rs` | 83 | No | `GameRef` with display name resolution from arcade_db/game_db |
-| `screenshots.rs` | 146 | Yes | Screenshot matching by ROM filename prefix, timestamp parsing |
-| `launch.rs` | 143 | No | Autostart file creation + `systemctl restart`, health check recovery |
-| `video_url.rs` | 321 | Yes | YouTube/Twitch/Vimeo/Dailymotion URL parsing, canonical/embed URL generation |
-| `videos.rs` | 99 | No | Video storage as JSON in `.replay-control/videos/` |
-| `skins.rs` | 260 | Yes | 11 skin palettes, CSS variable generation, theme color extraction |
-| `arcade_db.rs` | 240 | Yes | PHF map of ~28K arcade games (FBNeo + MAME 2003+ + MAME current + Flycast) |
-| `game_db.rs` | 471 | Yes | PHF maps of ~34K non-arcade games (No-Intro DATs + TheGamesDB + libretro metadata), normalized title fallback, CRC32 lookup |
-| `thumbnails.rs` | 567 | No | 3-tier fuzzy thumbnail matching, git clone with cancel, fake symlink resolution |
-| `metadata_db.rs` | 461 | No | SQLite cache with NFS nolock fallback, bulk upsert/update, per-system stats |
-| `launchbox.rs` | 507 | No | Streaming XML parser, normalized title matching with article reordering, download via curl |
-| `error.rs` | 46 | No | `thiserror`-based error enum |
-
-### Build-Time Code Generation
-
-The core crate has build scripts that:
-1. Parse MAME XML files and FBNeo CSV for arcade game data → generates `arcade_db.rs` with a PHF map
-2. Parse No-Intro DAT files, cross-reference with TheGamesDB JSON and libretro-database metadata → generates `game_db.rs` with per-system PHF maps, canonical game tables, CRC32 indexes, and normalized title indexes
-
-This approach embeds ~62K game entries into the binary with O(1) lookup time and zero runtime parsing.
-
-### Core Design Quality
-
-- **Title normalization** is thorough: handles `"Title, The"` ↔ `"The Title"` reordering, strips parenthesized tags, removes punctuation, collapses whitespace. Used in both game_db (build-time) and launchbox (runtime).
-- **ROM tag parsing** (`rom_tags.rs`) is impressively comprehensive: handles regions, revisions, translations, patches, hacks, betas, prototypes, alternate dumps, BIOS, unlicensed, with classification into quality tiers for sorting.
-- **Favorites organization** supports 5 criteria (system, genre, players, rating, alphabetical) with primary+secondary grouping and deduplication. Tested with 20+ test cases.
-- **Config writer** preserves comments and unknown keys when writing back — respectful of shared config ownership with RePlayOS.
+**Utility (1)**: alpha_player (hidden)
 
 ---
 
-## 7. Performance Concerns
-
-### High Priority
-
-1. **`find_image_on_disk()` does filesystem scanning per ROM**: In `server_fns.rs`, this function reads the media directory listing for every ROM to check for boxart/snap images. For a system with 1000 ROMs, this means 1000 directory listings. Should build an index once and cache it.
-
-2. **`get_all_genres()` iterates all ROMs across all systems**: This server function scans every ROM directory, builds full ROM lists, and extracts genres. Called from the search page genre dropdown. Should be cached or pre-computed.
-
-3. **`global_search()` scans all systems on every query**: Loads ROM lists for every system, filters, scores, and sorts. No caching of the combined index. With 40+ systems and thousands of ROMs, this is expensive on NFS.
-
-4. **`RomCache` clones entire Vec<RomEntry> on cache hit**: The cache stores `Vec<RomEntry>` and `.clone()` on every read. For systems with thousands of ROMs, this is a non-trivial allocation. Consider `Arc<Vec<RomEntry>>` for shared ownership.
-
-### Medium Priority
-
-5. **Metadata DB opened lazily but held behind Mutex**: The `MetadataDb` is wrapped in `Arc<Mutex<Option<MetadataDb>>>`. Every metadata lookup acquires the mutex. Under concurrent requests, this serializes all metadata access. Consider a connection pool or per-request connections.
-
-6. **Image import clones git repos one at a time**: For multi-repo systems like `arcade_dc` (3 repos), repos are cloned sequentially. Could parallelize repo cloning while remaining single-threaded for image copying.
-
-7. **No pagination for favorites**: `get_favorites()` returns all favorites at once. For users with hundreds of favorites, this loads everything into memory.
-
-### Low Priority
-
-8. **CSS served via `include_str!()`**: The entire CSS file is compiled into the binary. Hot-reloading CSS during development requires a full recompile. (Mitigated by `dev.sh` auto-rebuild.)
-
-9. **Skin CSS injected as inline `<style>`**: Works fine for 11 skins but would not scale to user-defined themes without a different approach.
-
----
-
-## 8. Security Review
-
-### Path Traversal
-
-The media and captures handlers in `main.rs` check for `..` in paths:
-```rust
-if path.contains("..") {
-    return StatusCode::BAD_REQUEST.into_response();
-}
-```
-
-This is the **minimum viable check**. It blocks the most common traversal attack but does not handle:
-- URL-encoded sequences (`%2e%2e`)
-- Symlink following (a symlink inside the media dir could point outside it)
-- Absolute paths (a path starting with `/` would be rejected by the route pattern anyway)
-
-The URL-encoded case is actually safe because Axum's `Path` extractor decodes the URL before passing the string, so `%2e%2e` becomes `..` and is caught. Symlink following is a theoretical concern but low-risk since the media directory is app-controlled.
-
-### ROM Operations
-
-- **Delete**: `delete_rom()` takes a relative path and delegates to `core::roms::delete_rom()`, which joins it with the storage root. The core function does not validate that the path stays within the roms directory. A malicious relative path like `../../etc/passwd` would be caught by the filesystem layout (roms are under `<storage>/roms/`) but there is no explicit validation.
-- **Rename**: `rename_rom()` takes a relative path and new filename. The core function renames within the same directory. No validation that the new name does not contain path separators.
-- **Upload**: `upload.rs` uses multipart parsing and writes to `<storage>/roms/<system>/<filename>`. The filename comes from the multipart `filename` header. No sanitization of the filename.
-
-### Recommendations
-
-1. Add explicit path canonicalization and containment checks for ROM operations.
-2. Sanitize uploaded filenames (strip path separators, null bytes, control characters).
-3. Consider rate limiting for operations that trigger filesystem scans.
-
----
-
-## 9. Error Handling
+## 3. Code Quality Assessment
 
 ### Patterns Used
 
-1. **`thiserror` enum in core**: `Error` enum with `Io`, `Config`, `NotFound`, `InvalidInput`, `Other` variants. Used consistently in core functions.
+**Leptos Conventions**:
+- `Resource` for async data loading with `Suspense`/`Transition` boundaries
+- `Signal`/`RwSignal` for reactive state, leveraging `Copy` semantics
+- `StoredValue` for non-reactive data in closures (avoiding clone explosion)
+- `Effect` for side effects (debounce timers, DOM interactions)
+- `#[component]` functions with setup-above/view-below pattern
+- `Show` for conditional rendering
 
-2. **`ServerFnError` in server functions**: Server functions return `Result<T, ServerFnError>`. Most convert core errors via `.map_err(|e| ServerFnError::new(e.to_string()))`.
+**Data Architecture**:
+- Mirror types pattern (`types.rs`) bridges the SSR/hydrate feature boundary
+- `resolve_game_info()` is the single function bridging arcade_db and game_db
+- `enrich_from_metadata_cache()` augments game info with external metadata
+- TTL-based caching (`RomCache`) avoids repeated filesystem scans
+- Cooperative cancellation via `AtomicBool` for long-running imports
 
-3. **`ErrorBoundary` in pages**: All pages wrap their async content in `<ErrorBoundary>` + `<Suspense>` + `Suspend::new()`. The `ErrorDisplay` component renders caught errors.
+**Error Handling**:
+- `thiserror` in core crate, `ServerFnError` wrapping at the app boundary
+- Core functions return `Result<T, Error>` consistently
+- Server functions map core errors via `ServerFnError::new()`
 
-### Issues
+**Testing**:
+- 155 `#[test]` functions in the core crate across 11 modules
+- 6 `#[test]` functions in the app crate (`util.rs` only)
+- No integration tests or end-to-end tests
+- Core crate has good unit test coverage for data processing logic
+- App crate (components, server functions) has no test coverage
 
-1. **Silent error swallowing**: Several places use `let _ = ...` to discard errors:
-   - `let _ = db.clear()` in `regenerate_metadata()`
-   - `let _ = std::fs::remove_file(&zip_path)` in download cleanup
-   - `let _ = child.kill()` in thumbnail clone cancellation
+### Code Consistency
 
-   Some of these are intentional (cleanup best-effort), but `db.clear()` failure is significant.
+**Strengths**:
+- Consistent use of Leptos idioms across all 12 pages
+- i18n keys used consistently (never hardcoded strings in components)
+- Server functions follow a uniform pattern: extract `AppState`, call core, map errors
+- CSS follows a systematic naming convention (`.page-*`, `.filter-*`, `.game-detail-*`)
+- ROM tag parsing is thorough with 60 test cases
 
-2. **Error message quality**: Server function errors are wrapped with `.map_err(|e| ServerFnError::new(e.to_string()))`, which loses error type information. The client sees generic string messages.
+**Inconsistencies**:
+- `RebootButton` component is duplicated in `wifi.rs` and `nfs.rs` (identical logic)
+- Some pages use `Transition` (rom_list), others use `Suspense` (home, game_detail) for the same pattern
+- Filter state management varies: some pages use URL params, others use local signals
+- Error display varies: some pages show inline errors, others use `ErrorBoundary`
 
-3. **No structured error logging**: Errors are logged via `tracing::warn!` or `tracing::debug!` with ad-hoc formatting. No structured fields for filtering or alerting.
+### Areas of Concern
 
-4. **Panic on lock poisoning**: All `RwLock`/`Mutex` accesses use `.expect("lock poisoned")`, which panics. In a web server, a panic in one request handler could crash the process.
+1. **server_fns.rs is a 2,322-line monolith**: Contains 51 server functions, 20+ struct/enum definitions, and several helper functions. This is the single largest Rust file and mixes data types with RPC handlers.
 
----
+2. **api/mod.rs grew to 1,419 lines**: Contains `AppState`, `RomCache`, background task spawning, storage watcher, auto-import, and the full image import orchestration pipeline. It handles too many concerns.
 
-## 10. Testing
+3. **game_detail.rs at 1,195 lines**: 8+ sub-components for a single page. The video section alone is substantial. Some of these could be extracted to their own files.
 
-### Current State
-
-The core library has substantial unit tests:
-- `rom_tags.rs`: 35+ tests covering regions, revisions, translations, hacks, classification
-- `favorites.rs`: 20+ tests for CRUD, organization, flattening, deduplication
-- `config.rs`: Tests for parsing, writing, comment preservation
-- `recents.rs`: Tests for parsing, deduplication
-- `video_url.rs`: Tests for all 4 platforms, edge cases
-- `game_db.rs`: 20+ tests for lookup, CRC, normalized title, fuzzy matching
-- `arcade_db.rs`: 15+ tests for lookup, clones, rotation, categories, total entry count
-- `skins.rs`: Tests for CSS generation, color validation, name count matching
-- `systems.rs`: Tests for lookup, fav filename parsing
-- `util.rs`: Tests for `format_size_short()`
-- `screenshots.rs`: Tests for filename matching, timestamp parsing
-
-### Missing Tests
-
-1. **No app-layer tests**: Zero tests in `replay-control-app`. No component tests, no server function tests, no integration tests.
-2. **No tests for `api/mod.rs`**: `AppState`, `RomCache`, storage watcher, import orchestration — all untested.
-3. **No tests for `thumbnails.rs`**: The 3-tier fuzzy matching, fake symlink resolution, and git clone logic have no tests.
-4. **No tests for `metadata_db.rs`**: SQLite operations, migrations, nolock fallback — all untested.
-5. **No tests for `launchbox.rs`**: XML parsing, title normalization, ROM index building — untested at unit level (though there is an integration path via metadata import).
-6. **No tests for `storage.rs`**: Detection logic depends on filesystem state, making it hard to unit test, but the `df` parsing could be tested.
-7. **No end-to-end tests**: No test harness that starts the server and makes HTTP requests.
-
-### Test Quality
-
-The existing tests are well-written: they test edge cases, use descriptive names, and cover both positive and negative paths. The game_db tests verify cross-region canonical sharing, which is a subtle correctness property.
+4. **No app-layer tests**: The 6 tests in `util.rs` are the only app crate tests. Server functions, components, and the API layer are untested.
 
 ---
 
-## 11. Technical Debt
+## 4. Data Flow
 
-### Critical
+### ROM Discovery to UI
 
-1. **`server_fns.rs` monolith (1700+ lines)**: The largest file in the codebase. Contains all server function definitions, response types, and helper functions. Hard to navigate, review, and maintain. Every new feature adds to this file.
+```
+Filesystem scan (core/roms.rs)
+  --> RomEntry { game: GameRef, size_bytes, is_m3u, is_favorite, ... }
+  --> mark_favorites() enriches is_favorite flag
+  --> RomCache (api/mod.rs) caches results for 30s
+  --> get_roms_page() server function:
+      - Paginates via offset/PAGE_SIZE (100 items)
+      - Calls resolve_game_info() per ROM for display names
+      - Calls enrich_from_metadata_cache() for descriptions/ratings/images
+      - Returns enriched RomPage { roms, has_more, total }
+  --> RomList component:
+      - Creates Resource with system + search + filters + page params
+      - Renders with Transition (no flicker on reload)
+      - Appends pages via IntersectionObserver infinite scroll
+      - Each RomItem shows box art, display name, rating badge, driver status badge
+```
 
-2. **Duplicated code patterns across pages/components**:
-   - `RebootButton` component duplicated in `wifi.rs` and `nfs.rs`
-   - Genre dropdown duplicated in `rom_list.rs` and `search.rs`
-   - Filter chips UI duplicated in `rom_list.rs` and `search.rs`
-   - Debounce logic duplicated (different implementations in rom_list.rs and search.rs)
-   - `update_url_params` helper duplicated in rom_list.rs and search.rs
+### Game Detail Pipeline
 
-3. **REST API + Server Functions redundancy**: The REST API (`api/` module) and server functions (`server_fns.rs`) provide overlapping functionality. Both paths go through `AppState` to core. The REST API was presumably the original interface; server functions were added for Leptos SSR. Maintaining both doubles the surface area.
+```
+URL params (:system, :filename)
+  --> get_rom_detail() server function:
+      - resolve_game_info(system, filename, rom_path)
+      - enrich_from_metadata_cache() for description/rating/images
+      - screenshots::find_screenshots() for user captures
+      - Return RomDetail { game: GameInfo, file_size, screenshots }
+  --> GameDetailPage component:
+      - Hero section with box art + launch button
+      - Info grid (system, year, genre, developer, players, etc.)
+      - Screenshots carousel
+      - Videos section (user-saved + recommendations)
+      - Captures lightbox for user screenshots
+      - Actions (favorite, rename, delete)
+```
 
-### Significant
+### Search Pipeline
 
-4. **`api/mod.rs` complexity (500+ lines)**: `AppState` has 8 fields (all `Arc<RwLock<...>>` or `Arc<Mutex<...>>`). Import orchestration, storage watching, and config management are all in this file alongside the state definition.
+```
+User types in search input
+  --> 300ms debounce (Effect with set_timeout)
+  --> URL param sync (?q=..., ?genre=..., etc.)
+  --> global_search() server function:
+      - Scans ALL systems via RomCache
+      - For each ROM: resolve_game_info() + search_score()
+      - search_score() ranks: exact match > starts-with > contains > display name match
+      - Applies filters: hide_hacks, hide_translations, hide_betas, hide_clones, multiplayer, genre
+      - Sorts by relevance score (descending)
+      - Returns GlobalSearchResults { results: Vec<(system, Vec<SearchResult>)>, total }
+  --> SearchPage component:
+      - Filter chips bar
+      - Results grouped by system
+      - Recent searches (localStorage)
+      - Random game button
+```
 
-5. **CSS in single file (2237 lines)**: No modular organization. Finding/modifying styles for a specific component requires searching through the entire file.
+### Metadata Import Pipeline
 
-6. **Mirror types maintenance burden**: Every struct shared between server and client must be defined twice (`types.rs` for WASM, source struct in `server_fns.rs`). Adding or modifying a field requires updating both.
+```
+User clicks "Download / Update" on MetadataPage
+  --> download_metadata() server function:
+      - Downloads Metadata.xml from launchbox-metadata repo
+      - Stores at <storage>/.replay-control/Metadata.xml
+  --> import_launchbox_metadata() server function:
+      - AppState.start_import() spawns background task
+      - Streams XML with launchbox.rs parser
+      - Builds ROM index from all systems
+      - Matches LaunchBox entries to ROM filenames (normalized title matching)
+      - Updates metadata_db SQLite cache
+      - Progress tracked via import_progress RwLock
+  --> MetadataPage polls get_import_progress() for live updates
+```
 
-7. **Manual server function registration in `main.rs`**: Every new server function requires adding a `register_explicit::<T>()` call. Forgetting this causes silent failures (the function appears to exist but returns errors at runtime).
+### Image Import Pipeline
 
-### Minor
+```
+User clicks "Download" for a system (or "Download All")
+  --> import_system_images() / import_all_images() server function:
+      - AppState orchestrates: clone/pull libretro-thumbnails repo
+      - resolve_fake_symlinks_in_dir() for FAT32/exFAT compatibility
+      - 3-tier fuzzy matching: exact --> strip-tags --> version-stripped
+      - Copies matched images to <storage>/.replay-control/media/<system>/
+      - Updates metadata_db with image paths (bulk_update_image_paths)
+      - Progress streamed via SSE at /sse/image-progress (200ms interval)
+  --> MetadataPage connects to SSE, displays per-system progress
+  --> Cancel button sets image_import_cancel AtomicBool
+```
 
-8. **i18n as match arms**: The `t()` function is a 200+ arm match. Adding translations requires editing a single function. No compile-time exhaustiveness checking. No tooling for missing translations.
+### Favorites Organization Pipeline
 
-9. **No pagination for favorites/recents**: These endpoints return all data at once. Fine for current usage but will not scale.
-
-10. **`game_detail.rs` size (1196 lines)**: The video section alone could be its own module.
-
----
-
-## 12. Proposed Changes
-
-### 12.1 Split `server_fns.rs` into modules
-
-**What**: Refactor the monolithic `server_fns.rs` into `src/server_fns/mod.rs` with submodules: `types.rs`, `system.rs`, `roms.rs`, `favorites.rs`, `search.rs`, `config.rs`, `metadata.rs`, `images.rs`, `skins.rs`, `videos.rs`, `system_ops.rs`.
-
-**Why**: The file is 1700+ lines with 50+ functions. It is the primary bottleneck for code navigation and review. Every feature change touches this file, increasing merge conflict risk.
-
-**Effort**: Medium. The functions have few interdependencies. `resolve_game_info()` and `enrich_from_metadata_cache()` are shared helpers that would go in a `helpers.rs` submodule.
-
-**Priority**: **High**. This is the single highest-impact refactor for developer velocity.
-
----
-
-### 12.2 Extract shared components to eliminate duplication
-
-**What**: Create shared components for:
-- `RebootButton` (currently duplicated in wifi.rs and nfs.rs)
-- `GenreDropdown` (duplicated in rom_list.rs and search.rs)
-- `FilterChips` (duplicated in rom_list.rs and search.rs)
-- `DebouncedInput` (duplicated debounce logic in rom_list.rs and search.rs)
-- `update_url_params` utility (duplicated in rom_list.rs and search.rs)
-
-**Why**: DRY violation. Bug fixes or UX changes must be applied in multiple places. Risk of divergence.
-
-**Effort**: Low-Medium. Each extraction is straightforward. `RebootButton` is the simplest (copy one version to `components/`). `GenreDropdown` requires parameterizing the data source.
-
-**Priority**: **High**. Low effort, immediate payoff.
-
----
-
-### 12.3 Cache `find_image_on_disk()` results
-
-**What**: Build an image path index (HashMap of `(system, rom_filename) -> (boxart_path, snap_path)`) once per cache TTL, instead of scanning the media directory per ROM.
-
-**Why**: Current implementation does a directory listing per ROM. For 1000 ROMs, that is 1000 readdir syscalls, magnified on NFS.
-
-**Effort**: Low. Add an image path cache to `RomCache`, populate on first access, invalidate on image import completion.
-
-**Priority**: **High**. Direct performance impact on ROM listing and game detail pages.
-
----
-
-### 12.4 Cache global search index
-
-**What**: Build a combined search index (all systems, all ROMs with metadata) cached in `RomCache` with TTL. Use it for `global_search()`, `get_all_genres()`, and `random_game()`.
-
-**Why**: These functions currently scan all systems on every call. With 40+ systems and NFS latency, this is the slowest server function path.
-
-**Effort**: Medium. Requires defining a combined index structure and invalidation strategy.
-
-**Priority**: **Medium-High**. Significantly improves search page responsiveness.
-
----
-
-### 12.5 Use `Arc<Vec<RomEntry>>` in `RomCache`
-
-**What**: Change `RomCache` to store `Arc<Vec<RomEntry>>` instead of `Vec<RomEntry>`. Return `Arc<Vec<RomEntry>>` from `get_roms()` instead of cloning.
-
-**Why**: Currently every cache hit clones the entire Vec. For systems with thousands of ROMs, this is unnecessary allocation.
-
-**Effort**: Low. Change the cache entry type and update callsites to work with `Arc<Vec<>>`.
-
-**Priority**: **Medium**. Reduces allocations but may not be user-visible on most systems.
-
----
-
-### 12.6 Split CSS into per-component files
-
-**What**: Split `style.css` into modular files (e.g., `base.css`, `layout.css`, `home.css`, `game-detail.css`, `rom-list.css`, `search.css`, `settings.css`, `video.css`, `lightbox.css`) and concatenate them at build time.
-
-**Why**: 2237 lines in one file is difficult to navigate. Finding styles for a specific component requires searching.
-
-**Effort**: Medium. Requires a build step to concatenate CSS files (or just use `@import` with a simple concatenation script).
-
-**Priority**: **Medium**. Improves developer experience but does not affect functionality.
+```
+User selects criteria on OrganizePanel
+  --> organize_favorites() server function:
+      - Reads all favorites for all systems
+      - Groups by primary criteria (system/genre/players/rating/alphabetical)
+      - Optionally groups by secondary criteria
+      - Creates folder structure on disk
+      - Option to keep originals at root (ReplayOS compatibility)
+  --> flatten_favorites() reverses: moves all favorites to root level
+```
 
 ---
 
-### 12.7 Extract `GameVideoSection` into its own module
+## 5. Changes Since Original Analysis
 
-**What**: Move `GameVideoSection`, `VideoEmbed`, `VideoRecommendations`, and `RecommendationItem` from `game_detail.rs` into `src/components/game_videos.rs` (or `src/pages/game_detail/videos.rs`).
+This section documents features and changes added after the initial analysis was written.
 
-**Why**: These 4 components total ~500 lines and are self-contained. Extracting them would reduce `game_detail.rs` from 1196 to ~700 lines.
+### New Features
 
-**Effort**: Low. The components are already self-contained with clear prop boundaries.
+**Multiplayer Filter**: ROM list and search pages gained a "Multiplayer" filter chip. Uses `players` field from game_db/arcade_db to filter games with 2+ players.
 
-**Priority**: **Medium**. Reduces the largest page file to a manageable size.
+**Rating Display in ROM List**: `RomEntry` gained `rating: Option<f32>` and `players: Option<u8>` fields. Server functions enrich ROM entries with ratings from the metadata cache. ROM list items show star-based rating badges.
 
----
+**Driver Status Badges**: Arcade ROM entries display colored badges (Working/Imperfect/Preliminary) based on MAME driver emulation status from arcade_db.
 
-### 12.8 Add path sanitization for ROM operations
+**Re-match All Images**: New `rematch_all_images()` server function and "Re-match All" button on MetadataPage. Re-runs image matching using already-downloaded repos without re-downloading. Useful when matching algorithm improves.
 
-**What**: Add explicit path validation in `delete_rom()`, `rename_rom()`, and the upload handler: reject filenames containing `/`, `\`, null bytes, or `..` sequences. Canonicalize paths and verify they stay within the roms directory.
+**Random Game**: New `random_game()` server function and button on SearchPage. Selects a random ROM across all systems and navigates to its detail page.
 
-**Why**: Current code relies on the filesystem layout for safety. Explicit validation is defense-in-depth against path traversal.
+**Favorites Filter Bar**: FavoritesPage gained a search/filter bar for filtering favorites by name.
 
-**Effort**: Low. Add a `sanitize_filename()` function and call it in the three entry points.
+**Recent Searches**: SearchPage stores recent search queries in localStorage and displays them as quick-access chips.
 
-**Priority**: **Medium**. Security improvement with minimal effort.
+**Genre Browsing**: Search results include genre chips that link to filtered search views ("Browsing all [genre]").
 
----
+**Video Management**: Full video section on GameDetailPage with YouTube/Twitch/Vimeo URL parsing, embed rendering, video recommendations (find trailers/gameplay/1CC), pin/unpin, user captures display.
 
-### 12.9 Replace `Arc<Mutex<Option<MetadataDb>>>` with per-request connections
+**Captures Lightbox**: GameDetailPage shows user screenshots taken on RePlayOS with a lightbox viewer.
 
-**What**: Instead of holding a single `MetadataDb` behind a Mutex, open a new SQLite connection per request (or use a connection pool like `r2d2`).
+**Metadata Download**: `download_metadata()` server function downloads LaunchBox Metadata.xml directly (previously required manual placement). Includes `regenerate_metadata()` for rebuilding from existing XML.
 
-**Why**: The current Mutex serializes all metadata access. Under concurrent load (e.g., SSR rendering multiple pages), this is a bottleneck. SQLite supports multiple concurrent readers with WAL mode.
+### Core Library Improvements
 
-**Effort**: Medium. Requires changing `AppState` and all callsites that use `metadata_db()`.
+**Thumbnail Matching Enhancements**:
+- `strip_version()`: Strips GDI/TOSEC version strings from filenames for better matching
+- `is_repo_stale()`: Compares local vs remote HEAD to determine if re-download is needed
+- `resolve_fake_symlinks_in_dir()`: Post-clone resolution of text-file symlinks created by git on FAT32/exFAT filesystems that don't support real symlinks
+- Colon variant fallback: Tries both "Game: Subtitle" and "Game - Subtitle" forms
+- N64DD prefix handling for combined N64/N64DD repos
 
-**Priority**: **Low-Medium**. Only matters under concurrent load, which is rare for a single-user companion app.
+**Multi-repo Support**: `arcade_dc` system maps to 3 libretro-thumbnails repos (Atomiswave, Naomi, Naomi 2), with sequential search across all.
 
----
+**Batch Rating Lookups**: `metadata_db.lookup_ratings()` fetches ratings for multiple ROMs efficiently. `all_ratings()` returns all ratings for organize-by-rating functionality.
 
-### 12.10 Add integration tests for server functions
+**Image Path Bulk Updates**: `metadata_db.bulk_update_image_paths()` uses transactions for efficient batch writes during image import.
 
-**What**: Create an integration test module that:
-1. Sets up a temporary storage directory with test ROM files
-2. Initializes `AppState`
-3. Calls server functions directly (bypassing HTTP)
-4. Verifies correct behavior
+### Architectural Changes
 
-**Why**: Server functions are the primary interface between the UI and core logic. They are currently untested. Bugs in data resolution, caching, or error handling are caught only manually.
+**Genre Dropdown Extraction**: Previously duplicated genre filter logic in rom_list.rs and search.rs was extracted to a shared `GenreDropdown` component (`genre_dropdown.rs`).
 
-**Effort**: Medium-High. Requires test fixtures (mock ROM directory, test Metadata.xml) and test infrastructure.
+**Hero Card Extraction**: `HeroCard` and `GameScrollCard` components were extracted to `hero_card.rs` for reuse across home and favorites pages.
 
-**Priority**: **Low-Medium**. Valuable for long-term maintainability but not blocking current development.
+**i18n Simplified**: The locale system was simplified to English-only (single `En` variant). The multi-locale infrastructure (match on locale+key) remains for future expansion but currently has no runtime overhead.
 
----
+**SSE Progress Streaming**: Image import progress switched from polling to Server-Sent Events at `/sse/image-progress` with 200ms update interval. This provides smoother progress updates compared to the polling approach still used for metadata import.
 
-### 12.11 Consider removing the REST API
-
-**What**: Evaluate whether the REST API (`api/` module: system_info, roms, favorites, upload, recents) is still needed. If not used externally, remove it to reduce maintenance burden.
-
-**Why**: The REST API and server functions are redundant. Both go through `AppState` to core. Server functions are used by the Leptos UI; the REST API was the original interface. If nothing external uses the REST API, it is dead code.
-
-**Effort**: Low (if removing) or None (if keeping for external use).
-
-**Priority**: **Low**. Requires checking if any external tools (scripts, automation, RePlayOS itself) use the REST endpoints.
+**App-Specific Config**: Introduction of `.replay-control/config.cfg` for app-specific settings, keeping the `replay.cfg` boundary clean.
 
 ---
 
-### 12.12 Add `thumbnails.rs` and `metadata_db.rs` tests
+## 6. Proposed Improvements
 
-**What**: Add unit tests for:
-- `strip_tags()`, `strip_version()`, `thumbnail_filename()`, `find_thumbnail()` in thumbnails.rs
-- `MetadataDb::lookup()`, `upsert()`, `bulk_upsert()`, `stats()`, `image_stats()` in metadata_db.rs
-- `normalize_title()` in launchbox.rs (especially article reordering edge cases)
+### High Priority
 
-**Why**: These modules handle complex matching logic (fuzzy thumbnail matching, title normalization) that is prone to subtle bugs. The matching logic has already been iterated on (3-tier fallback, colon variants) which suggests edge cases have been found empirically.
+**1. Split server_fns.rs into domain modules**
 
-**Effort**: Low-Medium. Thumbnail matching tests need a test directory with sample PNG files. Metadata DB tests need an in-memory SQLite database.
+At 2,322 lines with 51 functions and 20+ type definitions, this file is the primary maintainability bottleneck. Proposed split:
 
-**Priority**: **Low-Medium**. Prevents regressions in matching accuracy.
+```
+server_fns/
+  mod.rs          # Re-exports, shared types (GameInfo, SystemInfo)
+  roms.rs         # get_roms_page, get_rom_detail, delete_rom, rename_rom
+  favorites.rs    # get_favorites, add/remove_favorite, organize, flatten
+  search.rs       # global_search, get_all_genres, get_system_genres, random_game
+  settings.rs     # wifi, nfs, hostname, skin, restart, reboot
+  metadata.rs     # metadata import, coverage, clear, regenerate, download
+  images.rs       # image import, rematch, cancel, coverage, stats, clear
+  videos.rs       # get/add/remove/search game videos
+  helpers.rs      # resolve_game_info, enrich_from_metadata_cache, search_score
+```
+
+**2. Split api/mod.rs into focused modules**
+
+At 1,419 lines, this file handles AppState, RomCache, background tasks, config management, storage detection, metadata DB, and image import orchestration. The image import orchestration alone is hundreds of lines. Proposed split:
+
+```
+api/
+  mod.rs          # AppState definition + new/storage/config methods
+  cache.rs        # RomCache with TTL logic
+  background.rs   # spawn_storage_watcher, spawn_auto_import
+  import.rs       # start_import, start_image_import, image import orchestration
+```
+
+**3. Extract RebootButton to shared component**
+
+`RebootButton` is identically implemented in both `wifi.rs` and `nfs.rs`. Should be extracted to `components/reboot_button.rs`.
+
+**4. Unify Suspense/Transition usage**
+
+Some pages use `Suspense` and others use `Transition` for the same loading pattern. `Transition` is preferable when reloading data (avoids content flash) and should be used consistently.
+
+### Medium Priority
+
+**5. Extract game_detail.rs sub-components**
+
+The file has 1,195 lines with 8+ sub-components. The video section (`GameVideoSection`, `VideoEmbed`, `VideoRecommendations`, `RecommendationItem`) could be extracted to `components/video_section.rs`. The captures lightbox could move to `components/captures.rs`.
+
+**6. Unify metadata import progress to SSE**
+
+Metadata import still uses polling (`get_import_progress()` server function called on a timer) while image import uses SSE. Both should use SSE for consistency and efficiency.
+
+**7. Add app-layer tests**
+
+The entire app crate (10,455 lines of Rust) has only 6 tests in `util.rs`. Server function logic -- especially `search_score()`, `resolve_game_info()`, and filter application -- should have unit tests.
+
+**8. Introduce typed filter state**
+
+Filter state (hide_hacks, hide_translations, hide_betas, hide_clones, multiplayer, genre, search query) is managed as individual signals in both rom_list.rs and search.rs. A shared `FilterState` struct would reduce duplication and make filter logic testable.
+
+### Low Priority
+
+**9. CSS organization**
+
+The single `style.css` (2,356 lines) could benefit from being split by page/component for maintainability. However, the current approach avoids CSS module complexity and keeps the build simple.
+
+**10. Lazy-load embedded databases**
+
+The `arcade_db` and `game_db` PHF maps are compiled into the binary (~62K entries total). This increases binary size but provides zero-cost lookups. The tradeoff is acceptable for the deployment target (Raspberry Pi with sufficient RAM), but lazy initialization via `once_cell` could reduce startup memory if needed.
+
+**11. Search performance**
+
+`global_search()` iterates over all ROMs across all systems on every search request. For large collections (10K+ ROMs), this could benefit from a pre-built search index. However, the RomCache already avoids repeated filesystem scans, and the 30s TTL keeps results fresh.
 
 ---
 
-### Summary Table
+## 7. Technical Debt and Known Issues
 
-| # | Change | Effort | Priority |
-|---|--------|--------|----------|
-| 12.1 | Split server_fns.rs | Medium | High |
-| 12.2 | Extract shared components | Low-Medium | High |
-| 12.3 | Cache image paths | Low | High |
-| 12.4 | Cache search index | Medium | Medium-High |
-| 12.5 | Arc\<Vec\> in RomCache | Low | Medium |
-| 12.6 | Split CSS | Medium | Medium |
-| 12.7 | Extract video components | Low | Medium |
-| 12.8 | Path sanitization | Low | Medium |
-| 12.9 | MetadataDb connection pool | Medium | Low-Medium |
-| 12.10 | Server function integration tests | Medium-High | Low-Medium |
-| 12.11 | Evaluate REST API removal | Low | Low |
-| 12.12 | Add matching logic tests | Low-Medium | Low-Medium |
+### Code Duplication
+
+1. **RebootButton** in `wifi.rs` and `nfs.rs` -- identical component duplicated across two pages
+2. **Filter logic** in `rom_list.rs` and `search.rs` -- similar filter chip rendering and state management
+3. **Box art URL resolution** appears in multiple server functions (`get_roms_page`, `get_favorites`, `get_recents`, `get_system_favorites`) with slightly different patterns
+
+### Architectural Issues
+
+4. **server_fns.rs monolith** (2,322 lines) -- Single file mixing types, helpers, and 51 RPC functions makes navigation and maintenance difficult
+5. **api/mod.rs monolith** (1,419 lines) -- AppState, caching, background tasks, and import orchestration in one file
+6. **54 register_explicit calls in main.rs** -- Brittle: adding a server function requires remembering to add the registration. Forgetting causes silent runtime failures (function returns 404)
+7. **Mirror types in types.rs** -- Every core type used in server function signatures must be duplicated. Adding a field to a core type requires updating the mirror. The compiler does not enforce parity.
+
+### Missing Features
+
+8. **No authentication/authorization** -- Any network client can access all functionality including delete, rename, reboot, and config changes. Acceptable for a local-network appliance but limits deployment scenarios.
+9. **No rate limiting** -- No protection against rapid repeated requests to expensive operations (ROM scanning, metadata import)
+10. **No request validation middleware** -- Path traversal checks are done ad-hoc in individual handlers (media, captures) rather than via middleware
+
+### Known Limitations
+
+11. **Metadata import blocks the DB mutex** -- During metadata import, the `metadata_db` Mutex is held by the import task. Other requests needing metadata (ROM list enrichment, search) must wait or get stale data.
+12. **RomCache clones entire ROM lists** -- `get_roms()` returns `Vec<RomEntry>` by cloning. For systems with thousands of ROMs, this creates significant allocation pressure on every cache hit.
+13. **SearchShortcut leaks event listener** -- The `Closure::forget()` call in `SearchShortcut` leaks the keydown listener. In a SPA with long sessions, this is a minor memory leak. In practice, only one listener is ever created.
+14. **SSE stream runs indefinitely** -- The image progress SSE endpoint creates an interval stream that runs every 200ms regardless of whether an import is active. The stream only stops when the client disconnects.
+15. **No offline support** -- Despite having a service worker registered, the `sw.js` is minimal and does not implement caching strategies. The PWA works only when connected to the server.
+
+### Testing Gaps
+
+16. **App crate almost untested** -- 10,455 lines of Rust with only 6 tests (`format_size` and `format_size_short`). Server functions, components, and API layer have zero test coverage.
+17. **No integration tests** -- No tests verify the full request flow (HTTP request --> server function --> core crate --> response)
+18. **No WASM tests** -- Client-side behavior (hydration, infinite scroll, debounce, keyboard shortcuts) is untested
+
+---
+
+## 8. Lines of Code and Complexity Metrics
+
+### Summary
+
+| Component | Lines | Percentage |
+|-----------|-------|------------|
+| App crate (Rust) | 10,455 | 52.3% |
+| Core crate (Rust) | 7,331 | 36.7% |
+| CSS | 2,356 | 11.8% |
+| **Total** | **20,142** | **100%** |
+
+### App Crate Breakdown (10,455 lines Rust)
+
+**Server-side infrastructure:**
+
+| File | Lines | Description |
+|------|-------|-------------|
+| `server_fns.rs` | 2,322 | 51 server functions + types + helpers |
+| `api/mod.rs` | 1,419 | AppState, RomCache, background tasks, import orchestration |
+| `main.rs` | 336 | CLI args, 54 register_explicit calls, Axum router setup |
+| `api/favorites.rs` | 104 | REST API favorites routes |
+| `api/roms.rs` | 97 | REST API ROM routes |
+| `api/upload.rs` | 68 | REST API upload handler |
+| `api/system_info.rs` | 52 | REST API system info |
+| `api/recents.rs` | 30 | REST API recents |
+
+**Pages:**
+
+| File | Lines | Description |
+|------|-------|-------------|
+| `pages/game_detail.rs` | 1,195 | Game detail with 8+ sub-components |
+| `pages/metadata.rs` | 777 | Metadata + image import management |
+| `pages/search.rs` | 735 | Global search with filters |
+| `pages/favorites.rs` | 696 | Favorites with organize panel |
+| `pages/wifi.rs` | 187 | Wi-Fi settings |
+| `pages/home.rs` | 187 | Dashboard |
+| `pages/skin.rs` | 165 | Skin selector |
+| `pages/nfs.rs` | 153 | NFS settings |
+| `pages/hostname.rs` | 91 | Hostname editor |
+| `pages/more.rs` | 91 | Settings menu |
+| `pages/logs.rs` | 72 | Log viewer |
+| `pages/games.rs` | 35 | Thin wrapper for RomList |
+
+**Shared components:**
+
+| File | Lines | Description |
+|------|-------|-------------|
+| `components/rom_list.rs` | 712 | ROM list with filters + infinite scroll |
+| `components/hero_card.rs` | 52 | Reusable game cards |
+| `components/system_card.rs` | 40 | System grid cards |
+| `components/nav.rs` | 40 | Bottom navigation |
+| `components/genre_dropdown.rs` | 26 | Genre filter dropdown |
+
+**Framework & support:**
+
+| File | Lines | Description |
+|------|-------|-------------|
+| `i18n.rs` | 350 | ~120 translation keys |
+| `lib.rs` | 196 | App root, Shell, Router, routes |
+| `types.rs` | 128 | Mirror types for WASM |
+| `util.rs` | 79 | Size formatting |
+
+### Core Crate Breakdown (7,331 lines Rust)
+
+| File | Lines | Description |
+|------|-------|-------------|
+| `rom_tags.rs` | 1,135 | Tag parsing + 60 tests |
+| `favorites.rs` | 862 | Favorites CRUD + organize + 11 tests |
+| `thumbnails.rs` | 761 | Image matching + fake symlink resolution |
+| `metadata_db.rs` | 511 | SQLite metadata cache |
+| `launchbox.rs` | 506 | LaunchBox XML parser |
+| `game_db.rs` | 470 | ~34K game PHF + 29 tests |
+| `bin/metadata_report.rs` | 458 | Metadata coverage CLI tool |
+| `systems.rs` | 392 | 42 system definitions + 4 tests |
+| `roms.rs` | 332 | ROM scan/list/sort + 3 tests |
+| `video_url.rs` | 320 | Video URL parsing + 10 tests |
+| `skins.rs` | 259 | 11 skin palettes + 6 tests |
+| `arcade_db.rs` | 239 | ~28K arcade PHF + 19 tests |
+| `config.rs` | 213 | Config parser + 6 tests |
+| `recents.rs` | 173 | Recents parser + 4 tests |
+| `storage.rs` | 165 | Storage detection |
+| `screenshots.rs` | 145 | Screenshot discovery + 3 tests |
+| `launch.rs` | 143 | Game launching |
+| `videos.rs` | 98 | Video JSON storage |
+| `game_ref.rs` | 82 | GameRef with display name resolution |
+| `error.rs` | 45 | Error types |
+| `lib.rs` | 22 | Module declarations |
+
+### Test Coverage
+
+| Crate | Test Functions | Lines with Tests | Notes |
+|-------|---------------|-----------------|-------|
+| Core | 155 | All major modules | Good coverage of data processing logic |
+| App | 6 | `util.rs` only | No tests for server functions, components, or API |
+| **Total** | **161** | | |
+
+**Core crate test distribution:**
+- `rom_tags.rs`: 60 tests (tag parsing edge cases)
+- `game_db.rs`: 29 tests (lookup methods, normalization)
+- `arcade_db.rs`: 19 tests (arcade lookups)
+- `favorites.rs`: 11 tests (CRUD, organize, deduplicate)
+- `video_url.rs`: 10 tests (URL parsing for 4 platforms)
+- `config.rs`: 6 tests (parse, write, preserve comments)
+- `skins.rs`: 6 tests (palette generation)
+- `recents.rs`: 4 tests (parsing, deduplication)
+- `systems.rs`: 4 tests (lookup, extensions)
+- `roms.rs`: 3 tests (scan, extensions)
+- `screenshots.rs`: 3 tests (matching, timestamps)
+
+### Complexity Hotspots
+
+Files over 500 lines that warrant attention:
+
+| File | Lines | Concern |
+|------|-------|---------|
+| `server_fns.rs` | 2,322 | Monolithic, mixes types with handlers |
+| `api/mod.rs` | 1,419 | Too many responsibilities |
+| `game_detail.rs` | 1,195 | Many sub-components in one file |
+| `rom_tags.rs` | 1,135 | Inherently complex but well-tested (60 tests) |
+| `favorites.rs` | 862 | Complex but well-tested (11 tests) |
+| `metadata.rs` | 777 | Complex page but self-contained |
+| `thumbnails.rs` | 761 | Multi-repo matching, fake symlinks |
+| `search.rs` | 735 | Filter logic partially duplicated with rom_list |
+| `rom_list.rs` | 712 | Filter logic partially duplicated with search |
+| `favorites.rs` (page) | 696 | Multiple views (grouped/flat/system) |
+
+### Build Artifacts
+
+The project produces:
+- Server binary (SSR): standard Rust binary for the target architecture
+- WASM bundle (hydrate): `replay_control_app.wasm` + `replay_control_app.js` in `target/site/pkg/`
+- CSS: included via `include_str!` at compile time (no separate file serving needed beyond initial load)
+- Static assets: `manifest.json`, `sw.js`, app icons in `target/site/`
