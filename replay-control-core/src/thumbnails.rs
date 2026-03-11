@@ -505,6 +505,53 @@ pub fn import_system_thumbnails(
     Ok(stats)
 }
 
+/// Check if a cloned repo is stale (local HEAD differs from remote HEAD).
+/// Returns `true` if the repo needs re-cloning, `false` if up to date.
+/// On network errors, returns `false` (assume up to date, just re-match).
+pub fn is_repo_stale(repo_dir: &Path, repo_name: &str) -> bool {
+    let url = format!(
+        "https://github.com/libretro-thumbnails/{}.git",
+        repo_name.replace(' ', "_")
+    );
+
+    // Get local HEAD.
+    let local = match std::process::Command::new("git")
+        .args(["-C", &repo_dir.to_string_lossy(), "rev-parse", "HEAD"])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        }
+        _ => return false, // Can't read local hash — just re-match.
+    };
+
+    // Get remote HEAD (quick network check).
+    let remote = match std::process::Command::new("git")
+        .args(["ls-remote", "--heads", &url, "master"])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            let s = String::from_utf8_lossy(&out.stdout);
+            s.split_whitespace().next().unwrap_or("").to_string()
+        }
+        _ => return false, // Network error — assume up to date.
+    };
+
+    if remote.is_empty() {
+        return false;
+    }
+
+    let stale = local != remote;
+    if stale {
+        tracing::info!(
+            "Repo {repo_name} is stale (local: {}..., remote: {}...)",
+            &local[..8.min(local.len())],
+            &remote[..8.min(remote.len())]
+        );
+    }
+    stale
+}
+
 /// Clone a libretro-thumbnails repo.
 ///
 /// `clone_base` is the parent directory for clones (e.g. `<storage>/.replay-control/tmp`).
@@ -592,7 +639,7 @@ pub fn clone_thumbnail_repo(
 /// Walk a directory tree and replace git fake symlinks with copies of their targets.
 /// A fake symlink is a small file (< 200 bytes) that doesn't start with PNG magic bytes
 /// and contains the relative path to the real file.
-fn resolve_fake_symlinks_in_dir(dir: &Path) {
+pub fn resolve_fake_symlinks_in_dir(dir: &Path) {
     const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
     let walker = match std::fs::read_dir(dir) {
@@ -690,6 +737,18 @@ fn dir_size(path: &Path) -> u64 {
         }
     }
     total
+}
+
+/// Delete media files for a single system.
+pub fn clear_system_media(storage_root: &Path, system: &str) -> Result<()> {
+    let media_dir = storage_root
+        .join(crate::metadata_db::RC_DIR)
+        .join("media")
+        .join(system);
+    if media_dir.exists() {
+        std::fs::remove_dir_all(&media_dir).map_err(|e| Error::io(&media_dir, e))?;
+    }
+    Ok(())
 }
 
 /// Delete all media files for all systems.

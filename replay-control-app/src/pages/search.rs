@@ -47,6 +47,11 @@ pub fn SearchPage() -> impl IntoView {
         .get("genre")
         .map(|s| s.to_string())
         .unwrap_or_default();
+    let initial_multiplayer = query_map
+        .read_untracked()
+        .get("multiplayer")
+        .map(|v| v == "true")
+        .unwrap_or(false);
 
     // Signals for user input.
     let search_input = RwSignal::new(initial_query.clone());
@@ -54,6 +59,7 @@ pub fn SearchPage() -> impl IntoView {
     let hide_translations = RwSignal::new(initial_hide_translations);
     let hide_betas = RwSignal::new(initial_hide_betas);
     let hide_clones = RwSignal::new(initial_hide_clones);
+    let multiplayer_only = RwSignal::new(initial_multiplayer);
     let genre = RwSignal::new(initial_genre.clone());
 
     // Debounced search query that drives the resource.
@@ -107,6 +113,7 @@ pub fn SearchPage() -> impl IntoView {
                     hide_translations.get_untracked(),
                     hide_betas.get_untracked(),
                     hide_clones.get_untracked(),
+                    multiplayer_only.get_untracked(),
                     &genre.get_untracked(),
                 );
                 // Save to recent searches if non-empty.
@@ -135,6 +142,7 @@ pub fn SearchPage() -> impl IntoView {
             let ht = hide_translations.get();
             let hb = hide_betas.get();
             let hc = hide_clones.get();
+            let mp = multiplayer_only.get();
             let g = genre.get();
             debounced_genre.set(g.clone());
             // Skip the first run: URL already reflects initial values and the
@@ -143,7 +151,7 @@ pub fn SearchPage() -> impl IntoView {
                 filters_initialized.set_value(true);
                 return;
             }
-            update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, &g);
+            update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, mp, &g);
         });
 
         on_cleanup(move || {
@@ -164,10 +172,11 @@ pub fn SearchPage() -> impl IntoView {
                 hide_translations.get(),
                 hide_betas.get(),
                 hide_clones.get(),
+                multiplayer_only.get(),
                 debounced_genre.get(),
             )
         },
-        |(q, hh, ht, hb, hc, g)| server_fns::global_search(q, hh, ht, hb, hc, g, 3),
+        |(q, hh, ht, hb, hc, mp, g)| server_fns::global_search(q, hh, ht, hb, hc, mp, g, 3),
     );
 
     // Derived: show the "empty state" panel (recent searches + random game).
@@ -189,6 +198,7 @@ pub fn SearchPage() -> impl IntoView {
             hide_translations.get_untracked(),
             hide_betas.get_untracked(),
             hide_clones.get_untracked(),
+            multiplayer_only.get_untracked(),
             &genre.get_untracked(),
         );
     };
@@ -331,6 +341,20 @@ pub fn SearchPage() -> impl IntoView {
                 >
                     {move || t(i18n.locale.get(), "filter.hide_clones")}
                     {move || if hide_clones.get() { " \u{2715}" } else { "" }}
+                </button>
+
+                <button
+                    class=move || {
+                        if multiplayer_only.get() {
+                            "filter-chip filter-chip-active"
+                        } else {
+                            "filter-chip"
+                        }
+                    }
+                    on:click=move |_| multiplayer_only.update(|v| *v = !*v)
+                >
+                    {move || t(i18n.locale.get(), "filter.multiplayer")}
+                    {move || if multiplayer_only.get() { " \u{2715}" } else { "" }}
                 </button>
 
                 {move || {
@@ -541,6 +565,7 @@ fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
     let box_art = StoredValue::new(result.box_art_url.clone());
     let genre = StoredValue::new(result.genre.clone());
     let has_genre = !result.genre.is_empty();
+    let rating = result.rating;
     let display_name = result.display_name.clone();
 
     // Quick-favorite toggle state.
@@ -587,6 +612,10 @@ fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
                     <Show when=move || has_genre>
                         <span class="search-badge search-badge-genre">{genre.get_value()}</span>
                     </Show>
+                    {rating.filter(|&r| r > 0.0).map(|r| {
+                        let label = format!("\u{2605} {:.1}", r);
+                        view! { <span class="search-badge search-badge-rating">{label}</span> }
+                    })}
                 </div>
             </div>
         </div>
@@ -601,6 +630,7 @@ fn update_url_params(
     hide_translations: bool,
     hide_betas: bool,
     hide_clones: bool,
+    multiplayer_only: bool,
     genre: &str,
 ) {
     if let Some(window) = web_sys::window() {
@@ -619,6 +649,9 @@ fn update_url_params(
         }
         if hide_clones {
             params.push("hide_clones=true".to_string());
+        }
+        if multiplayer_only {
+            params.push("multiplayer=true".to_string());
         }
         if !genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(genre)));
@@ -643,10 +676,11 @@ fn update_url_params_if_hydrate(
     hide_translations: bool,
     hide_betas: bool,
     hide_clones: bool,
+    multiplayer_only: bool,
     genre: &str,
 ) {
     #[cfg(feature = "hydrate")]
-    update_url_params(query, hide_hacks, hide_translations, hide_betas, hide_clones, genre);
+    update_url_params(query, hide_hacks, hide_translations, hide_betas, hide_clones, multiplayer_only, genre);
 }
 
 // ── localStorage helpers for recent searches ──────────────────────

@@ -647,6 +647,8 @@ pub async fn get_roms_page(
     hide_clones: bool,
     #[server(default)]
     genre: String,
+    #[server(default)]
+    multiplayer_only: bool,
 ) -> Result<RomPage, ServerFnError> {
     use replay_control_core::rom_tags;
     use replay_control_core::systems::{self as sys_db, SystemCategory};
@@ -701,6 +703,12 @@ pub async fn get_roms_page(
             let rom_genre = lookup_genre(&system, &r.game.rom_filename);
             rom_genre.eq_ignore_ascii_case(&genre)
         })
+        .filter(|r| {
+            if !multiplayer_only {
+                return true;
+            }
+            lookup_players(&system, &r.game.rom_filename) >= 2
+        })
         .collect();
 
     let filtered: Vec<RomEntry> = if search.is_empty() {
@@ -751,6 +759,30 @@ pub async fn get_roms_page(
                     arcade_db::DriverStatus::Unknown => "Unknown",
                 };
                 rom.driver_status = Some(status.to_string());
+            }
+        }
+    }
+
+    // Populate players from game_db / arcade_db.
+    for rom in &mut roms {
+        let p = lookup_players(&system, &rom.game.rom_filename);
+        if p > 0 {
+            rom.players = Some(p);
+        }
+    }
+
+    // Populate ratings from metadata DB (batch lookup for efficiency).
+    if let Some(guard) = state.metadata_db() {
+        if let Some(db) = guard.as_ref() {
+            let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
+            if let Ok(ratings) = db.lookup_ratings(&system, &filenames) {
+                for rom in &mut roms {
+                    if let Some(&rating) = ratings.get(&rom.game.rom_filename) {
+                        if rating > 0.0 {
+                            rom.rating = Some(rating as f32);
+                        }
+                    }
+                }
             }
         }
     }
@@ -1447,6 +1479,18 @@ pub async fn import_all_images() -> Result<(), ServerFnError> {
     Ok(())
 }
 
+/// Re-match images for all systems using already-cloned repos (no download).
+#[server(prefix = "/sfn")]
+pub async fn rematch_all_images() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.start_rematch_all_images() {
+        return Err(ServerFnError::new(
+            "No cloned repos found or an import is already running",
+        ));
+    }
+    Ok(())
+}
+
 /// Cancel the current image import.
 #[server(prefix = "/sfn")]
 pub async fn cancel_image_import() -> Result<(), ServerFnError> {
@@ -1583,6 +1627,10 @@ pub struct GlobalSearchResult {
     pub genre: String,
     pub is_favorite: bool,
     pub box_art_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub players: Option<u8>,
 }
 
 /// A group of search results for a single system.
@@ -1632,6 +1680,36 @@ fn lookup_genre(system: &str, rom_filename: &str) -> String {
     }
 }
 
+/// Look up the max player count for a ROM on a given system.
+/// Returns 0 if unknown.
+#[cfg(feature = "ssr")]
+fn lookup_players(system: &str, rom_filename: &str) -> u8 {
+    use replay_control_core::arcade_db;
+    use replay_control_core::game_db;
+    use replay_control_core::systems::{self, SystemCategory};
+
+    let is_arcade = systems::find_system(system)
+        .is_some_and(|s| s.category == SystemCategory::Arcade);
+
+    if is_arcade {
+        let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+        arcade_db::lookup_arcade_game(stem)
+            .map(|info| info.players)
+            .unwrap_or(0)
+    } else {
+        let stem = rom_filename
+            .rfind('.')
+            .map(|i| &rom_filename[..i])
+            .unwrap_or(rom_filename);
+        let entry = game_db::lookup_game(system, stem);
+        let game = entry.map(|e| e.game).or_else(|| {
+            let normalized = game_db::normalize_filename(stem);
+            game_db::lookup_by_normalized_title(system, &normalized)
+        });
+        game.map(|g| g.players).unwrap_or(0)
+    }
+}
+
 #[server(prefix = "/sfn")]
 pub async fn global_search(
     query: String,
@@ -1639,6 +1717,8 @@ pub async fn global_search(
     hide_translations: bool,
     hide_betas: bool,
     hide_clones: bool,
+    #[server(default)]
+    multiplayer_only: bool,
     genre: String,
     per_system_limit: usize,
 ) -> Result<GlobalSearchResults, ServerFnError> {
@@ -1704,10 +1784,16 @@ pub async fn global_search(
                 let rom_genre = lookup_genre(&sys.folder_name, &r.game.rom_filename);
                 rom_genre.eq_ignore_ascii_case(&genre)
             })
+            .filter(|r| {
+                if !multiplayer_only {
+                    return true;
+                }
+                lookup_players(&sys.folder_name, &r.game.rom_filename) >= 2
+            })
             .filter_map(|r| {
                 if q.is_empty() {
-                    // No query: if genre is set, include all matching; otherwise skip.
-                    if !genre.is_empty() {
+                    // No query: if genre is set or multiplayer filter active, include all matching; otherwise skip.
+                    if !genre.is_empty() || multiplayer_only {
                         // Assign a default score based on display name length.
                         let display = r
                             .game
@@ -1755,6 +1841,19 @@ pub async fn global_search(
             .join("media")
             .join(&sys.folder_name);
 
+        // Batch lookup ratings from metadata DB.
+        let ratings_map = if let Some(guard) = state.metadata_db() {
+            if let Some(db) = guard.as_ref() {
+                let filenames: Vec<&str> =
+                    top_roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
+                db.lookup_ratings(&sys.folder_name, &filenames).unwrap_or_default()
+            } else {
+                std::collections::HashMap::new()
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
         let top_results: Vec<GlobalSearchResult> = top_roms
             .into_iter()
             .map(|mut rom| {
@@ -1762,6 +1861,11 @@ pub async fn global_search(
                     find_image_on_disk(&media_base, "boxart", &rom.game.rom_filename)
                         .map(|path| format!("/media/{}/{path}", sys.folder_name));
                 let genre_str = lookup_genre(&sys.folder_name, &rom.game.rom_filename);
+                let players_val = lookup_players(&sys.folder_name, &rom.game.rom_filename);
+                let rating = ratings_map
+                    .get(&rom.game.rom_filename)
+                    .filter(|&&r| r > 0.0)
+                    .map(|&r| r as f32);
                 GlobalSearchResult {
                     display_name: rom
                         .game
@@ -1773,6 +1877,8 @@ pub async fn global_search(
                     genre: genre_str,
                     is_favorite: rom.is_favorite,
                     box_art_url: rom.box_art_url,
+                    rating,
+                    players: if players_val > 0 { Some(players_val) } else { None },
                 }
             })
             .collect();

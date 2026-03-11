@@ -382,6 +382,36 @@ fn ImageSection() -> impl IntoView {
                     }
                 });
             };
+            let on_rematch_all = move |_| {
+                if img_importing.get() { return; }
+                img_importing.set(true);
+                img_cancelling.set(false);
+                img_message.set(None);
+                img_progress.set(Some(server_fns::ImageImportProgress {
+                    state: ImageImportState::Copying,
+                    system: String::new(),
+                    system_display: String::new(),
+                    processed: 0,
+                    total: 0,
+                    boxart_copied: 0,
+                    snap_copied: 0,
+                    elapsed_secs: 0,
+                    error: None,
+                    current_system: 0,
+                    total_systems: 0,
+                }));
+                leptos::task::spawn_local(async move {
+                    match server_fns::rematch_all_images().await {
+                        Ok(()) => {
+                            watch_image_progress(img_importing, img_progress, img_message, img_cancelling, image_coverage, image_stats);
+                        }
+                        Err(e) => {
+                            img_message.set(Some(format!("Error: {e}")));
+                            img_importing.set(false);
+                        }
+                    }
+                });
+            };
             let on_cancel = move |_| {
                 img_cancelling.set(true);
                 leptos::task::spawn_local(async move {
@@ -399,6 +429,18 @@ fn ImageSection() -> impl IntoView {
                             t(i18n.locale.get(), "metadata.downloading_all")
                         } else {
                             t(i18n.locale.get(), "metadata.download_all")
+                        }}
+                    </button>
+                    <button
+                        class="metadata-download-btn"
+                        on:click=on_rematch_all
+                        disabled=move || img_importing.get()
+                        title=move || t(i18n.locale.get(), "metadata.rematch_hint")
+                    >
+                        {move || if img_importing.get() {
+                            t(i18n.locale.get(), "metadata.rematching_all")
+                        } else {
+                            t(i18n.locale.get(), "metadata.rematch_all")
                         }}
                     </button>
                     <Show when=move || img_importing.get()>

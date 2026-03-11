@@ -43,6 +43,10 @@ pub struct RomEntry {
     pub box_art_url: Option<String>,
     #[serde(default)]
     pub driver_status: Option<String>,
+    #[serde(default)]
+    pub rating: Option<f32>,
+    #[serde(default)]
+    pub players: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

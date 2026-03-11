@@ -27,6 +27,12 @@ pub struct RomEntry {
     /// Only populated for arcade systems.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub driver_status: Option<String>,
+    /// Game rating (0.0–5.0 scale), from metadata DB or game_db.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f32>,
+    /// Maximum number of players, from game_db or arcade_db.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub players: Option<u8>,
 }
 
 /// Summary of a system's ROM collection.
@@ -246,6 +252,8 @@ fn collect_roms_recursive(dir: &Path, roms_root: &Path, system: &System, out: &m
                 is_favorite: false,
                 box_art_url: None,
                 driver_status: None,
+                rating: None,
+                players: None,
             });
         }
     }

@@ -966,6 +966,290 @@ impl AppState {
         true
     }
 
+    /// Re-match images for all systems using already-cloned repos.
+    /// Deletes existing media per system, resolves fake symlinks, and re-runs
+    /// the image matching logic without re-downloading repos from GitHub.
+    /// Returns `false` if an import is already running or no cloned repos exist.
+    pub fn start_rematch_all_images(&self) -> bool {
+        if self.is_image_import_running() {
+            return false;
+        }
+
+        let storage = self.storage();
+        let clone_base = storage
+            .root
+            .join(replay_control_core::metadata_db::RC_DIR)
+            .join("tmp")
+            .join("libretro-thumbnails");
+
+        // Collect systems that have a cloned repo on disk.
+        let systems = self.cache.get_systems(&storage);
+        let supported: Vec<String> = systems
+            .into_iter()
+            .filter(|s| s.game_count > 0)
+            .filter(|s| {
+                replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name)
+                    .is_some_and(|repos| {
+                        repos
+                            .iter()
+                            .any(|r| clone_base.join(r).join("Named_Boxarts").exists())
+                    })
+            })
+            .map(|s| s.folder_name)
+            .collect();
+
+        if supported.is_empty() {
+            return false;
+        }
+
+        use crate::server_fns::{ImageImportProgress, ImageImportState};
+        self.image_import_cancel
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        {
+            let total = supported.len();
+            let mut guard = self.image_import_progress.write().expect("lock");
+            *guard = Some(ImageImportProgress {
+                state: ImageImportState::Copying,
+                system: supported[0].clone(),
+                system_display: String::new(),
+                processed: 0,
+                total: 0,
+                boxart_copied: 0,
+                snap_copied: 0,
+                elapsed_secs: 0,
+                error: None,
+                current_system: 1,
+                total_systems: total,
+            });
+        }
+        let state = self.clone();
+        let total = supported.len();
+        tokio::task::spawn_blocking(move || {
+            let start = std::time::Instant::now();
+            for (i, system) in supported.iter().enumerate() {
+                state.rematch_system_images_blocking(system, i + 1, total, start);
+
+                {
+                    use crate::server_fns::ImageImportState;
+                    let guard = state.image_import_progress.read().expect("lock");
+                    if let Some(ref p) = *guard {
+                        if matches!(
+                            p.state,
+                            ImageImportState::Failed | ImageImportState::Cancelled
+                        ) {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        true
+    }
+
+    /// Re-match images for a single system using its already-cloned repo.
+    /// Clears existing media and DB paths, resolves fake symlinks, then
+    /// re-runs `import_system_thumbnails`.
+    fn rematch_system_images_blocking(
+        &self,
+        system: &str,
+        current_system: usize,
+        total_systems: usize,
+        start: std::time::Instant,
+    ) {
+        use crate::server_fns::{ImageImportProgress, ImageImportState};
+
+        let system_display = replay_control_core::systems::find_system(system)
+            .map(|s| s.display_name.to_string())
+            .unwrap_or_else(|| system.to_string());
+
+        let repo_names = match replay_control_core::thumbnails::thumbnail_repo_names(system) {
+            Some(names) => names,
+            None => return,
+        };
+
+        let storage_root = self.storage().root.clone();
+        let clone_base = storage_root
+            .join(replay_control_core::metadata_db::RC_DIR)
+            .join("tmp")
+            .join("libretro-thumbnails");
+        let rom_filenames =
+            replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
+
+        // Clear existing media files and DB image paths for this system.
+        let _ = replay_control_core::thumbnails::clear_system_media(&storage_root, system);
+        {
+            let guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+            if let Some(ref db) = *guard {
+                let _ = db.clear_system_image_paths(system);
+            }
+        }
+
+        // Take DB from state.
+        let db = {
+            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+            guard.take()
+        };
+        let mut db = match db {
+            Some(db) => db,
+            None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
+                Ok(db) => db,
+                Err(e) => {
+                    let mut guard = self.image_import_progress.write().expect("lock");
+                    if let Some(ref mut p) = *guard {
+                        p.state = ImageImportState::Failed;
+                        p.error = Some(format!("Cannot open metadata DB: {e}"));
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                    return;
+                }
+            },
+        };
+
+        let mut total_boxart = 0usize;
+        let mut total_snap = 0usize;
+
+        for repo_name in repo_names {
+            if self
+                .image_import_cancel
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                let mut guard = self.image_import_progress.write().expect("lock");
+                if let Some(ref mut p) = *guard {
+                    p.state = ImageImportState::Cancelled;
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+                break;
+            }
+
+            let mut repo_dir = clone_base.join(repo_name);
+            if !repo_dir.join("Named_Boxarts").exists() {
+                continue;
+            }
+
+            // Check if upstream has new images — re-clone if stale.
+            if replay_control_core::thumbnails::is_repo_stale(&repo_dir, repo_name) {
+                tracing::info!("Re-cloning stale repo {repo_name}");
+                let _ = std::fs::remove_dir_all(&repo_dir);
+                let clone_base_parent = storage_root
+                    .join(replay_control_core::metadata_db::RC_DIR)
+                    .join("tmp");
+                match replay_control_core::thumbnails::clone_thumbnail_repo(
+                    repo_name,
+                    Some(&clone_base_parent),
+                    Some(&self.image_import_cancel),
+                ) {
+                    Ok(dir) => repo_dir = dir,
+                    Err(e) => {
+                        tracing::warn!("Re-clone failed for {repo_name}: {e}");
+                        continue;
+                    }
+                }
+            }
+
+            let label = if repo_names.len() > 1 {
+                format!("{system_display} ({repo_name})")
+            } else {
+                system_display.clone()
+            };
+
+            // Resolve fake symlinks in case they weren't resolved before.
+            replay_control_core::thumbnails::resolve_fake_symlinks_in_dir(&repo_dir);
+
+            // Update progress to Copying.
+            {
+                let mut guard = self.image_import_progress.write().expect("lock");
+                *guard = Some(ImageImportProgress {
+                    state: ImageImportState::Copying,
+                    system: system.to_string(),
+                    system_display: label,
+                    processed: 0,
+                    total: rom_filenames.len(),
+                    boxart_copied: total_boxart,
+                    snap_copied: total_snap,
+                    elapsed_secs: start.elapsed().as_secs(),
+                    error: None,
+                    current_system,
+                    total_systems,
+                });
+            }
+
+            let progress_ref = self.image_import_progress.clone();
+            let cancel_ref = self.image_import_cancel.clone();
+            let prev_boxart = total_boxart;
+            let result = replay_control_core::thumbnails::import_system_thumbnails(
+                &repo_dir,
+                system,
+                &storage_root,
+                &mut db,
+                &rom_filenames,
+                |processed, images_found| {
+                    let mut guard = progress_ref.write().expect("lock");
+                    if let Some(ref mut p) = *guard {
+                        p.processed = processed;
+                        p.boxart_copied = prev_boxart + images_found;
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                    !cancel_ref.load(std::sync::atomic::Ordering::Relaxed)
+                },
+            );
+
+            match result {
+                Ok(stats) => {
+                    total_boxart += stats.boxart_copied;
+                    total_snap += stats.snap_copied;
+                }
+                Err(e) => {
+                    tracing::warn!("Re-match failed for {repo_name}: {e}");
+                }
+            }
+
+            if self
+                .image_import_cancel
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                let mut guard = self.image_import_progress.write().expect("lock");
+                if let Some(ref mut p) = *guard {
+                    p.state = ImageImportState::Cancelled;
+                    p.boxart_copied = total_boxart;
+                    p.snap_copied = total_snap;
+                    p.elapsed_secs = start.elapsed().as_secs();
+                }
+                break;
+            }
+        }
+
+        // Put DB back.
+        {
+            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+            *guard = Some(db);
+        }
+
+        // Update final progress (skip if already cancelled).
+        {
+            let mut guard = self.image_import_progress.write().expect("lock");
+            let already_cancelled = guard
+                .as_ref()
+                .map(|p| p.state == ImageImportState::Cancelled)
+                .unwrap_or(false);
+            if !already_cancelled {
+                *guard = Some(ImageImportProgress {
+                    state: ImageImportState::Complete,
+                    system: system.to_string(),
+                    system_display,
+                    processed: rom_filenames.len(),
+                    total: rom_filenames.len(),
+                    boxart_copied: total_boxart,
+                    snap_copied: total_snap,
+                    elapsed_secs: start.elapsed().as_secs(),
+                    error: None,
+                    current_system,
+                    total_systems,
+                });
+            }
+        }
+    }
+
     /// Spawn a background task that watches `replay.cfg` for changes and
     /// periodically re-checks storage as a fallback.
     ///

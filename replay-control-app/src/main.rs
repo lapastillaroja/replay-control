@@ -113,6 +113,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemLogs>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelImageImport>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RematchAllImages>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameVideos>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::AddGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveGameVideo>();

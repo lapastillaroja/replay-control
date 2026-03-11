@@ -184,6 +184,45 @@ impl MetadataDb {
         Ok(result)
     }
 
+    /// Batch look up ratings for a list of ROMs on a single system.
+    /// Returns a map of rom_filename -> rating for those that have a rating.
+    pub fn lookup_ratings(
+        &self,
+        system: &str,
+        rom_filenames: &[&str],
+    ) -> Result<std::collections::HashMap<String, f64>> {
+        use std::collections::HashMap;
+
+        if rom_filenames.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut map = HashMap::new();
+        // Use a prepared statement and iterate — avoids building dynamic SQL
+        // while still being efficient (single prepared statement, many binds).
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, rating FROM game_metadata
+                 WHERE system = ?1 AND rom_filename = ?2 AND rating IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare batch rating lookup: {e}")))?;
+
+        for filename in rom_filenames {
+            if let Some((name, rating)) = stmt
+                .query_row(params![system, filename], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+                })
+                .optional()
+                .map_err(|e| Error::Other(format!("Batch rating lookup: {e}")))?
+            {
+                map.insert(name, rating);
+            }
+        }
+
+        Ok(map)
+    }
+
     /// Insert or update metadata for a game.
     pub fn upsert(&self, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
         self.conn
@@ -404,6 +443,18 @@ impl MetadataDb {
 
         tx.commit()
             .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(count)
+    }
+
+    /// Clear image paths for a specific system in the DB.
+    pub fn clear_system_image_paths(&self, system: &str) -> Result<usize> {
+        let count = self
+            .conn
+            .execute(
+                "UPDATE game_metadata SET box_art_path = NULL, screenshot_path = NULL WHERE system = ?1",
+                params![system],
+            )
+            .map_err(|e| Error::Other(format!("Clear image paths failed: {e}")))?;
         Ok(count)
     }
 

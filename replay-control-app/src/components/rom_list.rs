@@ -41,11 +41,17 @@ pub fn RomList(system: String) -> impl IntoView {
         .get("genre")
         .map(|s| s.to_string())
         .unwrap_or_default();
+    let initial_multiplayer = query_map
+        .read_untracked()
+        .get("multiplayer")
+        .map(|v| v == "true")
+        .unwrap_or(false);
 
     let hide_hacks = RwSignal::new(initial_hide_hacks);
     let hide_translations = RwSignal::new(initial_hide_translations);
     let hide_betas = RwSignal::new(initial_hide_betas);
     let hide_clones = RwSignal::new(initial_hide_clones);
+    let multiplayer_only = RwSignal::new(initial_multiplayer);
     let genre_filter = RwSignal::new(initial_genre.clone());
     let debounced_genre = RwSignal::new(initial_genre);
 
@@ -128,6 +134,7 @@ pub fn RomList(system: String) -> impl IntoView {
             let ht = hide_translations.get();
             let hb = hide_betas.get();
             let hc = hide_clones.get();
+            let mp = multiplayer_only.get();
             let g = genre_filter.get();
             debounced_genre.set(g.clone());
             if !filters_initialized.get_value() {
@@ -140,6 +147,7 @@ pub fn RomList(system: String) -> impl IntoView {
                 ht,
                 hb,
                 hc,
+                mp,
                 &g,
                 &debounced_search.get_untracked(),
             );
@@ -175,11 +183,12 @@ pub fn RomList(system: String) -> impl IntoView {
                 hide_betas.get(),
                 hide_clones.get(),
                 debounced_genre.get(),
+                multiplayer_only.get(),
                 version.get(),
             )
         },
-        move |(system, query, hh, ht, hb, hc, gf, _)| {
-            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf)
+        move |(system, query, hh, ht, hb, hc, gf, mp, _)| {
+            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp)
         },
     );
 
@@ -207,9 +216,10 @@ pub fn RomList(system: String) -> impl IntoView {
         let hb = hide_betas.get_untracked();
         let hc = hide_clones.get_untracked();
         let gf = debounced_genre.get_untracked();
+        let mp = multiplayer_only.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) =
-                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, ht, hb, hc, gf)
+                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp)
                     .await
             {
                 set_extra_roms.update(|roms| roms.extend(page.roms));
@@ -336,6 +346,20 @@ pub fn RomList(system: String) -> impl IntoView {
                 </button>
             </Show>
 
+            <button
+                class=move || {
+                    if multiplayer_only.get() {
+                        "filter-chip filter-chip-active"
+                    } else {
+                        "filter-chip"
+                    }
+                }
+                on:click=move |_| multiplayer_only.update(|v| *v = !*v)
+            >
+                {move || t(i18n.locale.get(), "filter.multiplayer")}
+                {move || if multiplayer_only.get() { " \u{2715}" } else { "" }}
+            </button>
+
             {move || {
                 genres_resource.get().and_then(|res| res.ok()).map(|genre_list| {
                     if genre_list.is_empty() {
@@ -447,6 +471,7 @@ fn RomItem(
     let box_art_url = StoredValue::new(rom.box_art_url.clone());
     let has_box_art = rom.box_art_url.is_some();
     let driver_status = rom.driver_status.clone();
+    let rating = rom.rating;
     let is_fav = RwSignal::new(rom.is_favorite);
     let size = format_size(rom.size_bytes);
     let ext = format!(
@@ -549,6 +574,10 @@ fn RomItem(
             </div>
 
             <div class="rom-meta">
+                {rating.filter(|&r| r > 0.0).map(|r| {
+                    let label = format!("\u{2605} {:.1}", r);
+                    view! { <span class="rom-rating">{label}</span> }
+                })}
                 <span class="rom-size">{size}</span>
                 <span class="rom-ext">{ext}</span>
             </div>
@@ -643,6 +672,7 @@ fn update_filter_url(
     hide_translations: bool,
     hide_betas: bool,
     hide_clones: bool,
+    multiplayer_only: bool,
     genre: &str,
     search: &str,
 ) {
@@ -662,6 +692,9 @@ fn update_filter_url(
         }
         if hide_clones {
             params.push("hide_clones=true".to_string());
+        }
+        if multiplayer_only {
+            params.push("multiplayer=true".to_string());
         }
         if !genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(genre)));
