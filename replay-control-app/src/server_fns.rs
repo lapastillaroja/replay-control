@@ -1585,8 +1585,8 @@ pub async fn get_system_logs(source: String, lines: usize) -> Result<String, Ser
     cmd.args(["--no-pager", "--lines", &lines.to_string(), "--reverse"]);
 
     match source.as_str() {
-        "replay-companion" => {
-            cmd.args(["-u", "replay-companion"]);
+        "replay-control" => {
+            cmd.args(["-u", "replay-control"]);
         }
         "replay" => {
             cmd.args(["-u", "replay"]);

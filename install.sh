@@ -19,7 +19,7 @@ PI_USER="root"
 PI_PASSWORD="replayos"
 INSTALL_DIR="/usr/local/bin"
 SITE_DIR="/usr/local/share/replay"
-SERVICE_NAME="replay-companion"
+SERVICE_NAME="replay-control"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 ENV_FILE="/etc/default/${SERVICE_NAME}"
 AVAHI_FILE="/etc/avahi/services/${SERVICE_NAME}.service"
@@ -380,7 +380,7 @@ After=media-sd.mount media-usb.mount
 
 [Service]
 Type=simple
-EnvironmentFile=-/etc/default/replay-companion
+EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --site-root ${REPLAY_SITE_ROOT}
@@ -388,7 +388,7 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=replay-companion
+SyslogIdentifier=replay-control
 
 [Install]
 WantedBy=multi-user.target
@@ -488,7 +488,7 @@ mkdir -p /usr/local/share/replay
 tar -xzf /tmp/replay-site.tar.gz -C /usr/local/share/replay/
 
 # Write systemd service file
-cat > /etc/systemd/system/replay-companion.service << 'UNIT'
+cat > /etc/systemd/system/replay-control.service << 'UNIT'
 [Unit]
 Description=Replay Control
 After=network.target
@@ -496,7 +496,7 @@ After=media-sd.mount media-usb.mount
 
 [Service]
 Type=simple
-EnvironmentFile=-/etc/default/replay-companion
+EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --site-root ${REPLAY_SITE_ROOT}
@@ -504,15 +504,15 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=replay-companion
+SyslogIdentifier=replay-control
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 
 # Write default environment file (preserve existing)
-if [ ! -f /etc/default/replay-companion ]; then
-    cat > /etc/default/replay-companion << 'ENV'
+if [ ! -f /etc/default/replay-control ]; then
+    cat > /etc/default/replay-control << 'ENV'
 # Port for the web UI
 REPLAY_PORT=8080
 
@@ -536,7 +536,7 @@ if command -v avahi-daemon &>/dev/null; then
     systemctl start avahi-daemon 2>/dev/null || true
 
     if [ -d /etc/avahi/services ]; then
-        cat > /etc/avahi/services/replay-companion.service << 'AVAHI'
+        cat > /etc/avahi/services/replay-control.service << 'AVAHI'
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
@@ -552,8 +552,8 @@ fi
 
 # Reload and start
 systemctl daemon-reload
-systemctl enable replay-companion
-systemctl restart replay-companion
+systemctl enable replay-control
+systemctl restart replay-control
 
 # Cleanup
 rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
@@ -606,15 +606,15 @@ uninstall_ssh() {
     run_ssh bash -s <<'REMOTE_UNINSTALL'
 set -euo pipefail
 
-systemctl stop replay-companion 2>/dev/null || true
-systemctl disable replay-companion 2>/dev/null || true
-rm -f /etc/systemd/system/replay-companion.service
-rm -f /etc/avahi/services/replay-companion.service
+systemctl stop replay-control 2>/dev/null || true
+systemctl disable replay-control 2>/dev/null || true
+rm -f /etc/systemd/system/replay-control.service
+rm -f /etc/avahi/services/replay-control.service
 rm -f /usr/local/bin/replay-control-app
 rm -rf /usr/local/share/replay
 systemctl daemon-reload
 
-echo "Note: /etc/default/replay-companion was preserved (remove manually if desired)"
+echo "Note: /etc/default/replay-control was preserved (remove manually if desired)"
 REMOTE_UNINSTALL
 
     teardown_askpass

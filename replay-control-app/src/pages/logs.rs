@@ -9,7 +9,7 @@ use crate::server_fns;
 /// Available log sources that map to journalctl unit filters.
 const LOG_SOURCES: &[(&str, &str)] = &[
     ("all", "logs.source_all"),
-    ("replay-companion", "logs.source_companion"),
+    ("replay-control", "logs.source_companion"),
     ("replay", "logs.source_replay"),
 ];
 
