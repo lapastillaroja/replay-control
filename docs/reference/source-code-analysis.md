@@ -94,8 +94,8 @@ Two background tasks run at startup:
 ### Config Boundary
 
 Two separate config files serve different purposes:
-- `replay.cfg`: Belongs to RePlayOS. The app reads freely and writes only parameters that RePlayOS does not provide its own UI for (e.g., skin index)
-- `.replay-control/config.cfg`: App-specific settings (same key=value format). For settings that do not belong in the RePlayOS config
+- `replay.cfg`: Belongs to RePlayOS. Lives on the SD card at `/media/sd/config/replay.cfg` -- always, regardless of whether ROM storage is on SD, USB, or NFS. The app reads freely and writes only parameters that RePlayOS does not provide its own UI for (e.g., skin index)
+- `.replay-control/config.cfg`: App-specific settings (same key=value format), stored on the ROM storage device. For settings that do not belong in the RePlayOS config
 
 ---
 

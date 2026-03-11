@@ -22,7 +22,7 @@ All three can happen live. Replay Control already calls `systemctl restart repla
 The hostname is a system-level setting, not a RePlayOS game/emulation setting. Two options:
 
 - **Option A: System-only** -- just call `hostnamectl`, don't store in `replay.cfg`. The hostname persists across reboots via `/etc/hostname`. Read current hostname with `hostname` or `hostnamectl`.
-- **Option B: `replay.cfg`** -- add a `system_hostname` key. On boot (or on save), Replay Control applies it via `hostnamectl`. This keeps the setting visible/portable with the SD card, matching how `wifi_name` already lives in `replay.cfg`.
+- **Option B: `replay.cfg`** -- add a `system_hostname` key. On boot (or on save), Replay Control applies it via `hostnamectl`. This keeps the setting visible/portable with the SD card (`replay.cfg` always lives at `/media/sd/config/replay.cfg`), matching how `wifi_name` already lives in `replay.cfg`.
 
 Recommendation: **Option A** (system-only). The hostname belongs to the OS, not to the ROM library. If RePlayOS ever adds its own hostname support to `replay.cfg`, we can adapt.
 

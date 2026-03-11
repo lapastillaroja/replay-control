@@ -420,7 +420,7 @@ The environment file is only written on first install. Re-running the installer 
 |---|---|---|
 | `--port` | `8080` | Port to listen on |
 | `--storage-path` | auto-detect | Storage root path override |
-| `--config-path` | auto-detect | Path to `replay.cfg` |
+| `--config-path` | auto-detect | Path to `replay.cfg` (default: `/media/sd/config/replay.cfg` -- always on SD card, even when ROM storage is USB/NFS) |
 | `--site-root` | `target/site` | Path to static assets (`pkg/`, `icons/`, `style.css`) |
 
 ### Service management

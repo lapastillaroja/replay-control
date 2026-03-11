@@ -7,16 +7,15 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
 
 ## Config Boundary
 
-**`replay.cfg`** (in the storage root) belongs to RePlayOS. The companion app:
+**`replay.cfg`** lives on the SD card at `/media/sd/config/replay.cfg` -- ALWAYS. Even when ROM storage is on USB (`/media/usb`) or NFS (`/media/nfs`), `replay.cfg` remains on the SD card. It is NOT on the ROM storage device. The companion app:
 - **Reads** it freely for OS-level settings (skin, storage mode, wifi, video, NFS)
 - **May write** parameters that RePlayOS does NOT provide its own UI to modify (e.g., `system_skin`, `wifi_name`, `nfs_server`) — the companion app serves as a UI for these
-- **Must NOT** write app-specific settings to it (e.g., region preference) — those go in `.replay-control/config.cfg`
+- **Must NOT** write app-specific settings to it (e.g., region preference) — those go in `.replay-control/config.cfg` (on the ROM storage device)
 
 ## Directory Structure
 
 ```
 <rom_storage>/
-├── replay.cfg                     # RePlayOS system config (READ ONLY for our app)
 ├── roms/                          # ROM files organized by system
 │   ├── nintendo_snes/
 │   ├── sega_smd/

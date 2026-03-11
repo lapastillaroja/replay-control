@@ -3,7 +3,7 @@ use leptos_router::NavigateOptions;
 use leptos_router::components::A;
 use leptos_router::hooks::{query_signal_with_options, use_query_map};
 
-use crate::components::genre_dropdown::GenreDropdown;
+use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, PAGE_SIZE, RomEntry};
 use crate::util::format_size;
@@ -47,12 +47,14 @@ pub fn RomList(system: String) -> impl IntoView {
         .map(|v| v == "true")
         .unwrap_or(false);
 
-    let hide_hacks = RwSignal::new(initial_hide_hacks);
-    let hide_translations = RwSignal::new(initial_hide_translations);
-    let hide_betas = RwSignal::new(initial_hide_betas);
-    let hide_clones = RwSignal::new(initial_hide_clones);
-    let multiplayer_only = RwSignal::new(initial_multiplayer);
-    let genre_filter = RwSignal::new(initial_genre.clone());
+    let filters = FilterState {
+        hide_hacks: RwSignal::new(initial_hide_hacks),
+        hide_translations: RwSignal::new(initial_hide_translations),
+        hide_betas: RwSignal::new(initial_hide_betas),
+        hide_clones: RwSignal::new(initial_hide_clones),
+        multiplayer_only: RwSignal::new(initial_multiplayer),
+        genre: RwSignal::new(initial_genre.clone()),
+    };
     let debounced_genre = RwSignal::new(initial_genre);
 
     // Track whether the system is arcade (set from first page response).
@@ -130,12 +132,12 @@ pub fn RomList(system: String) -> impl IntoView {
         // pushState would overwrite the previous page's history entry.
         let filters_initialized = StoredValue::new(false);
         Effect::new(move || {
-            let hh = hide_hacks.get();
-            let ht = hide_translations.get();
-            let hb = hide_betas.get();
-            let hc = hide_clones.get();
-            let mp = multiplayer_only.get();
-            let g = genre_filter.get();
+            let hh = filters.hide_hacks.get();
+            let ht = filters.hide_translations.get();
+            let hb = filters.hide_betas.get();
+            let hc = filters.hide_clones.get();
+            let mp = filters.multiplayer_only.get();
+            let g = filters.genre.get();
             debounced_genre.set(g.clone());
             if !filters_initialized.get_value() {
                 filters_initialized.set_value(true);
@@ -178,12 +180,12 @@ pub fn RomList(system: String) -> impl IntoView {
             (
                 sys.get_value(),
                 debounced_search.get(),
-                hide_hacks.get(),
-                hide_translations.get(),
-                hide_betas.get(),
-                hide_clones.get(),
+                filters.hide_hacks.get(),
+                filters.hide_translations.get(),
+                filters.hide_betas.get(),
+                filters.hide_clones.get(),
                 debounced_genre.get(),
-                multiplayer_only.get(),
+                filters.multiplayer_only.get(),
                 version.get(),
             )
         },
@@ -211,12 +213,12 @@ pub fn RomList(system: String) -> impl IntoView {
         let system = sys.get_value();
         let query = debounced_search.get_untracked();
         let current_offset = offset.get_untracked();
-        let hh = hide_hacks.get_untracked();
-        let ht = hide_translations.get_untracked();
-        let hb = hide_betas.get_untracked();
-        let hc = hide_clones.get_untracked();
+        let hh = filters.hide_hacks.get_untracked();
+        let ht = filters.hide_translations.get_untracked();
+        let hb = filters.hide_betas.get_untracked();
+        let hc = filters.hide_clones.get_untracked();
         let gf = debounced_genre.get_untracked();
-        let mp = multiplayer_only.get_untracked();
+        let mp = filters.multiplayer_only.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) =
                 server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp)
@@ -288,86 +290,18 @@ pub fn RomList(system: String) -> impl IntoView {
             />
         </div>
         <div class="search-filters rom-list-filters">
-            <button
-                class=move || {
-                    if hide_hacks.get() {
-                        "filter-chip filter-chip-active"
-                    } else {
-                        "filter-chip"
-                    }
-                }
-                on:click=move |_| hide_hacks.update(|v| *v = !*v)
-            >
-                {move || t(i18n.locale.get(), "filter.hide_hacks")}
-                {move || if hide_hacks.get() { " \u{2715}" } else { "" }}
-            </button>
-
-            <button
-                class=move || {
-                    if hide_translations.get() {
-                        "filter-chip filter-chip-active"
-                    } else {
-                        "filter-chip"
-                    }
-                }
-                on:click=move |_| hide_translations.update(|v| *v = !*v)
-            >
-                {move || t(i18n.locale.get(), "filter.hide_translations")}
-                {move || if hide_translations.get() { " \u{2715}" } else { "" }}
-            </button>
-
-            <button
-                class=move || {
-                    if hide_betas.get() {
-                        "filter-chip filter-chip-active"
-                    } else {
-                        "filter-chip"
-                    }
-                }
-                on:click=move |_| hide_betas.update(|v| *v = !*v)
-            >
-                {move || t(i18n.locale.get(), "filter.hide_betas")}
-                {move || if hide_betas.get() { " \u{2715}" } else { "" }}
-            </button>
-
-            <Show when=move || is_arcade.get()>
-                <button
-                    class=move || {
-                        if hide_clones.get() {
-                            "filter-chip filter-chip-active"
-                        } else {
-                            "filter-chip"
-                        }
-                    }
-                    on:click=move |_| hide_clones.update(|v| *v = !*v)
-                >
-                    {move || t(i18n.locale.get(), "filter.hide_clones")}
-                    {move || if hide_clones.get() { " \u{2715}" } else { "" }}
-                </button>
-            </Show>
-
-            <button
-                class=move || {
-                    if multiplayer_only.get() {
-                        "filter-chip filter-chip-active"
-                    } else {
-                        "filter-chip"
-                    }
-                }
-                on:click=move |_| multiplayer_only.update(|v| *v = !*v)
-            >
-                {move || t(i18n.locale.get(), "filter.multiplayer")}
-                {move || if multiplayer_only.get() { " \u{2715}" } else { "" }}
-            </button>
-
+            <FilterChips
+                filters
+                show_clones=Signal::derive(move || is_arcade.get())
+            />
             {move || {
-                genres_resource.get().and_then(|res| res.ok()).map(|genre_list| {
+                genres_resource.get().and_then(|res| res.ok()).and_then(|genre_list| {
                     if genre_list.is_empty() {
                         None
                     } else {
-                        Some(view! { <GenreDropdown genre=genre_filter genre_list /> })
+                        Some(view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> })
                     }
-                }).flatten()
+                })
             }}
         </div>
         <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "games.loading_roms")}</div> }>

@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_query_map;
 
-use crate::components::genre_dropdown::GenreDropdown;
+use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, GlobalSearchResult, GlobalSearchResults, SystemSearchGroup};
 
@@ -55,12 +55,14 @@ pub fn SearchPage() -> impl IntoView {
 
     // Signals for user input.
     let search_input = RwSignal::new(initial_query.clone());
-    let hide_hacks = RwSignal::new(initial_hide_hacks);
-    let hide_translations = RwSignal::new(initial_hide_translations);
-    let hide_betas = RwSignal::new(initial_hide_betas);
-    let hide_clones = RwSignal::new(initial_hide_clones);
-    let multiplayer_only = RwSignal::new(initial_multiplayer);
-    let genre = RwSignal::new(initial_genre.clone());
+    let filters = FilterState {
+        hide_hacks: RwSignal::new(initial_hide_hacks),
+        hide_translations: RwSignal::new(initial_hide_translations),
+        hide_betas: RwSignal::new(initial_hide_betas),
+        hide_clones: RwSignal::new(initial_hide_clones),
+        multiplayer_only: RwSignal::new(initial_multiplayer),
+        genre: RwSignal::new(initial_genre.clone()),
+    };
 
     // Debounced search query that drives the resource.
     let debounced_query = RwSignal::new(initial_query.clone());
@@ -109,12 +111,12 @@ pub fn SearchPage() -> impl IntoView {
                 debounced_query.set(val.clone());
                 update_url_params(
                     &val,
-                    hide_hacks.get_untracked(),
-                    hide_translations.get_untracked(),
-                    hide_betas.get_untracked(),
-                    hide_clones.get_untracked(),
-                    multiplayer_only.get_untracked(),
-                    &genre.get_untracked(),
+                    filters.hide_hacks.get_untracked(),
+                    filters.hide_translations.get_untracked(),
+                    filters.hide_betas.get_untracked(),
+                    filters.hide_clones.get_untracked(),
+                    filters.multiplayer_only.get_untracked(),
+                    &filters.genre.get_untracked(),
                 );
                 // Save to recent searches if non-empty.
                 if !val.trim().is_empty() {
@@ -138,12 +140,12 @@ pub fn SearchPage() -> impl IntoView {
 
         // Immediate update for filter changes (no debounce needed).
         Effect::new(move || {
-            let hh = hide_hacks.get();
-            let ht = hide_translations.get();
-            let hb = hide_betas.get();
-            let hc = hide_clones.get();
-            let mp = multiplayer_only.get();
-            let g = genre.get();
+            let hh = filters.hide_hacks.get();
+            let ht = filters.hide_translations.get();
+            let hb = filters.hide_betas.get();
+            let hc = filters.hide_clones.get();
+            let mp = filters.multiplayer_only.get();
+            let g = filters.genre.get();
             debounced_genre.set(g.clone());
             // Skip the first run: URL already reflects initial values and the
             // Router's pushState hasn't completed yet.
@@ -168,11 +170,11 @@ pub fn SearchPage() -> impl IntoView {
         move || {
             (
                 debounced_query.get(),
-                hide_hacks.get(),
-                hide_translations.get(),
-                hide_betas.get(),
-                hide_clones.get(),
-                multiplayer_only.get(),
+                filters.hide_hacks.get(),
+                filters.hide_translations.get(),
+                filters.hide_betas.get(),
+                filters.hide_clones.get(),
+                filters.multiplayer_only.get(),
                 debounced_genre.get(),
             )
         },
@@ -194,12 +196,12 @@ pub fn SearchPage() -> impl IntoView {
         debounced_query.set(query.clone());
         update_url_params_if_hydrate(
             &query,
-            hide_hacks.get_untracked(),
-            hide_translations.get_untracked(),
-            hide_betas.get_untracked(),
-            hide_clones.get_untracked(),
-            multiplayer_only.get_untracked(),
-            &genre.get_untracked(),
+            filters.hide_hacks.get_untracked(),
+            filters.hide_translations.get_untracked(),
+            filters.hide_betas.get_untracked(),
+            filters.hide_clones.get_untracked(),
+            filters.multiplayer_only.get_untracked(),
+            &filters.genre.get_untracked(),
         );
     };
 
@@ -287,79 +289,13 @@ pub fn SearchPage() -> impl IntoView {
             </Show>
 
             <div class="search-filters">
-                <button
-                    class=move || {
-                        if hide_hacks.get() {
-                            "filter-chip filter-chip-active"
-                        } else {
-                            "filter-chip"
-                        }
-                    }
-                    on:click=move |_| hide_hacks.update(|v| *v = !*v)
-                >
-                    {move || t(i18n.locale.get(), "filter.hide_hacks")}
-                    {move || if hide_hacks.get() { " \u{2715}" } else { "" }}
-                </button>
-
-                <button
-                    class=move || {
-                        if hide_translations.get() {
-                            "filter-chip filter-chip-active"
-                        } else {
-                            "filter-chip"
-                        }
-                    }
-                    on:click=move |_| hide_translations.update(|v| *v = !*v)
-                >
-                    {move || t(i18n.locale.get(), "filter.hide_translations")}
-                    {move || if hide_translations.get() { " \u{2715}" } else { "" }}
-                </button>
-
-                <button
-                    class=move || {
-                        if hide_betas.get() {
-                            "filter-chip filter-chip-active"
-                        } else {
-                            "filter-chip"
-                        }
-                    }
-                    on:click=move |_| hide_betas.update(|v| *v = !*v)
-                >
-                    {move || t(i18n.locale.get(), "filter.hide_betas")}
-                    {move || if hide_betas.get() { " \u{2715}" } else { "" }}
-                </button>
-
-                <button
-                    class=move || {
-                        if hide_clones.get() {
-                            "filter-chip filter-chip-active"
-                        } else {
-                            "filter-chip"
-                        }
-                    }
-                    on:click=move |_| hide_clones.update(|v| *v = !*v)
-                >
-                    {move || t(i18n.locale.get(), "filter.hide_clones")}
-                    {move || if hide_clones.get() { " \u{2715}" } else { "" }}
-                </button>
-
-                <button
-                    class=move || {
-                        if multiplayer_only.get() {
-                            "filter-chip filter-chip-active"
-                        } else {
-                            "filter-chip"
-                        }
-                    }
-                    on:click=move |_| multiplayer_only.update(|v| *v = !*v)
-                >
-                    {move || t(i18n.locale.get(), "filter.multiplayer")}
-                    {move || if multiplayer_only.get() { " \u{2715}" } else { "" }}
-                </button>
-
+                <FilterChips
+                    filters
+                    show_clones=Signal::derive(|| true)
+                />
                 {move || {
                     genres_resource.get().and_then(|res| res.ok()).map(|genre_list| {
-                        view! { <GenreDropdown genre genre_list /> }
+                        view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> }
                     })
                 }}
             </div>
@@ -371,10 +307,10 @@ pub fn SearchPage() -> impl IntoView {
                     let locale = i18n.locale.get();
                     let data = results.await?;
                     let q = debounced_query.get_untracked();
-                    let hh = hide_hacks.get_untracked();
-                    let ht = hide_translations.get_untracked();
-                    let hb = hide_betas.get_untracked();
-                    let hc = hide_clones.get_untracked();
+                    let hh = filters.hide_hacks.get_untracked();
+                    let ht = filters.hide_translations.get_untracked();
+                    let hb = filters.hide_betas.get_untracked();
+                    let hc = filters.hide_clones.get_untracked();
                     let g = debounced_genre.get_untracked();
                     Ok::<_, server_fn::ServerFnError>(view! {
                         <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc genre=g />

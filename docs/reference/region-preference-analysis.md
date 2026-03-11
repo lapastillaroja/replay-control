@@ -224,11 +224,11 @@ Cons:
 
 ### Where to Store the Setting
 
-**Important constraint**: `replay.cfg` belongs to RePlayOS and must NOT be modified by the companion app for app-specific settings. Only RePlayOS-native settings (skin, wifi, video mode) should live there.
+**Important constraint**: `replay.cfg` belongs to RePlayOS and lives on the SD card at `/media/sd/config/replay.cfg` (not on ROM storage). It must NOT be modified by the companion app for app-specific settings. Only RePlayOS-native settings (skin, wifi, video mode) should live there.
 
 | Location | Pros | Cons |
 |----------|------|------|
-| `replay.cfg` | Shared with RePlayOS | **Not allowed** for app-specific settings |
+| `replay.cfg` (SD card only) | Shared with RePlayOS | **Not allowed** for app-specific settings |
 | `.replay-control/config.cfg` | App-specific, same format as replay.cfg, lives alongside metadata.db | Not shared with RePlayOS (which is correct) |
 | In-memory (AppState) | Simplest implementation | Lost on server restart |
 | Cookie / localStorage | Client-side, no server changes | Different per browser; lost when clearing cookies |
@@ -576,7 +576,7 @@ Tags like `(U)`, `(E)`, `(J)`, `(UE)`, `(JU)` are already expanded by `region_to
 
 ### Preference Value Validation
 
-If `replay.cfg` contains an invalid value (e.g., `region_preference = "brazil"`), the config accessor falls through to `RegionPreference::Usa` via the default match arm. This is safe and predictable.
+If `.replay-control/config.cfg` contains an invalid value (e.g., `region_preference = "brazil"`), the config accessor falls through to `RegionPreference::Usa` via the default match arm. This is safe and predictable.
 
 ### Cache Coherence
 
@@ -589,7 +589,7 @@ For NFS storage, the re-scan might take a few seconds. This is acceptable for a 
 
 ### Multiple Concurrent Users
 
-If two users access the app from different browsers with different region preferences, they will see the same ordering because the preference is stored server-side in `replay.cfg`. This is a known limitation: RePlayOS is a single-user system (one person's retro gaming console), so a shared server-side setting is appropriate. Per-user preferences via cookies would add complexity without benefiting the target use case.
+If two users access the app from different browsers with different region preferences, they will see the same ordering because the preference is stored server-side in `.replay-control/config.cfg`. This is a known limitation: RePlayOS is a single-user system (one person's retro gaming console), so a shared server-side setting is appropriate. Per-user preferences via cookies would add complexity without benefiting the target use case.
 
 ---
 
@@ -668,4 +668,4 @@ If two users access the app from different browsers with different region prefer
 
 3. **Region filtering**: The search improvement analysis (Phase 5) proposes filter toggles to hide specific regions. Region preference and region filtering are complementary: the preference controls sort order while filters control visibility. They should remain separate features.
 
-4. **RePlayOS locale upstream**: If RePlayOS adds a `system_language` or `system_region` key in `replay.cfg` in the future, the app could read it as a fallback default when `region_preference` is not explicitly set in `.replay-control/config.cfg`. The app reads `replay.cfg` for OS-level settings but never writes to it — only `.replay-control/config.cfg` is used for app-specific settings.
+4. **RePlayOS locale upstream**: If RePlayOS adds a `system_language` or `system_region` key in `replay.cfg` in the future, the app could read it as a fallback default when `region_preference` is not explicitly set in `.replay-control/config.cfg`. The app reads `replay.cfg` (on the SD card at `/media/sd/config/replay.cfg`) for OS-level settings but never writes app-specific settings to it — only `.replay-control/config.cfg` (on ROM storage) is used for app-specific settings.
