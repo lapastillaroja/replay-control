@@ -1,7 +1,7 @@
-//! LaunchBox Metadata.xml parser and importer.
+//! LaunchBox metadata XML parser and importer.
 //!
-//! Streams the ~460 MB XML file and extracts game metadata,
-//! matching entries to ROMs on disk via normalized title comparison.
+//! Streams the ~460 MB XML file (`launchbox-metadata.xml`) and extracts game
+//! metadata, matching entries to ROMs on disk via normalized title comparison.
 
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -149,7 +149,7 @@ fn normalize_title(name: &str) -> String {
         .collect()
 }
 
-/// Import metadata from a LaunchBox Metadata.xml file into the metadata DB.
+/// Import metadata from a LaunchBox metadata XML file into the metadata DB.
 ///
 /// `rom_index` maps `(system_folder, normalized_title)` → `rom_filename` for all ROMs on disk.
 /// This is built by the caller by scanning the ROM directories.
@@ -337,11 +337,14 @@ fn parse_xml<R: BufRead>(
 /// The LaunchBox metadata download URL.
 const METADATA_URL: &str = "https://gamesdb.launchbox-app.com/Metadata.zip";
 
-/// Download LaunchBox Metadata.zip and extract Metadata.xml to the given directory.
+/// Download LaunchBox Metadata.zip and extract to `launchbox-metadata.xml` in the given directory.
 ///
 /// Uses `curl` for download and `unzip` for extraction (available on all targets).
-/// Returns the path to the extracted Metadata.xml.
+/// The zip internally contains `Metadata.xml`, which is renamed after extraction.
+/// Returns the path to the extracted XML file.
 pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
+    use crate::metadata_db::LAUNCHBOX_XML;
+
     std::fs::create_dir_all(dest_dir).map_err(|e| {
         Error::Other(format!(
             "Cannot create directory {}: {e}",
@@ -350,7 +353,8 @@ pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
     })?;
 
     let zip_path = dest_dir.join("Metadata.zip");
-    let xml_path = dest_dir.join("Metadata.xml");
+    let extracted_path = dest_dir.join("Metadata.xml"); // name inside the zip
+    let xml_path = dest_dir.join(LAUNCHBOX_XML);
 
     // Download with curl.
     tracing::info!("Downloading LaunchBox metadata from {METADATA_URL}");
@@ -368,7 +372,7 @@ pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
         return Err(Error::Other(format!("Download failed: {stderr}")));
     }
 
-    // Extract just Metadata.xml from the zip.
+    // Extract Metadata.xml from the zip (upstream filename inside the archive).
     tracing::info!("Extracting Metadata.xml from {}", zip_path.display());
     let output = std::process::Command::new("unzip")
         .args(["-o", "-j"]) // overwrite, junk paths
@@ -387,13 +391,20 @@ pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
     // Remove the zip to save space.
     let _ = std::fs::remove_file(&zip_path);
 
-    if !xml_path.exists() {
+    if !extracted_path.exists() {
         return Err(Error::Other(
             "Metadata.xml not found in archive".to_string(),
         ));
     }
 
-    tracing::info!("Metadata.xml extracted to {}", xml_path.display());
+    // Rename from upstream name to our canonical name.
+    std::fs::rename(&extracted_path, &xml_path).map_err(|e| {
+        Error::Other(format!(
+            "Failed to rename Metadata.xml to {LAUNCHBOX_XML}: {e}"
+        ))
+    })?;
+
+    tracing::info!("{LAUNCHBOX_XML} extracted to {}", xml_path.display());
     Ok(xml_path)
 }
 

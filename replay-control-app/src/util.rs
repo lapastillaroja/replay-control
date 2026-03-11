@@ -76,4 +76,84 @@ mod tests {
     fn format_short_kb() {
         assert_eq!(format_size_short(512 * 1024), ("512".to_string(), "KB"));
     }
+
+    // --- Edge cases for format_size ---
+
+    #[test]
+    fn format_zero_bytes() {
+        assert_eq!(format_size(0), "0 KB");
+    }
+
+    #[test]
+    fn format_one_byte() {
+        // Integer division: 1 / 1024 = 0
+        assert_eq!(format_size(1), "0 KB");
+    }
+
+    #[test]
+    fn format_1023_bytes() {
+        // Just under 1 KB
+        assert_eq!(format_size(1023), "0 KB");
+    }
+
+    #[test]
+    fn format_mb_boundary() {
+        // Exactly at the MB boundary
+        assert_eq!(format_size(1_048_576), "1.0 MB");
+        // One byte below MB
+        assert_eq!(format_size(1_048_575), "1023 KB");
+    }
+
+    #[test]
+    fn format_gb_boundary() {
+        // Exactly at the GB boundary
+        assert_eq!(format_size(1_073_741_824), "1.0 GB");
+        // One byte below GB -- should be MB
+        let below_gb = format_size(1_073_741_823);
+        assert!(below_gb.ends_with("MB"), "Just below GB should be MB, got {below_gb}");
+    }
+
+    #[test]
+    fn format_very_large_value() {
+        // 1 TB
+        assert_eq!(format_size(1_099_511_627_776), "1024.0 GB");
+    }
+
+    #[test]
+    fn format_u64_max() {
+        // Should not panic on max value
+        let result = format_size(u64::MAX);
+        assert!(result.ends_with("GB"), "u64::MAX should show as GB, got {result}");
+    }
+
+    // --- Edge cases for format_size_short ---
+
+    #[test]
+    fn format_short_zero() {
+        assert_eq!(format_size_short(0), ("0".to_string(), "KB"));
+    }
+
+    #[test]
+    fn format_short_one_byte() {
+        assert_eq!(format_size_short(1), ("0".to_string(), "KB"));
+    }
+
+    #[test]
+    fn format_short_mb_boundary() {
+        assert_eq!(format_size_short(1_048_576), ("1.0".to_string(), "MB"));
+    }
+
+    #[test]
+    fn format_short_gb_rounding_up() {
+        // 1.5 GB should round to 2
+        let bytes = 1_073_741_824 + 536_870_912; // 1.5 GB
+        assert_eq!(format_size_short(bytes), ("2".to_string(), "GB"));
+    }
+
+    #[test]
+    fn format_short_gb_rounding_down() {
+        // 1.4 GB should round to 1
+        let bytes = (1_073_741_824.0 * 1.4) as u64;
+        assert_eq!(format_size_short(bytes), ("1".to_string(), "GB"));
+    }
 }

@@ -272,13 +272,6 @@ pub async fn global_search(
 
         replay_control_core::roms::mark_favorites(&storage, &sys.folder_name, &mut top_roms);
 
-        // Populate box art URLs.
-        let media_base = storage
-            .root
-            .join(replay_control_core::metadata_db::RC_DIR)
-            .join("media")
-            .join(&sys.folder_name);
-
         // Batch lookup ratings from metadata DB.
         let ratings_map = if let Some(guard) = state.metadata_db() {
             if let Some(db) = guard.as_ref() {
@@ -296,8 +289,7 @@ pub async fn global_search(
             .into_iter()
             .map(|mut rom| {
                 rom.box_art_url =
-                    find_image_on_disk(&media_base, "boxart", &rom.game.rom_filename)
-                        .map(|path| format!("/media/{}/{path}", sys.folder_name));
+                    resolve_box_art_url(&state, &sys.folder_name, &rom.game.rom_filename);
                 let genre_str = lookup_genre(&sys.folder_name, &rom.game.rom_filename);
                 let players_val = lookup_players(&sys.folder_name, &rom.game.rom_filename);
                 let rating = ratings_map
@@ -389,6 +381,194 @@ pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnEr
     }
 
     Ok(genres.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::search_score;
+
+    // --- Exact match (10_000 base) ---
+
+    #[test]
+    fn exact_match_display_name() {
+        let score = search_score("tetris", "Tetris", "Tetris (USA).nes");
+        assert!(score >= 10_000, "Exact match should score >= 10000, got {score}");
+    }
+
+    #[test]
+    fn exact_match_is_case_insensitive() {
+        let score = search_score("tetris", "Tetris", "Tetris (USA).nes");
+        let score2 = search_score("tetris", "TETRIS", "TETRIS.nes");
+        assert!(score >= 10_000);
+        assert!(score2 >= 10_000);
+    }
+
+    // --- Prefix match (5_000 base) ---
+
+    #[test]
+    fn prefix_match() {
+        let score = search_score("super", "Super Mario World", "Super Mario World (USA).sfc");
+        assert!(
+            (5_000..10_000).contains(&score),
+            "Prefix match should score in 5000..10000, got {score}"
+        );
+    }
+
+    // --- Word boundary match (2_000 base) ---
+
+    #[test]
+    fn word_boundary_match() {
+        let score = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        assert!(
+            (2_000..5_000).contains(&score),
+            "Word boundary match should score in 2000..5000, got {score}"
+        );
+    }
+
+    // --- Substring match (1_000 base) ---
+
+    #[test]
+    fn substring_match() {
+        // "ari" is inside "Mario" but doesn't start a word
+        let score = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc");
+        assert!(
+            (1_000..2_000).contains(&score),
+            "Substring match should score in 1000..2000, got {score}"
+        );
+    }
+
+    // --- Filename-only match (500 base) ---
+
+    #[test]
+    fn filename_only_match() {
+        // Query matches filename but not display name
+        let score = search_score("usa", "Tetris", "Tetris (USA).nes");
+        assert!(
+            (500..1_000).contains(&score),
+            "Filename-only match should score in 500..1000, got {score}"
+        );
+    }
+
+    // --- No match ---
+
+    #[test]
+    fn no_match_returns_zero() {
+        let score = search_score("zzzznotfound", "Tetris", "Tetris (USA).nes");
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn empty_query_no_match() {
+        let score = search_score("", "Tetris", "Tetris (USA).nes");
+        // Empty query matches everything via contains(""), so it should score > 0
+        // (exact match since "tetris".contains("") is true, but actually "" == display_lower is false)
+        // Let's verify the actual behavior
+        assert!(score > 0, "Empty string is contained in all strings");
+    }
+
+    // --- Tier ordering ---
+
+    #[test]
+    fn exact_beats_prefix() {
+        let exact = search_score("tetris", "Tetris", "Tetris (USA).nes");
+        let prefix = search_score("tetris", "Tetris Plus", "Tetris Plus (USA).nes");
+        assert!(exact > prefix, "Exact ({exact}) should beat prefix ({prefix})");
+    }
+
+    #[test]
+    fn prefix_beats_word_boundary() {
+        let prefix = search_score("super", "Super Mario World", "Super Mario World (USA).sfc");
+        let word = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        assert!(
+            prefix > word,
+            "Prefix ({prefix}) should beat word boundary ({word})"
+        );
+    }
+
+    #[test]
+    fn word_boundary_beats_substring() {
+        let word = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let substr = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc");
+        assert!(
+            word > substr,
+            "Word boundary ({word}) should beat substring ({substr})"
+        );
+    }
+
+    #[test]
+    fn substring_beats_filename_only() {
+        let substr = search_score("ari", "Super Mario World", "Super Mario World (USA).sfc");
+        let filename = search_score("usa", "Tetris", "Tetris (USA).nes");
+        assert!(
+            substr > filename,
+            "Substring ({substr}) should beat filename-only ({filename})"
+        );
+    }
+
+    // --- Length bonus ---
+
+    #[test]
+    fn short_name_gets_length_bonus() {
+        let short = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let long = search_score(
+            "mario",
+            "Super Mario World - Long Subtitle That Makes It Over 40 Characters",
+            "Super Mario World - Long Subtitle (USA).sfc",
+        );
+        assert!(
+            short > long,
+            "Short name ({short}) should beat long name ({long}) due to length bonus"
+        );
+    }
+
+    // --- Tier penalties ---
+
+    #[test]
+    fn hack_is_penalized() {
+        let original = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let hack =
+            search_score("mario", "Super Mario World", "Super Mario World (Hack).sfc");
+        assert!(
+            original > hack,
+            "Original ({original}) should beat hack ({hack})"
+        );
+    }
+
+    #[test]
+    fn translation_is_penalized() {
+        let original = search_score("mario", "Super Mario World", "Super Mario World (USA).sfc");
+        let translated = search_score(
+            "mario",
+            "Super Mario World",
+            "Super Mario World (Traducido Es).sfc",
+        );
+        assert!(
+            original > translated,
+            "Original ({original}) should beat translation ({translated})"
+        );
+    }
+
+    // --- Special characters ---
+
+    #[test]
+    fn special_characters_in_query() {
+        let score = search_score(
+            "asterix & obelix",
+            "Asterix & Obelix",
+            "Asterix & Obelix (Europe).sfc",
+        );
+        assert!(score >= 10_000, "Exact match with special chars should work, got {score}");
+    }
+
+    #[test]
+    fn query_with_dash() {
+        let score = search_score(
+            "x-men",
+            "X-Men - Mutant Apocalypse",
+            "X-Men - Mutant Apocalypse (USA).sfc",
+        );
+        assert!(score > 0, "Query with dash should match");
+    }
 }
 
 /// Pick a random game across all systems.

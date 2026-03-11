@@ -324,7 +324,7 @@ fn parse_args() -> (PathBuf, Option<PathBuf>) {
                 eprintln!("Options:");
                 eprintln!("  -s, --storage-path <PATH>  Path to storage root (e.g., /media/usb)");
                 eprintln!(
-                    "      --import <XML>         Import LaunchBox Metadata.xml before report"
+                    "      --import <XML>         Import LaunchBox metadata XML before report"
                 );
                 std::process::exit(0);
             }

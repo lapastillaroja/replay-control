@@ -291,7 +291,7 @@ CREATE TABLE game_metadata (
 /var/lib/replay-control/
   sources/              (optional, configurable)
     launchbox/
-      Metadata.xml
+      launchbox-metadata.xml
     libretro-thumbnails/
       Nintendo - Super Nintendo Entertainment System/
         Named_Boxarts/
@@ -342,7 +342,7 @@ An alternative to persisting source blobs on the SD card is using `/tmp` as a te
 
 | Source | Size | Notes |
 |--------|------|-------|
-| LaunchBox `Metadata.xml` (from Metadata.zip) | ~250-300 MB | XML with 108K+ games |
+| LaunchBox `launchbox-metadata.xml` (from Metadata.zip) | ~250-300 MB | XML with 108K+ games |
 | libretro-thumbnails (per system repo) | 50-300 MB each | Typical setup with 10-15 systems: ~1-3 GB. Only clone systems the user has ROMs for |
 | progetto-SNAPS packs (screenshots + titles) | ~200-500 MB | Varies by MAME version |
 | catver.ini / MAME XMLs | < 10 MB | Negligible |
@@ -524,7 +524,7 @@ See `docs/features.md` (Metadata Management section) for the full feature breakd
 
 **Scope:**
 - Add `metadata.db` SQLite schema and basic CRUD operations
-- Parse LaunchBox `Metadata.xml` and populate the local DB for matching games
+- Parse LaunchBox `launchbox-metadata.xml` and populate the local DB for matching games
 - Extend `GameInfo` with `description` and `rating` fields
 - Extend `resolve_game_info()` to query the metadata cache
 - Add description display to the game detail page

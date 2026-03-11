@@ -1,7 +1,7 @@
 # The `.replay-control/` Folder
 
 > Location: `<rom_storage>/.replay-control/`
-> Defined as: `RC_DIR` constant in `replay-control-core/src/metadata_db.rs`
+> Defined as: `RC_DIR` constant in `replay-control-core/src/storage.rs` (re-exported from `metadata_db.rs`)
 
 The `.replay-control/` directory is the companion app's data folder on the ROM storage device (SD card, USB drive, or NFS mount). It stores all app-specific data — metadata, images, settings, and temporary files — separate from both the ROM files and the RePlayOS system configuration.
 
@@ -10,7 +10,7 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
 **`replay.cfg`** lives on the SD card at `/media/sd/config/replay.cfg` -- ALWAYS. Even when ROM storage is on USB (`/media/usb`) or NFS (`/media/nfs`), `replay.cfg` remains on the SD card. It is NOT on the ROM storage device. The companion app:
 - **Reads** it freely for OS-level settings (skin, storage mode, wifi, video, NFS)
 - **May write** parameters that RePlayOS does NOT provide its own UI to modify (e.g., `system_skin`, `wifi_name`, `nfs_server`) — the companion app serves as a UI for these
-- **Must NOT** write app-specific settings to it (e.g., region preference) — those go in `.replay-control/config.cfg` (on the ROM storage device)
+- **Must NOT** write app-specific settings to it (e.g., region preference) — those go in `.replay-control/settings.cfg` (on the ROM storage device)
 
 ## Directory Structure
 
@@ -23,9 +23,9 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
 ├── _favorites/                    # RePlayOS favorites (symlinks managed by our app)
 │
 └── .replay-control/               # Companion app data directory
-    ├── config.cfg                 # App-specific settings (region preference, etc.)
+    ├── settings.cfg               # App-specific settings (region preference, etc.)
     ├── metadata.db                # SQLite database — game metadata cache
-    ├── Metadata.xml               # LaunchBox XML dump (downloaded or manually placed)
+    ├── launchbox-metadata.xml     # LaunchBox XML dump (downloaded or manually placed)
     ├── videos.json                # User-saved video links per game
     │
     ├── media/                     # Game images (box art + screenshots)
@@ -52,7 +52,7 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
 
 ## Files and Their Purpose
 
-### `config.cfg`
+### `settings.cfg`
 App-specific user settings in `key = "value"` format (same syntax as `replay.cfg`). Uses the existing `ReplayConfig` parser.
 
 **Current/planned keys:**
@@ -72,10 +72,10 @@ Uses `nolock` VFS fallback on NFS mounts (NFS doesn't support SQLite file lockin
 
 **Source code**: `replay-control-core/src/metadata_db.rs`
 
-### `Metadata.xml`
+### `launchbox-metadata.xml`
 The LaunchBox metadata XML dump (~460 MB, ~78K game entries). Either:
 - Downloaded automatically via the metadata management UI
-- Placed manually by the user
+- Placed manually by the user (the old name `Metadata.xml` is accepted as a fallback)
 
 Parsed during import to populate `metadata.db`. Kept on disk for re-imports.
 
@@ -107,7 +107,7 @@ Safe to delete manually at any time -- repos will be re-cloned on the next impor
 
 On a typical collection:
 - `metadata.db`: ~5-15 MB
-- `Metadata.xml`: ~460 MB (can be deleted after import to save space)
+- `launchbox-metadata.xml`: ~460 MB (can be deleted after import to save space)
 - `media/`: 200 MB – 2 GB depending on how many systems have images
 - `tmp/`: 0 bytes initially; grows as repos are cached (several GB if all systems imported); safe to delete
 
@@ -115,7 +115,7 @@ On a typical collection:
 
 | Constant/Function | File | Purpose |
 |---|---|---|
-| `RC_DIR` | `metadata_db.rs:12` | The `.replay-control` directory name |
+| `RC_DIR` | `storage.rs` (re-exported from `metadata_db.rs`) | The `.replay-control` directory name |
 | `MetadataDb::open()` | `metadata_db.rs:83` | Opens/creates `metadata.db` |
 | `import_system_thumbnails()` | `thumbnails.rs:294` | Copies images from cloned repo to `media/` |
 | `clone_thumbnail_repo()` | `thumbnails.rs:565` | Clones a repo into `tmp/` (reuses existing if not stale) |

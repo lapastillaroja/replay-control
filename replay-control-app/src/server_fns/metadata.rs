@@ -20,7 +20,7 @@ pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     db.stats().map_err(|e| ServerFnError::new(e.to_string()))
 }
 
-/// Start a background metadata import from a LaunchBox Metadata.xml file.
+/// Start a background metadata import from a LaunchBox metadata XML file.
 /// Returns immediately; poll `get_import_progress` for status.
 #[server(prefix = "/sfn")]
 pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnError> {
@@ -105,7 +105,7 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
     db.clear().map_err(|e| ServerFnError::new(e.to_string()))
 }
 
-/// Clear metadata DB and trigger re-import from Metadata.xml.
+/// Clear metadata DB and trigger re-import from launchbox-metadata.xml.
 /// The import runs in the background; poll `get_import_progress` for status.
 #[server(prefix = "/sfn")]
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {

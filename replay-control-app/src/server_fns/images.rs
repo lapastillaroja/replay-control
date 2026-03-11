@@ -37,6 +37,8 @@ pub struct ImageCoverage {
     pub with_boxart: usize,
     pub with_snap: usize,
     pub has_repo: bool,
+    /// Whether the thumbnail repo has already been cloned locally.
+    pub repo_cloned: bool,
 }
 
 /// Start downloading and importing images for a system.
@@ -116,13 +118,19 @@ pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
         .map(|(s, b, sn)| (s, (b, sn)))
         .collect();
 
+    let clone_base = storage.rc_dir().join("tmp").join("libretro-thumbnails");
+
     let mut coverage: Vec<ImageCoverage> = systems
         .into_iter()
         .filter(|s| s.game_count > 0)
         .map(|s| {
             let (with_boxart, with_snap) = img_map.remove(&s.folder_name).unwrap_or((0, 0));
-            let has_repo =
-                replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some();
+            let repo_names =
+                replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name);
+            let has_repo = repo_names.is_some();
+            let repo_cloned = repo_names
+                .map(|names| names.iter().any(|r| clone_base.join(r).join("Named_Boxarts").exists()))
+                .unwrap_or(false);
             ImageCoverage {
                 system: s.folder_name,
                 display_name: s.display_name,
@@ -130,6 +138,7 @@ pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
                 with_boxart,
                 with_snap,
                 has_repo,
+                repo_cloned,
             }
         })
         .collect();

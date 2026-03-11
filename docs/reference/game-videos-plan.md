@@ -124,7 +124,7 @@ display_name → strip parenthesized tags "(USA)", "(World 910522)" → clean ti
 
 ### Fallback
 - If Piped is down → graceful error message, manual paste always works
-- Optional: configurable Piped instance URL in `.replay-control/config.cfg` (`piped_api_url`)
+- Optional: configurable Piped instance URL in `.replay-control/settings.cfg` (`piped_api_url`)
 - Brief in-memory cache (5 min per query) to reduce API calls
 
 ---

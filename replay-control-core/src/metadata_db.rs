@@ -8,9 +8,13 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
-/// Directory name for Replay Control data on ROM storage.
-pub const RC_DIR: &str = ".replay-control";
-const DB_FILE: &str = "metadata.db";
+// Re-export RC_DIR from storage (the canonical definition).
+pub use crate::storage::RC_DIR;
+
+/// Filename for the SQLite metadata database.
+pub const METADATA_DB_FILE: &str = "metadata.db";
+/// Filename for the LaunchBox XML dump.
+pub const LAUNCHBOX_XML: &str = "launchbox-metadata.xml";
 
 /// State of a metadata import operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -83,7 +87,7 @@ impl MetadataDb {
     pub fn open(storage_root: &Path) -> Result<Self> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
-        let db_path = dir.join(DB_FILE);
+        let db_path = dir.join(METADATA_DB_FILE);
 
         // Try normal open first, then fall back to nolock mode for NFS.
         let conn = match Self::try_open(&db_path) {

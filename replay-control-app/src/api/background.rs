@@ -7,16 +7,25 @@ use super::AppState;
 const STORAGE_CHECK_INTERVAL: u64 = 60;
 
 impl AppState {
-    /// Auto-import metadata on startup if Metadata.xml exists and DB is empty.
+    /// Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
     pub fn spawn_auto_import(&self) {
-        use replay_control_core::metadata_db::RC_DIR;
+        use replay_control_core::metadata_db::LAUNCHBOX_XML;
 
-        let storage_root = self.storage().root.clone();
-        let xml_path = storage_root.join(RC_DIR).join("Metadata.xml");
+        let storage = self.storage();
+        let rc_dir = storage.rc_dir();
+        let xml_path = rc_dir.join(LAUNCHBOX_XML);
+        // Backwards-compat: fall back to old upstream name if user placed it manually.
+        let xml_path = if xml_path.exists() {
+            xml_path
+        } else {
+            let old_path = rc_dir.join("Metadata.xml");
+            if old_path.exists() { old_path } else { xml_path }
+        };
 
         if !xml_path.exists() {
             tracing::debug!(
-                "No Metadata.xml at {}, skipping auto-import",
+                "No {} at {}, skipping auto-import",
+                LAUNCHBOX_XML,
                 xml_path.display()
             );
             return;

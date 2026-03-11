@@ -89,13 +89,13 @@ Because server functions are defined in a library crate, Rust's linker strips th
 
 Two background tasks run at startup:
 1. **Storage watcher** (`spawn_storage_watcher`): Re-detects storage location every 60 seconds (skipped if `--storage-path` CLI override is set)
-2. **Auto-import** (`spawn_auto_import`): If `Metadata.xml` exists in the expected location and the metadata DB is empty, automatically triggers a metadata import
+2. **Auto-import** (`spawn_auto_import`): If `launchbox-metadata.xml` exists in the expected location and the metadata DB is empty, automatically triggers a metadata import
 
 ### Config Boundary
 
 Two separate config files serve different purposes:
 - `replay.cfg`: Belongs to RePlayOS. Lives on the SD card at `/media/sd/config/replay.cfg` -- always, regardless of whether ROM storage is on SD, USB, or NFS. The app reads freely and writes only parameters that RePlayOS does not provide its own UI for (e.g., skin index)
-- `.replay-control/config.cfg`: App-specific settings (same key=value format), stored on the ROM storage device. For settings that do not belong in the RePlayOS config
+- `.replay-control/settings.cfg`: App-specific settings (same key=value format), stored on the ROM storage device. For settings that do not belong in the RePlayOS config
 
 ---
 
@@ -183,7 +183,7 @@ Kept for external tool access (curl, scripts):
 | `favorites.rs` | 862 | CRUD, organize by 5 criteria, flatten, deduplication, sanitize folder names |
 | `thumbnails.rs` | 765 | libretro-thumbnails import, 3-tier fuzzy matching, fake symlink resolution, staleness check |
 | `metadata_db.rs` | 511 | SQLite cache with NFS nolock fallback, WAL mode, batch operations |
-| `launchbox.rs` | 506 | Streaming XML parser for LaunchBox Metadata.xml |
+| `launchbox.rs` | 506 | Streaming XML parser for LaunchBox metadata XML |
 | `game_db.rs` | 470 | PHF map for ~34K games, normalized title fallback, CRC32 lookup |
 | `bin/metadata_report.rs` | 458 | CLI tool for metadata coverage reporting |
 | `systems.rs` | 392 | 42 system definitions (41 visible), categories, extensions |
@@ -333,8 +333,8 @@ User types in search input
 ```
 User clicks "Download / Update" on MetadataPage
   --> download_metadata() server function:
-      - Downloads Metadata.xml from launchbox-metadata repo
-      - Stores at <storage>/.replay-control/Metadata.xml
+      - Downloads Metadata.zip from LaunchBox, extracts to launchbox-metadata.xml
+      - Stores at <storage>/.replay-control/launchbox-metadata.xml
   --> import_launchbox_metadata() server function:
       - AppState.start_import() spawns background task
       - Streams XML with launchbox.rs parser
@@ -403,7 +403,7 @@ This section documents features and changes added after the initial analysis was
 
 **Captures Lightbox**: GameDetailPage shows user screenshots taken on RePlayOS with a lightbox viewer.
 
-**Metadata Download**: `download_metadata()` server function downloads LaunchBox Metadata.xml directly (previously required manual placement). Includes `regenerate_metadata()` for rebuilding from existing XML.
+**Metadata Download**: `download_metadata()` server function downloads LaunchBox metadata XML directly (previously required manual placement). Includes `regenerate_metadata()` for rebuilding from existing XML.
 
 ### Core Library Improvements
 
@@ -442,7 +442,7 @@ This section documents features and changes added after the initial analysis was
 
 **SSE Progress Streaming**: Image import progress switched from polling to Server-Sent Events at `/sse/image-progress` with 200ms update interval. This provides smoother progress updates compared to the polling approach still used for metadata import.
 
-**App-Specific Config**: Introduction of `.replay-control/config.cfg` for app-specific settings, keeping the `replay.cfg` boundary clean.
+**App-Specific Config**: Introduction of `.replay-control/settings.cfg` for app-specific settings, keeping the `replay.cfg` boundary clean.
 
 ---
 

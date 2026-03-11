@@ -47,6 +47,8 @@ pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
         "atari_lynx" => Some(&["Atari - Lynx"]),
         "amstrad_cpc" => Some(&["Amstrad - CPC"]),
         "commodore_ami" => Some(&["Commodore - Amiga"]),
+        // commodore_amicd covers CD32 + CDTV hardware
+        "commodore_amicd" => Some(&["Commodore - CD32", "Commodore - CDTV"]),
         "commodore_c64" => Some(&["Commodore - 64"]),
         "ibm_pc" => Some(&["DOS"]),
         "microsoft_msx" => Some(&["Microsoft - MSX"]),
@@ -69,6 +71,7 @@ pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
         "sega_smd" => Some(&["Sega - Mega Drive - Genesis"]),
         "sega_sms" => Some(&["Sega - Master System - Mark III"]),
         "sega_st" => Some(&["Sega - Saturn"]),
+        "scummvm" => Some(&["ScummVM"]),
         "sharp_x68k" => Some(&["Sharp - X68000"]),
         "sinclair_zx" => Some(&["Sinclair - ZX Spectrum"]),
         "snk_ng" => Some(&["SNK - Neo Geo"]),
@@ -300,7 +303,7 @@ pub fn import_system_thumbnails(
     mut on_progress: impl FnMut(usize, usize) -> bool,
 ) -> Result<ImageImportStats> {
     let media_base = storage_root
-        .join(crate::metadata_db::RC_DIR)
+        .join(crate::storage::RC_DIR)
         .join("media")
         .join(system);
 
@@ -724,7 +727,7 @@ fn collect_rom_filenames_recursive(dir: &Path, filenames: &mut Vec<String>) {
 
 /// Get the total size of the media directory for all systems.
 pub fn media_dir_size(storage_root: &Path) -> u64 {
-    let media_dir = storage_root.join(crate::metadata_db::RC_DIR).join("media");
+    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
     dir_size(&media_dir)
 }
 
@@ -746,7 +749,7 @@ fn dir_size(path: &Path) -> u64 {
 /// Delete media files for a single system.
 pub fn clear_system_media(storage_root: &Path, system: &str) -> Result<()> {
     let media_dir = storage_root
-        .join(crate::metadata_db::RC_DIR)
+        .join(crate::storage::RC_DIR)
         .join("media")
         .join(system);
     if media_dir.exists() {
@@ -757,9 +760,209 @@ pub fn clear_system_media(storage_root: &Path, system: &str) -> Result<()> {
 
 /// Delete all media files for all systems.
 pub fn clear_media(storage_root: &Path) -> Result<()> {
-    let media_dir = storage_root.join(crate::metadata_db::RC_DIR).join("media");
+    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
     if media_dir.exists() {
         std::fs::remove_dir_all(&media_dir).map_err(|e| Error::io(&media_dir, e))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- thumbnail_filename ---
+
+    #[test]
+    fn thumbnail_filename_replaces_special_chars() {
+        assert_eq!(thumbnail_filename("Game: The Sequel"), "Game_ The Sequel");
+        assert_eq!(thumbnail_filename("A & B"), "A _ B");
+        assert_eq!(thumbnail_filename("What?"), "What_");
+        assert_eq!(thumbnail_filename("A/B"), "A_B");
+        assert_eq!(thumbnail_filename("A*B"), "A_B");
+        assert_eq!(thumbnail_filename("A<B>C"), "A_B_C");
+        assert_eq!(thumbnail_filename("A|B"), "A_B");
+        assert_eq!(thumbnail_filename("A\\B"), "A_B");
+        assert_eq!(thumbnail_filename("A`B"), "A_B");
+        assert_eq!(thumbnail_filename("A\"B"), "A_B");
+    }
+
+    #[test]
+    fn thumbnail_filename_preserves_normal_chars() {
+        assert_eq!(thumbnail_filename("Super Mario World"), "Super Mario World");
+        assert_eq!(
+            thumbnail_filename("Sonic The Hedgehog (USA)"),
+            "Sonic The Hedgehog (USA)"
+        );
+    }
+
+    #[test]
+    fn thumbnail_filename_empty_string() {
+        assert_eq!(thumbnail_filename(""), "");
+    }
+
+    #[test]
+    fn thumbnail_filename_all_special() {
+        assert_eq!(thumbnail_filename("&*/:"), "____");
+    }
+
+    #[test]
+    fn thumbnail_filename_multiple_colons() {
+        assert_eq!(
+            thumbnail_filename("Title: Sub: Part"),
+            "Title_ Sub_ Part"
+        );
+    }
+
+    // --- strip_tags (private, tested via module) ---
+
+    #[test]
+    fn strip_tags_removes_parenthesized() {
+        assert_eq!(strip_tags("Game Name (USA)"), "Game Name");
+        assert_eq!(strip_tags("Indiana Jones (Spanish)"), "Indiana Jones");
+    }
+
+    #[test]
+    fn strip_tags_removes_bracketed() {
+        assert_eq!(strip_tags("Game Name [!]"), "Game Name");
+    }
+
+    #[test]
+    fn strip_tags_no_tags() {
+        assert_eq!(strip_tags("Dark Seed"), "Dark Seed");
+    }
+
+    #[test]
+    fn strip_tags_empty_string() {
+        assert_eq!(strip_tags(""), "");
+    }
+
+    #[test]
+    fn strip_tags_strips_from_first_tag() {
+        // Everything from the first " (" onward is removed
+        assert_eq!(strip_tags("Game (USA) (Rev 1)"), "Game");
+    }
+
+    #[test]
+    fn strip_tags_trims_whitespace() {
+        assert_eq!(strip_tags("Game  (USA)"), "Game");
+    }
+
+    #[test]
+    fn strip_tags_paren_no_space_before() {
+        // " (" requires a space before the paren
+        assert_eq!(strip_tags("Game(USA)"), "Game(USA)");
+    }
+
+    // --- strip_version ---
+
+    #[test]
+    fn strip_version_standard() {
+        assert_eq!(strip_version("Sonic Adventure 2 v1.008"), "Sonic Adventure 2");
+    }
+
+    #[test]
+    fn strip_version_space_separated() {
+        assert_eq!(strip_version("Sega Rally 2 v1 001"), "Sega Rally 2");
+    }
+
+    #[test]
+    fn strip_version_simple() {
+        assert_eq!(strip_version("Game v2"), "Game");
+    }
+
+    #[test]
+    fn strip_version_with_dots() {
+        assert_eq!(strip_version("Game v1.2.3"), "Game");
+    }
+
+    #[test]
+    fn strip_version_no_version() {
+        assert_eq!(strip_version("Super Mario World"), "Super Mario World");
+    }
+
+    #[test]
+    fn strip_version_empty() {
+        assert_eq!(strip_version(""), "");
+    }
+
+    #[test]
+    fn strip_version_v_without_digit() {
+        // "v" not followed by a digit should not strip
+        assert_eq!(strip_version("Game vs Evil"), "Game vs Evil");
+    }
+
+    #[test]
+    fn strip_version_v_in_middle_of_word() {
+        // "v" must be preceded by a space
+        assert_eq!(strip_version("Marvel"), "Marvel");
+    }
+
+    #[test]
+    fn strip_version_non_version_text_after() {
+        // If there's non-version text after " v\d", it shouldn't strip
+        assert_eq!(
+            strip_version("Game v2 Special Edition"),
+            "Game v2 Special Edition"
+        );
+    }
+
+    #[test]
+    fn strip_version_underscore_separated() {
+        assert_eq!(strip_version("Game v1_003"), "Game");
+    }
+
+    // --- thumbnail_repo_names ---
+
+    #[test]
+    fn repo_names_known_systems() {
+        assert_eq!(
+            thumbnail_repo_names("nintendo_snes"),
+            Some(["Nintendo - Super Nintendo Entertainment System"].as_slice())
+        );
+        assert_eq!(
+            thumbnail_repo_names("sega_smd"),
+            Some(["Sega - Mega Drive - Genesis"].as_slice())
+        );
+        assert_eq!(
+            thumbnail_repo_names("nintendo_nes"),
+            Some(["Nintendo - Nintendo Entertainment System"].as_slice())
+        );
+    }
+
+    #[test]
+    fn repo_names_unknown_system() {
+        assert_eq!(thumbnail_repo_names("nonexistent_system"), None);
+    }
+
+    #[test]
+    fn repo_names_multi_repo_arcade_dc() {
+        let repos = thumbnail_repo_names("arcade_dc").unwrap();
+        assert_eq!(repos.len(), 3);
+        assert!(repos.contains(&"Atomiswave"));
+        assert!(repos.contains(&"Sega - Naomi"));
+        assert!(repos.contains(&"Sega - Naomi 2"));
+    }
+
+    #[test]
+    fn repo_names_multi_repo_commodore_amicd() {
+        let repos = thumbnail_repo_names("commodore_amicd").unwrap();
+        assert_eq!(repos.len(), 2);
+        assert!(repos.contains(&"Commodore - CD32"));
+        assert!(repos.contains(&"Commodore - CDTV"));
+    }
+
+    // --- ThumbnailKind ---
+
+    #[test]
+    fn thumbnail_kind_repo_dir() {
+        assert_eq!(ThumbnailKind::Boxart.repo_dir(), "Named_Boxarts");
+        assert_eq!(ThumbnailKind::Snap.repo_dir(), "Named_Snaps");
+    }
+
+    #[test]
+    fn thumbnail_kind_media_dir() {
+        assert_eq!(ThumbnailKind::Boxart.media_dir(), "boxart");
+        assert_eq!(ThumbnailKind::Snap.media_dir(), "snap");
+    }
 }

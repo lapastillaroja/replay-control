@@ -1132,4 +1132,209 @@ mod tests {
         // since they're not common enough to warrant special handling
         assert_eq!(extract_tags("Game (USA) (v1.1).sfc"), "USA");
     }
+
+    // ==========================================
+    // classify() tests
+    // ==========================================
+
+    // --- Tier classification ---
+
+    #[test]
+    fn classify_original_usa() {
+        let (tier, region) = classify("Super Mario World (USA).sfc");
+        assert_eq!(tier, RomTier::Original);
+        assert_eq!(region, RegionPriority::Usa);
+    }
+
+    #[test]
+    fn classify_original_world() {
+        let (tier, region) = classify("Tetris (World).nes");
+        assert_eq!(tier, RomTier::Original);
+        assert_eq!(region, RegionPriority::World);
+    }
+
+    #[test]
+    fn classify_original_europe() {
+        let (tier, region) = classify("Game (Europe).sfc");
+        assert_eq!(tier, RomTier::Original);
+        assert_eq!(region, RegionPriority::Europe);
+    }
+
+    #[test]
+    fn classify_original_japan() {
+        let (tier, region) = classify("Game (Japan).sfc");
+        assert_eq!(tier, RomTier::Original);
+        assert_eq!(region, RegionPriority::Japan);
+    }
+
+    #[test]
+    fn classify_revision() {
+        let (tier, _) = classify("Game (USA) (Rev 1).sfc");
+        assert_eq!(tier, RomTier::Revision);
+    }
+
+    #[test]
+    fn classify_region_variant() {
+        let (tier, region) = classify("Game (Spain).sfc");
+        assert_eq!(tier, RomTier::RegionVariant);
+        assert_eq!(region, RegionPriority::Other);
+    }
+
+    #[test]
+    fn classify_translation_paren() {
+        let (tier, _) = classify("Game (USA) (Traducido Es).sfc");
+        assert_eq!(tier, RomTier::Translation);
+    }
+
+    #[test]
+    fn classify_translation_bracket() {
+        let (tier, _) = classify("Game (UE) [T-Spa1.0v_Wave].md");
+        assert_eq!(tier, RomTier::Translation);
+    }
+
+    #[test]
+    fn classify_hack() {
+        let (tier, _) = classify("Game (Hack).sfc");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    #[test]
+    fn classify_smw_hack() {
+        let (tier, _) = classify("Custom Level (SMW Hack).sfc");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    #[test]
+    fn classify_beta() {
+        let (tier, _) = classify("Game (Beta).sfc");
+        assert_eq!(tier, RomTier::PreRelease);
+    }
+
+    #[test]
+    fn classify_proto() {
+        let (tier, _) = classify("Game (Proto).sfc");
+        assert_eq!(tier, RomTier::PreRelease);
+    }
+
+    #[test]
+    fn classify_prototype() {
+        let (tier, _) = classify("Game (Prototype).sfc");
+        assert_eq!(tier, RomTier::PreRelease);
+    }
+
+    #[test]
+    fn classify_demo() {
+        let (tier, _) = classify("Game (Demo).sfc");
+        assert_eq!(tier, RomTier::PreRelease);
+    }
+
+    #[test]
+    fn classify_unlicensed() {
+        let (tier, _) = classify("Game (Unl).sfc");
+        assert_eq!(tier, RomTier::Unlicensed);
+    }
+
+    #[test]
+    fn classify_homebrew() {
+        let (tier, _) = classify("Game (Homebrew).sfc");
+        assert_eq!(tier, RomTier::Homebrew);
+    }
+
+    #[test]
+    fn classify_aftermarket() {
+        let (tier, _) = classify("Game (Aftermarket).sfc");
+        assert_eq!(tier, RomTier::Homebrew);
+    }
+
+    #[test]
+    fn classify_pirate() {
+        let (tier, _) = classify("Game (Pirate).sfc");
+        assert_eq!(tier, RomTier::Pirate);
+    }
+
+    // --- Tier priority (pirate > prerelease > hack > homebrew > unlicensed > translation) ---
+
+    #[test]
+    fn classify_pirate_beats_hack() {
+        // If both (Hack) and (Pirate) are present, Pirate tier should win
+        let (tier, _) = classify("Game (Hack) (Pirate).sfc");
+        assert_eq!(tier, RomTier::Pirate);
+    }
+
+    #[test]
+    fn classify_prerelease_beats_hack() {
+        let (tier, _) = classify("Game (Hack) (Beta).sfc");
+        assert_eq!(tier, RomTier::PreRelease);
+    }
+
+    #[test]
+    fn classify_hack_beats_translation() {
+        let (tier, _) = classify("Game (Traducido Es) (Hack).sfc");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    // --- No tags ---
+
+    #[test]
+    fn classify_no_tags() {
+        let (tier, region) = classify("Game.sfc");
+        assert_eq!(tier, RomTier::Original);
+        assert_eq!(region, RegionPriority::Unknown);
+    }
+
+    #[test]
+    fn classify_no_extension() {
+        let (tier, region) = classify("Game (USA)");
+        assert_eq!(tier, RomTier::Original);
+        assert_eq!(region, RegionPriority::Usa);
+    }
+
+    // --- Region priority with GoodTools codes ---
+
+    #[test]
+    fn classify_goodtools_u() {
+        let (_, region) = classify("Game (U).sfc");
+        assert_eq!(region, RegionPriority::Usa);
+    }
+
+    #[test]
+    fn classify_goodtools_e() {
+        let (_, region) = classify("Game (E).sfc");
+        assert_eq!(region, RegionPriority::Europe);
+    }
+
+    #[test]
+    fn classify_goodtools_j() {
+        let (_, region) = classify("Game (J).sfc");
+        assert_eq!(region, RegionPriority::Japan);
+    }
+
+    #[test]
+    fn classify_goodtools_w() {
+        let (_, region) = classify("Game (W).sfc");
+        assert_eq!(region, RegionPriority::World);
+    }
+
+    // --- Tier ordering is consistent ---
+
+    #[test]
+    fn tier_ordering() {
+        assert!(RomTier::Original < RomTier::Revision);
+        assert!(RomTier::Revision < RomTier::RegionVariant);
+        assert!(RomTier::RegionVariant < RomTier::Translation);
+        assert!(RomTier::Translation < RomTier::Unlicensed);
+        assert!(RomTier::Unlicensed < RomTier::Homebrew);
+        assert!(RomTier::Homebrew < RomTier::Hack);
+        assert!(RomTier::Hack < RomTier::PreRelease);
+        assert!(RomTier::PreRelease < RomTier::Pirate);
+    }
+
+    #[test]
+    fn region_priority_ordering() {
+        assert!(RegionPriority::World < RegionPriority::Usa);
+        assert!(RegionPriority::Usa < RegionPriority::Europe);
+        assert!(RegionPriority::Europe < RegionPriority::Japan);
+        assert!(RegionPriority::Japan < RegionPriority::Other);
+        assert!(RegionPriority::Other < RegionPriority::Unknown);
+    }
 }

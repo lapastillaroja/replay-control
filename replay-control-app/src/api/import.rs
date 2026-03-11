@@ -49,10 +49,10 @@ impl AppState {
         true
     }
 
-    /// Clear metadata DB and re-import from Metadata.xml if present.
-    /// Returns an error message if Metadata.xml is not found.
+    /// Clear metadata DB and re-import from `launchbox-metadata.xml` if present.
+    /// Returns an error message if the XML file is not found.
     pub fn regenerate_metadata(&self) -> Result<(), String> {
-        use replay_control_core::metadata_db::RC_DIR;
+        use replay_control_core::metadata_db::LAUNCHBOX_XML;
 
         // Clear existing metadata.
         if let Some(guard) = self.metadata_db() {
@@ -61,11 +61,19 @@ impl AppState {
             }
         }
 
-        // Find Metadata.xml and trigger re-import.
-        let storage_root = self.storage().root.clone();
-        let xml_path = storage_root.join(RC_DIR).join("Metadata.xml");
+        // Find launchbox-metadata.xml (with fallback to old name) and trigger re-import.
+        let storage = self.storage();
+        let rc_dir = storage.rc_dir();
+        let xml_path = rc_dir.join(LAUNCHBOX_XML);
+        let xml_path = if xml_path.exists() {
+            xml_path
+        } else {
+            // Backwards-compat: check old upstream name.
+            let old_path = rc_dir.join("Metadata.xml");
+            if old_path.exists() { old_path } else { xml_path }
+        };
         if !xml_path.exists() {
-            return Err("No Metadata.xml found. Place it in the .replay-control folder to enable re-import.".to_string());
+            return Err(format!("No {LAUNCHBOX_XML} found. Place it in the .replay-control folder to enable re-import."));
         }
 
         self.start_import(xml_path);
@@ -76,7 +84,7 @@ impl AppState {
     /// Runs entirely in a background thread. Returns false if an import is
     /// already running.
     pub fn start_metadata_download(&self) -> bool {
-        use replay_control_core::metadata_db::{ImportProgress, ImportState, RC_DIR};
+        use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
         // Check if already running.
         {
@@ -113,8 +121,8 @@ impl AppState {
         let state = self.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            let storage_root = state.storage().root.clone();
-            let rc_dir = storage_root.join(RC_DIR);
+            let storage = state.storage();
+            let rc_dir = storage.rc_dir();
 
             // Download and extract.
             let xml_path = match replay_control_core::launchbox::download_metadata(&rc_dir) {
@@ -305,10 +313,9 @@ impl AppState {
             }
         };
 
-        let storage_root = self.storage().root.clone();
-        let clone_base = storage_root
-            .join(replay_control_core::metadata_db::RC_DIR)
-            .join("tmp");
+        let storage = self.storage();
+        let storage_root = storage.root.clone();
+        let clone_base = storage.rc_dir().join("tmp");
         let rom_filenames =
             replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
 
@@ -655,8 +662,7 @@ impl AppState {
 
         let storage = self.storage();
         let clone_base = storage
-            .root
-            .join(replay_control_core::metadata_db::RC_DIR)
+            .rc_dir()
             .join("tmp")
             .join("libretro-thumbnails");
 
@@ -746,11 +752,9 @@ impl AppState {
             None => return,
         };
 
-        let storage_root = self.storage().root.clone();
-        let clone_base = storage_root
-            .join(replay_control_core::metadata_db::RC_DIR)
-            .join("tmp")
-            .join("libretro-thumbnails");
+        let storage = self.storage();
+        let storage_root = storage.root.clone();
+        let clone_base = storage.rc_dir().join("tmp").join("libretro-thumbnails");
         let rom_filenames =
             replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
 
@@ -810,9 +814,7 @@ impl AppState {
             if replay_control_core::thumbnails::is_repo_stale(&repo_dir, repo_name) {
                 tracing::info!("Re-cloning stale repo {repo_name}");
                 let _ = std::fs::remove_dir_all(&repo_dir);
-                let clone_base_parent = storage_root
-                    .join(replay_control_core::metadata_db::RC_DIR)
-                    .join("tmp");
+                let clone_base_parent = self.storage().rc_dir().join("tmp");
                 match replay_control_core::thumbnails::clone_thumbnail_repo(
                     repo_name,
                     Some(&clone_base_parent),

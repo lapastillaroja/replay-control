@@ -412,7 +412,7 @@ pub async fn get_roms_page(
 
 ## Open Questions
 
-1. **Should region preference be configurable?** A European user might want `(Europe)` ROMs to sort first. This could be a setting in `.replay-control/config.cfg` (the app's own config file on ROM storage, not `replay.cfg` which belongs to RePlayOS on the SD card) or auto-detected from the system locale.
+1. **Should region preference be configurable?** A European user might want `(Europe)` ROMs to sort first. This could be a setting in `.replay-control/settings.cfg` (the app's own config file on ROM storage, not `replay.cfg` which belongs to RePlayOS on the SD card) or auto-detected from the system locale.
 
 2. **Should hacks be hidden by default?** Some users have ROM sets that are almost entirely hacks (e.g., Super Mario World hack collections). Hiding hacks by default would make their collection appear nearly empty. A toggle is safer than a default.
 

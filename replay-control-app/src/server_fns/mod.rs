@@ -279,10 +279,9 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
                         info.publisher = meta.publisher;
                     }
                     if let Some(ref path) = meta.box_art_path {
-                        let storage = state.storage();
-                        let full = storage
-                            .root
-                            .join(replay_control_core::metadata_db::RC_DIR)
+                        let full = state
+                            .storage()
+                            .rc_dir()
                             .join("media")
                             .join(&info.system)
                             .join(path);
@@ -291,10 +290,9 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
                         }
                     }
                     if let Some(ref path) = meta.screenshot_path {
-                        let storage = state.storage();
-                        let full = storage
-                            .root
-                            .join(replay_control_core::metadata_db::RC_DIR)
+                        let full = state
+                            .storage()
+                            .rc_dir()
                             .join("media")
                             .join(&info.system)
                             .join(path);
@@ -318,10 +316,9 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     // Filesystem fallback: if no image URLs from DB, check if images exist on disk.
     // This handles the case where images were downloaded but the DB was cleared/regenerated.
     if info.box_art_url.is_none() || info.screenshot_url.is_none() {
-        let storage = state.storage();
-        let media_base = storage
-            .root
-            .join(replay_control_core::metadata_db::RC_DIR)
+        let media_base = state
+            .storage()
+            .rc_dir()
             .join("media")
             .join(&info.system);
 
@@ -345,10 +342,9 @@ pub(crate) fn resolve_box_art_url(
     system: &str,
     rom_filename: &str,
 ) -> Option<String> {
-    let storage = state.storage();
-    let media_base = storage
-        .root
-        .join(replay_control_core::metadata_db::RC_DIR)
+    let media_base = state
+        .storage()
+        .rc_dir()
         .join("media")
         .join(system);
 

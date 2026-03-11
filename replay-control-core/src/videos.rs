@@ -3,8 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-const RC_DIR: &str = ".replay-control";
-const VIDEOS_FILE: &str = "videos.json";
+use crate::storage::{RC_DIR, VIDEOS_FILE};
 
 /// A single saved video entry for a game.
 #[derive(Debug, Clone, Serialize, Deserialize)]

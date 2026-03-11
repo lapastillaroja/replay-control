@@ -139,7 +139,7 @@ The metadata system is impressively engineered for a companion app:
 - **Fuzzy matching** for ROM-to-metadata linking
 
 **What works well:**
-- **One-button metadata download.** "Download / Update" fetches the LaunchBox Metadata.xml (~460 MB), extracts and parses it, and matches entries to the user's ROMs. Progress is shown in real-time (state, items processed, items matched, elapsed time). This is significantly easier than ScreenScraper's per-ROM API approach.
+- **One-button metadata download.** "Download / Update" fetches the LaunchBox metadata XML (~460 MB), extracts and parses it, and matches entries to the user's ROMs. Progress is shown in real-time (state, items processed, items matched, elapsed time). This is significantly easier than ScreenScraper's per-ROM API approach.
 - **Per-system image download.** Each system's images can be downloaded independently, and there is also a "Download All" button for bulk import. Progress tracking shows system-by-system status for multi-system downloads.
 - **Coverage visibility.** The metadata page shows per-system coverage (e.g., "142/203 (70%)"), giving users a clear picture of what is and is not covered.
 - **Attribution section.** Properly credits LaunchBox and libretro-thumbnails. Respects data licensing.

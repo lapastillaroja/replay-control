@@ -229,15 +229,15 @@ Cons:
 | Location | Pros | Cons |
 |----------|------|------|
 | `replay.cfg` (SD card only) | Shared with RePlayOS | **Not allowed** for app-specific settings |
-| `.replay-control/config.cfg` | App-specific, same format as replay.cfg, lives alongside metadata.db | Not shared with RePlayOS (which is correct) |
+| `.replay-control/settings.cfg` | App-specific, same format as replay.cfg, lives alongside metadata.db | Not shared with RePlayOS (which is correct) |
 | In-memory (AppState) | Simplest implementation | Lost on server restart |
 | Cookie / localStorage | Client-side, no server changes | Different per browser; lost when clearing cookies |
 
-**Recommendation**: Store in `.replay-control/config.cfg` using the same `key = "value"` format as `replay.cfg`. This keeps app-specific settings separate from the OS config, avoids any risk of breaking RePlayOS, and reuses the existing `ReplayConfig` parser. The `.replay-control/` directory already exists on ROM storage for metadata.db and media files.
+**Recommendation**: Store in `.replay-control/settings.cfg` using the same `key = "value"` format as `replay.cfg`. This keeps app-specific settings separate from the OS config, avoids any risk of breaking RePlayOS, and reuses the existing `ReplayConfig` parser. The `.replay-control/` directory already exists on ROM storage for metadata.db and media files.
 
 ### Config File
 
-**Path**: `<storage>/.replay-control/config.cfg`
+**Path**: `<storage>/.replay-control/settings.cfg`
 
 ```
 # Replay Control app settings
@@ -250,10 +250,10 @@ Valid values: `"usa"`, `"europe"`, `"japan"`, `"world"`. Default when missing: `
 
 **File**: `replay-control-core/src/config.rs`
 
-Add a new `AppConfig` struct (or reuse the `ReplayConfig` parser) that reads from `.replay-control/config.cfg`:
+Add a new `AppConfig` struct (or reuse the `ReplayConfig` parser) that reads from `.replay-control/settings.cfg`:
 
 ```rust
-/// App-specific settings stored in `.replay-control/config.cfg`.
+/// App-specific settings stored in `.replay-control/settings.cfg`.
 /// Uses the same key = "value" format as replay.cfg but is separate
 /// to avoid modifying the RePlayOS system configuration.
 pub struct AppConfig {
@@ -263,7 +263,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn open(storage_root: &Path) -> Result<Self> {
-        let path = storage_root.join(RC_DIR).join("config.cfg");
+        let path = storage_root.join(RC_DIR).join("settings.cfg");
         let inner = if path.exists() {
             ReplayConfig::from_file(&path)?
         } else {
@@ -576,7 +576,7 @@ Tags like `(U)`, `(E)`, `(J)`, `(UE)`, `(JU)` are already expanded by `region_to
 
 ### Preference Value Validation
 
-If `.replay-control/config.cfg` contains an invalid value (e.g., `region_preference = "brazil"`), the config accessor falls through to `RegionPreference::Usa` via the default match arm. This is safe and predictable.
+If `.replay-control/settings.cfg` contains an invalid value (e.g., `region_preference = "brazil"`), the config accessor falls through to `RegionPreference::Usa` via the default match arm. This is safe and predictable.
 
 ### Cache Coherence
 
@@ -589,7 +589,7 @@ For NFS storage, the re-scan might take a few seconds. This is acceptable for a 
 
 ### Multiple Concurrent Users
 
-If two users access the app from different browsers with different region preferences, they will see the same ordering because the preference is stored server-side in `.replay-control/config.cfg`. This is a known limitation: RePlayOS is a single-user system (one person's retro gaming console), so a shared server-side setting is appropriate. Per-user preferences via cookies would add complexity without benefiting the target use case.
+If two users access the app from different browsers with different region preferences, they will see the same ordering because the preference is stored server-side in `.replay-control/settings.cfg`. This is a known limitation: RePlayOS is a single-user system (one person's retro gaming console), so a shared server-side setting is appropriate. Per-user preferences via cookies would add complexity without benefiting the target use case.
 
 ---
 
@@ -647,7 +647,7 @@ If two users access the app from different browsers with different region prefer
 | File | Change |
 |------|--------|
 | `replay-control-core/src/rom_tags.rs` | Add `RegionPreference` enum, `RegionPriority::sort_key()` method |
-| `replay-control-core/src/config.rs` | Add `AppConfig` for `.replay-control/config.cfg`, `region_preference()` accessor |
+| `replay-control-core/src/config.rs` | Add `AppConfig` for `.replay-control/settings.cfg`, `region_preference()` accessor |
 | `replay-control-core/src/roms.rs` | Add `RegionPreference` parameter to `list_roms()` |
 | `replay-control-app/src/api/mod.rs` | Add `region_preference()` to `AppState`, update `RomCache::get_roms()` |
 | `replay-control-app/src/server_fns.rs` | Update `search_score()`, add `get_region_preference`/`set_region_preference` |
@@ -668,4 +668,4 @@ If two users access the app from different browsers with different region prefer
 
 3. **Region filtering**: The search improvement analysis (Phase 5) proposes filter toggles to hide specific regions. Region preference and region filtering are complementary: the preference controls sort order while filters control visibility. They should remain separate features.
 
-4. **RePlayOS locale upstream**: If RePlayOS adds a `system_language` or `system_region` key in `replay.cfg` in the future, the app could read it as a fallback default when `region_preference` is not explicitly set in `.replay-control/config.cfg`. The app reads `replay.cfg` (on the SD card at `/media/sd/config/replay.cfg`) for OS-level settings but never writes app-specific settings to it — only `.replay-control/config.cfg` (on ROM storage) is used for app-specific settings.
+4. **RePlayOS locale upstream**: If RePlayOS adds a `system_language` or `system_region` key in `replay.cfg` in the future, the app could read it as a fallback default when `region_preference` is not explicitly set in `.replay-control/settings.cfg`. The app reads `replay.cfg` (on the SD card at `/media/sd/config/replay.cfg`) for OS-level settings but never writes app-specific settings to it — only `.replay-control/settings.cfg` (on ROM storage) is used for app-specific settings.

@@ -64,7 +64,7 @@ mod ssr {
         // Spawn background storage re-detection task.
         app_state.clone().spawn_storage_watcher();
 
-        // Auto-import metadata if Metadata.xml exists and DB is empty.
+        // Auto-import metadata if launchbox-metadata.xml exists and DB is empty.
         app_state.spawn_auto_import();
 
         // Explicitly register all server functions (inventory auto-registration
@@ -169,10 +169,9 @@ mod ssr {
                         return StatusCode::BAD_REQUEST.into_response();
                     }
 
-                    let storage = state.storage();
-                    let file_path = storage
-                        .root
-                        .join(replay_control_core::metadata_db::RC_DIR)
+                    let file_path = state
+                        .storage()
+                        .rc_dir()
                         .join("media")
                         .join(&path);
 
@@ -286,9 +285,58 @@ mod ssr {
             },
         );
 
+        // SSE endpoint for real-time metadata import progress.
+        // Same pattern as image progress: 200ms interval, idle counter, auto-close.
+        let metadata_sse_state = app_state.clone();
+        let metadata_sse_handler = axum::routing::get(move || {
+            let state = metadata_sse_state.clone();
+            async move {
+                use axum::response::sse::{Event, Sse};
+                use std::convert::Infallible;
+                use tokio_stream::StreamExt;
+
+                let progress_ref = state.import_progress.clone();
+                let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+                let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
+                    std::time::Duration::from_millis(200),
+                ))
+                .map({
+                    let idle_count = idle_count.clone();
+                    move |_| {
+                        let guard = progress_ref.read().expect("lock");
+                        let is_active = guard.is_some();
+                        let json = match &*guard {
+                            Some(p) => serde_json::to_string(p).unwrap_or_default(),
+                            None => "null".to_string(),
+                        };
+                        drop(guard);
+
+                        if is_active {
+                            idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
+                        } else {
+                            idle_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Ok::<_, Infallible>(Event::default().data(json))
+                    }
+                })
+                // Close stream after 5 consecutive idle ticks (1s of no import).
+                .take_while({
+                    let idle_count = idle_count.clone();
+                    move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
+                });
+
+                Sse::new(stream).keep_alive(
+                    axum::response::sse::KeepAlive::new()
+                        .interval(std::time::Duration::from_secs(15)),
+                )
+            }
+        });
+
         let app = Router::new()
             .nest("/api", api_routes)
             .route("/sse/image-progress", sse_handler)
+            .route("/sse/metadata-progress", metadata_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/media/*path", media_handler)
             .route(

@@ -20,6 +20,13 @@ pub enum StorageKind {
     Nfs,
 }
 
+/// Directory name for Replay Control data on ROM storage.
+pub const RC_DIR: &str = ".replay-control";
+/// Filename for the user-saved video links JSON.
+pub const VIDEOS_FILE: &str = "videos.json";
+/// Filename for app-specific user settings.
+pub const SETTINGS_FILE: &str = "settings.cfg";
+
 /// Well-known paths relative to the storage root.
 const ROMS_DIR: &str = "roms";
 const SAVES_DIR: &str = "saves";
@@ -60,6 +67,11 @@ impl StorageLocation {
     /// Useful for testing or when the user provides a custom path.
     pub fn from_path(root: PathBuf, kind: StorageKind) -> Self {
         Self { root, kind }
+    }
+
+    /// The `.replay-control/` data directory for the companion app.
+    pub fn rc_dir(&self) -> PathBuf {
+        self.root.join(RC_DIR)
     }
 
     pub fn roms_dir(&self) -> PathBuf {

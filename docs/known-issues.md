@@ -8,7 +8,7 @@ reference the original filename become orphaned:
 | Data | Location | Impact |
 |------|----------|--------|
 | User screenshots | `captures/{system}/{old_filename}_*.png` | Screenshots no longer match the renamed ROM |
-| Pinned videos | `.replay-control/videos/{system}/{old_filename}.json` | Video links lost for the renamed ROM |
+| Pinned videos | `.replay-control/videos.json` (key `"{system}/{old_filename}"` becomes orphaned) | Video links lost for the renamed ROM |
 | Favorites | `_favorites/*/{system}@{old_filename}.fav` | RePlayOS manages these — .fav file content has the old path |
 | Recent entries | `_recent/{system}@{old_filename}.rec` | Old path in .rec file |
 | Metadata DB | `.replay-control/metadata.db` | Cached metadata keyed by old filename |
@@ -25,7 +25,7 @@ reference the original filename become orphaned:
 ### Proposed solution
 When renaming a ROM, cascade the rename to related data:
 1. Rename matching screenshot files in `captures/{system}/`
-2. Rename video JSON file in `.replay-control/videos/{system}/`
+2. Update video key in `.replay-control/videos.json` from old to new filename
 3. Update metadata DB entry (or invalidate cache for that ROM)
 4. Recent entries: skip (they expire naturally)
 

@@ -184,10 +184,10 @@ pub const SETTINGS_FILE: &str = "settings.cfg";
 
 ## Implementation Checklist
 
-1. **Centralize constants** — Create or consolidate path constants for all `.replay-control/` filenames. Remove duplicate `RC_DIR` from `videos.rs`.
-2. **Add `StorageLocation::rc_dir()`** — Add the method, then migrate call sites.
-3. **Rename `Metadata.xml` → `launchbox-metadata.xml`** — Update constant, update `download_metadata()` to rename after extraction, add old-name fallback.
-4. **Update `config.cfg` → `settings.cfg`** references in all design docs — No code changes since it's not implemented yet.
-5. **Fix `known-issues.md`** — Correct the video storage path.
-6. **Update all documentation** — Grep for old filenames and update references.
+1. [x] **Centralize constants** — Created `RC_DIR` in `storage.rs` (canonical), re-exported from `metadata_db.rs`. Added `METADATA_DB_FILE`, `LAUNCHBOX_XML`, `VIDEOS_FILE`, `SETTINGS_FILE` in `metadata_db.rs`. Removed duplicate `RC_DIR` from `videos.rs`.
+2. [x] **Add `StorageLocation::rc_dir()`** — Added the method, migrated all app-crate call sites that had access to a `StorageLocation`.
+3. [x] **Rename `Metadata.xml` → `launchbox-metadata.xml`** — Updated `download_metadata()` to rename after extraction. Added old-name fallback in `spawn_auto_import()` and `regenerate_metadata()`.
+4. [x] **Update `config.cfg` → `settings.cfg`** references in all design docs — Updated features.md, game-videos-plan.md, region-preference-analysis.md, replay-control-folder.md, search-improvement-analysis.md, skin-theming-analysis.md, source-code-analysis.md.
+5. [x] **Fix `known-issues.md`** — Corrected video path from `videos/{system}/{old_filename}.json` to `videos.json` with orphaned key note.
+6. [x] **Update all documentation** — Grepped for all old filenames and updated references across docs.
 7. **Test** — Verify auto-import on startup still works (checks for XML file), verify manual re-import works, verify `download_metadata` produces the correctly named file.

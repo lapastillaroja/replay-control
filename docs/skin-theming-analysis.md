@@ -127,14 +127,14 @@ require cache busting, adds a blocking request, and is harder to keep in sync wi
 
 Per `features.md`, Replay Control should NOT write to `replay.cfg` (which lives
 on the SD card at `/media/sd/config/replay.cfg`, not on ROM storage). App-specific
-settings go in `.replay-control/config.cfg` on the ROM storage device:
+settings go in `.replay-control/settings.cfg` on the ROM storage device:
 
 ```
 theme_sync = "true"          # sync with ReplayOS skin (default: true)
 theme_override = "dark"      # manual override: "dark", "light", or skin index
 ```
 
-Location: `<rom_storage>/.replay-control/config.cfg` (same key=value format).
+Location: `<rom_storage>/.replay-control/settings.cfg` (same key=value format).
 
 ### File watcher integration
 

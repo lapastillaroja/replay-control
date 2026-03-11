@@ -28,7 +28,7 @@ pub fn MetadataPage() -> impl IntoView {
                 ) {
                     progress.set(Some(p));
                     importing.set(true);
-                    poll_progress(importing, progress, import_message, stats, coverage).await;
+                    watch_metadata_progress(importing, progress, import_message, stats, coverage);
                 }
             }
         });
@@ -44,7 +44,7 @@ pub fn MetadataPage() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match server_fns::download_metadata().await {
                 Ok(()) => {
-                    poll_progress(importing, progress, import_message, stats, coverage).await;
+                    watch_metadata_progress(importing, progress, import_message, stats, coverage);
                 }
                 Err(e) => {
                     import_message.set(Some(format!("Error: {e}")));
@@ -183,27 +183,41 @@ pub fn MetadataPage() -> impl IntoView {
     }
 }
 
-/// Polls the server for import progress until complete or failed.
+/// Watches metadata import progress via SSE.
 #[allow(unused_variables, unreachable_code)]
-async fn poll_progress(
+fn watch_metadata_progress(
     importing: RwSignal<bool>,
     progress: RwSignal<Option<server_fns::ImportProgress>>,
     import_message: RwSignal<Option<String>>,
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
 ) {
-    #[allow(unused_mut)]
-    let mut empty_polls = 0u32;
-    loop {
-        #[cfg(target_arch = "wasm32")]
-        gloo_timers::future::TimeoutFuture::new(500).await;
-        #[cfg(not(target_arch = "wasm32"))]
-        break;
+    #[cfg(not(target_arch = "wasm32"))]
+    return;
 
-        match server_fns::get_import_progress().await {
-            Ok(Some(p)) => {
-                empty_polls = 0;
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::prelude::*;
+
+        let es = match web_sys::EventSource::new("/sse/metadata-progress") {
+            Ok(es) => es,
+            Err(_) => return,
+        };
+
+        let es_clone = es.clone();
+        let on_message =
+            Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+                let data = event.data().as_string().unwrap_or_default();
+                if data == "null" || data.is_empty() {
+                    return;
+                }
+                let p: server_fns::ImportProgress = match serde_json::from_str(&data) {
+                    Ok(p) => p,
+                    Err(_) => return,
+                };
+
                 let done = matches!(p.state, ImportState::Complete | ImportState::Failed);
+
                 if p.state == ImportState::Complete {
                     import_message.set(Some(format!(
                         "Import complete: {} matched, {} inserted ({}s)",
@@ -215,24 +229,19 @@ async fn poll_progress(
                         p.error.as_deref().unwrap_or("unknown error"),
                     )));
                 }
+
                 progress.set(Some(p));
+
                 if done {
                     importing.set(false);
                     stats.refetch();
                     coverage.refetch();
-                    break;
+                    es_clone.close();
                 }
-            }
-            Ok(None) => {
-                // Background task hasn't written progress yet — keep trying.
-                empty_polls += 1;
-                if empty_polls > 30 {
-                    importing.set(false);
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
+            });
+
+        es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+        on_message.forget(); // intentional: prevent drop while EventSource is alive
     }
 }
 
@@ -484,6 +493,7 @@ fn ImageSection() -> impl IntoView {
                         let rows = systems_with_repo.into_iter().map(|c| {
                             let system = StoredValue::new(c.system.clone());
                             let has_images = c.with_boxart > 0 || c.with_snap > 0;
+                            let repo_cloned = c.repo_cloned;
                             let display_name = StoredValue::new(c.display_name.clone());
                             let on_download = move |_| {
                                 if img_importing.get() { return; }
@@ -530,7 +540,7 @@ fn ImageSection() -> impl IntoView {
                                             on:click=on_download
                                             disabled=move || img_importing.get()
                                         >
-                                            {move || if has_images {
+                                            {move || if has_images || repo_cloned {
                                                 t(locale, "metadata.update_images")
                                             } else {
                                                 t(locale, "metadata.download_images")
