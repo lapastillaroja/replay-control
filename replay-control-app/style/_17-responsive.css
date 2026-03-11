@@ -1,0 +1,72 @@
+/* ================================================================
+   Responsive — Breakpoint overrides (tablet, desktop)
+   ================================================================ */
+
+@media (min-width: 600px) {
+    .manage-actions {
+        flex-direction: row;
+    }
+    .manage-actions > .manage-action-card {
+        flex: 1;
+    }
+
+    .metadata-import-form {
+        flex-direction: row;
+    }
+    .metadata-import-form .rename-input {
+        flex: 1;
+    }
+    .metadata-import-form .game-action-btn {
+        width: auto;
+        white-space: nowrap;
+    }
+
+    .skin-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Responsive: tablet+ */
+@media (min-width: 768px) {
+    .systems-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .game-meta-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .game-actions {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .game-action-btn {
+        width: auto;
+    }
+
+    .game-launch-cta .game-action-launch {
+        width: auto;
+    }
+}
+
+@media (min-width: 900px) {
+    .skin-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* Responsive: desktop */
+@media (min-width: 1024px) {
+    .systems-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .game-meta-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}

@@ -1,0 +1,76 @@
+/* ================================================================
+   Menu — More page menu list, info grid
+   ================================================================ */
+
+.menu-list {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 24px;
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.menu-item:hover {
+    background: var(--surface-hover);
+}
+
+.menu-icon {
+    font-size: 1.25rem;
+}
+
+.menu-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    flex: 1;
+}
+
+.menu-chevron {
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    margin-left: auto;
+}
+
+.menu-item-disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.menu-item-disabled:hover {
+    background: transparent;
+}
+
+.info-grid {
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.info-value {
+    font-size: 0.85rem;
+    font-weight: 500;
+}

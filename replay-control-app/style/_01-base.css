@@ -1,0 +1,45 @@
+/* ================================================================
+   Base — Reset, CSS variables, body, links
+   ================================================================ */
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    --bg: #0f1115;
+    --surface: #1a1d23;
+    --surface-hover: #22262e;
+    --border: #2a2e36;
+    --text: #e4e6ea;
+    --text-secondary: #8b8f96;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --star: #f59e0b;
+    --error: #ef4444;
+    --success: #22c55e;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --nav-height: 64px;
+    --top-bar-height: 56px;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Links reset — router <A> elements should not look like links */
+a, a:visited, a:hover, a:active {
+    color: inherit;
+    text-decoration: none;
+}
+
+.app-title-link {
+    color: var(--accent);
+}

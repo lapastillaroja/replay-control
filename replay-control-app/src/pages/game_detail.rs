@@ -7,7 +7,7 @@ use crate::components::video_section::GameVideoSection;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns::{self, RomDetail};
-use crate::util::format_size;
+use crate::util::format_size_for_system;
 
 #[component]
 pub fn GameDetailPage() -> impl IntoView {
@@ -54,7 +54,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let relative_path_sv = StoredValue::new(game.rom_path.clone());
     let system_sv = StoredValue::new(system.clone());
     let system_display = game.system_display.clone();
-    let size_display = format_size(detail.size_bytes);
+    let size_display = format_size_for_system(detail.size_bytes, &system);
     let has_arcade = game.rotation.is_some();
     let ext = game
         .rom_filename

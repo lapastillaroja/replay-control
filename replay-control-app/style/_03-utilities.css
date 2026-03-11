@@ -1,0 +1,27 @@
+/* ================================================================
+   Utilities — Loading, empty state, error, animations
+   ================================================================ */
+
+.loading {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-secondary);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.error {
+    color: var(--error);
+    padding: 12px;
+    font-size: 0.85rem;
+}
+
+@keyframes pulse-opacity {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.9; }
+}

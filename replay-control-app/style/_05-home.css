@@ -1,0 +1,181 @@
+/* ================================================================
+   Home — Hero card, recent scroll, stats grid, home search
+   ================================================================ */
+
+/* Hero card (last played) */
+.hero-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 20px;
+    border: 1px solid var(--border);
+}
+
+.hero-thumb {
+    height: 56px;
+    width: auto;
+    max-width: 80px;
+    object-fit: contain;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.hero-thumb-placeholder {
+    width: 56px;
+    height: 56px;
+    background: var(--border);
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.hero-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.hero-system {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Recent scroll */
+.recent-scroll {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.recent-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    width: 130px;
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.recent-item:hover {
+    border-color: var(--accent);
+}
+
+.recent-thumb {
+    height: 80px;
+    width: auto;
+    max-width: 100px;
+    object-fit: contain;
+    border-radius: 3px;
+    margin-bottom: 8px;
+}
+
+.recent-thumb-placeholder {
+    width: 56px;
+    height: 80px;
+    background: var(--border);
+    border-radius: 3px;
+    margin-bottom: 8px;
+}
+
+.recent-name {
+    font-size: 0.8rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+    width: 100%;
+    text-align: center;
+}
+
+.recent-system {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* Stats grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.stat-card {
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    text-align: center;
+    border: 1px solid var(--border);
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.stat-card.compact .stat-value {
+    font-size: 1rem;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 4px;
+}
+
+.storage-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.storage-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.3s;
+}
+
+/* Home page search bar */
+.home-search-section {
+    margin-bottom: 20px;
+}
+
+.home-search-link {
+    display: block;
+    width: 100%;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 1.05rem;
+    text-decoration: none;
+    cursor: text;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.home-search-link:hover,
+.home-search-link:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.home-search-placeholder {
+    color: var(--text-secondary);
+}

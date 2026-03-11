@@ -1,0 +1,29 @@
+/* ================================================================
+   Logs — Controls and output display
+   ================================================================ */
+
+.logs-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+}
+.logs-source-select {
+    flex: 1;
+    max-width: 220px;
+}
+.logs-output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 70vh;
+    overflow-y: auto;
+    color: var(--text-secondary);
+    margin: 0;
+}

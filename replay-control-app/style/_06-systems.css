@@ -1,0 +1,60 @@
+/* ================================================================
+   Systems — Grid and system cards
+   ================================================================ */
+
+.systems-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.system-card {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    color: var(--text);
+    width: 100%;
+}
+
+.system-card:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}
+
+.system-card.empty {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.system-card.empty:hover {
+    border-color: var(--border);
+    background: var(--surface);
+}
+
+.system-card-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 2px;
+}
+
+.system-card-manufacturer {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.system-card-count {
+    font-size: 0.8rem;
+    color: var(--accent);
+}
+
+.system-card-size {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}

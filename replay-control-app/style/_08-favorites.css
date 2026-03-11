@@ -1,0 +1,184 @@
+/* ================================================================
+   Favorites — Filter bar, list, groups, organize, confirm actions
+   ================================================================ */
+
+/* Favorites filter bar */
+.fav-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.fav-filter-input-wrap {
+    position: relative;
+    flex: 1;
+}
+
+.fav-filter-input {
+    width: 100%;
+    padding: 10px 36px 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: inherit;
+}
+
+.fav-filter-input:focus {
+    border-color: var(--accent);
+}
+
+.fav-filter-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.fav-filter-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    transition: color 0.15s;
+}
+
+.fav-filter-clear:hover {
+    color: var(--text);
+}
+
+.fav-filter-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* Favorites list */
+.fav-list, .fav-grouped {
+    display: flex;
+    flex-direction: column;
+}
+
+.fav-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.fav-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.fav-name {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fav-system {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.fav-star-btn {
+    background: none;
+    border: none;
+    color: var(--star);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin-left: 8px;
+    flex-shrink: 0;
+    transition: color 0.15s, transform 0.15s;
+    line-height: 1;
+}
+
+.fav-star-btn:hover {
+    color: var(--text-secondary);
+    transform: scale(1.2);
+}
+
+.fav-group {
+    margin-bottom: 16px;
+}
+
+.fav-group-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 8px 0;
+    border-bottom: 2px solid var(--accent);
+    margin-bottom: 4px;
+}
+
+.fav-group-count {
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+
+/* Favorite confirm actions (inline remove confirmation) */
+.fav-confirm-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+.toggle-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+    border-color: var(--accent);
+}
+
+/* Organize favorites */
+.organize-toggle {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.organize-toggle-icon {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.organize-panel {
+    margin-top: 12px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.organize-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.organize-actions .form-btn {
+    flex: 1;
+}

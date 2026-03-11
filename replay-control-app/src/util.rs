@@ -12,6 +12,45 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
+/// Format a byte count using historically appropriate units for the given system.
+///
+/// Cartridge-based and arcade ROM-chip systems display in Megabit (Mbit) or
+/// Kilobit (Kbit). Disc-based and computer systems display in KB/MB/GB.
+pub fn format_size_for_system(bytes: u64, system: &str) -> String {
+    if replay_control_core::systems::find_system_uses_megabit(system) {
+        format_size_megabit(bytes)
+    } else {
+        format_size(bytes)
+    }
+}
+
+/// Format bytes as Megabit (Mbit) or Kilobit (Kbit) for cartridge-based systems.
+///
+/// - Under 1 Mbit (131,072 bytes): displays as Kbit (e.g., "256 Kbit")
+/// - 1 Mbit and above: displays as Mbit, with one decimal place if not whole
+///   (e.g., "16 Mbit", "4.5 Mbit")
+/// - Under 128 bytes (1 Kbit): falls back to showing bytes
+pub fn format_size_megabit(bytes: u64) -> String {
+    let bits = bytes * 8;
+    const MEGABIT: u64 = 1_048_576; // 1,048,576 bits = 1 Mbit
+
+    if bits >= MEGABIT {
+        let mbit = bits as f64 / MEGABIT as f64;
+        if (mbit - mbit.round()).abs() < 0.01 {
+            format!("{} Mbit", mbit.round() as u64)
+        } else {
+            format!("{:.1} Mbit", mbit)
+        }
+    } else {
+        let kbit = bits / 1024;
+        if kbit > 0 {
+            format!("{} Kbit", kbit)
+        } else {
+            format!("{} bytes", bytes)
+        }
+    }
+}
+
 /// Like [`format_size`], but rounds GB values to whole numbers.
 ///
 /// Returns `(number_string, unit)` — e.g. `("12", "GB")` or `("5.5", "MB")`.
@@ -155,5 +194,119 @@ mod tests {
         // 1.4 GB should round to 1
         let bytes = (1_073_741_824.0 * 1.4) as u64;
         assert_eq!(format_size_short(bytes), ("1".to_string(), "GB"));
+    }
+
+    // --- format_size_megabit tests ---
+
+    #[test]
+    fn megabit_zero() {
+        assert_eq!(format_size_megabit(0), "0 bytes");
+    }
+
+    #[test]
+    fn megabit_tiny_bytes() {
+        // Under 128 bytes (1 Kbit) -> falls back to bytes
+        assert_eq!(format_size_megabit(64), "64 bytes");
+        assert_eq!(format_size_megabit(1), "1 bytes");
+    }
+
+    #[test]
+    fn megabit_kbit_values() {
+        // 2 KB = 16 Kbit (Atari 2600 ROM)
+        assert_eq!(format_size_megabit(2048), "16 Kbit");
+        // 4 KB = 32 Kbit
+        assert_eq!(format_size_megabit(4096), "32 Kbit");
+        // 32 KB = 256 Kbit
+        assert_eq!(format_size_megabit(32_768), "256 Kbit");
+    }
+
+    #[test]
+    fn megabit_exact_mbit_values() {
+        // 128 KB = 1 Mbit
+        assert_eq!(format_size_megabit(131_072), "1 Mbit");
+        // 256 KB = 2 Mbit
+        assert_eq!(format_size_megabit(262_144), "2 Mbit");
+        // 512 KB = 4 Mbit (classic SMS/GG)
+        assert_eq!(format_size_megabit(524_288), "4 Mbit");
+        // 1 MB = 8 Mbit (Super Mario World on SNES)
+        assert_eq!(format_size_megabit(1_048_576), "8 Mbit");
+        // 2 MB = 16 Mbit (Sonic 3)
+        assert_eq!(format_size_megabit(2_097_152), "16 Mbit");
+        // 3 MB = 24 Mbit (Phantasy Star IV)
+        assert_eq!(format_size_megabit(3_145_728), "24 Mbit");
+        // 4 MB = 32 Mbit (DKC on SNES)
+        assert_eq!(format_size_megabit(4_194_304), "32 Mbit");
+        // 8 MB = 64 Mbit (Super Mario 64)
+        assert_eq!(format_size_megabit(8_388_608), "64 Mbit");
+        // 32 MB = 256 Mbit (RE2 on N64)
+        assert_eq!(format_size_megabit(33_554_432), "256 Mbit");
+        // 64 MB = 512 Mbit (Conker's Bad Fur Day)
+        assert_eq!(format_size_megabit(67_108_864), "512 Mbit");
+    }
+
+    #[test]
+    fn megabit_whole_mbit_no_decimal() {
+        // 768 KB = 6 Mbit (whole number)
+        assert_eq!(format_size_megabit(786_432), "6 Mbit");
+        // 640 KB = 5 Mbit (whole number)
+        assert_eq!(format_size_megabit(655_360), "5 Mbit");
+    }
+
+    #[test]
+    fn megabit_fractional_mbit() {
+        // 192 KB = 1.5 Mbit
+        assert_eq!(format_size_megabit(196_608), "1.5 Mbit");
+        // 576 KB = 4.5 Mbit
+        assert_eq!(format_size_megabit(589_824), "4.5 Mbit");
+    }
+
+    #[test]
+    fn megabit_large_values() {
+        // 86 MB = 688 Mbit (largest Neo Geo carts)
+        assert_eq!(format_size_megabit(90_177_536), "688 Mbit");
+    }
+
+    // --- format_size_for_system tests ---
+
+    #[test]
+    fn format_for_system_megabit() {
+        // SNES ROM: 1 MB should show as 8 Mbit
+        assert_eq!(format_size_for_system(1_048_576, "nintendo_snes"), "8 Mbit");
+    }
+
+    #[test]
+    fn format_for_system_regular() {
+        // PlayStation: 500 MB should show in MB
+        assert_eq!(
+            format_size_for_system(524_288_000, "sony_psx"),
+            "500.0 MB"
+        );
+    }
+
+    #[test]
+    fn format_for_system_ds_uses_mb() {
+        // DS uses MB, not Mbit
+        assert_eq!(
+            format_size_for_system(33_554_432, "nintendo_ds"),
+            "32.0 MB"
+        );
+    }
+
+    #[test]
+    fn format_for_system_arcade_dc_uses_mb() {
+        // arcade_dc uses MB
+        assert_eq!(
+            format_size_for_system(524_288_000, "arcade_dc"),
+            "500.0 MB"
+        );
+    }
+
+    #[test]
+    fn format_for_system_unknown_uses_mb() {
+        // Unknown system defaults to MB/GB
+        assert_eq!(
+            format_size_for_system(1_048_576, "unknown_system"),
+            "1.0 MB"
+        );
     }
 }

@@ -486,9 +486,9 @@ Filter state (hide_hacks, hide_translations, hide_betas, hide_clones, multiplaye
 
 The single `style.css` (2,356 lines) could benefit from being split by page/component for maintainability. However, the current approach avoids CSS module complexity and keeps the build simple.
 
-**7. Lazy-load embedded databases**
+**7. ~~Lazy-load embedded databases~~ (Won't implement)**
 
-The `arcade_db` and `game_db` PHF maps are compiled into the binary (~62K entries total). This increases binary size but provides zero-cost lookups. The tradeoff is acceptable for the deployment target (Raspberry Pi with sufficient RAM), but lazy initialization via `once_cell` could reduce startup memory if needed.
+The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entries, ~25-30 MB or 33-40% of binary). Analysis concluded lazy loading provides no practical benefit: the OS already lazy-loads via memory-mapped pages (untouched pages never enter physical RAM), there's no initialization code (PHF tables are const-evaluated at compile time), and lookups are already O(1) with zero allocation. The real cost is compile time and binary size, which would only be addressed by moving to an external data file — a much larger refactor with portability tradeoffs not justified for the Pi target.
 
 **8. Search performance**
 

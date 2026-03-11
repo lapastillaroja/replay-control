@@ -1,0 +1,337 @@
+/* ================================================================
+   ROM List — Header, search, filters, items, thumbnails, actions
+   ================================================================ */
+
+.rom-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.back-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.back-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.search-bar {
+    margin-bottom: 12px;
+}
+
+.search-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-input:focus {
+    border-color: var(--accent);
+}
+
+.rom-list-filters {
+    margin-bottom: 12px;
+}
+
+.search-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.active-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.filter-chip-clear {
+    background: none;
+    border: 1px dashed var(--border);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.filter-chip-clear:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.rom-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.rom-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.rom-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+
+.rom-item:hover {
+    background: var(--surface-hover);
+}
+
+.rom-item.hidden {
+    display: none;
+}
+
+/* ROM thumbnail in list — fixed height, aspect ratio adapts to image */
+.rom-thumb-link {
+    flex-shrink: 0;
+    margin-right: 10px;
+    line-height: 0;
+}
+
+.rom-thumb {
+    height: 40px;
+    width: auto;
+    max-width: 56px;
+    object-fit: contain;
+    border-radius: 3px;
+}
+
+.rom-thumb-placeholder {
+    width: 40px;
+    height: 40px;
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.rom-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.rom-name {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rom-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.rom-name-row .rom-name {
+    min-width: 0;
+}
+
+.driver-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.driver-dot-working {
+    background: var(--success);
+}
+
+.driver-dot-imperfect {
+    background: #f59e0b;
+}
+
+.driver-dot-preliminary {
+    background: var(--error);
+}
+
+.driver-dot-unknown {
+    background: #6b7280;
+}
+
+.rom-path {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rom-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-left: 12px;
+    flex-shrink: 0;
+}
+
+.rom-size {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.rom-ext {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.rom-rating {
+    font-size: 0.7rem;
+    color: var(--star);
+    white-space: nowrap;
+}
+
+/* ROM favorite button */
+.rom-fav-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px 8px 4px 0;
+    flex-shrink: 0;
+    transition: color 0.15s;
+    line-height: 1;
+}
+
+.rom-fav-btn:hover {
+    color: var(--star);
+}
+
+/* ROM action buttons — always visible on touch, hover-reveal on desktop */
+.rom-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+@media (hover: hover) {
+    .rom-actions {
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+
+    .rom-item:hover .rom-actions {
+        opacity: 1;
+    }
+}
+
+.rom-action-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.rom-action-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.rom-action-delete:hover {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.rom-action-confirm-delete {
+    border-color: var(--error);
+    color: var(--error);
+    font-weight: 600;
+}
+
+.rom-action-confirm-delete:hover {
+    background: var(--error);
+    color: #fff;
+}
+
+/* Rename inline */
+.rename-inline {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex: 1;
+}
+
+.rename-input {
+    flex: 1;
+    padding: 4px 8px;
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 0.85rem;
+    outline: none;
+}
+
+/* Load more / infinite scroll */
+.load-more-sentinel {
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+}
+
+.load-more-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 8px 24px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.load-more-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.load-more-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* ROM name links — subtle clickable styling */
+.rom-name-link {
+    color: inherit;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+.rom-name-link:hover {
+    color: var(--accent);
+}

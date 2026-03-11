@@ -360,7 +360,7 @@ mod ssr {
                 axum::routing::get(|| async {
                     (
                         [("content-type", "text/css")],
-                        include_str!("../style/style.css"),
+                        include_str!(concat!(env!("OUT_DIR"), "/style.css")),
                     )
                 }),
             )

@@ -1,0 +1,325 @@
+/* ================================================================
+   Search — Page input, filters, chips, result groups, badges,
+            recent searches, random game
+   ================================================================ */
+
+.search-page-bar {
+    margin-bottom: 12px;
+}
+
+.search-page-input {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-page-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.search-page-input::placeholder {
+    color: var(--text-secondary);
+}
+
+/* Search filters */
+.search-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.filter-chip:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.filter-chip-active {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.filter-genre-select {
+    padding: 6px 28px 6px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23888' d='M5 7L1 3h8z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    transition: all 0.2s;
+}
+
+.filter-genre-select:hover,
+.filter-genre-select:focus {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.filter-genre-select option {
+    background: var(--surface);
+    color: var(--text);
+}
+
+/* Search summary */
+.search-summary {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+/* Search result groups */
+.search-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.search-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.search-group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.search-group-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.search-see-all {
+    font-size: 0.8rem;
+    color: var(--accent);
+    white-space: nowrap;
+    transition: color 0.15s;
+}
+
+.search-see-all:hover {
+    color: var(--accent-hover);
+}
+
+/* Search result items */
+.search-group-results {
+    display: flex;
+    flex-direction: column;
+}
+
+.search-result-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+
+.search-result-item:last-child {
+    border-bottom: none;
+}
+
+.search-result-item:hover {
+    background: var(--surface-hover);
+}
+
+.search-result-thumb-link {
+    flex-shrink: 0;
+    margin-right: 12px;
+    line-height: 0;
+}
+
+.search-result-thumb {
+    height: 40px;
+    width: auto;
+    max-width: 56px;
+    object-fit: contain;
+    border-radius: 3px;
+}
+
+.search-result-thumb-placeholder {
+    width: 40px;
+    height: 40px;
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.search-result-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.search-result-name {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.search-result-badges {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.search-badge {
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.search-badge-genre {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.search-badge-rating {
+    color: var(--star);
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.7rem;
+}
+
+.search-badge-fav {
+    color: var(--star);
+    font-size: 0.85rem;
+    padding: 0;
+}
+
+/* Search page: empty state panel */
+.search-empty-panel {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Recent searches */
+.recent-searches {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.recent-searches-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.recent-searches-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.recent-chip {
+    display: inline-flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.recent-chip:hover {
+    border-color: var(--accent);
+}
+
+.recent-chip-text {
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 0.8rem;
+    padding: 6px 4px 6px 14px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.recent-chip-remove {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    padding: 6px 10px 6px 4px;
+    cursor: pointer;
+    transition: color 0.15s;
+    line-height: 1;
+}
+
+.recent-chip-remove:hover {
+    color: var(--error);
+}
+
+/* Random game button */
+.random-game-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+    padding: 10px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.random-game-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}
+
+.random-game-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.random-game-icon {
+    font-size: 1.1rem;
+}

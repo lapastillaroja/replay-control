@@ -52,7 +52,7 @@ build_ssr() {
 
 # Copy CSS.
 copy_assets() {
-    cp "replay-control-app/style/style.css" "$OUT_DIR/style.css"
+    cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"
 }
 
 echo "==> Initial build..."
@@ -74,7 +74,7 @@ exec cargo watch \
 set -e
 cargo build -p $CRATE --lib --target wasm32-unknown-unknown --features hydrate --no-default-features
 wasm-bindgen target/wasm32-unknown-unknown/debug/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
-cp replay-control-app/style/style.css $OUT_DIR/style.css
+cat replay-control-app/style/_*.css > $OUT_DIR/style.css
 cargo run -p $CRATE --features ssr -- --port $PORT $SERVER_ARGS
 INNER
 )"

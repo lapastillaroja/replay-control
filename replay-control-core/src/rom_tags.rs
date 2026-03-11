@@ -57,6 +57,83 @@ pub enum RegionPriority {
     Unknown = 5,
 }
 
+/// User's preferred region for sorting and search prioritization.
+/// Controls which region's ROMs appear first in game lists and search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RegionPreference {
+    #[default]
+    Usa,
+    Europe,
+    Japan,
+    World,
+}
+
+impl RegionPreference {
+    /// Parse a region preference from a string value (as stored in settings.cfg).
+    /// Returns `Usa` for unrecognized values.
+    pub fn from_str_value(s: &str) -> Self {
+        match s {
+            "europe" => Self::Europe,
+            "japan" => Self::Japan,
+            "world" => Self::World,
+            _ => Self::Usa,
+        }
+    }
+
+    /// Convert to a string value suitable for storing in settings.cfg.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Usa => "usa",
+            Self::Europe => "europe",
+            Self::Japan => "japan",
+            Self::World => "world",
+        }
+    }
+}
+
+impl RegionPriority {
+    /// Return a sort key for this region given the user's preference.
+    /// Lower value = shown first. World always sorts first (or ties for first),
+    /// then the user's preferred region, then remaining major regions.
+    pub fn sort_key(self, pref: RegionPreference) -> u8 {
+        match pref {
+            RegionPreference::Usa => match self {
+                RegionPriority::World => 0,
+                RegionPriority::Usa => 1,
+                RegionPriority::Europe => 2,
+                RegionPriority::Japan => 3,
+                RegionPriority::Other => 4,
+                RegionPriority::Unknown => 5,
+            },
+            RegionPreference::Europe => match self {
+                RegionPriority::World => 0,
+                RegionPriority::Europe => 1,
+                RegionPriority::Usa => 2,
+                RegionPriority::Japan => 3,
+                RegionPriority::Other => 4,
+                RegionPriority::Unknown => 5,
+            },
+            RegionPreference::Japan => match self {
+                RegionPriority::World => 0,
+                RegionPriority::Japan => 1,
+                RegionPriority::Usa => 2,
+                RegionPriority::Europe => 3,
+                RegionPriority::Other => 4,
+                RegionPriority::Unknown => 5,
+            },
+            RegionPreference::World => match self {
+                RegionPriority::World => 0,
+                RegionPriority::Usa => 1,
+                RegionPriority::Europe => 2,
+                RegionPriority::Japan => 3,
+                RegionPriority::Other => 4,
+                RegionPriority::Unknown => 5,
+            },
+        }
+    }
+}
+
 /// Classify a ROM filename into a tier and region priority for sorting.
 pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
     let stem = filename

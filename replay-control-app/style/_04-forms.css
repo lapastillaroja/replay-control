@@ -1,0 +1,176 @@
+/* ================================================================
+   Forms — Fields, inputs, selects, checkboxes, buttons, status
+   ================================================================ */
+
+.settings-page .page-title {
+    margin-bottom: 0;
+}
+
+.settings-form {
+    margin-top: 16px;
+}
+
+.form-field {
+    margin-bottom: 16px;
+}
+
+.form-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 6px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: inherit;
+}
+
+.form-input:focus {
+    border-color: var(--accent);
+}
+
+.form-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.input-with-toggle {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.input-with-toggle .form-input {
+    padding-right: 44px;
+}
+.toggle-password {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+}
+
+select.form-input {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+    cursor: pointer;
+}
+
+select.form-input option {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.form-field-check {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.form-field-check .form-label {
+    margin-bottom: 0;
+}
+
+.form-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.form-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-family: inherit;
+}
+
+.form-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.form-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.form-btn-secondary {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+.form-btn-secondary:hover:not(:disabled) {
+    background: var(--surface-hover);
+    border-color: var(--accent);
+}
+
+.form-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.apply-section {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.status-msg {
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+}
+
+.status-ok {
+    background: color-mix(in srgb, var(--success) 10%, transparent);
+    color: var(--success);
+    border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+}
+
+.status-err {
+    background: color-mix(in srgb, var(--error) 10%, transparent);
+    color: var(--error);
+    border: 1px solid color-mix(in srgb, var(--error) 20%, transparent);
+}
+
+/* Settings hints and feedback */
+.settings-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.settings-saved {
+    font-size: 0.85rem;
+    color: var(--success);
+    margin-top: 8px;
+}

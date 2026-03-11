@@ -40,7 +40,7 @@ wasm-bindgen \
   --no-typescript
 
 # Copy static assets
-cp "replay-control-app/style/style.css" "$OUT_DIR/style.css"
+cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"
 cp -r "replay-control-app/static/icons" "$OUT_DIR/icons" 2>/dev/null || true
 
 echo "==> Building server (ssr)..."

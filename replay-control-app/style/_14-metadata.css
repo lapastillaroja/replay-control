@@ -1,0 +1,174 @@
+/* ================================================================
+   Metadata — Management page, import, download, progress
+   ================================================================ */
+
+.metadata-page .section {
+    margin-bottom: 32px;
+}
+
+.image-action-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.metadata-download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.metadata-download-btn:hover {
+    background: var(--accent-hover);
+}
+
+.metadata-download-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.image-systems-grid {
+    margin-top: 16px;
+}
+
+.image-system-row .info-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.image-download-btn {
+    font-size: 0.8rem;
+    padding: 4px 12px;
+}
+
+.image-download-btn:disabled {
+    animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.image-count-none {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+/* Metadata management actions */
+.manage-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.manage-action-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+}
+
+.manage-action-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    line-height: 1.5;
+}
+
+.manage-action-result {
+    font-size: 0.85rem;
+    color: var(--success);
+    margin-top: 8px;
+}
+
+.metadata-import-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* Auto-import hint — prominent callout */
+.auto-import-hint {
+    font-size: 0.85rem;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+/* Manual import collapsible toggle */
+.manual-import-toggle {
+    margin-top: 4px;
+}
+
+.manual-import-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.2s;
+}
+
+.manual-import-btn:hover {
+    color: var(--text);
+}
+
+.manual-import-chevron {
+    display: inline-block;
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+}
+
+.manual-import-chevron.open {
+    transform: rotate(90deg);
+}
+
+.manual-import-panel {
+    margin-top: 8px;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.import-progress {
+    margin-top: 8px;
+}
+
+.import-progress-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+}
+
+.import-progress-text {
+    color: var(--text);
+}
+
+.import-progress-time {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}

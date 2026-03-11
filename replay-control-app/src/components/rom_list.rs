@@ -6,7 +6,7 @@ use leptos_router::hooks::{query_signal_with_options, use_query_map};
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, PAGE_SIZE, RomEntry};
-use crate::util::format_size;
+use crate::util::format_size_for_system;
 
 /// ROM list with built-in search, pagination, and infinite scroll.
 #[component]
@@ -407,7 +407,7 @@ fn RomItem(
     let driver_status = rom.driver_status.clone();
     let rating = rom.rating;
     let is_fav = RwSignal::new(rom.is_favorite);
-    let size = format_size(rom.size_bytes);
+    let size = format_size_for_system(rom.size_bytes, &rom.game.system);
     let ext = format!(
         ".{}",
         rom.game.rom_filename.rsplit('.').next().unwrap_or("")
