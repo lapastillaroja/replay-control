@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -98,6 +100,7 @@ pub fn list_roms(
 
     let mut roms = Vec::new();
     collect_roms_recursive(&system_dir, &storage.roms_dir(), system, &mut roms);
+    apply_m3u_dedup(&mut roms, &storage.roms_dir());
 
     // Sort by display name, then by tier (originals before hacks), then by region
     // (using the user's region preference to determine region ordering).
@@ -179,6 +182,7 @@ pub fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
             collect_roms_recursive(&system_dir, &roms_dir, system, &mut all_roms);
         }
     }
+    apply_m3u_dedup(&mut all_roms, &roms_dir);
 
     // Group by (filename, size) — exact duplicates
     let mut seen: std::collections::HashMap<(String, u64), RomEntry> =
@@ -206,6 +210,16 @@ fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
         Err(_) => return (0, 0),
     };
 
+    // Collect ROM files in this directory for M3U dedup.
+    struct FileInfo {
+        filename: String,
+        size: u64,
+        is_m3u: bool,
+        path: PathBuf,
+    }
+
+    let mut files: Vec<FileInfo> = Vec::new();
+
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -219,9 +233,64 @@ fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
             count += sub_count;
             size += sub_size;
         } else if is_rom_file(&path, system) {
-            count += 1;
-            size += entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let filename = entry.file_name().to_string_lossy().to_string();
+            let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let is_m3u = path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
+            files.push(FileInfo {
+                filename,
+                size: file_size,
+                is_m3u,
+                path,
+            });
         }
+    }
+
+    // Build exclusion set from M3U references in this directory.
+    let mut referenced: HashSet<String> = HashSet::new();
+    for f in &files {
+        if f.is_m3u {
+            for r in parse_m3u_references(&f.path) {
+                referenced.insert(r.to_lowercase());
+            }
+        }
+    }
+
+    // Count and sum sizes, skipping files referenced by M3U playlists.
+    // Aggregate referenced file sizes into the M3U entries.
+    if referenced.is_empty() {
+        // Fast path: no M3U dedup needed.
+        for f in &files {
+            count += 1;
+            size += f.size;
+        }
+    } else {
+        // Accumulate sizes of referenced disc files per M3U filename,
+        // so we can add them to the M3U's reported size.
+        let mut disc_sizes: u64 = 0;
+        let mut m3u_count = 0usize;
+        let mut m3u_size = 0u64;
+        let mut non_m3u_count = 0usize;
+        let mut non_m3u_size = 0u64;
+
+        for f in &files {
+            if f.is_m3u {
+                m3u_count += 1;
+                m3u_size += f.size;
+            } else if referenced.contains(&f.filename.to_lowercase()) {
+                // This disc file is referenced by an M3U; skip it from count
+                // but accumulate its size for the M3U aggregate.
+                disc_sizes += f.size;
+            } else {
+                // Standalone file not referenced by any M3U.
+                non_m3u_count += 1;
+                non_m3u_size += f.size;
+            }
+        }
+
+        count += m3u_count + non_m3u_count;
+        size += m3u_size + non_m3u_size + disc_sizes;
     }
 
     (count, size)
@@ -265,6 +334,133 @@ fn collect_roms_recursive(dir: &Path, roms_root: &Path, system: &System, out: &m
             });
         }
     }
+}
+
+/// Parse an M3U file and return the list of referenced filenames (just the
+/// filename portion, no directories).
+///
+/// Handles both text M3U files (multi-disc playlists) and X68000 binary M3U
+/// files where the first line is a filename followed by binary disc data.
+/// Uses `BufReader` and reads at most `MAX_M3U_BYTES` to avoid loading large
+/// binary files into memory.
+fn parse_m3u_references(m3u_path: &Path) -> Vec<String> {
+    /// Maximum bytes to read from an M3U file. Covers any reasonable text
+    /// playlist while protecting against X68000 binary M3U files (~1.2 MB).
+    const MAX_M3U_BYTES: u64 = 8192;
+
+    let file = match std::fs::File::open(m3u_path) {
+        Ok(f) => f,
+        Err(_) => return vec![],
+    };
+
+    let reader = BufReader::new(file.take(MAX_M3U_BYTES));
+    let mut refs = Vec::new();
+
+    for line_result in reader.lines() {
+        let line: String = match line_result {
+            Ok(l) => l,
+            // Non-UTF-8 line means we hit binary data; stop parsing.
+            Err(_) => break,
+        };
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if !looks_like_filename(trimmed) {
+            // Binary/garbage line; stop parsing.
+            break;
+        }
+        // Extract just the filename from a potentially absolute path
+        // (ScummVM uses absolute paths like /media/nfs/roms/scummvm/Game/Game.svm).
+        let filename = Path::new(trimmed)
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or(trimmed);
+        refs.push(filename.to_string());
+    }
+
+    refs
+}
+
+/// Check whether a string looks like a valid filename reference in an M3U.
+/// Rejects binary data lines and overly long strings.
+fn looks_like_filename(s: &str) -> bool {
+    // Must contain a dot (for the extension), be reasonably short, and
+    // contain no control characters except tab.
+    s.contains('.')
+        && s.len() < 512
+        && s.chars()
+            .all(|c| !c.is_control() || c == '\t')
+}
+
+/// Remove ROM entries that are referenced by M3U playlist files and aggregate
+/// their sizes into the corresponding M3U entry.
+///
+/// This prevents double-counting of disc files alongside their M3U entry
+/// (e.g., X68000 games where both `Game.m3u` and `Game.dim` exist).
+fn apply_m3u_dedup(roms: &mut Vec<RomEntry>, roms_root: &Path) {
+    // Collect M3U entries and parse their references.
+    // Key: lowercased referenced filename -> list of M3U indices that reference it.
+    let mut referenced_by_m3u: HashMap<String, Vec<usize>> = HashMap::new();
+
+    for (idx, rom) in roms.iter().enumerate() {
+        if !rom.is_m3u {
+            continue;
+        }
+        // Resolve the M3U file's absolute path on disk from rom_path.
+        // rom_path is like "/roms/sharp_x68k/Game.m3u" relative to storage root.
+        let m3u_disk_path = roms_root
+            .parent()
+            .unwrap_or(Path::new("/"))
+            .join(rom.game.rom_path.trim_start_matches('/'));
+
+        for filename in parse_m3u_references(&m3u_disk_path) {
+            referenced_by_m3u
+                .entry(filename.to_lowercase())
+                .or_default()
+                .push(idx);
+        }
+    }
+
+    if referenced_by_m3u.is_empty() {
+        return;
+    }
+
+    // Build a set of ROM indices to remove (disc files referenced by M3U).
+    // Also accumulate sizes to add to each M3U entry.
+    let mut m3u_extra_size: HashMap<usize, u64> = HashMap::new();
+    let mut indices_to_remove: HashSet<usize> = HashSet::new();
+
+    for (idx, rom) in roms.iter().enumerate() {
+        if rom.is_m3u {
+            continue;
+        }
+        let key = rom.game.rom_filename.to_lowercase();
+        if let Some(m3u_indices) = referenced_by_m3u.get(&key) {
+            indices_to_remove.insert(idx);
+            // Add this disc file's size to each M3U that references it.
+            for &m3u_idx in m3u_indices {
+                *m3u_extra_size.entry(m3u_idx).or_default() += rom.size_bytes;
+            }
+        }
+    }
+
+    if indices_to_remove.is_empty() {
+        return;
+    }
+
+    // Aggregate sizes into M3U entries.
+    for (&m3u_idx, &extra) in &m3u_extra_size {
+        roms[m3u_idx].size_bytes += extra;
+    }
+
+    // Remove referenced disc files, preserving order of remaining entries.
+    let mut idx = 0;
+    roms.retain(|_| {
+        let keep = !indices_to_remove.contains(&idx);
+        idx += 1;
+        keep
+    });
 }
 
 fn is_rom_file(path: &Path, system: &System) -> bool {
@@ -325,6 +521,150 @@ mod tests {
 
         // NES should be sorted first (has games)
         assert!(summaries[0].game_count > 0 || summaries.iter().all(|s| s.game_count == 0));
+    }
+
+    #[test]
+    fn parse_m3u_single_disc() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        fs::write(&m3u, "Game (1991)(Publisher).dim\r\n").unwrap();
+        let refs = parse_m3u_references(&m3u);
+        assert_eq!(refs, vec!["Game (1991)(Publisher).dim"]);
+    }
+
+    #[test]
+    fn parse_m3u_multi_disc() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        fs::write(
+            &m3u,
+            "Game (Disk 1 of 3)(A).dim\r\nGame (Disk 2 of 3)(B).dim\r\nGame (Disk 3 of 3)(C).dim\r\n",
+        )
+        .unwrap();
+        let refs = parse_m3u_references(&m3u);
+        assert_eq!(refs.len(), 3);
+        assert_eq!(refs[0], "Game (Disk 1 of 3)(A).dim");
+        assert_eq!(refs[2], "Game (Disk 3 of 3)(C).dim");
+    }
+
+    #[test]
+    fn parse_m3u_comments_and_blanks() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        fs::write(&m3u, "# comment\n\ndisc1.chd\n\n# another\ndisc2.chd\n").unwrap();
+        let refs = parse_m3u_references(&m3u);
+        assert_eq!(refs, vec!["disc1.chd", "disc2.chd"]);
+    }
+
+    #[test]
+    fn parse_m3u_absolute_path() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        fs::write(
+            &m3u,
+            "/media/nfs/roms/scummvm/Grim Fandango (CD Spanish)/Grim Fandango (CD Spanish).svm\n",
+        )
+        .unwrap();
+        let refs = parse_m3u_references(&m3u);
+        assert_eq!(refs, vec!["Grim Fandango (CD Spanish).svm"]);
+    }
+
+    #[test]
+    fn parse_m3u_binary_stops_at_non_text() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        let mut content = b"Game.dim\r\n".to_vec();
+        // Append binary data (like X68000 embedded disc image)
+        content.extend_from_slice(&[0xe5; 1024]);
+        fs::write(&m3u, &content).unwrap();
+        let refs = parse_m3u_references(&m3u);
+        assert_eq!(refs, vec!["Game.dim"]);
+    }
+
+    #[test]
+    fn parse_m3u_nonexistent_file() {
+        let refs = parse_m3u_references(Path::new("/nonexistent/path.m3u"));
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn m3u_dedup_hides_disc_files() {
+        let tmp = tempdir();
+        let x68k_dir = tmp.join("roms/sharp_x68k");
+        fs::create_dir_all(&x68k_dir).unwrap();
+
+        // Create M3U referencing two disc files
+        fs::write(
+            x68k_dir.join("Game.m3u"),
+            "Game (Disk 1).dim\nGame (Disk 2).dim\n",
+        )
+        .unwrap();
+        // Create the disc files (100 bytes each)
+        fs::write(x68k_dir.join("Game (Disk 1).dim"), &[0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 2).dim"), &[0u8; 100]).unwrap();
+        // Create a standalone file not referenced by any M3U
+        fs::write(x68k_dir.join("Other.dim"), &[0u8; 50]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default()).unwrap();
+
+        // Should have 2 entries: Game.m3u and Other.dim (disc files hidden)
+        assert_eq!(roms.len(), 2);
+
+        let m3u_entry = roms.iter().find(|r| r.is_m3u).unwrap();
+        assert_eq!(m3u_entry.game.rom_filename, "Game.m3u");
+        // M3U size should be its own size + both disc files (200 bytes)
+        let m3u_own_size = fs::metadata(x68k_dir.join("Game.m3u")).unwrap().len();
+        assert_eq!(m3u_entry.size_bytes, m3u_own_size + 200);
+
+        let other = roms.iter().find(|r| r.game.rom_filename == "Other.dim").unwrap();
+        assert_eq!(other.size_bytes, 50);
+    }
+
+    #[test]
+    fn m3u_dedup_count_is_accurate() {
+        let tmp = tempdir();
+        let x68k_dir = tmp.join("roms/sharp_x68k");
+        fs::create_dir_all(&x68k_dir).unwrap();
+
+        // 1 M3U referencing 3 disc files + 1 standalone
+        fs::write(
+            x68k_dir.join("Game.m3u"),
+            "Game (Disk 1).dim\nGame (Disk 2).dim\nGame (Disk 3).dim\n",
+        )
+        .unwrap();
+        fs::write(x68k_dir.join("Game (Disk 1).dim"), &[0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 2).dim"), &[0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 3).dim"), &[0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Standalone.hdf"), &[0u8; 200]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let summaries = scan_systems(&storage);
+        let x68k = summaries
+            .iter()
+            .find(|s| s.folder_name == "sharp_x68k")
+            .unwrap();
+
+        // Should count 2 games (1 M3U + 1 standalone), not 5
+        assert_eq!(x68k.game_count, 2);
+    }
+
+    #[test]
+    fn m3u_dedup_case_insensitive() {
+        let tmp = tempdir();
+        let x68k_dir = tmp.join("roms/sharp_x68k");
+        fs::create_dir_all(&x68k_dir).unwrap();
+
+        // M3U references "game.DIM" but file on disk is "game.dim"
+        fs::write(x68k_dir.join("Multi.m3u"), "game.DIM\n").unwrap();
+        fs::write(x68k_dir.join("game.dim"), &[0u8; 100]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default()).unwrap();
+
+        // Only the M3U should remain; the .dim should be hidden
+        assert_eq!(roms.len(), 1);
+        assert!(roms[0].is_m3u);
     }
 
     use std::sync::atomic::{AtomicU32, Ordering};
