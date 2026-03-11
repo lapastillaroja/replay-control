@@ -1,0 +1,266 @@
+use super::*;
+
+/// A page of ROM results with total count.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RomPage {
+    pub roms: Vec<RomEntry>,
+    pub total: usize,
+    pub has_more: bool,
+    /// Human-readable system name (e.g., "Arcade (Atomiswave/Naomi)")
+    #[serde(default)]
+    pub system_display: String,
+    /// Whether this system is an arcade system (for clone filter visibility).
+    #[serde(default)]
+    pub is_arcade: bool,
+}
+
+/// A user-taken screenshot URL for the game detail page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScreenshotUrl {
+    pub url: String,
+    pub timestamp: Option<i64>,
+}
+
+/// Detailed ROM info including unified game metadata and favorite status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RomDetail {
+    pub game: GameInfo,
+    pub size_bytes: u64,
+    pub is_m3u: bool,
+    pub is_favorite: bool,
+    pub user_screenshots: Vec<ScreenshotUrl>,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_roms_page(
+    system: String,
+    offset: usize,
+    limit: usize,
+    search: String,
+    #[server(default)]
+    hide_hacks: bool,
+    #[server(default)]
+    hide_translations: bool,
+    #[server(default)]
+    hide_betas: bool,
+    #[server(default)]
+    hide_clones: bool,
+    #[server(default)]
+    genre: String,
+    #[server(default)]
+    multiplayer_only: bool,
+) -> Result<RomPage, ServerFnError> {
+    use replay_control_core::rom_tags;
+    use replay_control_core::systems::{self as sys_db, SystemCategory};
+
+    let state = expect_context::<crate::api::AppState>();
+    let sys_info = sys_db::find_system(&system);
+    let system_display = sys_info
+        .map(|s| s.display_name.to_string())
+        .unwrap_or_else(|| system.clone());
+    let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
+    let storage = state.storage();
+    let all_roms = state
+        .cache
+        .get_roms(&storage, &system)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Apply tier-based, clone, and genre filters before search scoring.
+    let pre_filtered: Vec<RomEntry> = all_roms
+        .into_iter()
+        .filter(|r| {
+            if hide_hacks || hide_translations || hide_betas {
+                let (tier, _) = rom_tags::classify(&r.game.rom_filename);
+                if hide_hacks && tier == rom_tags::RomTier::Hack {
+                    return false;
+                }
+                if hide_translations && tier == rom_tags::RomTier::Translation {
+                    return false;
+                }
+                if hide_betas && tier == rom_tags::RomTier::PreRelease {
+                    return false;
+                }
+            }
+            if hide_clones && is_arcade {
+                use replay_control_core::arcade_db;
+                let stem = r
+                    .game
+                    .rom_filename
+                    .strip_suffix(".zip")
+                    .unwrap_or(&r.game.rom_filename);
+                if let Some(info) = arcade_db::lookup_arcade_game(stem) {
+                    if info.is_clone {
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .filter(|r| {
+            if genre.is_empty() {
+                return true;
+            }
+            let rom_genre = lookup_genre(&system, &r.game.rom_filename);
+            rom_genre.eq_ignore_ascii_case(&genre)
+        })
+        .filter(|r| {
+            if !multiplayer_only {
+                return true;
+            }
+            lookup_players(&system, &r.game.rom_filename) >= 2
+        })
+        .collect();
+
+    let filtered: Vec<RomEntry> = if search.is_empty() {
+        pre_filtered
+    } else {
+        let q = search.to_lowercase();
+        let mut scored: Vec<(u32, RomEntry)> = pre_filtered
+            .into_iter()
+            .filter_map(|r| {
+                let display = r
+                    .game
+                    .display_name
+                    .as_deref()
+                    .unwrap_or(&r.game.rom_filename);
+                let score = search_score(&q, display, &r.game.rom_filename);
+                if score > 0 { Some((score, r)) } else { None }
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        scored.into_iter().map(|(_, r)| r).collect()
+    };
+
+    let total = filtered.len();
+    let mut roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).collect();
+    let has_more = offset + roms.len() < total;
+
+    replay_control_core::roms::mark_favorites(&storage, &system, &mut roms);
+
+    // Populate box art URLs.
+    for rom in &mut roms {
+        rom.box_art_url = resolve_box_art_url(&state, &system, &rom.game.rom_filename);
+    }
+
+    // Populate driver status for arcade systems.
+    if is_arcade {
+        use replay_control_core::arcade_db;
+        for rom in &mut roms {
+            let stem = rom
+                .game
+                .rom_filename
+                .strip_suffix(".zip")
+                .unwrap_or(&rom.game.rom_filename);
+            if let Some(info) = arcade_db::lookup_arcade_game(stem) {
+                let status = match info.status {
+                    arcade_db::DriverStatus::Working => "Working",
+                    arcade_db::DriverStatus::Imperfect => "Imperfect",
+                    arcade_db::DriverStatus::Preliminary => "Preliminary",
+                    arcade_db::DriverStatus::Unknown => "Unknown",
+                };
+                rom.driver_status = Some(status.to_string());
+            }
+        }
+    }
+
+    // Populate players from game_db / arcade_db.
+    for rom in &mut roms {
+        let p = lookup_players(&system, &rom.game.rom_filename);
+        if p > 0 {
+            rom.players = Some(p);
+        }
+    }
+
+    // Populate ratings from metadata DB (batch lookup for efficiency).
+    if let Some(guard) = state.metadata_db() {
+        if let Some(db) = guard.as_ref() {
+            let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
+            if let Ok(ratings) = db.lookup_ratings(&system, &filenames) {
+                for rom in &mut roms {
+                    if let Some(&rating) = ratings.get(&rom.game.rom_filename) {
+                        if rating > 0.0 {
+                            rom.rating = Some(rating as f32);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(RomPage {
+        roms,
+        total,
+        has_more,
+        system_display,
+        is_arcade,
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let all_roms = state
+        .cache
+        .get_roms(&storage, &system)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let rom = all_roms
+        .into_iter()
+        .find(|r| r.game.rom_filename == filename)
+        .ok_or_else(|| ServerFnError::new(format!("ROM not found: {filename}")))?;
+
+    let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);
+
+    let game = resolve_game_info(&system, &filename, &rom.game.rom_path);
+
+    let user_screenshots = replay_control_core::screenshots::find_screenshots_for_rom(
+        &storage, &system, &filename,
+    )
+    .into_iter()
+    .map(|s| ScreenshotUrl {
+        url: format!("/captures/{}/{}", system, s.filename),
+        timestamp: s.timestamp,
+    })
+    .collect();
+
+    Ok(RomDetail {
+        game,
+        size_bytes: rom.size_bytes,
+        is_m3u: rom.is_m3u,
+        is_favorite,
+        user_screenshots,
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn delete_rom(relative_path: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core::roms::delete_rom(&state.storage(), &relative_path)
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn rename_rom(
+    relative_path: String,
+    new_filename: String,
+) -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let new_path =
+        replay_control_core::roms::rename_rom(&state.storage(), &relative_path, &new_filename)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(new_path.display().to_string())
+}
+
+#[server(prefix = "/sfn")]
+pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
+    if !is_replayos() {
+        return Ok("Launch simulated (not on RePlayOS)".into());
+    }
+
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core::launch::launch_game(&state.storage(), &rom_path)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok("Game launching".into())
+}

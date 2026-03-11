@@ -1,0 +1,113 @@
+use super::*;
+
+/// A favorite enriched with box art URL.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FavoriteWithArt {
+    #[serde(flatten)]
+    pub fav: Favorite,
+    pub box_art_url: Option<String>,
+}
+
+/// Result of organizing favorites into subfolders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrganizeResult {
+    pub organized: usize,
+    pub skipped: usize,
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let favs = replay_control_core::favorites::list_favorites(&state.storage())
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(favs
+        .into_iter()
+        .map(|fav| {
+            let box_art_url = resolve_box_art_url(&state, &fav.game.system, &fav.game.rom_filename);
+            FavoriteWithArt { fav, box_art_url }
+        })
+        .collect())
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let favs = replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(favs
+        .into_iter()
+        .map(|fav| {
+            let box_art_url = resolve_box_art_url(&state, &fav.game.system, &fav.game.rom_filename);
+            FavoriteWithArt { fav, box_art_url }
+        })
+        .collect())
+}
+
+#[server(prefix = "/sfn")]
+pub async fn add_favorite(
+    system: String,
+    rom_path: String,
+    grouped: bool,
+) -> Result<Favorite, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn remove_favorite(
+    filename: String,
+    subfolder: Option<String>,
+) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core::favorites::remove_favorite(
+        &state.storage(),
+        &filename,
+        subfolder.as_deref(),
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn organize_favorites(
+    primary: OrganizeCriteria,
+    secondary: Option<OrganizeCriteria>,
+    keep_originals: bool,
+) -> Result<OrganizeResult, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let needs_ratings =
+        primary == OrganizeCriteria::Rating || secondary == Some(OrganizeCriteria::Rating);
+    let ratings = if needs_ratings {
+        replay_control_core::metadata_db::MetadataDb::open(&state.storage().root)
+            .ok()
+            .and_then(|db| db.all_ratings().ok())
+    } else {
+        None
+    };
+    let result = replay_control_core::favorites::organize_favorites(
+        &state.storage(),
+        primary,
+        secondary,
+        keep_originals,
+        ratings.as_ref(),
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(OrganizeResult {
+        organized: result.organized,
+        skipped: result.skipped,
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn group_favorites() -> Result<usize, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core::favorites::group_by_system(&state.storage())
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+#[server(prefix = "/sfn")]
+pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core::favorites::flatten_favorites(&state.storage())
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
