@@ -150,12 +150,7 @@ pub async fn get_roms_page(
                     .display_name
                     .as_deref()
                     .unwrap_or(&r.game.rom_filename);
-                let rom_genre = lookup_genre(&system, &r.game.rom_filename);
-                let rom_year = lookup_year(&system, &r.game.rom_filename);
-                let score = search_score(
-                    &q, display, &r.game.rom_filename, region_pref,
-                    &rom_genre, &rom_year,
-                );
+                let score = search_score(&q, display, &r.game.rom_filename, region_pref);
                 if score > 0 { Some((score, r)) } else { None }
             })
             .collect();

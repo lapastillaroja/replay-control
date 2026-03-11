@@ -353,6 +353,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "filter.hide_betas" => "Hide Betas",
         "filter.hide_clones" => "Hide Clones",
         "filter.multiplayer" => "Multiplayer",
+        "filter.rating_any" => "Any Rating",
         "filter.clear_filters" => "Clear Filters",
         "filter.active_search" => "Search",
         "filter.filtered_results" => "Filtered results",

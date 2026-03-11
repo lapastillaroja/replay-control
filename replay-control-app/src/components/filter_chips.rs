@@ -3,6 +3,37 @@ use leptos::prelude::*;
 use crate::components::genre_dropdown::GenreDropdown;
 use crate::i18n::{t, use_i18n};
 
+/// Rating filter dropdown — "Any", "3+", "3.5+", "4+", "4.5+".
+#[component]
+fn RatingDropdown(min_rating: RwSignal<Option<f32>>) -> impl IntoView {
+    let i18n = use_i18n();
+    let on_change = move |ev: leptos::ev::Event| {
+        let val = event_target_value(&ev);
+        min_rating.set(if val.is_empty() {
+            None
+        } else {
+            val.parse::<f32>().ok()
+        });
+    };
+    let value = move || {
+        min_rating.get().map(|v| v.to_string()).unwrap_or_default()
+    };
+
+    view! {
+        <select
+            class="filter-genre-select"
+            on:change=on_change
+            prop:value=value
+        >
+            <option value="">{move || t(i18n.locale.get(), "filter.rating_any")}</option>
+            <option value="3">"3+"</option>
+            <option value="3.5">"3.5+"</option>
+            <option value="4">"4+"</option>
+            <option value="4.5">"4.5+"</option>
+        </select>
+    }
+}
+
 /// Shared filter state used by both the ROM list and global search pages.
 #[derive(Clone, Copy)]
 pub struct FilterState {
@@ -12,6 +43,7 @@ pub struct FilterState {
     pub hide_clones: RwSignal<bool>,
     pub multiplayer_only: RwSignal<bool>,
     pub genre: RwSignal<String>,
+    pub min_rating: RwSignal<Option<f32>>,
 }
 
 /// A single toggle filter chip.
@@ -62,5 +94,6 @@ pub fn FilterChips(
         {genre_list.map(|gl| {
             view! { <GenreDropdown genre=filters.genre genre_list=gl /> }
         })}
+        <RatingDropdown min_rating=filters.min_rating />
     }
 }

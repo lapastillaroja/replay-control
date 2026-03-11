@@ -62,6 +62,7 @@ pub fn SearchPage() -> impl IntoView {
         hide_clones: RwSignal::new(initial_hide_clones),
         multiplayer_only: RwSignal::new(initial_multiplayer),
         genre: RwSignal::new(initial_genre.clone()),
+        min_rating: RwSignal::new(None),
     };
 
     // Debounced search query that drives the resource.
@@ -176,9 +177,10 @@ pub fn SearchPage() -> impl IntoView {
                 filters.hide_clones.get(),
                 filters.multiplayer_only.get(),
                 debounced_genre.get(),
+                filters.min_rating.get(),
             )
         },
-        |(q, hh, ht, hb, hc, mp, g)| server_fns::global_search(q, hh, ht, hb, hc, mp, None, g, 3),
+        |(q, hh, ht, hb, hc, mp, g, mr)| server_fns::global_search(q, hh, ht, hb, hc, mp, mr, g, 3),
     );
 
     // Derived: show the "empty state" panel (recent searches + random game).

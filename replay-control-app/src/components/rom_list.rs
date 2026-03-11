@@ -54,6 +54,7 @@ pub fn RomList(system: String) -> impl IntoView {
         hide_clones: RwSignal::new(initial_hide_clones),
         multiplayer_only: RwSignal::new(initial_multiplayer),
         genre: RwSignal::new(initial_genre.clone()),
+        min_rating: RwSignal::new(None),
     };
     let debounced_genre = RwSignal::new(initial_genre);
 
@@ -186,11 +187,12 @@ pub fn RomList(system: String) -> impl IntoView {
                 filters.hide_clones.get(),
                 debounced_genre.get(),
                 filters.multiplayer_only.get(),
+                filters.min_rating.get(),
                 version.get(),
             )
         },
-        move |(system, query, hh, ht, hb, hc, gf, mp, _)| {
-            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, None)
+        move |(system, query, hh, ht, hb, hc, gf, mp, mr, _)| {
+            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr)
         },
     );
 
@@ -219,9 +221,10 @@ pub fn RomList(system: String) -> impl IntoView {
         let hc = filters.hide_clones.get_untracked();
         let gf = debounced_genre.get_untracked();
         let mp = filters.multiplayer_only.get_untracked();
+        let mr = filters.min_rating.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) =
-                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, None)
+                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr)
                     .await
             {
                 set_extra_roms.update(|roms| roms.extend(page.roms));
