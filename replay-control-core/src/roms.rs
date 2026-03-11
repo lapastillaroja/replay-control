@@ -202,6 +202,14 @@ pub fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
 }
 
 fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
+    count_roms_inner(dir, system, &HashSet::new())
+}
+
+fn count_roms_inner(
+    dir: &Path,
+    system: &System,
+    parent_m3u_refs: &HashSet<String>,
+) -> (usize, u64) {
     let mut count = 0usize;
     let mut size = 0u64;
 
@@ -219,6 +227,7 @@ fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
     }
 
     let mut files: Vec<FileInfo> = Vec::new();
+    let mut subdirs: Vec<PathBuf> = Vec::new();
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -229,9 +238,7 @@ fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
             if name_str.starts_with('_') {
                 continue;
             }
-            let (sub_count, sub_size) = count_roms_recursive(&path, system);
-            count += sub_count;
-            size += sub_size;
+            subdirs.push(path);
         } else if is_rom_file(&path, system) {
             let filename = entry.file_name().to_string_lossy().to_string();
             let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
@@ -248,18 +255,38 @@ fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
     }
 
     // Build exclusion set from M3U references in this directory.
+    // This set is also passed down to subdirectories so that ScummVM .scummvm
+    // files inside subfolders are excluded when an M3U wrapper exists.
     let mut referenced: HashSet<String> = HashSet::new();
     for f in &files {
         if f.is_m3u {
             for r in parse_m3u_references(&f.path) {
-                referenced.insert(r.to_lowercase());
+                let lower = r.to_lowercase();
+                // ScummVM: also exclude the alternative extension (.svm <-> .scummvm).
+                if let Some(stem) = lower.strip_suffix(".svm") {
+                    referenced.insert(format!("{stem}.scummvm"));
+                } else if let Some(stem) = lower.strip_suffix(".scummvm") {
+                    referenced.insert(format!("{stem}.svm"));
+                }
+                referenced.insert(lower);
             }
         }
     }
 
+    // Recurse into subdirectories, passing down the M3U references.
+    for subdir in subdirs {
+        let (sub_count, sub_size) = count_roms_inner(&subdir, system, &referenced);
+        count += sub_count;
+        size += sub_size;
+    }
+
+    // Merge parent M3U references with this directory's references
+    // so files in this directory can also be excluded by parent M3U entries.
+    let all_refs: HashSet<&String> = referenced.iter().chain(parent_m3u_refs.iter()).collect();
+
     // Count and sum sizes, skipping files referenced by M3U playlists.
     // Aggregate referenced file sizes into the M3U entries.
-    if referenced.is_empty() {
+    if all_refs.is_empty() {
         // Fast path: no M3U dedup needed.
         for f in &files {
             count += 1;
@@ -275,10 +302,11 @@ fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
         let mut non_m3u_size = 0u64;
 
         for f in &files {
+            let lower = f.filename.to_lowercase();
             if f.is_m3u {
                 m3u_count += 1;
                 m3u_size += f.size;
-            } else if referenced.contains(&f.filename.to_lowercase()) {
+            } else if all_refs.contains(&lower) {
                 // This disc file is referenced by an M3U; skip it from count
                 // but accumulate its size for the M3U aggregate.
                 disc_sizes += f.size;
@@ -415,10 +443,24 @@ fn apply_m3u_dedup(roms: &mut Vec<RomEntry>, roms_root: &Path) {
             .join(rom.game.rom_path.trim_start_matches('/'));
 
         for filename in parse_m3u_references(&m3u_disk_path) {
+            let lower = filename.to_lowercase();
             referenced_by_m3u
-                .entry(filename.to_lowercase())
+                .entry(lower.clone())
                 .or_default()
                 .push(idx);
+            // ScummVM M3U files reference .svm or .scummvm files in subfolders.
+            // Some games have both extensions; add the alternative so both are excluded.
+            if let Some(stem) = lower.strip_suffix(".svm") {
+                referenced_by_m3u
+                    .entry(format!("{stem}.scummvm"))
+                    .or_default()
+                    .push(idx);
+            } else if let Some(stem) = lower.strip_suffix(".scummvm") {
+                referenced_by_m3u
+                    .entry(format!("{stem}.svm"))
+                    .or_default()
+                    .push(idx);
+            }
         }
     }
 
@@ -665,6 +707,82 @@ mod tests {
         // Only the M3U should remain; the .dim should be hidden
         assert_eq!(roms.len(), 1);
         assert!(roms[0].is_m3u);
+    }
+
+    #[test]
+    fn scummvm_m3u_dedup_hides_scummvm_in_subfolder() {
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        fs::create_dir_all(&scummvm_dir).unwrap();
+
+        // ScummVM pattern: M3U at root references .svm in subfolder,
+        // but subfolder also contains a .scummvm file (which IS in the system's
+        // extensions list). The .scummvm file should be hidden by M3U dedup.
+        let game_dir = scummvm_dir.join("Cool Game (CD)");
+        fs::create_dir_all(&game_dir).unwrap();
+
+        // M3U references a .svm file (absolute path style)
+        fs::write(
+            scummvm_dir.join("Cool Game (CD).m3u"),
+            "/media/roms/scummvm/Cool Game (CD)/Cool Game (CD).svm\n",
+        )
+        .unwrap();
+        // Subfolder has both .svm (not in extensions, won't be picked up) and
+        // .scummvm (in extensions, will be picked up)
+        fs::write(game_dir.join("Cool Game (CD).svm"), "scummvm-id").unwrap();
+        fs::write(game_dir.join("Cool Game (CD).scummvm"), "scummvm-id").unwrap();
+        fs::write(game_dir.join("GAME.DAT"), &[0u8; 1000]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+
+        // Should only have the M3U entry; the .scummvm should be hidden
+        assert_eq!(roms.len(), 1, "Expected 1 ROM (M3U only), got: {roms:?}");
+        assert!(roms[0].is_m3u);
+    }
+
+    #[test]
+    fn scummvm_m3u_dedup_count_is_accurate() {
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        fs::create_dir_all(&scummvm_dir).unwrap();
+
+        // Two games: one with M3U wrapper + .scummvm in subfolder,
+        // another with just M3U + .svm in subfolder (no .scummvm).
+        let game1_dir = scummvm_dir.join("Game One (CD)");
+        fs::create_dir_all(&game1_dir).unwrap();
+        fs::write(
+            scummvm_dir.join("Game One (CD).m3u"),
+            "/roms/scummvm/Game One (CD)/Game One (CD).svm\n",
+        )
+        .unwrap();
+        fs::write(game1_dir.join("Game One (CD).svm"), "id1").unwrap();
+        fs::write(game1_dir.join("Game One (CD).scummvm"), "id1").unwrap();
+
+        let game2_dir = scummvm_dir.join("Game Two (CD)");
+        fs::create_dir_all(&game2_dir).unwrap();
+        fs::write(
+            scummvm_dir.join("Game Two (CD).m3u"),
+            "/roms/scummvm/Game Two (CD)/Game Two (CD).scummvm\n",
+        )
+        .unwrap();
+        fs::write(game2_dir.join("Game Two (CD).scummvm"), "id2").unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        // Check game count via scan_systems
+        let summaries = scan_systems(&storage);
+        let scummvm = summaries
+            .iter()
+            .find(|s| s.folder_name == "scummvm")
+            .unwrap();
+        // Should count 2 games (2 M3Us), not 4 (2 M3Us + 2 .scummvm)
+        assert_eq!(scummvm.game_count, 2, "Expected 2 games, got {}", scummvm.game_count);
+
+        // Check ROM list
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        assert_eq!(roms.len(), 2, "Expected 2 ROMs (M3Us only), got: {roms:?}");
+        assert!(roms.iter().all(|r| r.is_m3u));
     }
 
     use std::sync::atomic::{AtomicU32, Ordering};

@@ -88,7 +88,7 @@ pub fn HomePage() -> impl IntoView {
                 </ErrorBoundary>
             </section>
 
-            // Recommendations: random picks + discover quick links
+            // Recommendations: random picks, favorites-based, top-rated, discover quick links
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                 <Transition fallback=|| ()>
                     {move || Suspend::new(async move {
@@ -121,6 +121,63 @@ pub fn HomePage() -> impl IntoView {
                                         </div>
                                         <div class="recent-scroll">
                                             {picks_view}
+                                        </div>
+                                    </section>
+                                }.into_any()
+                            } else {
+                                view! { <div></div> }.into_any()
+                            }}
+
+                            // Phase 2: Favorites-based recommendations
+                            {if let Some(ref fav_picks) = data.favorites_picks {
+                                let title = format!(
+                                    "{} {}",
+                                    t(locale, "home.because_you_love"),
+                                    fav_picks.system_display
+                                );
+                                let see_all_href = format!("/games/{}", fav_picks.system);
+                                let fav_cards: Vec<_> = fav_picks.picks.iter().map(|game| {
+                                    let href = game.href.clone();
+                                    let name = game.display_name.clone();
+                                    let system = game.system_display.clone();
+                                    let box_art_url = game.box_art_url.clone();
+                                    view! {
+                                        <GameScrollCard href name system box_art_url />
+                                    }
+                                }).collect();
+                                view! {
+                                    <section class="section">
+                                        <div class="section-header">
+                                            <h2 class="section-title">{title}</h2>
+                                            <A href=see_all_href attr:class="see-all-link">
+                                                {t(locale, "home.see_all")}
+                                            </A>
+                                        </div>
+                                        <div class="recent-scroll">
+                                            {fav_cards}
+                                        </div>
+                                    </section>
+                                }.into_any()
+                            } else {
+                                view! { <div></div> }.into_any()
+                            }}
+
+                            // Phase 3: Top-rated recommendations
+                            {if let Some(ref top_rated) = data.top_rated {
+                                let rated_cards: Vec<_> = top_rated.iter().map(|game| {
+                                    let href = game.href.clone();
+                                    let name = game.display_name.clone();
+                                    let system = game.system_display.clone();
+                                    let box_art_url = game.box_art_url.clone();
+                                    view! {
+                                        <GameScrollCard href name system box_art_url />
+                                    }
+                                }).collect();
+                                view! {
+                                    <section class="section">
+                                        <h2 class="section-title">{t(locale, "home.top_rated")}</h2>
+                                        <div class="recent-scroll">
+                                            {rated_cards}
                                         </div>
                                     </section>
                                 }.into_any()
