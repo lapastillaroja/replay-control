@@ -399,6 +399,7 @@ impl RomCache {
     }
 
     /// Write ROM list to SQLite rom_cache for persistent storage.
+    /// Enriches with genre/players from the baked-in game databases during write.
     fn save_roms_to_db(
         &self,
         storage: &StorageLocation,
@@ -407,6 +408,8 @@ impl RomCache {
         system_dir: &Path,
     ) {
         use replay_control_core::metadata_db::CachedRom;
+        use replay_control_core::{arcade_db, game_db};
+        use replay_control_core::systems::{self, SystemCategory};
 
         let mtime_secs = dir_mtime(system_dir).and_then(|t| {
             t.duration_since(std::time::UNIX_EPOCH)
@@ -414,20 +417,54 @@ impl RomCache {
                 .map(|d| d.as_secs() as i64)
         });
 
+        let is_arcade = systems::find_system(system)
+            .is_some_and(|s| s.category == SystemCategory::Arcade);
+
         let cached_roms: Vec<CachedRom> = roms
             .iter()
-            .map(|r| CachedRom {
-                system: r.game.system.clone(),
-                rom_filename: r.game.rom_filename.clone(),
-                rom_path: r.game.rom_path.clone(),
-                display_name: r.game.display_name.clone(),
-                size_bytes: r.size_bytes,
-                is_m3u: r.is_m3u,
-                box_art_url: r.box_art_url.clone(),
-                driver_status: r.driver_status.clone(),
-                genre: None,   // Enriched later
-                players: r.players,
-                rating: r.rating,
+            .map(|r| {
+                let rom_filename = &r.game.rom_filename;
+                let (genre, players_lookup) = if is_arcade {
+                    let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+                    match arcade_db::lookup_arcade_game(stem) {
+                        Some(info) => (
+                            Some(info.normalized_genre.to_string()),
+                            Some(info.players),
+                        ),
+                        None => (None, None),
+                    }
+                } else {
+                    let stem = rom_filename
+                        .rfind('.')
+                        .map(|i| &rom_filename[..i])
+                        .unwrap_or(rom_filename);
+                    let entry = game_db::lookup_game(system, stem);
+                    let game = entry.map(|e| e.game).or_else(|| {
+                        let normalized = game_db::normalize_filename(stem);
+                        game_db::lookup_by_normalized_title(system, &normalized)
+                    });
+                    match game {
+                        Some(g) => (
+                            if g.normalized_genre.is_empty() { None } else { Some(g.normalized_genre.to_string()) },
+                            if g.players > 0 { Some(g.players) } else { None },
+                        ),
+                        None => (None, None),
+                    }
+                };
+
+                CachedRom {
+                    system: r.game.system.clone(),
+                    rom_filename: rom_filename.clone(),
+                    rom_path: r.game.rom_path.clone(),
+                    display_name: r.game.display_name.clone(),
+                    size_bytes: r.size_bytes,
+                    is_m3u: r.is_m3u,
+                    box_art_url: r.box_art_url.clone(),
+                    driver_status: r.driver_status.clone(),
+                    genre,
+                    players: players_lookup.or(r.players),
+                    rating: r.rating,
+                }
             })
             .collect();
 

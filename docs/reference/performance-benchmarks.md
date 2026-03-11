@@ -91,3 +91,46 @@ Note: Tier1 sizes are smaller because curl receives gzip-compressed responses vi
 The Tier 2 home page improvement (680ms → 12ms) is primarily from the **image index cache** applied to `get_recents()` box art resolution. Previously, each of the ~10 recent entries triggered a full `read_dir` + fuzzy match per system's boxart directory. Now, the directory is read once and indexed in a HashMap — subsequent lookups are O(1).
 
 The arcade games page improvement (4200ms → 5ms) is the same effect at scale: 100 ROMs × full dir scan → 1 cached dir scan + 100 HashMap lookups.
+
+---
+
+## 2026-03-12: SQLite ROM Cache (L2 Persistent Cache)
+
+### Changes
+
+- **L2 cache**: `rom_cache` + `rom_cache_meta` SQLite tables persist ROM scan results across server restarts
+- **Three-layer architecture**: L1 (in-memory) → L2 (SQLite) → L3 (filesystem scan) with write-through
+- **mtime-based invalidation**: Single `stat()` validates L2 freshness; background startup verification
+- **Nolock-first DB open**: Try `nolock=1` URI first (instant), fall back to WAL mode — eliminates 5s timeout on NFS
+- **Background cache verification**: Startup task compares stored mtimes, re-scans stale systems
+- **SQL-based recommendation queries**: `random_cached_roms`, `top_rated_cached_roms`, `genre_counts`, etc.
+
+### Cold Start Times (ms, TTFB — first request after server restart)
+
+| Endpoint    | Before (L2 empty) | After (L2 populated) Local NFS | After (L2) Pi USB |
+|-------------|-------------------|-------------------------------|-------------------|
+| Home `/`    | 6100 (NFS)        | 1226                          | 14                |
+| Games NES   | 12                | 17                            | 2.5               |
+| Games Arcade| 15                | 31                            | 18                |
+
+### Warm Cache Times (ms, TTFB — subsequent requests)
+
+| Endpoint       | Local NFS | Pi USB |
+|----------------|-----------|--------|
+| Home `/`       | 23        | 13     |
+| Games NES      | 2         | 1.5    |
+| Games Arcade   | 14        | 9      |
+
+### Load Test (50 requests, 10 concurrent, warm cache)
+
+| Endpoint       | Local NFS req/s | Local NFS mean (ms) | Pi USB req/s | Pi USB mean (ms) |
+|----------------|----------------|---------------------|-------------|-----------------|
+| Home `/`       | 323            | 31                  | 134         | 75              |
+| Games NES      | 2668           | 3.7                 | 1711        | 5.8             |
+
+### Key Insights
+
+- **Pi USB cold start: 14ms** — L2 eliminates the 795ms filesystem scan entirely after first visit
+- **NFS cold start: 1.2s → was 6.1s** — the 5s improvement comes from reversing the SQLite open order (nolock first). Remaining 1.2s is image index building for recents (NFS dir reads, not cacheable in L2 yet)
+- **NES cold start: 3ms on Pi** — L2 restores 1000+ ROMs from SQLite faster than scanning the filesystem
+- L2 has no measurable impact on warm cache (L1 is always faster)

@@ -15,6 +15,19 @@ pub fn HomePage() -> impl IntoView {
     let info = Resource::new(|| (), |_| server_fns::get_info());
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new(|| (), |_| server_fns::get_systems());
+
+    // Recommendations: loaded client-side only (after hydration) to avoid blocking SSR.
+    // On NFS cold start, recommendation queries can trigger full ROM scans which would
+    // block the initial page render for 30+ seconds. By deferring to the client, the page
+    // renders instantly and recommendations appear when ready.
+    let recommendations = RwSignal::new(None::<server_fns::RecommendationData>);
+    Effect::new(move |_| {
+        leptos::task::spawn_local(async move {
+            if let Ok(data) = server_fns::get_recommendations(6).await {
+                recommendations.set(Some(data));
+            }
+        });
+    });
     view! {
         <div class="page home-page">
             <section class="section home-search-section">
@@ -77,6 +90,15 @@ pub fn HomePage() -> impl IntoView {
                     </Transition>
                 </ErrorBoundary>
             </section>
+
+            // --- Recommendations (client-side only) ---
+            {move || {
+                recommendations.read().as_ref().map(|data| {
+                    let locale = i18n.locale.get();
+                    let data = data.clone();
+                    view! { <RecommendationSections data locale /> }
+                })
+            }}
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.library")}</h2>
@@ -165,6 +187,94 @@ fn StorageBarCard(pct: u8, detail: String) -> impl IntoView {
             <div class="stat-value">{format!("{}%", pct)}</div>
             <div class="stat-label">{detail}</div>
         </div>
+    }
+}
+
+/// Render recommendation sections: random picks, favorites-based, top-rated, and discover links.
+#[component]
+fn RecommendationSections(
+    data: server_fns::RecommendationData,
+    locale: crate::i18n::Locale,
+) -> impl IntoView {
+    let has_random = !data.random_picks.is_empty();
+    let has_favorites = data.favorites_picks.is_some();
+    let has_top_rated = data.top_rated.as_ref().is_some_and(|v| !v.is_empty());
+    let has_discover = !data.top_genres.is_empty() || data.multiplayer_count > 0;
+
+    view! {
+        <Show when=move || has_random>
+            <section class="section">
+                <h2 class="section-title">{t(locale, "home.discover_random")}</h2>
+                <div class="recent-scroll">
+                    {data.random_picks.iter().map(|game| {
+                        let href = game.href.clone();
+                        let name = game.display_name.clone();
+                        let system = game.system_display.clone();
+                        let art = game.box_art_url.clone();
+                        view! { <GameScrollCard href name system box_art_url=art /> }
+                    }).collect::<Vec<_>>()}
+                </div>
+            </section>
+        </Show>
+
+        {data.favorites_picks.as_ref().map(|fp| {
+            let section_title = format!("{} {}", t(locale, "home.because_you_love"), &fp.system_display);
+            let see_all_href = format!("/games/{}", &fp.system);
+            view! {
+                <section class="section">
+                    <div class="section-header">
+                        <h2 class="section-title">{section_title}</h2>
+                        <A href=see_all_href attr:class="section-link">{t(locale, "home.see_all")}</A>
+                    </div>
+                    <div class="recent-scroll">
+                        {fp.picks.iter().map(|game| {
+                            let href = game.href.clone();
+                            let name = game.display_name.clone();
+                            let system = game.system_display.clone();
+                            let art = game.box_art_url.clone();
+                            view! { <GameScrollCard href name system box_art_url=art /> }
+                        }).collect::<Vec<_>>()}
+                    </div>
+                </section>
+            }
+        })}
+
+        <Show when=move || has_top_rated>
+            {data.top_rated.as_ref().map(|picks| {
+                view! {
+                    <section class="section">
+                        <h2 class="section-title">{t(locale, "home.top_rated")}</h2>
+                        <div class="recent-scroll">
+                            {picks.iter().map(|game| {
+                                let href = game.href.clone();
+                                let name = game.display_name.clone();
+                                let system = game.system_display.clone();
+                                let art = game.box_art_url.clone();
+                                view! { <GameScrollCard href name system box_art_url=art /> }
+                            }).collect::<Vec<_>>()}
+                        </div>
+                    </section>
+                }
+            })}
+        </Show>
+
+        <Show when=move || has_discover>
+            <section class="section">
+                <h2 class="section-title">{t(locale, "home.discover")}</h2>
+                <div class="discover-links">
+                    {data.top_genres.iter().map(|gc| {
+                        let href = format!("/search?genre={}", urlencoding::encode(&gc.genre));
+                        let label = format!("{} ({} {})", gc.genre, gc.count, t(locale, "home.discover_games"));
+                        view! { <A href=href attr:class="discover-link">{label}</A> }
+                    }).collect::<Vec<_>>()}
+                    <Show when={let mc = data.multiplayer_count; move || mc > 0}>
+                        <A href="/search?multiplayer=true" attr:class="discover-link">
+                            {format!("{} ({} {})", t(locale, "home.discover_multiplayer"), data.multiplayer_count, t(locale, "home.discover_games"))}
+                        </A>
+                    </Show>
+                </div>
+            </section>
+        </Show>
     }
 }
 

@@ -45,210 +45,37 @@ pub struct RecommendationData {
 
 /// Get recommendation data: random picks, discover links, favorites-based, and top-rated.
 /// Returns everything in a single call to minimize server round-trips on the Pi.
+///
+/// Uses SQL queries on the rom_cache for genre/multiplayer aggregation (fast)
+/// instead of iterating all ROMs in memory (slow on NFS cold start).
 #[server(prefix = "/sfn")]
 pub async fn get_recommendations(count: usize) -> Result<RecommendationData, ServerFnError> {
     use rand::seq::SliceRandom;
     use rand::Rng;
-    use std::collections::HashMap;
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     let region_pref = state.region_preference();
     let systems = state.cache.get_systems(&storage);
 
-    // Build weighted system list for random selection.
-    let weighted: Vec<(&str, usize)> = systems
-        .iter()
-        .filter(|s| s.game_count > 0)
-        .map(|s| (s.folder_name.as_str(), s.game_count))
-        .collect();
-
-    let total_games: usize = weighted.iter().map(|(_, c)| c).sum();
-
     let count = count.clamp(1, 12);
-    let mut random_picks = Vec::with_capacity(count);
-    let mut genre_counts: HashMap<String, usize> = HashMap::new();
-    let mut multiplayer_count: usize = 0;
-
-    // Track which systems we've already picked from to spread recommendations.
-    let mut used_systems: Vec<String> = Vec::new();
     let mut rng = rand::rng();
 
-    if total_games > 0 {
-        // Pick random games, preferring diversity across systems.
-        let mut attempts = 0;
-        while random_picks.len() < count && attempts < count * 4 {
-            attempts += 1;
+    // --- Phase A: Random picks with box art ---
+    let random_picks = build_random_picks(
+        &state, &storage, region_pref, &systems, count, &mut rng,
+    );
 
-            // Weighted random system selection.
-            let pick = rng.random_range(0..total_games);
-            let mut cumulative = 0;
-            let mut chosen_system = weighted[0].0;
-            for &(sys, cnt) in &weighted {
-                cumulative += cnt;
-                if pick < cumulative {
-                    chosen_system = sys;
-                    break;
-                }
-            }
+    // --- Phase B: Genre/multiplayer aggregation via SQL ---
+    let (top_genres, multiplayer_count) = build_discover_stats(&state, &storage, &systems, region_pref);
 
-            // Prefer systems we haven't picked from yet (but allow repeats after exhaustion).
-            if used_systems.len() < weighted.len() && used_systems.contains(&chosen_system.to_string()) {
-                continue;
-            }
-
-            let roms = match state.cache.get_roms(&storage, chosen_system, region_pref) {
-                Ok(roms) => roms,
-                Err(_) => continue,
-            };
-
-            if roms.is_empty() {
-                continue;
-            }
-
-            let idx = rng.random_range(0..roms.len());
-            let rom = &roms[idx];
-            let rom_filename = &rom.game.rom_filename;
-
-            // Get display name.
-            let display_name = rom
-                .game
-                .display_name
-                .as_deref()
-                .unwrap_or(rom_filename)
-                .to_string();
-
-            // Get system display name.
-            let system_display = systems
-                .iter()
-                .find(|s| s.folder_name == chosen_system)
-                .map(|s| s.display_name.clone())
-                .unwrap_or_else(|| chosen_system.to_string());
-
-            // Resolve box art.
-            let box_art_url = super::resolve_box_art_url(&state, chosen_system, rom_filename);
-
-            let href = format!(
-                "/games/{}/{}",
-                chosen_system,
-                urlencoding::encode(rom_filename)
-            );
-
-            random_picks.push(RecommendedGame {
-                system: chosen_system.to_string(),
-                system_display,
-                rom_filename: rom_filename.clone(),
-                display_name,
-                box_art_url,
-                href,
-            });
-
-            used_systems.push(chosen_system.to_string());
-        }
-
-        // If we still need more picks (all systems used), allow repeats.
-        while random_picks.len() < count {
-            let pick = rng.random_range(0..total_games);
-            let mut cumulative = 0;
-            let mut chosen_system = weighted[0].0;
-            for &(sys, cnt) in &weighted {
-                cumulative += cnt;
-                if pick < cumulative {
-                    chosen_system = sys;
-                    break;
-                }
-            }
-
-            let roms = match state.cache.get_roms(&storage, chosen_system, region_pref) {
-                Ok(roms) => roms,
-                Err(_) => break,
-            };
-            if roms.is_empty() {
-                break;
-            }
-
-            let idx = rng.random_range(0..roms.len());
-            let rom = &roms[idx];
-            let rom_filename = &rom.game.rom_filename;
-
-            // Skip duplicates.
-            if random_picks.iter().any(|p| p.rom_filename == *rom_filename && p.system == chosen_system) {
-                continue;
-            }
-
-            let display_name = rom
-                .game
-                .display_name
-                .as_deref()
-                .unwrap_or(rom_filename)
-                .to_string();
-
-            let system_display = systems
-                .iter()
-                .find(|s| s.folder_name == chosen_system)
-                .map(|s| s.display_name.clone())
-                .unwrap_or_else(|| chosen_system.to_string());
-
-            let box_art_url = super::resolve_box_art_url(&state, chosen_system, rom_filename);
-
-            let href = format!(
-                "/games/{}/{}",
-                chosen_system,
-                urlencoding::encode(rom_filename)
-            );
-
-            random_picks.push(RecommendedGame {
-                system: chosen_system.to_string(),
-                system_display,
-                rom_filename: rom_filename.clone(),
-                display_name,
-                box_art_url,
-                href,
-            });
-        }
-
-        // Shuffle the final picks so system ordering isn't predictable.
-        random_picks.shuffle(&mut rng);
-    }
-
-    // Compute genre counts and multiplayer count across all systems.
-    for sys in &systems {
-        if sys.game_count == 0 {
-            continue;
-        }
-        let roms = match state.cache.get_roms(&storage, &sys.folder_name, region_pref) {
-            Ok(roms) => roms,
-            Err(_) => continue,
-        };
-        for rom in &roms {
-            let genre = super::search::lookup_genre(&sys.folder_name, &rom.game.rom_filename);
-            if !genre.is_empty() {
-                *genre_counts.entry(genre).or_insert(0) += 1;
-            }
-            let players = super::search::lookup_players(&sys.folder_name, &rom.game.rom_filename);
-            if players >= 2 {
-                multiplayer_count += 1;
-            }
-        }
-    }
-
-    // Sort genres by count descending, take the top ones.
-    let mut top_genres: Vec<GenreCount> = genre_counts
-        .into_iter()
-        .map(|(genre, count)| GenreCount { genre, count })
-        .collect();
-    top_genres.sort_by(|a, b| b.count.cmp(&a.count));
-    top_genres.truncate(4);
-
-    // --- Phase 2: Favorites-based recommendations ---
+    // --- Phase C: Favorites-based recommendations ---
     let favorites_picks = build_favorites_picks(
         &state, &storage, region_pref, &systems, count, &mut rng,
     );
 
-    // --- Phase 3: Top-rated recommendations ---
-    let top_rated = build_top_rated_picks(
-        &state, &storage, region_pref, &systems, count,
-    );
+    // --- Phase D: Top-rated recommendations ---
+    let top_rated = build_top_rated_picks(&state, &storage, &systems, count);
 
     Ok(RecommendationData {
         random_picks,
@@ -257,6 +84,178 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         favorites_picks,
         top_rated,
     })
+}
+
+/// Build random game picks, preferring diversity across systems and games with box art.
+#[cfg(feature = "ssr")]
+fn build_random_picks(
+    state: &crate::api::AppState,
+    storage: &replay_control_core::storage::StorageLocation,
+    region_pref: replay_control_core::rom_tags::RegionPreference,
+    systems: &[SystemSummary],
+    count: usize,
+    rng: &mut impl rand::Rng,
+) -> Vec<RecommendedGame> {
+    use rand::seq::SliceRandom;
+
+    let weighted: Vec<(&str, usize)> = systems
+        .iter()
+        .filter(|s| s.game_count > 0)
+        .map(|s| (s.folder_name.as_str(), s.game_count))
+        .collect();
+
+    let total_games: usize = weighted.iter().map(|(_, c)| c).sum();
+    if total_games == 0 {
+        return Vec::new();
+    }
+
+    let mut picks = Vec::with_capacity(count);
+    let mut used_systems: Vec<String> = Vec::new();
+    let mut attempts = 0;
+
+    while picks.len() < count && attempts < count * 4 {
+        attempts += 1;
+
+        // Weighted random system selection.
+        let pick = rng.random_range(0..total_games);
+        let mut cumulative = 0;
+        let mut chosen_system = weighted[0].0;
+        for &(sys, cnt) in &weighted {
+            cumulative += cnt;
+            if pick < cumulative {
+                chosen_system = sys;
+                break;
+            }
+        }
+
+        // Prefer systems we haven't picked from yet.
+        if used_systems.len() < weighted.len()
+            && used_systems.contains(&chosen_system.to_string())
+        {
+            continue;
+        }
+
+        let roms = match state.cache.get_roms(storage, chosen_system, region_pref) {
+            Ok(roms) => roms,
+            Err(_) => continue,
+        };
+
+        if roms.is_empty() {
+            continue;
+        }
+
+        let idx = rng.random_range(0..roms.len());
+        let rom = &roms[idx];
+
+        if let Some(game) = rom_to_recommended(state, chosen_system, rom, systems) {
+            picks.push(game);
+            used_systems.push(chosen_system.to_string());
+        }
+    }
+
+    // Fill remaining slots if needed (allow repeats).
+    while picks.len() < count {
+        let pick = rng.random_range(0..total_games);
+        let mut cumulative = 0;
+        let mut chosen_system = weighted[0].0;
+        for &(sys, cnt) in &weighted {
+            cumulative += cnt;
+            if pick < cumulative {
+                chosen_system = sys;
+                break;
+            }
+        }
+
+        let roms = match state.cache.get_roms(storage, chosen_system, region_pref) {
+            Ok(roms) => roms,
+            Err(_) => break,
+        };
+        if roms.is_empty() {
+            break;
+        }
+
+        let idx = rng.random_range(0..roms.len());
+        let rom = &roms[idx];
+
+        // Skip duplicates.
+        if picks
+            .iter()
+            .any(|p| p.rom_filename == rom.game.rom_filename && p.system == chosen_system)
+        {
+            continue;
+        }
+
+        if let Some(game) = rom_to_recommended(state, chosen_system, rom, systems) {
+            picks.push(game);
+        }
+    }
+
+    picks.shuffle(rng);
+    picks
+}
+
+/// Build genre counts and multiplayer count using SQL queries on rom_cache.
+/// Falls back to iterating ROM lists if rom_cache is empty.
+#[cfg(feature = "ssr")]
+fn build_discover_stats(
+    state: &crate::api::AppState,
+    storage: &replay_control_core::storage::StorageLocation,
+    systems: &[SystemSummary],
+    region_pref: replay_control_core::rom_tags::RegionPreference,
+) -> (Vec<GenreCount>, usize) {
+    // Try SQL path first (fast, uses rom_cache).
+    if let Some(guard) = state.metadata_db() {
+        if let Some(db) = guard.as_ref() {
+            let genre_counts = db.genre_counts().unwrap_or_default();
+            let multiplayer = db.multiplayer_count().unwrap_or(0);
+
+            // Only use SQL results if the rom_cache has data.
+            if !genre_counts.is_empty() || multiplayer > 0 {
+                let mut top_genres: Vec<GenreCount> = genre_counts
+                    .into_iter()
+                    .map(|(genre, count)| GenreCount { genre, count })
+                    .collect();
+                top_genres.truncate(4);
+                return (top_genres, multiplayer);
+            }
+        }
+    }
+
+    // Fallback: iterate ROMs from cache (only happens before any L3 scan populates rom_cache).
+    let mut genre_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut multiplayer_count: usize = 0;
+
+    for sys in systems {
+        if sys.game_count == 0 {
+            continue;
+        }
+        let roms = match state.cache.get_roms(storage, &sys.folder_name, region_pref) {
+            Ok(roms) => roms,
+            Err(_) => continue,
+        };
+        for rom in &roms {
+            let genre =
+                super::search::lookup_genre(&sys.folder_name, &rom.game.rom_filename);
+            if !genre.is_empty() {
+                *genre_counts.entry(genre).or_insert(0) += 1;
+            }
+            let players =
+                super::search::lookup_players(&sys.folder_name, &rom.game.rom_filename);
+            if players >= 2 {
+                multiplayer_count += 1;
+            }
+        }
+    }
+
+    let mut top_genres: Vec<GenreCount> = genre_counts
+        .into_iter()
+        .map(|(genre, count)| GenreCount { genre, count })
+        .collect();
+    top_genres.sort_by(|a, b| b.count.cmp(&a.count));
+    top_genres.truncate(4);
+
+    (top_genres, multiplayer_count)
 }
 
 /// Build favorites-based recommendations: find the user's most-favorited system,
@@ -285,27 +284,22 @@ fn build_favorites_picks(
         *fav_per_system.entry(&fav.game.system).or_default() += 1;
     }
 
-    // Pick the system with the most favorites.
-    let (top_system, _) = fav_per_system
-        .iter()
-        .max_by_key(|(_, count)| *count)?;
+    let (top_system, _) = fav_per_system.iter().max_by_key(|(_, count)| *count)?;
     let top_system = top_system.to_string();
 
-    // Get the display name for the top system.
     let system_display = systems
         .iter()
         .find(|s| s.folder_name == top_system)
         .map(|s| s.display_name.clone())
         .unwrap_or_else(|| top_system.clone());
 
-    // Collect favorite filenames for this system (to exclude from recommendations).
     let fav_filenames: HashSet<String> = favorites
         .iter()
         .filter(|f| f.game.system == top_system)
         .map(|f| f.game.rom_filename.clone())
         .collect();
 
-    // Determine the genres the user likes (from their favorites in this system).
+    // Determine the genres the user likes.
     let mut fav_genres: HashMap<String, usize> = HashMap::new();
     for fav in &favorites {
         if fav.game.system == top_system {
@@ -317,8 +311,10 @@ fn build_favorites_picks(
     }
     let fav_genre_set: HashSet<String> = fav_genres.keys().cloned().collect();
 
-    // Load all ROMs for the top system and exclude favorites.
-    let roms = state.cache.get_roms(storage, &top_system, region_pref).ok()?;
+    let roms = state
+        .cache
+        .get_roms(storage, &top_system, region_pref)
+        .ok()?;
     let mut candidates: Vec<_> = roms
         .into_iter()
         .filter(|r| !fav_filenames.contains(&r.game.rom_filename))
@@ -328,7 +324,7 @@ fn build_favorites_picks(
         return None;
     }
 
-    // Try to load ratings from metadata DB for sorting.
+    // Load ratings for sorting.
     let ratings: HashMap<String, f64> = if let Some(guard) = state.metadata_db() {
         if let Some(db) = guard.as_ref() {
             db.system_ratings(&top_system).unwrap_or_default()
@@ -339,30 +335,22 @@ fn build_favorites_picks(
         HashMap::new()
     };
 
-    // Score candidates: prefer same genre as favorites, then by rating.
+    // Score: prefer same genre, then by rating.
     candidates.sort_by(|a, b| {
         let a_genre = super::search::lookup_genre(&top_system, &a.game.rom_filename);
         let b_genre = super::search::lookup_genre(&top_system, &b.game.rom_filename);
         let a_genre_match = fav_genre_set.contains(&a_genre);
         let b_genre_match = fav_genre_set.contains(&b_genre);
 
-        let a_rating = ratings
-            .get(&a.game.rom_filename)
-            .copied()
-            .unwrap_or(0.0);
-        let b_rating = ratings
-            .get(&b.game.rom_filename)
-            .copied()
-            .unwrap_or(0.0);
+        let a_rating = ratings.get(&a.game.rom_filename).copied().unwrap_or(0.0);
+        let b_rating = ratings.get(&b.game.rom_filename).copied().unwrap_or(0.0);
 
-        // Genre match first, then rating descending.
         b_genre_match
             .cmp(&a_genre_match)
             .then(b_rating.partial_cmp(&a_rating).unwrap_or(std::cmp::Ordering::Equal))
     });
 
-    // Take top candidates, but add some randomness: if we have enough genre-matching
-    // candidates, shuffle within the top tier so it's not always the same picks.
+    // Add randomness within genre-matching tier.
     let genre_matching_count = candidates
         .iter()
         .take_while(|r| {
@@ -378,29 +366,7 @@ fn build_favorites_picks(
     let picks: Vec<RecommendedGame> = candidates
         .iter()
         .take(count)
-        .map(|rom| {
-            let rom_filename = &rom.game.rom_filename;
-            let display_name = rom
-                .game
-                .display_name
-                .as_deref()
-                .unwrap_or(rom_filename)
-                .to_string();
-            let box_art_url = super::resolve_box_art_url(state, &top_system, rom_filename);
-            let href = format!(
-                "/games/{}/{}",
-                top_system,
-                urlencoding::encode(rom_filename)
-            );
-            RecommendedGame {
-                system: top_system.clone(),
-                system_display: system_display.clone(),
-                rom_filename: rom_filename.clone(),
-                display_name,
-                box_art_url,
-                href,
-            }
-        })
+        .filter_map(|rom| rom_to_recommended(state, &top_system, rom, systems))
         .collect();
 
     if picks.is_empty() {
@@ -420,12 +386,63 @@ fn build_favorites_picks(
 fn build_top_rated_picks(
     state: &crate::api::AppState,
     storage: &replay_control_core::storage::StorageLocation,
-    region_pref: replay_control_core::rom_tags::RegionPreference,
     systems: &[SystemSummary],
     count: usize,
 ) -> Option<Vec<RecommendedGame>> {
     use std::collections::HashSet;
 
+    // Try SQL path: top_rated_cached_roms from rom_cache.
+    if let Some(guard) = state.metadata_db() {
+        if let Some(db) = guard.as_ref() {
+            let top = db.top_rated_cached_roms(count * 3).unwrap_or_default();
+            if !top.is_empty() {
+                // Prefer diversity across systems.
+                let mut picks = Vec::with_capacity(count);
+                let mut used_systems: HashSet<String> = HashSet::new();
+
+                for rom in &top {
+                    if picks.len() >= count {
+                        break;
+                    }
+                    if used_systems.len() < systems.len()
+                        && used_systems.contains(&rom.system)
+                    {
+                        continue;
+                    }
+                    if let Some(game) =
+                        cached_rom_to_recommended(state, &rom.system, rom, systems)
+                    {
+                        used_systems.insert(rom.system.clone());
+                        picks.push(game);
+                    }
+                }
+
+                // Fill remaining from top-rated without diversity constraint.
+                for rom in &top {
+                    if picks.len() >= count {
+                        break;
+                    }
+                    if picks
+                        .iter()
+                        .any(|p| p.system == rom.system && p.rom_filename == rom.rom_filename)
+                    {
+                        continue;
+                    }
+                    if let Some(game) =
+                        cached_rom_to_recommended(state, &rom.system, rom, systems)
+                    {
+                        picks.push(game);
+                    }
+                }
+
+                if !picks.is_empty() {
+                    return Some(picks);
+                }
+            }
+        }
+    }
+
+    // Fallback: use all_ratings from game_metadata table.
     let guard = state.metadata_db()?;
     let db = guard.as_ref()?;
 
@@ -434,145 +451,116 @@ fn build_top_rated_picks(
         return None;
     }
 
-    // Sort by rating descending.
     let mut rated: Vec<((String, String), f64)> = all_ratings
         .into_iter()
         .filter(|(_, rating)| *rating > 0.0)
         .collect();
     rated.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Build the set of systems that have games in the library.
     let active_systems: HashSet<&str> = systems
         .iter()
         .filter(|s| s.game_count > 0)
         .map(|s| s.folder_name.as_str())
         .collect();
 
-    // Filter to games that actually exist in the user's ROM cache and prefer
-    // diversity across systems.
+    let region_pref = state.region_preference();
+
     let mut picks = Vec::with_capacity(count);
     let mut used_systems: HashSet<String> = HashSet::new();
 
-    for ((system, rom_filename), _rating) in &rated {
+    for ((system, rom_filename), _) in &rated {
         if picks.len() >= count {
             break;
         }
-
         if !active_systems.contains(system.as_str()) {
             continue;
         }
-
-        // Prefer diversity: skip systems we've already picked from (unless
-        // we've exhausted all systems with top-rated games).
         if used_systems.len() < active_systems.len() && used_systems.contains(system) {
             continue;
         }
 
-        // Verify the ROM exists in the cache.
         let roms = match state.cache.get_roms(storage, system, region_pref) {
             Ok(roms) => roms,
             Err(_) => continue,
         };
 
-        let rom = match roms.iter().find(|r| r.game.rom_filename == *rom_filename) {
-            Some(r) => r,
-            None => continue,
-        };
-
-        let display_name = rom
-            .game
-            .display_name
-            .as_deref()
-            .unwrap_or(rom_filename)
-            .to_string();
-
-        let system_display = systems
-            .iter()
-            .find(|s| s.folder_name == *system)
-            .map(|s| s.display_name.clone())
-            .unwrap_or_else(|| system.clone());
-
-        let box_art_url = super::resolve_box_art_url(state, system, rom_filename);
-
-        let href = format!(
-            "/games/{}/{}",
-            system,
-            urlencoding::encode(rom_filename)
-        );
-
-        picks.push(RecommendedGame {
-            system: system.clone(),
-            system_display,
-            rom_filename: rom_filename.clone(),
-            display_name,
-            box_art_url,
-            href,
-        });
-
-        used_systems.insert(system.clone());
-    }
-
-    // If we didn't get enough with diversity, fill from remaining top-rated.
-    if picks.len() < count {
-        for ((system, rom_filename), _rating) in &rated {
-            if picks.len() >= count {
-                break;
+        if let Some(rom) = roms.iter().find(|r| r.game.rom_filename == *rom_filename) {
+            if let Some(game) = rom_to_recommended(state, system, rom, systems) {
+                used_systems.insert(system.clone());
+                picks.push(game);
             }
-
-            if !active_systems.contains(system.as_str()) {
-                continue;
-            }
-
-            // Skip already picked.
-            if picks.iter().any(|p| p.system == *system && p.rom_filename == *rom_filename) {
-                continue;
-            }
-
-            let roms = match state.cache.get_roms(storage, system, region_pref) {
-                Ok(roms) => roms,
-                Err(_) => continue,
-            };
-
-            let rom = match roms.iter().find(|r| r.game.rom_filename == *rom_filename) {
-                Some(r) => r,
-                None => continue,
-            };
-
-            let display_name = rom
-                .game
-                .display_name
-                .as_deref()
-                .unwrap_or(rom_filename)
-                .to_string();
-
-            let system_display = systems
-                .iter()
-                .find(|s| s.folder_name == *system)
-                .map(|s| s.display_name.clone())
-                .unwrap_or_else(|| system.clone());
-
-            let box_art_url = super::resolve_box_art_url(state, system, rom_filename);
-
-            let href = format!(
-                "/games/{}/{}",
-                system,
-                urlencoding::encode(rom_filename)
-            );
-
-            picks.push(RecommendedGame {
-                system: system.clone(),
-                system_display,
-                rom_filename: rom_filename.clone(),
-                display_name,
-                box_art_url,
-                href,
-            });
         }
     }
 
-    if picks.is_empty() {
-        None
-    } else {
-        Some(picks)
-    }
+    if picks.is_empty() { None } else { Some(picks) }
+}
+
+/// Convert a RomEntry to a RecommendedGame.
+#[cfg(feature = "ssr")]
+fn rom_to_recommended(
+    state: &crate::api::AppState,
+    system: &str,
+    rom: &replay_control_core::roms::RomEntry,
+    systems: &[SystemSummary],
+) -> Option<RecommendedGame> {
+    let rom_filename = &rom.game.rom_filename;
+    let display_name = rom
+        .game
+        .display_name
+        .as_deref()
+        .unwrap_or(rom_filename)
+        .to_string();
+    let system_display = systems
+        .iter()
+        .find(|s| s.folder_name == system)
+        .map(|s| s.display_name.clone())
+        .unwrap_or_else(|| system.to_string());
+    let box_art_url = super::resolve_box_art_url(state, system, rom_filename);
+    let href = format!(
+        "/games/{}/{}",
+        system,
+        urlencoding::encode(rom_filename)
+    );
+    Some(RecommendedGame {
+        system: system.to_string(),
+        system_display,
+        rom_filename: rom_filename.clone(),
+        display_name,
+        box_art_url,
+        href,
+    })
+}
+
+/// Convert a CachedRom to a RecommendedGame.
+#[cfg(feature = "ssr")]
+fn cached_rom_to_recommended(
+    state: &crate::api::AppState,
+    system: &str,
+    rom: &replay_control_core::metadata_db::CachedRom,
+    systems: &[SystemSummary],
+) -> Option<RecommendedGame> {
+    let display_name = rom
+        .display_name
+        .as_deref()
+        .unwrap_or(&rom.rom_filename)
+        .to_string();
+    let system_display = systems
+        .iter()
+        .find(|s| s.folder_name == system)
+        .map(|s| s.display_name.clone())
+        .unwrap_or_else(|| system.to_string());
+    let box_art_url = super::resolve_box_art_url(state, system, &rom.rom_filename);
+    let href = format!(
+        "/games/{}/{}",
+        system,
+        urlencoding::encode(&rom.rom_filename)
+    );
+    Some(RecommendedGame {
+        system: system.to_string(),
+        system_display,
+        rom_filename: rom.rom_filename.clone(),
+        display_name,
+        box_art_url,
+        href,
+    })
 }
