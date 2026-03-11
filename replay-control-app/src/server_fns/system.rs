@@ -21,7 +21,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     let summaries = state.cache.get_systems(&storage);
-    let favorites = replay_control_core::favorites::list_favorites(&storage).unwrap_or_default();
+    let total_favorites = state.cache.get_favorites_count(&storage);
 
     let disk = storage
         .disk_usage()
@@ -45,7 +45,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         total_systems: summaries.len(),
         systems_with_games,
         total_games,
-        total_favorites: favorites.len(),
+        total_favorites,
         ethernet_ip,
         wifi_ip,
     })
@@ -83,14 +83,22 @@ pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
 pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let entries = replay_control_core::recents::list_recents(&storage)
+    let entries = state
+        .cache
+        .get_recents(&storage)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Build image indexes per-system (typically only a few distinct systems in recents).
+    let mut image_indexes: std::collections::HashMap<String, std::sync::Arc<crate::api::cache::ImageIndex>> =
+        std::collections::HashMap::new();
     let enriched = entries
         .into_iter()
         .map(|entry| {
+            let index = image_indexes
+                .entry(entry.game.system.clone())
+                .or_insert_with(|| state.cache.get_image_index(&state, &entry.game.system));
             let box_art_url =
-                resolve_box_art_url(&state, &entry.game.system, &entry.game.rom_filename);
+                state.cache.resolve_box_art(index, &entry.game.system, &entry.game.rom_filename);
             RecentWithArt {
                 entry,
                 box_art_url,

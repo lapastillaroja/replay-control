@@ -91,6 +91,8 @@
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     transition: background 0.15s;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 61px;
 }
 
 .rom-item:hover {

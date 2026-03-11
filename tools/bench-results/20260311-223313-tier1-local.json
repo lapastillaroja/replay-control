@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-03-11T22:33:43+09:00",
+  "target": "http://localhost:8091",
+  "tag": "tier1-local",
+  "runs": 3,
+  "endpoints": [
+    {"name":"Home /","ttfb_ms":669.5,"total_ms":669.6,"size_kb":6.6},
+    {"name":"Games NES","ttfb_ms":0.7,"total_ms":0.8,"size_kb":1.7},
+    {"name":"Games Arcade","ttfb_ms":4206.6,"total_ms":4209.1,"size_kb":9.3},
+    {"name":"GetRomsPage (NES, 100)","ttfb_ms":0.4,"total_ms":0.4,"size_kb":0.2},
+    {"name":"GlobalSearch sonic","ttfb_ms":0.4,"total_ms":0.4,"size_kb":0.2}
+  ],
+  "assets": [
+    {"name":"WASM bundle","raw_kb":2196.9,"gzip_kb":670.4},
+    {"name":"CSS","raw_kb":46.5,"gzip_kb":7.4},
+    {"name":"Home HTML","raw_kb":45.7,"gzip_kb":0},
+    {"name":"Games NES HTML","raw_kb":4.2,"gzip_kb":0}
+  ],
+  "lighthouse": [
+  ],
+  "loadtest": [
+  ]
+}

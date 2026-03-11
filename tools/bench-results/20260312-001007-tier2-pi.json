@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-03-12T00:10:08+09:00",
+  "target": "http://<PI_IP>:8080",
+  "tag": "tier2-pi",
+  "runs": 3,
+  "endpoints": [
+    {"name":"Home /","ttfb_ms":16.5,"total_ms":16.8,"size_kb":7.2},
+    {"name":"Games NES","ttfb_ms":1.6,"total_ms":2.5,"size_kb":3.5},
+    {"name":"Games Arcade","ttfb_ms":10.5,"total_ms":14.7,"size_kb":9.0}
+  ],
+  "assets": [
+    {"name":"WASM bundle","raw_kb":2196.9,"gzip_kb":670.4},
+    {"name":"CSS","raw_kb":46.5,"gzip_kb":7.4},
+    {"name":"Home HTML","raw_kb":49.5,"gzip_kb":0},
+    {"name":"Games NES HTML","raw_kb":23.2,"gzip_kb":0}
+  ],
+  "lighthouse": [
+  ],
+  "loadtest": [
+  ]
+}

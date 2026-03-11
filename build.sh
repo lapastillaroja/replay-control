@@ -26,18 +26,36 @@ TARGET="${TARGET:-${BUILD_TARGET:-}}"
 echo "==> Building WASM (hydrate)..."
 cargo build -p "$CRATE" --lib \
   --target wasm32-unknown-unknown \
-  --release \
+  --profile wasm-release \
   --features hydrate \
   --no-default-features
 
 echo "==> Running wasm-bindgen..."
 mkdir -p "$PKG_DIR"
 wasm-bindgen \
-  "target/wasm32-unknown-unknown/release/${CRATE//-/_}.wasm" \
+  "target/wasm32-unknown-unknown/wasm-release/${CRATE//-/_}.wasm" \
   --out-dir "$PKG_DIR" \
   --out-name "${CRATE//-/_}" \
   --target web \
   --no-typescript
+
+# Optimize WASM with wasm-opt if available.
+WASM_FILE="$PKG_DIR/${CRATE//-/_}_bg.wasm"
+if command -v wasm-opt &>/dev/null; then
+    echo "==> Running wasm-opt -Oz..."
+    BEFORE=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
+    wasm-opt -Oz "$WASM_FILE" -o "$WASM_FILE"
+    AFTER=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
+    echo "    WASM: ${BEFORE} -> ${AFTER} bytes ($(( (BEFORE - AFTER) * 100 / BEFORE ))% reduction)"
+else
+    echo "    (wasm-opt not found, skipping)"
+fi
+
+# Pre-compress WASM for static serving.
+echo "==> Pre-compressing WASM..."
+gzip -9 -k -f "$WASM_FILE"
+GZ_SIZE=$(stat -c%s "${WASM_FILE}.gz" 2>/dev/null || echo 0)
+echo "    ${WASM_FILE}.gz: ${GZ_SIZE} bytes"
 
 # Copy static assets
 cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"

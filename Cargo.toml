@@ -12,3 +12,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [profile.release]
 incremental = true
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+incremental = false

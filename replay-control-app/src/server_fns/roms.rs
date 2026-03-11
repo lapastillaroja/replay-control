@@ -162,11 +162,16 @@ pub async fn get_roms_page(
     let mut roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).collect();
     let has_more = offset + roms.len() < total;
 
-    replay_control_core::roms::mark_favorites(&storage, &system, &mut roms);
-
-    // Populate box art URLs.
+    // Use cached favorites set instead of per-request filesystem scan.
+    let fav_set = state.cache.get_favorites_set(&storage, &system);
     for rom in &mut roms {
-        rom.box_art_url = resolve_box_art_url(&state, &system, &rom.game.rom_filename);
+        rom.is_favorite = fav_set.contains(&rom.game.rom_filename);
+    }
+
+    // Populate box art URLs using cached per-system image index (single dir read).
+    let image_index = state.cache.get_image_index(&state, &system);
+    for rom in &mut roms {
+        rom.box_art_url = state.cache.resolve_box_art(&image_index, &system, &rom.game.rom_filename);
     }
 
     // Populate driver status for arcade systems.

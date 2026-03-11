@@ -478,7 +478,7 @@ fn RomItem(
 
             <A href=game_href.get_value() attr:class="rom-thumb-link">
                 {if has_box_art {
-                    view! { <img class="rom-thumb" src=box_art_url.get_value() loading="lazy" /> }.into_any()
+                    view! { <img class="rom-thumb" src=box_art_url.get_value() loading="lazy" width="56" height="40" /> }.into_any()
                 } else {
                     view! { <div class="rom-thumb-placeholder"></div> }.into_any()
                 }}

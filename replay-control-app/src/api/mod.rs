@@ -1,5 +1,5 @@
 mod background;
-mod cache;
+pub(crate) mod cache;
 mod import;
 pub mod favorites;
 pub mod recents;

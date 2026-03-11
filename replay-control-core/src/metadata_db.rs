@@ -188,6 +188,38 @@ impl MetadataDb {
         Ok(result)
     }
 
+    /// Fetch all box art paths for a system in one query.
+    /// Returns a map of rom_filename → box_art_path for entries that have one.
+    pub fn system_box_art_paths(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, String>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, box_art_path FROM game_metadata
+                 WHERE system = ?1 AND box_art_path IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system box art lookup: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("System box art lookup: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows {
+            if let Ok((filename, path)) = row {
+                map.insert(filename, path);
+            }
+        }
+
+        Ok(map)
+    }
+
     /// Batch look up ratings for a list of ROMs on a single system.
     /// Returns a map of rom_filename -> rating for those that have a rating.
     pub fn lookup_ratings(

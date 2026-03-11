@@ -20,10 +20,15 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut image_indexes: std::collections::HashMap<String, std::sync::Arc<crate::api::cache::ImageIndex>> =
+        std::collections::HashMap::new();
     Ok(favs
         .into_iter()
         .map(|fav| {
-            let box_art_url = resolve_box_art_url(&state, &fav.game.system, &fav.game.rom_filename);
+            let index = image_indexes
+                .entry(fav.game.system.clone())
+                .or_insert_with(|| state.cache.get_image_index(&state, &fav.game.system));
+            let box_art_url = state.cache.resolve_box_art(index, &fav.game.system, &fav.game.rom_filename);
             FavoriteWithArt { fav, box_art_url }
         })
         .collect())
@@ -34,10 +39,11 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let image_index = state.cache.get_image_index(&state, &system);
     Ok(favs
         .into_iter()
         .map(|fav| {
-            let box_art_url = resolve_box_art_url(&state, &fav.game.system, &fav.game.rom_filename);
+            let box_art_url = state.cache.resolve_box_art(&image_index, &fav.game.system, &fav.game.rom_filename);
             FavoriteWithArt { fav, box_art_url }
         })
         .collect())
@@ -50,8 +56,11 @@ pub async fn add_favorite(
     grouped: bool,
 ) -> Result<Favorite, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    let result =
+        replay_control_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state.cache.invalidate_favorites();
+    Ok(result)
 }
 
 #[server(prefix = "/sfn")]
@@ -65,7 +74,9 @@ pub async fn remove_favorite(
         &filename,
         subfolder.as_deref(),
     )
-    .map_err(|e| ServerFnError::new(e.to_string()))
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state.cache.invalidate_favorites();
+    Ok(())
 }
 
 #[server(prefix = "/sfn")]
@@ -92,6 +103,7 @@ pub async fn organize_favorites(
         ratings.as_ref(),
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state.cache.invalidate_favorites();
     Ok(OrganizeResult {
         organized: result.organized,
         skipped: result.skipped,
@@ -101,13 +113,17 @@ pub async fn organize_favorites(
 #[server(prefix = "/sfn")]
 pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::favorites::group_by_system(&state.storage())
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    let result = replay_control_core::favorites::group_by_system(&state.storage())
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state.cache.invalidate_favorites();
+    Ok(result)
 }
 
 #[server(prefix = "/sfn")]
 pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::favorites::flatten_favorites(&state.storage())
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    let result = replay_control_core::favorites::flatten_favorites(&state.storage())
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state.cache.invalidate_favorites();
+    Ok(result)
 }

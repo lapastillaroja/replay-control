@@ -4,6 +4,7 @@
 mod ssr {
     use clap::Parser;
     use leptos::config::LeptosOptions;
+    use tower_http::compression::CompressionLayer;
     use tower_http::cors::CorsLayer;
     use tower_http::services::ServeDir;
 
@@ -316,7 +317,10 @@ mod ssr {
             .route("/sse/metadata-progress", metadata_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/media/*path", media_handler)
-            .nest_service("/pkg", ServeDir::new(format!("{site_root}/pkg")))
+            .nest_service(
+                "/pkg",
+                ServeDir::new(format!("{site_root}/pkg")).precompressed_gzip(),
+            )
             .nest_service("/icons", ServeDir::new(format!("{site_root}/icons")))
             .route(
                 "/manifest.json",
@@ -336,6 +340,7 @@ mod ssr {
                     )
                 }),
             )
+            .layer(CompressionLayer::new().gzip(true))
             .layer(CorsLayer::permissive());
 
         let addr = format!("0.0.0.0:{}", cli.port);
