@@ -209,7 +209,7 @@ mkdir -p /usr/local/share/replay
 tar -xzf /tmp/replay-site.tar.gz -C /usr/local/share/replay/
 
 # Write systemd service file
-cat > /etc/systemd/system/replay-companion.service << 'UNIT'
+cat > /etc/systemd/system/replay-control.service << 'UNIT'
 [Unit]
 Description=Replay Control
 After=network.target
@@ -217,7 +217,7 @@ After=media-sd.mount media-usb.mount
 
 [Service]
 Type=simple
-EnvironmentFile=-/etc/default/replay-companion
+EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --site-root ${REPLAY_SITE_ROOT}
@@ -225,15 +225,15 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=replay-companion
+SyslogIdentifier=replay-control
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 
 # Write default environment file (preserve existing)
-if [ ! -f /etc/default/replay-companion ]; then
-    cat > /etc/default/replay-companion << 'ENV'
+if [ ! -f /etc/default/replay-control ]; then
+    cat > /etc/default/replay-control << 'ENV'
 REPLAY_PORT=8080
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
 RUST_LOG=replay_control_app=info,replay_control_core=info
@@ -242,7 +242,7 @@ fi
 
 # Write Avahi service for mDNS discovery
 if [ -d /etc/avahi/services ]; then
-    cat > /etc/avahi/services/replay-companion.service << 'AVAHI'
+    cat > /etc/avahi/services/replay-control.service << 'AVAHI'
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
@@ -257,8 +257,8 @@ fi
 
 # Reload and start
 systemctl daemon-reload
-systemctl enable replay-companion
-systemctl restart replay-companion
+systemctl enable replay-control
+systemctl restart replay-control
 
 # Cleanup
 rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
@@ -306,16 +306,16 @@ mkdir -p "$SD_ROOT/usr/local/share/replay"
 cp -r site/ "$SD_ROOT/usr/local/share/replay/site"
 
 # Install systemd service
-cp replay-companion.service "$SD_ROOT/etc/systemd/system/"
+cp replay-control.service "$SD_ROOT/etc/systemd/system/"
 
 # Install environment file (if not present)
-if [ ! -f "$SD_ROOT/etc/default/replay-companion" ]; then
-    cp replay-companion.env "$SD_ROOT/etc/default/replay-companion"
+if [ ! -f "$SD_ROOT/etc/default/replay-control" ]; then
+    cp replay-control.env "$SD_ROOT/etc/default/replay-control"
 fi
 
 # Enable the service for first boot
-ln -sf /etc/systemd/system/replay-companion.service \
-    "$SD_ROOT/etc/systemd/system/multi-user.target.wants/replay-companion.service"
+ln -sf /etc/systemd/system/replay-control.service \
+    "$SD_ROOT/etc/systemd/system/multi-user.target.wants/replay-control.service"
 ```
 
 The service starts automatically on the next boot.
@@ -365,9 +365,9 @@ All scripts use colored output (green for success, red for errors, yellow for wa
 
 ## 5. systemd Service
 
-### Service file: `replay-companion.service`
+### Service file: `replay-control.service`
 
-Installed to `/etc/systemd/system/replay-companion.service` by the installer.
+Installed to `/etc/systemd/system/replay-control.service` by the installer.
 
 ```ini
 [Unit]
@@ -377,7 +377,7 @@ After=media-sd.mount media-usb.mount
 
 [Service]
 Type=simple
-EnvironmentFile=-/etc/default/replay-companion
+EnvironmentFile=-/etc/default/replay-control
 ExecStart=/usr/local/bin/replay-control-app \
     --port ${REPLAY_PORT} \
     --site-root ${REPLAY_SITE_ROOT}
@@ -385,7 +385,7 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=replay-companion
+SyslogIdentifier=replay-control
 
 [Install]
 WantedBy=multi-user.target
@@ -393,7 +393,7 @@ WantedBy=multi-user.target
 
 No `User=` or `Group=` directive -- the service runs as root, same as everything else on RePlayOS.
 
-### Environment file: `/etc/default/replay-companion`
+### Environment file: `/etc/default/replay-control`
 
 ```bash
 # Port for the web UI
@@ -426,9 +426,9 @@ The environment file is only written on first install. Re-running the installer 
 ### Service management
 
 ```bash
-systemctl status replay-companion    # Check status
-systemctl restart replay-companion   # Restart after config change
-journalctl -u replay-companion -f    # Follow logs
+systemctl status replay-control    # Check status
+systemctl restart replay-control   # Restart after config change
+journalctl -u replay-control -f    # Follow logs
 ```
 
 
@@ -436,7 +436,7 @@ journalctl -u replay-companion -f    # Follow logs
 
 Once the app is deployed, users access it via `http://replaypi.local:8080` in their browser. This relies on mDNS, which RePlayOS supports via Avahi.
 
-The installer drops an Avahi service file at `/etc/avahi/services/replay-companion.service` that advertises the HTTP service for network discovery:
+The installer drops an Avahi service file at `/etc/avahi/services/replay-control.service` that advertises the HTTP service for network discovery:
 
 ```xml
 <?xml version="1.0" standalone='no'?>

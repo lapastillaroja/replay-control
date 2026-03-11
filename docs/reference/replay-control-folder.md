@@ -45,10 +45,10 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
     │   │   └── snap/
     │   └── ...
     │
-    └── tmp/                       # Temporary files (git clones during image import)
+    └── tmp/                       # Cached files (git clones for image import)
         └── libretro-thumbnails/   # Shallow clones of libretro-thumbnails repos
             ├── Sega - Mega Drive - Genesis/
-            └── ...                # Cleaned up after each import
+            └── ...                # Kept on disk between imports; re-cloned when stale
 ```
 
 ## Files and Their Purpose
@@ -100,9 +100,9 @@ Served to the browser at `/media/<system>/boxart/<file>.png` via the Axum media 
 **Source code**: `replay-control-core/src/thumbnails.rs`
 
 ### `tmp/libretro-thumbnails/`
-Temporary shallow git clones created during image import. Each system's repo is cloned, images are copied to `media/`, then the clone is deleted. If an import is interrupted, stale clones may remain here.
+Shallow git clones of libretro-thumbnails repos, created during image import. Each system's repo is cloned, images are copied to `media/`, and the clone is **kept on disk** for reuse in subsequent imports. On the next import, a staleness check compares the local HEAD against the remote HEAD; only stale repos are re-cloned.
 
-Safe to delete manually at any time.
+Safe to delete manually at any time -- repos will be re-cloned on the next import.
 
 ## Size Considerations
 
@@ -110,16 +110,17 @@ On a typical collection:
 - `metadata.db`: ~5-15 MB
 - `Metadata.xml`: ~460 MB (can be deleted after import to save space)
 - `media/`: 200 MB – 2 GB depending on how many systems have images
-- `tmp/`: 0 bytes normally; up to several GB during image import (cleaned up after)
+- `tmp/`: 0 bytes initially; grows as repos are cached (several GB if all systems imported); safe to delete
 
 ## Code References
 
 | Constant/Function | File | Purpose |
 |---|---|---|
 | `RC_DIR` | `metadata_db.rs:12` | The `.replay-control` directory name |
-| `MetadataDb::open()` | `metadata_db.rs:82` | Opens/creates `metadata.db` |
-| `import_system_thumbnails()` | `thumbnails.rs:228` | Copies images from cloned repo to `media/` |
-| `clone_thumbnail_repo()` | `thumbnails.rs:370` | Clones a repo into `tmp/` |
-| `media_dir_size()` | `thumbnails.rs:437` | Calculates total `media/` size |
-| `clear_media()` | `thumbnails.rs:460` | Deletes all `media/` content |
-| Media HTTP handler | `main.rs:140` | Serves `media/` files at `/media/` URL path |
+| `MetadataDb::open()` | `metadata_db.rs:83` | Opens/creates `metadata.db` |
+| `import_system_thumbnails()` | `thumbnails.rs:294` | Copies images from cloned repo to `media/` |
+| `clone_thumbnail_repo()` | `thumbnails.rs:565` | Clones a repo into `tmp/` (reuses existing if not stale) |
+| `is_repo_stale()` | `thumbnails.rs:511` | Checks if local HEAD differs from remote HEAD |
+| `media_dir_size()` | `thumbnails.rs:726` | Calculates total `media/` size |
+| `clear_media()` | `thumbnails.rs:759` | Deletes all `media/` content |
+| Media HTTP handler | `main.rs:158` | Serves `media/` files at `/media/` URL path |
