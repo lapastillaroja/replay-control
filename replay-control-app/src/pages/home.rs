@@ -29,7 +29,7 @@ pub fn HomePage() -> impl IntoView {
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.last_played")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let entries = recents.await?;
@@ -45,14 +45,14 @@ pub fn HomePage() -> impl IntoView {
                                 view! { <p class="empty-state">{t(locale, "home.no_games_played")}</p> }.into_any()
                             })
                         })}
-                    </Suspense>
+                    </Transition>
                 </ErrorBoundary>
             </section>
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.recently_played")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let entries = recents.await?;
@@ -75,14 +75,14 @@ pub fn HomePage() -> impl IntoView {
                                 }.into_any()
                             })
                         })}
-                    </Suspense>
+                    </Transition>
                 </ErrorBoundary>
             </section>
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.library")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let info = info.await?;
@@ -110,14 +110,14 @@ pub fn HomePage() -> impl IntoView {
                                 </div>
                             })
                         })}
-                    </Suspense>
+                    </Transition>
                 </ErrorBoundary>
             </section>
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.systems")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
                             let systems = systems.await?;
                             Ok::<_, ServerFnError>(view! {
@@ -133,7 +133,7 @@ pub fn HomePage() -> impl IntoView {
                                 </div>
                             })
                         })}
-                    </Suspense>
+                    </Transition>
                 </ErrorBoundary>
             </section>
         </div>

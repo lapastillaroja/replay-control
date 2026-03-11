@@ -21,12 +21,12 @@ pub fn HostnamePage() -> impl IntoView {
             </div>
 
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let current = hostname.await?;
                         Ok::<_, ServerFnError>(view! { <HostnameForm current /> })
                     })}
-                </Suspense>
+                </Transition>
             </ErrorBoundary>
         </div>
     }

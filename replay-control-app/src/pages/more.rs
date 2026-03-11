@@ -27,7 +27,7 @@ pub fn MorePage() -> impl IntoView {
 
             <h3 class="section-title">{move || t(i18n.locale.get(), "more.system_info")}</h3>
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
                         let info = info.await?;
@@ -43,7 +43,7 @@ pub fn MorePage() -> impl IntoView {
                             </div>
                         })
                     })}
-                </Suspense>
+                </Transition>
             </ErrorBoundary>
 
         </div>

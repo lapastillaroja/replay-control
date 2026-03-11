@@ -174,6 +174,8 @@ fn SearchShortcut() -> impl IntoView {
                 "keydown",
                 cb.as_ref().unchecked_ref(),
             );
+            // This component is mounted once at the App root and never unmounts,
+            // so `forget()` is acceptable — the listener lives for the app lifetime.
             cb.forget();
         });
     }

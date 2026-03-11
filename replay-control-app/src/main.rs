@@ -202,6 +202,9 @@ mod ssr {
         );
 
         // SSE endpoint for real-time image import progress.
+        // Emits progress every 200ms while an import is active.
+        // Once the import finishes (progress becomes None), sends a few
+        // final null events so the client sees the completion, then closes.
         let sse_state = app_state.clone();
         let sse_handler = axum::routing::get(move || {
             let state = sse_state.clone();
@@ -210,16 +213,35 @@ mod ssr {
                 use std::convert::Infallible;
                 use tokio_stream::StreamExt;
 
+                let progress_ref = state.image_import_progress.clone();
+                let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+
                 let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
                     std::time::Duration::from_millis(200),
                 ))
-                .map(move |_| {
-                    let guard = state.image_import_progress.read().expect("lock");
-                    let json = match &*guard {
-                        Some(p) => serde_json::to_string(p).unwrap_or_default(),
-                        None => "null".to_string(),
-                    };
-                    Ok::<_, Infallible>(Event::default().data(json))
+                .map({
+                    let idle_count = idle_count.clone();
+                    move |_| {
+                        let guard = progress_ref.read().expect("lock");
+                        let is_active = guard.is_some();
+                        let json = match &*guard {
+                            Some(p) => serde_json::to_string(p).unwrap_or_default(),
+                            None => "null".to_string(),
+                        };
+                        drop(guard);
+
+                        if is_active {
+                            idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
+                        } else {
+                            idle_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Ok::<_, Infallible>(Event::default().data(json))
+                    }
+                })
+                // Close stream after 5 consecutive idle ticks (1s of no import).
+                .take_while({
+                    let idle_count = idle_count.clone();
+                    move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
                 });
 
                 Sse::new(stream).keep_alive(

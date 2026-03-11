@@ -68,7 +68,7 @@ pub fn MetadataPage() -> impl IntoView {
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.descriptions")}</h2>
                 <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.descriptions_hint")}</p>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let data = stats.await?;
@@ -99,7 +99,7 @@ pub fn MetadataPage() -> impl IntoView {
                                 }.into_any()
                             })
                         })}
-                    </Suspense>
+                    </Transition>
                 </ErrorBoundary>
 
                 // Download/Update button
@@ -128,7 +128,7 @@ pub fn MetadataPage() -> impl IntoView {
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.coverage")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let data = coverage.await?;
@@ -160,7 +160,7 @@ pub fn MetadataPage() -> impl IntoView {
                                 }.into_any()
                             })
                         })}
-                    </Suspense>
+                    </Transition>
                 </ErrorBoundary>
             </section>
 
@@ -319,7 +319,7 @@ fn ImageSection() -> impl IntoView {
     view! {
         // Image stats
         <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                 {move || Suspend::new(async move {
                     let locale = i18n.locale.get();
                     let (with_boxart, with_snap, media_size) = image_stats.await?;
@@ -346,7 +346,7 @@ fn ImageSection() -> impl IntoView {
                         }.into_any()
                     })
                 })}
-            </Suspense>
+            </Transition>
         </ErrorBoundary>
 
         // Download All / Stop buttons
@@ -470,7 +470,7 @@ fn ImageSection() -> impl IntoView {
 
         // Per-system image coverage with download buttons
         <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                 {move || Suspend::new(async move {
                     let locale = i18n.locale.get();
                     let data = image_coverage.await?;
@@ -547,7 +547,7 @@ fn ImageSection() -> impl IntoView {
                         }.into_any()
                     })
                 })}
-            </Suspense>
+            </Transition>
         </ErrorBoundary>
     }
 }

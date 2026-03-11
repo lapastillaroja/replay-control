@@ -181,7 +181,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "settings.restarting" => "Restarting...",
         "settings.reboot" => "Reboot System",
         "settings.rebooting" => "Rebooting...",
-        "settings.reboot_hint" => "A reboot is required for WiFi changes to take effect.",
+        "settings.reboot_hint" => "A reboot is required for changes to take effect.",
         "settings.password_enter" => "Enter password",
 
         // Game detail page

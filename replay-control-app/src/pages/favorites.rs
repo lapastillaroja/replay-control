@@ -27,12 +27,12 @@ pub fn FavoritesPage() -> impl IntoView {
     view! {
         <div class="page favorites-page">
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let favs = favorites.await?;
                         Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view toggle_label /> })
                     })}
-                </Suspense>
+                </Transition>
             </ErrorBoundary>
         </div>
     }
@@ -624,12 +624,12 @@ pub fn SystemFavoritesPage() -> impl IntoView {
     view! {
         <div class="page favorites-page">
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let favs = favorites.await?;
                         Ok::<_, ServerFnError>(view! { <SystemFavoritesContent favs /> })
                     })}
-                </Suspense>
+                </Transition>
             </ErrorBoundary>
         </div>
     }
