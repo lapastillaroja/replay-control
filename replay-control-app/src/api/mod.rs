@@ -712,13 +712,24 @@ impl AppState {
                 });
             }
 
-            let repo_dir = match replay_control_core::thumbnails::clone_thumbnail_repo(
-                repo_name,
-                Some(&clone_base),
-                Some(&self.image_import_cancel),
-            ) {
-                Ok(dir) => dir,
-                Err(e) => {
+            // Check if an existing clone is stale (upstream has new images).
+            // If stale, remove it so clone_thumbnail_repo does a fresh clone.
+            let existing = clone_base.join("libretro-thumbnails").join(repo_name);
+            if existing.join("Named_Boxarts").exists()
+                && replay_control_core::thumbnails::is_repo_stale(&existing, repo_name)
+            {
+                tracing::info!("Repo {repo_name} is stale, re-cloning");
+                let _ = std::fs::remove_dir_all(&existing);
+            }
+
+            let (repo_dir, freshly_cloned) =
+                match replay_control_core::thumbnails::clone_thumbnail_repo(
+                    repo_name,
+                    Some(&clone_base),
+                    Some(&self.image_import_cancel),
+                ) {
+                    Ok(result) => result,
+                    Err(e) => {
                     // If cancelled during clone, set Cancelled state and stop.
                     if self
                         .image_import_cancel
@@ -757,8 +768,13 @@ impl AppState {
                     p.state = ImageImportState::Cancelled;
                     p.elapsed_secs = start.elapsed().as_secs();
                 }
-                let _ = std::fs::remove_dir_all(&repo_dir);
                 break;
+            }
+
+            // Resolve fake symlinks only on fresh clones (already done inside
+            // clone_thumbnail_repo). Reused repos were resolved on their original clone.
+            if !freshly_cloned {
+                tracing::debug!("Skipping symlink resolution for reused repo {repo_name}");
             }
 
             // Update progress to Copying.
@@ -801,9 +817,6 @@ impl AppState {
                     last_error = Some(e.to_string());
                 }
             }
-
-            // Clean up cloned repo to save disk space.
-            let _ = std::fs::remove_dir_all(&repo_dir);
 
             // Check for cancellation after copy.
             if self
@@ -1128,6 +1141,7 @@ impl AppState {
             }
 
             // Check if upstream has new images — re-clone if stale.
+            let mut freshly_cloned = false;
             if replay_control_core::thumbnails::is_repo_stale(&repo_dir, repo_name) {
                 tracing::info!("Re-cloning stale repo {repo_name}");
                 let _ = std::fs::remove_dir_all(&repo_dir);
@@ -1139,7 +1153,10 @@ impl AppState {
                     Some(&clone_base_parent),
                     Some(&self.image_import_cancel),
                 ) {
-                    Ok(dir) => repo_dir = dir,
+                    Ok((dir, _)) => {
+                        repo_dir = dir;
+                        freshly_cloned = true;
+                    }
                     Err(e) => {
                         tracing::warn!("Re-clone failed for {repo_name}: {e}");
                         continue;
@@ -1153,8 +1170,11 @@ impl AppState {
                 system_display.clone()
             };
 
-            // Resolve fake symlinks in case they weren't resolved before.
-            replay_control_core::thumbnails::resolve_fake_symlinks_in_dir(&repo_dir);
+            // Resolve fake symlinks only if repo wasn't freshly cloned
+            // (fresh clones resolve symlinks during clone_thumbnail_repo).
+            if !freshly_cloned {
+                replay_control_core::thumbnails::resolve_fake_symlinks_in_dir(&repo_dir);
+            }
 
             // Update progress to Copying.
             {

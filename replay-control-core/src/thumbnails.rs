@@ -558,11 +558,15 @@ pub fn is_repo_stale(repo_dir: &Path, repo_name: &str) -> bool {
 /// Falls back to `/tmp` if `None`.
 ///
 /// If `cancel` is provided, the clone subprocess is killed when the flag becomes `true`.
+///
+/// Returns `(path, freshly_cloned)`. When `freshly_cloned` is `true`, fake symlinks
+/// have already been resolved during this call. When `false`, the repo was reused
+/// from a previous clone and the caller can skip symlink resolution.
 pub fn clone_thumbnail_repo(
     repo_name: &str,
     clone_base: Option<&Path>,
     cancel: Option<&std::sync::atomic::AtomicBool>,
-) -> Result<std::path::PathBuf> {
+) -> Result<(std::path::PathBuf, bool)> {
     let url = format!(
         "https://github.com/libretro-thumbnails/{}.git",
         repo_name.replace(' ', "_")
@@ -575,7 +579,7 @@ pub fn clone_thumbnail_repo(
     // If already cloned, reuse
     if dest.join("Named_Boxarts").exists() {
         tracing::info!("Reusing existing clone at {}", dest.display());
-        return Ok(dest);
+        return Ok((dest, false));
     }
 
     std::fs::create_dir_all(dest.parent().unwrap()).map_err(|e| Error::io(&dest, e))?;
@@ -616,7 +620,7 @@ pub fn clone_thumbnail_repo(
                 // real symlinks, so git writes the target path as a small text
                 // file). Replace each fake symlink with a copy of its target.
                 resolve_fake_symlinks_in_dir(&dest);
-                return Ok(dest);
+                return Ok((dest, true));
             }
             Ok(None) => {
                 // Still running — check cancel flag.
