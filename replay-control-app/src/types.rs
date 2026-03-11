@@ -41,6 +41,8 @@ pub struct RomEntry {
     pub is_favorite: bool,
     #[serde(default)]
     pub box_art_url: Option<String>,
+    #[serde(default)]
+    pub driver_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -334,7 +334,8 @@ fn resolve_box_art_url(
         .join("media")
         .join(system);
 
-    // 1. Try metadata DB — but validate the file on disk (catches git fake-symlink artifacts)
+    // 1. Try metadata DB — but validate the file on disk (catches git fake-symlink artifacts).
+    //    If the DB path is a fake symlink, try resolving it before falling back to disk scan.
     if let Some(guard) = state.metadata_db() {
         if let Some(db) = guard.as_ref() {
             if let Ok(Some(meta)) = db.lookup(system, rom_filename) {
@@ -342,6 +343,17 @@ fn resolve_box_art_url(
                     let full_path = media_base.join(path);
                     if is_valid_image(&full_path) {
                         return Some(format!("/media/{system}/{path}"));
+                    }
+                    // DB path points to a fake symlink — try resolving it.
+                    let kind_dir = full_path
+                        .parent()
+                        .unwrap_or(&media_base);
+                    if let Some(resolved) = try_resolve_fake_symlink(&full_path, kind_dir) {
+                        let kind = std::path::Path::new(path)
+                            .parent()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or("boxart");
+                        return Some(format!("/media/{system}/{kind}/{resolved}"));
                     }
                 }
             }
@@ -353,7 +365,10 @@ fn resolve_box_art_url(
 }
 
 /// Try to find an image file on disk for a ROM, checking exact and fuzzy name matches.
-/// Skips broken files (< 200 bytes) that are git fake-symlink artifacts.
+/// When a file fails `is_valid_image()` (< 200 bytes), tries to resolve it as a git
+/// fake-symlink artifact — reads the text content, checks if the referenced file exists
+/// in the same directory and is a valid image. This only triggers for the rare small
+/// files (fake symlinks), so the extra I/O (reading ~48 bytes + one stat) is negligible.
 #[cfg(feature = "ssr")]
 fn find_image_on_disk(
     media_base: &std::path::Path,
@@ -371,19 +386,27 @@ fn find_image_on_disk(
         .rfind('.')
         .map(|i| &rom_filename[..i])
         .unwrap_or(rom_filename);
+    // Strip known prefixes (e.g., "N64DD - " from 64DD games).
+    let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
     let thumb_name = thumbnail_filename(stem);
 
     // 1. Exact match
     let exact = kind_dir.join(format!("{thumb_name}.png"));
-    if exact.exists() && is_valid_image(&exact) {
-        return Some(format!("{kind}/{thumb_name}.png"));
+    if exact.exists() {
+        if is_valid_image(&exact) {
+            return Some(format!("{kind}/{thumb_name}.png"));
+        }
+        // File exists but is too small — try resolving as a fake symlink.
+        if let Some(resolved) = try_resolve_fake_symlink(&exact, &kind_dir) {
+            return Some(format!("{kind}/{resolved}"));
+        }
     }
 
     // 2. Fuzzy match: strip parenthesized tags and special separators, then
     //    compare base titles. Use thumbnail_filename() on ROM stem so that
     //    special chars (&, *, etc.) are normalized to _ just like the image files.
     let base_title = |s: &str| -> String {
-        // Handle tilde dual-names: "Name1 ~ Name2" → use Name2 (usually the intl name)
+        // Handle tilde dual-names: "Name1 ~ Name2" -> use Name2 (usually the intl name)
         let s = s.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(s);
         s.find(" (")
             .or_else(|| s.find(" ["))
@@ -394,14 +417,34 @@ fn find_image_on_disk(
     };
 
     let rom_base = base_title(&thumb_name);
+    // Version-stripped key for TOSEC ROMs (e.g., "Sonic Adventure 2 v1.008" → "sonic adventure 2")
+    let rom_base_no_version = replay_control_core::thumbnails::strip_version(&rom_base);
+    let has_version = rom_base_no_version.len() < rom_base.len();
 
     if let Ok(entries) = std::fs::read_dir(&kind_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if let Some(img_stem) = name.strip_suffix(".png") {
-                if base_title(img_stem) == rom_base && is_valid_image(&entry.path()) {
-                    return Some(format!("{kind}/{name}"));
+                let img_base = base_title(img_stem);
+                if img_base == rom_base {
+                    let path = entry.path();
+                    if is_valid_image(&path) {
+                        return Some(format!("{kind}/{name}"));
+                    }
+                    if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                        return Some(format!("{kind}/{resolved}"));
+                    }
+                }
+                // 3. Version-stripped match: "Virtua Tennis 2 v1.009" matches "Virtua Tennis 2"
+                if has_version && img_base == rom_base_no_version {
+                    let path = entry.path();
+                    if is_valid_image(&path) {
+                        return Some(format!("{kind}/{name}"));
+                    }
+                    if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                        return Some(format!("{kind}/{resolved}"));
+                    }
                 }
             }
         }
@@ -415,6 +458,29 @@ fn find_image_on_disk(
 fn is_valid_image(path: &std::path::Path) -> bool {
     // Real PNGs are almost always > 200 bytes.
     path.metadata().map(|m| m.len() >= 200).unwrap_or(false)
+}
+
+/// Try to resolve a small file as a git fake-symlink artifact.
+/// Reads its text content (a relative filename), checks if that file exists in
+/// `parent_dir` and passes `is_valid_image()`. Returns the target filename on
+/// success, `None` otherwise. Only called when `is_valid_image()` already failed,
+/// so the extra I/O cost (read ~48 bytes of text + one stat) is negligible.
+#[cfg(feature = "ssr")]
+fn try_resolve_fake_symlink(
+    path: &std::path::Path,
+    parent_dir: &std::path::Path,
+) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let target_name = std::str::from_utf8(&bytes).ok()?.trim();
+    if target_name.is_empty() || !target_name.ends_with(".png") {
+        return None;
+    }
+    let target_path = parent_dir.join(target_name);
+    if target_path.exists() && is_valid_image(&target_path) {
+        Some(target_name.to_string())
+    } else {
+        None
+    }
 }
 
 #[server(prefix = "/sfn")]
@@ -666,6 +732,27 @@ pub async fn get_roms_page(
     // Populate box art URLs.
     for rom in &mut roms {
         rom.box_art_url = resolve_box_art_url(&state, &system, &rom.game.rom_filename);
+    }
+
+    // Populate driver status for arcade systems.
+    if is_arcade {
+        use replay_control_core::arcade_db;
+        for rom in &mut roms {
+            let stem = rom
+                .game
+                .rom_filename
+                .strip_suffix(".zip")
+                .unwrap_or(&rom.game.rom_filename);
+            if let Some(info) = arcade_db::lookup_arcade_game(stem) {
+                let status = match info.status {
+                    arcade_db::DriverStatus::Working => "Working",
+                    arcade_db::DriverStatus::Imperfect => "Imperfect",
+                    arcade_db::DriverStatus::Preliminary => "Preliminary",
+                    arcade_db::DriverStatus::Unknown => "Unknown",
+                };
+                rom.driver_status = Some(status.to_string());
+            }
+        }
     }
 
     Ok(RomPage {

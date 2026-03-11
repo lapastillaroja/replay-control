@@ -51,6 +51,29 @@ where
     let i18n = use_i18n();
     let favorites = RwSignal::new(favs);
 
+    // Filter input for the "All Favorites" section.
+    let filter_text = RwSignal::new(String::new());
+
+    let filtered_favorites = move || {
+        let query = filter_text.get().to_lowercase();
+        if query.is_empty() {
+            return favorites.get();
+        }
+        favorites
+            .get()
+            .into_iter()
+            .filter(|f| {
+                let name = f
+                    .fav
+                    .game
+                    .display_name
+                    .as_deref()
+                    .unwrap_or(&f.fav.game.rom_filename);
+                name.to_lowercase().contains(&query)
+            })
+            .collect()
+    };
+
     // Track which favorite is pending removal confirmation.
     let confirm_remove = RwSignal::new(Option::<String>::None);
 
@@ -216,11 +239,51 @@ where
                     </button>
                 </div>
 
-                <Show when=move || grouped_view.get() fallback=move || view! {
-                    <FlatFavorites favorites confirm_remove remove_fav />
-                }>
-                    <GroupedFavorites favorites confirm_remove remove_fav />
-                </Show>
+                <div class="fav-filter-bar">
+                    <div class="fav-filter-input-wrap">
+                        <input
+                            type="text"
+                            class="fav-filter-input"
+                            placeholder="Filter favorites..."
+                            prop:value=move || filter_text.get()
+                            on:input=move |ev| filter_text.set(event_target_value(&ev))
+                        />
+                        <Show when=move || !filter_text.get().is_empty()>
+                            <button
+                                class="fav-filter-clear"
+                                on:click=move |_| filter_text.set(String::new())
+                            >
+                                {"\u{2715}"}
+                            </button>
+                        </Show>
+                    </div>
+                    <span class="fav-filter-count">
+                        {
+                            let filtered_for_count = filtered_favorites.clone();
+                            move || {
+                                let filtered = filtered_for_count().len();
+                                let total = total_count();
+                                if filter_text.read().is_empty() {
+                                    format!("{total} {}", t(i18n.locale.get(), "stats.favorites").to_lowercase())
+                                } else {
+                                    format!("{filtered} / {total} {}", t(i18n.locale.get(), "stats.favorites").to_lowercase())
+                                }
+                            }
+                        }
+                    </span>
+                </div>
+
+                {
+                    let filtered_signal = Signal::derive(filtered_favorites.clone());
+                    let filtered_signal2 = Signal::derive(filtered_favorites.clone());
+                    view! {
+                        <Show when=move || grouped_view.get() fallback=move || view! {
+                            <FlatFavorites favorites=filtered_signal confirm_remove remove_fav />
+                        }>
+                            <GroupedFavorites favorites=filtered_signal2 confirm_remove remove_fav />
+                        </Show>
+                    }
+                }
             </section>
         </Show>
     }
@@ -228,7 +291,7 @@ where
 
 #[component]
 fn FlatFavorites<F>(
-    favorites: RwSignal<Vec<FavoriteWithArt>>,
+    #[prop(into)] favorites: Signal<Vec<FavoriteWithArt>>,
     confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
 ) -> impl IntoView
@@ -250,7 +313,7 @@ where
 
 #[component]
 fn GroupedFavorites<F>(
-    favorites: RwSignal<Vec<FavoriteWithArt>>,
+    #[prop(into)] favorites: Signal<Vec<FavoriteWithArt>>,
     confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
 ) -> impl IntoView
@@ -346,11 +409,11 @@ where
 
     view! {
         <div class="fav-item">
-            <Show when=move || has_box_art>
-                <A href=game_href.get_value() attr:class="rom-thumb-link">
+            <A href=game_href.get_value() attr:class="rom-thumb-link">
+                <Show when=move || has_box_art fallback=|| view! { <div class="rom-thumb-placeholder"></div> }>
                     <img class="rom-thumb" src=box_art.get_value() loading="lazy" />
-                </A>
-            </Show>
+                </Show>
+            </A>
             <div class="fav-info">
                 <A href=game_href.get_value() attr:class="fav-name rom-name-link">{rom_name}</A>
                 {system_display.map(|s| view! { <span class="fav-system">{s}</span> })}

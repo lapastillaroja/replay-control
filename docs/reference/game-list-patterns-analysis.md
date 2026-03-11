@@ -3,7 +3,7 @@
 Comprehensive analysis of every place in the RePlayOS Companion App where games
 are displayed as lists, scrolls, grids, cards, or items.
 
-**Last updated:** March 2026 (post-refactor)
+**Last updated:** March 2026 (post-driver-status + favorites-filter)
 
 Source files analyzed:
 
@@ -132,7 +132,7 @@ Source files analyzed:
 
 **Component:** `FlatFavorites` + `FavItem` (favorites.rs)
 **Data:** `FavoriteWithArt` -- `FavItem` receives `fav: Favorite` + `box_art_url: Option<String>`
-**CSS classes:** `.fav-list`, `.fav-item`, `.fav-info`, `.fav-name`, `.fav-system`, `.fav-star-btn`, `.fav-confirm-actions`, `.rom-thumb-link`, `.rom-thumb`
+**CSS classes:** `.fav-list`, `.fav-item`, `.fav-info`, `.fav-name`, `.fav-system`, `.fav-star-btn`, `.fav-confirm-actions`, `.rom-thumb-link`, `.rom-thumb`, `.rom-thumb-placeholder`
 
 ```
 .fav-list (flex column)
@@ -168,9 +168,10 @@ When star is clicked, confirmation replaces it:
 ```
 
 **Data shown:** Display name (or filename), system display name (when `show_system=true`), box art thumbnail
-**Box art:** YES (conditional) -- `.rom-thumb` (40px height, max 56px width) shown when `box_art_url` is present. No placeholder when absent (thumbnail area is simply omitted).
+**Box art:** YES -- `.rom-thumb` (40px height, max 56px width) when available, or `.rom-thumb-placeholder` (40x40px gray box) when not. All rows now have consistent heights regardless of box art availability.
 **Actions:** Remove from favorites (star button -> confirm -> remove)
 **Layout:** Vertical list, flex row per item, 12px padding, border-bottom separators
+**Filter:** A `.fav-filter-bar` above the list provides client-side text filtering (case-insensitive substring match on display name). Filter input with clear button and count label ("N / total favorites"). Both flat (Pattern 5) and grouped (Pattern 6) views receive the filtered results from the parent `FavoritesContent` component.
 
 ---
 
@@ -209,7 +210,7 @@ When star is clicked, confirmation replaces it:
 ```
 
 **Data shown:** Display name (or filename), box art thumbnail -- NO system name (grouped already)
-**Box art:** YES (conditional, same as Pattern 5)
+**Box art:** YES (same as Pattern 5 -- image or gray placeholder)
 **Actions:** Remove from favorites (same as Pattern 5)
 **Layout:** Grouped vertical list, group headers with accent border
 
@@ -299,8 +300,8 @@ but in the Home page systems grid it shows the actual disk size. This semantic m
 +--------------------------------------------------------------+
 ```
 
-**Data shown:** Display name, box art thumbnail (when available) -- no system name (already scoped)
-**Box art:** YES (conditional, same as Pattern 5)
+**Data shown:** Display name, box art thumbnail -- no system name (already scoped)
+**Box art:** YES (same as Pattern 5 -- image or gray placeholder)
 **Actions:** Remove from favorites
 **Layout:** Same as Pattern 5 but with `show_system=false`
 
@@ -310,7 +311,7 @@ but in the Home page systems grid it shows the actual disk size. This semantic m
 
 **Component:** `RomList` / `RomItem` (components/rom_list.rs)
 **Data:** `RomEntry` -- paginated via `get_roms_page()`, PAGE_SIZE=100
-**CSS classes:** `.rom-list`, `.rom-item`, `.rom-fav-btn`, `.rom-thumb-link`, `.rom-thumb`, `.rom-thumb-placeholder`, `.rom-info`, `.rom-name`, `.rom-path`, `.rom-meta`, `.rom-size`, `.rom-ext`, `.rom-actions`, `.rom-action-btn`
+**CSS classes:** `.rom-list`, `.rom-item`, `.rom-fav-btn`, `.rom-thumb-link`, `.rom-thumb`, `.rom-thumb-placeholder`, `.rom-info`, `.rom-name-row`, `.rom-name`, `.rom-path`, `.rom-meta`, `.rom-size`, `.rom-ext`, `.rom-actions`, `.rom-action-btn`, `.driver-dot`, `.driver-dot-working`, `.driver-dot-imperfect`, `.driver-dot-preliminary`, `.driver-dot-unknown`
 
 ```
 +--------------------------------------------------------------+
@@ -363,12 +364,12 @@ Full `.rom-item` detail:
 |                                                              |
 |  .rom-fav-btn   .rom-thumb-link  .rom-info       .rom-meta  |
 |  +---+          +--------+      +------------+   +--------+ |
-|  |   |          |        |      | .rom-name   |  | .rom-  | |
-|  | * |          | [img]  |      |  (link to   |  | size   | |
-|  | or|          | 40px h |      |  detail pg) |  | "1.2MB"| |
-|  | o |          | <=56px |      |             |  |        | |
-|  |   |          |   w    |      | .rom-path   |  | .rom-  | |
-|  +---+          |  -or-  |      |  "file.sfc" |  | ext    | |
+|  |   |          |        |      | .rom-name-row  | .rom-  | |
+|  | * |          | [img]  |      |  .rom-name  (o)| size   | |
+|  | or|          | 40px h |      |  (link)  driver| "1.2MB"| |
+|  | o |          | <=56px |      |          dot   |        | |
+|  |   |          |   w    |      | .rom-path      | .rom-  | |
+|  +---+          |  -or-  |      |  "file.sfc"    | ext    | |
 |                 | [plc-  |      +------------+   | ".sfc" | |
 |                 | holder]|                        +--------+ |
 |                 | 40x40  |                                   |
@@ -380,12 +381,18 @@ Full `.rom-item` detail:
 |  +-----+-----+                                              |
 |                                                              |
 +--------------------------------------------------------------+
+
+(o) = .driver-dot: 8px colored circle, arcade systems only.
+      Green = Working, Yellow = Imperfect, Red = Preliminary, Gray = Unknown.
+      Shows on the same line as .rom-name inside .rom-name-row.
+      Title tooltip: "Driver: {status}".
 ```
 
-**Data shown:** Display name (or filename), file path, file size, file extension, favorite status, box art
+**Data shown:** Display name (or filename), file path, file size, file extension, favorite status, box art, driver status (arcade only -- colored dot badge)
 **Box art:** YES -- `.rom-thumb` (40px height, max 56px width) when available, or `.rom-thumb-placeholder` (40x40px gray box with 3px border-radius) when not
 **Actions:** Favorite toggle (star), rename (pencil icon), delete (X icon)
 **Layout:** Vertical list, flex row per item, infinite scroll with IntersectionObserver
+**Arcade-specific:** When `driver_status` is present (arcade ROMs), a small colored dot (`.driver-dot`) appears inline next to the game name. Color encodes emulation quality: green (Working), amber (Imperfect), red (Preliminary), gray (Unknown). Hover tooltip shows "Driver: {status}".
 
 ---
 
@@ -476,7 +483,7 @@ Full `.rom-item` detail:
 | players | - | - | - | - | direct |
 | rating | - | - | - | - | direct (external) |
 | rotation | - | - | - | - | direct (arcade) |
-| driver_status | - | - | - | - | direct (arcade) |
+| driver_status | - | - | direct (arcade) | - | direct (arcade) |
 | is_clone | - | - | - | - | direct (arcade) |
 | region | - | - | - | - | direct (console) |
 | description | - | - | - | - | direct (external) |
@@ -499,8 +506,8 @@ is stripped before the component sees it.~~
 **Status:** FIXED. `FavItem` now accepts a separate `box_art_url: Option<String>` prop.
 All call sites (`FlatFavorites`, `GroupedFavorites`, `SystemFavoritesContent`) pass
 `f.box_art_url`. Thumbnails render using `.rom-thumb-link` / `.rom-thumb` with
-`<Show when=move || has_box_art>`. Items without box art omit the thumbnail space
-entirely (no placeholder in favorites lists).
+`<Show when=move || has_box_art>`, and a `.rom-thumb-placeholder` div is shown as
+fallback when no art is available. All rows now have consistent heights.
 
 ### Issue B: No Placeholder in ROM List and Search Results -- RESOLVED
 
@@ -573,20 +580,19 @@ while search always shows it).
 - FavItem has no delete or rename -- only unfavorite (appropriate for favorites context)
 - Only the game detail page has the Launch action
 
-### Issue H: Different Item Heights and Structures -- IMPROVED
+### Issue H: Different Item Heights and Structures -- RESOLVED
 
 | View | Row Height (approx) | Thumb Size | Placeholder | Name Font | Path Shown |
 |------|---------------------|-----------|-------------|-----------|-----------|
 | Hero card | ~96px | 56px h | 56x56px gray | 1.1rem bold | No |
 | Scroll card | ~160px | 80px h | 56x80px gray | 0.8rem | No |
-| FavItem (with art) | ~60px | 40px h | None | 0.85rem | No |
-| FavItem (no art) | ~44px | N/A | N/A | 0.85rem | No |
+| FavItem | ~60px | 40px h | 40x40px gray | 0.85rem | No |
 | RomItem | ~60px | 40px h | 40x40px gray | 0.85rem | Yes |
 | SearchResultItem | ~60px | 40px h | 40x40px gray | 0.85rem | No |
 
-**Changes from previous:** FavItem with box art now has a similar row height to RomItem and
-SearchResultItem. FavItem without box art is still shorter (no placeholder), creating some
-height inconsistency within the favorites list when box art coverage is mixed.
+**Status:** All list-type item views (FavItem, RomItem, SearchResultItem) now have
+consistent ~60px row heights with either a thumbnail image or a 40x40px gray
+placeholder. The previous FavItem height inconsistency is resolved.
 
 ---
 
@@ -622,11 +628,12 @@ HOME PAGE                          FAVORITES PAGE
 | |Maker   | |Maker   |     |     | +--------+ +--------+     |
 | |N games | |N games |     |     |                            |
 | |Size    | |Size    |     |     | ALL FAVORITES [Flat|Group] |
-| +--------+ +--------+     |     | +------------------------+ |
-| (SystemCard component)     |     | |[t] GameName     [star] | |
-| ...                        |     | |    System              | |
-+----------------------------+     | +------------------------+ |
-                                   | |[t] GameName     [star] | |
+| +--------+ +--------+     |     | [Filter favorites...] N   |
+| (SystemCard component)     |     | +------------------------+ |
+| ...                        |     | |[t] GameName     [star] | |
++----------------------------+     | |    System              | |
+                                   | +------------------------+ |
+                                   | |[p] GameName     [star] | |
                                    | |    System              | |
                                    | +------------------------+ |
                                    |  (FavItem component)       |
@@ -641,7 +648,7 @@ ROM LIST PAGE                      SEARCH PAGE
 | "50 / 234 games"           |     |                            |
 |                            |     | [Hacks][Trans][Betas]      |
 | +------------------------+ |     | [Clones][Genre v]          |
-| |(*) [t] GameName  1.2MB | |     |                            |
+| |(*) [t] GameName(o)1.2MB| |     |                            |
 | |        path.sfc  .sfc  | |     | "42 results in 5 systems"  |
 | |              [Ren][Del] | |     |                            |
 | +------------------------+ |     | +------------------------+ |
@@ -649,7 +656,7 @@ ROM LIST PAGE                      SEARCH PAGE
 | |        path.sfc  .sfc  | |     | +------------------------+ |
 | |              [Ren][Del] | |     | |(*) [t] GameName        | |
 | +------------------------+ |     | |         [Genre]         | |
-| |(*) [t] GameName  800KB | |     | +------------------------+ |
+| |(*) [t] GameName(o)800KB| |     | +------------------------+ |
 | |        path.sfc  .sfc  | |     | |(*) [p] GameName        | |
 | |              [Ren][Del] | |     | |         [Genre]         | |
 | +------------------------+ |     | +------------------------+ |
@@ -662,6 +669,7 @@ ROM LIST PAGE                      SEARCH PAGE
 
 (*) = fav star (interactive)   [t] = thumbnail (when art exists)
 [p] = placeholder (40x40 gray)  [Ren] = rename    [Del] = delete
+(o) = driver status dot (arcade only: green/amber/red/gray)
 * = Clones filter shown only for arcade systems
 (GenreDropdown shared component)
 ```
@@ -722,6 +730,38 @@ in the server-side search function. `SearchResultItem` now has a `.rom-fav-btn` 
 with optimistic toggle using the same pattern as `RomItem` (calls `add_favorite` /
 `remove_favorite` server functions). The read-only star badge was removed.
 
+### 6.7 Add Placeholder Thumbnails to FavItem -- DONE
+
+**Problem:** `FavItem` had no placeholder when box art was absent, causing mixed-height
+rows (~60px with art, ~44px without).
+
+**What changed:** Added a `<Show>` fallback in `FavItem` that renders
+`<div class="rom-thumb-placeholder"></div>` when `box_art_url` is `None`. All favorites
+list rows now have consistent ~60px height regardless of box art availability.
+
+### 6.8 Add Arcade Driver Status Badge to ROM List -- DONE
+
+**Problem:** Arcade users had no way to see emulation compatibility at a glance in the
+ROM list. The driver status was only visible on the game detail page.
+
+**What changed:** Added `driver_status: Option<String>` to `RomEntry` (in `types.rs`).
+Server-side `get_roms_page()` populates it from `arcade_db` for arcade systems. `RomItem`
+renders a `.driver-dot` colored circle (8px) inline next to the game name inside a new
+`.rom-name-row` wrapper. Colors: green (`--success`) for Working, amber (#f59e0b) for
+Imperfect, red (`--error`) for Preliminary, gray (#6b7280) for Unknown. Title tooltip
+shows "Driver: {status}". Non-arcade systems have `driver_status: None` so no dot appears.
+
+### 6.9 Add Search/Filter to Favorites Page -- DONE
+
+**Problem:** With many favorites, there was no way to find a specific game without
+scrolling through the entire list.
+
+**What changed:** Added a `filter_text: RwSignal<String>` and `filtered_favorites`
+derived closure to `FavoritesContent`. A `.fav-filter-bar` with text input, clear button,
+and count label appears above the "All Favorites" list. Filtering is client-side
+(case-insensitive substring match on display name), works in both flat and grouped views,
+and requires no server round-trip.
+
 ---
 
 ## 7. Information Fields Analysis by User Persona
@@ -751,7 +791,7 @@ across views:
 | Description | YES (ext.) | - | - | - | - |
 | Region | YES (console) | - | - | - | - |
 | Rotation | YES (arcade) | - | - | - | - |
-| Driver status | YES (arcade) | - | - | - | - |
+| Driver status | YES (arcade) | YES (arcade, dot badge) | - | - | - |
 | Clone/parent | YES (arcade) | - | - | - | - |
 | Arcade category | YES (arcade) | - | - | - | - |
 | Favorite status | YES | YES (star) | YES (star) | implicit | - |
@@ -936,30 +976,22 @@ and on the game detail page, but requires filesystem scanning for RetroArch save
 **Verdict:** High value but requires significant backend work to detect save files.
 Not currently feasible without understanding the RetroArch save file layout on RePlayOS.
 
-#### Compatibility Status (Arcade Driver Status)
+#### Compatibility Status (Arcade Driver Status) -- IMPLEMENTED
 
 **Currently available:** Yes, for arcade systems only. `driver_status` field in
-`GameInfo` with values "Working", "Imperfect", "Preliminary", "Unknown".
+`GameInfo` and now also in `RomEntry`, with values "Working", "Imperfect", "Preliminary",
+"Unknown".
 
-**Persona value:**
-- A (Casual): Low -- does not know what driver status means
-- B (Collector): Medium -- wants to know if a game works
-- C (Parent): Low
-- D (Arcade): Very High -- critical for curating a playable cabinet set
-- E (Technical): Medium -- useful for debugging
+**Status:** DONE. `RomItem` now renders a `.driver-dot` colored circle (8px) inline
+next to the game name inside `.rom-name-row` when `driver_status` is present.
+Colors: green (Working), amber (Imperfect), red (Preliminary), gray (Unknown).
+Hover tooltip shows "Driver: {status}". Only appears for arcade ROMs (field is `None`
+for console systems). CSS classes: `.driver-dot`, `.driver-dot-working`,
+`.driver-dot-imperfect`, `.driver-dot-preliminary`, `.driver-dot-unknown`.
 
-**Recommended contexts:**
-- ROM list (arcade systems): A small colored badge (green/yellow/red) for Working/
-  Imperfect/Preliminary would be extremely valuable for Persona D, who needs to
-  quickly identify playable games from thousands of arcade ROMs. The data exists in
-  `GameInfo` but is not propagated to `RomEntry`.
-- Search results: A similar badge for arcade results would help.
-- Game detail: Already shown as text -- good, but could be enhanced with color.
-- Non-arcade systems: N/A.
-
-**Verdict:** High priority specifically for arcade users. Adding a driver status badge
-to ROM list items for arcade systems would be a significant UX improvement for Persona D.
-Medium effort (add to `RomEntry` for arcade, conditional rendering).
+**Remaining opportunities:**
+- Search results: Could add a similar badge for arcade results in `SearchResultItem`.
+- Game detail: Already shown as text; could be enhanced with the same colored dot.
 
 #### Number of Players
 
@@ -983,17 +1015,17 @@ filter chip on the ROM list page would serve Personas C and D well. Medium effor
 
 ### Summary: Recommended Additions by Priority
 
-| Priority | Field | Where to Add | Effort | Primary Personas |
-|----------|-------|-------------|--------|-----------------|
-| 1 | Genre | ROM list items | Medium (schema + view) | B, D |
-| 2 | Rating | ROM list items, search results | Medium (schema + view) | A, B, C |
-| 3 | Driver status badge | ROM list items (arcade only) | Medium | D |
-| 4 | Last played date | Game detail page | Small | A, C |
-| 5 | Year | ROM list items (subtle) | Medium (schema + view) | B |
-| 6 | Players filter | ROM list filter bar | Medium | C, D |
-| 7 | Save state indicator | ROM list items, detail | Large (backend) | A, C |
+| Priority | Field | Where to Add | Effort | Primary Personas | Status |
+|----------|-------|-------------|--------|-----------------|--------|
+| 1 | Genre | ROM list items | Medium (schema + view) | B, D | TODO |
+| 2 | Rating | ROM list items, search results | Medium (schema + view) | A, B, C | TODO |
+| 3 | Driver status badge | ROM list items (arcade only) | Medium | D | **DONE** |
+| 4 | Last played date | Game detail page | Small | A, C | TODO |
+| 5 | Year | ROM list items (subtle) | Medium (schema + view) | B | TODO |
+| 6 | Players filter | ROM list filter bar | Medium | C, D | TODO |
+| 7 | Save state indicator | ROM list items, detail | Large (backend) | A, C | TODO |
 
-Note: Priorities 1-3 all require adding fields to `RomEntry` (or `GameRef`), which
+Note: Priorities 1-2 still require adding fields to `RomEntry` (or `GameRef`), which
 means a schema change that flows through both SSR and WASM targets. These could be
 batched into a single change to minimize the structural disruption.
 
@@ -1001,17 +1033,14 @@ batched into a single change to minimize the structural disruption.
 
 ## 8. Remaining Inconsistencies and Future Improvements
 
-### 8.1 FavItem Thumbnail Inconsistency (LOW)
+### 8.1 FavItem Thumbnail Inconsistency -- RESOLVED
 
-`FavItem` shows thumbnails when box art exists but has no placeholder when it does not.
-This means favorites lists have mixed-height rows: ~60px for items with art, ~44px for
-items without. In contrast, `RomItem` and `SearchResultItem` always allocate thumbnail
-space (either image or placeholder), giving them consistent row heights.
+~~`FavItem` shows thumbnails when box art exists but has no placeholder when it does not.~~
 
-Adding a `.fav-thumb-placeholder` (or reusing `.rom-thumb-placeholder`) to `FavItem`
-would align it with the ROM list behavior. Low priority since favorites tend to have
-higher box art coverage (users favorite games they care about, which are more likely
-to have metadata imported).
+**Status:** FIXED. `FavItem` now renders a `.rom-thumb-placeholder` (40x40px gray box)
+when `box_art_url` is `None`, using a `<Show>` fallback. All rows in favorites lists
+now have consistent heights (~60px) regardless of box art availability, matching the
+behavior of `RomItem` and `SearchResultItem`.
 
 ### 8.2 Filter Chip Duplication (LOW)
 
@@ -1021,12 +1050,19 @@ still independently implemented in `rom_list.rs` and `search.rs`. Extracting a s
 slightly between the two contexts (arcade-only clone filter in ROM list), so the
 extraction is not entirely trivial.
 
-### 8.3 No Search in Favorites (MEDIUM)
+### 8.3 No Search in Favorites -- RESOLVED
 
-The favorites page has no search functionality. With hundreds of favorites, finding a
-specific game requires scrolling through the flat/grouped list. Adding a client-side
-filter (since all favorites are already loaded into the `RwSignal<Vec<FavoriteWithArt>>`)
-would be straightforward and benefit all personas.
+~~The favorites page has no search functionality.~~
+
+**Status:** FIXED. A client-side filter bar (`.fav-filter-bar`) has been added to the
+"All Favorites" section in `FavoritesContent`. It consists of:
+- A text input (`.fav-filter-input`) that filters by display name (case-insensitive substring match)
+- A clear button (`.fav-filter-clear`, X icon) shown when filter is non-empty
+- A count label (`.fav-filter-count`) showing "N favorites" or "N / total favorites" when filtered
+
+The filter operates on the already-loaded `RwSignal<Vec<FavoriteWithArt>>` via a
+`filtered_favorites` derived closure. Both flat and grouped views receive the filtered
+results, so the filter works regardless of view mode. No server round-trip needed.
 
 ### 8.4 No Sort Options in ROM Lists (MEDIUM)
 
@@ -1042,12 +1078,13 @@ The `.system-card-size` class is used for disk size on the home page systems gri
 systems grid (inline rendering). The same CSS class serves two different semantic purposes.
 A rename or a dedicated class for the favorites variant would be cleaner.
 
-### 8.6 No Genre/Rating in ROM List Items
+### 8.6 Limited Game Metadata in ROM List Items (MEDIUM)
 
-As detailed in Section 7, the ROM list (`RomItem`) shows only file-centric metadata
-(size, extension, path) but no game-centric metadata (genre, year, rating). This
-information exists in the detail view but is absent from the browse view where it
-would be most useful for discovery.
+The ROM list (`RomItem`) now shows `driver_status` for arcade systems (colored dot badge),
+which is a significant improvement for arcade users. However, genre, year, and rating
+are still absent from ROM list items. These exist in the detail view but are missing from
+the browse view where they would be most useful for discovery. See Section 7 priority
+table for remaining items.
 
 ---
 
@@ -1061,5 +1098,8 @@ would be most useful for discovery.
 | 6.4 | Placeholders in ROM/search lists | LOW | Small | Medium -- consistent alignment | DONE |
 | 6.5 | Deduplicate GenreDropdown | LOW | Trivial | None (refactor) | DONE |
 | 6.6 | Quick-favorite in search | LOW | Medium | Small -- convenience feature | DONE |
+| 6.7 | Placeholder in FavItem | LOW | Small | Medium -- consistent row heights | DONE |
+| 6.8 | Driver status badge in ROM list | HIGH | Medium | Large -- arcade UX improvement | DONE |
+| 6.9 | Search/filter in favorites | MEDIUM | Small | Medium -- findability | DONE |
 
-All six originally proposed improvements have been implemented.
+All nine improvements have been implemented.

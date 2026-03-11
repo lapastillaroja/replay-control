@@ -446,6 +446,7 @@ fn RomItem(
     let system = StoredValue::new(rom.game.system.clone());
     let box_art_url = StoredValue::new(rom.box_art_url.clone());
     let has_box_art = rom.box_art_url.is_some();
+    let driver_status = rom.driver_status.clone();
     let is_fav = RwSignal::new(rom.is_favorite);
     let size = format_size(rom.size_bytes);
     let ext = format!(
@@ -522,9 +523,24 @@ fn RomItem(
             </A>
 
             <div class="rom-info">
-                <Show when=is_renaming fallback=move || view! {
-                    <A href=game_href.get_value() attr:class="rom-name rom-name-link">{shown_name()}</A>
-                    <span class="rom-path">{path_display.clone()}</span>
+                <Show when=is_renaming fallback=move || {
+                    let ds = driver_status.clone();
+                    view! {
+                        <div class="rom-name-row">
+                            <A href=game_href.get_value() attr:class="rom-name rom-name-link">{shown_name()}</A>
+                            {ds.as_ref().map(|status| {
+                                let class = match status.as_str() {
+                                    "Working" => "driver-dot driver-dot-working",
+                                    "Imperfect" => "driver-dot driver-dot-imperfect",
+                                    "Preliminary" => "driver-dot driver-dot-preliminary",
+                                    _ => "driver-dot driver-dot-unknown",
+                                };
+                                let title = format!("Driver: {status}");
+                                view! { <span class=class title=title></span> }
+                            })}
+                        </div>
+                        <span class="rom-path">{path_display.clone()}</span>
+                    }
                 }>
                     <RenameInput rename_value set_rename_value set_renaming
                         relative_path set_version

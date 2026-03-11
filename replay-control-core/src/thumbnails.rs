@@ -111,6 +111,8 @@ fn copy_png(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// If `path` is a small file without PNG magic bytes, treat it as a git "fake
 /// symlink" — read its text content as a relative path and resolve it.
+/// Returns an error if the file is a fake symlink whose target doesn't exist,
+/// so that `copy_png()` skips it instead of copying the text content as an image.
 fn resolve_fake_symlink(path: &Path) -> std::io::Result<std::path::PathBuf> {
     const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
@@ -128,6 +130,12 @@ fn resolve_fake_symlink(path: &Path) -> std::io::Result<std::path::PathBuf> {
                 // Recursively resolve in case of chained symlinks.
                 return resolve_fake_symlink(&resolved);
             }
+            // Target doesn't exist — report an error so copy_png() skips this file
+            // instead of copying the text content as a fake image.
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("fake symlink target not found: {}", resolved.display()),
+            ));
         }
     }
     Ok(path.to_path_buf())
@@ -156,7 +164,7 @@ fn strip_tags(name: &str) -> &str {
 /// `"Sonic Adventure 2 v1.008"` → `"Sonic Adventure 2"`
 /// `"Sega Rally 2 v1 001"` → `"Sega Rally 2"`
 /// Returns the original string if no version pattern is found.
-fn strip_version(name: &str) -> &str {
+pub fn strip_version(name: &str) -> &str {
     // Look for " v" followed by a digit, then optional digits/dots/spaces/underscores
     let bytes = name.as_bytes();
     let mut i = 0;
@@ -229,7 +237,7 @@ fn build_fuzzy_index(dir: &Path) -> FuzzyIndex {
     }
 }
 
-/// Try to find a thumbnail file: exact match → fuzzy (stripped tags) → version-stripped.
+/// Try to find a thumbnail file: exact match -> fuzzy (stripped tags) -> version-stripped.
 fn find_thumbnail(
     repo_subdir: &Path,
     thumb_name: &str,
@@ -241,6 +249,16 @@ fn find_thumbnail(
         return Some((exact, thumb_name.to_string()));
     }
 
+    find_thumbnail_fuzzy(repo_subdir, thumb_name, fuzzy_index)
+}
+
+/// Fuzzy-only thumbnail lookup (stripped tags -> version-stripped).
+/// Used as a fallback when the exact match is a broken fake symlink.
+fn find_thumbnail_fuzzy(
+    repo_subdir: &Path,
+    thumb_name: &str,
+    fuzzy_index: &FuzzyIndex,
+) -> Option<(std::path::PathBuf, String)> {
     // 2. Fuzzy: strip tags from ROM stem, look up in index
     let key = strip_tags(thumb_name).to_lowercase();
     if let Some(repo_stem) = fuzzy_index.by_tags.get(&key) {
@@ -345,7 +363,9 @@ pub fn import_system_thumbnails(
         let mut boxart_rel: Option<String> = None;
         let mut snap_rel: Option<String> = None;
 
-        // Try boxart (exact then fuzzy, with colon-variant fallbacks)
+        // Try boxart (exact then fuzzy, with colon-variant fallbacks).
+        // If copy_png fails (e.g. broken fake symlink), retry with fuzzy-only
+        // matching to find a valid alternative (e.g. a different region variant).
         let boxart_match =
             find_thumbnail(&boxart_repo_dir, &thumb_name, &boxart_index).or_else(|| {
                 colon_variants
@@ -358,6 +378,34 @@ pub fn import_system_thumbnails(
             if !dst.exists() {
                 if let Err(e) = copy_png(&src, &dst) {
                     tracing::debug!("Failed to copy boxart for {rom_filename}: {e}");
+                    // Exact match was a broken fake symlink — try fuzzy fallback.
+                    let fuzzy = find_thumbnail_fuzzy(
+                        &boxart_repo_dir,
+                        &thumb_name,
+                        &boxart_index,
+                    )
+                    .or_else(|| {
+                        colon_variants.iter().find_map(|v| {
+                            find_thumbnail_fuzzy(&boxart_repo_dir, v, &boxart_index)
+                        })
+                    });
+                    if let Some((fsrc, fmatched)) = fuzzy {
+                        let fdst_name = format!("{fmatched}.png");
+                        let fdst = boxart_dir.join(&fdst_name);
+                        if !fdst.exists() {
+                            if let Err(e2) = copy_png(&fsrc, &fdst) {
+                                tracing::debug!(
+                                    "Fuzzy fallback also failed for {rom_filename}: {e2}"
+                                );
+                            } else {
+                                stats.boxart_copied += 1;
+                                boxart_rel = Some(format!("boxart/{fdst_name}"));
+                            }
+                        } else {
+                            stats.boxart_copied += 1;
+                            boxart_rel = Some(format!("boxart/{fdst_name}"));
+                        }
+                    }
                 } else {
                     stats.boxart_copied += 1;
                     boxart_rel = Some(format!("boxart/{dst_name}"));
@@ -368,7 +416,8 @@ pub fn import_system_thumbnails(
             }
         }
 
-        // Try snap (exact then fuzzy, with colon-variant fallbacks)
+        // Try snap (exact then fuzzy, with colon-variant fallbacks).
+        // Same broken-symlink fallback as boxart above.
         let snap_match = find_thumbnail(&snap_repo_dir, &thumb_name, &snap_index).or_else(|| {
             colon_variants
                 .iter()
@@ -380,6 +429,33 @@ pub fn import_system_thumbnails(
             if !dst.exists() {
                 if let Err(e) = copy_png(&src, &dst) {
                     tracing::debug!("Failed to copy snap for {rom_filename}: {e}");
+                    let fuzzy = find_thumbnail_fuzzy(
+                        &snap_repo_dir,
+                        &thumb_name,
+                        &snap_index,
+                    )
+                    .or_else(|| {
+                        colon_variants.iter().find_map(|v| {
+                            find_thumbnail_fuzzy(&snap_repo_dir, v, &snap_index)
+                        })
+                    });
+                    if let Some((fsrc, fmatched)) = fuzzy {
+                        let fdst_name = format!("{fmatched}.png");
+                        let fdst = snap_dir.join(&fdst_name);
+                        if !fdst.exists() {
+                            if let Err(e2) = copy_png(&fsrc, &fdst) {
+                                tracing::debug!(
+                                    "Fuzzy fallback also failed for {rom_filename}: {e2}"
+                                );
+                            } else {
+                                stats.snap_copied += 1;
+                                snap_rel = Some(format!("snap/{fdst_name}"));
+                            }
+                        } else {
+                            stats.snap_copied += 1;
+                            snap_rel = Some(format!("snap/{fdst_name}"));
+                        }
+                    }
                 } else {
                     stats.snap_copied += 1;
                     snap_rel = Some(format!("snap/{dst_name}"));
@@ -489,6 +565,10 @@ pub fn clone_thumbnail_repo(
                         "git clone failed for {repo_name}: {stderr}"
                     )));
                 }
+                // Post-clone: resolve fake symlinks (exFAT/FAT32 don't support
+                // real symlinks, so git writes the target path as a small text
+                // file). Replace each fake symlink with a copy of its target.
+                resolve_fake_symlinks_in_dir(&dest);
                 return Ok(dest);
             }
             Ok(None) => {
@@ -504,6 +584,62 @@ pub fn clone_thumbnail_repo(
             }
             Err(e) => {
                 return Err(Error::Other(format!("Failed to wait for git: {e}")));
+            }
+        }
+    }
+}
+
+/// Walk a directory tree and replace git fake symlinks with copies of their targets.
+/// A fake symlink is a small file (< 200 bytes) that doesn't start with PNG magic bytes
+/// and contains the relative path to the real file.
+fn resolve_fake_symlinks_in_dir(dir: &Path) {
+    const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
+
+    let walker = match std::fs::read_dir(dir) {
+        Ok(w) => w,
+        Err(_) => return,
+    };
+
+    for entry in walker.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            resolve_fake_symlinks_in_dir(&path);
+            continue;
+        }
+
+        // Only check small .png files.
+        let is_png = path.extension().and_then(|e| e.to_str()) == Some("png");
+        if !is_png {
+            continue;
+        }
+        let meta = match std::fs::metadata(&path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.len() >= 200 {
+            continue; // Real image, skip.
+        }
+
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        if bytes.starts_with(&PNG_MAGIC) {
+            continue; // Small but valid PNG.
+        }
+
+        // It's a fake symlink — read the target path.
+        let target = match std::str::from_utf8(&bytes) {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => continue,
+        };
+        let resolved = path.parent().unwrap_or(Path::new(".")).join(&target);
+        if resolved.exists() && resolved != path {
+            // Target exists — copy it over the fake symlink.
+            if let Err(e) = std::fs::copy(&resolved, &path) {
+                tracing::debug!("Failed to resolve fake symlink {}: {e}", path.display());
+            } else {
+                tracing::trace!("Resolved fake symlink: {} -> {}", path.display(), target);
             }
         }
     }

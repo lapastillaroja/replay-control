@@ -523,6 +523,41 @@ a, a:visited, a:hover, a:active {
     text-overflow: ellipsis;
 }
 
+.rom-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.rom-name-row .rom-name {
+    min-width: 0;
+}
+
+.driver-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.driver-dot-working {
+    background: var(--success);
+}
+
+.driver-dot-imperfect {
+    background: #f59e0b;
+}
+
+.driver-dot-preliminary {
+    background: var(--error);
+}
+
+.driver-dot-unknown {
+    background: #6b7280;
+}
+
 .rom-path {
     display: block;
     font-size: 0.7rem;
@@ -668,6 +703,65 @@ a, a:visited, a:hover, a:active {
 .load-more-btn:disabled {
     opacity: 0.5;
     cursor: default;
+}
+
+/* Favorites filter bar */
+.fav-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.fav-filter-input-wrap {
+    position: relative;
+    flex: 1;
+}
+
+.fav-filter-input {
+    width: 100%;
+    padding: 10px 36px 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: inherit;
+}
+
+.fav-filter-input:focus {
+    border-color: var(--accent);
+}
+
+.fav-filter-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.fav-filter-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    transition: color 0.15s;
+}
+
+.fav-filter-clear:hover {
+    color: var(--text);
+}
+
+.fav-filter-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
 }
 
 /* Favorites */

@@ -23,6 +23,10 @@ pub struct RomEntry {
     /// Box art image URL (relative path under /media/), populated by the app layer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub box_art_url: Option<String>,
+    /// Arcade driver emulation status (Working/Imperfect/Preliminary/Unknown).
+    /// Only populated for arcade systems.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver_status: Option<String>,
 }
 
 /// Summary of a system's ROM collection.
@@ -241,6 +245,7 @@ fn collect_roms_recursive(dir: &Path, roms_root: &Path, system: &System, out: &m
                 is_m3u,
                 is_favorite: false,
                 box_art_url: None,
+                driver_status: None,
             });
         }
     }
