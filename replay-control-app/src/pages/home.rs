@@ -15,6 +15,15 @@ pub fn HomePage() -> impl IntoView {
     let info = Resource::new(|| (), |_| server_fns::get_info());
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new(|| (), |_| server_fns::get_systems());
+    let (reco_version, set_reco_version) = signal(0u32);
+    let recommendations = Resource::new(
+        move || reco_version.get(),
+        |_| server_fns::get_recommendations(6),
+    );
+
+    let on_refresh = move |_| {
+        set_reco_version.update(|v| *v += 1);
+    };
 
     view! {
         <div class="page home-page">
@@ -78,6 +87,85 @@ pub fn HomePage() -> impl IntoView {
                     </Transition>
                 </ErrorBoundary>
             </section>
+
+            // Recommendations: random picks + discover quick links
+            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                <Transition fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        let locale = i18n.locale.get();
+                        let data = recommendations.await?;
+                        let has_picks = !data.random_picks.is_empty();
+                        let has_discover = !data.top_genres.is_empty() || data.multiplayer_count > 0;
+                        let has_multiplayer = data.multiplayer_count > 0;
+                        Ok::<_, ServerFnError>(view! {
+                            {if has_picks {
+                                let picks_view: Vec<_> = data.random_picks.iter().map(|game| {
+                                    let href = game.href.clone();
+                                    let name = game.display_name.clone();
+                                    let system = game.system_display.clone();
+                                    let box_art_url = game.box_art_url.clone();
+                                    view! {
+                                        <GameScrollCard href name system box_art_url />
+                                    }
+                                }).collect();
+                                view! {
+                                    <section class="section">
+                                        <div class="section-header">
+                                            <h2 class="section-title">{t(locale, "home.discover_random")}</h2>
+                                            <button class="refresh-btn" on:click=on_refresh title="Refresh">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div class="recent-scroll">
+                                            {picks_view}
+                                        </div>
+                                    </section>
+                                }.into_any()
+                            } else {
+                                view! { <div></div> }.into_any()
+                            }}
+
+                            {if has_discover {
+                                let multiplayer_card = if has_multiplayer {
+                                    Some(view! {
+                                        <DiscoverCard
+                                            href=format!("/search?multiplayer=true")
+                                            label=t(locale, "home.discover_multiplayer").to_string()
+                                            count=data.multiplayer_count
+                                        />
+                                    })
+                                } else {
+                                    None
+                                };
+                                let genre_cards: Vec<_> = data.top_genres.iter().map(|gc| {
+                                    let href = format!("/search?genre={}", urlencoding::encode(&gc.genre));
+                                    view! {
+                                        <DiscoverCard
+                                            href
+                                            label=gc.genre.clone()
+                                            count=gc.count
+                                        />
+                                    }
+                                }).collect();
+                                view! {
+                                    <section class="section">
+                                        <h2 class="section-title">{t(locale, "home.discover")}</h2>
+                                        <div class="discover-grid">
+                                            {multiplayer_card}
+                                            {genre_cards}
+                                        </div>
+                                    </section>
+                                }.into_any()
+                            } else {
+                                view! { <div></div> }.into_any()
+                            }}
+                        })
+                    })}
+                </Transition>
+            </ErrorBoundary>
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.library")}</h2>
@@ -183,5 +271,22 @@ fn EmptySystemCard(system: crate::server_fns::SystemSummary) -> impl IntoView {
                 {move || t(i18n.locale.get(), "games.no_games").to_string()}
             </div>
         </div>
+    }
+}
+
+/// A quick-discover card that links to a pre-filtered search.
+#[component]
+fn DiscoverCard(href: String, label: String, count: usize) -> impl IntoView {
+    let i18n = use_i18n();
+    let count_label = move || {
+        let games = t(i18n.locale.get(), "home.discover_games");
+        format!("{count} {games}")
+    };
+
+    view! {
+        <A href=href attr:class="discover-card">
+            <span class="discover-card-label">{label}</span>
+            <span class="discover-card-count">{count_label}</span>
+        </A>
     }
 }

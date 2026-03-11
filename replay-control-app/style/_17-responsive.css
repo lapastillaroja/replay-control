@@ -24,6 +24,10 @@
     .skin-grid {
         grid-template-columns: repeat(3, 1fr);
     }
+
+    .discover-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
 
 /* Responsive: tablet+ */
@@ -67,6 +71,10 @@
     }
 
     .game-meta-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .discover-grid {
         grid-template-columns: repeat(4, 1fr);
     }
 }

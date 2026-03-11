@@ -1,6 +1,7 @@
 mod favorites;
 mod images;
 mod metadata;
+mod recommendations;
 mod roms;
 mod search;
 mod settings;
@@ -10,6 +11,7 @@ mod videos;
 pub use favorites::*;
 pub use images::*;
 pub use metadata::*;
+pub use recommendations::*;
 pub use roms::*;
 pub use search::*;
 pub use settings::*;

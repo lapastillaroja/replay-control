@@ -363,6 +363,12 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "search.recent_searches" => "Recent Searches",
         "search.clear_recent" => "Clear",
 
+        // Recommendations
+        "home.discover" => "Discover",
+        "home.discover_random" => "Rediscover Your Library",
+        "home.discover_multiplayer" => "Multiplayer",
+        "home.discover_games" => "games",
+
         // Common
         "common.loading" => "Loading...",
         "common.error" => "Error",
