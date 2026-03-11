@@ -76,6 +76,32 @@ pub struct MetadataStats {
     pub db_size_bytes: u64,
 }
 
+/// A cached ROM entry from the `rom_cache` table.
+#[derive(Debug, Clone)]
+pub struct CachedRom {
+    pub system: String,
+    pub rom_filename: String,
+    pub rom_path: String,
+    pub display_name: Option<String>,
+    pub size_bytes: u64,
+    pub is_m3u: bool,
+    pub box_art_url: Option<String>,
+    pub driver_status: Option<String>,
+    pub genre: Option<String>,
+    pub players: Option<u8>,
+    pub rating: Option<f32>,
+}
+
+/// Per-system cache metadata from the `rom_cache_meta` table.
+#[derive(Debug, Clone)]
+pub struct CachedSystemMeta {
+    pub system: String,
+    pub dir_mtime_secs: Option<i64>,
+    pub scanned_at: i64,
+    pub rom_count: usize,
+    pub total_size_bytes: u64,
+}
+
 /// Handle to the metadata SQLite database.
 pub struct MetadataDb {
     conn: Connection,
@@ -84,17 +110,22 @@ pub struct MetadataDb {
 
 impl MetadataDb {
     /// Open (or create) the metadata database at `<storage_root>/.replay-control/metadata.db`.
+    ///
+    /// Tries nolock mode first (fast, works on both local and NFS), falls back
+    /// to standard WAL mode if nolock fails. This avoids the ~5s timeout that
+    /// the WAL attempt causes on NFS mounts.
     pub fn open(storage_root: &Path) -> Result<Self> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(METADATA_DB_FILE);
 
-        // Try normal open first, then fall back to nolock mode for NFS.
-        let conn = match Self::try_open(&db_path) {
+        // Try nolock first (works on both local and NFS, avoids slow WAL timeout on NFS).
+        // Single-writer safety is guaranteed by the Mutex in the app layer.
+        let conn = match Self::try_open_nolock(&db_path) {
             Ok(conn) => conn,
             Err(_) => {
-                tracing::info!("Standard SQLite open failed (NFS?), retrying with nolock VFS");
-                Self::try_open_nolock(&db_path)?
+                tracing::info!("Nolock SQLite open failed, trying standard WAL mode");
+                Self::try_open(&db_path)?
             }
         };
 
@@ -159,6 +190,33 @@ impl MetadataDb {
         let _ = self
             .conn
             .execute_batch("ALTER TABLE game_metadata ADD COLUMN screenshot_path TEXT;");
+
+        // Persistent ROM cache tables (L2 cache).
+        self.conn
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS rom_cache (
+                    system TEXT NOT NULL,
+                    rom_filename TEXT NOT NULL,
+                    rom_path TEXT NOT NULL,
+                    display_name TEXT,
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    is_m3u INTEGER NOT NULL DEFAULT 0,
+                    box_art_url TEXT,
+                    driver_status TEXT,
+                    genre TEXT,
+                    players INTEGER,
+                    rating REAL,
+                    PRIMARY KEY (system, rom_filename)
+                );
+                CREATE TABLE IF NOT EXISTS rom_cache_meta (
+                    system TEXT PRIMARY KEY,
+                    dir_mtime_secs INTEGER,
+                    scanned_at INTEGER NOT NULL,
+                    rom_count INTEGER NOT NULL DEFAULT 0,
+                    total_size_bytes INTEGER NOT NULL DEFAULT 0
+                );",
+            )
+            .map_err(|e| Error::Other(format!("Failed to create rom_cache tables: {e}")))?;
 
         Ok(())
     }
@@ -571,4 +629,392 @@ impl MetadataDb {
     pub fn db_path(&self) -> &Path {
         &self.db_path
     }
+
+    // ── ROM Cache (L2 persistent cache) ──────────────────────────────
+
+    /// Save a system's ROM list to the rom_cache table.
+    /// Replaces all existing entries for the system in a single transaction.
+    pub fn save_system_roms(
+        &mut self,
+        system: &str,
+        roms: &[CachedRom],
+        dir_mtime_secs: Option<i64>,
+    ) -> Result<()> {
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+
+        // Delete existing entries for this system.
+        tx.execute("DELETE FROM rom_cache WHERE system = ?1", params![system])
+            .map_err(|e| Error::Other(format!("Delete rom_cache failed: {e}")))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO rom_cache (system, rom_filename, rom_path, display_name,
+                     size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                )
+                .map_err(|e| Error::Other(format!("Prepare rom_cache insert: {e}")))?;
+
+            for rom in roms {
+                stmt.execute(params![
+                    &rom.system,
+                    &rom.rom_filename,
+                    &rom.rom_path,
+                    &rom.display_name,
+                    rom.size_bytes as i64,
+                    rom.is_m3u,
+                    &rom.box_art_url,
+                    &rom.driver_status,
+                    &rom.genre,
+                    rom.players.map(|p| p as i32),
+                    rom.rating,
+                ])
+                .map_err(|e| Error::Other(format!("Insert rom_cache failed: {e}")))?;
+            }
+        }
+
+        // Update system metadata.
+        let total_size: u64 = roms.iter().map(|r| r.size_bytes).sum();
+        let now = unix_now();
+        tx.execute(
+            "INSERT INTO rom_cache_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(system) DO UPDATE SET
+                dir_mtime_secs = excluded.dir_mtime_secs,
+                scanned_at = excluded.scanned_at,
+                rom_count = excluded.rom_count,
+                total_size_bytes = excluded.total_size_bytes",
+            params![system, dir_mtime_secs, now, roms.len() as i64, total_size as i64],
+        )
+        .map_err(|e| Error::Other(format!("Upsert rom_cache_meta failed: {e}")))?;
+
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+
+        Ok(())
+    }
+
+    /// Load all cached ROMs for a system.
+    pub fn load_system_roms(&self, system: &str) -> Result<Vec<CachedRom>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, players, rating
+                 FROM rom_cache WHERE system = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare load_system_roms: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], Self::row_to_cached_rom)
+            .map_err(|e| Error::Other(format!("Query load_system_roms: {e}")))?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| Error::Other(format!("Row read failed: {e}")))?);
+        }
+        Ok(result)
+    }
+
+    /// Save just the system-level metadata (counts, mtime) without replacing ROM entries.
+    /// Used when we know game counts from scan_systems but haven't loaded ROMs yet.
+    pub fn save_system_meta(
+        &self,
+        system: &str,
+        dir_mtime_secs: Option<i64>,
+        rom_count: usize,
+        total_size_bytes: u64,
+    ) -> Result<()> {
+        let now = unix_now();
+        self.conn
+            .execute(
+                "INSERT INTO rom_cache_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(system) DO UPDATE SET
+                    dir_mtime_secs = excluded.dir_mtime_secs,
+                    scanned_at = excluded.scanned_at,
+                    rom_count = excluded.rom_count,
+                    total_size_bytes = excluded.total_size_bytes",
+                rusqlite::params![system, dir_mtime_secs, now, rom_count as i64, total_size_bytes as i64],
+            )
+            .map_err(|e| Error::Other(format!("Upsert rom_cache_meta: {e}")))?;
+        Ok(())
+    }
+
+    /// Load cache metadata for a single system.
+    pub fn load_system_meta(&self, system: &str) -> Result<Option<CachedSystemMeta>> {
+        self.conn
+            .query_row(
+                "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes
+                 FROM rom_cache_meta WHERE system = ?1",
+                params![system],
+                |row| {
+                    Ok(CachedSystemMeta {
+                        system: row.get(0)?,
+                        dir_mtime_secs: row.get(1)?,
+                        scanned_at: row.get(2)?,
+                        rom_count: row.get::<_, i64>(3)? as usize,
+                        total_size_bytes: row.get::<_, i64>(4)? as u64,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Query load_system_meta: {e}")))
+    }
+
+    /// Load cache metadata for all systems.
+    pub fn load_all_system_meta(&self) -> Result<Vec<CachedSystemMeta>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes
+                 FROM rom_cache_meta",
+            )
+            .map_err(|e| Error::Other(format!("Prepare load_all_system_meta: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(CachedSystemMeta {
+                    system: row.get(0)?,
+                    dir_mtime_secs: row.get(1)?,
+                    scanned_at: row.get(2)?,
+                    rom_count: row.get::<_, i64>(3)? as usize,
+                    total_size_bytes: row.get::<_, i64>(4)? as u64,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Query load_all_system_meta: {e}")))?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| Error::Other(format!("Row read failed: {e}")))?);
+        }
+        Ok(result)
+    }
+
+    /// Batch update enrichment fields (box_art_url, genre, players, rating, driver_status)
+    /// for ROMs already in the cache.
+    pub fn update_rom_enrichment(
+        &mut self,
+        system: &str,
+        enrichments: &[(String, Option<String>, Option<String>, Option<u8>, Option<f32>, Option<String>)],
+    ) -> Result<usize> {
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+
+        let mut count = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE rom_cache SET box_art_url = ?2, genre = ?3, players = ?4,
+                            rating = ?5, driver_status = ?6
+                     WHERE system = ?7 AND rom_filename = ?1",
+                )
+                .map_err(|e| Error::Other(format!("Prepare update_rom_enrichment: {e}")))?;
+
+            for (filename, box_art_url, genre, players, rating, driver_status) in enrichments {
+                let updated = stmt
+                    .execute(params![
+                        filename,
+                        box_art_url,
+                        genre,
+                        players.map(|p| p as i32),
+                        rating,
+                        driver_status,
+                        system,
+                    ])
+                    .map_err(|e| Error::Other(format!("Update rom enrichment: {e}")))?;
+                count += updated;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(count)
+    }
+
+    /// Clear the rom_cache and rom_cache_meta for a specific system.
+    pub fn clear_system_rom_cache(&self, system: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM rom_cache WHERE system = ?1", params![system])
+            .map_err(|e| Error::Other(format!("Clear system rom_cache: {e}")))?;
+        self.conn
+            .execute(
+                "DELETE FROM rom_cache_meta WHERE system = ?1",
+                params![system],
+            )
+            .map_err(|e| Error::Other(format!("Clear system rom_cache_meta: {e}")))?;
+        Ok(())
+    }
+
+    /// Clear all rom_cache and rom_cache_meta entries.
+    pub fn clear_all_rom_cache(&self) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM rom_cache", [])
+            .map_err(|e| Error::Other(format!("Clear rom_cache: {e}")))?;
+        self.conn
+            .execute("DELETE FROM rom_cache_meta", [])
+            .map_err(|e| Error::Other(format!("Clear rom_cache_meta: {e}")))?;
+        Ok(())
+    }
+
+    // ── SQL-Based Recommendation Queries ─────────────────────────────
+
+    /// Get random cached ROMs with box art from a specific system.
+    pub fn random_cached_roms(&self, system: &str, count: usize) -> Result<Vec<CachedRom>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, players, rating
+                 FROM rom_cache
+                 WHERE system = ?1 AND box_art_url IS NOT NULL
+                 ORDER BY RANDOM() LIMIT ?2",
+            )
+            .map_err(|e| Error::Other(format!("Prepare random_cached_roms: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system, count as i64], Self::row_to_cached_rom)
+            .map_err(|e| Error::Other(format!("Query random_cached_roms: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get top-rated cached ROMs across all systems.
+    pub fn top_rated_cached_roms(&self, count: usize) -> Result<Vec<CachedRom>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, players, rating
+                 FROM rom_cache
+                 WHERE rating IS NOT NULL AND rating > 0
+                 ORDER BY rating DESC
+                 LIMIT ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare top_rated_cached_roms: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![count as i64], Self::row_to_cached_rom)
+            .map_err(|e| Error::Other(format!("Query top_rated_cached_roms: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get genre counts across the entire library.
+    pub fn genre_counts(&self) -> Result<Vec<(String, usize)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT genre, COUNT(*) as cnt FROM rom_cache
+                 WHERE genre IS NOT NULL AND genre != ''
+                 GROUP BY genre ORDER BY cnt DESC",
+            )
+            .map_err(|e| Error::Other(format!("Prepare genre_counts: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query genre_counts: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Count multiplayer games (players >= 2) across the entire library.
+    pub fn multiplayer_count(&self) -> Result<usize> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM rom_cache WHERE players IS NOT NULL AND players >= 2",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Query multiplayer_count: {e}")))
+    }
+
+    /// Get non-favorited ROMs from a system, optionally filtered by genre,
+    /// sorted by rating descending. Used for favorites-based recommendations.
+    pub fn system_roms_excluding(
+        &self,
+        system: &str,
+        exclude_filenames: &[&str],
+        genre_filter: Option<&str>,
+        count: usize,
+    ) -> Result<Vec<CachedRom>> {
+        let exclude_set: std::collections::HashSet<&str> =
+            exclude_filenames.iter().copied().collect();
+
+        // Fetch extra to account for exclusions filtered in Rust.
+        let limit = (count + exclude_filenames.len()) as i64 * 2;
+
+        let roms = if let Some(genre) = genre_filter {
+            let mut stmt = self
+                .conn
+                .prepare(
+                    "SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                            is_m3u, box_art_url, driver_status, genre, players, rating
+                     FROM rom_cache
+                     WHERE system = ?1 AND genre = ?2
+                     ORDER BY rating DESC NULLS LAST
+                     LIMIT ?3",
+                )
+                .map_err(|e| Error::Other(format!("Prepare system_roms_excluding: {e}")))?;
+
+            let rows = stmt
+                .query_map(params![system, genre, limit], Self::row_to_cached_rom)
+                .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
+            rows.flatten().collect::<Vec<_>>()
+        } else {
+            let mut stmt = self
+                .conn
+                .prepare(
+                    "SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                            is_m3u, box_art_url, driver_status, genre, players, rating
+                     FROM rom_cache
+                     WHERE system = ?1
+                     ORDER BY rating DESC NULLS LAST
+                     LIMIT ?2",
+                )
+                .map_err(|e| Error::Other(format!("Prepare system_roms_excluding: {e}")))?;
+
+            let rows = stmt
+                .query_map(params![system, limit], Self::row_to_cached_rom)
+                .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
+            rows.flatten().collect::<Vec<_>>()
+        };
+
+        Ok(roms
+            .into_iter()
+            .filter(|r| !exclude_set.contains(r.rom_filename.as_str()))
+            .take(count)
+            .collect())
+    }
+
+    /// Helper: convert a row to CachedRom (used by multiple queries).
+    fn row_to_cached_rom(row: &rusqlite::Row<'_>) -> rusqlite::Result<CachedRom> {
+        Ok(CachedRom {
+            system: row.get(0)?,
+            rom_filename: row.get(1)?,
+            rom_path: row.get(2)?,
+            display_name: row.get(3)?,
+            size_bytes: row.get::<_, i64>(4)? as u64,
+            is_m3u: row.get(5)?,
+            box_art_url: row.get(6)?,
+            driver_status: row.get(7)?,
+            genre: row.get(8)?,
+            players: row.get::<_, Option<i32>>(9)?.map(|p| p as u8),
+            rating: row.get(10)?,
+        })
+    }
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }

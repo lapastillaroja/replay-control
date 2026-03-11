@@ -2,11 +2,92 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::AppState;
+use super::cache::dir_mtime;
 
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
 
 impl AppState {
+    /// Verify L2 cache freshness on startup: compare stored mtimes against filesystem.
+    /// Re-scans stale systems in the background so the first user request is fast.
+    pub fn spawn_cache_verification(&self) {
+        let state = self.clone();
+        tokio::spawn(async move {
+            // Brief delay to let the server start accepting requests.
+            tokio::time::sleep(Duration::from_secs(2)).await;
+
+            let result = tokio::task::spawn_blocking(move || {
+                let storage = state.storage();
+                let roms_dir = storage.roms_dir();
+                let region_pref = state.region_preference();
+
+                // Load all cached system metadata from L2.
+                let cached_meta = {
+                    let guard = state.metadata_db.lock().ok();
+                    guard.and_then(|mut g| {
+                        if g.is_none() {
+                            match replay_control_core::metadata_db::MetadataDb::open(&storage.root) {
+                                Ok(db) => *g = Some(db),
+                                Err(e) => {
+                                    tracing::debug!("Cannot open DB for cache verification: {e}");
+                                    return None;
+                                }
+                            }
+                        }
+                        g.as_ref()?.load_all_system_meta().ok()
+                    })
+                };
+
+                let Some(cached_meta) = cached_meta else {
+                    tracing::debug!("No L2 cache data to verify");
+                    return;
+                };
+
+                let mut stale_count = 0usize;
+                for meta in &cached_meta {
+                    let system_dir = roms_dir.join(&meta.system);
+                    let current_mtime_secs = dir_mtime(&system_dir).and_then(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .ok()
+                            .map(|d| d.as_secs() as i64)
+                    });
+
+                    let is_stale = match (meta.dir_mtime_secs, current_mtime_secs) {
+                        (Some(cached), Some(current)) => cached != current,
+                        (Some(_), None) => false, // Can't read — trust cache
+                        (None, _) => true,        // No mtime stored — re-scan
+                    };
+
+                    if is_stale {
+                        tracing::info!(
+                            "Background re-scan: {} (mtime changed)",
+                            meta.system
+                        );
+                        // Trigger L3 scan by calling get_roms (which writes through to L1+L2).
+                        let _ = state.cache.get_roms(&storage, &meta.system, region_pref);
+                        stale_count += 1;
+                    }
+                }
+
+                if stale_count > 0 {
+                    tracing::info!("Background cache verification: re-scanned {stale_count} stale system(s)");
+                    // Also refresh the systems list since counts may have changed.
+                    let _ = state.cache.get_systems(&storage);
+                } else {
+                    tracing::debug!(
+                        "Background cache verification: all {} system(s) fresh",
+                        cached_meta.len()
+                    );
+                }
+            })
+            .await;
+
+            if let Err(e) = result {
+                tracing::warn!("Background cache verification failed: {e}");
+            }
+        });
+    }
+
     /// Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
     pub fn spawn_auto_import(&self) {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;

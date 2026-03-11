@@ -13,6 +13,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [profile.release]
 incremental = true
 
+# Fast release profile for development iteration.
+# Use with: cargo build --profile release-dev
+[profile.release-dev]
+inherits = "release"
+incremental = true
+codegen-units = 256
+opt-level = 1
+
 [profile.wasm-release]
 inherits = "release"
 opt-level = "z"

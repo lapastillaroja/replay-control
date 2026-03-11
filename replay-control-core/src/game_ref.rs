@@ -79,4 +79,25 @@ impl GameRef {
             rom_path,
         }
     }
+
+    /// Create a GameRef with a pre-resolved display name (from cache).
+    /// Skips the DB lookup — useful when restoring from SQLite rom_cache.
+    pub fn new_with_display(
+        system: &str,
+        rom_filename: String,
+        rom_path: String,
+        display_name: Option<String>,
+    ) -> Self {
+        let system_display = systems::find_system(system)
+            .map(|s| s.display_name.to_string())
+            .unwrap_or_else(|| system.to_string());
+
+        Self {
+            system: system.to_string(),
+            system_display,
+            rom_filename,
+            display_name,
+            rom_path,
+        }
+    }
 }

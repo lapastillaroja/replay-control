@@ -82,14 +82,15 @@ impl AppState {
 
         tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
+        let metadata_db = Arc::new(std::sync::Mutex::new(None));
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
-            cache: Arc::new(RomCache::new()),
+            cache: Arc::new(RomCache::new(metadata_db.clone())),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(None)),
-            metadata_db: Arc::new(std::sync::Mutex::new(None)),
+            metadata_db,
             import_progress: Arc::new(std::sync::RwLock::new(None)),
             image_import_progress: Arc::new(std::sync::RwLock::new(None)),
             image_import_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),

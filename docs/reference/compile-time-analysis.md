@@ -171,7 +171,70 @@ Heavy dependency chains:
 - **clap** (CLI parser): Used for server CLI arguments. Moderate compile
   cost with `derive` feature.
 
-### 10. Parallel Frontend/Backend Compilation
+### 10. Flattened Folder Structure (Single Crate)
+
+An alternative workspace strategy is to **merge all crates into a single crate** --
+collapsing `replay-control-core` and `replay-control-app` into one crate with a
+flat module hierarchy instead of maintaining a Cargo workspace.
+
+**What this means**: Instead of two crates with an inter-crate dependency
+(`app` depends on `core`), all source lives under a single `src/` directory.
+The current `core` code becomes modules like `src/data/`, `src/db/`, etc., and
+the current `app` code stays as `src/pages/`, `src/components/`, etc. One
+`Cargo.toml`, one compilation unit, one `build.rs`.
+
+**Pros**:
+- **Eliminates inter-crate dependency overhead.** Currently, any change to
+  `core` forces a full recompilation of `app` in release mode. With a single
+  crate, cargo's incremental compilation can track dependencies at the module
+  level, recompiling only the functions that actually changed.
+- **Single compilation unit allows better whole-program optimization.** The
+  compiler sees all code at once, enabling better inlining and dead code
+  elimination without needing LTO.
+- **Simpler build configuration.** One `Cargo.toml`, one feature set, no
+  workspace-level coordination. The `build.sh` script would not need to
+  specify `-p` flags.
+
+**Cons**:
+- **Loses the crate-level compilation boundary.** With two crates, changing
+  only `app` code never recompiles `core` (and its 141K lines of generated
+  code). With a single crate, the incremental compilation engine must track
+  all 150K+ lines as one unit. In practice, Rust's incremental compilation
+  handles this well for debug builds but less predictably for release builds.
+- **Larger single compilation unit.** A single crate with 19K lines of
+  handwritten code + 141K lines of generated code puts more pressure on the
+  compiler's memory and parallelism. Codegen units help, but the monomorphization
+  and type-checking phases still process everything together.
+- **Harder to enforce module boundaries.** Separate crates enforce visibility
+  at the API level -- `pub` items in `core` are the contract. In a single crate,
+  any module can reach into any other module's internals via `pub(crate)` or
+  `super::`, making it easier to introduce unwanted coupling over time.
+- **Feature gating becomes more complex.** Currently, `core` has its own
+  feature flags (`metadata`) and `app` has its own (`ssr`, `hydrate`). In a
+  single crate, all features coexist and interact, increasing the risk of
+  accidental feature leakage (e.g., `hydrate` accidentally pulling in
+  `rusqlite` through a missing `cfg` gate).
+
+**When it makes sense**: For small projects (< 5K lines, < 50 dependencies)
+where the overhead of maintaining a workspace -- duplicate `Cargo.toml` settings,
+inter-crate version coordination, workspace-level feature resolution -- exceeds
+the compilation benefits of separate crates. Also useful when the "core" crate
+changes as frequently as the "app" crate, making the crate boundary a pure cost
+with no caching benefit.
+
+**Assessment for this project**: A flattened structure would **not** be
+beneficial here. The current two-crate split provides a meaningful compilation
+boundary: `core` contains 141K lines of generated code that compiles in ~48
+seconds and changes rarely, while `app` contains 11K lines of UI code that
+changes frequently. With the current structure, a typical UI change skips the
+entire core compilation. Merging the crates would mean the incremental engine
+must track the generated code alongside the UI code, and any invalidation in
+the generated code module graph would slow down what are currently fast
+incremental rebuilds. The feature gating story (`ssr` vs `hydrate`) is also
+cleaner with the current split, since core is SSR-only and never needs to be
+compiled for WASM. The workspace overhead for 2 crates is minimal.
+
+### 11. Parallel Frontend/Backend Compilation
 
 `build.sh` builds WASM first, then SSR, sequentially. They **cannot share
 compiled artifacts** because they target different architectures
@@ -352,6 +415,7 @@ generated code, saving ~1 minute on every core crate rebuild.
 | 8 | Replace reqwest with lighter client   | Moderate       | 1-2 hours | Medium     | Not done   |
 | 9 | Split app crate                       | High           | 1-2 days  | Large      | Not done   |
 | 10| Pre-compile data to binary format     | Very High      | 1-2 days  | Large      | Not done   |
+| 11| Flatten to single crate               | Negative       | N/A       | Evaluated  | Not recommended |
 
 The biggest single win is **recommendation #1** (enabling incremental release builds).
 It takes 5 minutes to implement and should reduce iterative release rebuilds from

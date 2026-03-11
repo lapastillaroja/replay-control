@@ -62,6 +62,9 @@ mod ssr {
         // Spawn background storage re-detection task.
         app_state.clone().spawn_storage_watcher();
 
+        // Verify L2 cache freshness in background (re-scans stale systems).
+        app_state.spawn_cache_verification();
+
         // Auto-import metadata if launchbox-metadata.xml exists and DB is empty.
         app_state.spawn_auto_import();
 
