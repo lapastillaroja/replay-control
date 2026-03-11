@@ -484,6 +484,12 @@ impl AppState {
                 Ok(stats) => {
                     total_boxart += stats.boxart_copied;
                     total_snap += stats.snap_copied;
+                    // Auto-delete the repo after successful match to reclaim disk space.
+                    if let Err(e) = std::fs::remove_dir_all(&repo_dir) {
+                        tracing::warn!("Failed to delete repo cache {}: {e}", repo_dir.display());
+                    } else {
+                        tracing::info!("Deleted repo cache: {}", repo_dir.display());
+                    }
                 }
                 Err(e) => {
                     last_error = Some(e.to_string());
@@ -804,31 +810,10 @@ impl AppState {
                 break;
             }
 
-            let mut repo_dir = clone_base.join(repo_name);
+            let repo_dir = clone_base.join(repo_name);
             if !repo_dir.join("Named_Boxarts").exists() {
+                tracing::debug!("Skipping {repo_name}: no local repo (re-match is offline-only)");
                 continue;
-            }
-
-            // Check if upstream has new images — re-clone if stale.
-            let mut freshly_cloned = false;
-            if replay_control_core::thumbnails::is_repo_stale(&repo_dir, repo_name) {
-                tracing::info!("Re-cloning stale repo {repo_name}");
-                let _ = std::fs::remove_dir_all(&repo_dir);
-                let clone_base_parent = self.storage().rc_dir().join("tmp");
-                match replay_control_core::thumbnails::clone_thumbnail_repo(
-                    repo_name,
-                    Some(&clone_base_parent),
-                    Some(&self.image_import_cancel),
-                ) {
-                    Ok((dir, _)) => {
-                        repo_dir = dir;
-                        freshly_cloned = true;
-                    }
-                    Err(e) => {
-                        tracing::warn!("Re-clone failed for {repo_name}: {e}");
-                        continue;
-                    }
-                }
             }
 
             let label = if repo_names.len() > 1 {
@@ -837,11 +822,8 @@ impl AppState {
                 system_display.clone()
             };
 
-            // Resolve fake symlinks only if repo wasn't freshly cloned
-            // (fresh clones resolve symlinks during clone_thumbnail_repo).
-            if !freshly_cloned {
-                replay_control_core::thumbnails::resolve_fake_symlinks_in_dir(&repo_dir);
-            }
+            // Re-resolve fake symlinks in case new ones appeared.
+            replay_control_core::thumbnails::resolve_fake_symlinks_in_dir(&repo_dir);
 
             // Update progress to Copying.
             {

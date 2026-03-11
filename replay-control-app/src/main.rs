@@ -108,6 +108,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageCoverage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetCacheSize>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImageCache>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemLogs>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelImageImport>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RematchAllImages>();

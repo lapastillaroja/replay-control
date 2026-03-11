@@ -767,6 +767,27 @@ pub fn clear_media(storage_root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Get the total size of the thumbnail repo cache directory.
+pub fn cache_dir_size(storage_root: &Path) -> u64 {
+    let cache_dir = storage_root
+        .join(crate::storage::RC_DIR)
+        .join("tmp")
+        .join("libretro-thumbnails");
+    dir_size(&cache_dir)
+}
+
+/// Delete the thumbnail repo cache directory.
+pub fn clear_cache(storage_root: &Path) -> Result<()> {
+    let cache_dir = storage_root
+        .join(crate::storage::RC_DIR)
+        .join("tmp")
+        .join("libretro-thumbnails");
+    if cache_dir.exists() {
+        std::fs::remove_dir_all(&cache_dir).map_err(|e| Error::io(&cache_dir, e))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

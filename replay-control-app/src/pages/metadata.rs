@@ -331,8 +331,8 @@ fn ImageSection() -> impl IntoView {
             <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                 {move || Suspend::new(async move {
                     let locale = i18n.locale.get();
-                    let (with_boxart, with_snap, media_size) = image_stats.await?;
-                    Ok::<_, ServerFnError>(if with_boxart == 0 && with_snap == 0 {
+                    let (with_boxart, with_snap, media_size, cache_size) = image_stats.await?;
+                    Ok::<_, ServerFnError>(if with_boxart == 0 && with_snap == 0 && cache_size == 0 {
                         view! {
                             <p class="game-section-empty">{t(locale, "metadata.no_images")}</p>
                         }.into_any()
@@ -351,6 +351,12 @@ fn ImageSection() -> impl IntoView {
                                     <span class="info-label">{t(locale, "metadata.media_size")}</span>
                                     <span class="info-value">{format_size(media_size)}</span>
                                 </div>
+                                {(cache_size > 0).then(|| view! {
+                                    <div class="info-row">
+                                        <span class="info-label">{t(locale, "metadata.cache_size")}</span>
+                                        <span class="info-value">{format_size(cache_size)}</span>
+                                    </div>
+                                })}
                             </div>
                         }.into_any()
                     })
@@ -570,7 +576,7 @@ fn watch_image_progress(
     message: RwSignal<Option<String>>,
     cancelling: RwSignal<bool>,
     coverage: Resource<Result<Vec<server_fns::ImageCoverage>, ServerFnError>>,
-    stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
+    stats: Resource<Result<(usize, usize, u64, u64), ServerFnError>>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     return;
@@ -725,6 +731,10 @@ fn ClearImagesSection() -> impl IntoView {
     let clearing = RwSignal::new(false);
     let result = RwSignal::new(Option::<String>::None);
 
+    let confirming_cache = RwSignal::new(false);
+    let clearing_cache = RwSignal::new(false);
+    let cache_result = RwSignal::new(Option::<String>::None);
+
     let on_clear = move |_| {
         clearing.set(true);
         result.set(None);
@@ -741,6 +751,25 @@ fn ClearImagesSection() -> impl IntoView {
             }
             clearing.set(false);
             confirming.set(false);
+        });
+    };
+
+    let on_clear_cache = move |_| {
+        clearing_cache.set(true);
+        cache_result.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::clear_image_cache().await {
+                Ok(()) => {
+                    cache_result.set(Some(
+                        t(i18n.locale.get(), "metadata.cache_cleared").to_string(),
+                    ));
+                }
+                Err(e) => {
+                    cache_result.set(Some(format!("Error: {e}")));
+                }
+            }
+            clearing_cache.set(false);
+            confirming_cache.set(false);
         });
     };
 
@@ -779,6 +808,39 @@ fn ClearImagesSection() -> impl IntoView {
                     </Show>
                     <Show when=move || result.read().is_some()>
                         <p class="manage-action-result">{move || result.get().unwrap_or_default()}</p>
+                    </Show>
+                </div>
+                <div class="manage-action-card">
+                    <Show when=move || confirming_cache.get()
+                        fallback=move || view! {
+                            <button
+                                class="game-action-btn game-action-delete"
+                                on:click=move |_| confirming_cache.set(true)
+                            >
+                                {move || t(i18n.locale.get(), "metadata.clear_cache")}
+                            </button>
+                        }
+                    >
+                        <p class="manage-action-hint">{move || t(i18n.locale.get(), "metadata.confirm_clear_cache")}</p>
+                        <div class="game-delete-confirm">
+                            <button
+                                class="game-action-btn game-action-delete-confirm"
+                                on:click=on_clear_cache
+                                disabled=move || clearing_cache.get()
+                            >
+                                {move || if clearing_cache.get() {
+                                    t(i18n.locale.get(), "metadata.clearing_cache")
+                                } else {
+                                    t(i18n.locale.get(), "metadata.clear_cache")
+                                }}
+                            </button>
+                            <button class="game-action-btn" on:click=move |_| confirming_cache.set(false)>
+                                {move || t(i18n.locale.get(), "games.cancel")}
+                            </button>
+                        </div>
+                    </Show>
+                    <Show when=move || cache_result.read().is_some()>
+                        <p class="manage-action-result">{move || cache_result.get().unwrap_or_default()}</p>
                     </Show>
                 </div>
             </div>

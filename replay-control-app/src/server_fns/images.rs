@@ -147,9 +147,9 @@ pub async fn get_image_coverage() -> Result<Vec<ImageCoverage>, ServerFnError> {
     Ok(coverage)
 }
 
-/// Get image stats.
+/// Get image stats: (boxart_count, snap_count, media_size_bytes, cache_size_bytes).
 #[server(prefix = "/sfn")]
-pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
+pub async fn get_image_stats() -> Result<(usize, usize, u64, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let (with_boxart, with_snap) = {
         let guard = state
@@ -163,7 +163,8 @@ pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     };
     let storage = state.storage();
     let media_size = replay_control_core::thumbnails::media_dir_size(&storage.root);
-    Ok((with_boxart, with_snap, media_size))
+    let cache_size = replay_control_core::thumbnails::cache_dir_size(&storage.root);
+    Ok((with_boxart, with_snap, media_size, cache_size))
 }
 
 /// Clear all images.
@@ -172,5 +173,22 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     replay_control_core::thumbnails::clear_media(&storage.root)
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+/// Get the size of the thumbnail repo cache in bytes.
+#[server(prefix = "/sfn")]
+pub async fn get_cache_size() -> Result<u64, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    Ok(replay_control_core::thumbnails::cache_dir_size(&storage.root))
+}
+
+/// Clear the thumbnail repo cache (tmp/libretro-thumbnails/).
+#[server(prefix = "/sfn")]
+pub async fn clear_image_cache() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    replay_control_core::thumbnails::clear_cache(&storage.root)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }

@@ -308,10 +308,16 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.images_found" => "found",
         "metadata.rematch_all" => "Re-match All",
         "metadata.rematching_all" => "Re-matching...",
-        "metadata.rematch_hint" => "Re-run image matching using already-downloaded repos (no download needed)",
+        "metadata.rematch_hint" => "Re-run image matching using locally cached repos only (offline, no download)",
         "metadata.stop" => "Stop",
         "metadata.cancelling" => "Cancelling...",
         "metadata.import_cancelled" => "Cancelled",
+        "metadata.image_cache" => "Image Cache",
+        "metadata.cache_size" => "Cache Size",
+        "metadata.clear_cache" => "Clear Cache",
+        "metadata.clearing_cache" => "Clearing Cache...",
+        "metadata.cache_cleared" => "Cache cleared",
+        "metadata.confirm_clear_cache" => "Delete all downloaded thumbnail repos? Re-match will not work until repos are downloaded again.",
 
         "metadata.attribution" => "Attribution",
         "metadata.attribution_text" => {
