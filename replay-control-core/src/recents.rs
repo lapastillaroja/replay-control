@@ -83,6 +83,29 @@ pub fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>> {
     Ok(recents)
 }
 
+/// Create or update a recent entry for a game.
+///
+/// Creates `<system>@<rom_filename>.rec` in `_recent/` with the ROM path as content.
+/// If the file already exists, its mtime is updated to the current time (overwrite).
+pub fn add_recent(
+    storage: &StorageLocation,
+    system_folder: &str,
+    rom_filename: &str,
+    rom_path: &str,
+) -> Result<()> {
+    let recents_dir = storage.recents_dir();
+    std::fs::create_dir_all(&recents_dir).map_err(|e| Error::io(&recents_dir, e))?;
+
+    let rec_filename = format!("{system_folder}@{rom_filename}.rec");
+    let rec_path = recents_dir.join(&rec_filename);
+
+    // Write (or overwrite) the marker file.
+    // Overwriting an existing file also updates its mtime.
+    std::fs::write(&rec_path, format!("{rom_path}\n")).map_err(|e| Error::io(&rec_path, e))?;
+
+    Ok(())
+}
+
 /// Get the most recently played game.
 pub fn last_played(storage: &StorageLocation) -> Result<Option<RecentEntry>> {
     let recents = list_recents(storage)?;
@@ -143,6 +166,78 @@ mod tests {
         let recents = list_recents(&storage).unwrap();
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].game.rom_filename, "chelnov.zip");
+    }
+
+    #[test]
+    fn add_recent_creates_marker() {
+        let tmp =
+            std::env::temp_dir().join(format!("replay-rec-add-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("roms")).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
+        add_recent(&storage, "sega_smd", "Sonic.md", "/roms/sega_smd/Sonic.md").unwrap();
+
+        // Verify the file was created with correct content
+        let rec_path = tmp.join("roms/_recent/sega_smd@Sonic.md.rec");
+        assert!(rec_path.exists());
+        let content = std::fs::read_to_string(&rec_path).unwrap();
+        assert_eq!(content, "/roms/sega_smd/Sonic.md\n");
+
+        // Verify it shows up in list_recents
+        let recents = list_recents(&storage).unwrap();
+        assert_eq!(recents.len(), 1);
+        assert_eq!(recents[0].game.system, "sega_smd");
+        assert_eq!(recents[0].game.rom_filename, "Sonic.md");
+    }
+
+    #[test]
+    fn add_recent_overwrites_existing() {
+        let tmp =
+            std::env::temp_dir().join(format!("replay-rec-overwrite-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let recent_dir = tmp.join("roms/_recent");
+        std::fs::create_dir_all(&recent_dir).unwrap();
+
+        // Write an old marker with stale content
+        std::fs::write(
+            recent_dir.join("sega_smd@Sonic.md.rec"),
+            "/roms/sega_smd/old_path/Sonic.md\n",
+        )
+        .unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
+        add_recent(&storage, "sega_smd", "Sonic.md", "/roms/sega_smd/Sonic.md").unwrap();
+
+        let content =
+            std::fs::read_to_string(recent_dir.join("sega_smd@Sonic.md.rec")).unwrap();
+        assert_eq!(content, "/roms/sega_smd/Sonic.md\n");
+    }
+
+    #[test]
+    fn add_recent_creates_directory() {
+        let tmp =
+            std::env::temp_dir().join(format!("replay-rec-mkdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        // Only create the base roms dir, not _recent
+        std::fs::create_dir_all(tmp.join("roms")).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
+        add_recent(
+            &storage,
+            "arcade_dc",
+            "ggx15.zip",
+            "/roms/arcade_dc/Atomiswave/Horizontal Games/00 Clean Romset/ggx15.zip",
+        )
+        .unwrap();
+
+        let rec_path = tmp.join("roms/_recent/arcade_dc@ggx15.zip.rec");
+        assert!(rec_path.exists());
+        let content = std::fs::read_to_string(&rec_path).unwrap();
+        assert_eq!(
+            content,
+            "/roms/arcade_dc/Atomiswave/Horizontal Games/00 Clean Romset/ggx15.zip\n"
+        );
     }
 
     #[test]

@@ -291,8 +291,34 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
     }
 
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::launch::launch_game(&state.storage(), &rom_path)
+    let storage = state.storage();
+
+    replay_control_core::launch::launch_game(&storage, &rom_path)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Create a recents entry so the home page reflects the launch immediately.
+    // Extract system and rom_filename from the rom_path.
+    // rom_path format: "/roms/<system>/<optional_subdirs>/<rom_filename>"
+    if let Some((system, rom_filename)) = parse_rom_path(&rom_path) {
+        if let Err(e) =
+            replay_control_core::recents::add_recent(&storage, &system, &rom_filename, &rom_path)
+        {
+            tracing::warn!("Failed to create recents entry: {e}");
+        }
+        state.cache.invalidate_recents();
+    }
+
     Ok("Game launching".into())
+}
+
+/// Extract system folder and ROM filename from a rom_path.
+///
+/// Handles paths like `/roms/sega_smd/Sonic.md` (simple) and
+/// `/roms/arcade_dc/Atomiswave/Horizontal Games/00 Clean Romset/ggx15.zip` (nested).
+#[cfg(feature = "ssr")]
+fn parse_rom_path(rom_path: &str) -> Option<(String, String)> {
+    let path = rom_path.strip_prefix("/roms/")?;
+    let (system, rest) = path.split_once('/')?;
+    let rom_filename = rest.rsplit_once('/').map(|(_, f)| f).unwrap_or(rest);
+    Some((system.to_string(), rom_filename.to_string()))
 }

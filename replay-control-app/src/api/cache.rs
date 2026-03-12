@@ -830,6 +830,13 @@ impl RomCache {
         }
     }
 
+    /// Invalidate only the recents cache (after launch creates a new entry).
+    pub fn invalidate_recents(&self) {
+        if let Ok(mut guard) = self.recents.write() {
+            *guard = None;
+        }
+    }
+
     /// Enrich box_art_url (and rating) for all ROMs in a system's rom_cache.
     /// Uses the image index for box art and game_metadata for ratings.
     /// Called after L2 write-through to populate fields that `list_roms()` doesn't set.
