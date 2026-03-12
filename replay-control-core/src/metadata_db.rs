@@ -1194,13 +1194,16 @@ impl MetadataDb {
     /// Get random cached ROMs with box art from all systems.
     /// Returns a diverse selection across different systems.
     pub fn random_cached_roms_diverse(&self, count: usize) -> Result<Vec<CachedRom>> {
+        // Don't filter by box_art_url — games without box art show with a
+        // placeholder. Filtering by box_art_url biases recommendations toward
+        // systems whose thumbnails were downloaded on-demand (e.g., only Mega
+        // Drive games appear if the user browsed that system first).
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating
                  FROM rom_cache
-                 WHERE box_art_url IS NOT NULL
                  ORDER BY RANDOM() LIMIT ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare random_cached_roms_diverse: {e}")))?;
