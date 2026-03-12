@@ -133,11 +133,6 @@ pub async fn search_game_videos(
     let encoded_query = urlencoding::encode(&query);
     tracing::info!("Video search: query=\"{query}\"");
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .map_err(|e| ServerFnError::new(format!("HTTP client error: {e}")))?;
-
     // Try Piped instances first, then Invidious instances
     let piped_instances = [
         "https://pipedapi.kavin.rocks",
@@ -154,38 +149,24 @@ pub async fn search_game_videos(
     for base_url in &piped_instances {
         let api_url =
             format!("{base_url}/search?q={encoded_query}&filter=videos");
-        match client.get(&api_url).send().await {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    match resp.json::<serde_json::Value>().await {
-                        Ok(body) => {
-                            let items = body
-                                .get("items")
-                                .and_then(|v| v.as_array())
-                                .cloned()
-                                .unwrap_or_default();
-                            if !items.is_empty() {
-                                tracing::info!(
-                                    "Video search: Piped {base_url} returned {} results",
-                                    items.len()
-                                );
-                                return Ok(parse_piped_results(&items));
-                            }
-                            tracing::warn!("Video search: Piped {base_url} returned empty results");
-                        }
-                        Err(e) => {
-                            tracing::warn!("Video search: Piped {base_url} JSON parse error: {e}");
-                        }
-                    }
-                } else {
-                    tracing::warn!(
-                        "Video search: Piped {base_url} returned status {}",
-                        resp.status()
+        match curl_get_json(&api_url, 8).await {
+            Ok(body) => {
+                let items = body
+                    .get("items")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                if !items.is_empty() {
+                    tracing::info!(
+                        "Video search: Piped {base_url} returned {} results",
+                        items.len()
                     );
+                    return Ok(parse_piped_results(&items));
                 }
+                tracing::warn!("Video search: Piped {base_url} returned empty results");
             }
             Err(e) => {
-                tracing::warn!("Video search: Piped {base_url} request failed: {e}");
+                tracing::warn!("Video search: Piped {base_url} failed: {e}");
             }
         }
     }
@@ -194,37 +175,25 @@ pub async fn search_game_videos(
     for base_url in &invidious_instances {
         let api_url =
             format!("{base_url}/api/v1/search?q={encoded_query}&type=video");
-        match client.get(&api_url).send().await {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    match resp.json::<Vec<serde_json::Value>>().await {
-                        Ok(items) => {
-                            if !items.is_empty() {
-                                tracing::info!(
-                                    "Video search: Invidious {base_url} returned {} results",
-                                    items.len()
-                                );
-                                return Ok(parse_invidious_results(&items));
-                            }
-                            tracing::warn!(
-                                "Video search: Invidious {base_url} returned empty results"
-                            );
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Video search: Invidious {base_url} JSON parse error: {e}"
-                            );
-                        }
-                    }
-                } else {
-                    tracing::warn!(
-                        "Video search: Invidious {base_url} returned status {}",
-                        resp.status()
+        match curl_get_json(&api_url, 8).await {
+            Ok(body) => {
+                let items = match body.as_array() {
+                    Some(arr) => arr.clone(),
+                    None => Vec::new(),
+                };
+                if !items.is_empty() {
+                    tracing::info!(
+                        "Video search: Invidious {base_url} returned {} results",
+                        items.len()
                     );
+                    return Ok(parse_invidious_results(&items));
                 }
+                tracing::warn!(
+                    "Video search: Invidious {base_url} returned empty results"
+                );
             }
             Err(e) => {
-                tracing::warn!("Video search: Invidious {base_url} request failed: {e}");
+                tracing::warn!("Video search: Invidious {base_url} failed: {e}");
             }
         }
     }
@@ -233,6 +202,21 @@ pub async fn search_game_videos(
     Err(ServerFnError::new(
         "Video search unavailable. Paste URLs directly.".to_string(),
     ))
+}
+
+/// Fetch a URL with curl and parse the response as JSON.
+#[cfg(feature = "ssr")]
+async fn curl_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
+    let output = tokio::process::Command::new("curl")
+        .args(["-sS", "--max-time", &timeout_secs.to_string(), url])
+        .output()
+        .await
+        .map_err(|e| format!("curl spawn failed: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("curl failed: {stderr}"));
+    }
+    serde_json::from_slice(&output.stdout).map_err(|e| format!("JSON parse error: {e}"))
 }
 
 #[cfg(feature = "ssr")]

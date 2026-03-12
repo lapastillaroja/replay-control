@@ -33,7 +33,6 @@ clap = { version = "4", features = ["derive"], optional = true }
 any_spawner = { version = "0.2", features = ["tokio"], optional = true }
 notify = { version = "8", optional = true }
 tokio-stream = { version = "0.1", optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 rand = { version = "0.9", optional = true }
 
 # Hydrate-only
@@ -75,7 +74,6 @@ ssr = [
     "dep:any_spawner",
     "dep:notify",
     "dep:tokio-stream",
-    "dep:reqwest",
     "dep:rand",
 ]
 
