@@ -128,6 +128,9 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetThumbnailDataSource>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearThumbnailIndex>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBoxartVariants>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SetBoxartOverride>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::ResetBoxartOverride>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")

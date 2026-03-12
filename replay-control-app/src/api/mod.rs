@@ -30,6 +30,9 @@ pub struct AppState {
     /// Metadata DB handle (lazily opened on first access).
     pub(crate) metadata_db:
         Arc<std::sync::Mutex<Option<replay_control_core::metadata_db::MetadataDb>>>,
+    /// User data DB handle (lazily opened on first access).
+    pub(crate) user_data_db:
+        Arc<std::sync::Mutex<Option<replay_control_core::user_data_db::UserDataDb>>>,
     /// Progress of the current metadata import (None = no import running).
     pub import_progress:
         Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
@@ -86,6 +89,7 @@ impl AppState {
         tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
         let metadata_db = Arc::new(std::sync::Mutex::new(None));
+        let user_data_db = Arc::new(std::sync::Mutex::new(None));
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
@@ -94,6 +98,7 @@ impl AppState {
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(None)),
             metadata_db,
+            user_data_db,
             import_progress: Arc::new(std::sync::RwLock::new(None)),
             thumbnail_progress: Arc::new(std::sync::RwLock::new(None)),
             thumbnail_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -123,6 +128,31 @@ impl AppState {
                 }
                 Err(e) => {
                     tracing::debug!("Could not open metadata DB: {e}");
+                    return None;
+                }
+            }
+        }
+        Some(guard)
+    }
+
+    /// Get a lock on the user data DB, lazily opening it on first access.
+    /// Returns None if the DB can't be opened.
+    pub fn user_data_db(
+        &self,
+    ) -> Option<std::sync::MutexGuard<'_, Option<replay_control_core::user_data_db::UserDataDb>>>
+    {
+        let mut guard = self
+            .user_data_db
+            .lock()
+            .expect("user_data_db lock poisoned");
+        if guard.is_none() {
+            let storage = self.storage();
+            match replay_control_core::user_data_db::UserDataDb::open(&storage.root) {
+                Ok(db) => {
+                    *guard = Some(db);
+                }
+                Err(e) => {
+                    tracing::debug!("Could not open user_data DB: {e}");
                     return None;
                 }
             }

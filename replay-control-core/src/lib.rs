@@ -21,5 +21,7 @@ pub mod systems;
 pub mod thumbnail_manifest;
 #[cfg(feature = "metadata")]
 pub mod thumbnails;
+#[cfg(feature = "metadata")]
+pub mod user_data_db;
 pub mod video_url;
 pub mod videos;

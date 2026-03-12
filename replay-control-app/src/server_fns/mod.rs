@@ -1,3 +1,4 @@
+mod boxart;
 mod favorites;
 mod images;
 mod metadata;
@@ -9,6 +10,7 @@ mod system;
 mod thumbnails;
 mod videos;
 
+pub use boxart::*;
 pub use favorites::*;
 pub use images::*;
 pub use metadata::*;
@@ -273,46 +275,66 @@ pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str
 #[cfg(feature = "ssr")]
 pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     let state = leptos::prelude::expect_context::<crate::api::AppState>();
-    if let Some(guard) = state.metadata_db() {
-        if let Some(db) = guard.as_ref() {
-            match db.lookup(&info.system, &info.rom_filename) {
-                Ok(Some(meta)) => {
-                    info.description = meta.description;
-                    info.rating = meta.rating.map(|r| r as f32);
-                    if meta.publisher.is_some() {
-                        info.publisher = meta.publisher;
-                    }
-                    if let Some(ref path) = meta.box_art_path {
-                        let full = state
-                            .storage()
-                            .rc_dir()
-                            .join("media")
-                            .join(&info.system)
-                            .join(path);
-                        if is_valid_image(&full) {
-                            info.box_art_url = Some(format!("/media/{}/{path}", info.system));
-                        }
-                    }
-                    if let Some(ref path) = meta.screenshot_path {
-                        let full = state
-                            .storage()
-                            .rc_dir()
-                            .join("media")
-                            .join(&info.system)
-                            .join(path);
-                        if is_valid_image(&full) {
-                            info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
-                        }
+
+    // Check user_data_db for box art override FIRST (highest priority).
+    if let Some(ud_guard) = state.user_data_db()
+        && let Some(ud_db) = ud_guard.as_ref()
+        && let Ok(Some(override_path)) = ud_db.get_override(&info.system, &info.rom_filename)
+    {
+        let full = state
+            .storage()
+            .rc_dir()
+            .join("media")
+            .join(&info.system)
+            .join(&override_path);
+        if is_valid_image(&full) {
+            info.box_art_url = Some(format!("/media/{}/{override_path}", info.system));
+        }
+    }
+
+    if let Some(guard) = state.metadata_db()
+        && let Some(db) = guard.as_ref()
+    {
+        match db.lookup(&info.system, &info.rom_filename) {
+            Ok(Some(meta)) => {
+                info.description = meta.description;
+                info.rating = meta.rating.map(|r| r as f32);
+                if meta.publisher.is_some() {
+                    info.publisher = meta.publisher;
+                }
+                // Only set box_art_url from metadata if no override was set above.
+                if info.box_art_url.is_none()
+                    && let Some(ref path) = meta.box_art_path
+                {
+                    let full = state
+                        .storage()
+                        .rc_dir()
+                        .join("media")
+                        .join(&info.system)
+                        .join(path);
+                    if is_valid_image(&full) {
+                        info.box_art_url = Some(format!("/media/{}/{path}", info.system));
                     }
                 }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::debug!(
-                        "Metadata lookup failed for {}/{}: {e}",
-                        info.system,
-                        info.rom_filename
-                    );
+                if let Some(ref path) = meta.screenshot_path {
+                    let full = state
+                        .storage()
+                        .rc_dir()
+                        .join("media")
+                        .join(&info.system)
+                        .join(path);
+                    if is_valid_image(&full) {
+                        info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+                    }
                 }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::debug!(
+                    "Metadata lookup failed for {}/{}: {e}",
+                    info.system,
+                    info.rom_filename
+                );
             }
         }
     }
@@ -322,15 +344,15 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     if info.box_art_url.is_none() || info.screenshot_url.is_none() {
         let media_base = state.storage().rc_dir().join("media").join(&info.system);
 
-        if info.box_art_url.is_none() {
-            if let Some(path) = find_image_on_disk(&media_base, "boxart", &info.rom_filename) {
-                info.box_art_url = Some(format!("/media/{}/{path}", info.system));
-            }
+        if info.box_art_url.is_none()
+            && let Some(path) = find_image_on_disk(&media_base, "boxart", &info.rom_filename)
+        {
+            info.box_art_url = Some(format!("/media/{}/{path}", info.system));
         }
-        if info.screenshot_url.is_none() {
-            if let Some(path) = find_image_on_disk(&media_base, "snap", &info.rom_filename) {
-                info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
-            }
+        if info.screenshot_url.is_none()
+            && let Some(path) = find_image_on_disk(&media_base, "snap", &info.rom_filename)
+        {
+            info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
         }
     }
 }
@@ -344,27 +366,41 @@ pub(crate) fn resolve_box_art_url(
 ) -> Option<String> {
     let media_base = state.storage().rc_dir().join("media").join(system);
 
+    // 0. Check user_data_db for box art override (highest priority).
+    if let Some(ud_guard) = state.user_data_db()
+        && let Some(ud_db) = ud_guard.as_ref()
+        && let Ok(Some(override_path)) = ud_db.get_override(system, rom_filename)
+    {
+        let full = state
+            .storage()
+            .rc_dir()
+            .join("media")
+            .join(system)
+            .join(&override_path);
+        if is_valid_image(&full) {
+            return Some(format!("/media/{system}/{override_path}"));
+        }
+    }
+
     // 1. Try metadata DB — but validate the file on disk (catches git fake-symlink artifacts).
     //    If the DB path is a fake symlink, try resolving it before falling back to disk scan.
-    if let Some(guard) = state.metadata_db() {
-        if let Some(db) = guard.as_ref() {
-            if let Ok(Some(meta)) = db.lookup(system, rom_filename) {
-                if let Some(ref path) = meta.box_art_path {
-                    let full_path = media_base.join(path);
-                    if is_valid_image(&full_path) {
-                        return Some(format!("/media/{system}/{path}"));
-                    }
-                    // DB path points to a fake symlink — try resolving it.
-                    let kind_dir = full_path.parent().unwrap_or(&media_base);
-                    if let Some(resolved) = try_resolve_fake_symlink(&full_path, kind_dir) {
-                        let kind = std::path::Path::new(path)
-                            .parent()
-                            .and_then(|p| p.to_str())
-                            .unwrap_or("boxart");
-                        return Some(format!("/media/{system}/{kind}/{resolved}"));
-                    }
-                }
-            }
+    if let Some(guard) = state.metadata_db()
+        && let Some(db) = guard.as_ref()
+        && let Ok(Some(meta)) = db.lookup(system, rom_filename)
+        && let Some(ref path) = meta.box_art_path
+    {
+        let full_path = media_base.join(path);
+        if is_valid_image(&full_path) {
+            return Some(format!("/media/{system}/{path}"));
+        }
+        // DB path points to a fake symlink — try resolving it.
+        let kind_dir = full_path.parent().unwrap_or(&media_base);
+        if let Some(resolved) = try_resolve_fake_symlink(&full_path, kind_dir) {
+            let kind = std::path::Path::new(path)
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or("boxart");
+            return Some(format!("/media/{system}/{kind}/{resolved}"));
         }
     }
     // 2. Filesystem fallback (find_image_on_disk already validates)

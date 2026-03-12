@@ -516,6 +516,18 @@ fn watch_metadata_progress(
 
         es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         on_message.forget();
+
+        // When the server closes the stream (idle timeout), close our side
+        // to prevent EventSource auto-reconnect spam.
+        let es_err = es.clone();
+        let on_error = Closure::<dyn Fn()>::new(move || {
+            es_err.close();
+            METADATA_ES.with(|cell| {
+                cell.borrow_mut().take();
+            });
+        });
+        es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+        on_error.forget();
     }
 }
 
@@ -607,6 +619,18 @@ fn watch_thumbnail_progress(
 
         es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         on_message.forget();
+
+        // When the server closes the stream (idle timeout), close our side
+        // to prevent EventSource auto-reconnect spam.
+        let es_err = es.clone();
+        let on_error = Closure::<dyn Fn()>::new(move || {
+            es_err.close();
+            THUMBNAIL_ES.with(|cell| {
+                cell.borrow_mut().take();
+            });
+        });
+        es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+        on_error.forget();
     }
 }
 

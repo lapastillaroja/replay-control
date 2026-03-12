@@ -29,6 +29,9 @@ pub struct RomDetail {
     pub is_m3u: bool,
     pub is_favorite: bool,
     pub user_screenshots: Vec<ScreenshotUrl>,
+    /// Number of distinct box art variants available (for "Change cover" affordance).
+    #[serde(default)]
+    pub variant_count: usize,
 }
 
 #[server(prefix = "/sfn")]
@@ -84,10 +87,10 @@ pub async fn get_roms_page(
                     .rom_filename
                     .strip_suffix(".zip")
                     .unwrap_or(&r.game.rom_filename);
-                if let Some(info) = arcade_db::lookup_arcade_game(stem) {
-                    if info.is_clone {
-                        return false;
-                    }
+                if let Some(info) = arcade_db::lookup_arcade_game(stem)
+                    && info.is_clone
+                {
+                    return false;
                 }
             }
             true
@@ -200,16 +203,16 @@ pub async fn get_roms_page(
     }
 
     // Populate ratings from metadata DB (batch lookup for efficiency).
-    if let Some(guard) = state.metadata_db() {
-        if let Some(db) = guard.as_ref() {
-            let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
-            if let Ok(ratings) = db.lookup_ratings(&system, &filenames) {
-                for rom in &mut roms {
-                    if let Some(&rating) = ratings.get(&rom.game.rom_filename) {
-                        if rating > 0.0 {
-                            rom.rating = Some(rating as f32);
-                        }
-                    }
+    if let Some(guard) = state.metadata_db()
+        && let Some(db) = guard.as_ref()
+    {
+        let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
+        if let Ok(ratings) = db.lookup_ratings(&system, &filenames) {
+            for rom in &mut roms {
+                if let Some(&rating) = ratings.get(&rom.game.rom_filename)
+                    && rating > 0.0
+                {
+                    rom.rating = Some(rating as f32);
                 }
             }
         }
@@ -251,12 +254,25 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
             })
             .collect();
 
+    // Count box art variants (lightweight — only needs the thumbnail index).
+    let variant_count = state
+        .metadata_db()
+        .and_then(|guard| {
+            guard.as_ref().map(|db| {
+                replay_control_core::thumbnail_manifest::count_boxart_variants(
+                    db, &system, &filename,
+                )
+            })
+        })
+        .unwrap_or(0);
+
     Ok(RomDetail {
         game,
         size_bytes: rom.size_bytes,
         is_m3u: rom.is_m3u,
         is_favorite,
         user_screenshots,
+        variant_count,
     })
 }
 

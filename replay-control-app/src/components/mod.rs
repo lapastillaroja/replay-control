@@ -1,3 +1,4 @@
+pub mod boxart_picker;
 pub mod captures;
 pub mod filter_chips;
 pub mod genre_dropdown;

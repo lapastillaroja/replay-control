@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
+use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::captures::{CapturesLightbox, INITIAL_CAPTURE_COUNT};
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{t, use_i18n};
@@ -123,11 +124,15 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let has_publisher = game.publisher.as_ref().is_some_and(|p| !p.is_empty());
     let publisher = StoredValue::new(game.publisher.clone().unwrap_or_default());
 
-    // Images
-    let box_art_url = StoredValue::new(game.box_art_url.clone());
-    let has_box_art = game.box_art_url.is_some();
+    // Images — box_art_url is an RwSignal so the picker can update it reactively.
+    let box_art_url = RwSignal::new(game.box_art_url.clone());
     let screenshot_url = StoredValue::new(game.screenshot_url.clone());
     let has_screenshot = game.screenshot_url.is_some();
+
+    // Box art variant picker state.
+    let variant_count = detail.variant_count;
+    let has_variants = variant_count > 1;
+    let show_picker = RwSignal::new(false);
 
     // User captures
     let user_screenshots = StoredValue::new(detail.user_screenshots.clone());
@@ -192,12 +197,50 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         // Hero / Cover Art
         <section class="section">
             <div class="game-cover">
-                <Show when=move || has_box_art
+                <Show when=move || box_art_url.read().is_some()
                     fallback=move || view! { <span class="game-cover-text">{game_name_sv.get_value()}</span> }
                 >
-                    <img class="game-cover-img" src=box_art_url.get_value() alt=game_name_sv.get_value() />
+                    <img
+                        class="game-cover-img"
+                        class:game-cover-tappable=has_variants
+                        src=move || box_art_url.get().unwrap_or_default()
+                        alt=game_name_sv.get_value()
+                        on:click=move |_| {
+                            if has_variants {
+                                show_picker.set(true);
+                            }
+                        }
+                    />
                 </Show>
             </div>
+            <Show when=move || has_variants>
+                <div class="change-cover-link" on:click=move |_| show_picker.set(true)>
+                    {move || t(i18n.locale.get(), "game_detail.change_cover")}
+                    " \u{203A}"
+                </div>
+            </Show>
+            <Show when=move || show_picker.get()>
+                <BoxArtPicker
+                    system=system_sv
+                    rom_filename=filename_sv
+                    on_close=Callback::new(move |()| show_picker.set(false))
+                    on_change=Callback::new(move |new_url: String| {
+                        show_picker.set(false);
+                        if new_url.is_empty() {
+                            // Reset: reload the page to get the default box art.
+                            // For simplicity, just reload the resource.
+                            #[cfg(feature = "hydrate")]
+                            {
+                                if let Some(window) = web_sys::window() {
+                                    let _ = window.location().reload();
+                                }
+                            }
+                        } else {
+                            box_art_url.set(Some(new_url));
+                        }
+                    })
+                />
+            </Show>
         </section>
 
         // Launch on TV (prominent CTA)

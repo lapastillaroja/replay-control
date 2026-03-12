@@ -13,6 +13,25 @@ use crate::error::{Error, Result};
 use crate::metadata_db::MetadataDb;
 use crate::thumbnails::{self, ThumbnailKind};
 
+/// Percent-encode a string for use in a URL path component.
+/// Encodes everything except unreserved characters (RFC 3986).
+fn encode_uri_component(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push('%');
+                out.push(char::from(b"0123456789ABCDEF"[(b >> 4) as usize]));
+                out.push(char::from(b"0123456789ABCDEF"[(b & 0x0F) as usize]));
+            }
+        }
+    }
+    out
+}
+
 // ── Phase 1: Manifest Generation ────────────────────────────────────────
 
 /// Info about a single libretro-thumbnails repo.
@@ -501,14 +520,13 @@ pub fn find_in_manifest<'a>(
 
     // Tier 3: version-stripped.
     let version_key = strip_version(&key);
-    if version_key.len() < key.len() {
-        if let Some(m) = index
+    if version_key.len() < key.len()
+        && let Some(m) = index
             .by_tags
             .get(version_key)
             .or_else(|| index.by_version.get(version_key))
-        {
-            return Some(m);
-        }
+    {
+        return Some(m);
     }
 
     None
@@ -622,6 +640,221 @@ pub fn save_thumbnail(
     std::fs::write(&dest, png_bytes).map_err(|e| Error::io(&dest, e))?;
 
     Ok(dest)
+}
+
+// ── Phase 3: Variant Discovery ───────────────────────────────────────────
+
+/// A box art variant available for a ROM (different region, same game).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BoxArtVariant {
+    /// Filename stem in the thumbnail index (e.g., "Sonic the Hedgehog (Europe)").
+    pub filename: String,
+    /// Region label extracted from the filename (e.g., "Europe").
+    pub region_label: String,
+    /// Whether the image is already downloaded to local media.
+    pub is_downloaded: bool,
+    /// URL to serve the image (local path if downloaded, GitHub raw URL otherwise).
+    pub image_url: String,
+    /// Whether this is the currently active variant.
+    pub is_active: bool,
+    /// URL-safe repo name (for downloading).
+    pub repo_url_name: String,
+    /// Git branch for this repo.
+    pub branch: String,
+}
+
+/// Find all box art variants for a ROM by querying the thumbnail index.
+///
+/// Computes the ROM's base title via `strip_tags(thumbnail_filename(stem))`, then
+/// collects all `Named_Boxarts` entries with the same base title. De-duplicates
+/// by symlink target so entries pointing to the same image appear only once.
+pub fn find_boxart_variants(
+    db: &MetadataDb,
+    system: &str,
+    rom_filename: &str,
+    storage_root: &std::path::Path,
+    active_box_art_url: Option<&str>,
+) -> Vec<BoxArtVariant> {
+    use crate::thumbnails::{self, strip_tags, thumbnail_filename};
+    use std::collections::HashSet;
+
+    let repo_names = match thumbnails::thumbnail_repo_names(system) {
+        Some(names) => names,
+        None => return Vec::new(),
+    };
+
+    // Compute the ROM's base title for matching.
+    let stem = rom_filename
+        .rfind('.')
+        .map(|i| &rom_filename[..i])
+        .unwrap_or(rom_filename);
+
+    // For arcade ROMs, translate MAME codename to display name.
+    let is_arcade = matches!(
+        system,
+        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
+    );
+    let display_name = if is_arcade {
+        crate::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name.to_string())
+    } else {
+        None
+    };
+    let thumb_name = thumbnail_filename(display_name.as_deref().unwrap_or(stem));
+    let base_title = strip_tags(&thumb_name).to_lowercase();
+
+    let media_base = storage_root
+        .join(crate::storage::RC_DIR)
+        .join("media")
+        .join(system)
+        .join("boxart");
+
+    let mut variants = Vec::new();
+    let mut seen_targets: HashSet<String> = HashSet::new();
+
+    for display_name in repo_names {
+        let url_name = display_name.replace(' ', "_");
+        let source_name = format!("libretro:{url_name}");
+
+        let branch = db
+            .get_data_source(&source_name)
+            .ok()
+            .flatten()
+            .and_then(|s| s.branch)
+            .unwrap_or_else(|| "master".to_string());
+
+        let entries = db
+            .query_thumbnail_index(&source_name, "Named_Boxarts")
+            .unwrap_or_default();
+
+        for entry in &entries {
+            let entry_base = strip_tags(&entry.filename).to_lowercase();
+            if entry_base != base_title {
+                continue;
+            }
+
+            // De-duplicate by resolved image (symlink target or filename).
+            let resolved = entry
+                .symlink_target
+                .as_deref()
+                .filter(|t| !t.is_empty())
+                .unwrap_or(&entry.filename);
+            if !seen_targets.insert(resolved.to_string()) {
+                continue;
+            }
+
+            let local_path = media_base.join(format!("{}.png", entry.filename));
+            let is_downloaded = local_path.exists()
+                && local_path
+                    .metadata()
+                    .map(|m| m.len() >= 200)
+                    .unwrap_or(false);
+
+            let image_url = if is_downloaded {
+                format!("/media/{system}/boxart/{}.png", entry.filename)
+            } else {
+                // Preview from GitHub raw content for undownloaded variants.
+                let encoded_name = encode_uri_component(&entry.filename);
+                format!(
+                    "https://raw.githubusercontent.com/libretro-thumbnails/{}/{}/Named_Boxarts/{encoded_name}.png",
+                    url_name, branch
+                )
+            };
+
+            // Check if this variant is the currently active one.
+            let is_active = active_box_art_url
+                .map(|url| {
+                    let expected = format!("/media/{system}/boxart/{}.png", entry.filename);
+                    url == expected
+                })
+                .unwrap_or(false);
+
+            let region_label = extract_region_label(&entry.filename);
+
+            variants.push(BoxArtVariant {
+                filename: entry.filename.clone(),
+                region_label,
+                is_downloaded,
+                image_url,
+                is_active,
+                repo_url_name: url_name.clone(),
+                branch: branch.clone(),
+            });
+        }
+    }
+
+    variants
+}
+
+/// Count distinct box art variants for a ROM without building the full list.
+/// Faster than `find_boxart_variants()` when only the count is needed.
+pub fn count_boxart_variants(db: &MetadataDb, system: &str, rom_filename: &str) -> usize {
+    use crate::thumbnails::{self, strip_tags, thumbnail_filename};
+    use std::collections::HashSet;
+
+    let repo_names = match thumbnails::thumbnail_repo_names(system) {
+        Some(names) => names,
+        None => return 0,
+    };
+
+    let stem = rom_filename
+        .rfind('.')
+        .map(|i| &rom_filename[..i])
+        .unwrap_or(rom_filename);
+
+    let is_arcade = matches!(
+        system,
+        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
+    );
+    let display_name = if is_arcade {
+        crate::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name.to_string())
+    } else {
+        None
+    };
+    let thumb_name = thumbnail_filename(display_name.as_deref().unwrap_or(stem));
+    let base_title = strip_tags(&thumb_name).to_lowercase();
+
+    let mut seen_targets: HashSet<String> = HashSet::new();
+
+    for display_name in repo_names {
+        let url_name = display_name.replace(' ', "_");
+        let source_name = format!("libretro:{url_name}");
+
+        let entries = db
+            .query_thumbnail_index(&source_name, "Named_Boxarts")
+            .unwrap_or_default();
+
+        for entry in &entries {
+            let entry_base = strip_tags(&entry.filename).to_lowercase();
+            if entry_base != base_title {
+                continue;
+            }
+
+            let resolved = entry
+                .symlink_target
+                .as_deref()
+                .filter(|t| !t.is_empty())
+                .unwrap_or(&entry.filename);
+            seen_targets.insert(resolved.to_string());
+        }
+    }
+
+    seen_targets.len()
+}
+
+/// Extract the region label from a thumbnail filename.
+///
+/// "Sonic the Hedgehog (USA, Europe)" -> "USA, Europe"
+/// "Sonic the Hedgehog (Japan) (Rev 1)" -> "Japan"
+/// "Sonic the Hedgehog" -> "" (no region tag)
+fn extract_region_label(filename: &str) -> String {
+    // Find the first parenthesized group.
+    if let Some(start) = filename.find(" (") {
+        let rest = &filename[start + 2..];
+        if let Some(end) = rest.find(')') {
+            return rest[..end].to_string();
+        }
+    }
+    String::new()
 }
 
 /// Stats from a download operation.
@@ -760,7 +993,7 @@ pub fn download_system_thumbnails(
 
             // Report progress periodically.
             let done = processed.load(Ordering::Relaxed);
-            if done % 5 == 0 {
+            if done.is_multiple_of(5) {
                 on_progress(skipped + done, total, downloaded.load(Ordering::Relaxed));
             }
         }

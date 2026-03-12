@@ -1,0 +1,188 @@
+/* ── Box Art Picker (bottom sheet variant selector) ──────────────────── */
+
+.game-cover-tappable {
+    cursor: pointer;
+}
+
+.change-cover-link {
+    text-align: center;
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #888);
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.change-cover-link:active {
+    opacity: 0.6;
+}
+
+/* Overlay */
+.boxart-picker-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    animation: boxart-overlay-in 0.2s ease-out;
+}
+
+@keyframes boxart-overlay-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Sheet */
+.boxart-picker-sheet {
+    background: var(--bg-card, #1a1a2e);
+    border-radius: 16px 16px 0 0;
+    padding: 16px;
+    width: 100%;
+    max-width: 480px;
+    max-height: 60vh;
+    overflow-y: auto;
+    animation: boxart-sheet-in 0.25s ease-out;
+}
+
+@keyframes boxart-sheet-in {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+.boxart-picker-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.boxart-picker-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+}
+
+.boxart-picker-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary, #888);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+}
+
+.boxart-picker-loading,
+.boxart-picker-empty {
+    text-align: center;
+    padding: 24px 0;
+    color: var(--text-secondary, #888);
+    font-size: 0.9rem;
+}
+
+/* Horizontal strip of variants */
+.boxart-picker-strip {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 4px 0 12px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+.boxart-variant {
+    flex-shrink: 0;
+    width: 100px;
+    cursor: pointer;
+    text-align: center;
+    position: relative;
+    border-radius: 6px;
+    padding: 4px;
+    transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.boxart-variant:active {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.boxart-variant.active {
+    outline: 2px solid var(--accent, #4a9eff);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+.boxart-variant-img {
+    width: 92px;
+    height: auto;
+    max-height: 130px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.boxart-variant-placeholder {
+    width: 92px;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    font-size: 1.5rem;
+    color: var(--text-secondary, #888);
+}
+
+.boxart-variant-label {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--text-secondary, #888);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
+}
+
+.boxart-variant-check {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: var(--accent, #4a9eff);
+    color: #fff;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* Reset button */
+.boxart-picker-reset {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    margin-top: 4px;
+    background: none;
+    border: 1px solid var(--border, #333);
+    border-radius: 8px;
+    color: var(--text-secondary, #888);
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-align: center;
+}
+
+.boxart-picker-reset:active {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.boxart-picker-reset:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
