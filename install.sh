@@ -386,8 +386,8 @@ ExecStart=/usr/local/bin/replay-control-app \
     --site-root ${REPLAY_SITE_ROOT}
 Restart=on-failure
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
+StandardOutput=append:/var/log/replay-control.log
+StandardError=append:/var/log/replay-control.log
 SyslogIdentifier=replay-control
 
 [Install]
@@ -502,8 +502,8 @@ ExecStart=/usr/local/bin/replay-control-app \
     --site-root ${REPLAY_SITE_ROOT}
 Restart=on-failure
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
+StandardOutput=append:/var/log/replay-control.log
+StandardError=append:/var/log/replay-control.log
 SyslogIdentifier=replay-control
 
 [Install]

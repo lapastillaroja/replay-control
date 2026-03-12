@@ -34,7 +34,9 @@ mod ssr {
     }
 
     pub async fn run() {
+        use std::io::IsTerminal;
         tracing_subscriber::fmt()
+            .with_ansi(std::io::stderr().is_terminal())
             .with_env_filter(
                 tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
                     "replay_control_app=info,replay_control_core=info"

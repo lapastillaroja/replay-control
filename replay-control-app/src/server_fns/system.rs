@@ -112,32 +112,85 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     Ok(enriched)
 }
 
-/// Read system logs from journalctl.
+/// Read system logs.
+/// Tries journalctl first; falls back to log files when journald has Storage=none
+/// (as on RePlayOS, which disables persistent/volatile journal).
 #[server(prefix = "/sfn")]
 pub async fn get_system_logs(source: String, lines: usize) -> Result<String, ServerFnError> {
     let lines = lines.min(500);
+
+    // Try journalctl first.
+    let journal_text = read_journalctl(&source, lines);
+    if !journal_text.is_empty() {
+        return Ok(journal_text);
+    }
+
+    // Fallback: read from log files.
+    match source.as_str() {
+        "replay" => Ok(read_log_file_tail("/var/log/replay.log", lines)),
+        "replay-control" => Ok(read_log_file_tail("/var/log/replay-control.log", lines)),
+        _ => {
+            // "all": combine both log files, interleave by showing replay-control first.
+            let rc = read_log_file_tail("/var/log/replay-control.log", lines);
+            let rp = read_log_file_tail("/var/log/replay.log", lines);
+            if rc.is_empty() && rp.is_empty() {
+                Ok("No logs available.".to_string())
+            } else if rc.is_empty() {
+                Ok(rp)
+            } else if rp.is_empty() {
+                Ok(rc)
+            } else {
+                Ok(format!(
+                    "=== Replay Control ===\n{rc}\n\n=== RePlayOS ===\n{rp}"
+                ))
+            }
+        }
+    }
+}
+
+#[cfg(feature = "ssr")]
+fn read_journalctl(source: &str, lines: usize) -> String {
     let mut cmd = std::process::Command::new("journalctl");
     cmd.args(["--no-pager", "--lines", &lines.to_string(), "--reverse"]);
 
-    match source.as_str() {
+    match source {
         "replay-control" => {
             cmd.args(["-u", "replay-control"]);
         }
         "replay" => {
             cmd.args(["-u", "replay"]);
         }
-        _ => {} // "all" — no unit filter
+        _ => {}
     }
 
-    let output = cmd
-        .output()
-        .map_err(|e| ServerFnError::new(format!("Failed to read logs: {e}")))?;
+    let output = match cmd.output() {
+        Ok(o) if o.status.success() => o,
+        _ => return String::new(),
+    };
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        // journalctl may not exist on dev machines
-        Ok("journalctl not available or no logs found.".to_string())
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    // journalctl with Storage=none prints "No journal files were found" + "-- No entries --"
+    if text.contains("No journal files") || text.contains("-- No entries --") || text.trim().is_empty()
+    {
+        return String::new();
+    }
+    text
+}
+
+/// Read the last N lines of a log file (newest last, reversed for display).
+#[cfg(feature = "ssr")]
+fn read_log_file_tail(path: &str, lines: usize) -> String {
+    let output = std::process::Command::new("tail")
+        .args(["-n", &lines.to_string(), path])
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let text = String::from_utf8_lossy(&o.stdout).into_owned();
+            // Reverse lines so newest is first (matching journalctl --reverse).
+            let reversed: Vec<&str> = text.lines().rev().collect();
+            reversed.join("\n")
+        }
+        _ => String::new(),
     }
 }
 
