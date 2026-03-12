@@ -115,11 +115,19 @@ impl AppState {
 
     /// Get a lock on the metadata DB, lazily opening it on first access.
     /// Returns None if the DB can't be opened (e.g., storage not available).
+    /// Re-opens automatically if the DB file was deleted externally.
     pub fn metadata_db(
         &self,
     ) -> Option<std::sync::MutexGuard<'_, Option<replay_control_core::metadata_db::MetadataDb>>>
     {
         let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+        // Drop stale connection if the DB file was deleted externally.
+        if let Some(ref db) = *guard {
+            if !db.db_path().exists() {
+                tracing::warn!("Metadata DB file deleted externally, re-opening");
+                *guard = None;
+            }
+        }
         if guard.is_none() {
             let storage = self.storage();
             match replay_control_core::metadata_db::MetadataDb::open(&storage.root) {
@@ -137,6 +145,7 @@ impl AppState {
 
     /// Get a lock on the user data DB, lazily opening it on first access.
     /// Returns None if the DB can't be opened.
+    /// Re-opens automatically if the DB file was deleted externally.
     pub fn user_data_db(
         &self,
     ) -> Option<std::sync::MutexGuard<'_, Option<replay_control_core::user_data_db::UserDataDb>>>
@@ -145,6 +154,13 @@ impl AppState {
             .user_data_db
             .lock()
             .expect("user_data_db lock poisoned");
+        // Drop stale connection if the DB file was deleted externally.
+        if let Some(ref db) = *guard {
+            if !db.db_path().exists() {
+                tracing::warn!("User data DB file deleted externally, re-opening");
+                *guard = None;
+            }
+        }
         if guard.is_none() {
             let storage = self.storage();
             match replay_control_core::user_data_db::UserDataDb::open(&storage.root) {
