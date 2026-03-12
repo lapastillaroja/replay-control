@@ -117,7 +117,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemGenres>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RandomGame>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRegionPreference>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveRegionPreference>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveRegionPreference>(
+        );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecommendations>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::UpdateThumbnails>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelThumbnailUpdate>(
@@ -126,8 +127,7 @@ mod ssr {
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetThumbnailDataSource>(
         );
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearThumbnailIndex>(
-        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearThumbnailIndex>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
@@ -151,11 +151,7 @@ mod ssr {
                         return StatusCode::BAD_REQUEST.into_response();
                     }
 
-                    let file_path = state
-                        .storage()
-                        .rc_dir()
-                        .join("media")
-                        .join(&path);
+                    let file_path = state.storage().rc_dir().join("media").join(&path);
 
                     match tokio::fs::read(&file_path).await {
                         Ok(data) => {
@@ -203,10 +199,7 @@ mod ssr {
                             StatusCode::OK,
                             [
                                 ("content-type", "image/png"),
-                                (
-                                    "cache-control",
-                                    "public, max-age=31536000, immutable",
-                                ),
+                                ("cache-control", "public, max-age=31536000, immutable"),
                             ],
                             data,
                         )
@@ -237,7 +230,15 @@ mod ssr {
                     let idle_count = idle_count.clone();
                     move |_| {
                         let guard = progress_ref.read().expect("lock");
-                        let is_active = guard.is_some();
+                        let is_active = guard.as_ref().is_some_and(|p| {
+                            use replay_control_app::server_fns::ImportState;
+                            matches!(
+                                p.state,
+                                ImportState::Downloading
+                                    | ImportState::BuildingIndex
+                                    | ImportState::Parsing
+                            )
+                        });
                         let json = match &*guard {
                             Some(p) => serde_json::to_string(p).unwrap_or_default(),
                             None => "null".to_string(),
@@ -252,7 +253,7 @@ mod ssr {
                         Ok::<_, Infallible>(Event::default().data(json))
                     }
                 })
-                // Close stream after 5 consecutive idle ticks (1s of no import).
+                // Close stream after 5 consecutive idle ticks (1s of no active operation).
                 .take_while({
                     let idle_count = idle_count.clone();
                     move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
@@ -284,7 +285,13 @@ mod ssr {
                     let idle_count = idle_count.clone();
                     move |_| {
                         let guard = progress_ref.read().expect("lock");
-                        let is_active = guard.is_some();
+                        let is_active = guard.as_ref().is_some_and(|p| {
+                            use replay_control_app::server_fns::ThumbnailPhase;
+                            matches!(
+                                p.phase,
+                                ThumbnailPhase::Indexing | ThumbnailPhase::Downloading
+                            )
+                        });
                         let json = match &*guard {
                             Some(p) => serde_json::to_string(p).unwrap_or_default(),
                             None => "null".to_string(),

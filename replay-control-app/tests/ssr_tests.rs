@@ -8,8 +8,8 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 
 use common::{
-    cleanup_test_storage, create_test_storage, init_executor, register_server_fns,
-    test_app_state, test_router,
+    cleanup_test_storage, create_test_storage, init_executor, register_server_fns, test_app_state,
+    test_router,
 };
 
 /// SSR tests require the Leptos executor and server function registration.
@@ -26,12 +26,7 @@ async fn home_page_returns_200_with_replay_control() {
     let app = test_router(state);
 
     let resp = app
-        .oneshot(
-            Request::builder()
-                .uri("/")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
 
@@ -56,12 +51,7 @@ async fn more_page_returns_200() {
     let app = test_router(state);
 
     let resp = app
-        .oneshot(
-            Request::builder()
-                .uri("/more")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::builder().uri("/more").body(Body::empty()).unwrap())
         .await
         .unwrap();
 

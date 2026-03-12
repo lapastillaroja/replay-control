@@ -12,10 +12,7 @@ static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
 /// Returns the temp directory path. Caller must call `cleanup_test_storage` when done.
 pub fn create_test_storage() -> PathBuf {
     let id = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let tmp = std::env::temp_dir().join(format!(
-        "replay-integ-{}-{id}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("replay-integ-{}-{id}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
 
     // Create directory structure
@@ -32,11 +29,7 @@ pub fn create_test_storage() -> PathBuf {
 
     // Create fake ROM files
     std::fs::write(tmp.join("roms/nintendo_nes/TestGame.nes"), b"fake").unwrap();
-    std::fs::write(
-        tmp.join("roms/nintendo_nes/AnotherGame (USA).nes"),
-        b"fake",
-    )
-    .unwrap();
+    std::fs::write(tmp.join("roms/nintendo_nes/AnotherGame (USA).nes"), b"fake").unwrap();
     std::fs::write(
         tmp.join("roms/sega_smd/Sonic The Hedgehog (USA).md"),
         b"fake",
@@ -118,9 +111,7 @@ pub fn cleanup_test_storage(tmp: &std::path::Path) {
 }
 
 /// Helper to assert a response has status 200 and parse the JSON body.
-pub async fn assert_json_ok(
-    resp: axum::http::Response<axum::body::Body>,
-) -> serde_json::Value {
+pub async fn assert_json_ok(resp: axum::http::Response<axum::body::Body>) -> serde_json::Value {
     use http_body_util::BodyExt;
 
     assert_eq!(resp.status(), axum::http::StatusCode::OK);

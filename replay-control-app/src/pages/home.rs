@@ -153,12 +153,12 @@ pub fn HomePage() -> impl IntoView {
 }
 
 #[component]
-fn StatCard(
-    value: String,
-    label: &'static str,
-    #[prop(optional)] compact: bool,
-) -> impl IntoView {
-    let class = if compact { "stat-card compact" } else { "stat-card" };
+fn StatCard(value: String, label: &'static str, #[prop(optional)] compact: bool) -> impl IntoView {
+    let class = if compact {
+        "stat-card compact"
+    } else {
+        "stat-card"
+    };
     view! {
         <div class=class>
             <div class="stat-value">{value}</div>
@@ -284,4 +284,3 @@ fn EmptySystemCard(system: crate::server_fns::SystemSummary) -> impl IntoView {
         </div>
     }
 }
-

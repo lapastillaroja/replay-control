@@ -6,7 +6,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
-use common::{assert_json_ok, cleanup_test_storage, create_test_storage, test_api_router, test_app_state};
+use common::{
+    assert_json_ok, cleanup_test_storage, create_test_storage, test_api_router, test_app_state,
+};
 
 #[tokio::test]
 async fn api_systems_returns_ok_with_json() {
@@ -29,7 +31,9 @@ async fn api_systems_returns_ok_with_json() {
 
     // Should contain at least one system with games (nintendo_nes has 2 ROMs).
     assert!(
-        systems.iter().any(|s| s["game_count"].as_u64().unwrap() > 0),
+        systems
+            .iter()
+            .any(|s| s["game_count"].as_u64().unwrap() > 0),
         "at least one system should have games"
     );
 
@@ -115,7 +119,12 @@ async fn api_info_returns_system_info() {
 
     // Should report correct storage info.
     assert_eq!(json["storage_kind"].as_str().unwrap(), "sd");
-    assert!(json["storage_root"].as_str().unwrap().contains("replay-integ-"));
+    assert!(
+        json["storage_root"]
+            .as_str()
+            .unwrap()
+            .contains("replay-integ-")
+    );
     assert!(json["total_systems"].as_u64().unwrap() > 0);
     assert_eq!(json["total_games"].as_u64().unwrap(), 3); // 2 NES + 1 SMD
     assert_eq!(json["total_favorites"].as_u64().unwrap(), 0);

@@ -312,7 +312,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.clear_index" => "Clear Thumbnail Index",
         "metadata.clearing_index" => "Clearing...",
         "metadata.index_cleared" => "Thumbnail index cleared",
-        "metadata.confirm_clear_index" => "Delete the thumbnail index? It can be rebuilt by clicking Update.",
+        "metadata.confirm_clear_index" => {
+            "Delete the thumbnail index? It can be rebuilt by clicking Update."
+        }
         "metadata.clear_metadata" => "Clear Metadata",
         "metadata.clearing_metadata" => "Clearing...",
         "metadata.metadata_cleared" => "Metadata cleared",

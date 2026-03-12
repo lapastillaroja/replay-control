@@ -15,9 +15,7 @@ fn RatingDropdown(min_rating: RwSignal<Option<f32>>) -> impl IntoView {
             val.parse::<f32>().ok()
         });
     };
-    let value = move || {
-        min_rating.get().map(|v| v.to_string()).unwrap_or_default()
-    };
+    let value = move || min_rating.get().map(|v| v.to_string()).unwrap_or_default();
 
     view! {
         <select
@@ -48,10 +46,7 @@ pub struct FilterState {
 
 /// A single toggle filter chip.
 #[component]
-fn FilterChip(
-    signal: RwSignal<bool>,
-    label_key: &'static str,
-) -> impl IntoView {
+fn FilterChip(signal: RwSignal<bool>, label_key: &'static str) -> impl IntoView {
     let i18n = use_i18n();
 
     view! {

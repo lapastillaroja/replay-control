@@ -251,10 +251,7 @@ mod tests {
 
     #[test]
     fn thumbnail_filename_multiple_colons() {
-        assert_eq!(
-            thumbnail_filename("Title: Sub: Part"),
-            "Title_ Sub_ Part"
-        );
+        assert_eq!(thumbnail_filename("Title: Sub: Part"), "Title_ Sub_ Part");
     }
 
     // --- strip_tags ---
@@ -299,7 +296,10 @@ mod tests {
 
     #[test]
     fn strip_version_standard() {
-        assert_eq!(strip_version("Sonic Adventure 2 v1.008"), "Sonic Adventure 2");
+        assert_eq!(
+            strip_version("Sonic Adventure 2 v1.008"),
+            "Sonic Adventure 2"
+        );
     }
 
     #[test]

@@ -37,20 +37,13 @@ pub async fn get_roms_page(
     offset: usize,
     limit: usize,
     search: String,
-    #[server(default)]
-    hide_hacks: bool,
-    #[server(default)]
-    hide_translations: bool,
-    #[server(default)]
-    hide_betas: bool,
-    #[server(default)]
-    hide_clones: bool,
-    #[server(default)]
-    genre: String,
-    #[server(default)]
-    multiplayer_only: bool,
-    #[server(default)]
-    min_rating: Option<f32>,
+    #[server(default)] hide_hacks: bool,
+    #[server(default)] hide_translations: bool,
+    #[server(default)] hide_betas: bool,
+    #[server(default)] hide_clones: bool,
+    #[server(default)] genre: String,
+    #[server(default)] multiplayer_only: bool,
+    #[server(default)] min_rating: Option<f32>,
 ) -> Result<RomPage, ServerFnError> {
     use replay_control_core::rom_tags;
     use replay_control_core::systems::{self as sys_db, SystemCategory};
@@ -171,7 +164,10 @@ pub async fn get_roms_page(
     // Populate box art URLs using cached per-system image index (single dir read).
     let image_index = state.cache.get_image_index(&state, &system);
     for rom in &mut roms {
-        rom.box_art_url = state.cache.resolve_box_art(&image_index, &system, &rom.game.rom_filename);
+        rom.box_art_url =
+            state
+                .cache
+                .resolve_box_art(&state, &image_index, &system, &rom.game.rom_filename);
     }
 
     // Populate driver status for arcade systems.
@@ -246,15 +242,14 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     let game = resolve_game_info(&system, &filename, &rom.game.rom_path);
 
-    let user_screenshots = replay_control_core::screenshots::find_screenshots_for_rom(
-        &storage, &system, &filename,
-    )
-    .into_iter()
-    .map(|s| ScreenshotUrl {
-        url: format!("/captures/{}/{}", system, s.filename),
-        timestamp: s.timestamp,
-    })
-    .collect();
+    let user_screenshots =
+        replay_control_core::screenshots::find_screenshots_for_rom(&storage, &system, &filename)
+            .into_iter()
+            .map(|s| ScreenshotUrl {
+                url: format!("/captures/{}/{}", system, s.filename),
+                timestamp: s.timestamp,
+            })
+            .collect();
 
     Ok(RomDetail {
         game,

@@ -30,7 +30,8 @@ impl AppState {
                     let guard = state.metadata_db.lock().ok();
                     guard.and_then(|mut g| {
                         if g.is_none() {
-                            match replay_control_core::metadata_db::MetadataDb::open(&storage.root) {
+                            match replay_control_core::metadata_db::MetadataDb::open(&storage.root)
+                            {
                                 Ok(db) => *g = Some(db),
                                 Err(e) => {
                                     tracing::debug!("Cannot open DB for cache verification: {e}");
@@ -66,10 +67,7 @@ impl AppState {
                     };
 
                     if is_stale {
-                        tracing::info!(
-                            "Background re-scan: {} (mtime changed)",
-                            meta.system
-                        );
+                        tracing::info!("Background re-scan: {} (mtime changed)", meta.system);
                         // Trigger L3 scan by calling get_roms (which writes through to L1+L2).
                         let _ = state.cache.get_roms(&storage, &meta.system, region_pref);
                         state.cache.enrich_system_cache(&state, &meta.system);
@@ -78,7 +76,9 @@ impl AppState {
                 }
 
                 if stale_count > 0 {
-                    tracing::info!("Background cache verification: re-scanned {stale_count} stale system(s)");
+                    tracing::info!(
+                        "Background cache verification: re-scanned {stale_count} stale system(s)"
+                    );
                     // Also refresh the systems list since counts may have changed.
                     let _ = state.cache.get_systems(&storage);
                 } else {
@@ -152,7 +152,11 @@ impl AppState {
             xml_path
         } else {
             let old_path = rc_dir.join("Metadata.xml");
-            if old_path.exists() { old_path } else { xml_path }
+            if old_path.exists() {
+                old_path
+            } else {
+                xml_path
+            }
         };
 
         if !xml_path.exists() {

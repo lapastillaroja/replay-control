@@ -89,20 +89,23 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Build image indexes per-system (typically only a few distinct systems in recents).
-    let mut image_indexes: std::collections::HashMap<String, std::sync::Arc<crate::api::cache::ImageIndex>> =
-        std::collections::HashMap::new();
+    let mut image_indexes: std::collections::HashMap<
+        String,
+        std::sync::Arc<crate::api::cache::ImageIndex>,
+    > = std::collections::HashMap::new();
     let enriched = entries
         .into_iter()
         .map(|entry| {
             let index = image_indexes
                 .entry(entry.game.system.clone())
                 .or_insert_with(|| state.cache.get_image_index(&state, &entry.game.system));
-            let box_art_url =
-                state.cache.resolve_box_art(index, &entry.game.system, &entry.game.rom_filename);
-            RecentWithArt {
-                entry,
-                box_art_url,
-            }
+            let box_art_url = state.cache.resolve_box_art(
+                &state,
+                index,
+                &entry.game.system,
+                &entry.game.rom_filename,
+            );
+            RecentWithArt { entry, box_art_url }
         })
         .collect();
 

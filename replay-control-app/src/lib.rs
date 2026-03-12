@@ -123,8 +123,8 @@ pub fn App() -> impl IntoView {
 fn SearchShortcut() -> impl IntoView {
     #[cfg(feature = "hydrate")]
     {
-        use wasm_bindgen::prelude::*;
         use wasm_bindgen::JsCast;
+        use wasm_bindgen::prelude::*;
 
         let navigate = leptos_router::hooks::use_navigate();
         Effect::new(move || {
@@ -157,9 +157,7 @@ fn SearchShortcut() -> impl IntoView {
                                 if let Some(el) =
                                     doc.query_selector(".search-page-input").ok().flatten()
                                 {
-                                    if let Some(input) =
-                                        el.dyn_ref::<web_sys::HtmlInputElement>()
-                                    {
+                                    if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
                                         let _ = input.focus();
                                     }
                                 }
@@ -170,10 +168,7 @@ fn SearchShortcut() -> impl IntoView {
                     }
                 },
             );
-            let _ = window.add_event_listener_with_callback(
-                "keydown",
-                cb.as_ref().unchecked_ref(),
-            );
+            let _ = window.add_event_listener_with_callback("keydown", cb.as_ref().unchecked_ref());
             // This component is mounted once at the App root and never unmounts,
             // so `forget()` is acceptable — the listener lives for the app lifetime.
             cb.forget();

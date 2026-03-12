@@ -444,12 +444,10 @@ fn GameLaunchAction(relative_path: StoredValue<String>) -> impl IntoView {
         });
     };
 
-    let is_launched = move || {
-        matches!(launch_result.get(), Some(Ok(ref m)) if !m.contains("simulated"))
-    };
-    let is_simulated = move || {
-        matches!(launch_result.get(), Some(Ok(ref m)) if m.contains("simulated"))
-    };
+    let is_launched =
+        move || matches!(launch_result.get(), Some(Ok(ref m)) if !m.contains("simulated"));
+    let is_simulated =
+        move || matches!(launch_result.get(), Some(Ok(ref m)) if m.contains("simulated"));
     let is_error = move || matches!(launch_result.get(), Some(Err(_)));
     let is_disabled = move || launching.get() || is_launched();
 
@@ -593,4 +591,3 @@ fn GameDeleteAction(
         </Show>
     }
 }
-

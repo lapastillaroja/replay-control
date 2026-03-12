@@ -1501,12 +1501,27 @@ mod tests {
 
     #[test]
     fn region_preference_from_str() {
-        assert_eq!(RegionPreference::from_str_value("usa"), RegionPreference::Usa);
-        assert_eq!(RegionPreference::from_str_value("europe"), RegionPreference::Europe);
-        assert_eq!(RegionPreference::from_str_value("japan"), RegionPreference::Japan);
-        assert_eq!(RegionPreference::from_str_value("world"), RegionPreference::World);
+        assert_eq!(
+            RegionPreference::from_str_value("usa"),
+            RegionPreference::Usa
+        );
+        assert_eq!(
+            RegionPreference::from_str_value("europe"),
+            RegionPreference::Europe
+        );
+        assert_eq!(
+            RegionPreference::from_str_value("japan"),
+            RegionPreference::Japan
+        );
+        assert_eq!(
+            RegionPreference::from_str_value("world"),
+            RegionPreference::World
+        );
         // Unknown values default to Usa.
-        assert_eq!(RegionPreference::from_str_value("brazil"), RegionPreference::Usa);
+        assert_eq!(
+            RegionPreference::from_str_value("brazil"),
+            RegionPreference::Usa
+        );
         assert_eq!(RegionPreference::from_str_value(""), RegionPreference::Usa);
     }
 

@@ -335,11 +335,11 @@ const HIDDEN_SYSTEMS: &[&str] = &["alpha_player"];
 const MEGABIT_SYSTEMS: &[&str] = &[
     // --- Atari cartridge systems ---
     // All used ROM cartridges; sizes printed on packaging in Kbit/Mbit.
-    "atari_2600",  // 2-64 Kbit ROMs
-    "atari_5200",  // 8-128 Kbit ROMs
-    "atari_7800",  // 16-1024 Kbit ROMs
+    "atari_2600",   // 2-64 Kbit ROMs
+    "atari_5200",   // 8-128 Kbit ROMs
+    "atari_7800",   // 16-1024 Kbit ROMs
     "atari_jaguar", // 8-48 Mbit cartridges
-    "atari_lynx",  // 1-4 Mbit cartridge handheld
+    "atari_lynx",   // 1-4 Mbit cartridge handheld
     // --- Nintendo cartridge systems ---
     // ROM chip sizes on labels: "PRG-ROM: 256 Kbit", "8 Mbit", "64 Mbit", etc.
     // Excludes nintendo_ds: DS era used MB, not Mbit.

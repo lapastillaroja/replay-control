@@ -99,8 +99,7 @@ fn parse_timestamp_suffix(filename: &str) -> Option<i64> {
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy as u32;
     let days = era * 146097 + doe as i32 - 719468;
 
-    let timestamp =
-        days as i64 * 86400 + hour as i64 * 3600 + minute as i64 * 60 + second as i64;
+    let timestamp = days as i64 * 86400 + hour as i64 * 3600 + minute as i64 * 60 + second as i64;
     Some(timestamp)
 }
 

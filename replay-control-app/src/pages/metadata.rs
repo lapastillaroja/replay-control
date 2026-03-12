@@ -26,17 +26,45 @@ pub fn MetadataPage() -> impl IntoView {
     let thumb_message = RwSignal::new(Option::<String>::None);
     let thumb_cancelling = RwSignal::new(false);
 
+    // Close any leaked EventSource connections when this component unmounts.
+    #[cfg(target_arch = "wasm32")]
+    {
+        on_cleanup(move || {
+            close_metadata_sse();
+            close_thumbnail_sse();
+        });
+    }
+
     // Check for in-progress operations on page load.
     Effect::new(move || {
         leptos::task::spawn_local(async move {
             if let Ok(Some(p)) = server_fns::get_import_progress().await {
-                if matches!(
-                    p.state,
-                    ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
-                ) {
-                    progress.set(Some(p));
-                    importing.set(true);
-                    watch_metadata_progress(importing, progress, import_message, stats, coverage);
+                match p.state {
+                    ImportState::Downloading
+                    | ImportState::BuildingIndex
+                    | ImportState::Parsing => {
+                        progress.set(Some(p));
+                        importing.set(true);
+                        watch_metadata_progress(
+                            importing,
+                            progress,
+                            import_message,
+                            stats,
+                            coverage,
+                        );
+                    }
+                    ImportState::Complete => {
+                        import_message.set(Some(format!(
+                            "Import complete: {} matched, {} inserted ({}s)",
+                            p.matched, p.inserted, p.elapsed_secs,
+                        )));
+                    }
+                    ImportState::Failed => {
+                        import_message.set(Some(format!(
+                            "Import failed: {}",
+                            p.error.as_deref().unwrap_or("unknown error"),
+                        )));
+                    }
                 }
             }
         });
@@ -45,28 +73,45 @@ pub fn MetadataPage() -> impl IntoView {
     Effect::new(move || {
         leptos::task::spawn_local(async move {
             if let Ok(Some(p)) = server_fns::get_thumbnail_progress().await {
-                if matches!(
-                    p.phase,
-                    ThumbnailPhase::Indexing | ThumbnailPhase::Downloading
-                ) {
-                    thumb_progress.set(Some(p));
-                    thumb_updating.set(true);
-                    watch_thumbnail_progress(
-                        thumb_updating,
-                        thumb_progress,
-                        thumb_message,
-                        thumb_cancelling,
-                        data_source,
-                        image_stats,
-                        coverage,
-                    );
+                match p.phase {
+                    ThumbnailPhase::Indexing | ThumbnailPhase::Downloading => {
+                        thumb_progress.set(Some(p));
+                        thumb_updating.set(true);
+                        watch_thumbnail_progress(
+                            thumb_updating,
+                            thumb_progress,
+                            thumb_message,
+                            thumb_cancelling,
+                            data_source,
+                            image_stats,
+                            coverage,
+                        );
+                    }
+                    ThumbnailPhase::Complete => {
+                        thumb_message.set(Some(format!(
+                            "Complete: {} indexed, {} downloaded ({}s)",
+                            p.entries_indexed, p.downloaded, p.elapsed_secs,
+                        )));
+                    }
+                    ThumbnailPhase::Cancelled => {
+                        thumb_message.set(Some(format!(
+                            "Cancelled after {}s ({} downloaded)",
+                            p.elapsed_secs, p.downloaded,
+                        )));
+                    }
+                    ThumbnailPhase::Failed => {
+                        thumb_message.set(Some(format!(
+                            "Failed: {}",
+                            p.error.as_deref().unwrap_or("unknown error"),
+                        )));
+                    }
                 }
             }
         });
     });
 
     let on_download = move |_| {
-        if importing.get() {
+        if importing.get() || thumb_updating.get() {
             return;
         }
         importing.set(true);
@@ -86,7 +131,7 @@ pub fn MetadataPage() -> impl IntoView {
     };
 
     let on_thumb_update = move |_| {
-        if thumb_updating.get() {
+        if thumb_updating.get() || importing.get() {
             return;
         }
         thumb_updating.set(true);
@@ -176,7 +221,7 @@ pub fn MetadataPage() -> impl IntoView {
                         <button
                             class="metadata-download-btn"
                             on:click=on_download
-                            disabled=move || importing.get()
+                            disabled=move || importing.get() || thumb_updating.get()
                         >
                             {move || if importing.get() {
                                 t(i18n.locale.get(), "metadata.downloading_metadata")
@@ -260,7 +305,7 @@ pub fn MetadataPage() -> impl IntoView {
                         <button
                             class="metadata-download-btn"
                             on:click=on_thumb_update
-                            disabled=move || thumb_updating.get()
+                            disabled=move || thumb_updating.get() || importing.get()
                         >
                             {move || if thumb_updating.get() {
                                 t(i18n.locale.get(), "metadata.thumbnail_updating")
@@ -363,6 +408,44 @@ pub fn MetadataPage() -> impl IntoView {
     }
 }
 
+// ── EventSource lifecycle management ─────────────────────────────────────
+//
+// We track active SSE connections in thread-locals so we can close old ones
+// before opening new ones (prevents leaked connections on SPA navigation)
+// and close them on component unmount via on_cleanup.
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static METADATA_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
+    static THUMBNAIL_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(target_arch = "wasm32")]
+fn close_metadata_sse() {
+    METADATA_ES.with(|cell| {
+        if let Some(es) = cell.borrow_mut().take() {
+            es.close();
+        }
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn close_thumbnail_sse() {
+    THUMBNAIL_ES.with(|cell| {
+        if let Some(es) = cell.borrow_mut().take() {
+            es.close();
+        }
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+fn close_metadata_sse() {}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+fn close_thumbnail_sse() {}
+
 /// Watches metadata import progress via SSE.
 #[allow(unused_variables, unreachable_code)]
 fn watch_metadata_progress(
@@ -379,10 +462,18 @@ fn watch_metadata_progress(
     {
         use wasm_bindgen::prelude::*;
 
+        // Close any existing metadata SSE connection before opening a new one.
+        close_metadata_sse();
+
         let es = match web_sys::EventSource::new("/sse/metadata-progress") {
             Ok(es) => es,
             Err(_) => return,
         };
+
+        // Track this connection so on_cleanup or a future call can close it.
+        METADATA_ES.with(|cell| {
+            *cell.borrow_mut() = Some(es.clone());
+        });
 
         let es_clone = es.clone();
         let on_message =
@@ -417,6 +508,9 @@ fn watch_metadata_progress(
                     stats.refetch();
                     coverage.refetch();
                     es_clone.close();
+                    METADATA_ES.with(|cell| {
+                        cell.borrow_mut().take();
+                    });
                 }
             });
 
@@ -443,10 +537,18 @@ fn watch_thumbnail_progress(
     {
         use wasm_bindgen::prelude::*;
 
+        // Close any existing thumbnail SSE connection before opening a new one.
+        close_thumbnail_sse();
+
         let es = match web_sys::EventSource::new("/sse/thumbnail-progress") {
             Ok(es) => es,
             Err(_) => return,
         };
+
+        // Track this connection so on_cleanup or a future call can close it.
+        THUMBNAIL_ES.with(|cell| {
+            *cell.borrow_mut() = Some(es.clone());
+        });
 
         let es_clone = es.clone();
         let on_message =
@@ -494,6 +596,9 @@ fn watch_thumbnail_progress(
                     image_stats.refetch();
                     coverage.refetch();
                     es_clone.close();
+                    THUMBNAIL_ES.with(|cell| {
+                        cell.borrow_mut().take();
+                    });
                     return;
                 }
 

@@ -127,10 +127,7 @@ mod tests {
         // 2.5 GB rounds to 3
         assert_eq!(format_size_short(2_684_354_560), ("3".to_string(), "GB"));
         // ~12.3 GB rounds to 12
-        assert_eq!(
-            format_size_short(13_207_024_435),
-            ("12".to_string(), "GB")
-        );
+        assert_eq!(format_size_short(13_207_024_435), ("12".to_string(), "GB"));
     }
 
     #[test]
@@ -179,7 +176,10 @@ mod tests {
         assert_eq!(format_size(1_073_741_824), "1.0 GB");
         // One byte below GB -- should be MB
         let below_gb = format_size(1_073_741_823);
-        assert!(below_gb.ends_with("MB"), "Just below GB should be MB, got {below_gb}");
+        assert!(
+            below_gb.ends_with("MB"),
+            "Just below GB should be MB, got {below_gb}"
+        );
     }
 
     #[test]
@@ -192,7 +192,10 @@ mod tests {
     fn format_u64_max() {
         // Should not panic on max value
         let result = format_size(u64::MAX);
-        assert!(result.ends_with("GB"), "u64::MAX should show as GB, got {result}");
+        assert!(
+            result.ends_with("GB"),
+            "u64::MAX should show as GB, got {result}"
+        );
     }
 
     // --- Edge cases for format_size_short ---
@@ -307,28 +310,19 @@ mod tests {
     #[test]
     fn format_for_system_regular() {
         // PlayStation: 500 MB should show in MB
-        assert_eq!(
-            format_size_for_system(524_288_000, "sony_psx"),
-            "500.0 MB"
-        );
+        assert_eq!(format_size_for_system(524_288_000, "sony_psx"), "500.0 MB");
     }
 
     #[test]
     fn format_for_system_ds_uses_mb() {
         // DS uses MB, not Mbit
-        assert_eq!(
-            format_size_for_system(33_554_432, "nintendo_ds"),
-            "32.0 MB"
-        );
+        assert_eq!(format_size_for_system(33_554_432, "nintendo_ds"), "32.0 MB");
     }
 
     #[test]
     fn format_for_system_arcade_dc_uses_mb() {
         // arcade_dc uses MB
-        assert_eq!(
-            format_size_for_system(524_288_000, "arcade_dc"),
-            "500.0 MB"
-        );
+        assert_eq!(format_size_for_system(524_288_000, "arcade_dc"), "500.0 MB");
     }
 
     #[test]

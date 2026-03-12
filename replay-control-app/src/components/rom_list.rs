@@ -223,9 +223,20 @@ pub fn RomList(system: String) -> impl IntoView {
         let mp = filters.multiplayer_only.get_untracked();
         let mr = filters.min_rating.get_untracked();
         leptos::task::spawn_local(async move {
-            if let Ok(page) =
-                server_fns::get_roms_page(system, current_offset, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr)
-                    .await
+            if let Ok(page) = server_fns::get_roms_page(
+                system,
+                current_offset,
+                PAGE_SIZE,
+                query,
+                hh,
+                ht,
+                hb,
+                hc,
+                gf,
+                mp,
+                mr,
+            )
+            .await
             {
                 set_extra_roms.update(|roms| roms.extend(page.roms));
                 set_has_more.set(page.has_more);

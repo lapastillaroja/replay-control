@@ -8,6 +8,7 @@ use replay_control_core::recents::RecentEntry;
 use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core::roms::{RomEntry, SystemSummary};
 use replay_control_core::storage::StorageLocation;
+use replay_control_core::thumbnail_manifest::ManifestFuzzyIndex;
 
 /// Hard TTL — even if mtime hasn't changed, re-scan after this long.
 const CACHE_HARD_TTL: Duration = Duration::from_secs(300);
@@ -61,6 +62,9 @@ pub struct ImageIndex {
     pub version: HashMap<String, String>,
     /// DB paths: rom_filename → "boxart/{path}"
     pub db_paths: HashMap<String, String>,
+    /// Manifest-backed fallback for images not yet downloaded.
+    /// None if the thumbnail_index has no entries for this system.
+    pub manifest: Option<ManifestFuzzyIndex>,
     dir_mtime: Option<SystemTime>,
     expires: Instant,
 }
@@ -338,8 +342,9 @@ impl RomCache {
     ) -> Option<Vec<RomEntry>> {
         use replay_control_core::metadata_db::CachedSystemMeta;
 
-        let meta: CachedSystemMeta =
-            self.with_db(storage, |db| db.load_system_meta(system))?.ok()??;
+        let meta: CachedSystemMeta = self
+            .with_db(storage, |db| db.load_system_meta(system))?
+            .ok()??;
 
         // No cached ROMs? Skip L2.
         if meta.rom_count == 0 {
@@ -419,8 +424,8 @@ impl RomCache {
         system_dir: &Path,
     ) {
         use replay_control_core::metadata_db::CachedRom;
-        use replay_control_core::{arcade_db, game_db};
         use replay_control_core::systems::{self, SystemCategory};
+        use replay_control_core::{arcade_db, game_db};
 
         let mtime_secs = dir_mtime(system_dir).and_then(|t| {
             t.duration_since(std::time::UNIX_EPOCH)
@@ -428,8 +433,8 @@ impl RomCache {
                 .map(|d| d.as_secs() as i64)
         });
 
-        let is_arcade = systems::find_system(system)
-            .is_some_and(|s| s.category == SystemCategory::Arcade);
+        let is_arcade =
+            systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
 
         let cached_roms: Vec<CachedRom> = roms
             .iter()
@@ -438,10 +443,7 @@ impl RomCache {
                 let (genre, players_lookup) = if is_arcade {
                     let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
                     match arcade_db::lookup_arcade_game(stem) {
-                        Some(info) => (
-                            Some(info.normalized_genre.to_string()),
-                            Some(info.players),
-                        ),
+                        Some(info) => (Some(info.normalized_genre.to_string()), Some(info.players)),
                         None => (None, None),
                     }
                 } else {
@@ -456,7 +458,11 @@ impl RomCache {
                     });
                     match game {
                         Some(g) => (
-                            if g.normalized_genre.is_empty() { None } else { Some(g.normalized_genre.to_string()) },
+                            if g.normalized_genre.is_empty() {
+                                None
+                            } else {
+                                Some(g.normalized_genre.to_string())
+                            },
                             if g.players > 0 { Some(g.players) } else { None },
                         ),
                         None => (None, None),
@@ -487,7 +493,9 @@ impl RomCache {
             db.save_system_roms(system, &cached_roms, mtime_secs)
         });
         match result {
-            Some(Ok(())) => tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len()),
+            Some(Ok(())) => {
+                tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len())
+            }
             Some(Err(e)) => tracing::warn!("L2 write-through: {system} FAILED: {e}"),
             None => tracing::warn!("L2 write-through: {system} skipped (DB unavailable)"),
         }
@@ -495,33 +503,21 @@ impl RomCache {
 
     /// Get the set of favorited filenames for a system.
     /// Uses a cached favorites list to avoid per-request filesystem reads.
-    pub fn get_favorites_set(
-        &self,
-        storage: &StorageLocation,
-        system: &str,
-    ) -> HashSet<String> {
+    pub fn get_favorites_set(&self, storage: &StorageLocation, system: &str) -> HashSet<String> {
         let favs_dir = storage.favorites_dir();
 
         // Try read lock first.
         if let Ok(guard) = self.favorites.read() {
             if let Some(ref cache) = *guard {
                 if cache.is_fresh(&favs_dir) {
-                    return cache
-                        .data
-                        .get(system)
-                        .cloned()
-                        .unwrap_or_default();
+                    return cache.data.get(system).cloned().unwrap_or_default();
                 }
             }
         }
 
         // Cache miss — rebuild.
         let new_cache = FavoritesCache::new(storage);
-        let result = new_cache
-            .data
-            .get(system)
-            .cloned()
-            .unwrap_or_default();
+        let result = new_cache.data.get(system).cloned().unwrap_or_default();
         if let Ok(mut guard) = self.favorites.write() {
             *guard = Some(new_cache);
         }
@@ -554,7 +550,9 @@ impl RomCache {
         result
     }
 
-    fn top_system_from_data(data: &HashMap<String, HashSet<String>>) -> Option<(String, Vec<String>)> {
+    fn top_system_from_data(
+        data: &HashMap<String, HashSet<String>>,
+    ) -> Option<(String, Vec<String>)> {
         data.iter()
             .max_by_key(|(_, files)| files.len())
             .map(|(system, files)| (system.clone(), files.iter().cloned().collect()))
@@ -621,13 +619,12 @@ impl RomCache {
         if let Ok(guard) = self.images.read() {
             if let Some(idx) = guard.get(system) {
                 if idx.is_fresh(&boxart_dir) {
-                    // Return a reference-counted clone so we don't hold the lock.
-                    // For now, rebuild is cheap enough that we just clone the maps.
                     return std::sync::Arc::new(ImageIndex {
                         exact: idx.exact.clone(),
                         fuzzy: idx.fuzzy.clone(),
                         version: idx.version.clone(),
                         db_paths: idx.db_paths.clone(),
+                        manifest: None, // Don't clone the manifest (large); rebuild if needed
                         dir_mtime: idx.dir_mtime,
                         expires: idx.expires,
                     });
@@ -668,7 +665,9 @@ impl RomCache {
                             exact.insert(img_stem.to_string(), resolved_path.clone());
                             let bt = base_title(img_stem);
                             let vs = strip_version(&bt).to_string();
-                            fuzzy.entry(bt.clone()).or_insert_with(|| resolved_path.clone());
+                            fuzzy
+                                .entry(bt.clone())
+                                .or_insert_with(|| resolved_path.clone());
                             if vs.len() < bt.len() {
                                 version.entry(vs).or_insert(resolved_path);
                             }
@@ -687,14 +686,32 @@ impl RomCache {
         }
 
         // Load DB paths for this system.
-        let db_paths = if let Some(guard) = state.metadata_db() {
+        let (db_paths, manifest) = if let Some(guard) = state.metadata_db() {
             if let Some(db) = guard.as_ref() {
-                db.system_box_art_paths(system).unwrap_or_default()
+                let paths = db.system_box_art_paths(system).unwrap_or_default();
+                // Build manifest fuzzy index for on-demand downloads.
+                let mfi = if let Some(repo_names) =
+                    replay_control_core::thumbnails::thumbnail_repo_names(system)
+                {
+                    let idx = replay_control_core::thumbnail_manifest::build_manifest_fuzzy_index(
+                        db,
+                        repo_names,
+                        "Named_Boxarts",
+                    );
+                    if idx.exact.is_empty() {
+                        None
+                    } else {
+                        Some(idx)
+                    }
+                } else {
+                    None
+                };
+                (paths, mfi)
             } else {
-                HashMap::new()
+                (HashMap::new(), None)
             }
         } else {
-            HashMap::new()
+            (HashMap::new(), None)
         };
 
         let index = ImageIndex {
@@ -702,6 +719,7 @@ impl RomCache {
             fuzzy,
             version,
             db_paths,
+            manifest: None, // Stored in cache without manifest (rebuilt on arc)
             dir_mtime: dir_mtime(&boxart_dir),
             expires: Instant::now() + CACHE_HARD_TTL,
         };
@@ -711,6 +729,7 @@ impl RomCache {
             fuzzy: index.fuzzy.clone(),
             version: index.version.clone(),
             db_paths: index.db_paths.clone(),
+            manifest,
             dir_mtime: index.dir_mtime,
             expires: index.expires,
         });
@@ -723,8 +742,11 @@ impl RomCache {
     }
 
     /// Resolve a box art URL for a single ROM using the cached image index.
+    /// If no local image is found but the manifest has a match, a background
+    /// download is queued and None is returned (image appears on next load).
     pub fn resolve_box_art(
         &self,
+        state: &crate::api::AppState,
         index: &ImageIndex,
         system: &str,
         rom_filename: &str,
@@ -733,7 +755,6 @@ impl RomCache {
 
         // 1. Try DB path first (already validated during index build).
         if let Some(db_path) = index.db_paths.get(rom_filename) {
-            // Check if this path exists in our exact index (validates file on disk).
             let stem = db_path.strip_prefix("boxart/").unwrap_or(db_path);
             let stem = stem.strip_suffix(".png").unwrap_or(stem);
             if index.exact.contains_key(stem) {
@@ -777,7 +798,73 @@ impl RomCache {
             }
         }
 
+        // 5. On-demand: check manifest for a remote thumbnail to download.
+        if let Some(ref manifest) = index.manifest {
+            if let Some(m) = replay_control_core::thumbnail_manifest::find_in_manifest(
+                manifest,
+                rom_filename,
+                system,
+            ) {
+                self.queue_on_demand_download(state, system, m);
+            }
+        }
+
         None
+    }
+
+    /// Queue a background download for a single thumbnail.
+    /// Deduplicates concurrent requests for the same image.
+    fn queue_on_demand_download(
+        &self,
+        state: &crate::api::AppState,
+        system: &str,
+        m: &replay_control_core::thumbnail_manifest::ManifestMatch,
+    ) {
+        use replay_control_core::thumbnail_manifest::{download_thumbnail, save_thumbnail};
+        use replay_control_core::thumbnails::ThumbnailKind;
+
+        let download_key = format!("{system}/{}", m.filename);
+
+        // Check and insert atomically to prevent duplicate downloads.
+        {
+            let mut pending = state.pending_downloads.write().expect("pending lock");
+            if !pending.insert(download_key.clone()) {
+                return; // Already queued.
+            }
+        }
+
+        let m = m.clone();
+        let storage_root = state.storage().root.clone();
+        let system = system.to_string();
+        let pending = state.pending_downloads.clone();
+        let cache = state.cache.clone();
+
+        tokio::task::spawn_blocking(move || {
+            match download_thumbnail(&m, "Named_Boxarts") {
+                Ok(bytes) => {
+                    if let Err(e) = save_thumbnail(
+                        &storage_root,
+                        &system,
+                        ThumbnailKind::Boxart,
+                        &m.filename,
+                        &bytes,
+                    ) {
+                        tracing::debug!("On-demand save failed for {}: {e}", m.filename);
+                    } else {
+                        // Invalidate image cache so the next page load picks up the new file.
+                        cache.invalidate_system_images(&system);
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!("On-demand download failed for {}: {e}", m.filename);
+                }
+            }
+
+            // Remove from pending set.
+            if let Ok(mut guard) = pending.write() {
+                guard.remove(&download_key);
+            }
+        });
     }
 
     /// Invalidate all caches (after delete, rename, upload).
@@ -845,30 +932,37 @@ impl RomCache {
         }
     }
 
+    /// Invalidate a single system's image index.
+    pub fn invalidate_system_images(&self, system: &str) {
+        if let Ok(mut guard) = self.images.write() {
+            guard.remove(system);
+        }
+    }
+
     /// Enrich box_art_url (and rating) for all ROMs in a system's rom_cache.
     /// Uses the image index for box art and game_metadata for ratings.
     /// Called after L2 write-through to populate fields that `list_roms()` doesn't set.
-    pub fn enrich_system_cache(
-        &self,
-        state: &crate::api::AppState,
-        system: &str,
-    ) {
+    pub fn enrich_system_cache(&self, state: &crate::api::AppState, system: &str) {
         let storage = state.storage();
         let index = self.get_image_index(state, system);
 
         // Load ratings from game_metadata table (from LaunchBox import).
         let ratings: HashMap<String, f64> = state
             .metadata_db()
-            .and_then(|guard| {
-                guard.as_ref()?.system_ratings(system).ok()
-            })
+            .and_then(|guard| guard.as_ref()?.system_ratings(system).ok())
             .unwrap_or_default();
 
         // Read current ROMs from L1 cache to get filenames.
         let rom_filenames: Vec<String> = if let Ok(guard) = self.roms.read() {
             guard
                 .get(system)
-                .map(|entry| entry.data.iter().map(|r| r.game.rom_filename.clone()).collect())
+                .map(|entry| {
+                    entry
+                        .data
+                        .iter()
+                        .map(|r| r.game.rom_filename.clone())
+                        .collect()
+                })
                 .unwrap_or_default()
         } else {
             return;
@@ -882,7 +976,7 @@ impl RomCache {
         let enrichments: Vec<(String, Option<String>, Option<f32>)> = rom_filenames
             .iter()
             .filter_map(|filename| {
-                let art = self.resolve_box_art(&index, system, filename);
+                let art = self.resolve_box_art(state, &index, system, filename);
                 let rating = ratings.get(filename).map(|&r| r as f32);
                 if art.is_none() && rating.is_none() {
                     return None;

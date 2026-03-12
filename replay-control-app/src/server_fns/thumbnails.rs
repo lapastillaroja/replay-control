@@ -49,7 +49,7 @@ pub async fn update_thumbnails() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     if !state.start_thumbnail_update() {
         return Err(ServerFnError::new(
-            "A thumbnail update is already running",
+            "Another metadata operation is already running",
         ));
     }
     Ok(())
@@ -91,17 +91,23 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
         .get_data_source_stats("libretro-thumbnails")
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    let last_updated_text = stats.oldest_imported_at
+    let last_updated_text = stats
+        .oldest_imported_at
         .map(|ts| {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs() as i64;
             let diff = now - ts;
-            if diff < 60 { "just now".to_string() }
-            else if diff < 3600 { format!("{}m ago", diff / 60) }
-            else if diff < 86400 { format!("{}h ago", diff / 3600) }
-            else { format!("{}d ago", diff / 86400) }
+            if diff < 60 {
+                "just now".to_string()
+            } else if diff < 3600 {
+                format!("{}m ago", diff / 60)
+            } else if diff < 86400 {
+                format!("{}h ago", diff / 3600)
+            } else {
+                format!("{}d ago", diff / 86400)
+            }
         })
         .unwrap_or_default();
 

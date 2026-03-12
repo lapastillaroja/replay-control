@@ -20,15 +20,22 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    let mut image_indexes: std::collections::HashMap<String, std::sync::Arc<crate::api::cache::ImageIndex>> =
-        std::collections::HashMap::new();
+    let mut image_indexes: std::collections::HashMap<
+        String,
+        std::sync::Arc<crate::api::cache::ImageIndex>,
+    > = std::collections::HashMap::new();
     Ok(favs
         .into_iter()
         .map(|fav| {
             let index = image_indexes
                 .entry(fav.game.system.clone())
                 .or_insert_with(|| state.cache.get_image_index(&state, &fav.game.system));
-            let box_art_url = state.cache.resolve_box_art(index, &fav.game.system, &fav.game.rom_filename);
+            let box_art_url = state.cache.resolve_box_art(
+                &state,
+                index,
+                &fav.game.system,
+                &fav.game.rom_filename,
+            );
             FavoriteWithArt { fav, box_art_url }
         })
         .collect())
@@ -43,7 +50,12 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     Ok(favs
         .into_iter()
         .map(|fav| {
-            let box_art_url = state.cache.resolve_box_art(&image_index, &fav.game.system, &fav.game.rom_filename);
+            let box_art_url = state.cache.resolve_box_art(
+                &state,
+                &image_index,
+                &fav.game.system,
+                &fav.game.rom_filename,
+            );
             FavoriteWithArt { fav, box_art_url }
         })
         .collect())

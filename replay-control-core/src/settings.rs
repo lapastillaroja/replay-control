@@ -62,10 +62,8 @@ mod tests {
 
     fn tempdir() -> std::path::PathBuf {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!(
-            "replay-settings-test-{}-{id}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("replay-settings-test-{}-{id}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

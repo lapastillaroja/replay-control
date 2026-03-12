@@ -26,7 +26,11 @@ fn check_game_loaded() -> bool {
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let pid = match stdout.lines().next().and_then(|l| l.trim().parse::<u32>().ok()) {
+    let pid = match stdout
+        .lines()
+        .next()
+        .and_then(|l| l.trim().parse::<u32>().ok())
+    {
         Some(pid) => pid,
         None => {
             eprintln!("[launch] health check: replay process not found");

@@ -147,8 +147,7 @@ pub async fn search_game_videos(
 
     // Try Piped instances
     for base_url in &piped_instances {
-        let api_url =
-            format!("{base_url}/search?q={encoded_query}&filter=videos");
+        let api_url = format!("{base_url}/search?q={encoded_query}&filter=videos");
         match curl_get_json(&api_url, 8).await {
             Ok(body) => {
                 let items = body
@@ -173,8 +172,7 @@ pub async fn search_game_videos(
 
     // Try Invidious instances
     for base_url in &invidious_instances {
-        let api_url =
-            format!("{base_url}/api/v1/search?q={encoded_query}&type=video");
+        let api_url = format!("{base_url}/api/v1/search?q={encoded_query}&type=video");
         match curl_get_json(&api_url, 8).await {
             Ok(body) => {
                 let items = match body.as_array() {
@@ -188,9 +186,7 @@ pub async fn search_game_videos(
                     );
                     return Ok(parse_invidious_results(&items));
                 }
-                tracing::warn!(
-                    "Video search: Invidious {base_url} returned empty results"
-                );
+                tracing::warn!("Video search: Invidious {base_url} returned empty results");
             }
             Err(e) => {
                 tracing::warn!("Video search: Invidious {base_url} failed: {e}");
@@ -274,8 +270,7 @@ pub(crate) fn parse_invidious_results(items: &[serde_json::Value]) -> Vec<VideoR
                 .unwrap_or("Untitled")
                 .to_string();
             // Use medium-quality thumbnail from YouTube directly
-            let thumbnail_url =
-                Some(format!("https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"));
+            let thumbnail_url = Some(format!("https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"));
             let duration_secs = item.get("lengthSeconds").and_then(|v| v.as_i64());
             let duration_text = duration_secs.map(|secs| {
                 let mins = secs / 60;

@@ -106,6 +106,7 @@
     border-bottom: none;
 }
 
+.overview-table th.overview-num,
 .overview-num {
     text-align: right;
     font-variant-numeric: tabular-nums;

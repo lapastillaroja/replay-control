@@ -140,7 +140,8 @@ where
             entry.2 += 1;
             // Track the most recently added favorite for this system.
             if f.fav.date_added >= entry.4 {
-                entry.3 = f.fav
+                entry.3 = f
+                    .fav
                     .game
                     .display_name
                     .clone()

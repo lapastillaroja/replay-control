@@ -320,11 +320,7 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     // Filesystem fallback: if no image URLs from DB, check if images exist on disk.
     // This handles the case where images were downloaded but the DB was cleared/regenerated.
     if info.box_art_url.is_none() || info.screenshot_url.is_none() {
-        let media_base = state
-            .storage()
-            .rc_dir()
-            .join("media")
-            .join(&info.system);
+        let media_base = state.storage().rc_dir().join("media").join(&info.system);
 
         if info.box_art_url.is_none() {
             if let Some(path) = find_image_on_disk(&media_base, "boxart", &info.rom_filename) {
@@ -346,11 +342,7 @@ pub(crate) fn resolve_box_art_url(
     system: &str,
     rom_filename: &str,
 ) -> Option<String> {
-    let media_base = state
-        .storage()
-        .rc_dir()
-        .join("media")
-        .join(system);
+    let media_base = state.storage().rc_dir().join("media").join(system);
 
     // 1. Try metadata DB — but validate the file on disk (catches git fake-symlink artifacts).
     //    If the DB path is a fake symlink, try resolving it before falling back to disk scan.
@@ -363,9 +355,7 @@ pub(crate) fn resolve_box_art_url(
                         return Some(format!("/media/{system}/{path}"));
                     }
                     // DB path points to a fake symlink — try resolving it.
-                    let kind_dir = full_path
-                        .parent()
-                        .unwrap_or(&media_base);
+                    let kind_dir = full_path.parent().unwrap_or(&media_base);
                     if let Some(resolved) = try_resolve_fake_symlink(&full_path, kind_dir) {
                         let kind = std::path::Path::new(path)
                             .parent()

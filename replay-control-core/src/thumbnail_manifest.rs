@@ -1,7 +1,8 @@
-//! Manifest-based libretro-thumbnails: fetch file listings from GitHub Tree API,
+//! Manifest-based libretro-thumbnails: fetch file listings via git protocol,
 //! store in SQLite, and download individual images on demand.
 //!
-//! Phase 1: Manifest generation — build a local index of all available thumbnails.
+//! Phase 1: Manifest generation — build a local index of all available thumbnails
+//!   using `git clone --filter=blob:none` and `git ls-tree` (no GitHub API rate limits).
 //! Phase 2: Image download — fetch matched images from raw.githubusercontent.com.
 
 use std::collections::HashMap;
@@ -63,84 +64,108 @@ pub fn default_branch(repo_display_name: &str) -> &'static str {
     }
 }
 
-/// Fetch the full tree listing for a libretro-thumbnails repo via GitHub API.
-/// Returns the raw JSON response body. Blocking (uses std::process::Command).
-pub fn fetch_repo_tree(url_name: &str, branch: &str) -> Result<String> {
-    let url = format!(
-        "https://api.github.com/repos/libretro-thumbnails/{url_name}/git/trees/{branch}?recursive=1"
-    );
+/// Fetch the full tree listing for a libretro-thumbnails repo via git protocol.
+/// Returns `(commit_sha, ls_tree_output)`. Blocking (uses std::process::Command).
+///
+/// Clones a bare, blobless repo into a temp dir, reads the tree, and cleans up.
+/// This avoids GitHub REST API rate limits (60/hour unauthenticated).
+pub fn fetch_repo_tree(url_name: &str, branch: &str) -> Result<(String, String)> {
+    let repo_url = format!("https://github.com/libretro-thumbnails/{url_name}.git");
+    let tmp_dir = format!("/tmp/libretro-thumb-{url_name}");
 
-    let output = std::process::Command::new("curl")
+    // Clean up any leftover dir from a previous failed run.
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    // Ensure cleanup on all exit paths.
+    struct CleanupGuard<'a>(&'a str);
+    impl Drop for CleanupGuard<'_> {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(self.0);
+        }
+    }
+    let _guard = CleanupGuard(&tmp_dir);
+
+    // Clone bare repo with blob filter (downloads only tree objects, no file content).
+    let clone_output = std::process::Command::new("git")
         .args([
-            "-fsSL",
-            "--max-time",
-            "30",
-            "-H",
-            "User-Agent: RePlayOS-Companion/1.0",
-            "-H",
-            "Accept: application/vnd.github+json",
-            &url,
+            "clone",
+            "--filter=blob:none",
+            "--bare",
+            "--depth",
+            "1",
+            "--branch",
+            branch,
+            &repo_url,
+            &tmp_dir,
         ])
         .output()
-        .map_err(|e| Error::Other(format!("Failed to run curl: {e}")))?;
+        .map_err(|e| Error::Other(format!("Failed to run git clone: {e}")))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if !clone_output.status.success() {
+        let stderr = String::from_utf8_lossy(&clone_output.stderr);
         return Err(Error::Other(format!(
-            "GitHub API request failed for {url_name}/{branch}: {stderr}"
+            "git clone failed for {url_name}/{branch}: {stderr}"
         )));
     }
 
-    String::from_utf8(output.stdout)
-        .map_err(|e| Error::Other(format!("Invalid UTF-8 in API response: {e}")))
+    // Get commit SHA.
+    let rev_output = std::process::Command::new("git")
+        .args(["-C", &tmp_dir, "rev-parse", "HEAD"])
+        .output()
+        .map_err(|e| Error::Other(format!("Failed to run git rev-parse: {e}")))?;
+
+    if !rev_output.status.success() {
+        return Err(Error::Other("git rev-parse HEAD failed".to_string()));
+    }
+
+    let commit_sha = String::from_utf8_lossy(&rev_output.stdout)
+        .trim()
+        .to_string();
+
+    // List all files in the tree.
+    let ls_output = std::process::Command::new("git")
+        .args(["-C", &tmp_dir, "ls-tree", "-r", "HEAD"])
+        .output()
+        .map_err(|e| Error::Other(format!("Failed to run git ls-tree: {e}")))?;
+
+    if !ls_output.status.success() {
+        return Err(Error::Other("git ls-tree failed".to_string()));
+    }
+
+    let ls_tree = String::from_utf8(ls_output.stdout)
+        .map_err(|e| Error::Other(format!("Invalid UTF-8 in ls-tree output: {e}")))?;
+
+    // _guard drops here, cleaning up tmp_dir.
+    Ok((commit_sha, ls_tree))
 }
 
-/// A parsed thumbnail entry from the GitHub Tree API response.
+/// A parsed thumbnail entry from a git ls-tree listing.
 #[derive(Debug)]
 pub struct ThumbnailEntry {
     pub kind: String,     // "Named_Boxarts" or "Named_Snaps"
     pub filename: String, // stem without .png
-    pub is_symlink: bool, // true if size < 100 bytes
+    pub is_symlink: bool, // true if git mode is 120000 (symlink)
 }
 
-/// Parse the GitHub Tree API JSON response, extracting Named_Boxarts and Named_Snaps entries.
-/// Returns `(commit_sha, entries)`.
-pub fn parse_tree_entries(json: &str) -> Result<(String, Vec<ThumbnailEntry>)> {
-    #[derive(serde::Deserialize)]
-    struct TreeResponse {
-        sha: String,
-        tree: Vec<TreeEntry>,
-        #[serde(default)]
-        truncated: bool,
-    }
-
-    #[derive(serde::Deserialize)]
-    struct TreeEntry {
-        path: String,
-        #[serde(default)]
-        size: u64,
-        #[serde(rename = "type")]
-        entry_type: String,
-    }
-
-    let resp: TreeResponse = serde_json::from_str(json)
-        .map_err(|e| Error::Other(format!("Failed to parse tree JSON: {e}")))?;
-
-    if resp.truncated {
-        tracing::warn!("Tree response was truncated -- some entries may be missing");
-    }
-
+/// Parse `git ls-tree -r HEAD` output, extracting Named_Boxarts and Named_Snaps entries.
+///
+/// Each line has the format: `<mode> <type> <sha>\t<path>`
+/// - Mode `120000` = symlink
+/// - Mode `100644` = regular file
+pub fn parse_tree_entries(ls_tree_output: &str) -> Result<Vec<ThumbnailEntry>> {
     let mut entries = Vec::new();
 
-    for entry in &resp.tree {
-        if entry.entry_type != "blob" {
-            continue;
-        }
+    for line in ls_tree_output.lines() {
+        // Split on tab: left part is "mode type sha", right part is path.
+        let (meta, path) = match line.split_once('\t') {
+            Some(parts) => parts,
+            None => continue,
+        };
 
         // Filter to Named_Boxarts/ and Named_Snaps/ only.
-        let (kind, rest) = if let Some(rest) = entry.path.strip_prefix("Named_Boxarts/") {
+        let (kind, rest) = if let Some(rest) = path.strip_prefix("Named_Boxarts/") {
             ("Named_Boxarts", rest)
-        } else if let Some(rest) = entry.path.strip_prefix("Named_Snaps/") {
+        } else if let Some(rest) = path.strip_prefix("Named_Snaps/") {
             ("Named_Snaps", rest)
         } else {
             continue;
@@ -152,8 +177,8 @@ pub fn parse_tree_entries(json: &str) -> Result<(String, Vec<ThumbnailEntry>)> {
             None => continue,
         };
 
-        // Detect symlinks: real PNGs are almost always > 100 bytes.
-        let is_symlink = entry.size < 100;
+        // Detect symlinks from the git file mode (first field).
+        let is_symlink = meta.starts_with("120000");
 
         entries.push(ThumbnailEntry {
             kind: kind.to_string(),
@@ -162,7 +187,7 @@ pub fn parse_tree_entries(json: &str) -> Result<(String, Vec<ThumbnailEntry>)> {
         });
     }
 
-    Ok((resp.sha, entries))
+    Ok(entries)
 }
 
 /// Insert parsed thumbnail entries into the `thumbnail_index` table.
@@ -222,10 +247,7 @@ pub fn import_all_manifests(
                     }
                     Ok(true) => { /* Repo changed, re-fetch below. */ }
                     Err(e) => {
-                        tracing::warn!(
-                            "Freshness check failed for {}: {e}",
-                            repo.display_name
-                        );
+                        tracing::warn!("Freshness check failed for {}: {e}", repo.display_name);
                         // Can't tell -- re-fetch to be safe.
                     }
                 }
@@ -233,13 +255,13 @@ pub fn import_all_manifests(
         }
 
         let branch = default_branch(&repo.display_name);
-        let json = match fetch_repo_tree(&repo.url_name, branch) {
-            Ok(j) => j,
+        let (commit_sha, ls_tree, actual_branch) = match fetch_repo_tree(&repo.url_name, branch) {
+            Ok((sha, tree)) => (sha, tree, branch),
             Err(_) => {
                 // Try the other branch before giving up.
                 let alt = if branch == "master" { "main" } else { "master" };
                 match fetch_repo_tree(&repo.url_name, alt) {
-                    Ok(j) => j,
+                    Ok((sha, tree)) => (sha, tree, alt),
                     Err(e) => {
                         errors.push(format!("{}: {e}", repo.display_name));
                         continue;
@@ -248,13 +270,28 @@ pub fn import_all_manifests(
             }
         };
 
-        let (commit_sha, entries) = match parse_tree_entries(&json) {
+        let entries = match parse_tree_entries(&ls_tree) {
             Ok(r) => r,
             Err(e) => {
                 errors.push(format!("{}: {e}", repo.display_name));
                 continue;
             }
         };
+
+        // Upsert data_source BEFORE inserting thumbnail entries (FK constraint).
+        if let Err(e) = db.upsert_data_source(
+            &source_name,
+            "libretro-thumbnails",
+            &commit_sha,
+            actual_branch,
+            0,
+        ) {
+            errors.push(format!(
+                "{}: failed to upsert data_source: {e}",
+                repo.display_name
+            ));
+            continue;
+        }
 
         let count = match insert_thumbnail_entries(db, &source_name, &entries) {
             Ok(c) => c,
@@ -264,30 +301,18 @@ pub fn import_all_manifests(
             }
         };
 
-        // Determine which branch actually worked (for the data_sources record).
-        let actual_branch = if db
-            .get_data_source(&source_name)
-            .ok()
-            .flatten()
-            .and_then(|s| s.branch)
-            .as_deref()
-            == Some(branch)
-            || json.contains(&format!("\"sha\":\"{commit_sha}\""))
-        {
-            branch
-        } else {
-            // Fallback branch must have worked.
-            if branch == "master" {
-                "main"
-            } else {
-                "master"
-            }
-        };
-
-        if let Err(e) =
-            db.upsert_data_source(&source_name, "libretro-thumbnails", &commit_sha, actual_branch, count)
-        {
-            errors.push(format!("{}: failed to upsert data_source: {e}", repo.display_name));
+        // Update with actual entry count.
+        if let Err(e) = db.upsert_data_source(
+            &source_name,
+            "libretro-thumbnails",
+            &commit_sha,
+            actual_branch,
+            count,
+        ) {
+            errors.push(format!(
+                "{}: failed to update data_source count: {e}",
+                repo.display_name
+            ));
         }
 
         total_entries += count;
@@ -303,40 +328,32 @@ pub fn import_all_manifests(
     })
 }
 
-/// Check if a repo has changed by comparing the latest commit SHA on GitHub
+/// Check if a repo has changed by comparing the latest commit SHA (via `git ls-remote`)
 /// with the stored hash. Returns `Ok(true)` if the repo has changed.
+///
+/// Uses git protocol instead of GitHub REST API to avoid rate limits.
 fn check_repo_freshness(url_name: &str, stored_hash: &str) -> Result<bool> {
-    let url = format!(
-        "https://api.github.com/repos/libretro-thumbnails/{url_name}/commits?per_page=1"
-    );
+    let repo_url = format!("https://github.com/libretro-thumbnails/{url_name}.git");
 
-    let output = std::process::Command::new("curl")
-        .args([
-            "-fsSL",
-            "--max-time",
-            "10",
-            "-H",
-            "User-Agent: RePlayOS-Companion/1.0",
-            "-H",
-            "Accept: application/vnd.github+json",
-            &url,
-        ])
+    let output = std::process::Command::new("git")
+        .args(["ls-remote", &repo_url, "HEAD"])
         .output()
-        .map_err(|e| Error::Other(format!("Failed to run curl: {e}")))?;
+        .map_err(|e| Error::Other(format!("Failed to run git ls-remote: {e}")))?;
 
     if !output.status.success() {
-        return Err(Error::Other("Commits API request failed".to_string()));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::Other(format!(
+            "git ls-remote failed for {url_name}: {stderr}"
+        )));
     }
 
-    let body = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Quick extraction: look for the first "sha" field in the JSON array.
-    // The response is `[{"sha": "abc123...", ...}]`.
-    if let Some(pos) = body.find("\"sha\":\"") {
-        let rest = &body[pos + 7..];
-        if let Some(end) = rest.find('"') {
-            let latest_sha = &rest[..end];
-            return Ok(latest_sha != stored_hash);
+    // Output format: "{sha}\tHEAD\n"
+    if let Some(sha) = stdout.split('\t').next() {
+        let sha = sha.trim();
+        if !sha.is_empty() {
+            return Ok(sha != stored_hash);
         }
     }
 
@@ -418,9 +435,7 @@ pub fn build_manifest_fuzzy_index(
             // Tier 3: version-stripped
             let version_key = strip_version(&key);
             if version_key.len() < key.len() {
-                by_version
-                    .entry(version_key.to_string())
-                    .or_insert(m);
+                by_version.entry(version_key.to_string()).or_insert(m);
             }
         }
     }
@@ -468,13 +483,11 @@ pub fn find_in_manifest<'a>(
     // Colon variants (same logic as import_system_thumbnails in thumbnails.rs).
     let source = display_name.unwrap_or(stem);
     if source.contains(':') {
-        let dash_variant =
-            thumbnail_filename(&source.replace(": ", " - ").replace(':', " -"));
+        let dash_variant = thumbnail_filename(&source.replace(": ", " - ").replace(':', " -"));
         if let Some(m) = index.exact.get(&dash_variant) {
             return Some(m);
         }
-        let drop_variant =
-            thumbnail_filename(&source.replace(": ", " ").replace(':', ""));
+        let drop_variant = thumbnail_filename(&source.replace(": ", " ").replace(':', ""));
         if let Some(m) = index.exact.get(&drop_variant) {
             return Some(m);
         }
@@ -583,9 +596,7 @@ pub fn curl_download_bytes(url: &str) -> Result<Vec<u8>> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Other(format!(
-            "Download failed for {url}: {stderr}"
-        )));
+        return Err(Error::Other(format!("Download failed for {url}: {stderr}")));
     }
 
     Ok(output.stdout)
@@ -750,11 +761,7 @@ pub fn download_system_thumbnails(
             // Report progress periodically.
             let done = processed.load(Ordering::Relaxed);
             if done % 5 == 0 {
-                on_progress(
-                    skipped + done,
-                    total,
-                    downloaded.load(Ordering::Relaxed),
-                );
+                on_progress(skipped + done, total, downloaded.load(Ordering::Relaxed));
             }
         }
     });

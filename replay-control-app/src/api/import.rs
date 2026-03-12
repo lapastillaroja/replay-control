@@ -4,23 +4,33 @@ use super::AppState;
 
 impl AppState {
     /// Start a background metadata import from a LaunchBox XML file.
-    /// Returns `false` if an import is already running.
+    /// Returns `false` if another metadata operation is already running.
     pub fn start_import(&self, xml_path: PathBuf) -> bool {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
-        // Check if already running.
+        // Atomically claim the operation slot.
+        if self
+            .metadata_operation_in_progress
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return false;
+        }
+
+        // Check if already running (shouldn't happen with the atomic guard, but be safe).
         {
             let guard = self
                 .import_progress
                 .read()
                 .expect("import_progress lock poisoned");
-            if let Some(ref p) = *guard {
-                if matches!(
+            if let Some(ref p) = *guard
+                && matches!(
                     p.state,
                     ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
-                ) {
-                    return false;
-                }
+                )
+            {
+                self.metadata_operation_in_progress
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                return false;
             }
         }
 
@@ -55,10 +65,10 @@ impl AppState {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;
 
         // Clear existing metadata.
-        if let Some(guard) = self.metadata_db() {
-            if let Some(db) = guard.as_ref() {
-                db.clear().map_err(|e| e.to_string())?;
-            }
+        if let Some(guard) = self.metadata_db()
+            && let Some(db) = guard.as_ref()
+        {
+            db.clear().map_err(|e| e.to_string())?;
         }
 
         // Find launchbox-metadata.xml (with fallback to old name) and trigger re-import.
@@ -70,10 +80,16 @@ impl AppState {
         } else {
             // Backwards-compat: check old upstream name.
             let old_path = rc_dir.join("Metadata.xml");
-            if old_path.exists() { old_path } else { xml_path }
+            if old_path.exists() {
+                old_path
+            } else {
+                xml_path
+            }
         };
         if !xml_path.exists() {
-            return Err(format!("No {LAUNCHBOX_XML} found. Place it in the .replay-control folder to enable re-import."));
+            return Err(format!(
+                "No {LAUNCHBOX_XML} found. Place it in the .replay-control folder to enable re-import."
+            ));
         }
 
         self.start_import(xml_path);
@@ -81,24 +97,34 @@ impl AppState {
     }
 
     /// Download LaunchBox Metadata.zip, extract, clear DB, and re-import.
-    /// Runs entirely in a background thread. Returns false if an import is
-    /// already running.
+    /// Runs entirely in a background thread. Returns false if another metadata
+    /// operation is already running.
     pub fn start_metadata_download(&self) -> bool {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
-        // Check if already running.
+        // Atomically claim the operation slot.
+        if self
+            .metadata_operation_in_progress
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return false;
+        }
+
+        // Check if already running (shouldn't happen with the atomic guard, but be safe).
         {
             let guard = self
                 .import_progress
                 .read()
                 .expect("import_progress lock poisoned");
-            if let Some(ref p) = *guard {
-                if matches!(
+            if let Some(ref p) = *guard
+                && matches!(
                     p.state,
                     ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
-                ) {
-                    return false;
-                }
+                )
+            {
+                self.metadata_operation_in_progress
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                return false;
             }
         }
 
@@ -137,17 +163,19 @@ impl AppState {
                         p.error = Some(format!("Download failed: {e}"));
                         p.elapsed_secs = start.elapsed().as_secs();
                     }
+                    state
+                        .metadata_operation_in_progress
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
                     return;
                 }
             };
 
             // Clear existing metadata before re-import.
-            if let Some(guard) = state.metadata_db() {
-                if let Some(db) = guard.as_ref() {
-                    if let Err(e) = db.clear() {
-                        tracing::warn!("Failed to clear metadata DB before re-import: {e}");
-                    }
-                }
+            if let Some(guard) = state.metadata_db()
+                && let Some(db) = guard.as_ref()
+                && let Err(e) = db.clear()
+            {
+                tracing::warn!("Failed to clear metadata DB before re-import: {e}");
             }
 
             // Update elapsed before starting import.
@@ -219,6 +247,8 @@ impl AppState {
                         p.error = Some(format!("Cannot open metadata DB: {e}"));
                         p.elapsed_secs = start.elapsed().as_secs();
                     }
+                    self.metadata_operation_in_progress
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
                     return;
                 }
             },
@@ -273,6 +303,22 @@ impl AppState {
                 }
             }
         }
+
+        // Clear progress after a short delay so SSE clients can read the
+        // terminal state, then the slot becomes None for future operations.
+        let progress_ref = self.import_progress.clone();
+        let flag_ref = self.metadata_operation_in_progress.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            let mut guard = progress_ref.write().expect("lock");
+            if guard
+                .as_ref()
+                .is_some_and(|p| matches!(p.state, ImportState::Complete | ImportState::Failed))
+            {
+                *guard = None;
+            }
+            flag_ref.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
     }
 
     // ── Thumbnail Update (Manifest + Download) ──────────────────────
@@ -293,9 +339,19 @@ impl AppState {
     }
 
     /// Start the two-phase thumbnail pipeline in the background.
-    /// Returns `false` if an update is already running.
+    /// Returns `false` if another metadata operation is already running.
     pub fn start_thumbnail_update(&self) -> bool {
+        // Atomically claim the operation slot.
+        if self
+            .metadata_operation_in_progress
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return false;
+        }
+
         if self.is_thumbnail_update_running() {
+            self.metadata_operation_in_progress
+                .store(false, std::sync::atomic::Ordering::SeqCst);
             return false;
         }
 
@@ -346,23 +402,20 @@ impl AppState {
         };
         let mut db = match db {
             Some(db) => db,
-            None => {
-                match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
-                    Ok(db) => db,
-                    Err(e) => {
-                        let mut guard = self
-                            .thumbnail_progress
-                            .write()
-                            .expect("lock");
-                        if let Some(ref mut p) = *guard {
-                            p.phase = ThumbnailPhase::Failed;
-                            p.error = Some(format!("Cannot open metadata DB: {e}"));
-                            p.elapsed_secs = start.elapsed().as_secs();
-                        }
-                        return;
+            None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
+                Ok(db) => db,
+                Err(e) => {
+                    let mut guard = self.thumbnail_progress.write().expect("lock");
+                    if let Some(ref mut p) = *guard {
+                        p.phase = ThumbnailPhase::Failed;
+                        p.error = Some(format!("Cannot open metadata DB: {e}"));
+                        p.elapsed_secs = start.elapsed().as_secs();
                     }
+                    self.metadata_operation_in_progress
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                    return;
                 }
-            }
+            },
         };
 
         // ── Phase 1: Index refresh ──────────────────────────────────
@@ -394,12 +447,46 @@ impl AppState {
                         stats.errors
                     );
                 }
+
+                // If ALL repos failed (0 entries), report as Failed.
+                if stats.total_entries == 0 && !stats.errors.is_empty() {
+                    let is_rate_limited = stats
+                        .errors
+                        .iter()
+                        .any(|e| e.contains("403") || e.contains("rate"));
+                    let msg = if is_rate_limited {
+                        format!(
+                            "GitHub API rate limit exceeded ({}/{} repos failed). Wait ~1 hour and try again.",
+                            stats.errors.len(),
+                            stats.errors.len() + stats.repos_fetched,
+                        )
+                    } else {
+                        format!(
+                            "All repos failed to index ({} errors). First: {}",
+                            stats.errors.len(),
+                            stats
+                                .errors
+                                .first()
+                                .map(|s| s.as_str())
+                                .unwrap_or("unknown"),
+                        )
+                    };
+                    let mut guard = self.thumbnail_progress.write().expect("lock");
+                    if let Some(ref mut p) = *guard {
+                        p.phase = ThumbnailPhase::Failed;
+                        p.error = Some(msg);
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                    let mut guard = self.metadata_db.lock().expect("lock");
+                    *guard = Some(db);
+                    self.metadata_operation_in_progress
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                    return;
+                }
+
                 // Update progress with index results.
                 {
-                    let mut guard = self
-                        .thumbnail_progress
-                        .write()
-                        .expect("lock");
+                    let mut guard = self.thumbnail_progress.write().expect("lock");
                     if let Some(ref mut p) = *guard {
                         p.entries_indexed = stats.total_entries;
                         p.elapsed_secs = start.elapsed().as_secs();
@@ -408,10 +495,7 @@ impl AppState {
                 stats
             }
             Err(e) => {
-                let mut guard = self
-                    .thumbnail_progress
-                    .write()
-                    .expect("lock");
+                let mut guard = self.thumbnail_progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Failed;
                     p.error = Some(format!("Index failed: {e}"));
@@ -420,32 +504,30 @@ impl AppState {
                 // Put DB back before returning.
                 let mut guard = self.metadata_db.lock().expect("lock");
                 *guard = Some(db);
+                self.metadata_operation_in_progress
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
                 return;
             }
         };
 
         // Check cancellation between phases.
         if cancel_ref.load(std::sync::atomic::Ordering::Relaxed) {
-            let mut guard = self
-                .thumbnail_progress
-                .write()
-                .expect("lock");
+            let mut guard = self.thumbnail_progress.write().expect("lock");
             if let Some(ref mut p) = *guard {
                 p.phase = ThumbnailPhase::Cancelled;
                 p.elapsed_secs = start.elapsed().as_secs();
             }
             let mut guard = self.metadata_db.lock().expect("lock");
             *guard = Some(db);
+            self.metadata_operation_in_progress
+                .store(false, std::sync::atomic::Ordering::SeqCst);
             return;
         }
 
         // ── Phase 2: Download images ────────────────────────────────
 
         {
-            let mut guard = self
-                .thumbnail_progress
-                .write()
-                .expect("lock");
+            let mut guard = self.thumbnail_progress.write().expect("lock");
             if let Some(ref mut p) = *guard {
                 p.phase = ThumbnailPhase::Downloading;
                 p.step_done = 0;
@@ -462,8 +544,7 @@ impl AppState {
             .into_iter()
             .filter(|s| s.game_count > 0)
             .filter(|s| {
-                replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name)
-                    .is_some()
+                replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some()
             })
             .map(|s| s.folder_name)
             .collect();
@@ -483,10 +564,7 @@ impl AppState {
 
             // Update progress for this system.
             {
-                let mut guard = self
-                    .thumbnail_progress
-                    .write()
-                    .expect("lock");
+                let mut guard = self.thumbnail_progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
                     p.current_label = system_display.clone();
                     p.step_done = i;
@@ -513,8 +591,7 @@ impl AppState {
                         p.elapsed_secs = start.elapsed().as_secs();
                         // Encode per-system progress in current_label.
                         if total > 0 {
-                            p.current_label =
-                                format!("{system_display}: {processed}/{total}");
+                            p.current_label = format!("{system_display}: {processed}/{total}");
                         }
                     }
                 },
@@ -576,10 +653,7 @@ impl AppState {
 
         // Set final progress.
         {
-            let mut guard = self
-                .thumbnail_progress
-                .write()
-                .expect("lock");
+            let mut guard = self.thumbnail_progress.write().expect("lock");
             if cancel_ref.load(std::sync::atomic::Ordering::Relaxed) {
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Cancelled;
@@ -595,14 +669,44 @@ impl AppState {
                     downloaded: total_downloaded,
                     entries_indexed: index_stats.total_entries,
                     elapsed_secs: start.elapsed().as_secs(),
-                    error: if total_failed > 0 {
-                        Some(format!("{total_failed} images failed to download"))
-                    } else {
-                        None
+                    error: {
+                        let mut parts = Vec::new();
+                        if !index_stats.errors.is_empty() {
+                            parts.push(format!(
+                                "{} repos failed to index",
+                                index_stats.errors.len()
+                            ));
+                        }
+                        if total_failed > 0 {
+                            parts.push(format!("{total_failed} images failed to download"));
+                        }
+                        if parts.is_empty() {
+                            None
+                        } else {
+                            Some(parts.join("; "))
+                        }
                     },
                 });
             }
         }
+
+        // Clear progress after a short delay so SSE clients can read the
+        // terminal state, then the slot becomes None for future operations.
+        let progress_ref = self.thumbnail_progress.clone();
+        let flag_ref = self.metadata_operation_in_progress.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            let mut guard = progress_ref.write().expect("lock");
+            if guard.as_ref().is_some_and(|p| {
+                matches!(
+                    p.phase,
+                    ThumbnailPhase::Complete | ThumbnailPhase::Failed | ThumbnailPhase::Cancelled
+                )
+            }) {
+                *guard = None;
+            }
+            flag_ref.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
     }
 
     /// Scan the media directory for a system and update game_metadata image paths.
@@ -655,10 +759,10 @@ impl AppState {
             }
         }
 
-        if !updates.is_empty() {
-            if let Err(e) = db.bulk_update_image_paths(&updates) {
-                tracing::warn!("Failed to update image paths for {system}: {e}");
-            }
+        if !updates.is_empty()
+            && let Err(e) = db.bulk_update_image_paths(&updates)
+        {
+            tracing::warn!("Failed to update image paths for {system}: {e}");
         }
     }
 }

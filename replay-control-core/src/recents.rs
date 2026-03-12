@@ -170,8 +170,7 @@ mod tests {
 
     #[test]
     fn add_recent_creates_marker() {
-        let tmp =
-            std::env::temp_dir().join(format!("replay-rec-add-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("replay-rec-add-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join("roms")).unwrap();
 
@@ -193,8 +192,7 @@ mod tests {
 
     #[test]
     fn add_recent_overwrites_existing() {
-        let tmp =
-            std::env::temp_dir().join(format!("replay-rec-overwrite-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("replay-rec-overwrite-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let recent_dir = tmp.join("roms/_recent");
         std::fs::create_dir_all(&recent_dir).unwrap();
@@ -209,15 +207,13 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
         add_recent(&storage, "sega_smd", "Sonic.md", "/roms/sega_smd/Sonic.md").unwrap();
 
-        let content =
-            std::fs::read_to_string(recent_dir.join("sega_smd@Sonic.md.rec")).unwrap();
+        let content = std::fs::read_to_string(recent_dir.join("sega_smd@Sonic.md.rec")).unwrap();
         assert_eq!(content, "/roms/sega_smd/Sonic.md\n");
     }
 
     #[test]
     fn add_recent_creates_directory() {
-        let tmp =
-            std::env::temp_dir().join(format!("replay-rec-mkdir-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("replay-rec-mkdir-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         // Only create the base roms dir, not _recent
         std::fs::create_dir_all(tmp.join("roms")).unwrap();

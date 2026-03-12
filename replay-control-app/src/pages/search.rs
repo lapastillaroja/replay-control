@@ -127,12 +127,10 @@ pub fn SearchPage() -> impl IntoView {
                 }
             });
             if let Some(window) = web_sys::window() {
-                if let Ok(handle) =
-                    window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                        cb.as_ref().unchecked_ref(),
-                        400,
-                    )
-                {
+                if let Ok(handle) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                    cb.as_ref().unchecked_ref(),
+                    400,
+                ) {
                     timer_handle.set_value(Some(handle));
                 }
             }
@@ -225,11 +223,8 @@ pub fn SearchPage() -> impl IntoView {
             leptos::task::spawn_local(async move {
                 match server_fns::random_game().await {
                     Ok((system, rom_filename)) => {
-                        let href = format!(
-                            "/games/{}/{}",
-                            system,
-                            urlencoding::encode(&rom_filename)
-                        );
+                        let href =
+                            format!("/games/{}/{}", system, urlencoding::encode(&rom_filename));
                         if let Some(w) = web_sys::window() {
                             let _ = w.location().set_href(&href);
                         }
@@ -618,7 +613,15 @@ fn update_url_params_if_hydrate(
     genre: &str,
 ) {
     #[cfg(feature = "hydrate")]
-    update_url_params(query, hide_hacks, hide_translations, hide_betas, hide_clones, multiplayer_only, genre);
+    update_url_params(
+        query,
+        hide_hacks,
+        hide_translations,
+        hide_betas,
+        hide_clones,
+        multiplayer_only,
+        genre,
+    );
 }
 
 // ── localStorage helpers for recent searches ──────────────────────

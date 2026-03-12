@@ -194,7 +194,7 @@ impl MetadataDb {
         Ok(conn)
     }
 
-    /// Create tables if they don't exist, and run migrations.
+    /// Create all tables if they don't exist.
     fn init(&self) -> Result<()> {
         self.conn
             .execute_batch(
@@ -206,37 +206,21 @@ impl MetadataDb {
                     publisher TEXT,
                     source TEXT NOT NULL,
                     fetched_at INTEGER NOT NULL,
+                    box_art_path TEXT,
+                    screenshot_path TEXT,
                     PRIMARY KEY (system, rom_filename)
-                );",
-            )
-            .map_err(|e| Error::Other(format!("Failed to create metadata table: {e}")))?;
+                );
 
-        // Migration: add image path columns (idempotent — ignore "duplicate column" errors).
-        let _ = self
-            .conn
-            .execute_batch("ALTER TABLE game_metadata ADD COLUMN box_art_path TEXT;");
-        let _ = self
-            .conn
-            .execute_batch("ALTER TABLE game_metadata ADD COLUMN screenshot_path TEXT;");
-
-        // Data sources tracking table (LaunchBox, libretro-thumbnails repos, etc.).
-        self.conn
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS data_sources (
+                CREATE TABLE IF NOT EXISTS data_sources (
                     source_name TEXT PRIMARY KEY,
                     source_type TEXT NOT NULL,
                     version_hash TEXT,
                     imported_at INTEGER NOT NULL,
                     entry_count INTEGER NOT NULL DEFAULT 0,
                     branch TEXT
-                );",
-            )
-            .map_err(|e| Error::Other(format!("Failed to create data_sources table: {e}")))?;
+                );
 
-        // Thumbnail index table (manifest of available libretro-thumbnails).
-        self.conn
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS thumbnail_index (
+                CREATE TABLE IF NOT EXISTS thumbnail_index (
                     repo_name TEXT NOT NULL,
                     kind TEXT NOT NULL,
                     filename TEXT NOT NULL,
@@ -244,14 +228,9 @@ impl MetadataDb {
                     PRIMARY KEY (repo_name, kind, filename),
                     FOREIGN KEY (repo_name) REFERENCES data_sources(source_name)
                 );
-                CREATE INDEX IF NOT EXISTS idx_thumbidx_repo ON thumbnail_index(repo_name);",
-            )
-            .map_err(|e| Error::Other(format!("Failed to create thumbnail_index table: {e}")))?;
+                CREATE INDEX IF NOT EXISTS idx_thumbidx_repo ON thumbnail_index(repo_name);
 
-        // Persistent ROM cache tables (L2 cache).
-        self.conn
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS rom_cache (
+                CREATE TABLE IF NOT EXISTS rom_cache (
                     system TEXT NOT NULL,
                     rom_filename TEXT NOT NULL,
                     rom_path TEXT NOT NULL,
@@ -265,6 +244,7 @@ impl MetadataDb {
                     rating REAL,
                     PRIMARY KEY (system, rom_filename)
                 );
+
                 CREATE TABLE IF NOT EXISTS rom_cache_meta (
                     system TEXT PRIMARY KEY,
                     dir_mtime_secs INTEGER,
@@ -273,7 +253,7 @@ impl MetadataDb {
                     total_size_bytes INTEGER NOT NULL DEFAULT 0
                 );",
             )
-            .map_err(|e| Error::Other(format!("Failed to create rom_cache tables: {e}")))?;
+            .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
 
         Ok(())
     }
@@ -883,7 +863,14 @@ impl MetadataDb {
     pub fn update_rom_enrichment(
         &mut self,
         system: &str,
-        enrichments: &[(String, Option<String>, Option<String>, Option<u8>, Option<f32>, Option<String>)],
+        enrichments: &[(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<u8>,
+            Option<f32>,
+            Option<String>,
+        )],
     ) -> Result<usize> {
         let tx = self
             .conn

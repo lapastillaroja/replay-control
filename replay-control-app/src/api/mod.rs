@@ -1,7 +1,7 @@
 mod background;
 pub(crate) mod cache;
-mod import;
 pub mod favorites;
+mod import;
 pub mod recents;
 pub mod roms;
 pub mod system_info;
@@ -34,10 +34,13 @@ pub struct AppState {
     pub import_progress:
         Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
     /// Progress of the current thumbnail update pipeline (None = no update running).
-    pub thumbnail_progress:
-        Arc<std::sync::RwLock<Option<crate::server_fns::ThumbnailProgress>>>,
+    pub thumbnail_progress: Arc<std::sync::RwLock<Option<crate::server_fns::ThumbnailProgress>>>,
     /// Set to `true` to request cancellation of the current thumbnail update.
     pub thumbnail_cancel: Arc<std::sync::atomic::AtomicBool>,
+    /// Guard: true while any metadata DB operation is running (import or thumbnail update).
+    pub metadata_operation_in_progress: Arc<std::sync::atomic::AtomicBool>,
+    /// Track in-flight on-demand thumbnail downloads to avoid duplicates.
+    pub pending_downloads: Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
 }
 
 impl AppState {
@@ -94,6 +97,8 @@ impl AppState {
             import_progress: Arc::new(std::sync::RwLock::new(None)),
             thumbnail_progress: Arc::new(std::sync::RwLock::new(None)),
             thumbnail_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            metadata_operation_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
         })
     }
 

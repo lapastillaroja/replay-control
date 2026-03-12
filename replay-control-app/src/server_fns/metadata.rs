@@ -32,7 +32,9 @@ pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnE
     }
 
     if !state.start_import(path) {
-        return Err(ServerFnError::new("An import is already running"));
+        return Err(ServerFnError::new(
+            "Another metadata operation is already running",
+        ));
     }
 
     tracing::info!("Started LaunchBox import from {xml_path}");
@@ -63,9 +65,11 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         let db = guard
             .as_ref()
             .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-        let entries = db.entries_per_system()
+        let entries = db
+            .entries_per_system()
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        let images = db.images_per_system()
+        let images = db
+            .images_per_system()
             .map_err(|e| ServerFnError::new(e.to_string()))?;
         (entries, images)
     };
@@ -76,8 +80,10 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 
     let mut meta_map: std::collections::HashMap<String, usize> =
         entries_per_system.into_iter().collect();
-    let mut thumb_map: std::collections::HashMap<String, usize> =
-        images_per_system.into_iter().map(|(s, boxart, _snap)| (s, boxart)).collect();
+    let mut thumb_map: std::collections::HashMap<String, usize> = images_per_system
+        .into_iter()
+        .map(|(s, boxart, _snap)| (s, boxart))
+        .collect();
 
     let mut coverage: Vec<SystemCoverage> = systems
         .into_iter()

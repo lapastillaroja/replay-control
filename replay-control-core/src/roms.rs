@@ -121,7 +121,11 @@ pub fn list_roms(
             .to_lowercase()
             .cmp(&b_name.to_lowercase())
             .then(a_tier.cmp(&b_tier))
-            .then(a_region.sort_key(region_pref).cmp(&b_region.sort_key(region_pref)))
+            .then(
+                a_region
+                    .sort_key(region_pref)
+                    .cmp(&b_region.sort_key(region_pref)),
+            )
     });
 
     Ok(roms)
@@ -415,10 +419,7 @@ fn parse_m3u_references(m3u_path: &Path) -> Vec<String> {
 fn looks_like_filename(s: &str) -> bool {
     // Must contain a dot (for the extension), be reasonably short, and
     // contain no control characters except tab.
-    s.contains('.')
-        && s.len() < 512
-        && s.chars()
-            .all(|c| !c.is_control() || c == '\t')
+    s.contains('.') && s.len() < 512 && s.chars().all(|c| !c.is_control() || c == '\t')
 }
 
 /// Remove ROM entries that are referenced by M3U playlist files and aggregate
@@ -659,7 +660,10 @@ mod tests {
         let m3u_own_size = fs::metadata(x68k_dir.join("Game.m3u")).unwrap().len();
         assert_eq!(m3u_entry.size_bytes, m3u_own_size + 200);
 
-        let other = roms.iter().find(|r| r.game.rom_filename == "Other.dim").unwrap();
+        let other = roms
+            .iter()
+            .find(|r| r.game.rom_filename == "Other.dim")
+            .unwrap();
         assert_eq!(other.size_bytes, 50);
     }
 
@@ -777,7 +781,11 @@ mod tests {
             .find(|s| s.folder_name == "scummvm")
             .unwrap();
         // Should count 2 games (2 M3Us), not 4 (2 M3Us + 2 .scummvm)
-        assert_eq!(scummvm.game_count, 2, "Expected 2 games, got {}", scummvm.game_count);
+        assert_eq!(
+            scummvm.game_count, 2,
+            "Expected 2 games, got {}",
+            scummvm.game_count
+        );
 
         // Check ROM list
         let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
