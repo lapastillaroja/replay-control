@@ -389,6 +389,43 @@ impl MetadataDb {
         Ok(map)
     }
 
+    /// Fetch all metadata entries for a system.
+    /// Returns a vec of `(rom_filename, GameMetadata)`.
+    /// Used for normalized-title matching when enriching new ROMs.
+    pub fn system_metadata_all(&self, system: &str) -> Result<Vec<(String, GameMetadata)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, description, rating, publisher, source, fetched_at,
+                        box_art_path, screenshot_path
+                 FROM game_metadata WHERE system = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_metadata_all: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    GameMetadata {
+                        description: row.get(1)?,
+                        rating: row.get(2)?,
+                        publisher: row.get(3)?,
+                        source: row.get(4)?,
+                        fetched_at: row.get(5)?,
+                        box_art_path: row.get(6)?,
+                        screenshot_path: row.get(7)?,
+                    },
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Query system_metadata_all: {e}")))?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| Error::Other(format!("Row read failed: {e}")))?);
+        }
+        Ok(result)
+    }
+
     /// Insert or update metadata for a game.
     pub fn upsert(&self, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
         self.conn

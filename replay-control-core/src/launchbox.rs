@@ -94,7 +94,7 @@ struct LbGame {
 /// - Strips parenthetical tags `(...)` and `[...]`
 /// - Handles "Title, The" → "The Title" reordering (No-Intro convention)
 /// - Lowercases and removes punctuation
-fn normalize_title(name: &str) -> String {
+pub fn normalize_title(name: &str) -> String {
     // Step 1: Remove anything in parentheses or brackets.
     let mut stripped = String::with_capacity(name.len());
     let mut depth = 0u32;
