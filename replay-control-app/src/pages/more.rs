@@ -119,7 +119,7 @@ fn RegionSelector(current: String) -> impl IntoView {
     view! {
         <div class="form-field">
             <select
-                class="form-select"
+                class="form-input"
                 on:change=on_change
                 disabled=move || saving.get()
             >

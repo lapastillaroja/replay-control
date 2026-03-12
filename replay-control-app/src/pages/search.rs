@@ -290,11 +290,16 @@ pub fn SearchPage() -> impl IntoView {
                     filters
                     show_clones=Signal::derive(|| true)
                 />
-                {move || {
-                    genres_resource.get().and_then(|res| res.ok()).map(|genre_list| {
-                        view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> }
-                    })
-                }}
+                <Suspense>
+                    {move || Suspend::new(async move {
+                        let genre_list = genres_resource.await?;
+                        Ok::<_, server_fn::ServerFnError>(if genre_list.is_empty() {
+                            None
+                        } else {
+                            Some(view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> })
+                        })
+                    })}
+                </Suspense>
             </div>
 
             <Transition fallback=move || view! {
