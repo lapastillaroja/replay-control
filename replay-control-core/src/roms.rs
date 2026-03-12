@@ -402,9 +402,12 @@ fn parse_m3u_references(m3u_path: &Path) -> Vec<String> {
             // Binary/garbage line; stop parsing.
             break;
         }
-        // Extract just the filename from a potentially absolute path
-        // (ScummVM uses absolute paths like /media/nfs/roms/scummvm/Game/Game.svm).
-        let filename = Path::new(trimmed)
+        // Extract just the filename from a potentially absolute or relative path.
+        // ScummVM uses absolute paths like /media/nfs/roms/scummvm/Game/Game.svm.
+        // Windows-created M3U files may use backslashes (e.g., "subdir\disc1.chd")
+        // which are NOT recognized as path separators on Linux by std::path::Path.
+        let normalized = trimmed.replace('\\', "/");
+        let filename = Path::new(&normalized)
             .file_name()
             .and_then(|f| f.to_str())
             .unwrap_or(trimmed);
@@ -610,6 +613,26 @@ mod tests {
         .unwrap();
         let refs = parse_m3u_references(&m3u);
         assert_eq!(refs, vec!["Grim Fandango (CD Spanish).svm"]);
+    }
+
+    #[test]
+    fn parse_m3u_windows_backslash_paths() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        // Windows-style M3U with backslash paths
+        fs::write(&m3u, "subdir\\disc1.chd\r\nsubdir\\disc2.chd\r\n").unwrap();
+        let refs = parse_m3u_references(&m3u);
+        assert_eq!(refs, vec!["disc1.chd", "disc2.chd"]);
+    }
+
+    #[test]
+    fn parse_m3u_mixed_path_separators() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        // Mix of forward slashes, backslashes, and bare filenames
+        fs::write(&m3u, "disc1.chd\nsubdir/disc2.chd\nother\\disc3.chd\n").unwrap();
+        let refs = parse_m3u_references(&m3u);
+        assert_eq!(refs, vec!["disc1.chd", "disc2.chd", "disc3.chd"]);
     }
 
     #[test]
