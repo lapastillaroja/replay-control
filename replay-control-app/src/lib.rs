@@ -20,6 +20,7 @@ use i18n::{provide_i18n, t, use_i18n};
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
 use pages::games::SystemRomView;
+use pages::github::GithubPage;
 use pages::home::HomePage;
 use pages::hostname::HostnamePage;
 use pages::logs::LogsPage;
@@ -110,6 +111,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/more/metadata") view=MetadataPage />
                         <Route path=path!("/more/skin") view=SkinPage />
                         <Route path=path!("/more/logs") view=LogsPage />
+                        <Route path=path!("/more/github") view=GithubPage />
                     </Routes>
                 </main>
 

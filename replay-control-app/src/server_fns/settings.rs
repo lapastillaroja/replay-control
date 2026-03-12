@@ -261,6 +261,23 @@ pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
     Ok(())
 }
 
+/// Get the GitHub API key from `.replay-control/settings.cfg`.
+#[server(prefix = "/sfn")]
+pub async fn get_github_api_key() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    Ok(replay_control_core::settings::read_github_api_key(&storage.root).unwrap_or_default())
+}
+
+/// Save the GitHub API key to `.replay-control/settings.cfg`.
+#[server(prefix = "/sfn")]
+pub async fn save_github_api_key(key: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    replay_control_core::settings::write_github_api_key(&storage.root, key.trim())
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
 /// Get the current region preference from `.replay-control/settings.cfg`.
 #[server(prefix = "/sfn")]
 pub async fn get_region_preference() -> Result<String, ServerFnError> {

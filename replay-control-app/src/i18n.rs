@@ -129,6 +129,14 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         }
         "hostname.invalid" => "Invalid hostname",
 
+        // GitHub API key
+        "more.github" => "GitHub API Key",
+        "github.title" => "GitHub API Key",
+        "github.label" => "Personal Access Token",
+        "github.hint" => {
+            "Optional. Increases the GitHub API rate limit from 60 to 5,000 requests/hour for thumbnail indexing. Create a token at github.com/settings/tokens (no scopes needed)."
+        }
+
         // More page
         "more.title" => "More",
         "more.upload" => "Upload ROMs",

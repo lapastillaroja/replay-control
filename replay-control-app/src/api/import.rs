@@ -423,6 +423,9 @@ impl AppState {
         let progress_ref = self.thumbnail_progress.clone();
         let cancel_ref = &self.thumbnail_cancel;
 
+        // Read GitHub API key from settings (if configured).
+        let api_key = replay_control_core::settings::read_github_api_key(&storage_root);
+
         let index_result = thumbnail_manifest::import_all_manifests(
             &mut db,
             &|repos_done, repos_total, current_repo| {
@@ -436,6 +439,7 @@ impl AppState {
                 }
             },
             cancel_ref,
+            api_key.as_deref(),
         );
 
         let index_stats = match index_result {

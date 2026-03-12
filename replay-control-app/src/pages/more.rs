@@ -24,6 +24,7 @@ pub fn MorePage() -> impl IntoView {
                 <MenuItem icon="\u{1F4BB}" label_key="more.hostname" href=Some("/more/hostname") />
                 <MenuItem icon="\u{1F4DA}" label_key="more.metadata" href=Some("/more/metadata") />
                 <MenuItem icon="\u{1F4DC}" label_key="more.logs" href=Some("/more/logs") />
+                <MenuItem icon="\u{1F511}" label_key="more.github" href=Some("/more/github") />
             </div>
 
             <h3 class="section-title">{move || t(i18n.locale.get(), "region.title")}</h3>
