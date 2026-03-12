@@ -134,3 +134,121 @@ The arcade games page improvement (4200ms → 5ms) is the same effect at scale: 
 - **NFS cold start: 1.2s → was 6.1s** — the 5s improvement comes from reversing the SQLite open order (nolock first). Remaining 1.2s is image index building for recents (NFS dir reads, not cacheable in L2 yet)
 - **NES cold start: 3ms on Pi** — L2 restores 1000+ ROMs from SQLite faster than scanning the filesystem
 - L2 has no measurable impact on warm cache (L1 is always faster)
+
+---
+
+## 2026-03-12: Recommendations Enabled (SSR, Full Enrichment)
+
+### Changes
+
+- **SSR recommendations**: All 5 sections render server-side via `Resource` + `Transition` — visible on first paint
+- **SQL-powered queries**: Random picks, top-rated, genre counts, multiplayer count — all from `rom_cache` via SQL
+- **L2 warmup on startup**: When rom_cache is empty, background task pre-populates all systems + enriches box art URLs and ratings
+- **Box art + rating enrichment**: Image index resolution + LaunchBox ratings written to rom_cache during warmup
+- **Five recommendation sections**: Random picks, favorites-based ("Because you love…"), top-rated, discover (genre/multiplayer pills)
+- **Race condition fix**: LaunchBox auto-import no longer clears rom_cache (was wiping warmup data)
+- **UNIQUE constraint fix**: `INSERT OR IGNORE` in save_system_roms handles duplicate ROM entries from M3U dedup
+
+### L2 Warmup Times (ms, from fresh DB)
+
+| Environment | Systems | ROMs   | Scan Time | Enrich Time | Total |
+|-------------|---------|--------|-----------|-------------|-------|
+| Pi USB      | 19      | 27,081 | 1.4s      | 0.5s        | 1.9s  |
+| Local NFS   | 17      | 20,631 | 10.9s     | 0.5s        | 11.4s |
+
+### Cold Start Times (ms, TTFB — first request after server restart, L2 populated)
+
+| Endpoint       | Local NFS | Pi USB |
+|----------------|-----------|--------|
+| Home `/`       | 1093      | 350    |
+| Games NES      | 13        | 2.3    |
+| Games Arcade   | 6.3       | 21     |
+
+Note: NFS cold-start dominated by NFS dir reads for recents box art. Pi cold-start includes background warmup/import startup overhead.
+
+### Warm Cache Times (ms, TTFB median of 3 runs)
+
+| Endpoint       | Local NFS | Pi USB |
+|----------------|-----------|--------|
+| Home `/`       | 21        | 37     |
+| Games NES      | 0.5       | 1.4    |
+| Games Arcade   | 5.0       | 10     |
+
+### Load Test (50 requests, 10 concurrent, warm cache)
+
+| Endpoint       | Local NFS req/s | Local NFS mean (ms) | Pi USB req/s | Pi USB mean (ms) |
+|----------------|----------------|---------------------|-------------|-----------------|
+| Home `/`       | 81             | 124                 | 38          | 267             |
+| Games NES      | 5760           | 1.7                 | 1560        | 6.4             |
+
+### GetRecommendations Endpoint (ms, TTFB median)
+
+| Local NFS | Pi USB |
+|-----------|--------|
+| 0.3       | 0.5    |
+
+### SSR Response Sizes (KB)
+
+| Endpoint | Uncompressed | Gzip |
+|----------|-------------|------|
+| Home `/` | 54          | 8.1  |
+
+### Key Insights
+
+- **Full SSR recommendations**: All 5 sections visible in initial HTML — no client-side loading needed
+- **Pi warm TTFB: 37ms** — excellent for single-user retro gaming device
+- **Recommendation endpoint: 0.3-0.5ms** — SQL queries on enriched rom_cache are near-instant
+- **Load test throughput lower than without recs** (81 vs 323 req/s local): expected, since SSR now renders 20+ game cards with box art. Irrelevant for single-user Pi use case
+- **L2 warmup: 1.9s on Pi** — pre-populates 27K ROMs with box art and ratings from fresh DB
+- **Enrichment coverage**: 13,483 ROMs with box art, 12,012 with ratings (from 27K total)
+- **Games pages unaffected**: NES 5760 req/s, Arcade stays fast — recommendations only impact home page
+
+---
+
+## Cumulative Summary (Baseline → Final)
+
+### End-to-End TTFB Improvements (ms, warm cache)
+
+| Endpoint       | Baseline Local | Final Local | Improvement | Baseline Pi | Final Pi | Improvement |
+|----------------|---------------|-------------|-------------|-------------|----------|-------------|
+| Home `/`       | 689           | 21          | **-97%**    | 1084        | 37       | **-97%**    |
+| Games NES      | 37            | 0.5         | **-99%**    | 7.0         | 1.4      | **-80%**    |
+| Games Arcade   | 4397          | 5.0         | **-99.9%**  | 1662        | 10       | **-99.4%**  |
+
+### Architecture
+
+```
+Request → L1 (in-memory HashMap) → L2 (SQLite rom_cache) → L3 (filesystem scan)
+                                     ↑ write-through         ↑ write-through
+```
+
+- **L1**: Sub-millisecond, invalidated by mtime check (single `stat()`) or 5-min TTL
+- **L2**: Persists across restarts, pre-populated on startup via background warmup (1.9s on Pi for 27K ROMs)
+- **L3**: Full filesystem scan, only on first access or stale cache
+
+### Optimization Stack
+
+| Layer | Optimization | Files Changed |
+|-------|-------------|---------------|
+| Build | `wasm-opt -Oz`, `[profile.wasm-release]` with LTO | `build.sh`, `Cargo.toml` |
+| Network | Pre-compressed `.wasm.gz`, `CompressionLayer` for dynamic gzip | `main.rs` |
+| Cache L1 | In-memory favorites, recents, systems, ROMs with mtime invalidation | `cache.rs` |
+| Cache L1 | Per-system image index (HashMap) for O(1) box art lookups | `cache.rs` |
+| Cache L2 | SQLite `rom_cache` + `rom_cache_meta` with nolock-first NFS support | `metadata_db.rs` |
+| Cache L2 | Background warmup + box art/rating enrichment on startup | `background.rs` |
+| Render | `content-visibility: auto` on `.rom-item` | CSS |
+| Render | Explicit `width`/`height` on thumbnail `<img>` | `rom_list.rs` |
+| SSR | Recommendations rendered server-side via `Transition` | `home.rs` |
+| SQL | All recommendation queries from enriched `rom_cache` — no filesystem | `recommendations.rs` |
+
+### Key Numbers
+
+| Metric | Value |
+|--------|-------|
+| WASM bundle (gzip) | 670 KB (was 1.2 MB) |
+| Home page HTML (gzip) | 8.1 KB |
+| Pi warm TTFB (home) | 37 ms |
+| Pi cold start (L2 populated) | 350 ms |
+| L2 warmup (27K ROMs, Pi) | 1.9s |
+| Recommendation query | 0.3–0.5 ms |
+| Enrichment coverage | 13,483 box art / 12,012 ratings (of 27K ROMs) |

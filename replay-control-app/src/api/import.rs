@@ -241,9 +241,6 @@ impl AppState {
             },
         );
 
-        // Clear L2 rom_cache since ratings may have changed.
-        let _ = db.clear_all_rom_cache();
-
         // Put DB back.
         {
             let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");

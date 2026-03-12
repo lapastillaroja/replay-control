@@ -16,18 +16,7 @@ pub fn HomePage() -> impl IntoView {
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new(|| (), |_| server_fns::get_systems());
 
-    // Recommendations: loaded client-side only (after hydration) to avoid blocking SSR.
-    // On NFS cold start, recommendation queries can trigger full ROM scans which would
-    // block the initial page render for 30+ seconds. By deferring to the client, the page
-    // renders instantly and recommendations appear when ready.
-    let recommendations = RwSignal::new(None::<server_fns::RecommendationData>);
-    Effect::new(move |_| {
-        leptos::task::spawn_local(async move {
-            if let Ok(data) = server_fns::get_recommendations(6).await {
-                recommendations.set(Some(data));
-            }
-        });
-    });
+    let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations(6));
     view! {
         <div class="page home-page">
             <section class="section home-search-section">
@@ -91,14 +80,16 @@ pub fn HomePage() -> impl IntoView {
                 </ErrorBoundary>
             </section>
 
-            // --- Recommendations (client-side only) ---
-            {move || {
-                recommendations.read().as_ref().map(|data| {
-                    let locale = i18n.locale.get();
-                    let data = data.clone();
-                    view! { <RecommendationSections data locale /> }
-                })
-            }}
+            // --- Recommendations ---
+            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                <Transition fallback=|| ()>
+                    {move || Suspend::new(async move {
+                        let locale = i18n.locale.get();
+                        let data = recommendations.await?;
+                        Ok::<_, ServerFnError>(view! { <RecommendationSections data locale /> })
+                    })}
+                </Transition>
+            </ErrorBoundary>
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.library")}</h2>
@@ -197,7 +188,6 @@ fn RecommendationSections(
     locale: crate::i18n::Locale,
 ) -> impl IntoView {
     let has_random = !data.random_picks.is_empty();
-    let has_favorites = data.favorites_picks.is_some();
     let has_top_rated = data.top_rated.as_ref().is_some_and(|v| !v.is_empty());
     let has_discover = !data.top_genres.is_empty() || data.multiplayer_count > 0;
 

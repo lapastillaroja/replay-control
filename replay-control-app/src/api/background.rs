@@ -8,8 +8,12 @@ use super::cache::dir_mtime;
 const STORAGE_CHECK_INTERVAL: u64 = 60;
 
 impl AppState {
-    /// Verify L2 cache freshness on startup: compare stored mtimes against filesystem.
-    /// Re-scans stale systems in the background so the first user request is fast.
+    /// Verify L2 cache freshness on startup and pre-populate if empty.
+    ///
+    /// - If L2 is empty (fresh DB): scan all systems with games to populate rom_cache.
+    ///   This ensures recommendations work on first visit without waiting for the user
+    ///   to browse every system page.
+    /// - If L2 has data: verify stored mtimes against filesystem, re-scan stale systems.
     pub fn spawn_cache_verification(&self) {
         let state = self.clone();
         tokio::spawn(async move {
@@ -38,10 +42,13 @@ impl AppState {
                     })
                 };
 
-                let Some(cached_meta) = cached_meta else {
-                    tracing::debug!("No L2 cache data to verify");
+                let cached_meta = cached_meta.unwrap_or_default();
+
+                if cached_meta.is_empty() {
+                    // Fresh DB — pre-populate L2 for all systems with games.
+                    Self::populate_all_systems(&state, &storage, region_pref);
                     return;
-                };
+                }
 
                 let mut stale_count = 0usize;
                 for meta in &cached_meta {
@@ -65,6 +72,7 @@ impl AppState {
                         );
                         // Trigger L3 scan by calling get_roms (which writes through to L1+L2).
                         let _ = state.cache.get_roms(&storage, &meta.system, region_pref);
+                        state.cache.enrich_system_cache(&state, &meta.system);
                         stale_count += 1;
                     }
                 }
@@ -86,6 +94,50 @@ impl AppState {
                 tracing::warn!("Background cache verification failed: {e}");
             }
         });
+    }
+
+    /// Pre-populate L2 cache for all systems that have games.
+    /// Called on startup when the rom_cache is empty (fresh DB or after clear).
+    /// After populating ROMs, enriches box art URLs and ratings.
+    fn populate_all_systems(
+        state: &AppState,
+        storage: &replay_control_core::storage::StorageLocation,
+        region_pref: replay_control_core::rom_tags::RegionPreference,
+    ) {
+        let systems = state.cache.get_systems(storage);
+        let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
+        tracing::info!(
+            "L2 warmup: populating {} system(s) with games",
+            with_games.len()
+        );
+
+        let start = std::time::Instant::now();
+        let mut total_roms = 0usize;
+        for sys in &with_games {
+            match state.cache.get_roms(storage, &sys.folder_name, region_pref) {
+                Ok(roms) => total_roms += roms.len(),
+                Err(e) => tracing::warn!("L2 warmup: failed to scan {}: {e}", sys.folder_name),
+            }
+        }
+
+        tracing::info!(
+            "L2 warmup: scanned {} ROMs across {} systems in {:.1}s, enriching...",
+            total_roms,
+            with_games.len(),
+            start.elapsed().as_secs_f64()
+        );
+
+        // Enrich box art URLs and ratings for all systems.
+        for sys in &with_games {
+            state.cache.enrich_system_cache(state, &sys.folder_name);
+        }
+
+        tracing::info!(
+            "L2 warmup: done — {} ROMs across {} systems in {:.1}s",
+            total_roms,
+            with_games.len(),
+            start.elapsed().as_secs_f64()
+        );
     }
 
     /// Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.

@@ -136,6 +136,15 @@ impl RomCache {
         }
     }
 
+    /// Run a read-only closure with the DB, opening it if needed.
+    /// Public for recommendation queries that need direct DB access.
+    pub fn with_db_read<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
+    where
+        F: FnOnce(&MetadataDb) -> R,
+    {
+        self.with_db(storage, f)
+    }
+
     /// Try to open the DB if not yet open, then run a read-only closure.
     fn with_db<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
     where
@@ -307,7 +316,9 @@ impl RomCache {
         }
 
         // L3: Cache miss — full filesystem scan.
+        tracing::debug!("L3 scan for {system}: starting filesystem scan");
         let roms = replay_control_core::roms::list_roms(storage, system, region_pref)?;
+        tracing::debug!("L3 scan for {system}: found {} ROMs", roms.len());
         if let Ok(mut guard) = self.roms.write() {
             guard.insert(key.clone(), CacheEntry::new(roms.clone(), &system_dir));
         }
@@ -468,11 +479,18 @@ impl RomCache {
             })
             .collect();
 
-        self.with_db_mut(storage, |db| {
-            if let Err(e) = db.save_system_roms(system, &cached_roms, mtime_secs) {
-                tracing::debug!("Failed to write L2 cache for {system}: {e}");
-            }
+        tracing::debug!(
+            "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
+            cached_roms.len()
+        );
+        let result = self.with_db_mut(storage, |db| {
+            db.save_system_roms(system, &cached_roms, mtime_secs)
         });
+        match result {
+            Some(Ok(())) => tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len()),
+            Some(Err(e)) => tracing::warn!("L2 write-through: {system} FAILED: {e}"),
+            None => tracing::warn!("L2 write-through: {system} skipped (DB unavailable)"),
+        }
     }
 
     /// Get the set of favorited filenames for a system.
@@ -508,6 +526,38 @@ impl RomCache {
             *guard = Some(new_cache);
         }
         result
+    }
+
+    /// Get the most-favorited system and its favorited filenames.
+    /// Uses the cached favorites — no filesystem access on cache hit.
+    pub fn get_top_favorited_system(
+        &self,
+        storage: &StorageLocation,
+    ) -> Option<(String, Vec<String>)> {
+        let favs_dir = storage.favorites_dir();
+
+        // Ensure cache is fresh.
+        if let Ok(guard) = self.favorites.read() {
+            if let Some(ref cache) = *guard {
+                if cache.is_fresh(&favs_dir) {
+                    return Self::top_system_from_data(&cache.data);
+                }
+            }
+        }
+
+        // Rebuild cache.
+        let new_cache = FavoritesCache::new(storage);
+        let result = Self::top_system_from_data(&new_cache.data);
+        if let Ok(mut guard) = self.favorites.write() {
+            *guard = Some(new_cache);
+        }
+        result
+    }
+
+    fn top_system_from_data(data: &HashMap<String, HashSet<String>>) -> Option<(String, Vec<String>)> {
+        data.iter()
+            .max_by_key(|(_, files)| files.len())
+            .map(|(system, files)| (system.clone(), files.iter().cloned().collect()))
     }
 
     /// Get the total count of favorited games (all systems).
@@ -778,5 +828,85 @@ impl RomCache {
         if let Ok(mut guard) = self.favorites.write() {
             *guard = None;
         }
+    }
+
+    /// Enrich box_art_url (and rating) for all ROMs in a system's rom_cache.
+    /// Uses the image index for box art and game_metadata for ratings.
+    /// Called after L2 write-through to populate fields that `list_roms()` doesn't set.
+    pub fn enrich_system_cache(
+        &self,
+        state: &crate::api::AppState,
+        system: &str,
+    ) {
+        let storage = state.storage();
+        let index = self.get_image_index(state, system);
+
+        // Load ratings from game_metadata table (from LaunchBox import).
+        let ratings: HashMap<String, f64> = state
+            .metadata_db()
+            .and_then(|guard| {
+                guard.as_ref()?.system_ratings(system).ok()
+            })
+            .unwrap_or_default();
+
+        // Read current ROMs from L1 cache to get filenames.
+        let rom_filenames: Vec<String> = if let Ok(guard) = self.roms.read() {
+            guard
+                .get(system)
+                .map(|entry| entry.data.iter().map(|r| r.game.rom_filename.clone()).collect())
+                .unwrap_or_default()
+        } else {
+            return;
+        };
+
+        if rom_filenames.is_empty() {
+            return;
+        }
+
+        // Build enrichment tuples: (filename, box_art_url, rating)
+        let enrichments: Vec<(String, Option<String>, Option<f32>)> = rom_filenames
+            .iter()
+            .filter_map(|filename| {
+                let art = self.resolve_box_art(&index, system, filename);
+                let rating = ratings.get(filename).map(|&r| r as f32);
+                if art.is_none() && rating.is_none() {
+                    return None;
+                }
+                Some((filename.clone(), art, rating))
+            })
+            .collect();
+
+        if enrichments.is_empty() {
+            return;
+        }
+
+        let count = enrichments.len();
+        // Use targeted SQL update for just box_art_url and rating.
+        self.with_db_mut(&storage, |db| {
+            if let Err(e) = db.update_box_art_and_rating(system, &enrichments) {
+                tracing::warn!("Box art enrichment failed for {system}: {e}");
+            }
+        });
+
+        // Also update L1 cache entries.
+        if let Ok(mut guard) = self.roms.write() {
+            if let Some(entry) = guard.get_mut(system) {
+                for rom in &mut entry.data {
+                    for (filename, art, rating) in &enrichments {
+                        if rom.game.rom_filename == *filename {
+                            if art.is_some() {
+                                rom.box_art_url = art.clone();
+                            }
+                            if let Some(r) = rating {
+                                rom.rating = Some(*r);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        tracing::debug!("L2 enrichment: {system} — {count} ROMs updated with box art/ratings");
     }
 }

@@ -652,7 +652,7 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO rom_cache (system, rom_filename, rom_path, display_name,
+                    "INSERT OR IGNORE INTO rom_cache (system, rom_filename, rom_path, display_name,
                      size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 )
@@ -837,6 +837,52 @@ impl MetadataDb {
         Ok(count)
     }
 
+    /// Batch update box_art_url and rating for ROMs in rom_cache.
+    /// Only updates non-None fields (preserves existing genre/players/driver_status).
+    pub fn update_box_art_and_rating(
+        &mut self,
+        system: &str,
+        enrichments: &[(String, Option<String>, Option<f32>)],
+    ) -> Result<()> {
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+
+        {
+            let mut art_stmt = tx
+                .prepare(
+                    "UPDATE rom_cache SET box_art_url = ?2
+                     WHERE system = ?3 AND rom_filename = ?1",
+                )
+                .map_err(|e| Error::Other(format!("Prepare box_art update: {e}")))?;
+
+            let mut rating_stmt = tx
+                .prepare(
+                    "UPDATE rom_cache SET rating = ?2
+                     WHERE system = ?3 AND rom_filename = ?1",
+                )
+                .map_err(|e| Error::Other(format!("Prepare rating update: {e}")))?;
+
+            for (filename, box_art_url, rating) in enrichments {
+                if let Some(url) = box_art_url {
+                    art_stmt
+                        .execute(params![filename, url, system])
+                        .map_err(|e| Error::Other(format!("Update box_art_url: {e}")))?;
+                }
+                if let Some(r) = rating {
+                    rating_stmt
+                        .execute(params![filename, r, system])
+                        .map_err(|e| Error::Other(format!("Update rating: {e}")))?;
+                }
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(())
+    }
+
     /// Clear the rom_cache and rom_cache_meta for a specific system.
     pub fn clear_system_rom_cache(&self, system: &str) -> Result<()> {
         self.conn
@@ -863,6 +909,27 @@ impl MetadataDb {
     }
 
     // ── SQL-Based Recommendation Queries ─────────────────────────────
+
+    /// Get random cached ROMs with box art from all systems.
+    /// Returns a diverse selection across different systems.
+    pub fn random_cached_roms_diverse(&self, count: usize) -> Result<Vec<CachedRom>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, players, rating
+                 FROM rom_cache
+                 WHERE box_art_url IS NOT NULL
+                 ORDER BY RANDOM() LIMIT ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare random_cached_roms_diverse: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![(count * 5) as i64], Self::row_to_cached_rom)
+            .map_err(|e| Error::Other(format!("Query random_cached_roms_diverse: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
 
     /// Get random cached ROMs with box art from a specific system.
     pub fn random_cached_roms(&self, system: &str, count: usize) -> Result<Vec<CachedRom>> {
