@@ -6,23 +6,60 @@
     margin-bottom: 32px;
 }
 
-.image-action-row {
+/* ── Data Source Cards ─────────────────────────────────────────── */
+
+.data-source-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.data-source-header {
+    margin-bottom: 6px;
+}
+
+.data-source-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text);
+}
+
+.data-source-summary {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0;
+}
+
+.data-source-summary.dim {
+    font-style: italic;
+}
+
+.data-source-details {
+    margin-bottom: 2px;
+}
+
+.data-source-actions {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-top: 16px;
+    margin-top: 10px;
 }
+
+/* ── Update Button ─────────────────────────────────────────────── */
 
 .metadata-download-btn {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 20px;
+    padding: 8px 18px;
     background: var(--accent);
     color: var(--bg);
     border: none;
     border-radius: var(--radius-sm);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
     transition: background 0.2s;
@@ -38,31 +75,52 @@
     animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
-.image-systems-grid {
-    margin-top: 16px;
+/* ── System Overview Table ─────────────────────────────────────── */
+
+.overview-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
-.image-system-row .info-value {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.image-download-btn {
-    font-size: 0.8rem;
-    padding: 4px 12px;
-}
-
-.image-download-btn:disabled {
-    animation: pulse-opacity 1.5s ease-in-out infinite;
-}
-
-.image-count-none {
-    color: var(--text-secondary);
+.overview-table {
+    width: 100%;
+    border-collapse: collapse;
     font-size: 0.85rem;
 }
 
-/* Metadata management actions */
+.overview-table thead th {
+    text-align: left;
+    padding: 8px 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.overview-table tbody td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.04));
+}
+
+.overview-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.overview-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.overview-system {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Data Management Actions ───────────────────────────────────── */
+
 .manage-actions {
     display: flex;
     flex-direction: column;
@@ -89,65 +147,7 @@
     margin-top: 8px;
 }
 
-.metadata-import-form {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-/* Auto-import hint — prominent callout */
-.auto-import-hint {
-    font-size: 0.85rem;
-    color: var(--text);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: var(--radius-sm);
-    padding: 12px 14px;
-    margin-bottom: 12px;
-    line-height: 1.5;
-}
-
-/* Manual import collapsible toggle */
-.manual-import-toggle {
-    margin-top: 4px;
-}
-
-.manual-import-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    cursor: pointer;
-    padding: 4px 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: color 0.2s;
-}
-
-.manual-import-btn:hover {
-    color: var(--text);
-}
-
-.manual-import-chevron {
-    display: inline-block;
-    font-size: 0.7rem;
-    transition: transform 0.2s;
-}
-
-.manual-import-chevron.open {
-    transform: rotate(90deg);
-}
-
-.manual-import-panel {
-    margin-top: 8px;
-    padding: 12px 14px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-}
+/* ── Progress Display ──────────────────────────────────────────── */
 
 .import-progress {
     margin-top: 8px;

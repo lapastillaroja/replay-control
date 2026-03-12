@@ -105,18 +105,9 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImportProgress>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemCoverage>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportSystemImages>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportAllImages>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageImportProgress>(
-        );
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageCoverage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetCacheSize>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImageCache>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemLogs>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelImageImport>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::RematchAllImages>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameVideos>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::AddGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveGameVideo>();
@@ -128,6 +119,15 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRegionPreference>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveRegionPreference>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecommendations>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::UpdateThumbnails>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelThumbnailUpdate>(
+        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetThumbnailProgress>(
+        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetThumbnailDataSource>(
+        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearThumbnailIndex>(
+        );
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
@@ -181,56 +181,6 @@ mod ssr {
                 }
             },
         );
-
-        // SSE endpoint for real-time image import progress.
-        // Emits progress every 200ms while an import is active.
-        // Once the import finishes (progress becomes None), sends a few
-        // final null events so the client sees the completion, then closes.
-        let sse_state = app_state.clone();
-        let sse_handler = axum::routing::get(move || {
-            let state = sse_state.clone();
-            async move {
-                use axum::response::sse::{Event, Sse};
-                use std::convert::Infallible;
-                use tokio_stream::StreamExt;
-
-                let progress_ref = state.image_import_progress.clone();
-                let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-
-                let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
-                    std::time::Duration::from_millis(200),
-                ))
-                .map({
-                    let idle_count = idle_count.clone();
-                    move |_| {
-                        let guard = progress_ref.read().expect("lock");
-                        let is_active = guard.is_some();
-                        let json = match &*guard {
-                            Some(p) => serde_json::to_string(p).unwrap_or_default(),
-                            None => "null".to_string(),
-                        };
-                        drop(guard);
-
-                        if is_active {
-                            idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
-                        } else {
-                            idle_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        Ok::<_, Infallible>(Event::default().data(json))
-                    }
-                })
-                // Close stream after 5 consecutive idle ticks (1s of no import).
-                .take_while({
-                    let idle_count = idle_count.clone();
-                    move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
-                });
-
-                Sse::new(stream).keep_alive(
-                    axum::response::sse::KeepAlive::new()
-                        .interval(std::time::Duration::from_secs(15)),
-                )
-            }
-        });
 
         // Captures handler: serves user screenshots from <storage>/captures/<system>/<file>
         let captures_state = app_state.clone();
@@ -315,9 +265,55 @@ mod ssr {
             }
         });
 
+        // SSE endpoint for real-time thumbnail update progress.
+        let thumbnail_sse_state = app_state.clone();
+        let thumbnail_sse_handler = axum::routing::get(move || {
+            let state = thumbnail_sse_state.clone();
+            async move {
+                use axum::response::sse::{Event, Sse};
+                use std::convert::Infallible;
+                use tokio_stream::StreamExt;
+
+                let progress_ref = state.thumbnail_progress.clone();
+                let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+                let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
+                    std::time::Duration::from_millis(200),
+                ))
+                .map({
+                    let idle_count = idle_count.clone();
+                    move |_| {
+                        let guard = progress_ref.read().expect("lock");
+                        let is_active = guard.is_some();
+                        let json = match &*guard {
+                            Some(p) => serde_json::to_string(p).unwrap_or_default(),
+                            None => "null".to_string(),
+                        };
+                        drop(guard);
+
+                        if is_active {
+                            idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
+                        } else {
+                            idle_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Ok::<_, Infallible>(Event::default().data(json))
+                    }
+                })
+                .take_while({
+                    let idle_count = idle_count.clone();
+                    move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
+                });
+
+                Sse::new(stream).keep_alive(
+                    axum::response::sse::KeepAlive::new()
+                        .interval(std::time::Duration::from_secs(15)),
+                )
+            }
+        });
+
         let app = api::build_router(app_state, leptos_options)
-            .route("/sse/image-progress", sse_handler)
             .route("/sse/metadata-progress", metadata_sse_handler)
+            .route("/sse/thumbnail-progress", thumbnail_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/media/*path", media_handler)
             .nest_service(

@@ -55,16 +55,19 @@ pub async fn get_import_progress() -> Result<Option<ImportProgress>, ServerFnErr
 pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    // Get metadata entries per system from DB.
-    let entries_per_system = {
+    // Get metadata entries and image counts per system from DB.
+    let (entries_per_system, images_per_system) = {
         let guard = state
             .metadata_db()
             .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
         let db = guard
             .as_ref()
             .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-        db.entries_per_system()
-            .map_err(|e| ServerFnError::new(e.to_string()))?
+        let entries = db.entries_per_system()
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let images = db.images_per_system()
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        (entries, images)
     };
 
     // Get total games per system from ROM cache.
@@ -73,17 +76,21 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 
     let mut meta_map: std::collections::HashMap<String, usize> =
         entries_per_system.into_iter().collect();
+    let mut thumb_map: std::collections::HashMap<String, usize> =
+        images_per_system.into_iter().map(|(s, boxart, _snap)| (s, boxart)).collect();
 
     let mut coverage: Vec<SystemCoverage> = systems
         .into_iter()
         .filter(|s| s.game_count > 0)
         .map(|s| {
             let with_metadata = meta_map.remove(&s.folder_name).unwrap_or(0);
+            let with_thumbnail = thumb_map.remove(&s.folder_name).unwrap_or(0);
             SystemCoverage {
                 system: s.folder_name,
                 display_name: s.display_name,
                 total_games: s.game_count,
                 with_metadata,
+                with_thumbnail,
             }
         })
         .collect();

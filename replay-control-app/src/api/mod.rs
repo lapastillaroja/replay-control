@@ -33,11 +33,11 @@ pub struct AppState {
     /// Progress of the current metadata import (None = no import running).
     pub import_progress:
         Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
-    /// Progress of the current image import (None = no import running).
-    pub image_import_progress:
-        Arc<std::sync::RwLock<Option<crate::server_fns::ImageImportProgress>>>,
-    /// Set to `true` to request cancellation of the current image import.
-    pub image_import_cancel: Arc<std::sync::atomic::AtomicBool>,
+    /// Progress of the current thumbnail update pipeline (None = no update running).
+    pub thumbnail_progress:
+        Arc<std::sync::RwLock<Option<crate::server_fns::ThumbnailProgress>>>,
+    /// Set to `true` to request cancellation of the current thumbnail update.
+    pub thumbnail_cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
@@ -92,8 +92,8 @@ impl AppState {
             skin_override: Arc::new(std::sync::RwLock::new(None)),
             metadata_db,
             import_progress: Arc::new(std::sync::RwLock::new(None)),
-            image_import_progress: Arc::new(std::sync::RwLock::new(None)),
-            image_import_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            thumbnail_progress: Arc::new(std::sync::RwLock::new(None)),
+            thumbnail_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }
 

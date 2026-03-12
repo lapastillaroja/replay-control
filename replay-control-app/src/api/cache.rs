@@ -837,6 +837,14 @@ impl RomCache {
         }
     }
 
+    /// Invalidate only the per-system image indexes.
+    /// Called after thumbnail downloads to force re-scan of the media directory.
+    pub fn invalidate_images(&self) {
+        if let Ok(mut guard) = self.images.write() {
+            guard.clear();
+        }
+    }
+
     /// Enrich box_art_url (and rating) for all ROMs in a system's rom_cache.
     /// Uses the image index for box art and game_metadata for ratings.
     /// Called after L2 write-through to populate fields that `list_roms()` doesn't set.

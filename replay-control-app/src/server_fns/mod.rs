@@ -6,6 +6,7 @@ mod roms;
 mod search;
 mod settings;
 mod system;
+mod thumbnails;
 mod videos;
 
 pub use favorites::*;
@@ -16,6 +17,7 @@ pub use roms::*;
 pub use search::*;
 pub use settings::*;
 pub use system::*;
+pub use thumbnails::*;
 pub use videos::*;
 
 use leptos::prelude::*;

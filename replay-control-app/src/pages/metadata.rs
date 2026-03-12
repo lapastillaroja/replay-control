@@ -4,7 +4,7 @@ use server_fn::ServerFnError;
 
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
-use crate::server_fns::{self, ImageImportState, ImportState};
+use crate::server_fns::{self, ImportState, ThumbnailPhase};
 use crate::util::format_size;
 
 #[component]
@@ -12,13 +12,21 @@ pub fn MetadataPage() -> impl IntoView {
     let i18n = use_i18n();
     let stats = Resource::new(|| (), |_| server_fns::get_metadata_stats());
     let coverage = Resource::new(|| (), |_| server_fns::get_system_coverage());
+    let data_source = Resource::new(|| (), |_| server_fns::get_thumbnail_data_source());
+    let image_stats = Resource::new(|| (), |_| server_fns::get_image_stats());
 
-    // Import state (downloads and auto-imports)
+    // LaunchBox import state
     let importing = RwSignal::new(false);
     let import_message = RwSignal::new(Option::<String>::None);
     let progress = RwSignal::new(Option::<server_fns::ImportProgress>::None);
 
-    // Check for in-progress import on page load (client-side only).
+    // Thumbnail update state
+    let thumb_updating = RwSignal::new(false);
+    let thumb_progress = RwSignal::new(Option::<server_fns::ThumbnailProgress>::None);
+    let thumb_message = RwSignal::new(Option::<String>::None);
+    let thumb_cancelling = RwSignal::new(false);
+
+    // Check for in-progress operations on page load.
     Effect::new(move || {
         leptos::task::spawn_local(async move {
             if let Ok(Some(p)) = server_fns::get_import_progress().await {
@@ -29,6 +37,29 @@ pub fn MetadataPage() -> impl IntoView {
                     progress.set(Some(p));
                     importing.set(true);
                     watch_metadata_progress(importing, progress, import_message, stats, coverage);
+                }
+            }
+        });
+    });
+
+    Effect::new(move || {
+        leptos::task::spawn_local(async move {
+            if let Ok(Some(p)) = server_fns::get_thumbnail_progress().await {
+                if matches!(
+                    p.phase,
+                    ThumbnailPhase::Indexing | ThumbnailPhase::Downloading
+                ) {
+                    thumb_progress.set(Some(p));
+                    thumb_updating.set(true);
+                    watch_thumbnail_progress(
+                        thumb_updating,
+                        thumb_progress,
+                        thumb_message,
+                        thumb_cancelling,
+                        data_source,
+                        image_stats,
+                        coverage,
+                    );
                 }
             }
         });
@@ -54,6 +85,51 @@ pub fn MetadataPage() -> impl IntoView {
         });
     };
 
+    let on_thumb_update = move |_| {
+        if thumb_updating.get() {
+            return;
+        }
+        thumb_updating.set(true);
+        thumb_cancelling.set(false);
+        thumb_message.set(None);
+        thumb_progress.set(Some(server_fns::ThumbnailProgress {
+            phase: ThumbnailPhase::Indexing,
+            current_label: String::new(),
+            step_done: 0,
+            step_total: 0,
+            downloaded: 0,
+            entries_indexed: 0,
+            elapsed_secs: 0,
+            error: None,
+        }));
+        leptos::task::spawn_local(async move {
+            match server_fns::update_thumbnails().await {
+                Ok(()) => {
+                    watch_thumbnail_progress(
+                        thumb_updating,
+                        thumb_progress,
+                        thumb_message,
+                        thumb_cancelling,
+                        data_source,
+                        image_stats,
+                        coverage,
+                    );
+                }
+                Err(e) => {
+                    thumb_message.set(Some(format!("Error: {e}")));
+                    thumb_updating.set(false);
+                }
+            }
+        });
+    };
+
+    let on_thumb_cancel = move |_| {
+        thumb_cancelling.set(true);
+        leptos::task::spawn_local(async move {
+            let _ = server_fns::cancel_thumbnail_update().await;
+        });
+    };
+
     view! {
         <div class="page metadata-page">
             <div class="rom-header">
@@ -63,99 +139,210 @@ pub fn MetadataPage() -> impl IntoView {
                 <h2 class="page-title">{move || t(i18n.locale.get(), "metadata.title")}</h2>
             </div>
 
-            // Descriptions & Ratings section
+            // ── Data Sources ──────────────────────────────────────────
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.descriptions")}</h2>
-                <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.descriptions_hint")}</p>
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                        {move || Suspend::new(async move {
-                            let locale = i18n.locale.get();
-                            let data = stats.await?;
-                            Ok::<_, ServerFnError>(if data.total_entries == 0 {
-                                view! {
-                                    <p class="game-section-empty">{t(locale, "metadata.no_data")}</p>
-                                }.into_any()
+                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.data_sources")}</h2>
+
+                // Descriptions & Ratings (LaunchBox)
+                <div class="data-source-card">
+                    <div class="data-source-header">
+                        <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.descriptions_launchbox")}</span>
+                    </div>
+                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                            {move || Suspend::new(async move {
+                                let locale = i18n.locale.get();
+                                let data = stats.await?;
+                                Ok::<_, ServerFnError>(if data.total_entries == 0 {
+                                    view! {
+                                        <p class="data-source-summary dim">{t(locale, "metadata.no_data")}</p>
+                                    }.into_any()
+                                } else {
+                                    let updated = if data.last_updated_text.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(" — {}", data.last_updated_text)
+                                    };
+                                    view! {
+                                        <p class="data-source-summary">
+                                            {format!("{} {}{}", data.total_entries, t(locale, "metadata.entries_summary"), updated)}
+                                        </p>
+                                    }.into_any()
+                                })
+                            })}
+                        </Transition>
+                    </ErrorBoundary>
+                    <div class="data-source-actions">
+                        <button
+                            class="metadata-download-btn"
+                            on:click=on_download
+                            disabled=move || importing.get()
+                        >
+                            {move || if importing.get() {
+                                t(i18n.locale.get(), "metadata.downloading_metadata")
                             } else {
-                                view! {
-                                    <div class="info-grid">
-                                        <div class="info-row">
-                                            <span class="info-label">{t(locale, "metadata.total_entries")}</span>
-                                            <span class="info-value">{data.total_entries.to_string()}</span>
-                                        </div>
-                                        <div class="info-row">
-                                            <span class="info-label">{t(locale, "metadata.with_description")}</span>
-                                            <span class="info-value">{data.with_description.to_string()}</span>
-                                        </div>
-                                        <div class="info-row">
-                                            <span class="info-label">{t(locale, "metadata.with_rating")}</span>
-                                            <span class="info-value">{data.with_rating.to_string()}</span>
-                                        </div>
-                                        <div class="info-row">
-                                            <span class="info-label">{t(locale, "metadata.db_size")}</span>
-                                            <span class="info-value">{format_size(data.db_size_bytes)}</span>
-                                        </div>
-                                    </div>
-                                }.into_any()
-                            })
-                        })}
-                    </Transition>
-                </ErrorBoundary>
+                                t(i18n.locale.get(), "metadata.download_metadata")
+                            }}
+                        </button>
+                    </div>
+                    <Show when=move || progress.read().is_some()>
+                        <ImportProgressDisplay progress />
+                    </Show>
+                    <Show when=move || import_message.read().is_some()>
+                        <p class="settings-saved">{move || import_message.get().unwrap_or_default()}</p>
+                    </Show>
+                </div>
 
-                // Download/Update button
-                <button
-                    class="metadata-download-btn"
-                    on:click=on_download
-                    disabled=move || importing.get()
-                >
-                    {move || if importing.get() {
-                        t(i18n.locale.get(), "metadata.downloading_metadata")
-                    } else {
-                        t(i18n.locale.get(), "metadata.download_metadata")
-                    }}
-                </button>
+                // Thumbnails (libretro)
+                <div class="data-source-card">
+                    <div class="data-source-header">
+                        <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.thumbnails_libretro")}</span>
+                    </div>
+                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                            {move || Suspend::new(async move {
+                                let locale = i18n.locale.get();
+                                let ds = data_source.await?;
+                                let (with_boxart, with_snap, media_size) = image_stats.await?;
 
-                // Import progress
-                <Show when=move || progress.read().is_some()>
-                    <ImportProgressDisplay progress />
-                </Show>
-                <Show when=move || import_message.read().is_some()>
-                    <p class="settings-saved">{move || import_message.get().unwrap_or_default()}</p>
-                </Show>
+                                Ok::<_, ServerFnError>(if ds.entry_count == 0 && with_boxart == 0 {
+                                    view! {
+                                        <p class="data-source-summary dim">{t(locale, "metadata.thumbnail_no_data")}</p>
+                                    }.into_any()
+                                } else {
+                                    let images_line = if with_boxart > 0 || with_snap > 0 {
+                                        format!(
+                                            "{} {}, {} {} — {} {}",
+                                            with_boxart,
+                                            t(locale, "metadata.thumbnail_summary"),
+                                            with_snap,
+                                            t(locale, "metadata.thumbnail_snaps"),
+                                            format_size(media_size),
+                                            t(locale, "metadata.thumbnail_on_disk"),
+                                        )
+                                    } else {
+                                        String::new()
+                                    };
+                                    let index_line = if ds.entry_count > 0 {
+                                        let updated = if ds.last_updated_text.is_empty() {
+                                            String::new()
+                                        } else {
+                                            format!(" — {}", ds.last_updated_text)
+                                        };
+                                        format!(
+                                            "Index: {} {} {} {}{}",
+                                            ds.entry_count,
+                                            t(locale, "metadata.thumbnail_index_summary"),
+                                            ds.repo_count,
+                                            t(locale, "metadata.thumbnail_systems"),
+                                            updated,
+                                        )
+                                    } else {
+                                        String::new()
+                                    };
+                                    let has_images = !images_line.is_empty();
+                                    let has_index = !index_line.is_empty();
+                                    view! {
+                                        <div class="data-source-details">
+                                            {has_images.then(|| view! {
+                                                <p class="data-source-summary">{images_line}</p>
+                                            })}
+                                            {has_index.then(|| view! {
+                                                <p class="data-source-summary">{index_line}</p>
+                                            })}
+                                        </div>
+                                    }.into_any()
+                                })
+                            })}
+                        </Transition>
+                    </ErrorBoundary>
+                    <div class="data-source-actions">
+                        <button
+                            class="metadata-download-btn"
+                            on:click=on_thumb_update
+                            disabled=move || thumb_updating.get()
+                        >
+                            {move || if thumb_updating.get() {
+                                t(i18n.locale.get(), "metadata.thumbnail_updating")
+                            } else {
+                                t(i18n.locale.get(), "metadata.thumbnail_update")
+                            }}
+                        </button>
+                        <Show when=move || thumb_updating.get()>
+                            <button
+                                class="form-btn form-btn-secondary"
+                                on:click=on_thumb_cancel
+                                disabled=move || thumb_cancelling.get()
+                            >
+                                {move || if thumb_cancelling.get() {
+                                    t(i18n.locale.get(), "metadata.thumbnail_cancelling")
+                                } else {
+                                    t(i18n.locale.get(), "metadata.thumbnail_stop")
+                                }}
+                            </button>
+                        </Show>
+                    </div>
+                    <Show when=move || thumb_progress.read().is_some()>
+                        <ThumbnailProgressDisplay progress=thumb_progress />
+                    </Show>
+                    <Show when=move || thumb_message.read().is_some()>
+                        <p class="settings-saved">{move || thumb_message.get().unwrap_or_default()}</p>
+                    </Show>
+                </div>
             </section>
 
-            // Per-system coverage
+            // ── System Overview ───────────────────────────────────────
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.coverage")}</h2>
+                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.system_overview")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                     <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let data = coverage.await?;
-                            Ok::<_, ServerFnError>(if data.is_empty() || data.iter().all(|c| c.with_metadata == 0) {
+
+                            let has_any_data = data.iter().any(|c| c.with_metadata > 0 || c.with_thumbnail > 0);
+
+                            Ok::<_, ServerFnError>(if !has_any_data {
                                 view! {
-                                    <p class="game-section-empty">{t(locale, "metadata.no_coverage")}</p>
+                                    <p class="game-section-empty">{t(locale, "metadata.no_systems")}</p>
                                 }.into_any()
                             } else {
                                 let rows = data.into_iter()
-                                    .filter(|c| c.with_metadata > 0)
+                                    .filter(|c| c.with_metadata > 0 || c.with_thumbnail > 0)
                                     .map(|c| {
-                                        let pct = if c.total_games > 0 {
-                                            (c.with_metadata as f64 / c.total_games as f64 * 100.0) as u32
-                                        } else { 0 };
+                                        let desc_pct = if c.total_games > 0 && c.with_metadata > 0 {
+                                            format!("{}%", (c.with_metadata as f64 / c.total_games as f64 * 100.0) as u32)
+                                        } else {
+                                            "--".to_string()
+                                        };
+                                        let thumb_pct = if c.total_games > 0 && c.with_thumbnail > 0 {
+                                            format!("{}%", (c.with_thumbnail as f64 / c.total_games as f64 * 100.0) as u32)
+                                        } else {
+                                            "--".to_string()
+                                        };
                                         view! {
-                                            <div class="info-row">
-                                                <span class="info-label">{c.display_name}</span>
-                                                <span class="info-value">
-                                                    {format!("{}/{} ({}%)", c.with_metadata, c.total_games, pct)}
-                                                </span>
-                                            </div>
+                                            <tr>
+                                                <td class="overview-system">{c.display_name}</td>
+                                                <td class="overview-num">{c.total_games}</td>
+                                                <td class="overview-num">{desc_pct}</td>
+                                                <td class="overview-num">{thumb_pct}</td>
+                                            </tr>
                                         }
                                     })
                                     .collect::<Vec<_>>();
                                 view! {
-                                    <div class="info-grid">
-                                        {rows}
+                                    <div class="overview-table-wrap">
+                                        <table class="overview-table">
+                                            <thead>
+                                                <tr>
+                                                    <th class="overview-system">{t(locale, "metadata.col_system")}</th>
+                                                    <th class="overview-num">{t(locale, "metadata.col_games")}</th>
+                                                    <th class="overview-num">{t(locale, "metadata.col_desc")}</th>
+                                                    <th class="overview-num">{t(locale, "metadata.col_thumb")}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>{rows}</tbody>
+                                        </table>
                                     </div>
                                 }.into_any()
                             })
@@ -164,18 +351,10 @@ pub fn MetadataPage() -> impl IntoView {
                 </ErrorBoundary>
             </section>
 
-            // Images section
-            <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.images")}</h2>
-                <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.images_hint")}</p>
-                <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.images_performance_notice")}</p>
-                <ImageSection />
-            </section>
+            // ── Data Management ───────────────────────────────────────
+            <DataManagementSection stats coverage />
 
-            // Data management section (clear images only)
-            <ClearImagesSection />
-
-            // Attribution section
+            // ── Attribution ───────────────────────────────────────────
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.attribution")}</h2>
                 <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.attribution_text")}</p>
@@ -242,7 +421,87 @@ fn watch_metadata_progress(
             });
 
         es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        on_message.forget(); // intentional: prevent drop while EventSource is alive
+        on_message.forget();
+    }
+}
+
+/// Watches thumbnail update progress via SSE.
+#[allow(unused_variables, unreachable_code)]
+fn watch_thumbnail_progress(
+    updating: RwSignal<bool>,
+    progress: RwSignal<Option<server_fns::ThumbnailProgress>>,
+    message: RwSignal<Option<String>>,
+    cancelling: RwSignal<bool>,
+    data_source: Resource<Result<server_fns::DataSourceSummary, ServerFnError>>,
+    image_stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
+    coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    return;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::prelude::*;
+
+        let es = match web_sys::EventSource::new("/sse/thumbnail-progress") {
+            Ok(es) => es,
+            Err(_) => return,
+        };
+
+        let es_clone = es.clone();
+        let on_message =
+            Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+                let data = event.data().as_string().unwrap_or_default();
+                if data == "null" || data.is_empty() {
+                    return;
+                }
+                let p: server_fns::ThumbnailProgress = match serde_json::from_str(&data) {
+                    Ok(p) => p,
+                    Err(_) => return,
+                };
+
+                let done = matches!(
+                    p.phase,
+                    ThumbnailPhase::Complete | ThumbnailPhase::Failed | ThumbnailPhase::Cancelled
+                );
+
+                if done {
+                    cancelling.set(false);
+                    match p.phase {
+                        ThumbnailPhase::Complete => {
+                            message.set(Some(format!(
+                                "Complete: {} indexed, {} downloaded ({}s)",
+                                p.entries_indexed, p.downloaded, p.elapsed_secs,
+                            )));
+                        }
+                        ThumbnailPhase::Cancelled => {
+                            message.set(Some(format!(
+                                "Cancelled after {}s ({} downloaded)",
+                                p.elapsed_secs, p.downloaded,
+                            )));
+                        }
+                        ThumbnailPhase::Failed => {
+                            message.set(Some(format!(
+                                "Failed: {}",
+                                p.error.as_deref().unwrap_or("unknown error"),
+                            )));
+                        }
+                        _ => {}
+                    }
+                    progress.set(Some(p));
+                    updating.set(false);
+                    data_source.refetch();
+                    image_stats.refetch();
+                    coverage.refetch();
+                    es_clone.close();
+                    return;
+                }
+
+                progress.set(Some(p));
+            });
+
+        es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+        on_message.forget();
     }
 }
 
@@ -255,8 +514,7 @@ fn ImportProgressDisplay(progress: RwSignal<Option<server_fns::ImportProgress>>)
         <div class="import-progress">
             {move || {
                 let locale = i18n.locale.get();
-                let p = progress.get();
-                match p {
+                match progress.get() {
                     Some(p) => {
                         let state_text = match p.state {
                             ImportState::Downloading => t(locale, "metadata.downloading_file").to_string(),
@@ -291,371 +549,10 @@ fn ImportProgressDisplay(progress: RwSignal<Option<server_fns::ImportProgress>>)
     }
 }
 
-/// Images section: shows per-system image coverage and download buttons.
+/// Displays thumbnail update progress.
 #[component]
-fn ImageSection() -> impl IntoView {
-    let i18n = use_i18n();
-    let image_coverage = Resource::new(|| (), |_| server_fns::get_image_coverage());
-    let image_stats = Resource::new(|| (), |_| server_fns::get_image_stats());
-    let img_importing = RwSignal::new(false);
-    let img_progress = RwSignal::new(Option::<server_fns::ImageImportProgress>::None);
-    let img_message = RwSignal::new(Option::<String>::None);
-
-    let img_cancelling = RwSignal::new(false);
-
-    // Check for in-progress image import on load.
-    Effect::new(move || {
-        leptos::task::spawn_local(async move {
-            if let Ok(Some(p)) = server_fns::get_image_import_progress().await {
-                if matches!(
-                    p.state,
-                    ImageImportState::Cloning | ImageImportState::Copying
-                ) {
-                    img_progress.set(Some(p));
-                    img_importing.set(true);
-                    watch_image_progress(
-                        img_importing,
-                        img_progress,
-                        img_message,
-                        img_cancelling,
-                        image_coverage,
-                        image_stats,
-                    );
-                }
-            }
-        });
-    });
-
-    view! {
-        // Image stats
-        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                {move || Suspend::new(async move {
-                    let locale = i18n.locale.get();
-                    let (with_boxart, with_snap, media_size, cache_size) = image_stats.await?;
-                    Ok::<_, ServerFnError>(if with_boxart == 0 && with_snap == 0 && cache_size == 0 {
-                        view! {
-                            <p class="game-section-empty">{t(locale, "metadata.no_images")}</p>
-                        }.into_any()
-                    } else {
-                        view! {
-                            <div class="info-grid">
-                                <div class="info-row">
-                                    <span class="info-label">{t(locale, "metadata.with_boxart")}</span>
-                                    <span class="info-value">{with_boxart.to_string()}</span>
-                                </div>
-                                <div class="info-row">
-                                    <span class="info-label">{t(locale, "metadata.with_snap")}</span>
-                                    <span class="info-value">{with_snap.to_string()}</span>
-                                </div>
-                                <div class="info-row">
-                                    <span class="info-label">{t(locale, "metadata.media_size")}</span>
-                                    <span class="info-value">{format_size(media_size)}</span>
-                                </div>
-                                {(cache_size > 0).then(|| view! {
-                                    <div class="info-row">
-                                        <span class="info-label">{t(locale, "metadata.cache_size")}</span>
-                                        <span class="info-value">{format_size(cache_size)}</span>
-                                    </div>
-                                })}
-                            </div>
-                        }.into_any()
-                    })
-                })}
-            </Transition>
-        </ErrorBoundary>
-
-        // Download All / Stop buttons
-        {
-            let on_download_all = move |_| {
-                if img_importing.get() { return; }
-                img_importing.set(true);
-                img_cancelling.set(false);
-                img_message.set(None);
-                // Optimistic: show progress bar immediately
-                img_progress.set(Some(server_fns::ImageImportProgress {
-                    state: ImageImportState::Cloning,
-                    system: String::new(),
-                    system_display: String::new(),
-                    processed: 0,
-                    total: 0,
-                    boxart_copied: 0,
-                    snap_copied: 0,
-                    elapsed_secs: 0,
-                    error: None,
-                    current_system: 0,
-                    total_systems: 0,
-                }));
-                leptos::task::spawn_local(async move {
-                    match server_fns::import_all_images().await {
-                        Ok(()) => {
-                            watch_image_progress(img_importing, img_progress, img_message, img_cancelling, image_coverage, image_stats);
-                        }
-                        Err(e) => {
-                            img_message.set(Some(format!("Error: {e}")));
-                            img_importing.set(false);
-                        }
-                    }
-                });
-            };
-            let on_rematch_all = move |_| {
-                if img_importing.get() { return; }
-                img_importing.set(true);
-                img_cancelling.set(false);
-                img_message.set(None);
-                img_progress.set(Some(server_fns::ImageImportProgress {
-                    state: ImageImportState::Copying,
-                    system: String::new(),
-                    system_display: String::new(),
-                    processed: 0,
-                    total: 0,
-                    boxart_copied: 0,
-                    snap_copied: 0,
-                    elapsed_secs: 0,
-                    error: None,
-                    current_system: 0,
-                    total_systems: 0,
-                }));
-                leptos::task::spawn_local(async move {
-                    match server_fns::rematch_all_images().await {
-                        Ok(()) => {
-                            watch_image_progress(img_importing, img_progress, img_message, img_cancelling, image_coverage, image_stats);
-                        }
-                        Err(e) => {
-                            img_message.set(Some(format!("Error: {e}")));
-                            img_importing.set(false);
-                        }
-                    }
-                });
-            };
-            let on_cancel = move |_| {
-                img_cancelling.set(true);
-                leptos::task::spawn_local(async move {
-                    let _ = server_fns::cancel_image_import().await;
-                });
-            };
-            view! {
-                <div class="image-action-row">
-                    <button
-                        class="metadata-download-btn"
-                        on:click=on_download_all
-                        disabled=move || img_importing.get()
-                    >
-                        {move || if img_importing.get() {
-                            t(i18n.locale.get(), "metadata.downloading_all")
-                        } else {
-                            t(i18n.locale.get(), "metadata.download_all")
-                        }}
-                    </button>
-                    <button
-                        class="metadata-download-btn"
-                        on:click=on_rematch_all
-                        disabled=move || img_importing.get()
-                        title=move || t(i18n.locale.get(), "metadata.rematch_hint")
-                    >
-                        {move || if img_importing.get() {
-                            t(i18n.locale.get(), "metadata.rematching_all")
-                        } else {
-                            t(i18n.locale.get(), "metadata.rematch_all")
-                        }}
-                    </button>
-                    <Show when=move || img_importing.get()>
-                        <button
-                            class="form-btn form-btn-secondary"
-                            on:click=on_cancel
-                            disabled=move || img_cancelling.get()
-                        >
-                            {move || if img_cancelling.get() {
-                                t(i18n.locale.get(), "metadata.cancelling")
-                            } else {
-                                t(i18n.locale.get(), "metadata.stop")
-                            }}
-                        </button>
-                    </Show>
-                </div>
-            }
-        }
-
-        // Image import progress
-        <Show when=move || img_progress.read().is_some()>
-            <ImageProgressDisplay progress=img_progress />
-        </Show>
-        <Show when=move || img_message.read().is_some()>
-            <p class="settings-saved">{move || img_message.get().unwrap_or_default()}</p>
-        </Show>
-
-        // Per-system image coverage with download buttons
-        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                {move || Suspend::new(async move {
-                    let locale = i18n.locale.get();
-                    let data = image_coverage.await?;
-
-                    let systems_with_repo: Vec<_> = data.into_iter().filter(|c| c.has_repo).collect();
-                    Ok::<_, ServerFnError>(if systems_with_repo.is_empty() {
-                        view! {
-                            <p class="game-section-empty">{t(locale, "metadata.no_image_systems")}</p>
-                        }.into_any()
-                    } else {
-                        let rows = systems_with_repo.into_iter().map(|c| {
-                            let system = StoredValue::new(c.system.clone());
-                            let has_images = c.with_boxart > 0 || c.with_snap > 0;
-                            let repo_cloned = c.repo_cloned;
-                            let display_name = StoredValue::new(c.display_name.clone());
-                            let on_download = move |_| {
-                                if img_importing.get() { return; }
-                                img_importing.set(true);
-                                img_message.set(None);
-                                // Optimistic: show progress bar immediately
-                                img_progress.set(Some(server_fns::ImageImportProgress {
-                                    state: ImageImportState::Cloning,
-                                    system: system.get_value(),
-                                    system_display: display_name.get_value(),
-                                    processed: 0,
-                                    total: 0,
-                                    boxart_copied: 0,
-                                    snap_copied: 0,
-                                    elapsed_secs: 0,
-                                    error: None,
-                                    current_system: 1,
-                                    total_systems: 1,
-                                }));
-                                let sys = system.get_value();
-                                leptos::task::spawn_local(async move {
-                                    match server_fns::import_system_images(sys).await {
-                                        Ok(()) => {
-                                            watch_image_progress(img_importing, img_progress, img_message, img_cancelling, image_coverage, image_stats);
-                                        }
-                                        Err(e) => {
-                                            img_message.set(Some(format!("Error: {e}")));
-                                            img_importing.set(false);
-                                        }
-                                    }
-                                });
-                            };
-                            view! {
-                                <div class="info-row image-system-row">
-                                    <span class="info-label">{c.display_name}</span>
-                                    <span class="info-value">
-                                        <Show when=move || has_images
-                                            fallback=move || view! { <span class="image-count-none">{t(locale, "metadata.no_images_short")}</span> }
-                                        >
-                                            <span>{format!("{}/{}", c.with_boxart, c.total_games)}</span>
-                                        </Show>
-                                        <button
-                                            class="game-action-btn image-download-btn"
-                                            on:click=on_download
-                                            disabled=move || img_importing.get()
-                                        >
-                                            {move || if has_images || repo_cloned {
-                                                t(locale, "metadata.update_images")
-                                            } else {
-                                                t(locale, "metadata.download_images")
-                                            }}
-                                        </button>
-                                    </span>
-                                </div>
-                            }
-                        }).collect::<Vec<_>>();
-                        view! {
-                            <div class="info-grid image-systems-grid">
-                                {rows}
-                            </div>
-                        }.into_any()
-                    })
-                })}
-            </Transition>
-        </ErrorBoundary>
-    }
-}
-
-/// Watches image import progress via SSE, falling back to polling.
-#[allow(unused_variables, unreachable_code)]
-fn watch_image_progress(
-    importing: RwSignal<bool>,
-    progress: RwSignal<Option<server_fns::ImageImportProgress>>,
-    message: RwSignal<Option<String>>,
-    cancelling: RwSignal<bool>,
-    coverage: Resource<Result<Vec<server_fns::ImageCoverage>, ServerFnError>>,
-    stats: Resource<Result<(usize, usize, u64, u64), ServerFnError>>,
-) {
-    #[cfg(not(target_arch = "wasm32"))]
-    return;
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::prelude::*;
-
-        let es = match web_sys::EventSource::new("/sse/image-progress") {
-            Ok(es) => es,
-            Err(_) => return,
-        };
-
-        let es_clone = es.clone();
-        let on_message =
-            Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-                let data = event.data().as_string().unwrap_or_default();
-                if data == "null" || data.is_empty() {
-                    return;
-                }
-                let p: server_fns::ImageImportProgress = match serde_json::from_str(&data) {
-                    Ok(p) => p,
-                    Err(_) => return,
-                };
-
-                let is_multi = p.total_systems > 1;
-                let is_last = p.current_system >= p.total_systems;
-                let done = match p.state {
-                    ImageImportState::Failed | ImageImportState::Cancelled => true,
-                    ImageImportState::Complete => !is_multi || is_last,
-                    _ => false,
-                };
-
-                if done {
-                    cancelling.set(false);
-                    if p.state == ImageImportState::Complete {
-                        if is_multi {
-                            message.set(Some(format!(
-                                "All {} systems done ({}s)",
-                                p.total_systems, p.elapsed_secs,
-                            )));
-                        } else {
-                            message.set(Some(format!(
-                                "{}: {} boxart, {} snaps ({}s)",
-                                p.system_display, p.boxart_copied, p.snap_copied, p.elapsed_secs,
-                            )));
-                        }
-                    } else if p.state == ImageImportState::Cancelled {
-                        message.set(Some(format!(
-                            "Cancelled after {}s ({} boxart, {} snaps imported)",
-                            p.elapsed_secs, p.boxart_copied, p.snap_copied,
-                        )));
-                    } else {
-                        message.set(Some(format!(
-                            "Failed: {}",
-                            p.error.as_deref().unwrap_or("unknown error"),
-                        )));
-                    }
-                    progress.set(Some(p));
-                    importing.set(false);
-                    coverage.refetch();
-                    stats.refetch();
-                    es_clone.close();
-                    return;
-                }
-
-                progress.set(Some(p));
-            });
-
-        es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        on_message.forget(); // intentional: prevent drop while EventSource is alive
-    }
-}
-
-/// Displays image import progress.
-#[component]
-fn ImageProgressDisplay(
-    progress: RwSignal<Option<server_fns::ImageImportProgress>>,
+fn ThumbnailProgressDisplay(
+    progress: RwSignal<Option<server_fns::ThumbnailProgress>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
 
@@ -665,48 +562,47 @@ fn ImageProgressDisplay(
                 let locale = i18n.locale.get();
                 match progress.get() {
                     Some(p) => {
-                        let sys_prefix = if p.total_systems > 1 {
-                            format!("[{}/{}] ", p.current_system, p.total_systems)
-                        } else {
-                            String::new()
-                        };
-                        let state_text = match p.state {
-                            ImageImportState::Cloning => format!(
-                                "{}{}: {}",
-                                sys_prefix,
-                                t(locale, "metadata.cloning_repo"),
-                                p.system_display,
+                        let state_text = match p.phase {
+                            ThumbnailPhase::Indexing => {
+                                if p.step_total > 0 {
+                                    format!(
+                                        "{} {}/{} {}",
+                                        t(locale, "metadata.thumbnail_phase_indexing"),
+                                        p.step_done,
+                                        p.step_total,
+                                        p.current_label,
+                                    )
+                                } else {
+                                    t(locale, "metadata.thumbnail_phase_indexing").to_string()
+                                }
+                            }
+                            ThumbnailPhase::Downloading => {
+                                format!(
+                                    "{} {} ({} {})",
+                                    t(locale, "metadata.thumbnail_phase_downloading"),
+                                    p.current_label,
+                                    p.downloaded,
+                                    t(locale, "metadata.thumbnail_downloaded"),
+                                )
+                            }
+                            ThumbnailPhase::Complete => format!(
+                                "{}: {} {}, {} {}",
+                                t(locale, "metadata.thumbnail_complete"),
+                                p.entries_indexed,
+                                t(locale, "metadata.thumbnail_indexed"),
+                                p.downloaded,
+                                t(locale, "metadata.thumbnail_downloaded"),
                             ),
-                            ImageImportState::Copying => format!(
-                                "{}{} {}: {}/{} ({}+{} {})",
-                                sys_prefix,
-                                p.system_display,
-                                t(locale, "metadata.copying_images"),
-                                p.processed,
-                                p.total,
-                                p.boxart_copied,
-                                p.snap_copied,
-                                t(locale, "metadata.images_found"),
-                            ),
-                            ImageImportState::Complete => format!(
-                                "{}{}: {} boxart, {} snaps",
-                                sys_prefix,
-                                t(locale, "metadata.import_complete"),
-                                p.boxart_copied,
-                                p.snap_copied,
-                            ),
-                            ImageImportState::Failed => format!(
-                                "{}{}: {}",
-                                sys_prefix,
-                                t(locale, "metadata.import_failed"),
+                            ThumbnailPhase::Failed => format!(
+                                "{}: {}",
+                                t(locale, "metadata.thumbnail_failed"),
                                 p.error.as_deref().unwrap_or(""),
                             ),
-                            ImageImportState::Cancelled => format!(
-                                "{}{}: {} boxart, {} snaps",
-                                sys_prefix,
-                                t(locale, "metadata.import_cancelled"),
-                                p.boxart_copied,
-                                p.snap_copied,
+                            ThumbnailPhase::Cancelled => format!(
+                                "{}: {} {}",
+                                t(locale, "metadata.thumbnail_cancelled"),
+                                p.downloaded,
+                                t(locale, "metadata.thumbnail_downloaded"),
                             ),
                         };
                         let elapsed = format!("{}s", p.elapsed_secs);
@@ -724,127 +620,170 @@ fn ImageProgressDisplay(
     }
 }
 
-/// Clear images section with confirmation.
+/// Data Management section with three destructive actions.
 #[component]
-fn ClearImagesSection() -> impl IntoView {
+fn DataManagementSection(
+    stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
+    coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
+) -> impl IntoView {
     let i18n = use_i18n();
-    let confirming = RwSignal::new(false);
-    let clearing = RwSignal::new(false);
-    let result = RwSignal::new(Option::<String>::None);
 
-    let confirming_cache = RwSignal::new(false);
-    let clearing_cache = RwSignal::new(false);
-    let cache_result = RwSignal::new(Option::<String>::None);
+    // Clear Downloaded Images
+    let confirming_images = RwSignal::new(false);
+    let clearing_images = RwSignal::new(false);
+    let images_result = RwSignal::new(Option::<String>::None);
 
-    let on_clear = move |_| {
-        clearing.set(true);
-        result.set(None);
+    // Clear Thumbnail Index
+    let confirming_index = RwSignal::new(false);
+    let clearing_index = RwSignal::new(false);
+    let index_result = RwSignal::new(Option::<String>::None);
+
+    // Clear Metadata
+    let confirming_metadata = RwSignal::new(false);
+    let clearing_metadata = RwSignal::new(false);
+    let metadata_result = RwSignal::new(Option::<String>::None);
+
+    let on_clear_images = Callback::new(move |_: leptos::ev::MouseEvent| {
+        clearing_images.set(true);
+        images_result.set(None);
         leptos::task::spawn_local(async move {
             match server_fns::clear_images().await {
                 Ok(()) => {
-                    result.set(Some(
+                    images_result.set(Some(
                         t(i18n.locale.get(), "metadata.cleared_images").to_string(),
                     ));
                 }
                 Err(e) => {
-                    result.set(Some(format!("Error: {e}")));
+                    images_result.set(Some(format!("Error: {e}")));
                 }
             }
-            clearing.set(false);
-            confirming.set(false);
+            clearing_images.set(false);
+            confirming_images.set(false);
         });
-    };
+    });
 
-    let on_clear_cache = move |_| {
-        clearing_cache.set(true);
-        cache_result.set(None);
+    let on_clear_index = Callback::new(move |_: leptos::ev::MouseEvent| {
+        clearing_index.set(true);
+        index_result.set(None);
         leptos::task::spawn_local(async move {
-            match server_fns::clear_image_cache().await {
+            match server_fns::clear_thumbnail_index().await {
                 Ok(()) => {
-                    cache_result.set(Some(
-                        t(i18n.locale.get(), "metadata.cache_cleared").to_string(),
+                    index_result.set(Some(
+                        t(i18n.locale.get(), "metadata.index_cleared").to_string(),
                     ));
                 }
                 Err(e) => {
-                    cache_result.set(Some(format!("Error: {e}")));
+                    index_result.set(Some(format!("Error: {e}")));
                 }
             }
-            clearing_cache.set(false);
-            confirming_cache.set(false);
+            clearing_index.set(false);
+            confirming_index.set(false);
         });
-    };
+    });
+
+    let on_clear_metadata = Callback::new(move |_: leptos::ev::MouseEvent| {
+        clearing_metadata.set(true);
+        metadata_result.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::clear_metadata().await {
+                Ok(()) => {
+                    metadata_result.set(Some(
+                        t(i18n.locale.get(), "metadata.metadata_cleared").to_string(),
+                    ));
+                    stats.refetch();
+                    coverage.refetch();
+                }
+                Err(e) => {
+                    metadata_result.set(Some(format!("Error: {e}")));
+                }
+            }
+            clearing_metadata.set(false);
+            confirming_metadata.set(false);
+        });
+    });
 
     view! {
         <section class="section">
             <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.data_management")}</h2>
             <div class="manage-actions">
-                <div class="manage-action-card">
-                    <Show when=move || confirming.get()
-                        fallback=move || view! {
-                            <button
-                                class="game-action-btn game-action-delete"
-                                on:click=move |_| confirming.set(true)
-                            >
-                                {move || t(i18n.locale.get(), "metadata.clear_images")}
-                            </button>
-                        }
-                    >
-                        <p class="manage-action-hint">{move || t(i18n.locale.get(), "metadata.confirm_clear_images")}</p>
-                        <div class="game-delete-confirm">
-                            <button
-                                class="game-action-btn game-action-delete-confirm"
-                                on:click=on_clear
-                                disabled=move || clearing.get()
-                            >
-                                {move || if clearing.get() {
-                                    t(i18n.locale.get(), "metadata.clearing_images")
-                                } else {
-                                    t(i18n.locale.get(), "metadata.clear_images")
-                                }}
-                            </button>
-                            <button class="game-action-btn" on:click=move |_| confirming.set(false)>
-                                {move || t(i18n.locale.get(), "games.cancel")}
-                            </button>
-                        </div>
-                    </Show>
-                    <Show when=move || result.read().is_some()>
-                        <p class="manage-action-result">{move || result.get().unwrap_or_default()}</p>
-                    </Show>
-                </div>
-                <div class="manage-action-card">
-                    <Show when=move || confirming_cache.get()
-                        fallback=move || view! {
-                            <button
-                                class="game-action-btn game-action-delete"
-                                on:click=move |_| confirming_cache.set(true)
-                            >
-                                {move || t(i18n.locale.get(), "metadata.clear_cache")}
-                            </button>
-                        }
-                    >
-                        <p class="manage-action-hint">{move || t(i18n.locale.get(), "metadata.confirm_clear_cache")}</p>
-                        <div class="game-delete-confirm">
-                            <button
-                                class="game-action-btn game-action-delete-confirm"
-                                on:click=on_clear_cache
-                                disabled=move || clearing_cache.get()
-                            >
-                                {move || if clearing_cache.get() {
-                                    t(i18n.locale.get(), "metadata.clearing_cache")
-                                } else {
-                                    t(i18n.locale.get(), "metadata.clear_cache")
-                                }}
-                            </button>
-                            <button class="game-action-btn" on:click=move |_| confirming_cache.set(false)>
-                                {move || t(i18n.locale.get(), "games.cancel")}
-                            </button>
-                        </div>
-                    </Show>
-                    <Show when=move || cache_result.read().is_some()>
-                        <p class="manage-action-result">{move || cache_result.get().unwrap_or_default()}</p>
-                    </Show>
-                </div>
+                <ClearActionCard
+                    confirming=confirming_images
+                    clearing=clearing_images
+                    result=images_result
+                    label_key="metadata.clear_images"
+                    clearing_key="metadata.clearing_images"
+                    confirm_key="metadata.confirm_clear_images"
+                    on_confirm=on_clear_images
+                />
+                <ClearActionCard
+                    confirming=confirming_index
+                    clearing=clearing_index
+                    result=index_result
+                    label_key="metadata.clear_index"
+                    clearing_key="metadata.clearing_index"
+                    confirm_key="metadata.confirm_clear_index"
+                    on_confirm=on_clear_index
+                />
+                <ClearActionCard
+                    confirming=confirming_metadata
+                    clearing=clearing_metadata
+                    result=metadata_result
+                    label_key="metadata.clear_metadata"
+                    clearing_key="metadata.clearing_metadata"
+                    confirm_key="metadata.confirm_clear_metadata"
+                    on_confirm=on_clear_metadata
+                />
             </div>
         </section>
+    }
+}
+
+/// Reusable card for a destructive action with confirmation.
+#[component]
+fn ClearActionCard(
+    confirming: RwSignal<bool>,
+    clearing: RwSignal<bool>,
+    result: RwSignal<Option<String>>,
+    #[prop(into)] label_key: &'static str,
+    #[prop(into)] clearing_key: &'static str,
+    #[prop(into)] confirm_key: &'static str,
+    on_confirm: Callback<leptos::ev::MouseEvent>,
+) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <div class="manage-action-card">
+            <Show when=move || confirming.get()
+                fallback=move || view! {
+                    <button
+                        class="game-action-btn game-action-delete"
+                        on:click=move |_| confirming.set(true)
+                    >
+                        {move || t(i18n.locale.get(), label_key)}
+                    </button>
+                }
+            >
+                <p class="manage-action-hint">{move || t(i18n.locale.get(), confirm_key)}</p>
+                <div class="game-delete-confirm">
+                    <button
+                        class="game-action-btn game-action-delete-confirm"
+                        on:click=move |ev| on_confirm.run(ev)
+                        disabled=move || clearing.get()
+                    >
+                        {move || if clearing.get() {
+                            t(i18n.locale.get(), clearing_key)
+                        } else {
+                            t(i18n.locale.get(), label_key)
+                        }}
+                    </button>
+                    <button class="game-action-btn" on:click=move |_| confirming.set(false)>
+                        {move || t(i18n.locale.get(), "games.cancel")}
+                    </button>
+                </div>
+            </Show>
+            <Show when=move || result.read().is_some()>
+                <p class="manage-action-result">{move || result.get().unwrap_or_default()}</p>
+            </Show>
+        </div>
     }
 }

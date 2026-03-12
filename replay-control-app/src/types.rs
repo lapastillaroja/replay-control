@@ -82,6 +82,7 @@ pub struct MetadataStats {
     pub with_description: usize,
     pub with_rating: usize,
     pub db_size_bytes: u64,
+    pub last_updated_text: String,
 }
 
 /// Mirror of `replay_control_core::metadata_db::ImportState` for WASM.
@@ -112,6 +113,7 @@ pub struct SystemCoverage {
     pub display_name: String,
     pub total_games: usize,
     pub with_metadata: usize,
+    pub with_thumbnail: usize,
 }
 
 /// Mirror of `replay_control_core::videos::VideoEntry` for WASM.

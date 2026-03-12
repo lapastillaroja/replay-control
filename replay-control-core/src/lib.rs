@@ -18,6 +18,8 @@ pub mod skins;
 pub mod storage;
 pub mod systems;
 #[cfg(feature = "metadata")]
+pub mod thumbnail_manifest;
+#[cfg(feature = "metadata")]
 pub mod thumbnails;
 pub mod video_url;
 pub mod videos;
