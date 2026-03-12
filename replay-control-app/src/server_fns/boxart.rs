@@ -23,12 +23,14 @@ pub async fn get_boxart_variants(
     // because resolve_box_art_url also needs that lock.
     let active_url = crate::server_fns::resolve_box_art_url(&state, &system, &rom_filename);
 
-    let guard = state
-        .metadata_db()
-        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-    let db = guard
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+    // Gracefully return empty when the DB is temporarily unavailable
+    // (e.g., during a metadata import or thumbnail update operation).
+    let Some(guard) = state.metadata_db() else {
+        return Ok(Vec::new());
+    };
+    let Some(db) = guard.as_ref() else {
+        return Ok(Vec::new());
+    };
 
     let core_variants = replay_control_core::thumbnail_manifest::find_boxart_variants(
         db,

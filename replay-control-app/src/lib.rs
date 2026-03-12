@@ -14,6 +14,7 @@ use leptos::prelude::*;
 use leptos_router::components::{A, Route, Router, Routes};
 use leptos_router::path;
 
+use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
 use i18n::{provide_i18n, t, use_i18n};
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
@@ -91,6 +92,8 @@ pub fn App() -> impl IntoView {
                         </A>
                     </div>
                 </header>
+
+                <MetadataBusyBanner />
 
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>

@@ -3,6 +3,7 @@ pub mod captures;
 pub mod filter_chips;
 pub mod genre_dropdown;
 pub mod hero_card;
+pub mod metadata_banner;
 pub mod nav;
 pub mod reboot_button;
 pub mod rom_list;

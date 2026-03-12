@@ -376,6 +376,11 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "home.see_all" => "See all",
         "home.top_rated" => "Top Rated",
 
+        // Metadata busy banner
+        "metadata.busy_banner" => {
+            "Metadata update in progress \u{2014} some info may be temporarily unavailable"
+        }
+
         // Common
         "common.loading" => "Loading...",
         "common.error" => "Error",

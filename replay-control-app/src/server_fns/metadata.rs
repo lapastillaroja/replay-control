@@ -126,6 +126,16 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     state.regenerate_metadata().map_err(ServerFnError::new)
 }
 
+/// Check if a metadata operation is currently running (import or thumbnail update).
+/// Used by the UI to show a degraded-mode banner.
+#[server(prefix = "/sfn")]
+pub async fn is_metadata_busy() -> Result<bool, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(state
+        .metadata_operation_in_progress
+        .load(std::sync::atomic::Ordering::Relaxed))
+}
+
 /// Download LaunchBox metadata from the internet, extract, and import.
 /// The entire process runs in the background; poll `get_import_progress` for status.
 #[server(prefix = "/sfn")]

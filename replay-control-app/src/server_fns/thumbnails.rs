@@ -80,12 +80,24 @@ pub async fn get_thumbnail_progress() -> Result<Option<ThumbnailProgress>, Serve
 #[server(prefix = "/sfn")]
 pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state
-        .metadata_db()
-        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-    let db = guard
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+    // Gracefully return defaults when the DB is temporarily unavailable
+    // (e.g., during a metadata import or thumbnail update operation).
+    let Some(guard) = state.metadata_db() else {
+        return Ok(DataSourceSummary {
+            entry_count: 0,
+            repo_count: 0,
+            oldest_imported_at: None,
+            last_updated_text: String::new(),
+        });
+    };
+    let Some(db) = guard.as_ref() else {
+        return Ok(DataSourceSummary {
+            entry_count: 0,
+            repo_count: 0,
+            oldest_imported_at: None,
+            last_updated_text: String::new(),
+        });
+    };
 
     let stats = db
         .get_data_source_stats("libretro-thumbnails")
