@@ -25,22 +25,25 @@ impl AppState {
                 let roms_dir = storage.roms_dir();
                 let region_pref = state.region_preference();
 
+                // Skip if a metadata operation (e.g. auto-import) is already
+                // running — opening a second nolock connection to the same DB
+                // file would cause corruption.
+                if state
+                    .metadata_operation_in_progress
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    tracing::debug!(
+                        "Metadata operation in progress, skipping cache verification"
+                    );
+                    return;
+                }
+
                 // Load all cached system metadata from L2.
+                // Use metadata_db() accessor (which handles lazy open) instead
+                // of locking the raw mutex, so we go through the standard path.
                 let cached_meta = {
-                    let guard = state.metadata_db.lock().ok();
-                    guard.and_then(|mut g| {
-                        if g.is_none() {
-                            match replay_control_core::metadata_db::MetadataDb::open(&storage.root)
-                            {
-                                Ok(db) => *g = Some(db),
-                                Err(e) => {
-                                    tracing::debug!("Cannot open DB for cache verification: {e}");
-                                    return None;
-                                }
-                            }
-                        }
-                        g.as_ref()?.load_all_system_meta().ok()
-                    })
+                    let guard = state.metadata_db();
+                    guard.and_then(|g| g.as_ref()?.load_all_system_meta().ok())
                 };
 
                 let cached_meta = cached_meta.unwrap_or_default();

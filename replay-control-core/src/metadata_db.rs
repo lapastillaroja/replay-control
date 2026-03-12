@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
@@ -105,7 +105,7 @@ pub struct ImportStats {
 }
 
 /// Coverage statistics.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MetadataStats {
     pub total_entries: usize,
     pub with_description: usize,
@@ -147,61 +147,41 @@ pub struct MetadataDb {
 }
 
 impl MetadataDb {
+    /// Tables to probe for corruption detection.
+    const TABLES: &[&str] = &[
+        "game_metadata",
+        "rom_cache",
+        "data_sources",
+        "thumbnail_index",
+    ];
+
     /// Open (or create) the metadata database at `<storage_root>/.replay-control/metadata.db`.
     ///
-    /// Tries nolock mode first (fast, works on both local and NFS), falls back
-    /// to standard WAL mode if nolock fails. This avoids the ~5s timeout that
-    /// the WAL attempt causes on NFS mounts.
+    /// Uses the shared nolock→WAL open strategy (see `db_common`), runs table
+    /// init, then probes all tables for corruption — auto-recreates if corrupt.
     pub fn open(storage_root: &Path) -> Result<Self> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(METADATA_DB_FILE);
 
-        // Try nolock first (works on both local and NFS, avoids slow WAL timeout on NFS).
-        // Single-writer safety is guaranteed by the Mutex in the app layer.
-        let conn = match Self::try_open_nolock(&db_path) {
-            Ok(conn) => conn,
-            Err(_) => {
-                tracing::info!("Nolock SQLite open failed, trying standard WAL mode");
-                Self::try_open(&db_path)?
-            }
+        let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
+        let db = Self {
+            conn,
+            db_path: db_path.clone(),
         };
-
-        let db = Self { conn, db_path };
         db.init()?;
+
+        if let Err(detail) = crate::db_common::probe_tables(&db.conn, Self::TABLES) {
+            tracing::warn!("Metadata DB corrupt ({detail}), deleting and recreating");
+            drop(db);
+            crate::db_common::delete_db_files(&db_path);
+            let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
+            let db = Self { conn, db_path };
+            db.init()?;
+            return Ok(db);
+        }
+
         Ok(db)
-    }
-
-    /// Try to open SQLite with normal locking + WAL.
-    fn try_open(db_path: &Path) -> Result<Connection> {
-        let conn = Connection::open(db_path)
-            .map_err(|e| Error::Other(format!("Failed to open metadata DB: {e}")))?;
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA synchronous = NORMAL;
-             PRAGMA cache_size = -8000;",
-        )
-        .map_err(|e| Error::Other(format!("Failed to set pragmas: {e}")))?;
-        Ok(conn)
-    }
-
-    /// Open SQLite with file locking disabled (for NFS/network filesystems).
-    /// Safe because we hold the connection behind a Mutex (single-writer).
-    fn try_open_nolock(db_path: &Path) -> Result<Connection> {
-        // Use file: URI with nolock=1 to bypass filesystem locking.
-        let uri = format!("file:{}?nolock=1", db_path.display());
-        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
-            | OpenFlags::SQLITE_OPEN_CREATE
-            | OpenFlags::SQLITE_OPEN_URI;
-        let conn = Connection::open_with_flags(uri, flags)
-            .map_err(|e| Error::Other(format!("Failed to open metadata DB (nolock): {e}")))?;
-        conn.execute_batch(
-            "PRAGMA journal_mode = DELETE;
-             PRAGMA synchronous = NORMAL;
-             PRAGMA cache_size = -8000;",
-        )
-        .map_err(|e| Error::Other(format!("Failed to set pragmas: {e}")))?;
-        Ok(conn)
     }
 
     /// Create all tables if they don't exist.

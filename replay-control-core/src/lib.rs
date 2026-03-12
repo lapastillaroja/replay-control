@@ -1,5 +1,7 @@
 pub mod arcade_db;
 pub mod config;
+#[cfg(feature = "metadata")]
+pub mod db_common;
 pub mod error;
 pub mod favorites;
 pub mod game_db;

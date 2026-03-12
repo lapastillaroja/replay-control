@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{Error, Result};
 use crate::storage::RC_DIR;
@@ -22,55 +22,37 @@ pub struct UserDataDb {
 }
 
 impl UserDataDb {
+    /// Tables to probe for corruption detection.
+    /// NOTE: update this list when adding new tables.
+    const TABLES: &[&str] = &["box_art_overrides"];
+
     /// Open (or create) the user data database at `<storage_root>/.replay-control/user_data.db`.
     ///
-    /// Same NFS `nolock` fallback as `MetadataDb::open()`.
+    /// Uses the shared nolock→WAL open strategy (see `db_common`), runs table
+    /// init, then probes all tables for corruption — auto-recreates if corrupt.
     pub fn open(storage_root: &Path) -> Result<Self> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(USER_DATA_DB_FILE);
 
-        let conn = match Self::try_open_nolock(&db_path) {
-            Ok(conn) => conn,
-            Err(_) => {
-                tracing::info!(
-                    "Nolock SQLite open failed for user_data.db, trying standard WAL mode"
-                );
-                Self::try_open(&db_path)?
-            }
+        let conn = crate::db_common::open_connection(&db_path, "user_data.db")?;
+        let db = Self {
+            conn,
+            db_path: db_path.clone(),
         };
-
-        let db = Self { conn, db_path };
         db.init()?;
+
+        if let Err(detail) = crate::db_common::probe_tables(&db.conn, Self::TABLES) {
+            tracing::warn!("User data DB corrupt ({detail}), deleting and recreating");
+            drop(db);
+            crate::db_common::delete_db_files(&db_path);
+            let conn = crate::db_common::open_connection(&db_path, "user_data.db")?;
+            let db = Self { conn, db_path };
+            db.init()?;
+            return Ok(db);
+        }
+
         Ok(db)
-    }
-
-    fn try_open(db_path: &Path) -> Result<Connection> {
-        let conn = Connection::open(db_path)
-            .map_err(|e| Error::Other(format!("Failed to open user_data DB: {e}")))?;
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             PRAGMA synchronous = NORMAL;
-             PRAGMA cache_size = -2000;",
-        )
-        .map_err(|e| Error::Other(format!("Failed to set pragmas: {e}")))?;
-        Ok(conn)
-    }
-
-    fn try_open_nolock(db_path: &Path) -> Result<Connection> {
-        let uri = format!("file:{}?nolock=1", db_path.display());
-        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
-            | OpenFlags::SQLITE_OPEN_CREATE
-            | OpenFlags::SQLITE_OPEN_URI;
-        let conn = Connection::open_with_flags(uri, flags)
-            .map_err(|e| Error::Other(format!("Failed to open user_data DB (nolock): {e}")))?;
-        conn.execute_batch(
-            "PRAGMA journal_mode = DELETE;
-             PRAGMA synchronous = NORMAL;
-             PRAGMA cache_size = -2000;",
-        )
-        .map_err(|e| Error::Other(format!("Failed to set pragmas: {e}")))?;
-        Ok(conn)
     }
 
     fn init(&self) -> Result<()> {

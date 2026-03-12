@@ -68,6 +68,7 @@ impl AppState {
 
             let kind = match config.storage_mode() {
                 "usb" => StorageKind::Usb,
+                "nvme" => StorageKind::Nvme,
                 "nfs" => StorageKind::Nfs,
                 _ => StorageKind::Sd,
             };
@@ -88,8 +89,17 @@ impl AppState {
 
         tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
-        let metadata_db = Arc::new(std::sync::Mutex::new(None));
-        let user_data_db = Arc::new(std::sync::Mutex::new(None));
+        // Open DBs eagerly at startup so they're ready for the first request.
+        // Fail-fast: if DB creation/open fails here, the service can't function.
+        let metadata_db = replay_control_core::metadata_db::MetadataDb::open(&storage.root)
+            .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
+        tracing::info!("Metadata DB ready at {}", metadata_db.db_path().display());
+        let metadata_db = Arc::new(std::sync::Mutex::new(Some(metadata_db)));
+
+        let user_data_db = replay_control_core::user_data_db::UserDataDb::open(&storage.root)
+            .map_err(|e| format!("Failed to open user data DB: {e}"))?;
+        tracing::info!("User data DB ready at {}", user_data_db.db_path().display());
+        let user_data_db = Arc::new(std::sync::Mutex::new(Some(user_data_db)));
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
@@ -114,7 +124,8 @@ impl AppState {
     }
 
     /// Get a lock on the metadata DB, lazily opening it on first access.
-    /// Returns None if the DB can't be opened (e.g., storage not available).
+    /// Returns None if the DB can't be opened (e.g., storage not available)
+    /// or if a metadata operation has temporarily taken the connection.
     /// Re-opens automatically if the DB file was deleted externally.
     pub fn metadata_db(
         &self,
@@ -129,6 +140,15 @@ impl AppState {
             }
         }
         if guard.is_none() {
+            // If a metadata operation (import, thumbnail update) has taken the
+            // connection out of the mutex, don't open a second one — two nolock
+            // connections to the same file causes corruption.
+            if self
+                .metadata_operation_in_progress
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return None;
+            }
             let storage = self.storage();
             match replay_control_core::metadata_db::MetadataDb::open(&storage.root) {
                 Ok(db) => {

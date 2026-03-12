@@ -8,15 +8,16 @@ pub use replay_control_core::metadata_db::{
 };
 
 /// Get metadata coverage stats.
+/// Returns empty stats when the DB is unavailable (e.g., during import).
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state
-        .metadata_db()
-        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-    let db = guard
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
+    let Some(guard) = state.metadata_db() else {
+        return Ok(MetadataStats::default());
+    };
+    let Some(db) = guard.as_ref() else {
+        return Ok(MetadataStats::default());
+    };
     db.stats().map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -58,20 +59,19 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
     let state = expect_context::<crate::api::AppState>();
 
     // Get metadata entries and image counts per system from DB.
-    let (entries_per_system, images_per_system) = {
-        let guard = state
-            .metadata_db()
-            .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-        let entries = db
-            .entries_per_system()
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-        let images = db
-            .images_per_system()
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-        (entries, images)
+    // Return empty data when DB is unavailable (e.g., during import).
+    let (entries_per_system, images_per_system) = match state.metadata_db() {
+        Some(guard) if guard.as_ref().is_some() => {
+            let db = guard.as_ref().unwrap();
+            let entries = db
+                .entries_per_system()
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            let images = db
+                .images_per_system()
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            (entries, images)
+        }
+        _ => (Vec::new(), Vec::new()),
     };
 
     // Get total games per system from ROM cache.
