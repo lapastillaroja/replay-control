@@ -44,7 +44,12 @@ WASM_FILE="$PKG_DIR/${CRATE//-/_}_bg.wasm"
 if command -v wasm-opt &>/dev/null; then
     echo "==> Running wasm-opt -Oz..."
     BEFORE=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
-    wasm-opt -Oz "$WASM_FILE" -o "$WASM_FILE"
+    wasm-opt -Oz \
+        --enable-bulk-memory \
+        --enable-nontrapping-float-to-int \
+        --enable-sign-ext \
+        --enable-mutable-globals \
+        "$WASM_FILE" -o "$WASM_FILE"
     AFTER=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
     echo "    WASM: ${BEFORE} -> ${AFTER} bytes ($(( (BEFORE - AFTER) * 100 / BEFORE ))% reduction)"
 else
