@@ -19,7 +19,7 @@ ROM file on disk
   ├── Arcade? ──→ arcade_db (PHF map, 28K+ entries)
   │                 └── ArcadeGameInfo: display_name, year, manufacturer, players, ...
   │
-  └── Console? ──→ game_db (PHF map, 34K+ entries across 9 systems)
+  └── Console? ──→ game_db (PHF map, 34K+ entries across 20+ systems)
                     ├── Exact filename stem match → GameEntry
                     ├── CRC32 fallback → GameEntry
                     └── Normalized title fallback → CanonicalGame
@@ -72,7 +72,7 @@ pub struct ArcadeGameInfo {
 
 ### game_db (non-arcade systems)
 
-**Scope:** `nintendo_nes`, `nintendo_snes`, `nintendo_gb`, `nintendo_gbc`, `nintendo_gba`, `nintendo_n64`, `sega_sms`, `sega_smd`, `sega_gg`
+**Scope:** 20+ systems including `nintendo_nes`, `nintendo_snes`, `nintendo_gb`, `nintendo_gbc`, `nintendo_gba`, `nintendo_n64`, `nintendo_ds`, `sega_sms`, `sega_smd`, `sega_gg`, `sega_32x`, `nec_pce`, `atari_2600`, `atari_7800`, `atari_lynx`, `snk_ng`, `snk_ngp`, and more.
 
 **Key insight:** Non-arcade ROMs use human-readable filenames following the No-Intro naming convention: `Legend of Zelda, The - A Link to the Past (USA).sfc`. The filename itself encodes the game title, region, revision, and more.
 
@@ -297,7 +297,7 @@ When listing ROMs for the UI, `GameRef::new()` resolves the display name:
 
 ## GameInfo: Unified API Response
 
-Server functions return a single `GameInfo` struct regardless of data source. The `resolve_game_info()` function in `server_fns.rs` is the only place that branches on arcade vs. non-arcade:
+Server functions return a single `GameInfo` struct regardless of data source. The `resolve_game_info()` function in `server_fns/mod.rs` is the only place that branches on arcade vs. non-arcade:
 
 ```rust
 pub struct GameInfo {
@@ -380,5 +380,5 @@ The arcade display-name bridge (using `arcade_db` to translate MAME codenames to
 | `replay-control-core/src/roms.rs` | ROM listing and filesystem scanning |
 | `replay-control-core/src/systems.rs` | System definitions and categories |
 | `replay-control-core/build.rs` | Build-time generation of game_db and arcade_db |
-| `replay-control-app/src/server_fns.rs` | `resolve_game_info()` — unified API response |
+| `replay-control-app/src/server_fns/mod.rs` | `resolve_game_info()` — unified API response |
 | `replay-control-core/src/bin/metadata_report.rs` | Coverage analysis tool |

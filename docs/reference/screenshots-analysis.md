@@ -1,5 +1,7 @@
 # Screenshots Feature — Analysis
 
+> **Status**: Implemented. See `replay-control-core/src/screenshots.rs` and the "Your Captures" section in `replay-control-app/src/pages/game_detail.rs`.
+
 How to surface RePlayOS screenshots in the Replay Control app.
 
 ## Background

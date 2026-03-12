@@ -25,6 +25,7 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
 └── .replay-control/               # Companion app data directory
     ├── settings.cfg               # App-specific settings (region preference, etc.)
     ├── metadata.db                # SQLite database — game metadata cache
+    ├── user_data.db               # SQLite database — user customizations (box art overrides, etc.)
     ├── launchbox-metadata.xml     # LaunchBox XML dump (downloaded or manually placed)
     ├── videos.json                # User-saved video links per game
     │
@@ -64,13 +65,29 @@ This file is created on first write. Missing keys use defaults.
 
 ### `metadata.db`
 SQLite database caching external game metadata. Stores:
-- **Game metadata**: descriptions, ratings, publishers, genres (from LaunchBox XML import)
+- **Game metadata** (`game_metadata` table): descriptions, ratings, publishers, genres (from LaunchBox XML import)
+- **ROM cache** (`rom_cache` / `rom_cache_meta` tables): L2 persistent cache for ROM listings with box art URLs and ratings
 - **Image paths**: relative paths to box art and screenshot files per ROM
-- **Per-system coverage stats**: how many ROMs have metadata/images
+- **Thumbnail index** (`thumbnail_index` table): manifest of all available libretro-thumbnails images across ~40 repos
+- **Data sources** (`data_sources` table): version tracking for LaunchBox imports and per-repo libretro thumbnail index freshness
 
 Uses `nolock` VFS fallback on NFS mounts (NFS doesn't support SQLite file locking).
 
 **Source code**: `replay-control-core/src/metadata_db.rs`
+
+### `user_data.db`
+SQLite database for persistent user customizations. Unlike `metadata.db` (which is a rebuildable cache), this file stores deliberate user choices that cannot be reconstructed from external sources.
+
+**Current tables:**
+| Table | Purpose |
+|---|---|
+| `box_art_overrides` | User-chosen region variant for a game's cover art. Keyed by `(system, rom_filename)`. |
+
+Uses `nolock` VFS fallback on NFS mounts (same pattern as `metadata.db`).
+
+**Key invariant:** This file is never touched by any "Clear Metadata" or "Clear Images" operation. It survives all cache rebuilds.
+
+**Source code**: `replay-control-core/src/user_data_db.rs`
 
 ### `launchbox-metadata.xml`
 The LaunchBox metadata XML dump (~460 MB, ~78K game entries). Either:
@@ -99,19 +116,19 @@ Served to the browser at `/media/<system>/boxart/<file>.png` via the Axum media 
 **Source code**: `replay-control-core/src/thumbnails.rs`
 
 ### `tmp/libretro-thumbnails/`
-Shallow git clones of libretro-thumbnails repos, created during image import. Each system's repo is cloned, images are matched and copied to `media/`, and the clone is **auto-deleted after successful matching** to prevent disk from filling up (repos previously caused ~10:1 overhead vs useful image data).
+Shallow git clones of libretro-thumbnails repos, created during the legacy image import path. Each system's repo is cloned, images are matched and copied to `media/`, and the clone is **auto-deleted after successful matching** to prevent disk from filling up.
 
-A "Clear Cache" button on the metadata page removes any remaining repos in this directory. The "Re-match All" feature works only with repos already on disk (truly offline -- no staleness check, no network access).
+**Note:** The new manifest-based thumbnail system (`thumbnail_manifest.rs`) downloads images directly from `raw.githubusercontent.com` via the `thumbnail_index` table, eliminating the need for git clones entirely. This directory is only used by the legacy git-clone import path.
 
-Safe to delete manually at any time -- repos will be re-cloned on the next download.
+A "Clear Cache" button on the metadata page removes any remaining repos in this directory. Safe to delete manually at any time.
 
 ## Size Considerations
 
 On a typical collection:
-- `metadata.db`: ~5-15 MB
+- `metadata.db`: ~5-20 MB (includes thumbnail_index with ~200K entries across 40 systems)
 - `launchbox-metadata.xml`: ~460 MB (can be deleted after import to save space)
-- `media/`: 200 MB – 2 GB depending on how many systems have images
-- `tmp/`: 0 bytes initially; grows as repos are cached (several GB if all systems imported); safe to delete
+- `media/`: 200 MB - 2 GB depending on how many systems have images
+- `tmp/`: 0 bytes in normal operation (legacy git-clone path only); safe to delete
 
 ## Code References
 
@@ -121,6 +138,8 @@ On a typical collection:
 | `SETTINGS_FILE` | `storage.rs` | `"settings.cfg"` filename constant |
 | `LAUNCHBOX_XML` | `metadata_db.rs` | `"launchbox-metadata.xml"` filename constant |
 | `METADATA_DB_FILE` | `metadata_db.rs` | `"metadata.db"` filename constant |
+| `USER_DATA_DB_FILE` | `user_data_db.rs` | `"user_data.db"` filename constant |
+| `UserDataDb::open()` | `user_data_db.rs` | Opens/creates `user_data.db` |
 | `VIDEOS_FILE` | `storage.rs` | `"videos.json"` filename constant |
 | `StorageLocation::rc_dir()` | `storage.rs` | Returns `<root>/.replay-control` path |
 | `MetadataDb::open()` | `metadata_db.rs:83` | Opens/creates `metadata.db` |

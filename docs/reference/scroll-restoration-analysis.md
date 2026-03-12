@@ -1,6 +1,6 @@
 # Scroll Restoration & Back-Navigation Analysis
 
-> **Status**: Ready to implement. Recommended approach: global `PageCache` context (see below). Validated by Leptos maintainer.
+> **Status**: Not yet implemented. The recommended approach (global `PageCache` context) has not been built. Scroll and infinite-scroll state is still lost on back-navigation.
 
 ## Problem Statement
 

@@ -1,6 +1,6 @@
 # Search Improvement Analysis
 
-> Status: Implemented (Phases 1-3, 4 partial [genre+year], 5 partial, 6)
+> Status: Implemented (Phases 1-3, 4 partial [genre+year], 5 partial, 6, 7)
 > Date: 2026-03-11
 
 ## Problem Statement
@@ -775,7 +775,7 @@ Our proposed approach matches LaunchBox's behavior, which is widely considered t
 
 ## Phase 7: Rating-Based Search and Filtering
 
-> Status: Proposed
+> Status: Implemented (min_rating filter in `global_search()`)
 > Date: 2026-03-11
 
 ### Problem

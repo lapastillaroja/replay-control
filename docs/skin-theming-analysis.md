@@ -1,5 +1,7 @@
 # Skin/Theming Analysis
 
+> **Status:** Phases 1-2 implemented. Phase 3 (live SSE updates, contrast safety) not yet done.
+
 Research on syncing Replay Control's appearance with ReplayOS's active skin.
 
 ## 1. ReplayOS Skin System
@@ -220,19 +222,21 @@ given the skin palette range.
 
 ### Suggested phasing
 
-**Phase 1 — Basic skin sync (Low effort, high impact)**
-- Read `system_skin`, extract colors from PNGs, derive theme palette.
-- Inject inline `<style>` in Shell. Update `theme-color` meta tag.
-- Falls back to default theme when images unavailable.
-- No config file, no settings UI, no live updates.
+**Phase 1 — Basic skin sync — DONE**
+- Hardcoded palettes for all 11 built-in skins in `replay-control-core/src/skins.rs`
+  (no runtime PNG parsing needed for built-in skins).
+- `system_skin()` accessor on `ReplayConfig`.
+- Inline `<style id="skin-theme">` injected in the Shell component via `skins::theme_css()`.
+- `theme-color` meta tag updated via `skins::theme_color()`.
+- Falls back to default theme (skin 0) when index is invalid.
 
-**Phase 2 — User control (Medium effort)**
-- `replay-companion.cfg` with `theme_sync` toggle.
-- Settings UI on More page.
-- Fix hardcoded CSS colors (dropdown arrow, status backgrounds).
+**Phase 2 — User control — DONE**
+- Dedicated `/more/skin` page (`pages/skin.rs`) for browsing and applying skins.
+- `theme_sync` toggle in `.replay-control/settings.cfg`.
+- `effective_skin()` method on `AppState` respects the sync toggle.
+- `get_skins()` / `set_skin()` / `set_theme_sync()` server functions.
 
-**Phase 3 — Polish (Medium effort)**
+**Phase 3 — Polish (not yet done)**
 - Live theme updates via SSE when skin changes while client connected.
 - Contrast safety checks and auto-adjustment.
-- Predefined theme palette map as alternative to runtime image parsing
-  (hardcode the 11 built-in skin palettes, only parse PNGs for custom slots).
+- Runtime PNG parsing for custom skin slots (11+).

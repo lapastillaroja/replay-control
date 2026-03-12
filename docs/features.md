@@ -40,9 +40,10 @@ Tracking document for Replay Control. Organized by page/area.
   - URL sanitization — strips tracking params, builds canonical URLs, uses `youtube-nocookie.com` for privacy
   - Separate `videos.json` storage (survives metadata clears)
   - Duplicate detection — prevents saving the same video twice
+- **Launch on TV** — prominent CTA button below cover art to launch the game on the RePlayOS device. States: default, launching (spinner), launched (success, 3s), simulated (not on RePlayOS), error. Creates a recents entry on successful launch.
+- **User screenshots** ("Your Captures") — displays screenshots taken on RePlayOS, matched by ROM filename prefix. Horizontal wrapping gallery, newest first, capped at 12 with "View all" toggle. Click-to-open fullscreen lightbox with prev/next navigation.
 - **Placeholder sections** for future content:
   - Description ("No description available")
-  - Screenshots gallery ("No screenshots available")
   - Manual ("No manual available")
 - **Actions section** with:
   - Favorite/Unfavorite toggle with optimistic UI
@@ -56,26 +57,23 @@ Tracking document for Replay Control. Organized by page/area.
 - URL-encoded filenames in links to handle spaces, parentheses, etc.
 
 ### Planned
-- **Screenshots gallery** — display screenshots taken on RePlayOS for the current game. Screenshots are discovered from the `captures/` directory by matching the ROM filename prefix. Shown as a horizontal scrollable gallery below the metadata section. See `docs/reference/screenshots-analysis.md`.
-- **Game metadata integration** — cover images, descriptions, screenshots from external metadata providers
 - **RetroAchievements integration** — show achievements for the current game if the user has configured their RA account. Displays: achievement list with icons, earned/locked status, earn dates, total points, and completion percentage. Data fetched from RA API and cached locally. See details in the RetroAchievements section below.
 - **Manual viewer** — display game manuals in-browser
 
 ---
 
-## Screenshots (`/screenshots`)
+## Screenshots
 
-### Planned
-- **Browse all screenshots** — dedicated page accessible from the More section listing all screenshots taken on RePlayOS
-- **Grouped display** — screenshots grouped by system, with game name and timestamp for each
-- **Game navigation** — each screenshot links to its game detail page
-- **Delete screenshots** — delete individual screenshots with confirmation step
-- **Pagination** — paginated or infinite-scroll loading for large collections
+### Implemented
+- **Per-game captures** — user-taken screenshots displayed on the game detail page in a "Your Captures" section with fullscreen lightbox viewer (prev/next navigation, keyboard support). See Game Detail section above.
+
+### Discarded
+- **Standalone `/screenshots` page** — originally planned as a dedicated gallery page. Discarded because the fullscreen lightbox on game detail provides sufficient browsing capability. See `docs/reference/user-screenshots-plan.md`.
 
 ### Future ideas
+- Delete individual screenshots with confirmation step
 - Bulk delete (multi-select)
 - Filter by system or date range
-- Fullscreen lightbox viewer
 
 ---
 
@@ -222,7 +220,7 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 
 ### Future ideas
 - Search within favorites
-- Quick-launch favorites (depends on game launching — see `docs/reference/game-launching.md`)
+- Quick-launch favorites (game launching is now implemented — could add launch buttons to favorite items)
 - Drag-to-reorder favorites
 - Export/import favorites list
 - Per-favorite notes or tags
@@ -241,9 +239,6 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Wi-Fi configuration** — view and edit Wi-Fi settings (SSID, password, country, mode) from the web UI
 - **NFS share settings** — view and edit NFS v4 share configuration (server IP, share path, version) from the web UI
 - **Metadata management** — dedicated page at `/more/metadata` for importing LaunchBox metadata (auto-download + parse), viewing per-system coverage stats, importing libretro-thumbnails box art, clearing metadata/images, and regenerating the metadata DB (see `docs/game-metadata.md`)
-
-### Planned
-- **Screenshots browser** — menu item linking to `/screenshots` page for browsing and managing all RePlayOS screenshots (see `docs/reference/screenshots-analysis.md`)
 
 ### Future ideas
 - RePlayOS config editor (replay.cfg settings)
@@ -284,22 +279,24 @@ Dedicated page for managing external game metadata (descriptions, images, rating
 - **Incremental release compilation** — `incremental = true` in release profile for faster iterative rebuilds
 - **New thumbnail mappings** — `commodore_amicd` (maps to CD32 + CDTV repos) and `scummvm` (maps to ScummVM repo) added to the thumbnail system
 
-### Planned
-- **Game launching** — launch games on RePlayOS from the web UI. Recommended approach: `_autostart` folder manipulation + process restart. Needs testing on real hardware. See `docs/reference/game-launching.md`.
+- **Game launching** — launch games on RePlayOS via autostart file + `systemctl restart`. Includes health check (detects failed core loads via `/proc/PID/maps`) and automatic recovery (restarts service to menu). Creates a recents entry on launch for immediate home page reflection. See `docs/reference/game-launching.md` and `docs/reference/game-launch-implementation-plan.md`.
+- **SQLite ROM cache** — persistent L2 cache (`rom_cache` + `rom_cache_meta` tables in `metadata.db`) between in-memory L1 and filesystem L3. Eliminates cold-start penalties. Write-through on L3 scan, mtime-based invalidation.
+- **Game recommendations** — home page recommendation blocks: random picks, top genres, multiplayer count, favorites-based picks, top-rated games. Powered by SQLite ROM cache queries (no per-ROM filesystem I/O). See `docs/reference/recommendations-optimization-plan.md`.
+- **Global search** — cross-system search with genre filter, driver status filter (arcade), favorites-only filter. Dedicated `/search` page with URL-persisted query params. Search scoring with region preference bonus, hack/translation penalties, and display name matching. See `docs/reference/global-search-plan.md`.
+- **User screenshots** — discover and display screenshots taken on RePlayOS (`captures/{system}/`) on the game detail page. Matched by ROM filename prefix with timestamp parsing. See `docs/reference/user-screenshots-plan.md`.
+- **Game videos** — paste video URLs (YouTube, Twitch, Vimeo, Dailymotion), search via Piped/Invidious APIs, pin search results to saved videos. URL sanitization, privacy-respecting embeds (`youtube-nocookie.com`). Stored in `videos.json`. See `docs/reference/game-videos-plan.md`.
+- **App-specific configuration file** — `.replay-control/settings.cfg` on the ROM storage device stores user preferences (currently `region_preference`). Uses the same `key = "value"` syntax as `replay.cfg`. Parsed via the existing `ReplayConfig` parser. Separate from `replay.cfg` (which belongs to RePlayOS on the SD card) to maintain the config boundary.
+- **Centralized `.replay-control/` constants** — `RC_DIR`, `SETTINGS_FILE`, `LAUNCHBOX_XML`, `METADATA_DB_FILE`, `VIDEOS_FILE` constants centralized in the core crate. `StorageLocation::rc_dir()` method replaces manual `.join(RC_DIR)` calls.
+- **On-demand thumbnail downloads** — manifest-based thumbnail index stored in SQLite (`thumbnail_index` table). When a ROM has no local image, `queue_on_demand_download()` fetches the individual PNG from GitHub via the manifest. Image appears on subsequent page loads.
+- **reqwest removed** — HTTP client dependency replaced with curl subprocess (`curl_get_json()` in videos server function). Eliminates 11 TLS-related crates including ring.
 
 ### Future ideas
-- **SQLite cache layer** — replace filesystem scanning with indexed database, populated by background scan, updated via inotify
 - **ROM hash computation** — MD5/SHA1/CRC32 for hash-based identification and metadata matching
 - **RetroAchievements integration** — connect user's RA account, show earned achievements per game (see dedicated section above for full details)
 - **Authentication** — pairing token or password-based auth (middleware designed but not implemented)
-- **Remote control** — trigger actions on RePlayOS from the web UI
 - **Backup & sync** — backup ROM library, save states, configuration
-- **Game recommendations** — suggest games based on library, favorites, play history
 - **Non-installed game search** — discover games not in the library
 - **Game manuals viewer** — read game manuals from the web UI
-- **systemd integration** — run as a system service on RePlayOS
 - **mDNS/Avahi** — auto-discovery via `replaypi.local`
 - **CLI mode** — command-line interface for scripting and power users (same binary)
 - **CI/CD pipeline** — automated builds and GitHub Releases (see `docs/reference/binary-distribution.md`)
-- **App-specific configuration file** — `.replay-control/settings.cfg` on the ROM storage device stores user preferences (currently `region_preference`). Uses the same `key = "value"` syntax as `replay.cfg`. Parsed via the existing `ReplayConfig` parser. Separate from `replay.cfg` (which belongs to RePlayOS on the SD card) to maintain the config boundary
-- **Centralized `.replay-control/` constants** — `RC_DIR`, `SETTINGS_FILE`, `LAUNCHBOX_XML`, `METADATA_DB_FILE`, `VIDEOS_FILE` constants centralized in the core crate. `StorageLocation::rc_dir()` method replaces manual `.join(RC_DIR)` calls. `Metadata.xml` renamed to `launchbox-metadata.xml` (old name accepted as fallback)

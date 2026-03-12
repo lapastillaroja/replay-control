@@ -28,7 +28,7 @@ Both databases have a `normalized_genre` field mapped to a shared taxonomy of ~1
 
 ### Unified GameInfo at the API Layer
 
-Server functions return a single `GameInfo` struct regardless of whether data comes from arcade_db or game_db. The `resolve_game_info()` function in `server_fns.rs` is the only place that branches on system type. UI components work with `GameInfo` exclusively and never need to know the data source.
+Server functions return a single `GameInfo` struct regardless of whether data comes from arcade_db or game_db. The `resolve_game_info()` function in `server_fns/mod.rs` is the only place that branches on system type. UI components work with `GameInfo` exclusively and never need to know the data source.
 
 ```rust
 pub struct GameInfo {

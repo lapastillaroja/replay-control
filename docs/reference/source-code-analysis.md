@@ -44,8 +44,8 @@ replay/
 - `--features hydrate`: WASM client (hydrates server-rendered HTML in the browser)
 
 The app layer provides:
-- 12 page routes with SSR + client-side hydration
-- 55 server functions across 8 domain modules (RPC calls from client to server)
+- 13 page routes with SSR + client-side hydration
+- 56 server functions across 12 domain modules (RPC calls from client to server)
 - REST API endpoints for external access
 - SSE (Server-Sent Events) for real-time progress streaming
 - IntersectionObserver-based infinite scroll
@@ -101,13 +101,13 @@ Two separate config files serve different purposes:
 
 ## 2. Full Feature Inventory
 
-### Pages (12 routes)
+### Pages (13 routes)
 
 | Route | Page Component | Description |
 |-------|---------------|-------------|
 | `/` | `HomePage` | Dashboard with last played hero card, recent games scroll, stats grid (games/systems/favorites/storage), systems grid |
 | `/games/:system` | `SystemRomView` | ROM list for a system with search, filters, infinite scroll, inline rename/delete |
-| `/games/:system/:filename` | `GameDetailPage` | Full game detail with metadata, screenshots, videos, captures, launch, favorite, rename, delete |
+| `/games/:system/:filename` | `GameDetailPage` | Full game detail with metadata, screenshots, videos, captures, box art swap, launch, favorite, rename, delete |
 | `/favorites` | `FavoritesPage` | Favorites with grouped/flat view toggle, organize panel, filter bar |
 | `/favorites/:system` | `SystemFavoritesPage` | System-scoped favorites view |
 | `/search` | `SearchPage` | Global search with debounce, genre filter, hide hacks/translations/betas/clones, multiplayer filter, recent searches, random game |
@@ -115,7 +115,7 @@ Two separate config files serve different purposes:
 | `/more/wifi` | `WifiPage` | Wi-Fi SSID/password/country/security config with reboot button |
 | `/more/nfs` | `NfsPage` | NFS server/share/version config with reboot button |
 | `/more/hostname` | `HostnamePage` | Network hostname editor |
-| `/more/metadata` | `MetadataPage` | Metadata import (descriptions/ratings), image import with per-system progress, coverage stats, re-match, clear |
+| `/more/metadata` | `MetadataPage` | Metadata import (descriptions/ratings), thumbnail index + download, coverage stats, re-match, clear |
 | `/more/skin` | `SkinPage` | 11 skin palettes with preview cards, sync-with-ReplayOS toggle |
 | `/more/logs` | `LogsPage` | System log viewer (all/replay-control/replay sources) |
 
@@ -131,9 +131,9 @@ Two separate config files serve different purposes:
 | `RebootButton` | `reboot_button.rs` | Shared reboot button with loading state and result display, used by wifi and nfs pages |
 | `SearchShortcut` | `lib.rs` | Invisible component installing "/" keyboard shortcut for search navigation |
 
-### Server Functions (55 public async functions)
+### Server Functions (56 public async functions)
 
-Split across 8 domain modules in `server_fns/`:
+Split across 12 domain modules in `server_fns/`:
 
 **System & Storage (5)** -- `system.rs`:
 `get_info`, `get_systems`, `get_recents`, `get_system_logs`, `refresh_storage`
@@ -156,6 +156,15 @@ Split across 8 domain modules in `server_fns/`:
 **Images (9)** -- `images.rs`:
 `import_system_images`, `import_all_images`, `rematch_all_images`, `cancel_image_import`, `get_image_import_progress`, `get_image_coverage`, `get_image_stats`, `clear_images`, `clear_image_cache`
 
+**Thumbnails (5)** -- `thumbnails.rs`:
+`update_thumbnails`, `cancel_thumbnail_update`, `get_thumbnail_progress`, `get_thumbnail_data_source`, `clear_thumbnail_index`
+
+**Box Art (3)** -- `boxart.rs`:
+`get_boxart_variants`, `set_boxart_override`, `reset_boxart_override`
+
+**Recommendations (1)** -- `recommendations.rs`:
+`get_recommendations`
+
 **Videos (4)** -- `videos.rs`:
 `get_game_videos`, `add_game_video`, `remove_game_video`, `search_game_videos`
 
@@ -175,14 +184,15 @@ Kept for external tool access (curl, scripts):
 | `arcade_db` | ~28K | MAME | PHF by ROM stem (e.g., "pacman") |
 | `game_db` | ~34K | Screenscraper | PHF by `system~stem`, normalized title fallback, CRC32 fallback, tilde-split fallback |
 
-### Core Library Modules (21 source files)
+### Core Library Modules (23 source files)
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
+| `metadata_db.rs` | 1,330 | SQLite cache with NFS nolock fallback, WAL mode, data_sources + thumbnail_index tables, batch operations |
 | `rom_tags.rs` | 1,135 | No-Intro/GoodTools tag parser, tier classification, region detection |
+| `thumbnail_manifest.rs` | 990 | Manifest-based libretro-thumbnails: GitHub Tree API index, parallel downloads, ManifestFuzzyIndex |
 | `favorites.rs` | 862 | CRUD, organize by 5 criteria, flatten, deduplication, sanitize folder names |
 | `thumbnails.rs` | 765 | libretro-thumbnails import, 3-tier fuzzy matching, fake symlink resolution, staleness check |
-| `metadata_db.rs` | 511 | SQLite cache with NFS nolock fallback, WAL mode, batch operations |
 | `launchbox.rs` | 506 | Streaming XML parser for LaunchBox metadata XML |
 | `game_db.rs` | 470 | PHF map for ~34K games, normalized title fallback, CRC32 lookup |
 | `bin/metadata_report.rs` | 458 | CLI tool for metadata coverage reporting |
@@ -194,11 +204,12 @@ Kept for external tool access (curl, scripts):
 | `config.rs` | 213 | replay.cfg parser with comment-preserving write-back |
 | `recents.rs` | 173 | `.rec` file parsing, deduplication |
 | `storage.rs` | 165 | Storage detection (SD/USB/NFS), disk usage via `df` |
+| `user_data_db.rs` | 163 | SQLite for persistent user customizations (box art overrides), NFS nolock fallback |
 | `screenshots.rs` | 145 | Screenshot matching by ROM filename prefix |
 | `launch.rs` | 143 | Game launching via autostart + systemctl with health check |
+| `settings.rs` | 123 | App-specific settings (region preference) with read/write to `.replay-control/settings.cfg` |
 | `videos.rs` | 98 | Video storage as JSON in `.replay-control/videos.json` |
 | `game_ref.rs` | 82 | Display name resolution from arcade_db/game_db with tag enrichment |
-| `settings.rs` | 123 | App-specific settings (region preference) with read/write to `.replay-control/settings.cfg` |
 | `error.rs` | 45 | `thiserror`-based error enum |
 | `lib.rs` | 22 | Module declarations, `metadata` feature gate |
 
@@ -345,7 +356,7 @@ User clicks "Download / Update" on MetadataPage
   --> MetadataPage polls get_import_progress() for live updates
 ```
 
-### Image Import Pipeline
+### Image Import Pipeline (Legacy: Git Clone)
 
 ```
 User clicks "Download" for a system (or "Download All")
@@ -360,6 +371,26 @@ User clicks "Download" for a system (or "Download All")
       - Progress streamed via SSE at /sse/image-progress (200ms interval, auto-closes when idle)
   --> MetadataPage connects to SSE, displays per-system progress
   --> Cancel button sets image_import_cancel AtomicBool
+```
+
+### Image Import Pipeline (New: Manifest-Based)
+
+```
+User clicks "Update" in the Thumbnails section
+  --> update_thumbnails() server function (thumbnails.rs):
+      Phase 1: Manifest generation
+      - Iterates all systems via thumbnail_repo_names()
+      - Fetches GitHub Tree API for each repo (blobless, ~40 requests)
+      - Parses entries, detects symlinks (size < 100 bytes)
+      - Stores in thumbnail_index table with data_sources versioning
+      Phase 2: Parallel image download
+      - Builds ManifestFuzzyIndex per system from thumbnail_index DB
+      - 3-tier fuzzy matching against user's ROM filenames
+      - Downloads matched images from raw.githubusercontent.com (concurrency 10-16)
+      - Handles symlink resolution at download time (PNG magic byte check)
+      - Saves to <storage>/.replay-control/media/<system>/boxart/
+      - Progress streamed via SSE, cancel via AtomicBool
+  --> Source code: replay-control-core/src/thumbnail_manifest.rs
 ```
 
 ### Favorites Organization Pipeline
@@ -422,7 +453,7 @@ This section documents features and changes added after the initial analysis was
 
 ### Architectural Changes
 
-**Server Functions Split**: The monolithic `server_fns.rs` (2,322 lines) was split into 8 domain modules under `server_fns/`: `system.rs`, `roms.rs`, `favorites.rs`, `search.rs`, `settings.rs`, `metadata.rs`, `images.rs`, `videos.rs`. Shared types (`GameInfo`, `SystemInfo`) and helpers (`resolve_game_info`, `enrich_from_metadata_cache`) remain in `server_fns/mod.rs`.
+**Server Functions Split**: The monolithic `server_fns.rs` was split into 12 domain modules under `server_fns/`: `system.rs`, `roms.rs`, `favorites.rs`, `search.rs`, `settings.rs`, `metadata.rs`, `images.rs`, `videos.rs`, `thumbnails.rs`, `boxart.rs`, `recommendations.rs`, plus `mod.rs`. Shared types (`GameInfo`, `SystemInfo`) and helpers (`resolve_game_info`, `enrich_from_metadata_cache`) remain in `server_fns/mod.rs`.
 
 **RebootButton Extraction**: The `RebootButton` component, previously duplicated identically in `wifi.rs` and `nfs.rs`, was extracted to a shared `components/reboot_button.rs`. Both pages now import from the shared component.
 

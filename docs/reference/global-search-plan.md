@@ -1,5 +1,7 @@
 # Global Search — Implementation Plan
 
+> **Status:** Implemented. Dedicated `/search` page with cross-system search, genre dropdown filter, driver status filter (arcade), favorites-only filter. Search accessible from home page search bar and top bar icon. See `replay-control-app/src/pages/search.rs` and `replay-control-app/src/server_fns/search.rs`.
+
 ## Overview
 
 A search feature that spans all systems, returning results grouped by system, with filter toggles and persistence when navigating to per-system browse pages.
@@ -282,7 +284,7 @@ pub struct GlobalSearchResult {
 | `replay-control-app/src/pages/mod.rs` | Add `pub mod search;` |
 | `replay-control-app/src/components/mod.rs` | Add `pub mod search_bar;` and `pub mod search_result;` |
 | `replay-control-app/src/lib.rs` | Add route for `/search`, search icon in top bar `.top-actions` |
-| `replay-control-app/src/server_fns.rs` | Add result types, `global_search()`, `get_all_genres()`. Modify `get_roms_page()` for filter params. |
+| `replay-control-app/src/server_fns/search.rs` | Result types, `global_search()`, `get_all_genres()`. Filter params in `roms.rs`'s `get_roms_page()`. |
 | `replay-control-app/src/types.rs` | Add client-side mirror types |
 | `replay-control-app/src/main.rs` | `register_explicit` for new server functions |
 | `replay-control-app/src/components/rom_list.rs` | Read/pass `hide_hacks` and `genre` query params |

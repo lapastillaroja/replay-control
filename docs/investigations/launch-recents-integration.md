@@ -1,7 +1,7 @@
 # Launch on TV + Recents Integration
 
 **Date:** 2026-03-12
-**Status:** Design proposal
+**Status:** Implemented
 
 ## How "Launch on TV" Currently Works
 
@@ -312,3 +312,13 @@ If we wanted recents entries in development (for testing the home page), we coul
 | `replay-control-app/src/server_fns/roms.rs` | Update `launch_game` to create recents entry + add `parse_rom_path` helper |
 
 No changes to: UI components, client-side code, lib.rs exports (recents module already public), main.rs registration (launch_game server fn already registered).
+
+---
+
+## Implementation Notes
+
+All three proposed changes have been implemented as described:
+
+1. **`add_recent()`** in `replay-control-core/src/recents.rs` -- implemented exactly as proposed, with tests (`add_recent_creates_marker`, `add_recent_overwrites_existing`, `add_recent_creates_directory`).
+2. **`invalidate_recents()`** in `replay-control-app/src/api/cache.rs` -- implemented following the `invalidate_favorites()` pattern.
+3. **`launch_game` server function** in `replay-control-app/src/server_fns/roms.rs` -- updated to call `add_recent()` after successful launch and `invalidate_recents()` after creating the entry. The `parse_rom_path()` helper is implemented as a standalone function.

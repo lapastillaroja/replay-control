@@ -1,5 +1,7 @@
 # Investigation: App Startup When NFS Storage Is Unavailable
 
+> **Status**: Not yet addressed. The app still crashes with `exit(1)` when NFS storage is unavailable at startup.
+
 Date: 2026-03-12
 
 ## Summary

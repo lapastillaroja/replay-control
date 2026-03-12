@@ -1,6 +1,7 @@
 # Investigation: Replace reqwest with lighter alternative
 
 Date: 2026-03-12
+Status: Implemented (Option D -- curl)
 
 ## Motivation
 
@@ -208,3 +209,15 @@ Switch `reqwest` from `rustls-tls` to `native-tls` feature.
 
 The primary benefit is **reduced SSR clean build time** (especially the ring
 C/asm compilation step) and **simpler dependency tree**, not WASM bundle size.
+
+---
+
+## Implementation Notes
+
+**Option D (shell out to curl) has been implemented.** The `curl_get_json()` async
+helper function in `replay-control-app/src/server_fns/videos.rs` spawns `curl -sS
+--max-time {timeout}` via `tokio::process::Command` and parses the stdout as JSON.
+It is used by `search_game_videos()` to query Piped and Invidious API instances.
+
+reqwest has been fully removed from the dependency tree -- it no longer appears in
+any `Cargo.toml` file in the workspace.

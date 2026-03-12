@@ -2,7 +2,7 @@
 
 Design document analyzing the feasibility of extending the existing arcade DB approach (PHF map, build-time codegen) to cover all supported game systems: consoles, handhelds, and computers.
 
-**Status:** Research / Proposal
+**Status:** Implemented (`game_db` module with ~34K entries across 20+ systems)
 **Date:** March 2026
 **Related docs:** `arcade-db-design.md`, `rom-identification.md`, `game-metadata-sources.md`
 

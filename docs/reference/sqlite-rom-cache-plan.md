@@ -1,5 +1,7 @@
 # Persistent SQLite ROM Cache — Implementation Plan
 
+> **Status:** Implemented. `rom_cache` and `rom_cache_meta` tables added to `metadata.db`. L2 cache sits between in-memory L1 and filesystem L3 with mtime-based invalidation and write-through on scan. Also powers SQL-based recommendations queries. See `replay-control-core/src/metadata_db.rs` (`save_system_roms`, `load_roms_from_db`, `CachedRom`).
+
 ## Goal
 
 Add a persistent L2 cache (SQLite) between the in-memory L1 cache (`RomCache`) and L3 filesystem scans. This eliminates cold-start penalties (430ms NFS / 95ms USB for systems, 4200ms for arcade_mame) and enables SQL-based queries for recommendations.

@@ -1,5 +1,7 @@
 # User Screenshots — Implementation Plan
 
+> **Status**: Implemented. User screenshots appear on the game detail page under "Your Captures" with a fullscreen lightbox. Standalone screenshots page was discarded. See `replay-control-core/src/screenshots.rs` and `replay-control-app/src/pages/game_detail.rs`.
+
 ## Overview
 
 Display screenshots taken by the user on RePlayOS alongside metadata screenshots

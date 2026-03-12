@@ -1,5 +1,7 @@
 # Favorites Organization Design
 
+> **Status**: Implemented. Core functions `organize_favorites()`, `OrganizeCriteria`, and `OrganizeResult` are in `replay-control-core/src/favorites.rs`. Server functions `organize_favorites`, `flatten_favorites` are in `replay-control-app/src/server_fns/favorites.rs`.
+
 ## Overview
 
 Allow users to organize their favorites into subfolders using configurable criteria, with up to 2 levels of nesting.

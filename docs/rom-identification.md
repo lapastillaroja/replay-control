@@ -1,5 +1,7 @@
 # ROM Identification, Grouping & Search
 
+> **Status**: Partially implemented. ROM tag parsing is in `rom_tags.rs` (tier classification, region priority, tag extraction for display names) but uses a simpler `classify()`/`extract_tags()` API rather than the full `RomTags` struct proposed here. The `game_db` module handles the embedded metadata database (section 7). Search scoring with region preference is in `server_fns/search.rs`.
+
 Design document for parsing non-arcade ROM filenames, grouping variants of the same game, improving search, and bridging to external metadata sources.
 
 **Scope:** Non-arcade systems only. Arcade ROMs use zip-name-based lookup via the existing `arcade_db` module.

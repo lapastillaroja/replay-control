@@ -1,5 +1,7 @@
 # Recommendations Performance Optimization Plan
 
+> **Status:** Implemented. Recommendations now use the SQLite ROM cache (no per-ROM filesystem I/O). Genre/multiplayer aggregation runs via SQL queries against `rom_cache`. Box art URLs are cached in the `rom_cache` table. Client-side loading (non-blocking SSR) is implemented.
+
 ## 1. Root Cause Breakdown
 
 The `get_recommendations()` server function at `<WORKSPACE>/replay-control-app/src/server_fns/recommendations.rs` performs three categories of expensive work, each with different cost profiles.

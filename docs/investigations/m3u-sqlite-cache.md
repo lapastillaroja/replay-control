@@ -1,5 +1,7 @@
 # M3U Support with SQLite ROM Cache
 
+> **Status**: Not yet implemented. M3U files are handled at the ROM scanning level (`roms.rs`) but not integrated with the SQLite ROM cache for disc-label display or parent game grouping.
+
 Investigation date: 2026-03-12
 
 ## 1. Current M3U Handling in `list_roms()`

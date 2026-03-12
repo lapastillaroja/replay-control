@@ -1,14 +1,38 @@
 # `.replay-control/` Directory Improvements
 
+> **Status:** All proposed improvements implemented.
+
 Analysis of the current `.replay-control/` directory structure with proposed naming and organizational improvements.
 
-## Current Structure
+## Previous Structure (before improvements)
 
 ```
 <rom_storage>/.replay-control/
 ├── config.cfg                    # App-specific settings (region preference, etc.)
 ├── metadata.db                   # SQLite database — game metadata cache
 ├── Metadata.xml                  # LaunchBox XML dump (~460 MB)
+├── videos.json                   # User-saved video links per game
+│
+├── media/                        # Game images (box art + screenshots)
+│   └── <system>/
+│       ├── boxart/
+│       │   └── *.png
+│       └── snap/
+│           └── *.png
+│
+└── tmp/                          # Cached working data
+    └── libretro-thumbnails/      # Shallow git clones (kept between imports)
+        └── <repo_name>/
+```
+
+## Current Structure (after improvements)
+
+```
+<rom_storage>/.replay-control/
+├── settings.cfg                  # App-specific settings (renamed from config.cfg)
+├── metadata.db                   # SQLite database — game metadata + ROM cache
+├── user_data.db                  # SQLite database — user customizations
+├── launchbox-metadata.xml        # LaunchBox XML dump (renamed from Metadata.xml)
 ├── videos.json                   # User-saved video links per game
 │
 ├── media/                        # Game images (box art + screenshots)
@@ -33,7 +57,7 @@ Analysis of the current `.replay-control/` directory structure with proposed nam
 | Proposed | `settings.cfg` |
 | Rationale | `config.cfg` is ambiguous — the codebase already has `replay.cfg` (OS config) and the directory `config/` on the storage root. The word "config" appears in at least three different contexts: RePlayOS config (`replay.cfg`), storage config dir (`config/`), and now app config (`config.cfg`). **`settings.cfg`** makes the purpose immediately clear — these are user-facing app settings, not system configuration. It also avoids confusion with the `config/` directory at the storage root level. |
 | Convention | Underscore vs hyphen is moot here since it's a single word. The `.cfg` extension is kept for consistency with `replay.cfg`. |
-| Status | **Not yet implemented** — `config.cfg` is referenced only in docs and design documents (region-preference analysis, game-videos plan). No Rust code reads/writes it yet. This is the ideal time to rename. |
+| Status | **Implemented** — `settings.cfg` is used via the `SETTINGS_FILE` constant in `replay-control-core/src/storage.rs`. Read/written by `replay-control-core/src/settings.rs`. |
 
 **Why not `replay-control.cfg` or `replay_control.cfg`?** The file already lives inside the `.replay-control/` directory, so repeating the directory name in the filename is redundant. `settings.cfg` is shorter, clearer, and follows the principle that files should describe their *content*, not their *owner* (the directory already identifies the owner).
 

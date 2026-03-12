@@ -1,5 +1,7 @@
 # Game Recommendations Feature -- Analysis & Design
 
+> **Status:** Implemented. Home page displays random picks, top genres, multiplayer count, favorites-based picks, and top-rated games. Uses SQLite ROM cache for efficient queries. See `replay-control-app/src/server_fns/recommendations.rs`.
+
 Comprehensive design analysis for adding game recommendation blocks to the Home page of the Replay Control companion app. The goal is to make the Home page more dynamic, encouraging discovery and rediscovery of games within the user's existing library.
 
 **Date:** March 2026

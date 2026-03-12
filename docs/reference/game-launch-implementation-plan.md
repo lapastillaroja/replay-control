@@ -1,6 +1,6 @@
 # Game Launch — Implementation Plan
 
-## Status: Phase 1 Implemented (2026-03-11)
+## Status: Fully Implemented (Phase 1 + Recents Integration)
 
 > **NOTE**: This feature is a reverse-engineered workaround. RePlayOS has no
 > official API for programmatic game launching. Check RePlayOS changelogs for
@@ -147,7 +147,7 @@ gameplay reported by users on Telegram and GitHub issues).
 |------|--------|
 | `replay-control-core/src/launch.rs` | Core launch logic + health check recovery |
 | `replay-control-core/src/lib.rs` | `pub mod launch;` |
-| `replay-control-app/src/server_fns.rs` | `launch_game` server function with `is_replayos()` guard |
+| `replay-control-app/src/server_fns/roms.rs` | `launch_game` server function with `is_replayos()` guard |
 | `replay-control-app/src/pages/game_detail.rs` | `GameLaunchAction` component, placed below cover art |
 | `replay-control-app/src/main.rs` | `register_explicit::<LaunchGame>()` |
 | `replay-control-app/src/i18n.rs` | Launch translation keys (5 keys) |

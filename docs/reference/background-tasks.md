@@ -1,5 +1,7 @@
 # Background Task System Design
 
+> **Status:** The formal `TaskManager` / `DashMap<TaskId, TaskHandle>` design described here was NOT implemented. Instead, background tasks use simpler patterns: `AtomicBool` for cooperative cancellation, SSE endpoints for real-time progress streaming, and `tokio::spawn` for async tasks. The metadata import and image download tasks in `replay-control-app/src/api/import.rs` follow this lighter approach. The `TaskManager` design remains a reference for future needs if more complex task management is required.
+
 ## Problem
 
 Several operations in Replay Control are too slow for a request/response cycle: scanning the full ROM library, building a metadata database, bulk ROM operations. These need to run in the background with progress reporting, and the user should be able to see what's running and cancel if needed.

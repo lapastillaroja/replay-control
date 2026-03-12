@@ -1,5 +1,7 @@
 # On-Demand libretro-thumbnails: Manifest-Based Strategy
 
+> **Status**: Implemented. The manifest-based approach (option C) was built in `replay-control-core/src/thumbnail_manifest.rs` with `data_sources` and `thumbnail_index` tables in `metadata_db.rs`. Bulk parallel downloads, symlink resolution, `ManifestFuzzyIndex`, and SSE progress are all operational.
+
 > Investigation date: 2026-03-12
 > Updated: 2026-03-12 (bulk download optimization research: section 15)
 > Updated: 2026-03-12 (detailed fetch logic: sections 6-11)

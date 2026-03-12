@@ -1,16 +1,18 @@
 # Performance Improvements Analysis
 
+> **Status:** Key items implemented. WASM bundle optimized (wasm-opt + pre-compressed gzip), box art resolution cached via image index, SQLite ROM cache eliminates repeated filesystem scans. See `docs/reference/performance-benchmarks.md` for before/after measurements.
+
 Analysis of the Replay Control app performance, with focus on Games page response time. Findings ranked by estimated impact and implementation feasibility.
 
 ---
 
 ## Executive Summary
 
-The app has several low-hanging fruit optimizations that would dramatically improve perceived and actual performance, particularly on the Pi's constrained hardware. The three highest-impact items are:
+The app has several low-hanging fruit optimizations that would dramatically improve perceived and actual performance, particularly on the Pi's constrained hardware. The three highest-impact items were:
 
-1. **WASM bundle is 33 MB unoptimized, served uncompressed** (loading time)
-2. **`resolve_box_art_url()` does per-ROM filesystem I/O in a loop** (server response time)
-3. **Full ROM list is cloned from cache on every request, then filtered/paginated** (memory + CPU)
+1. **WASM bundle is 33 MB unoptimized, served uncompressed** (loading time) -- **FIXED**: `wasm-opt -Oz`, `[profile.wasm-release]`, pre-compressed `.wasm.gz`, `CompressionLayer`
+2. **`resolve_box_art_url()` does per-ROM filesystem I/O in a loop** (server response time) -- **FIXED**: per-system image index cache, box art URLs stored in SQLite `rom_cache`
+3. **Full ROM list is cloned from cache on every request, then filtered/paginated** (memory + CPU) -- **MITIGATED**: SQLite ROM cache with indexed queries
 
 ---
 

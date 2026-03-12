@@ -1,5 +1,7 @@
 # Hostname & WiFi Hotspot Analysis
 
+> **Status**: Phase 1 (Hostname) is implemented (`pages/hostname.rs`, server functions `get_hostname`/`save_hostname` in `settings.rs`). Phase 2 (WiFi Hotspot) is not yet implemented.
+
 ## 1. Hostname Configuration
 
 ### Implementation Approach
