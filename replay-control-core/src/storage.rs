@@ -17,6 +17,7 @@ pub struct StorageLocation {
 pub enum StorageKind {
     Sd,
     Usb,
+    Nvme,
     Nfs,
 }
 
@@ -42,8 +43,14 @@ impl StorageLocation {
                 let path = find_usb_storage()?;
                 (path, StorageKind::Usb)
             }
+            "nvme" => {
+                let path = PathBuf::from("/media/nvme");
+                if !path.exists() {
+                    return Err(Error::StorageNotFound);
+                }
+                (path, StorageKind::Nvme)
+            }
             "nfs" => {
-                // NFS is mounted at a fixed path by RePlayOS
                 let path = PathBuf::from("/media/nfs");
                 if !path.exists() {
                     return Err(Error::StorageNotFound);
