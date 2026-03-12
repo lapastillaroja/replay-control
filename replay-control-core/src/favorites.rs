@@ -287,7 +287,7 @@ pub fn organize_favorites(
 /// Sanitize a string for use as a directory name.
 /// Replaces `/` and other filesystem-unsafe characters with `-`.
 fn sanitize_folder_name(name: &str) -> String {
-    name.replace('/', "-").replace('\\', "-").replace(':', "-")
+    name.replace(['/', '\\', ':'], "-")
 }
 
 /// Determine the subfolder name for a favorite based on the given criteria.
@@ -498,10 +498,11 @@ fn find_fav_recursive(dir: &Path, fav_filename: &str) -> bool {
         let path = entry.path();
         if path.is_dir() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with('_') && !name.starts_with('.') {
-                if path.join(fav_filename).exists() || find_fav_recursive(&path, fav_filename) {
-                    return true;
-                }
+            if !name.starts_with('_')
+                && !name.starts_with('.')
+                && (path.join(fav_filename).exists() || find_fav_recursive(&path, fav_filename))
+            {
+                return true;
             }
         }
     }

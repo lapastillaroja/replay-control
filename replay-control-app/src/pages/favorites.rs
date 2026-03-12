@@ -260,7 +260,7 @@ where
                     </div>
                     <span class="fav-filter-count">
                         {
-                            let filtered_for_count = filtered_favorites.clone();
+                            let filtered_for_count = filtered_favorites;
                             move || {
                                 let filtered = filtered_for_count().len();
                                 let total = total_count();
@@ -275,8 +275,8 @@ where
                 </div>
 
                 {
-                    let filtered_signal = Signal::derive(filtered_favorites.clone());
-                    let filtered_signal2 = Signal::derive(filtered_favorites.clone());
+                    let filtered_signal = Signal::derive(filtered_favorites);
+                    let filtered_signal2 = Signal::derive(filtered_favorites);
                     view! {
                         <Show when=move || grouped_view.get() fallback=move || view! {
                             <FlatFavorites favorites=filtered_signal confirm_remove remove_fav />
@@ -617,10 +617,7 @@ pub fn SystemFavoritesPage() -> impl IntoView {
     let params = use_params_map();
     let system = move || params.read().get("system").unwrap_or_default();
 
-    let favorites = Resource::new(
-        move || system(),
-        |sys| server_fns::get_system_favorites(sys),
-    );
+    let favorites = Resource::new(system, server_fns::get_system_favorites);
 
     view! {
         <div class="page favorites-page">
@@ -689,7 +686,7 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
                     key=|f| f.fav.marker_filename.clone()
                     let:f
                 >
-                    <FavItem fav=f.fav box_art_url=f.box_art_url show_system=false confirm_remove remove_fav=remove_fav.clone() />
+                    <FavItem fav=f.fav box_art_url=f.box_art_url show_system=false confirm_remove remove_fav />
                 </For>
             </div>
         </Show>

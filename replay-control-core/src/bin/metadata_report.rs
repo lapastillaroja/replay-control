@@ -163,33 +163,33 @@ fn main() {
                     embedded.any += 1;
                 }
 
-                if let Some(e) = entry {
-                    if !e.region.is_empty() {
-                        embedded.region += 1;
-                    }
+                if let Some(e) = entry
+                    && !e.region.is_empty()
+                {
+                    embedded.region += 1;
                 }
             }
 
             // --- External metadata (SQLite) ---
-            if let Some(ref db) = meta_db {
-                if let Ok(Some(meta)) = db.lookup(system_name, filename) {
-                    if meta.description.as_ref().is_some_and(|d| !d.is_empty()) {
-                        external.description += 1;
-                    }
-                    if meta.rating.is_some() {
-                        external.rating += 1;
-                    }
-                    if meta.publisher.as_ref().is_some_and(|p| !p.is_empty()) {
-                        external.publisher += 1;
-                    }
-                    if meta.box_art_path.is_some() {
-                        external.box_art += 1;
-                    }
-                    if meta.screenshot_path.is_some() {
-                        external.screenshot += 1;
-                    }
-                    external.any += 1;
+            if let Some(ref db) = meta_db
+                && let Ok(Some(meta)) = db.lookup(system_name, filename)
+            {
+                if meta.description.as_ref().is_some_and(|d| !d.is_empty()) {
+                    external.description += 1;
                 }
+                if meta.rating.is_some() {
+                    external.rating += 1;
+                }
+                if meta.publisher.as_ref().is_some_and(|p| !p.is_empty()) {
+                    external.publisher += 1;
+                }
+                if meta.box_art_path.is_some() {
+                    external.box_art += 1;
+                }
+                if meta.screenshot_path.is_some() {
+                    external.screenshot += 1;
+                }
+                external.any += 1;
             }
         }
 

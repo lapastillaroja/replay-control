@@ -22,7 +22,7 @@
 /// - Version dates: [2017-03-28]
 /// - Hacker credits in brackets: [T-Spa1.0v_Wave] -> shown as "ES" not the full tag
 /// - Language codes already in the region: (En,Fr,De) merged with region
-
+///
 /// Classification tier for sorting ROMs — lower value = shown first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RomTier {
@@ -160,11 +160,11 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
         }
         let lower = trimmed.to_lowercase();
 
-        if lower.starts_with("rev ") || (lower.starts_with("rev") && trimmed.len() <= 6) {
-            if parse_revision(trimmed).is_some() {
-                has_revision = true;
-                continue;
-            }
+        if (lower.starts_with("rev ") || (lower.starts_with("rev") && trimmed.len() <= 6))
+            && parse_revision(trimmed).is_some()
+        {
+            has_revision = true;
+            continue;
         }
         if parse_translation_paren(trimmed).is_some() {
             has_translation = true;
@@ -308,11 +308,11 @@ pub fn extract_tags(filename: &str) -> String {
         let lower = trimmed.to_lowercase();
 
         // Revision tags
-        if lower.starts_with("rev ") || lower.starts_with("rev") && trimmed.len() <= 6 {
-            if let Some(rev) = parse_revision(trimmed) {
-                revision = Some(rev);
-                continue;
-            }
+        if (lower.starts_with("rev ") || (lower.starts_with("rev") && trimmed.len() <= 6))
+            && let Some(rev) = parse_revision(trimmed)
+        {
+            revision = Some(rev);
+            continue;
         }
 
         // Translation tags (parenthesized style)

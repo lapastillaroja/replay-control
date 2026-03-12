@@ -11,6 +11,16 @@ use crate::error::{Error, Result};
 // Re-export RC_DIR from storage (the canonical definition).
 pub use crate::storage::RC_DIR;
 
+/// Enrichment tuple: (filename, box_art_url, genre, players, rating, driver_status).
+pub type RomEnrichment = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<u8>,
+    Option<f32>,
+    Option<String>,
+);
+
 /// Filename for the SQLite metadata database.
 pub const METADATA_DB_FILE: &str = "metadata.db";
 /// Filename for the LaunchBox XML dump.
@@ -306,10 +316,8 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("System box art lookup: {e}")))?;
 
         let mut map = HashMap::new();
-        for row in rows {
-            if let Ok((filename, path)) = row {
-                map.insert(filename, path);
-            }
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
         }
 
         Ok(map)
@@ -863,14 +871,7 @@ impl MetadataDb {
     pub fn update_rom_enrichment(
         &mut self,
         system: &str,
-        enrichments: &[(
-            String,
-            Option<String>,
-            Option<String>,
-            Option<u8>,
-            Option<f32>,
-            Option<String>,
-        )],
+        enrichments: &[RomEnrichment],
     ) -> Result<usize> {
         let tx = self
             .conn

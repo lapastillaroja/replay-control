@@ -37,7 +37,7 @@ pub struct GlobalSearchResults {
 #[cfg(feature = "ssr")]
 fn split_into_words(s: &str) -> Vec<&str> {
     s.split(|c: char| c.is_whitespace() || c == '-')
-        .map(|w| w.trim_end_matches(|c: char| matches!(c, '.' | ',' | ':' | '!' | '?' | ';')))
+        .map(|w| w.trim_end_matches(['.', ',', ':', '!', '?', ';']))
         .filter(|w| !w.is_empty())
         .collect()
 }
@@ -50,7 +50,7 @@ fn words_in_order(query_words: &[&str], title_words: &[&str]) -> bool {
         let found = title_words
             .iter()
             .enumerate()
-            .position(|(i, tw)| tw.starts_with(qw) && last_pos.map_or(true, |lp| i > lp));
+            .position(|(i, tw)| tw.starts_with(qw) && last_pos.is_none_or(|lp| i > lp));
         match found {
             Some(pos) => last_pos = Some(pos),
             None => return false,
@@ -72,10 +72,10 @@ fn count_adjacent_pairs(query_words: &[&str], title_words: &[&str]) -> u32 {
         .map(|qw| title_words.iter().position(|tw| tw.starts_with(qw)))
         .collect();
     for i in 0..positions.len() - 1 {
-        if let (Some(p1), Some(p2)) = (positions[i], positions[i + 1]) {
-            if p2 == p1 + 1 {
-                pairs += 1;
-            }
+        if let (Some(p1), Some(p2)) = (positions[i], positions[i + 1])
+            && p2 == p1 + 1
+        {
+            pairs += 1;
         }
     }
     pairs
@@ -163,7 +163,7 @@ pub(crate) fn search_score(
         s[offset..]
             .chars()
             .next()
-            .map_or(true, |c| !c.is_alphanumeric())
+            .is_none_or(|c| !c.is_alphanumeric())
     };
 
     // Check whether `needle` appears in `haystack` at a clean trailing word boundary
@@ -421,10 +421,10 @@ pub async fn global_search(
                         .rom_filename
                         .strip_suffix(".zip")
                         .unwrap_or(&r.game.rom_filename);
-                    if let Some(info) = arcade_db::lookup_arcade_game(stem) {
-                        if info.is_clone {
-                            return false;
-                        }
+                    if let Some(info) = arcade_db::lookup_arcade_game(stem)
+                        && info.is_clone
+                    {
+                        return false;
                     }
                 }
                 true

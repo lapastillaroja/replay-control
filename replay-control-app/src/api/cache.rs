@@ -191,23 +191,22 @@ impl RomCache {
         let roms_dir = storage.roms_dir();
 
         // L1: Try in-memory cache.
-        if let Ok(guard) = self.systems.read() {
-            if let Some(ref entry) = *guard {
-                if entry.is_fresh(&roms_dir) {
-                    return entry.data.clone();
-                }
-            }
+        if let Ok(guard) = self.systems.read()
+            && let Some(ref entry) = *guard
+            && entry.is_fresh(&roms_dir)
+        {
+            return entry.data.clone();
         }
 
         // L2: Try SQLite rom_cache_meta (reconstructs SystemSummary from cached metadata).
-        if let Some(summaries) = self.load_systems_from_db(storage) {
-            if !summaries.is_empty() {
-                // Store in L1.
-                if let Ok(mut guard) = self.systems.write() {
-                    *guard = Some(CacheEntry::new(summaries.clone(), &roms_dir));
-                }
-                return summaries;
+        if let Some(summaries) = self.load_systems_from_db(storage)
+            && !summaries.is_empty()
+        {
+            // Store in L1.
+            if let Ok(mut guard) = self.systems.write() {
+                *guard = Some(CacheEntry::new(summaries.clone(), &roms_dir));
             }
+            return summaries;
         }
 
         // L3: Cache miss — full filesystem scan.
@@ -302,12 +301,11 @@ impl RomCache {
         let system_dir = storage.roms_dir().join(system);
 
         // L1: Try in-memory cache.
-        if let Ok(guard) = self.roms.read() {
-            if let Some(entry) = guard.get(&key) {
-                if entry.is_fresh(&system_dir) {
-                    return Ok(entry.data.clone());
-                }
-            }
+        if let Ok(guard) = self.roms.read()
+            && let Some(entry) = guard.get(&key)
+            && entry.is_fresh(&system_dir)
+        {
+            return Ok(entry.data.clone());
         }
 
         // L2: Try SQLite rom_cache.
@@ -507,12 +505,11 @@ impl RomCache {
         let favs_dir = storage.favorites_dir();
 
         // Try read lock first.
-        if let Ok(guard) = self.favorites.read() {
-            if let Some(ref cache) = *guard {
-                if cache.is_fresh(&favs_dir) {
-                    return cache.data.get(system).cloned().unwrap_or_default();
-                }
-            }
+        if let Ok(guard) = self.favorites.read()
+            && let Some(ref cache) = *guard
+            && cache.is_fresh(&favs_dir)
+        {
+            return cache.data.get(system).cloned().unwrap_or_default();
         }
 
         // Cache miss — rebuild.
@@ -533,12 +530,11 @@ impl RomCache {
         let favs_dir = storage.favorites_dir();
 
         // Ensure cache is fresh.
-        if let Ok(guard) = self.favorites.read() {
-            if let Some(ref cache) = *guard {
-                if cache.is_fresh(&favs_dir) {
-                    return Self::top_system_from_data(&cache.data);
-                }
-            }
+        if let Ok(guard) = self.favorites.read()
+            && let Some(ref cache) = *guard
+            && cache.is_fresh(&favs_dir)
+        {
+            return Self::top_system_from_data(&cache.data);
         }
 
         // Rebuild cache.
@@ -563,12 +559,11 @@ impl RomCache {
     pub fn get_favorites_count(&self, storage: &StorageLocation) -> usize {
         let favs_dir = storage.favorites_dir();
 
-        if let Ok(guard) = self.favorites.read() {
-            if let Some(ref cache) = *guard {
-                if cache.is_fresh(&favs_dir) {
-                    return cache.data.values().map(|s| s.len()).sum();
-                }
-            }
+        if let Ok(guard) = self.favorites.read()
+            && let Some(ref cache) = *guard
+            && cache.is_fresh(&favs_dir)
+        {
+            return cache.data.values().map(|s| s.len()).sum();
         }
 
         let new_cache = FavoritesCache::new(storage);
@@ -588,12 +583,11 @@ impl RomCache {
     ) -> Result<Vec<RecentEntry>, replay_control_core::error::Error> {
         let recents_dir = storage.recents_dir();
 
-        if let Ok(guard) = self.recents.read() {
-            if let Some(ref entry) = *guard {
-                if entry.is_fresh(&recents_dir) {
-                    return Ok(entry.data.clone());
-                }
-            }
+        if let Ok(guard) = self.recents.read()
+            && let Some(ref entry) = *guard
+            && entry.is_fresh(&recents_dir)
+        {
+            return Ok(entry.data.clone());
         }
 
         let entries = replay_control_core::recents::list_recents(storage)?;
@@ -616,20 +610,19 @@ impl RomCache {
         let boxart_dir = media_base.join("boxart");
 
         // Check cache freshness.
-        if let Ok(guard) = self.images.read() {
-            if let Some(idx) = guard.get(system) {
-                if idx.is_fresh(&boxart_dir) {
-                    return std::sync::Arc::new(ImageIndex {
-                        exact: idx.exact.clone(),
-                        fuzzy: idx.fuzzy.clone(),
-                        version: idx.version.clone(),
-                        db_paths: idx.db_paths.clone(),
-                        manifest: None, // Don't clone the manifest (large); rebuild if needed
-                        dir_mtime: idx.dir_mtime,
-                        expires: idx.expires,
-                    });
-                }
-            }
+        if let Ok(guard) = self.images.read()
+            && let Some(idx) = guard.get(system)
+            && idx.is_fresh(&boxart_dir)
+        {
+            return std::sync::Arc::new(ImageIndex {
+                exact: idx.exact.clone(),
+                fuzzy: idx.fuzzy.clone(),
+                version: idx.version.clone(),
+                db_paths: idx.db_paths.clone(),
+                manifest: None, // Don't clone the manifest (large); rebuild if needed
+                dir_mtime: idx.dir_mtime,
+                expires: idx.expires,
+            });
         }
 
         // Build the index.
@@ -685,10 +678,26 @@ impl RomCache {
             }
         }
 
+        // Load user box art overrides first (separate lock, released before metadata_db).
+        let user_overrides: HashMap<String, String> = state
+            .user_data_db()
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .and_then(|db| db.get_system_overrides(system).ok())
+            })
+            .unwrap_or_default();
+
         // Load DB paths for this system.
         let (db_paths, manifest) = if let Some(guard) = state.metadata_db() {
             if let Some(db) = guard.as_ref() {
-                let paths = db.system_box_art_paths(system).unwrap_or_default();
+                let mut paths = db.system_box_art_paths(system).unwrap_or_default();
+
+                // Inject user box art overrides (highest priority — overwrites auto-matched paths).
+                for (rom_filename, override_path) in user_overrides {
+                    paths.insert(rom_filename, override_path);
+                }
+
                 // Build manifest fuzzy index for on-demand downloads.
                 let mfi = if let Some(repo_names) =
                     replay_control_core::thumbnails::thumbnail_repo_names(system)
@@ -792,21 +801,21 @@ impl RomCache {
 
         // 4. Version-stripped match.
         let rom_base_no_version = strip_version(&rom_base);
-        if rom_base_no_version.len() < rom_base.len() {
-            if let Some(path) = index.version.get(rom_base_no_version) {
-                return Some(format!("/media/{system}/{path}"));
-            }
+        if rom_base_no_version.len() < rom_base.len()
+            && let Some(path) = index.version.get(rom_base_no_version)
+        {
+            return Some(format!("/media/{system}/{path}"));
         }
 
         // 5. On-demand: check manifest for a remote thumbnail to download.
-        if let Some(ref manifest) = index.manifest {
-            if let Some(m) = replay_control_core::thumbnail_manifest::find_in_manifest(
+        if let Some(ref manifest) = index.manifest
+            && let Some(m) = replay_control_core::thumbnail_manifest::find_in_manifest(
                 manifest,
                 rom_filename,
                 system,
-            ) {
-                self.queue_on_demand_download(state, system, m);
-            }
+            )
+        {
+            self.queue_on_demand_download(state, system, m);
         }
 
         None
@@ -886,10 +895,10 @@ impl RomCache {
             guard.clear();
         }
         // L2: Clear SQLite rom_cache.
-        if let Ok(guard) = self.db.lock() {
-            if let Some(ref db) = *guard {
-                let _ = db.clear_all_rom_cache();
-            }
+        if let Ok(guard) = self.db.lock()
+            && let Some(ref db) = *guard
+        {
+            let _ = db.clear_all_rom_cache();
         }
     }
 
@@ -903,10 +912,10 @@ impl RomCache {
             guard.remove(system);
         }
         // L2: Clear SQLite rom_cache for this system.
-        if let Ok(guard) = self.db.lock() {
-            if let Some(ref db) = *guard {
-                let _ = db.clear_system_rom_cache(system);
-            }
+        if let Ok(guard) = self.db.lock()
+            && let Some(ref db) = *guard
+        {
+            let _ = db.clear_system_rom_cache(system);
         }
     }
 
@@ -998,19 +1007,19 @@ impl RomCache {
         });
 
         // Also update L1 cache entries.
-        if let Ok(mut guard) = self.roms.write() {
-            if let Some(entry) = guard.get_mut(system) {
-                for rom in &mut entry.data {
-                    for (filename, art, rating) in &enrichments {
-                        if rom.game.rom_filename == *filename {
-                            if art.is_some() {
-                                rom.box_art_url = art.clone();
-                            }
-                            if let Some(r) = rating {
-                                rom.rating = Some(*r);
-                            }
-                            break;
+        if let Ok(mut guard) = self.roms.write()
+            && let Some(entry) = guard.get_mut(system)
+        {
+            for rom in &mut entry.data {
+                for (filename, art, rating) in &enrichments {
+                    if rom.game.rom_filename == *filename {
+                        if art.is_some() {
+                            rom.box_art_url = art.clone();
                         }
+                        if let Some(r) = rating {
+                            rom.rating = Some(*r);
+                        }
+                        break;
                     }
                 }
             }

@@ -55,7 +55,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         let genre_counts = db.genre_counts().unwrap_or_default();
         let multiplayer = db.multiplayer_count().unwrap_or(0);
         let top_rated = db.top_rated_cached_roms(count * 3).unwrap_or_default();
-        let fav_roms = favorites_info.as_ref().and_then(|fi| {
+        let fav_roms = favorites_info.as_ref().map(|fi| {
             let exclude: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
             let top_genre = fi.top_genre.as_deref();
             let mut roms = db
@@ -77,7 +77,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     }
                 }
             }
-            Some(roms)
+            roms
         });
         (random_pool, genre_counts, multiplayer, top_rated, fav_roms)
     });

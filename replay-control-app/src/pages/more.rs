@@ -104,10 +104,7 @@ fn RegionSelector(current: String) -> impl IntoView {
         .map(|(value, label_key)| {
             let value = *value;
             let label_key = *label_key;
-            let is_selected = {
-                let active = active;
-                move || active.read().as_str() == value
-            };
+            let is_selected = move || active.read().as_str() == value;
             view! {
                 <option value=value selected=is_selected>
                     {move || t(i18n.locale.get(), label_key)}

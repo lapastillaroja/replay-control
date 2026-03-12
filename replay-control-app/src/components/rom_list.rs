@@ -65,7 +65,7 @@ pub fn RomList(system: String) -> impl IntoView {
     let sys_for_genres = system.clone();
     let genres_resource = Resource::new(
         move || sys_for_genres.clone(),
-        |system| server_fns::get_system_genres(system),
+        server_fns::get_system_genres,
     );
 
     // Search: synced with URL query param `?search=...`.

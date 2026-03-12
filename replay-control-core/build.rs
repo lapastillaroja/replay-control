@@ -165,11 +165,11 @@ fn main() {
         );
         let mut applied = 0u32;
         for (rom_name, category) in &categories {
-            if let Some(entry) = entries_map.get_mut(rom_name) {
-                if entry.category.is_empty() {
-                    entry.category = category.clone();
-                    applied += 1;
-                }
+            if let Some(entry) = entries_map.get_mut(rom_name)
+                && entry.category.is_empty()
+            {
+                entry.category = category.clone();
+                applied += 1;
             }
         }
         println!(
@@ -189,11 +189,11 @@ fn main() {
         );
         let mut applied = 0u32;
         for (rom_name, category) in &categories {
-            if let Some(entry) = entries_map.get_mut(rom_name) {
-                if entry.category.is_empty() {
-                    entry.category = category.clone();
-                    applied += 1;
-                }
+            if let Some(entry) = entries_map.get_mut(rom_name)
+                && entry.category.is_empty()
+            {
+                entry.category = category.clone();
+                applied += 1;
             }
         }
         println!(
@@ -702,13 +702,11 @@ fn parse_catver_ini(path: &Path) -> HashMap<String, String> {
             continue;
         }
 
-        if in_category_section {
-            if let Some((rom_name, category)) = trimmed.split_once('=') {
-                let rom_name = rom_name.trim();
-                let category = category.trim();
-                if !rom_name.is_empty() && !category.is_empty() {
-                    categories.insert(rom_name.to_string(), category.to_string());
-                }
+        if in_category_section && let Some((rom_name, category)) = trimmed.split_once('=') {
+            let rom_name = rom_name.trim();
+            let category = category.trim();
+            if !rom_name.is_empty() && !category.is_empty() {
+                categories.insert(rom_name.to_string(), category.to_string());
             }
         }
     }
@@ -1063,28 +1061,18 @@ fn parse_nointro_dat(path: &Path) -> Vec<NoIntroEntry> {
 /// Extract a quoted value after a field name, e.g., `name "value"` -> `value`
 fn extract_quoted_field(line: &str, field: &str) -> Option<String> {
     let rest = line.strip_prefix(field)?;
-    let rest = rest.trim();
-    if rest.starts_with('"') {
-        let content = &rest[1..];
-        if let Some(end) = content.find('"') {
-            return Some(content[..end].to_string());
-        }
-    }
-    None
+    let rest = rest.trim().strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
 }
 
 /// Extract a quoted value after a keyword anywhere in the line.
 fn extract_quoted_after(line: &str, keyword: &str) -> Option<String> {
     let idx = line.find(keyword)?;
     let rest = &line[idx + keyword.len()..];
-    let rest = rest.trim();
-    if rest.starts_with('"') {
-        let content = &rest[1..];
-        if let Some(end) = content.find('"') {
-            return Some(content[..end].to_string());
-        }
-    }
-    None
+    let rest = rest.trim().strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
 }
 
 /// Extract a word (non-whitespace token) after a keyword.
@@ -1101,39 +1089,39 @@ fn extract_word_after(line: &str, keyword: &str) -> Option<String> {
 /// Extract region from a No-Intro game name by looking at parenthesized tags.
 fn extract_region_from_name(name: &str) -> String {
     // Look for the first parenthesized group which typically contains the region
-    if let Some(start) = name.find('(') {
-        if let Some(end) = name[start..].find(')') {
-            let tag = &name[start + 1..start + end];
-            // Check if it's a known region
-            let regions = [
-                "USA",
-                "Europe",
-                "Japan",
-                "World",
-                "Australia",
-                "Brazil",
-                "Canada",
-                "China",
-                "France",
-                "Germany",
-                "Hong Kong",
-                "Italy",
-                "Korea",
-                "Netherlands",
-                "Russia",
-                "Spain",
-                "Sweden",
-                "Taiwan",
-                "UK",
-            ];
-            for region in &regions {
-                if tag.contains(region) {
-                    return region.to_string();
-                }
+    if let Some(start) = name.find('(')
+        && let Some(end) = name[start..].find(')')
+    {
+        let tag = &name[start + 1..start + end];
+        // Check if it's a known region
+        let regions = [
+            "USA",
+            "Europe",
+            "Japan",
+            "World",
+            "Australia",
+            "Brazil",
+            "Canada",
+            "China",
+            "France",
+            "Germany",
+            "Hong Kong",
+            "Italy",
+            "Korea",
+            "Netherlands",
+            "Russia",
+            "Spain",
+            "Sweden",
+            "Taiwan",
+            "UK",
+        ];
+        for region in &regions {
+            if tag.contains(region) {
+                return region.to_string();
             }
-            // Return the whole tag content as region
-            return tag.to_string();
         }
+        // Return the whole tag content as region
+        return tag.to_string();
     }
     String::new()
 }
@@ -1190,12 +1178,12 @@ fn parse_libretro_meta_dat(path: &Path, field_name: &str) -> HashMap<u32, String
         }
 
         // Parse the value field (users or genre)
-        if trimmed.starts_with(field_name) {
-            let rest = trimmed[field_name.len()..].trim();
+        if let Some(rest) = trimmed.strip_prefix(field_name) {
+            let rest = rest.trim();
             // Handle both quoted and unquoted values
-            if rest.starts_with('"') {
-                if let Some(end) = rest[1..].find('"') {
-                    current_value = rest[1..1 + end].to_string();
+            if let Some(quoted) = rest.strip_prefix('"') {
+                if let Some(end) = quoted.find('"') {
+                    current_value = quoted[..end].to_string();
                 }
             } else {
                 current_value = rest.to_string();
@@ -1203,10 +1191,10 @@ fn parse_libretro_meta_dat(path: &Path, field_name: &str) -> HashMap<u32, String
         }
 
         // Parse rom line for CRC
-        if trimmed.starts_with("rom (") || trimmed.starts_with("rom(") {
-            if let Some(crc_str) = extract_word_after(trimmed, "crc ") {
-                current_crc = u32::from_str_radix(&crc_str, 16).unwrap_or(0);
-            }
+        if (trimmed.starts_with("rom (") || trimmed.starts_with("rom("))
+            && let Some(crc_str) = extract_word_after(trimmed, "crc ")
+        {
+            current_crc = u32::from_str_radix(&crc_str, 16).unwrap_or(0);
         }
     }
 
@@ -1549,15 +1537,15 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
 
             for &idx in indices {
                 let crc = nointro_entries[idx].crc32;
-                if final_players == 0 {
-                    if let Some(users_str) = maxusers.get(&crc) {
-                        final_players = users_str.parse().unwrap_or(0);
-                    }
+                if final_players == 0
+                    && let Some(users_str) = maxusers.get(&crc)
+                {
+                    final_players = users_str.parse().unwrap_or(0);
                 }
-                if final_genre.is_empty() {
-                    if let Some(genre_str) = genres.get(&crc) {
-                        final_genre = genre_str.clone();
-                    }
+                if final_genre.is_empty()
+                    && let Some(genre_str) = genres.get(&crc)
+                {
+                    final_genre = genre_str.clone();
                 }
                 if final_players > 0 && !final_genre.is_empty() {
                     break;

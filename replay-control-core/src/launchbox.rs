@@ -102,9 +102,7 @@ fn normalize_title(name: &str) -> String {
         match ch {
             '(' | '[' => depth += 1,
             ')' | ']' => {
-                if depth > 0 {
-                    depth -= 1;
-                }
+                depth = depth.saturating_sub(1);
             }
             _ if depth == 0 => stripped.push(ch),
             _ => {}
@@ -126,8 +124,7 @@ fn normalize_title(name: &str) -> String {
         let first_word = &after_comma[..first_word_end];
         let first_word_lower = first_word.to_ascii_lowercase();
         if first_word_lower == "the" || first_word_lower == "a" || first_word_lower == "an" {
-            let rest =
-                after_comma[first_word_end..].trim_start_matches(|c: char| c == ' ' || c == '-');
+            let rest = after_comma[first_word_end..].trim_start_matches([' ', '-']);
             if rest.is_empty() {
                 format!("{first_word} {before}")
             } else {
@@ -222,16 +219,16 @@ pub fn import_launchbox(
         }
 
         // Report progress every 5000 entries.
-        if stats.total_source % 5000 == 0 {
+        if stats.total_source.is_multiple_of(5000) {
             on_progress(stats.total_source, stats.matched, stats.inserted);
         }
     })?;
 
     // Flush remaining.
-    if !batch.is_empty() {
-        if let Ok(n) = db.bulk_upsert(&batch) {
-            stats.inserted += n;
-        }
+    if !batch.is_empty()
+        && let Ok(n) = db.bulk_upsert(&batch)
+    {
+        stats.inserted += n;
     }
 
     tracing::info!(
@@ -490,13 +487,14 @@ fn scan_rom_dir_recursive(
 
                     // For clones, also index under the parent's display name
                     // so they can match the parent's LaunchBox entry.
-                    if info.is_clone && !info.parent.is_empty() {
-                        if let Some(parent_info) = arcade_db::lookup_arcade_game(info.parent) {
-                            let parent_norm = normalize_title(parent_info.display_name);
-                            if parent_norm != normalize_title(info.display_name) {
-                                let parent_key = (system.to_string(), parent_norm);
-                                index.entry(parent_key).or_default().push(filename);
-                            }
+                    if info.is_clone
+                        && !info.parent.is_empty()
+                        && let Some(parent_info) = arcade_db::lookup_arcade_game(info.parent)
+                    {
+                        let parent_norm = normalize_title(parent_info.display_name);
+                        if parent_norm != normalize_title(info.display_name) {
+                            let parent_key = (system.to_string(), parent_norm);
+                            index.entry(parent_key).or_default().push(filename);
                         }
                     }
                 } else {

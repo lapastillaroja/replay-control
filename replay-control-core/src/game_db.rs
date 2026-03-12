@@ -7,7 +7,7 @@
 /// The data model uses a two-level structure:
 /// - `CanonicalGame`: one per unique game, holds shared metadata
 /// - `GameEntry`: one per ROM filename variant, references a CanonicalGame
-
+///
 /// Shared metadata for a canonical game (one per unique game title per system).
 #[derive(Debug, Clone)]
 pub struct CanonicalGame {
@@ -91,7 +91,7 @@ pub fn lookup_by_normalized_title(
 pub fn normalize_filename(stem: &str) -> String {
     // Strip everything from the first '(' or '[' onward
     let base = stem
-        .find(|c| c == '(' || c == '[')
+        .find(['(', '['])
         .map(|i| &stem[..i])
         .unwrap_or(stem)
         .trim();
@@ -133,20 +133,20 @@ pub fn game_display_name(system: &str, filename: &str) -> Option<&'static str> {
 
     // 2. Normalized title fallback
     let normalized = normalize_filename(stem);
-    if !normalized.is_empty() {
-        if let Some(game) = lookup_by_normalized_title(system, &normalized) {
-            return Some(game.display_name);
-        }
+    if !normalized.is_empty()
+        && let Some(game) = lookup_by_normalized_title(system, &normalized)
+    {
+        return Some(game.display_name);
     }
 
     // 3. Tilde-split fallback: try each segment of "Title A ~ Title B" separately
     if stem.contains('~') {
         for part in stem.split('~') {
             let part_normalized = normalize_filename(part.trim());
-            if !part_normalized.is_empty() {
-                if let Some(game) = lookup_by_normalized_title(system, &part_normalized) {
-                    return Some(game.display_name);
-                }
+            if !part_normalized.is_empty()
+                && let Some(game) = lookup_by_normalized_title(system, &part_normalized)
+            {
+                return Some(game.display_name);
             }
         }
     }

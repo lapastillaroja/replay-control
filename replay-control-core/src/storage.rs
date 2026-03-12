@@ -132,10 +132,7 @@ fn disk_usage_for(path: &Path) -> Result<DiskUsage> {
         .map_err(|e| Error::io(path, e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let line = stdout
-        .lines()
-        .nth(1)
-        .ok_or_else(|| Error::StorageNotFound)?;
+    let line = stdout.lines().nth(1).ok_or(Error::StorageNotFound)?;
 
     let fields: Vec<&str> = line.split_whitespace().collect();
     if fields.len() < 4 {
@@ -162,13 +159,13 @@ fn find_usb_storage() -> Result<PathBuf> {
 
     // Fallback: scan /media for any mounted USB
     let media = Path::new("/media");
-    if media.exists() {
-        if let Ok(entries) = std::fs::read_dir(media) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p != Path::new("/media/sd") && p.join(ROMS_DIR).exists() {
-                    return Ok(p);
-                }
+    if media.exists()
+        && let Ok(entries) = std::fs::read_dir(media)
+    {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p != Path::new("/media/sd") && p.join(ROMS_DIR).exists() {
+                return Ok(p);
             }
         }
     }

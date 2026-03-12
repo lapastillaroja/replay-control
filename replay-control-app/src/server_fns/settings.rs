@@ -187,11 +187,12 @@ pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
     }
 
     // Step 2: Update /etc/hosts — replace old hostname with new.
-    if !old_hostname.is_empty() && old_hostname != hostname {
-        if let Ok(hosts) = std::fs::read_to_string("/etc/hosts") {
-            let updated = hosts.replace(&old_hostname, &hostname);
-            let _ = std::fs::write("/etc/hosts", updated);
-        }
+    if !old_hostname.is_empty()
+        && old_hostname != hostname
+        && let Ok(hosts) = std::fs::read_to_string("/etc/hosts")
+    {
+        let updated = hosts.replace(&old_hostname, &hostname);
+        let _ = std::fs::write("/etc/hosts", updated);
     }
 
     // Step 3: Restart Avahi so mDNS broadcasts the new name.

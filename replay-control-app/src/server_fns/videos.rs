@@ -96,17 +96,17 @@ pub async fn search_game_videos(
         // Repeatedly strip trailing parenthesized/bracketed tags
         loop {
             let trimmed = s.trim();
-            if let Some(pos) = trimmed.rfind(" (") {
-                if trimmed.ends_with(')') {
-                    s = &trimmed[..pos];
-                    continue;
-                }
+            if let Some(pos) = trimmed.rfind(" (")
+                && trimmed.ends_with(')')
+            {
+                s = &trimmed[..pos];
+                continue;
             }
-            if let Some(pos) = trimmed.rfind(" [") {
-                if trimmed.ends_with(']') {
-                    s = &trimmed[..pos];
-                    continue;
-                }
+            if let Some(pos) = trimmed.rfind(" [")
+                && trimmed.ends_with(']')
+            {
+                s = &trimmed[..pos];
+                continue;
             }
             break;
         }
