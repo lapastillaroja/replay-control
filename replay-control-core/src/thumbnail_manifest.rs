@@ -143,7 +143,7 @@ pub fn fetch_repo_tree(url_name: &str, branch: &str) -> Result<(String, String)>
 
     // List all files in the tree.
     let ls_output = std::process::Command::new("git")
-        .args(["-C", &tmp_dir, "ls-tree", "-r", "HEAD"])
+        .args(["-C", &tmp_dir, "ls-tree", "-rl", "HEAD"])
         .output()
         .map_err(|e| Error::Other(format!("Failed to run git ls-tree: {e}")))?;
 
@@ -166,16 +166,17 @@ pub struct ThumbnailEntry {
     pub is_symlink: bool, // true if git mode is 120000 (symlink)
 }
 
-/// Parse `git ls-tree -r HEAD` output, extracting Named_Boxarts and Named_Snaps entries.
+/// Parse `git ls-tree -rl HEAD` output, extracting Named_Boxarts and Named_Snaps entries.
 ///
-/// Each line has the format: `<mode> <type> <sha>\t<path>`
-/// - Mode `120000` = symlink
+/// Each line has the format: `<mode> <type> <sha> <size>\t<path>`
+/// - Mode `120000` = symlink (size shows as `-`)
 /// - Mode `100644` = regular file
+/// Entries smaller than 200 bytes are filtered out (broken stubs/LFS pointers).
 pub fn parse_tree_entries(ls_tree_output: &str) -> Result<Vec<ThumbnailEntry>> {
     let mut entries = Vec::new();
 
     for line in ls_tree_output.lines() {
-        // Split on tab: left part is "mode type sha", right part is path.
+        // Split on tab: left part is "mode type sha size", right part is path.
         let (meta, path) = match line.split_once('\t') {
             Some(parts) => parts,
             None => continue,
@@ -198,6 +199,18 @@ pub fn parse_tree_entries(ls_tree_output: &str) -> Result<Vec<ThumbnailEntry>> {
 
         // Detect symlinks from the git file mode (first field).
         let is_symlink = meta.starts_with("120000");
+
+        // Filter out stub/broken files (< 200 bytes). Symlinks show size as "-".
+        if !is_symlink {
+            // Meta format: "100644 blob <sha> <size>" — size is the last field.
+            let blob_size: u64 = meta
+                .rsplit_once(' ')
+                .and_then(|(_, s)| s.trim().parse().ok())
+                .unwrap_or(0);
+            if blob_size > 0 && blob_size < 200 {
+                continue;
+            }
+        }
 
         entries.push(ThumbnailEntry {
             kind: kind.to_string(),
