@@ -26,6 +26,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # ── Dev (SSR server) ──────────────────────────────────────────────────────────
 [profile.dev]
 opt-level = 1            # basic optimisations — still fast to compile
+strip = "debuginfo"      # drops ~800MB → ~80MB, faster Pi deploys
 
 [profile.dev.package."*"]
 opt-level = 2            # heavier opts for deps (they rarely change)
