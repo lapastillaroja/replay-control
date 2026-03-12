@@ -10,20 +10,43 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# ── Profiles ──────────────────────────────────────────────────────────────────
+#
+# Four profiles are intentional — SSR and WASM have different optimisation
+# goals (speed vs size), so each environment (dev / prod) needs a pair.
+#
+#              SSR server          WASM client
+#   dev:       dev (opt 1)         wasm-dev (opt "s")
+#   prod:      release (opt 3)     wasm-release (opt "z")
+#
+# Why wasm-dev exists: even in dev, unoptimised WASM (opt 0/1) can be 20-40 MB,
+# making page loads painfully slow. opt "s" keeps dev WASM at a few MB without
+# the full cost of a release build.
+
+# ── Dev (SSR server) ──────────────────────────────────────────────────────────
+[profile.dev]
+opt-level = 1            # basic optimisations — still fast to compile
+
+[profile.dev.package."*"]
+opt-level = 2            # heavier opts for deps (they rarely change)
+
+[profile.dev.build-override]
+opt-level = 2            # build scripts (serde_json, phf_codegen) run ~3-5x faster optimised
+
+# ── Dev (WASM hydrate) ───────────────────────────────────────────────────────
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = "s"          # optimise for size — keeps dev WASM small enough
+
+# ── Release (SSR server) ─────────────────────────────────────────────────────
 [profile.release]
-incremental = true
+opt-level = 3
+lto = "thin"             # good LTO without fat-LTO compile cost
+codegen-units = 1
+strip = "symbols"
 
-# Fast release profile for development iteration.
-# Use with: cargo build --profile release-dev
-[profile.release-dev]
-inherits = "release"
-incremental = true
-codegen-units = 256
-opt-level = 1
-
+# ── Release (WASM hydrate) ───────────────────────────────────────────────────
 [profile.wasm-release]
 inherits = "release"
-opt-level = "z"
-lto = true
-codegen-units = 1
-incremental = false
+opt-level = "z"          # aggressively optimise for size
+lto = true               # fat LTO — best size reduction for WASM
