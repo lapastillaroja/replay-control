@@ -277,6 +277,9 @@ impl AppState {
             *guard = Some(db);
         }
 
+        // Invalidate image cache so updated metadata paths are picked up.
+        self.cache.invalidate_images();
+
         // Update final progress.
         {
             let mut guard = self
