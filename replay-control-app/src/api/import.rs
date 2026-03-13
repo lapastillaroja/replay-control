@@ -717,12 +717,15 @@ impl AppState {
     }
 
     /// Scan the media directory for a system and update game_metadata image paths.
+    /// Uses fuzzy matching (base title + version-stripped) to bridge naming gaps
+    /// between ROM filenames and libretro-thumbnails manifest names.
     fn update_image_paths_from_disk(
         db: &mut replay_control_core::metadata_db::MetadataDb,
         storage_root: &std::path::Path,
         system: &str,
     ) {
-        use replay_control_core::thumbnails;
+        use replay_control_core::thumbnails::{self, strip_version, thumbnail_filename};
+        use std::collections::HashMap;
 
         let rom_filenames = thumbnails::list_rom_filenames(storage_root, system);
         let media_base = storage_root
@@ -730,31 +733,112 @@ impl AppState {
             .join("media")
             .join(system);
 
-        let boxart_dir = media_base.join("boxart");
-        let snap_dir = media_base.join("snap");
+        /// Build a filename index for a media subdirectory (boxart or snap).
+        /// Returns (exact, fuzzy, version) maps from normalized keys to relative paths.
+        fn build_dir_index(
+            dir: &std::path::Path,
+            kind: &str,
+        ) -> (HashMap<String, String>, HashMap<String, String>, HashMap<String, String>) {
+            let base_title = |s: &str| -> String {
+                let s = s.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(s);
+                s.find(" (")
+                    .or_else(|| s.find(" ["))
+                    .map(|i| &s[..i])
+                    .unwrap_or(s)
+                    .trim()
+                    .to_lowercase()
+            };
 
-        let mut updates: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
+            let mut exact = HashMap::new();
+            let mut fuzzy = HashMap::new();
+            let mut version = HashMap::new();
 
-        for rom_filename in &rom_filenames {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if let Some(img_stem) = name_str.strip_suffix(".png") {
+                        // Skip tiny files (fake symlinks / stubs).
+                        let valid = entry
+                            .metadata()
+                            .map(|m| m.len() >= 200)
+                            .unwrap_or(false);
+                        if !valid {
+                            continue;
+                        }
+                        let path = format!("{kind}/{name_str}");
+                        exact.insert(img_stem.to_string(), path.clone());
+                        let bt = base_title(img_stem);
+                        let vs = strip_version(&bt).to_string();
+                        fuzzy.entry(bt.clone()).or_insert_with(|| path.clone());
+                        if vs.len() < bt.len() {
+                            version.entry(vs).or_insert(path);
+                        }
+                    }
+                }
+            }
+            (exact, fuzzy, version)
+        }
+
+        /// Look up a ROM in the directory index using the same fuzzy tiers
+        /// as resolve_box_art / find_image_on_disk.
+        fn find_match(
+            rom_filename: &str,
+            exact: &HashMap<String, String>,
+            fuzzy: &HashMap<String, String>,
+            version: &HashMap<String, String>,
+        ) -> Option<String> {
             let stem = rom_filename
                 .rfind('.')
                 .map(|i| &rom_filename[..i])
                 .unwrap_or(rom_filename);
-            let thumb_name = thumbnails::thumbnail_filename(stem);
+            let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
+            let thumb_name = thumbnail_filename(stem);
 
-            let boxart_path = boxart_dir.join(format!("{thumb_name}.png"));
-            let snap_path = snap_dir.join(format!("{thumb_name}.png"));
+            // Tier 1: exact
+            if let Some(path) = exact.get(&thumb_name) {
+                return Some(path.clone());
+            }
 
-            let boxart_rel = if boxart_path.exists() {
-                Some(format!("boxart/{thumb_name}.png"))
-            } else {
-                None
+            // Tier 2: base title (strip tags)
+            let base = {
+                let s = thumb_name
+                    .rsplit_once(" ~ ")
+                    .map(|(_, r)| r)
+                    .unwrap_or(&thumb_name);
+                s.find(" (")
+                    .or_else(|| s.find(" ["))
+                    .map(|i| &s[..i])
+                    .unwrap_or(s)
+                    .trim()
+                    .to_lowercase()
             };
-            let snap_rel = if snap_path.exists() {
-                Some(format!("snap/{thumb_name}.png"))
-            } else {
-                None
-            };
+            if let Some(path) = fuzzy.get(&base) {
+                return Some(path.clone());
+            }
+
+            // Tier 3: version-stripped
+            let vs = strip_version(&base);
+            if vs.len() < base.len() {
+                if let Some(path) = fuzzy.get(vs).or_else(|| version.get(vs)) {
+                    return Some(path.clone());
+                }
+            }
+
+            None
+        }
+
+        let boxart_dir = media_base.join("boxart");
+        let snap_dir = media_base.join("snap");
+
+        let (box_exact, box_fuzzy, box_version) = build_dir_index(&boxart_dir, "boxart");
+        let (snap_exact, snap_fuzzy, snap_version) = build_dir_index(&snap_dir, "snap");
+
+        let mut updates: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
+
+        for rom_filename in &rom_filenames {
+            let boxart_rel = find_match(rom_filename, &box_exact, &box_fuzzy, &box_version);
+            let snap_rel = find_match(rom_filename, &snap_exact, &snap_fuzzy, &snap_version);
 
             if boxart_rel.is_some() || snap_rel.is_some() {
                 updates.push((
