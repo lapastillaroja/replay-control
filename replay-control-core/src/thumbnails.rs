@@ -78,8 +78,10 @@ pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
         "sony_psx" => Some(&["Sony - PlayStation"]),
         // Arcade systems — libretro-thumbnails uses display names as filenames,
         // so the manifest builder translates MAME codenames via arcade_db.
-        "arcade_mame" => Some(&["MAME"]),
-        "arcade_fbneo" => Some(&["FBNeo - Arcade Games"]),
+        // MAME primary, FBNeo fallback (each repo has some boxarts the other lacks)
+        "arcade_mame" => Some(&["MAME", "FBNeo - Arcade Games"]),
+        // FBNeo primary, MAME fallback (FBNeo repo is missing some boxarts that MAME has)
+        "arcade_fbneo" => Some(&["FBNeo - Arcade Games", "MAME"]),
         "arcade_mame_2k3p" => Some(&["MAME"]),
         // arcade_dc covers Atomiswave + Naomi + Naomi 2 hardware
         "arcade_dc" => Some(&["Atomiswave", "Sega - Naomi", "Sega - Naomi 2"]),

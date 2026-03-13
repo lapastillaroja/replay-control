@@ -587,7 +587,7 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT system, COUNT(*) as cnt FROM game_metadata GROUP BY system ORDER BY cnt DESC",
+                "SELECT gm.system, COUNT(*) as cnt FROM game_metadata gm INNER JOIN rom_cache rc ON gm.system = rc.system AND gm.rom_filename = rc.rom_filename GROUP BY gm.system ORDER BY cnt DESC",
             )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -694,10 +694,10 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT system,
-                        SUM(CASE WHEN box_art_path IS NOT NULL THEN 1 ELSE 0 END),
-                        SUM(CASE WHEN screenshot_path IS NOT NULL THEN 1 ELSE 0 END)
-                 FROM game_metadata GROUP BY system",
+                "SELECT gm.system,
+                        SUM(CASE WHEN gm.box_art_path IS NOT NULL THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN gm.screenshot_path IS NOT NULL THEN 1 ELSE 0 END)
+                 FROM game_metadata gm INNER JOIN rom_cache rc ON gm.system = rc.system AND gm.rom_filename = rc.rom_filename GROUP BY gm.system",
             )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -984,6 +984,18 @@ impl MetadataDb {
             )
             .map_err(|e| Error::Other(format!("Clear system rom_cache_meta: {e}")))?;
         Ok(())
+    }
+
+    /// Get filenames of visible games for a system (excludes disc files hidden by M3U dedup).
+    pub fn visible_filenames(&self, system: &str) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT rom_filename FROM rom_cache WHERE system = ?1")
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| row.get(0))
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+        Ok(rows.flatten().collect())
     }
 
     /// Clear all rom_cache and rom_cache_meta entries.

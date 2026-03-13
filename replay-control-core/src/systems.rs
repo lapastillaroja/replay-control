@@ -308,7 +308,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "PlayStation",
         manufacturer: "Sony",
         category: SystemCategory::Console,
-        extensions: &["chd", "cue", "bin", "img", "pbp"],
+        extensions: &["chd", "cue", "bin", "img", "pbp", "m3u"],
     },
     System {
         folder_name: "alpha_player",
