@@ -36,8 +36,7 @@ pub struct RecommendationData {
     pub top_rated: Option<Vec<RecommendedGame>>,
 }
 
-/// Get recommendation data purely from SQLite rom_cache.
-/// One Mutex acquisition, a few fast SQL queries, no filesystem access.
+/// Get recommendation data from SQLite rom_cache + filesystem image resolution.
 /// Returns empty data gracefully if rom_cache is not yet populated.
 #[server(prefix = "/sfn")]
 pub async fn get_recommendations(count: usize) -> Result<RecommendationData, ServerFnError> {
@@ -94,7 +93,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     };
 
     // --- Post-process random picks: ensure system diversity ---
-    let random_picks = diversify_picks(random_pool, count, &systems);
+    let mut random_picks = diversify_picks(random_pool, count, &systems);
 
     // --- Genre/multiplayer ---
     let top_genres: Vec<GenreCount> = genre_counts
@@ -104,7 +103,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         .collect();
 
     // --- Favorites picks ---
-    let favorites_picks = favorites_info.and_then(|fi| {
+    let mut favorites_picks = favorites_info.and_then(|fi| {
         let roms = fav_roms?;
         if roms.is_empty() {
             return None;
@@ -125,12 +124,22 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     });
 
     // --- Top rated: diversity across systems ---
-    let top_rated = if top_rated_pool.is_empty() {
+    let mut top_rated = if top_rated_pool.is_empty() {
         None
     } else {
         let picks = diversify_picks(top_rated_pool, count, &systems);
         if picks.is_empty() { None } else { Some(picks) }
     };
+
+    // Resolve box art from filesystem (same approach as recents/favorites/games).
+    // The pre-cached rom_cache.box_art_url may be stale or NULL.
+    resolve_box_art_for_picks(&state, &mut random_picks);
+    if let Some(ref mut fp) = favorites_picks {
+        resolve_box_art_for_picks(&state, &mut fp.picks);
+    }
+    if let Some(ref mut tr) = top_rated {
+        resolve_box_art_for_picks(&state, tr);
+    }
 
     Ok(RecommendationData {
         random_picks,
@@ -232,7 +241,29 @@ fn diversify_picks(
     picks
 }
 
-/// Convert CachedRom to RecommendedGame. Uses cached box_art_url — no filesystem access.
+/// Resolve box art URLs from the filesystem for a batch of picks.
+/// Uses the same ImageIndex approach as recents/favorites/games pages.
+#[cfg(feature = "ssr")]
+fn resolve_box_art_for_picks(state: &crate::api::AppState, picks: &mut [RecommendedGame]) {
+    let mut image_indexes: std::collections::HashMap<
+        String,
+        std::sync::Arc<crate::api::cache::ImageIndex>,
+    > = std::collections::HashMap::new();
+    for game in picks.iter_mut() {
+        let index = image_indexes
+            .entry(game.system.clone())
+            .or_insert_with(|| state.cache.get_image_index(state, &game.system));
+        if let Some(url) =
+            state
+                .cache
+                .resolve_box_art(state, index, &game.system, &game.rom_filename)
+        {
+            game.box_art_url = Some(url);
+        }
+    }
+}
+
+/// Convert CachedRom to RecommendedGame. box_art_url is resolved later by the caller.
 #[cfg(feature = "ssr")]
 fn to_recommended(
     system: &str,
