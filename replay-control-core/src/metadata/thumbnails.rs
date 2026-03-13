@@ -146,11 +146,19 @@ pub fn strip_version(name: &str) -> &str {
 
 /// Compute a lowercased base title for fuzzy image matching.
 ///
-/// Handles tilde dual-names (`"Name1 ~ Name2"` → `"Name2"`), then strips
-/// parenthesized/bracketed tags and lowercases the result.
+/// Handles tilde dual-names (`"Name1 ~ Name2"` → `"Name2"`), strips
+/// parenthesized/bracketed tags, lowercases the result, and normalizes
+/// trailing articles (`", The"` / `", A"` / `", An"`) to the front.
 pub fn base_title(name: &str) -> String {
     let s = name.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(name);
-    strip_tags(s).to_lowercase()
+    let lower = strip_tags(s).to_lowercase();
+    for article in &[", the", ", an", ", a"] {
+        if let Some(title) = lower.strip_suffix(article) {
+            let art = &article[2..]; // skip ", "
+            return format!("{art} {title}");
+        }
+    }
+    lower
 }
 
 /// Quick check that a file is likely a real image (not a git fake-symlink text file).
@@ -473,6 +481,38 @@ mod tests {
     #[test]
     fn strip_version_underscore_separated() {
         assert_eq!(strip_version("Game v1_003"), "Game");
+    }
+
+    // --- base_title ---
+
+    #[test]
+    fn base_title_reorders_trailing_the() {
+        assert_eq!(base_title("Legend of Zelda, The"), "the legend of zelda");
+    }
+
+    #[test]
+    fn base_title_reorders_trailing_a() {
+        assert_eq!(base_title("Legend of Zelda, A"), "a legend of zelda");
+    }
+
+    #[test]
+    fn base_title_reorders_trailing_an() {
+        assert_eq!(base_title("NHL 95, An"), "an nhl 95");
+    }
+
+    #[test]
+    fn base_title_no_article_unchanged() {
+        assert_eq!(base_title("Super Mario World"), "super mario world");
+    }
+
+    #[test]
+    fn base_title_short_name_no_article() {
+        assert_eq!(base_title("Contra"), "contra");
+    }
+
+    #[test]
+    fn base_title_does_not_false_match_article_suffix() {
+        assert_eq!(base_title("America"), "america");
     }
 
     // --- thumbnail_repo_names ---
