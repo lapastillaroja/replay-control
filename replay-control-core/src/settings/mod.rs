@@ -3,6 +3,8 @@
 //! Uses the same `key = "value"` format as `replay.cfg` but is kept separate
 //! to avoid modifying the RePlayOS system configuration.
 
+pub mod skins;
+
 use std::path::Path;
 
 use crate::config::ReplayConfig;

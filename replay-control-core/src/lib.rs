@@ -1,29 +1,41 @@
-pub mod arcade_db;
-pub mod config;
-#[cfg(feature = "metadata")]
-pub mod db_common;
 pub mod error;
-pub mod favorites;
-pub mod game_db;
-pub mod game_ref;
 pub mod launch;
-#[cfg(feature = "metadata")]
-pub mod launchbox;
-#[cfg(feature = "metadata")]
-pub mod metadata_db;
-pub mod recents;
-pub mod rom_tags;
-pub mod roms;
-pub mod screenshots;
+
+mod platform;
+pub use platform::config;
+pub use platform::storage;
+pub use platform::systems;
+
+mod game;
+pub use game::arcade_db;
+pub use game::game_db;
+pub use game::game_ref;
+pub use game::rom_tags;
+
+mod library;
+pub use library::favorites;
+pub use library::recents;
+pub use library::roms;
+
 pub mod settings;
-pub mod skins;
-pub mod storage;
-pub mod systems;
+pub use settings::skins;
+
+mod capture;
+pub use capture::screenshots;
+pub use capture::video_url;
+pub use capture::videos;
+
 #[cfg(feature = "metadata")]
-pub mod thumbnail_manifest;
+mod metadata;
 #[cfg(feature = "metadata")]
-pub mod thumbnails;
+pub use metadata::db_common;
 #[cfg(feature = "metadata")]
-pub mod user_data_db;
-pub mod video_url;
-pub mod videos;
+pub use metadata::launchbox;
+#[cfg(feature = "metadata")]
+pub use metadata::metadata_db;
+#[cfg(feature = "metadata")]
+pub use metadata::thumbnail_manifest;
+#[cfg(feature = "metadata")]
+pub use metadata::thumbnails;
+#[cfg(feature = "metadata")]
+pub use metadata::user_data_db;
