@@ -1,13 +1,15 @@
 use leptos::prelude::*;
+use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::captures::{CapturesLightbox, INITIAL_CAPTURE_COUNT};
+use crate::components::hero_card::GameScrollCard;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
-use crate::server_fns::{self, RomDetail};
+use crate::server_fns::{self, RecommendedGame, RegionalVariant, RomDetail};
 use crate::util::format_size_for_system;
 
 #[component]
@@ -416,6 +418,12 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             display_name=game_name_sv
         />
 
+        // Related Games (lazy-loaded)
+        <RelatedGamesSection
+            system=system_sv
+            rom_filename=filename_sv
+        />
+
         // Manual
         <section class="section game-section">
             <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.manual")}</h2>
@@ -632,5 +640,89 @@ fn GameDeleteAction(
                 </button>
             </div>
         </Show>
+    }
+}
+
+/// Related games section: regional variants and "More Like This" (genre-based).
+/// Loads lazily via its own Resource so it never blocks the main page render.
+#[component]
+fn RelatedGamesSection(
+    system: StoredValue<String>,
+    rom_filename: StoredValue<String>,
+) -> impl IntoView {
+    let related = Resource::new(
+        move || (system.get_value(), rom_filename.get_value()),
+        |(sys, fname)| server_fns::get_related_games(sys, fname),
+    );
+
+    view! {
+        <Transition fallback=|| ()>
+            {move || Suspend::new(async move {
+                let data = related.await;
+                Ok::<_, ServerFnError>(match data {
+                    Ok(data) => {
+                        let has_variants = data.regional_variants.len() > 1;
+                        let has_similar = !data.similar_games.is_empty();
+                        if !has_variants && !has_similar {
+                            view! { <div /> }.into_any()
+                        } else {
+                            view! {
+                                <Show when=move || has_variants>
+                                    <RegionalVariantsChips variants=data.regional_variants.clone() />
+                                </Show>
+                                <Show when=move || has_similar>
+                                    <SimilarGamesRow games=data.similar_games.clone() />
+                                </Show>
+                            }.into_any()
+                        }
+                    }
+                    Err(_) => view! { <div /> }.into_any(),
+                })
+            })}
+        </Transition>
+    }
+}
+
+/// Horizontal chip row showing regional variants as clickable links.
+#[component]
+fn RegionalVariantsChips(variants: Vec<RegionalVariant>) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <section class="section game-section">
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.regional_variants")}</h2>
+            <div class="regional-variants">
+                {variants.into_iter().map(|v| {
+                    let class = if v.is_current { "region-chip active" } else { "region-chip" };
+                    view! {
+                        <A href=v.href attr:class=class>{v.region}</A>
+                    }
+                }).collect::<Vec<_>>()}
+            </div>
+        </section>
+    }
+}
+
+/// Horizontal scrollable row of similar games, reusing GameScrollCard.
+#[component]
+fn SimilarGamesRow(games: Vec<RecommendedGame>) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <section class="section game-section">
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.more_like_this")}</h2>
+            <div class="recent-scroll">
+                {games.into_iter().map(|game| {
+                    view! {
+                        <GameScrollCard
+                            href=game.href
+                            name=game.display_name
+                            system=game.system_display
+                            box_art_url=game.box_art_url
+                        />
+                    }
+                }).collect::<Vec<_>>()}
+            </div>
+        </section>
     }
 }

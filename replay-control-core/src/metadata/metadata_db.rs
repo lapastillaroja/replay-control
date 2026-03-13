@@ -247,7 +247,11 @@ impl MetadataDb {
                     scanned_at INTEGER NOT NULL,
                     rom_count INTEGER NOT NULL DEFAULT 0,
                     total_size_bytes INTEGER NOT NULL DEFAULT 0
-                );",
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_rom_cache_genre
+                  ON rom_cache (system, genre)
+                  WHERE genre IS NOT NULL AND genre != '';",
             )
             .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
 
@@ -1421,6 +1425,81 @@ impl MetadataDb {
             .filter(|r| !exclude_set.contains(r.rom_filename.as_str()))
             .take(count)
             .collect())
+    }
+
+    /// Find regional variants of a game: other ROMs sharing the same base_title.
+    /// Returns (rom_filename, region) pairs sorted by region priority (USA, Europe, Japan first).
+    /// Returns an empty Vec if the game has no base_title or only one region exists.
+    pub fn regional_variants(
+        &self,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, region FROM rom_cache
+                 WHERE system = ?1
+                   AND base_title != ''
+                   AND base_title = (
+                       SELECT base_title FROM rom_cache
+                       WHERE system = ?1 AND rom_filename = ?2
+                   )
+                 ORDER BY
+                   CASE region
+                       WHEN 'USA' THEN 1
+                       WHEN 'Europe' THEN 2
+                       WHEN 'Japan' THEN 3
+                       ELSE 4
+                   END,
+                   region",
+            )
+            .map_err(|e| Error::Other(format!("Prepare regional_variants: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system, rom_filename], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query regional_variants: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Find similar games by genre within the same system.
+    /// Excludes the given ROM, clones, and games without a genre.
+    /// Returns randomized results up to `limit`.
+    pub fn similar_by_genre(
+        &self,
+        system: &str,
+        genre: &str,
+        exclude_filename: &str,
+        limit: usize,
+    ) -> Result<Vec<CachedRom>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_clone, base_title, region
+                 FROM rom_cache
+                 WHERE system = ?1
+                   AND genre = ?2
+                   AND genre != ''
+                   AND rom_filename != ?3
+                   AND is_clone = 0
+                 ORDER BY RANDOM()
+                 LIMIT ?4",
+            )
+            .map_err(|e| Error::Other(format!("Prepare similar_by_genre: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![system, genre, exclude_filename, limit as i64],
+                Self::row_to_cached_rom,
+            )
+            .map_err(|e| Error::Other(format!("Query similar_by_genre: {e}")))?;
+
+        Ok(rows.flatten().collect())
     }
 
     /// Helper: convert a row to CachedRom (used by multiple queries).

@@ -211,3 +211,34 @@
 .game-rename-inline .rename-input {
     flex: 1;
 }
+
+/* Regional variant chips */
+.regional-variants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.region-chip {
+    display: inline-block;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.85rem;
+    text-decoration: none;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.region-chip:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover, var(--bg-secondary));
+}
+
+.region-chip.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+}

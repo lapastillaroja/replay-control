@@ -229,36 +229,42 @@ fn collect_favorites_info(
     })
 }
 
-/// Select diverse picks from a pool: prefer one per system, then fill.
+/// Select diverse picks from a pool: prefer one per system, then fill with a cap.
 #[cfg(feature = "ssr")]
 fn diversify_picks(
     pool: Vec<replay_control_core::metadata_db::CachedRom>,
     count: usize,
     systems: &[SystemSummary],
 ) -> Vec<RecommendedGame> {
-    use std::collections::HashSet;
+    use std::collections::HashMap;
 
     let mut picks = Vec::with_capacity(count);
-    let mut used_systems: HashSet<String> = HashSet::new();
+    let mut system_counts: HashMap<String, usize> = HashMap::new();
 
     // First pass: one per system.
     for rom in &pool {
         if picks.len() >= count {
             break;
         }
-        if used_systems.contains(&rom.system) {
+        if system_counts.contains_key(&rom.system) {
             continue;
         }
         if let Some(game) = to_recommended(&rom.system, rom, systems) {
-            used_systems.insert(rom.system.clone());
+            *system_counts.entry(rom.system.clone()).or_default() += 1;
             picks.push(game);
         }
     }
 
-    // Second pass: fill remaining.
+    // Second pass: fill remaining, but cap each system to ensure diversity.
+    // With count=6, max_per_system=2 guarantees at least 3 different systems.
+    let max_per_system = (count / 3).max(2);
     for rom in &pool {
         if picks.len() >= count {
             break;
+        }
+        let sys_count = system_counts.get(&rom.system).copied().unwrap_or(0);
+        if sys_count >= max_per_system {
+            continue;
         }
         if picks
             .iter()
@@ -267,6 +273,7 @@ fn diversify_picks(
             continue;
         }
         if let Some(game) = to_recommended(&rom.system, rom, systems) {
+            *system_counts.entry(rom.system.clone()).or_default() += 1;
             picks.push(game);
         }
     }
@@ -277,7 +284,7 @@ fn diversify_picks(
 /// Resolve box art URLs from the filesystem for a batch of picks.
 /// Uses the same ImageIndex approach as recents/favorites/games pages.
 #[cfg(feature = "ssr")]
-fn resolve_box_art_for_picks(state: &crate::api::AppState, picks: &mut [RecommendedGame]) {
+pub(super) fn resolve_box_art_for_picks(state: &crate::api::AppState, picks: &mut [RecommendedGame]) {
     let mut image_indexes: std::collections::HashMap<
         String,
         std::sync::Arc<crate::api::cache::ImageIndex>,
@@ -298,7 +305,7 @@ fn resolve_box_art_for_picks(state: &crate::api::AppState, picks: &mut [Recommen
 
 /// Convert CachedRom to RecommendedGame. box_art_url is resolved later by the caller.
 #[cfg(feature = "ssr")]
-fn to_recommended(
+pub(super) fn to_recommended(
     system: &str,
     rom: &replay_control_core::metadata_db::CachedRom,
     systems: &[SystemSummary],
