@@ -174,6 +174,13 @@ It may succeed (the `inotify_add_watch` syscall does not reject NFS paths), but
 the watch will silently miss remote changes. This is worse than an outright
 failure because it gives a false sense of real-time detection.
 
+However, automatic polling on a timer is not needed for NFS either. The existing
+metadata page already has "Update" and "Clear" buttons that trigger
+`enrich_system_cache()` for all systems, which runs `auto_match_metadata()` —
+the exact code path that matches new ROMs. When a user adds ROMs via scp, their
+natural next step is visiting the app's metadata page and triggering an update.
+This manual flow is sufficient for the NFS use case.
+
 #### fanotify
 
 `fanotify` (the newer Linux filesystem notification API) has the same
@@ -198,9 +205,8 @@ tree.
 
 #### Hybrid approach recommendation
 
-Use a **hybrid strategy** that matches what the project already does for config
-file watching: `notify` (inotify) for instant detection on local mounts, with
-periodic polling as a fallback for NFS.
+Use a **hybrid strategy**: `notify` (inotify) for instant detection on local
+mounts, and the existing manual "Update" flow on the metadata page for NFS.
 
 The project already distinguishes `StorageKind::Nfs` from local storage types
 (`Sd`, `Usb`, `Nvme`) via `StorageLocation::kind`. This is the same boundary
@@ -214,28 +220,26 @@ detection strategy can branch on this:
   batch rapid changes (e.g., bulk copy operations). This gives sub-second
   detection latency for the common case.
 
-- **NFS storage**: Fall back to the 60-second periodic mtime poll (same
-  mechanism as the existing `spawn_storage_watcher` interval). This is the
-  only reliable approach for NFS since the server provides no push
-  notifications. The 300-second hard TTL remains as an additional safety net.
-
-This mirrors the existing pattern in `spawn_storage_watcher`, which uses
-`try_start_config_watcher` (inotify) with a 60-second poll fallback
-(background.rs:231: "Falls back to the 60-second poll if filesystem watching
-cannot be set up (e.g., on NFS)"). The ROM watching would follow the same
-architecture.
+- **NFS storage**: No watcher, no periodic polling timer. The existing "Update"
+  and "Clear" buttons on the metadata page already trigger
+  `enrich_system_cache()` for all systems, which calls `auto_match_metadata()`.
+  This is the exact code path that matches new ROMs. When a user adds ROMs
+  via scp, their natural workflow is to visit the metadata page and trigger an
+  update. The 300-second hard TTL remains as an additional safety net for
+  page-level cache freshness.
 
 **Benefits of the hybrid approach:**
 
 - Near-instant detection on local storage (the majority deployment on Pi)
-- No false confidence on NFS — polling is explicit and reliable
+- No watcher or timer complexity for NFS — the existing UI flow handles it
 - Zero new dependencies (reuses existing `notify` crate)
 - Graceful degradation: if `notify` fails to set up a watcher (permissions,
-  kernel limits), the poll fallback still works
+  kernel limits), the user can always trigger a manual update from the
+  metadata page
 
 ### Proposed Implementation
 
-#### Change 1: Hybrid ROM change detection (background.rs)
+#### Change 1: Filesystem watcher for local storage (background.rs)
 
 For **local storage** (`Sd`, `Usb`, `Nvme`): set up a `notify` filesystem
 watcher on the `roms/` directory using `RecursiveMode::Recursive`, following
@@ -245,51 +249,38 @@ marking the affected system stale and scheduling `get_roms` +
 `enrich_system_cache`. Use a 2-3 second debounce window to batch bulk
 operations.
 
-For **NFS storage** (or if the watcher fails to start): fall back to a
-periodic rescan loop that runs every 60 seconds, reusing the same mtime-check
-logic as the startup verification.
+For **NFS storage**: no watcher or polling timer is needed. The existing
+"Update" button on the metadata page already triggers `enrich_system_cache()`
+for all systems, which runs `auto_match_metadata()`. When a user adds ROMs
+via scp, they naturally visit the metadata page and trigger an update.
 
 **File**: `replay-control-app/src/api/background.rs`
 
 Add a new method `spawn_rom_watcher` (parallel to `spawn_storage_watcher`)
 that:
 
-1. Checks `storage.kind` to decide between watcher and poll-only modes.
+1. Checks `storage.kind` to decide whether to set up a watcher.
 2. For local storage, calls a new `try_start_rom_watcher` that sets up a
    `notify` watcher on `storage.roms_dir()` with `RecursiveMode::Recursive`.
    Events are sent through a `tokio::sync::mpsc` channel (same pattern as
    `try_start_config_watcher`). The event loop debounces and extracts the
    system folder name from the event path, then triggers a targeted rescan.
-3. If the watcher setup fails, or for NFS, runs the 60-second poll loop
-   instead.
-4. The poll loop calls `load_all_system_meta()` and compares mtimes (same as
-   `spawn_cache_verification`).
+3. If the watcher setup fails, logs a warning — the user can still trigger
+   rescans manually from the metadata page.
+4. For NFS, skips watcher setup entirely (inotify is unreliable on NFS, and
+   the manual "Update" flow covers this case).
 5. Also checks if the `roms/` directory mtime has changed, and if so, triggers
    a `get_systems` refresh to detect new system directories.
 6. Guards against concurrent execution with the `metadata_operation_in_progress`
    atomic.
 
-Alternatively, fold this into the existing `spawn_storage_watcher` loop (which
-already runs every 60 seconds) by adding ROM directory mtime checks alongside
-the config file check:
-
-```
-// In the 60-second poll loop (background.rs:256):
-interval.tick().await;
-// Existing config refresh:
-match state.refresh_storage() { ... }
-// NEW: also check ROM directories (NFS fallback / safety net):
-state.check_stale_systems();
-```
-
 **Estimated lines of code**: ~80 new lines for watcher setup + debounce +
-event handling; ~50 lines for the poll fallback path (reuses existing mtime
-check logic).
+event handling.
 
 The new `check_stale_systems` method would mirror the logic from
 `spawn_cache_verification` lines 56-92, but wrapped to be callable both from
-the watcher event handler and the periodic poll. Protect against overlap with
-the `metadata_operation_in_progress` atomic.
+the watcher event handler and from the metadata page "Update" flow. Protect
+against overlap with the `metadata_operation_in_progress` atomic.
 
 #### Change 2: Detect new system directories (background.rs)
 
@@ -325,38 +316,43 @@ This is low priority since the image already appears correctly via disk lookup.
    see it appear and then work once the copy finishes. On local storage, the
    watcher will fire again when the copy completes (`CLOSE_WRITE` triggers a
    `Modify` event via `notify`), causing a second rescan that picks up the
-   final state. On NFS, the periodic poll will re-detect the mtime change.
+   final state. On NFS, the user triggers the update manually from the metadata
+   page after the copy finishes.
 
-2. **NFS mounts**: The hybrid approach uses polling-only for NFS, avoiding the
-   silent-failure problem where inotify watches appear to succeed on NFS but
-   miss remote changes. `dir_mtime` falls back to trusting the hard TTL when
-   mtime can't be read. NFS can report stale mtimes. The 300-second hard TTL
-   is the safety net. With a 60-second periodic check, the worst case for
-   detection is 300 seconds (hard TTL) on NFS with broken mtime.
+2. **NFS mounts — no auto-detection, by design**: The hybrid approach does not
+   attempt automatic detection on NFS (no watcher, no polling timer). This is
+   acceptable because the user's workflow naturally involves visiting the
+   metadata page after adding ROMs via scp. The "Update" button triggers
+   `enrich_system_cache()` for all systems, which runs `auto_match_metadata()`
+   — the exact code path that detects and matches new ROMs. The 300-second
+   hard TTL remains as a safety net for page-level cache freshness (e.g., if
+   the user navigates to a system page directly instead of using the metadata
+   page).
 
 3. **Concurrent access**: `metadata_operation_in_progress` atomic prevents the
-   periodic check from running during a metadata import (which takes the DB
-   exclusively). This is already the pattern used by `spawn_cache_verification`.
+   watcher-triggered rescan from running during a metadata import (which takes
+   the DB exclusively). This is already the pattern used by
+   `spawn_cache_verification`.
 
 4. **Race with import**: If a metadata import is running when new ROMs are added,
-   the periodic check skips that tick. The `spawn_cache_enrichment` call at the
-   end of import will catch up, since it runs `enrich_system_cache` for all
-   systems, which includes `auto_match_metadata`.
+   the watcher-triggered rescan is skipped. The `spawn_cache_enrichment` call
+   at the end of import will catch up, since it runs `enrich_system_cache` for
+   all systems, which includes `auto_match_metadata`.
 
 5. **Large ROM collections**: Iterating all systems' mtimes is cheap (one `stat`
    per system). Only systems with changed mtimes trigger L3 scans. A typical
-   setup has ~40 systems, so this is ~40 stat calls per 60-second tick.
+   setup has ~40 systems, so this is ~40 stat calls per watcher event or
+   manual update trigger.
 
 ### Effort Estimate
 
 | Change | Effort |
 |--------|--------|
 | Filesystem watcher for local storage | 2-3 hours |
-| Periodic polling fallback (NFS / watcher failure) | 1-2 hours |
 | New system directory detection | 1 hour |
 | Update box_art_path on download (optional) | 1 hour |
 | Testing (local + Pi + NFS) | 2-3 hours |
-| **Total** | **7-10 hours** |
+| **Total** | **6-8 hours** |
 
 ---
 
@@ -666,17 +662,19 @@ Both features are closely related and should be implemented together, since the
 periodic background check (Feature 1) is the natural place to trigger the orphan
 cleanup (Feature 2).
 
-### Phase 1: Hybrid ROM change detection (Feature 1, core)
+### Phase 1: ROM change detection (Feature 1, core)
 
 1. Add `check_stale_systems` method to `AppState` (background.rs) -- the
-   shared rescan logic called by both the watcher event handler and the poll
-   loop.
+   shared rescan logic called by the watcher event handler and from the
+   metadata page "Update" flow.
 2. Add `try_start_rom_watcher` (following the `try_start_config_watcher`
    pattern): set up `notify` watcher on `roms/` for local storage types
    (`Sd`, `Usb`, `Nvme`). Skip for `Nfs`.
-3. For NFS or watcher failure, call `check_stale_systems` from the existing
-   60-second poll loop in `spawn_storage_watcher`.
-4. Include `roms/` directory mtime check for new system detection (both paths).
+3. For NFS, no watcher or timer — rely on the existing manual "Update" flow
+   from the metadata page, which already calls `enrich_system_cache()` for
+   all systems.
+4. Include `roms/` directory mtime check for new system detection (watcher
+   path).
 
 ### Phase 2: Orphan identification and cleanup (Feature 2, core)
 
@@ -695,15 +693,16 @@ cleanup (Feature 2).
 
 9. Test on Pi with USB storage: add/remove ROMs, verify watcher fires and
    detection is near-instant.
-10. Test with local NFS mount: add ROMs via scp, verify 60-second poll detects
-    them. Confirm watcher is **not** started for NFS.
+10. Test with local NFS mount: add ROMs via scp, verify watcher is **not**
+    started for NFS. Use the metadata page "Update" button, confirm new ROMs
+    are detected and matched.
 11. Test removal: delete ROMs via scp, verify orphaned thumbnails are cleaned up
-    (both watcher and poll paths).
+    after watcher fires (local) or manual update (NFS).
 12. Test watcher failure gracefully: simulate by making `roms/` unreadable
-    briefly, confirm poll fallback activates.
+    briefly, confirm the app continues to work and manual updates still function.
 13. Test edge cases: arcade systems, partial copies, new system directories.
 
-### Total Effort: 13-18 hours
+### Total Effort: 12-16 hours
 
 ---
 
