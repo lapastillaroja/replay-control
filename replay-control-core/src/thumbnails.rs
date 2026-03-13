@@ -403,4 +403,171 @@ mod tests {
         assert_eq!(ThumbnailKind::Boxart.media_dir(), "boxart");
         assert_eq!(ThumbnailKind::Snap.media_dir(), "snap");
     }
+
+    // --- Arcade image matching pipeline ---
+    //
+    // These tests verify the full ROM-name → thumbnail-filename pipeline
+    // for arcade systems, where the ROM zip name (e.g., "avsp") differs
+    // from the image filename (e.g., "Alien vs. Predator (Europe 940520).png").
+    //
+    // The resolution pipeline is:
+    //   1. Strip extension from ROM filename → stem
+    //   2. Look up arcade_db for display name
+    //   3. Apply thumbnail_filename() normalization
+    //   4. Try exact match, colon variants, fuzzy (strip_tags), version-stripped
+
+    /// Helper: simulate the full matching pipeline used by resolve_box_art.
+    /// Returns (thumb_name, base_title) for a given ROM filename + system.
+    fn resolve_pipeline(rom_filename: &str, system: &str) -> (String, String) {
+        let stem = rom_filename
+            .rfind('.')
+            .map(|i| &rom_filename[..i])
+            .unwrap_or(rom_filename);
+        let is_arcade = matches!(
+            system,
+            "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
+        );
+        let display_name = if is_arcade {
+            crate::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name)
+        } else {
+            None
+        };
+        let thumb_name = thumbnail_filename(display_name.unwrap_or(stem));
+        let base = strip_tags(&thumb_name).trim().to_lowercase();
+        (thumb_name, base)
+    }
+
+    #[test]
+    fn arcade_avsp_resolves_to_alien_vs_predator() {
+        let (thumb_name, base) = resolve_pipeline("avsp.zip", "arcade_fbneo");
+        assert!(
+            thumb_name.starts_with("Alien vs. Predator"),
+            "expected 'Alien vs. Predator...', got '{thumb_name}'"
+        );
+        assert_eq!(base, "alien vs. predator");
+    }
+
+    #[test]
+    fn arcade_ffight_resolves_to_final_fight() {
+        let (thumb_name, base) = resolve_pipeline("ffight.zip", "arcade_fbneo");
+        assert!(
+            thumb_name.starts_with("Final Fight"),
+            "expected 'Final Fight...', got '{thumb_name}'"
+        );
+        assert_eq!(base, "final fight");
+    }
+
+    #[test]
+    fn arcade_dsmbl_resolves_to_deathsmiles() {
+        let (thumb_name, base) = resolve_pipeline("dsmbl.zip", "arcade_fbneo");
+        assert!(
+            thumb_name.starts_with("Deathsmiles MegaBlack Label"),
+            "expected 'Deathsmiles MegaBlack Label...', got '{thumb_name}'"
+        );
+        assert_eq!(base, "deathsmiles megablack label");
+    }
+
+    #[test]
+    fn arcade_dmnfrnt_resolves_with_slash_replaced() {
+        let (thumb_name, _) = resolve_pipeline("dmnfrnt.zip", "arcade_fbneo");
+        // Display name is "Demon Front / Moyu Zhanxian ..."
+        // thumbnail_filename replaces '/' with '_'
+        assert!(
+            thumb_name.contains("Demon Front _ Moyu Zhanxian"),
+            "expected slash replaced with underscore, got '{thumb_name}'"
+        );
+    }
+
+    #[test]
+    fn arcade_sf2_colon_in_display_name() {
+        let (thumb_name, _) = resolve_pipeline("sf2.zip", "arcade_fbneo");
+        // "Street Fighter II: The World Warrior (...)"
+        // thumbnail_filename replaces ':' with '_'
+        assert!(
+            thumb_name.contains("Street Fighter II_ The World Warrior"),
+            "expected colon replaced with underscore, got '{thumb_name}'"
+        );
+
+        // Colon variant: ": " → " - "
+        let info = crate::arcade_db::lookup_arcade_game("sf2").unwrap();
+        let dash_variant =
+            thumbnail_filename(&info.display_name.replace(": ", " - ").replace(':', " -"));
+        assert!(
+            dash_variant.contains("Street Fighter II - The World Warrior"),
+            "expected dash variant, got '{dash_variant}'"
+        );
+    }
+
+    #[test]
+    fn arcade_unknown_rom_falls_back_to_stem() {
+        let (thumb_name, base) = resolve_pipeline("zzz_nonexistent.zip", "arcade_fbneo");
+        assert_eq!(thumb_name, "zzz_nonexistent");
+        assert_eq!(base, "zzz_nonexistent");
+    }
+
+    #[test]
+    fn non_arcade_system_no_arcade_db_lookup() {
+        // For non-arcade systems, the stem is used directly
+        let (thumb_name, base) =
+            resolve_pipeline("Super Mario World (USA).sfc", "nintendo_snes");
+        assert_eq!(thumb_name, "Super Mario World (USA)");
+        assert_eq!(base, "super mario world");
+    }
+
+    #[test]
+    fn arcade_mame_system_also_uses_arcade_db() {
+        let (thumb_name, _) = resolve_pipeline("sf2.zip", "arcade_mame");
+        assert!(
+            thumb_name.contains("Street Fighter II"),
+            "arcade_mame should also use arcade_db, got '{thumb_name}'"
+        );
+    }
+
+    #[test]
+    fn arcade_dc_system_uses_arcade_db() {
+        let (thumb_name, _) = resolve_pipeline("ikaruga.zip", "arcade_dc");
+        assert!(
+            thumb_name.starts_with("Ikaruga"),
+            "arcade_dc should use arcade_db, got '{thumb_name}'"
+        );
+    }
+
+    #[test]
+    fn n64dd_prefix_stripped() {
+        // N64DD ROMs have a "N64DD - " prefix that should be stripped
+        let stem = "N64DD - Mario Artist Paint Studio (Japan).n64";
+        let stem = stem
+            .rfind('.')
+            .map(|i| &stem[..i])
+            .unwrap_or(stem);
+        let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
+        assert_eq!(stem, "Mario Artist Paint Studio (Japan)");
+        let thumb = thumbnail_filename(stem);
+        assert_eq!(thumb, "Mario Artist Paint Studio (Japan)");
+    }
+
+    #[test]
+    fn fuzzy_match_strips_region_tags() {
+        // "Alien vs. Predator (Europe 940520)" and "(USA 940520)" should
+        // both fuzzy-match to the same base title
+        let base_eu = strip_tags("Alien vs. Predator (Europe 940520)")
+            .trim()
+            .to_lowercase();
+        let base_us = strip_tags("Alien vs. Predator (USA 940520)")
+            .trim()
+            .to_lowercase();
+        assert_eq!(base_eu, base_us);
+        assert_eq!(base_eu, "alien vs. predator");
+    }
+
+    #[test]
+    fn version_stripped_match_for_dreamcast_style() {
+        // Dreamcast GDI ROMs often have version strings
+        let base = strip_tags("Sonic Adventure 2 (USA)").to_lowercase();
+        let base_v = strip_tags("Sonic Adventure 2 v1.008 (USA)").to_lowercase();
+        // strip_tags removes from first paren, so both → "sonic adventure 2" / "sonic adventure 2 v1.008"
+        let v_stripped = strip_version(&base_v);
+        assert_eq!(v_stripped, "sonic adventure 2");
+        assert_eq!(strip_version(&base), "sonic adventure 2");
+    }
 }
