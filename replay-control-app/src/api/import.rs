@@ -280,6 +280,8 @@ impl AppState {
         // Invalidate image cache so updated metadata paths are picked up.
         self.cache.invalidate_images();
 
+        let succeeded = result.is_ok();
+
         // Update final progress.
         {
             let mut guard = self
@@ -305,6 +307,11 @@ impl AppState {
                     }
                 }
             }
+        }
+
+        // Re-enrich rom_cache with freshly imported ratings.
+        if succeeded {
+            self.spawn_cache_enrichment();
         }
 
         // Clear progress after a short delay so SSE clients can read the
@@ -658,10 +665,17 @@ impl AppState {
         // Invalidate the image cache so new thumbnails are picked up.
         self.cache.invalidate_images();
 
+        let cancelled = cancel_ref.load(std::sync::atomic::Ordering::Relaxed);
+
+        // Re-enrich rom_cache with freshly downloaded box art.
+        if !cancelled {
+            self.spawn_cache_enrichment();
+        }
+
         // Set final progress.
         {
             let mut guard = self.thumbnail_progress.write().expect("lock");
-            if cancel_ref.load(std::sync::atomic::Ordering::Relaxed) {
+            if cancelled {
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Cancelled;
                     p.downloaded = total_downloaded;

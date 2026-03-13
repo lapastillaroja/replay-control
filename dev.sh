@@ -173,6 +173,9 @@ build_wasm() {
         --no-typescript
 
     local wasm_file="$PKG_DIR/${CRATE//-/_}_bg.wasm"
+    # Remove stale pre-compressed file — the server uses .precompressed_gzip()
+    # so a leftover .gz from build.sh would be served instead of the fresh .wasm.
+    rm -f "${wasm_file}.gz"
     if [[ -f "$wasm_file" ]]; then
         local size
         size=$(stat -c%s "$wasm_file" 2>/dev/null || echo 0)
@@ -370,6 +373,7 @@ set -e
 BUILD_START=\$(date +%s)
 cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile wasm-dev --features hydrate --no-default-features
 wasm-bindgen target/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
+rm -f $PKG_DIR/${CRATE//-/_}_bg.wasm.gz
 cat replay-control-app/style/_*.css > $OUT_DIR/style.css
 cargo build -p $CRATE --bin $CRATE --features ssr --no-default-features
 BUILD_END=\$(date +%s)

@@ -143,6 +143,29 @@ impl AppState {
         );
     }
 
+    /// Re-enrich rom_cache for all systems after a metadata or thumbnail import.
+    /// Updates box_art_url and rating columns with freshly imported data.
+    pub fn spawn_cache_enrichment(&self) {
+        let state = self.clone();
+        std::thread::spawn(move || {
+            let storage = state.storage();
+            let systems = state.cache.get_systems(&storage);
+            let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
+            tracing::info!(
+                "Post-import enrichment: updating {} system(s)",
+                with_games.len()
+            );
+            let start = std::time::Instant::now();
+            for sys in &with_games {
+                state.cache.enrich_system_cache(&state, &sys.folder_name);
+            }
+            tracing::info!(
+                "Post-import enrichment: done in {:.1}s",
+                start.elapsed().as_secs_f64()
+            );
+        });
+    }
+
     /// Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
     pub fn spawn_auto_import(&self) {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;
