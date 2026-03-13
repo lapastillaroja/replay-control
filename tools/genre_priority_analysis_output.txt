@@ -1,0 +1,1661 @@
+Loading TGDB data...
+  TGDB: 110911 entries loaded
+
+======================================================================
+System: nintendo_nes (Nintendo - Nintendo Entertainment System.dat)
+======================================================================
+  No-Intro entries: 13883
+  Libretro genre entries: 3301
+  Total game groups: 4040
+  Groups with beta/proto ROMs: 716
+  Groups where genre came from beta CRC: 73
+  Groups where beta genre != primary genre: 0
+  Groups where beta-sourced genre != TGDB: 40
+  User ROMs on disk: 0
+  User-affected games (beta genre + on disk): 0
+
+======================================================================
+System: nintendo_snes (Nintendo - Super Nintendo Entertainment System.dat)
+======================================================================
+  No-Intro entries: 4215
+  Libretro genre entries: 3851
+  Total game groups: 2407
+  Groups with beta/proto ROMs: 507
+  Groups where genre came from beta CRC: 83
+  Groups where beta genre != primary genre: 0
+  Groups where beta-sourced genre != TGDB: 31
+  User ROMs on disk: 8909
+  User-affected games (beta genre + on disk): 14
+
+======================================================================
+System: nintendo_gb (Nintendo - Game Boy.dat)
+======================================================================
+  No-Intro entries: 2187
+  Libretro genre entries: 1730
+  Total game groups: 1640
+  Groups with beta/proto ROMs: 191
+  Groups where genre came from beta CRC: 38
+  Groups where beta genre != primary genre: 1
+  Groups where beta-sourced genre != TGDB: 21
+  User ROMs on disk: 0
+  User-affected games (beta genre + on disk): 0
+
+======================================================================
+System: nintendo_gbc (Nintendo - Game Boy Color.dat)
+======================================================================
+  No-Intro entries: 2417
+  Libretro genre entries: 1529
+  Total game groups: 1785
+  Groups with beta/proto ROMs: 212
+  Groups where genre came from beta CRC: 38
+  Groups where beta genre != primary genre: 0
+  Groups where beta-sourced genre != TGDB: 20
+  User ROMs on disk: 0
+  User-affected games (beta genre + on disk): 0
+
+======================================================================
+System: nintendo_gba (Nintendo - Game Boy Advance.dat)
+======================================================================
+  No-Intro entries: 3640
+  Libretro genre entries: 3108
+  Total game groups: 2290
+  Groups with beta/proto ROMs: 208
+  Groups where genre came from beta CRC: 35
+  Groups where beta genre != primary genre: 0
+  Groups where beta-sourced genre != TGDB: 12
+  User ROMs on disk: 0
+  User-affected games (beta genre + on disk): 0
+
+======================================================================
+System: nintendo_n64 (Nintendo - Nintendo 64.dat)
+======================================================================
+  No-Intro entries: 2436
+  Libretro genre entries: 1966
+  Total game groups: 592
+  Groups with beta/proto ROMs: 95
+  Groups where genre came from beta CRC: 16
+  Groups where beta genre != primary genre: 0
+  Groups where beta-sourced genre != TGDB: 10
+  User ROMs on disk: 1274
+  User-affected games (beta genre + on disk): 3
+
+======================================================================
+System: sega_sms (Sega - Master System - Mark III.dat)
+======================================================================
+  No-Intro entries: 1109
+  Libretro genre entries: 607
+  Total game groups: 757
+  Groups with beta/proto ROMs: 168
+  Groups where genre came from beta CRC: 16
+  Groups where beta genre != primary genre: 0
+  Groups where beta-sourced genre != TGDB: 6
+  User ROMs on disk: 2048
+  User-affected games (beta genre + on disk): 1
+
+======================================================================
+System: sega_smd (Sega - Mega Drive - Genesis.dat)
+======================================================================
+  No-Intro entries: 3267
+  Libretro genre entries: 2566
+  Total game groups: 1759
+  Groups with beta/proto ROMs: 441
+  Groups where genre came from beta CRC: 92
+  Groups where beta genre != primary genre: 0
+  Groups where beta-sourced genre != TGDB: 58
+  User ROMs on disk: 6178
+  User-affected games (beta genre + on disk): 45
+
+======================================================================
+System: sega_gg (Sega - Game Gear.dat)
+======================================================================
+  No-Intro entries: 910
+  Libretro genre entries: 802
+  Total game groups: 497
+  Groups with beta/proto ROMs: 92
+  Groups where genre came from beta CRC: 17
+  Groups where beta genre != primary genre: 0
+  Groups where beta-sourced genre != TGDB: 9
+  User ROMs on disk: 1356
+  User-affected games (beta genre + on disk): 1
+
+======================================================================
+OVERALL SUMMARY
+======================================================================
+Total game groups (canonical games): 15767
+Groups containing beta/proto/sample/demo ROMs: 2630
+Groups where genre was set from a beta ROM's CRC: 408
+  ...of which beta genre != primary ROM's genre: 1
+  ...of which beta genre != TGDB genre: 207
+User-affected games (on disk + beta genre): 64
+
+======================================================================
+DETAILED: Games with genre set from beta CRC
+======================================================================
+
+--- Games where beta genre CONFLICTS with primary/TGDB (207) ---
+  [nintendo_gb] Barbie - Game Girl
+    Beta genre:    Action -> Action
+      from: Barbie - Game Girl (USA) (Beta)
+    Primary genre: Action -> Action
+      from: Barbie - Game Girl (USA, Europe)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_gb] CutThroat Island
+    Beta genre:    Platform -> Platform
+      from: CutThroat Island (Japan) (En) (Proto)
+    Primary genre: Platform -> Platform
+      from: CutThroat Island (USA, Europe)
+    TGDB genre:    Adventure -> Adventure
+  [nintendo_gb] Diablo
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Diablo (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Platform -> Platform
+  [nintendo_gb] Dirty Racing
+    Beta genre:    Racing -> Driving
+      from: Dirty Racing (Europe) (Proto)
+    Primary genre: Racing -> Driving
+      from: Dirty Racing (Japan)
+    TGDB genre:    Family -> Action
+  [nintendo_gb] Donkey Kong Land 2
+    Beta genre:    Platform -> Platform
+      from: Donkey Kong Land 2 (Japan) (Proto) (SGB Enhanced)
+    Primary genre: Platform -> Platform
+      from: Donkey Kong Land 2 (USA, Europe) (SGB Enhanced)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_gb] Donkey Kong Land III
+    Beta genre:    Platform -> Platform
+      from: Donkey Kong Land III (USA, Europe) (Beta) (SGB Enhanced)
+    Primary genre: Platform -> Platform
+      from: Donkey Kong Land III (USA, Europe) (Rev 1) (SGB Enhanced)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_gb] Hammerin' Harry - Ghost Building Company
+    Beta genre:    Platform -> Platform
+      from: Hammerin' Harry - Ghost Building Company (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_gb] Hudson Hawk
+    Beta genre:    Platform -> Platform
+      from: Hudson Hawk (Europe) (Proto)
+    Primary genre: Platform -> Platform
+      from: Hudson Hawk (Japan)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_gb] Mighty Morphin Power Rangers
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Mighty Morphin Power Rangers (USA, Europe) (Beta) (SGB Enhanced)
+    Primary genre: Beat'em Up -> Beat'em Up
+      from: Mighty Morphin Power Rangers (USA, Europe) (SGB Enhanced)
+    TGDB genre:    Horror -> Action
+  [nintendo_gb] NFL Quarterback Club 96
+    Beta genre:    Sports -> Sports
+      from: NFL Quarterback Club 96 (Japan) (En) (Proto)
+    Primary genre: Sports -> Sports
+      from: NFL Quarterback Club 96 (USA, Europe)
+    TGDB genre:    MMO -> Action
+  [nintendo_gb] Probotector 2
+    Beta genre:    Shooter -> Shooter
+      from: Probotector 2 (Europe) (Beta) (SGB Enhanced)
+    Primary genre: Shooter -> Shooter
+      from: Probotector 2 (Europe) (SGB Enhanced)
+    TGDB genre:    Action -> Action
+  [nintendo_gb] Samurai Shodown
+    Beta genre:    Fighting -> Fighting
+      from: Samurai Shodown (USA, Europe) (Beta) (SGB Enhanced)
+    Primary genre: Fighting -> Fighting
+      from: Samurai Shodown (USA, Europe) (SGB Enhanced)
+    TGDB genre:    Horror -> Action
+  [nintendo_gb] Spirou
+    Beta genre:    Platform -> Platform
+      from: Spirou (Europe) (En,Fr,De,Es) (Beta) (SGB Enhanced)
+    Primary genre: Platform -> Platform
+      from: Spirou (Europe) (En,Fr,De,Es) (SGB Enhanced)
+    TGDB genre:    Action -> Action
+  [nintendo_gb] The Adventures of Pinocchio
+    Beta genre:    Platform -> Platform
+      from: Adventures of Pinocchio, The (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_gb] The Flintstones - King Rock Treasure Island
+    Beta genre:    Platform -> Platform
+      from: Flintstones, The - King Rock Treasure Island (Japan) (Proto)
+    Primary genre: Platform -> Platform
+      from: Flintstones, The - King Rock Treasure Island (USA, Europe)
+    TGDB genre:    Action -> Action
+  [nintendo_gb] The Jetsons - Robot Panic
+    Beta genre:    Platform -> Platform
+      from: Jetsons, The - Robot Panic (Japan) (Proto)
+    Primary genre: Platform -> Platform
+      from: Jetsons, The - Robot Panic (USA, Europe)
+    TGDB genre:    Action -> Action
+  [nintendo_gb] The Sword of Hope
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Sword of Hope, The (Europe) (Proto)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: Sword of Hope, The (Germany)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_gb] Tintin in Tibet
+    Beta genre:    Platform -> Platform
+      from: Tintin in Tibet (Europe) (En,Es,It,Sv) (Beta) (SGB Enhanced)
+    Primary genre: Action -> Action
+      from: Tintin in Tibet (Europe) (En,Es,It,Sv) (SGB Enhanced)
+    TGDB genre:    Action -> Action
+  [nintendo_gb] Wordtris
+    Beta genre:    Puzzle -> Puzzle
+      from: Wordtris (Europe) (Proto)
+    Primary genre: Puzzle -> Puzzle
+      from: Wordtris (USA)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_gb] Zool
+    Beta genre:    Platform -> Platform
+      from: Zool (Japan) (En) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_gb] seaQuest DSV
+    Beta genre:    Shooter -> Shooter
+      from: seaQuest DSV (USA, Europe) (Beta)
+    Primary genre: Shooter -> Shooter
+      from: seaQuest DSV (USA, Europe) (SGB Enhanced)
+    TGDB genre:    Action -> Action
+  [nintendo_gba] Banjo-Pilot
+    Beta genre:    Racing -> Driving
+      from: Banjo-Pilot (Europe) (Beta 1)
+    Primary genre: Racing -> Driving
+      from: Banjo-Pilot (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    Family -> Action
+  [nintendo_gba] Battletoads
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Battletoads (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_gba] Crazy Taxi - Catch a Ride
+    Beta genre:    Racing -> Driving
+      from: Crazy Taxi - Catch a Ride (Europe) (En,Fr,De,Es) (Beta)
+    Primary genre: Racing -> Driving
+      from: Crazy Taxi - Catch a Ride (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    Family -> Action
+  [nintendo_gba] FILA Decathlon
+    Beta genre:    Sports -> Sports
+      from: FILA Decathlon (Europe) (Beta)
+    Primary genre: Sports -> Sports
+      from: FILA Decathlon (Europe) (En,Fr,De,Es,It,Sv)
+    TGDB genre:    MMO -> Action
+  [nintendo_gba] GP-1 Racing
+    Beta genre:    Simulation -> Simulation
+      from: GP-1 Racing (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [nintendo_gba] GT Racers
+    Beta genre:    Racing -> Driving
+      from: GT Racers (Europe) (Beta 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [nintendo_gba] Kien
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Kien (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_gba] LEGO Racers 2
+    Beta genre:    Racing -> Driving
+      from: LEGO Racers 2 (Europe) (Beta)
+    Primary genre: Racing -> Driving
+      from: LEGO Racers 2 (Europe) (En,Fr,De,Es,It,Nl,Sv,Da)
+    TGDB genre:    Family -> Action
+  [nintendo_gba] MotoGP
+    Beta genre:    Sports -> Sports
+      from: MotoGP (Europe) (Beta)
+    Primary genre: Sports -> Sports
+      from: MotoGP (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    Family -> Action
+  [nintendo_gba] Motocross Challenge
+    Beta genre:    Racing -> Driving
+      from: Motocross Challenge (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_gba] Overstorm
+    Beta genre:    Platform -> Platform
+      from: Overstorm (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_gba] Resident Evil 2
+    Beta genre:    Adventure -> Adventure
+      from: Resident Evil 2 (Unknown) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_gbc] Antz
+    Beta genre:    Platform -> Platform
+      from: Antz (Europe) (En,Fr,De,Es,It,Nl) (Beta) (GB Compatible)
+    Primary genre: Platform -> Platform
+      from: Antz (Europe) (En,Fr,De,Es,It,Nl) (GB Compatible)
+    TGDB genre:    Action -> Action
+  [nintendo_gbc] Daikatana
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Daikatana (USA) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_gbc] Dungeon Savior
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Dungeon Savior (Japan) (Rev 1) (Proto) (SGB Enhanced) (GB Compatible)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: Dungeon Savior (Japan) (SGB Enhanced) (GB Compatible)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_gbc] F-1 World Grand Prix
+    Beta genre:    Racing -> Driving
+      from: F-1 World Grand Prix (Europe) (Beta)
+    Primary genre: Racing -> Driving
+      from: F-1 World Grand Prix (Europe) (En,Fr,De,Es)
+    TGDB genre:    Family -> Action
+  [nintendo_gbc] Formula One 2000
+    Beta genre:    Racing -> Driving
+      from: Formula One 2000 (Europe) (En,Fr,De,Es,It) (Proto)
+    Primary genre: Racing -> Driving
+      from: Formula One 2000 (USA)
+    TGDB genre:    Family -> Action
+  [nintendo_gbc] From TV Animation One Piece - Maboroshi no Grand Line Boukenki!
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: From TV Animation One Piece - Maboroshi no Grand Line Boukenki! (Japan) (Beta 1) (SGB Enhanced) (GB Compatible)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: From TV Animation One Piece - Maboroshi no Grand Line Boukenki! (Japan) (SGB Enhanced) (GB Compatible)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_gbc] Hello Kitty's Cube Frenzy
+    Beta genre:    Puzzle -> Puzzle
+      from: Hello Kitty's Cube Frenzy (Europe) (Proto) (GB Compatible)
+    Primary genre: Puzzle -> Puzzle
+      from: Hello Kitty's Cube Frenzy (USA) (GB Compatible)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_gbc] Klustar
+    Beta genre:    Puzzle -> Puzzle
+      from: Klustar (Europe) (En,Fr,De,Es,It) (Beta) (GB Compatible)
+    Primary genre: Puzzle -> Puzzle
+      from: Klustar (Europe) (En,Fr,De,Es,It) (GB Compatible)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_gbc] Pokemon - Silberne Edition
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Pokemon - Silberne Edition (Germany) (Beta) (SGB Enhanced) (GB Compatible)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: Pokemon - Silberne Edition (Germany) (SGB Enhanced) (GB Compatible)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_gbc] Prince of Persia
+    Beta genre:    Platform -> Platform
+      from: Prince of Persia (Japan) (En,Ja) (Proto) (GB Compatible)
+    Primary genre: Platform -> Platform
+      from: Prince of Persia (USA, Europe) (En,Fr,De,Es,It) (GB Compatible)
+    TGDB genre:    Action -> Action
+  [nintendo_gbc] Radikal Bikers
+    Beta genre:    Racing -> Driving
+      from: Radikal Bikers (Europe) (En,Fr,De,Es) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [nintendo_gbc] Resident Evil
+    Beta genre:    Adventure -> Adventure
+      from: Resident Evil (World) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Sandbox -> Action
+  [nintendo_gbc] Robopon - Sun Version
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Robopon - Sun Version (USA) (Beta) (SGB Enhanced) (GB Compatible)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: Robopon - Sun Version (USA) (SGB Enhanced) (GB Compatible)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_gbc] Speedy Gonzales - Aztec Adventure
+    Beta genre:    Platform -> Platform
+      from: Speedy Gonzales - Aztec Adventure (Japan) (Proto) (GB Compatible)
+    Primary genre: Platform -> Platform
+      from: Speedy Gonzales - Aztec Adventure (USA, Europe) (GB Compatible)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_gbc] Swing
+    Beta genre:    Puzzle -> Puzzle
+      from: Swing (Europe) (En,Fr,De,Es,It) (Proto)
+    Primary genre: Puzzle -> Puzzle
+      from: Swing (Germany)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_gbc] Taxi 2
+    Beta genre:    Racing -> Driving
+      from: Taxi 2 (Europe) (En,Fr,De,Es,It,Nl) (Proto)
+    Primary genre: Racing -> Driving
+      from: Taxi 2 (France)
+    TGDB genre:    Family -> Action
+  [nintendo_gbc] Tony Hawk's Pro Skater
+    Beta genre:    Sports -> Sports
+      from: Tony Hawk's Pro Skater (Japan) (Proto)
+    Primary genre: Sports -> Sports
+      from: Tony Hawk's Pro Skater (USA, Europe)
+    TGDB genre:    MMO -> Action
+  [nintendo_gbc] Top Gear Pocket 2
+    Beta genre:    Racing -> Driving
+      from: Top Gear Pocket 2 (Japan) (Rev 1) (Proto) (Rumble Version)
+    Primary genre: Racing -> Driving
+      from: Top Gear Pocket 2 (Japan) (Rumble Version)
+    TGDB genre:    Family -> Action
+  [nintendo_gbc] Worms Armageddon
+    Beta genre:    Strategy -> Strategy
+      from: Worms Armageddon (Europe) (Beta)
+    Primary genre: Strategy -> Strategy
+      from: Worms Armageddon (Europe) (En,Fr,De,Es,It,Nl)
+    TGDB genre:    Educational -> Educational
+  [nintendo_gbc] Zelda no Densetsu - Yume o Miru Shima DX
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Zelda no Densetsu - Yume o Miru Shima DX (Japan) (Beta) (GB Compatible)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: Zelda no Densetsu - Yume o Miru Shima DX (Japan) (Rev 1) (SGB Enhanced) (GB Compatible)
+    TGDB genre:    Adventure -> Adventure
+  [nintendo_n64] 40 Winks
+    Beta genre:    Platform -> Platform
+      from: 40 Winks (Europe) (En,Es,It) (Proto)
+    Primary genre: Platform -> Platform
+      from: 40 Winks (USA)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_n64] California Speed [ON DISK]
+    Beta genre:    Racing -> Driving
+      from: California Speed (Europe) (Proto)
+    Primary genre: Racing -> Driving
+      from: California Speed (USA)
+    TGDB genre:    Family -> Action
+  [nintendo_n64] Dragon Sword 64
+    Beta genre:    Fighting -> Fighting
+      from: Dragon Sword 64 (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_n64] Glover 2
+    Beta genre:    Platform -> Platform
+      from: Glover 2 (USA) (Proto 2)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_n64] Mini Racers
+    Beta genre:    Racing -> Driving
+      from: Mini Racers (USA) (Ja) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [nintendo_n64] Robotech - Crystal Dreams
+    Beta genre:    Simulation -> Simulation
+      from: Robotech - Crystal Dreams (USA) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Pinball -> Pinball
+  [nintendo_n64] Sydney 2000
+    Beta genre:    Sports -> Sports
+      from: Sydney 2000 (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [nintendo_n64] Tamiya Racing 64
+    Beta genre:    Racing -> Driving
+      from: Tamiya Racing 64 (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [nintendo_n64] The Legend of Zelda - Ocarina of Time [ON DISK]
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Legend of Zelda, The - Ocarina of Time (Europe) (Beta) (GameCube)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: Legend of Zelda, The - Ocarina of Time (Europe) (En,Fr,De)
+    TGDB genre:    Action -> Action
+  [nintendo_n64] Wildwaters
+    Beta genre:    Racing -> Driving
+      from: Wildwaters (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [nintendo_nes] 1943 - The Battle of Midway
+    Beta genre:    Shoot'em Up -> Shooter
+      from: 1943 - The Battle of Midway (Japan) (Beta)
+    Primary genre: Shoot'em Up -> Shooter
+      from: 1943 - The Battle of Midway (USA)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Airball
+    Beta genre:    Puzzle -> Puzzle
+      from: Airball (USA) (Proto 1)
+    Primary genre: Puzzle -> Puzzle
+      from: Airball (USA) (RetroZone) (Pirate)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_nes] Alter Ego
+    Beta genre:    Puzzle -> Puzzle
+      from: Alter Ego (World) (Beta)
+    Primary genre: Puzzle -> Puzzle
+      from: Alter Ego (World) (NROM 256)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_nes] Arcadia VI
+    Beta genre:    Sports -> Sports
+      from: Arcadia VI (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Bashi Bazook - Morphoid Masher
+    Beta genre:    Adventure -> Adventure
+      from: Bashi Bazook - Morphoid Masher (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Big Nose and the Witchdoctor
+    Beta genre:    Adventure -> Adventure
+      from: Big Nose and the Witchdoctor (USA) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_nes] Bio Force Ape
+    Beta genre:    Platform -> Platform
+      from: Bio Force Ape (Japan) (En) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Bomb Sweeper
+    Beta genre:    Puzzle -> Puzzle
+      from: Bomb Sweeper (World) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Buzz & Waldog
+    Beta genre:    Platform -> Platform
+      from: Buzz & Waldog (USA) (Proto 2)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] California Raisins - The Grape Escape
+    Beta genre:    Platform -> Platform
+      from: California Raisins - The Grape Escape (USA) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_nes] Dreamworld Pogie
+    Beta genre:    Platform -> Platform
+      from: Dreamworld Pogie (USA, Europe) (Proto)
+    Primary genre: Platform -> Platform
+      from: Dreamworld Pogie (World)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_nes] Exploding Fist
+    Beta genre:    Sports -> Sports
+      from: Exploding Fist (USA) (Proto 1)
+    Primary genre: Sports -> Sports
+      from: Exploding Fist (World) (Digital)
+    TGDB genre:    Horror -> Action
+  [nintendo_nes] Free Fall
+    Beta genre:    Puzzle -> Puzzle
+      from: Free Fall (USA) (Proto 2)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] King Neptune's Adventure
+    Beta genre:    Adventure -> Adventure
+      from: King Neptune's Adventure (USA) (Beta)
+    Primary genre: Adventure -> Adventure
+      from: King Neptune's Adventure (USA)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Lizard
+    Beta genre:    Platform -> Platform
+      from: Lizard (World) (Demo 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Mickey Mouse - Dream Balloon
+    Beta genre:    Platform -> Platform
+      from: Mickey Mouse - Dream Balloon (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_nes] Mike Tyson's Intergalactic Power Punch
+    Beta genre:    Sports -> Sports
+      from: Mike Tyson's Intergalactic Power Punch (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Horror -> Action
+  [nintendo_nes] Panic! Dizzy
+    Beta genre:    Puzzle -> Puzzle
+      from: Panic! Dizzy (World) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Parody World - Monster Party
+    Beta genre:    Platform -> Platform
+      from: Parody World - Monster Party (Japan) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Pescatore
+    Beta genre:    Puzzle -> Puzzle
+      from: Pescatore (Japan) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_nes] Poke Block
+    Beta genre:    Puzzle -> Puzzle
+      from: Poke Block (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_nes] Project Blue
+    Beta genre:    Platform -> Platform
+      from: Project Blue (World) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Raid 2020
+    Beta genre:    Shooter -> Shooter
+      from: Raid 2020 (USA) (Beta) (1989-12-xx)
+    Primary genre: Shooter -> Shooter
+      from: Raid 2020 (USA)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] RoboCop Versus The Terminator
+    Beta genre:    Platform -> Platform
+      from: RoboCop Versus The Terminator (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Scarabeus
+    Beta genre:    Puzzle -> Puzzle
+      from: Scarabeus (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_nes] Secret Scout in the Temple of Demise
+    Beta genre:    Adventure -> Adventure
+      from: Secret Scout in the Temple of Demise (USA) (Beta)
+    Primary genre: Adventure -> Adventure
+      from: Secret Scout in the Temple of Demise (USA)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Secret Ties
+    Beta genre:    Adventure -> Adventure
+      from: Secret Ties (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] SimCity
+    Beta genre:    Simulation -> Simulation
+      from: SimCity (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Board -> Board & Card
+  [nintendo_nes] Spiritual Warfare
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Spiritual Warfare (USA) (Beta)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: Spiritual Warfare (USA) (v5.1)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_nes] Star Trek V - The Final Frontier
+    Beta genre:    Platform -> Platform
+      from: Star Trek V - The Final Frontier (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Sunman
+    Beta genre:    Platform -> Platform
+      from: Sunman (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Taro's Quest
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Taro's Quest (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_nes] The Legend of Robin Hood
+    Beta genre:    Adventure -> Adventure
+      from: Legend of Robin Hood, The (USA) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Thomas the Tank Engine & Friends
+    Beta genre:    Educational -> Educational
+      from: Thomas the Tank Engine & Friends (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Time Diver - Eon Man
+    Beta genre:    Platform -> Platform
+      from: Time Diver - Eon Man (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Twin Dragons
+    Beta genre:    Platform -> Platform
+      from: Twin Dragons (World) (Demo 1) (NESDev 2016)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_nes] UWC
+    Beta genre:    Sports -> Sports
+      from: UWC (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_nes] Virus
+    Beta genre:    Puzzle -> Puzzle
+      from: Virus (USA) (Beta 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_nes] Wally Bear and the No! Gang
+    Beta genre:    Platform -> Platform
+      from: Wally Bear and the No! Gang (USA) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_nes] Xybots
+    Beta genre:    Shooter -> Shooter
+      from: Xybots (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Adventure -> Adventure
+  [nintendo_snes] Bobby's World
+    Beta genre:    Platform -> Platform
+      from: Bobby's World (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_snes] Buck Rogers - The Arcade Game
+    Beta genre:    Platform -> Platform
+      from: Buck Rogers - The Arcade Game (USA) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] Corn Buster
+    Beta genre:    Action -> Action
+      from: Corn Buster (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_snes] Dragon's Lair [ON DISK]
+    Beta genre:    Action -> Action
+      from: Dragon's Lair (Europe) (Beta)
+    Primary genre: Action -> Action
+      from: Dragon's Lair (Europe) (En,Fr,De,Es,It,Nl,Sv)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_snes] Fireteam Rogue
+    Beta genre:    Platform -> Platform
+      from: Fireteam Rogue (USA) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] Genocide 2
+    Beta genre:    Platform -> Platform
+      from: Genocide 2 (Japan) (Beta)
+    Primary genre: Platform -> Platform
+      from: Genocide 2 (Japan) (En)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] Jeff's Shoot'Em Up
+    Beta genre:    Shoot'em Up -> Shooter
+      from: Jeff's Shoot'Em Up (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] Jim Power - The Lost Dimension in 3D [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Jim Power - The Lost Dimension in 3D (Europe) (Proto)
+    Primary genre: Platform -> Platform
+      from: Jim Power - The Lost Dimension in 3D (USA)
+    TGDB genre:    Shooter -> Shooter
+  [nintendo_snes] Kick Off 3 - European Challenge [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: Kick Off 3 - European Challenge (Europe) (Beta 2)
+    Primary genre: Sports -> Sports
+      from: Kick Off 3 - European Challenge (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    MMO -> Action
+  [nintendo_snes] Little Magic [ON DISK]
+    Beta genre:    Puzzle -> Puzzle
+      from: Little Magic (Europe) (Proto)
+    Primary genre: Puzzle -> Puzzle
+      from: Little Magic (Japan)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_snes] Lobo
+    Beta genre:    Fighting -> Fighting
+      from: Lobo (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_snes] Mickey's Playtown Adventure - A Day of Discovery!
+    Beta genre:    Action -> Action
+      from: Mickey's Playtown Adventure - A Day of Discovery! (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_snes] Mr. Bloopy Saves the World
+    Beta genre:    Educational -> Educational
+      from: Mr. Bloopy Saves the World (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_snes] Mr. Tuff
+    Beta genre:    Platform -> Platform
+      from: Mr. Tuff (Europe) (En,Fr,De) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] NHL '97 [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: NHL '97 (USA) (Beta)
+    Primary genre: Sports -> Sports
+      from: NHL 97 (Europe)
+    TGDB genre:    MMO -> Action
+  [nintendo_snes] Power Slide
+    Beta genre:    Racing -> Driving
+      from: Power Slide (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [nintendo_snes] Prime
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Prime (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] Quik the Thunder Rabbit
+    Beta genre:    Platform -> Platform
+      from: Quik the Thunder Rabbit (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_snes] RHI Roller Hockey '95
+    Beta genre:    Sports -> Sports
+      from: RHI Roller Hockey '95 (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [nintendo_snes] Rap Basketball
+    Beta genre:    Sports -> Sports
+      from: Rap Basketball (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [nintendo_snes] Rayman
+    Beta genre:    Platform -> Platform
+      from: Rayman (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Adventure -> Adventure
+  [nintendo_snes] Shadowhawk
+    Beta genre:    Platform -> Platform
+      from: Shadowhawk (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] Special Tee Shot
+    Beta genre:    Sports -> Sports
+      from: Special Tee Shot (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_snes] SpellCraft - Aspects of Valor
+    Beta genre:    Adventure -> Adventure
+      from: SpellCraft - Aspects of Valor (USA) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Card -> Board & Card
+  [nintendo_snes] Steven Seagal Is The Final Option
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Steven Seagal Is The Final Option (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] Super Loopz
+    Beta genre:    Puzzle -> Puzzle
+      from: Super Loopz (Europe) (Proto)
+    Primary genre: Puzzle -> Puzzle
+      from: Super Loopz (Japan) (En)
+    TGDB genre:    Casino -> Board & Card
+  [nintendo_snes] Super Shadow of the Beast
+    Beta genre:    Action -> Action
+      from: Super Shadow of the Beast (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [nintendo_snes] The Shadow
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Shadow, The (USA) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Horror -> Action
+  [nintendo_snes] Tinhead
+    Beta genre:    Platform -> Platform
+      from: Tinhead (Europe) (Proto)
+    Primary genre: Platform -> Platform
+      from: Tinhead (World) (Piko Interactive)
+    TGDB genre:    Action -> Action
+  [nintendo_snes] Universal Soldier
+    Beta genre:    Platform -> Platform
+      from: Universal Soldier (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Shooter -> Shooter
+  [nintendo_snes] World Cup USA '94 [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: World Cup USA '94 (USA) (En,Fr,De,Es,It,Nl,Pt,Sv) (Beta)
+    Primary genre: Sports -> Sports
+      from: World Cup USA 94 (Europe) (En,Fr,De,Es,It,Nl,Pt,Sv)
+    TGDB genre:    MMO -> Action
+  [sega_gg] Barbie Super Model
+    Beta genre:    Adventure -> Adventure
+      from: Barbie Super Model (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_gg] Crazy Faces
+    Beta genre:    Puzzle -> Puzzle
+      from: Crazy Faces (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [sega_gg] Frogger
+    Beta genre:    Platform -> Platform
+      from: Frogger (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_gg] Lemmings 2 - The Tribes
+    Beta genre:    Strategy -> Strategy
+      from: Lemmings 2 - The Tribes (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [sega_gg] Pac-in-Time
+    Beta genre:    Platform -> Platform
+      from: Pac-in-Time (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_gg] Spirou
+    Beta genre:    Platform -> Platform
+      from: Spirou (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_gg] Street Hero
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Street Hero (USA) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Horror -> Action
+  [sega_gg] WildSnake
+    Beta genre:    Puzzle -> Puzzle
+      from: WildSnake (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [sega_gg] Yogi Bear in Yogi Bear's Goldrush
+    Beta genre:    Platform -> Platform
+      from: Yogi Bear in Yogi Bear's Goldrush (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_smd] Advanced Daisenryaku - Deutsch Dengeki Sakusen [ON DISK]
+    Beta genre:    Strategy -> Strategy
+      from: Advanced Daisenryaku - Deutsch Dengeki Sakusen (Japan) (Beta)
+    Primary genre: Strategy -> Strategy
+      from: Advanced Daisenryaku - Deutsch Dengeki Sakusen (Japan) (Rev A)
+    TGDB genre:    Educational -> Educational
+  [sega_smd] Arkagis Revolution
+    Beta genre:    Shooter -> Shooter
+      from: Arkagis Revolution (World) (En,Es) (Beta 2)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Ballz 3D - Fighting at its Ballziest
+    Beta genre:    Fighting -> Fighting
+      from: Ballz 3D - Fighting at its Ballziest (USA, Europe) (Beta 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Horror -> Action
+  [sega_smd] Barbie Vacation Adventure [ON DISK]
+    Beta genre:    Adventure -> Adventure
+      from: Barbie Vacation Adventure (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Bare Knuckle II
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Bare Knuckle II (Japan) (En) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Beastball [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: Beastball (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Best of the Best - Championship Karate [ON DISK]
+    Beta genre:    Fighting -> Fighting
+      from: Best of the Best - Championship Karate (Europe) (Proto)
+    Primary genre: Fighting -> Fighting
+      from: Best of the Best - Championship Karate (USA)
+    TGDB genre:    MMO -> Action
+  [sega_smd] Bill's Tomato Game [ON DISK]
+    Beta genre:    Puzzle -> Puzzle
+      from: Bill's Tomato Game (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [sega_smd] Champions World Class Soccer [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: Champions World Class Soccer (World) (Beta)
+    Primary genre: Sports -> Sports
+      from: Champions World Class Soccer (World) (En,Fr,De,Es)
+    TGDB genre:    MMO -> Action
+  [sega_smd] Combat Aces
+    Beta genre:    Racing -> Driving
+      from: Combat Aces (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Shooter -> Shooter
+  [sega_smd] Daffy Duck in Hollywood [ON DISK]
+    Beta genre:    Action -> Action
+      from: Daffy Duck in Hollywood (Europe) (Beta)
+    Primary genre: Action -> Action
+      from: Daffy Duck in Hollywood (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_smd] Danny Sullivan's Indy Heat [ON DISK]
+    Beta genre:    Racing -> Driving
+      from: Danny Sullivan's Indy Heat (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [sega_smd] Dashin' Desperadoes [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Dashin' Desperadoes (Europe) (Proto)
+    Primary genre: Platform -> Platform
+      from: Dashin' Desperadoes (USA)
+    TGDB genre:    Action -> Action
+  [sega_smd] Davis Cup II
+    Beta genre:    Sports -> Sports
+      from: Davis Cup II (Europe) (Proto 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [sega_smd] Demons of Asteborg
+    Beta genre:    Platform -> Platform
+      from: Demons of Asteborg (World) (Demo 2)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Desert Demolition
+    Beta genre:    Platform -> Platform
+      from: Desert Demolition (USA, Europe) (Beta 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Devwill Too MD
+    Beta genre:    Platform -> Platform
+      from: Devwill Too MD (World) (Demo 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_smd] Dominus [ON DISK]
+    Beta genre:    Adventure -> Adventure
+      from: Dominus (USA) (Proto) (Alt)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Educational -> Educational
+  [sega_smd] ESPN National Hockey Night [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: ESPN National Hockey Night (USA) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [sega_smd] F-22 Interceptor
+    Beta genre:    Simulation -> Simulation
+      from: F-22 Interceptor (USA) (Beta)
+    Primary genre: Simulation -> Simulation
+      from: F-22 Interceptor (USA) (Sega Channel)
+    TGDB genre:    Pinball -> Pinball
+  [sega_smd] Fantastic Dizzy
+    Beta genre:    Platform -> Platform
+      from: Fantastic Dizzy (USA, Europe) (Beta)
+    Primary genre: Platform -> Platform
+      from: Fantastic Dizzy (USA, Europe) (En,Fr,De,Es,It)
+    TGDB genre:    Action -> Action
+  [sega_smd] Fido Dido [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Fido Dido (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Flash Point [ON DISK]
+    Beta genre:    Puzzle -> Puzzle
+      from: Flash Point (Japan) (En) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [sega_smd] Fun Car Rally
+    Beta genre:    Racing -> Driving
+      from: Fun Car Rally (USA) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [sega_smd] It Came from the Desert [ON DISK]
+    Beta genre:    Adventure -> Adventure
+      from: It Came from the Desert (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Jelly Boy [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Jelly Boy (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Jesse 'The Body' Ventura - Wrestling Superstars
+    Beta genre:    Sports -> Sports
+      from: Jesse 'The Body' Ventura - Wrestling Superstars (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Horror -> Action
+  [sega_smd] Jim Power - The Arcade Game [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Jim Power - The Arcade Game (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Kick Off 3 - European Challenge [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: Kick Off 3 - European Challenge (Europe) (Beta 2)
+    Primary genre: Sports -> Sports
+      from: Kick Off 3 - European Challenge (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    MMO -> Action
+  [sega_smd] Lobo [ON DISK]
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Lobo (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Horror -> Action
+  [sega_smd] Lufia & The Fortress of Doom
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Lufia & The Fortress of Doom (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Card -> Board & Card
+  [sega_smd] Might and Magic III - Isles of Terra [ON DISK]
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Might and Magic III - Isles of Terra (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Platform -> Platform
+  [sega_smd] Ninja Gaiden [ON DISK]
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Ninja Gaiden (Japan) (En) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Prince of Persia 2
+    Beta genre:    Platform -> Platform
+      from: Prince of Persia 2 (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Adventure -> Adventure
+  [sega_smd] Psycho Pinball
+    Beta genre:    Pinball -> Pinball
+      from: Psycho Pinball (Europe) (Beta)
+    Primary genre: Pinball -> Pinball
+      from: Psycho Pinball (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    MMO -> Action
+  [sega_smd] Resq [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Resq (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Scrabble [ON DISK]
+    Beta genre:    Various -> Other
+      from: Scrabble (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Sports -> Sports
+  [sega_smd] Slam - Shaq vs. the Legends [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: Slam - Shaq vs. the Legends (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [sega_smd] Sonic & Knuckles
+    Beta genre:    Shoot'em Up -> Shooter
+      from: Sonic & Knuckles (World) (Beta 1)
+    Primary genre: Shoot'em Up -> Shooter
+      from: Sonic & Knuckles (World) (Sonic Classic Collection)
+    TGDB genre:    Action -> Action
+  [sega_smd] Sonic & Knuckles + Sonic The Hedgehog 2
+    Beta genre:    Platform -> Platform
+      from: Sonic & Knuckles + Sonic The Hedgehog 2 (World) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_smd] Sonic Crackers
+    Beta genre:    Platform -> Platform
+      from: Sonic Crackers (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_smd] Star Odyssey
+    Beta genre:    Role-playing (RPG) -> Role-Playing
+      from: Star Odyssey (USA) (Proto)
+    Primary genre: Role-playing (RPG) -> Role-Playing
+      from: Star Odyssey (USA) (Super Fighter Team)
+    TGDB genre:    Card -> Board & Card
+  [sega_smd] Stone Protectors [ON DISK]
+    Beta genre:    Beat'em Up -> Beat'em Up
+      from: Stone Protectors (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Striker [ON DISK]
+    Beta genre:    Sports -> Sports
+      from: Striker (Europe) (Beta)
+    Primary genre: Sports -> Sports
+      from: Striker (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    MMO -> Action
+  [sega_smd] Super Skidmarks [ON DISK]
+    Beta genre:    Racing -> Driving
+      from: Super Skidmarks (Europe) (Beta) (J-Cart)
+    Primary genre: Racing -> Driving
+      from: Super Skidmarks (Europe) (J-Cart)
+    TGDB genre:    Family -> Action
+  [sega_smd] Swamp Thing [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Swamp Thing (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Tanglewood
+    Beta genre:    Platform -> Platform
+      from: Tanglewood (World) (Demo 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_smd] Tecmo Cup Football Game
+    Beta genre:    Sports -> Sports
+      from: Tecmo Cup Football Game (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [sega_smd] The Chaos Engine 2 [ON DISK]
+    Beta genre:    Shooter -> Shooter
+      from: Chaos Engine 2, The (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] The Curse of Illmoore Bay [ON DISK]
+    Beta genre:    Shoot'em Up -> Shooter
+      from: Curse of Illmoore Bay, The (World) (Demo 1)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Adventure -> Adventure
+  [sega_smd] The Itchy & Scratchy Game [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Itchy & Scratchy Game, The (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] The Ottifants
+    Beta genre:    Platform -> Platform
+      from: Ottifants, The (Europe) (De) (Beta)
+    Primary genre: Platform -> Platform
+      from: Ottifants, The (Europe) (En,Fr,De,Es,It)
+    TGDB genre:    Action -> Action
+  [sega_smd] The Super Shinobi II
+    Beta genre:    Platform -> Platform
+      from: Super Shinobi II, The (Japan) (Beta 1)
+    Primary genre: Platform -> Platform
+      from: Super Shinobi II, The (Japan, Korea) (Ja)
+    TGDB genre:    Action -> Action
+  [sega_smd] Time Trax [ON DISK]
+    Beta genre:    Platform -> Platform
+      from: Time Trax (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] Wacky Races [ON DISK]
+    Beta genre:    Racing -> Driving
+      from: Wacky Races (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Family -> Action
+  [sega_smd] Waterworld [ON DISK]
+    Beta genre:    Adventure -> Adventure
+      from: Waterworld (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_smd] WildSnake
+    Beta genre:    Puzzle -> Puzzle
+      from: WildSnake (USA) (Proto 2)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Casino -> Board & Card
+  [sega_smd] Zombie High
+    Beta genre:    Platform -> Platform
+      from: Zombie High (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Action -> Action
+  [sega_sms] Choplifter [ON DISK]
+    Beta genre:    Shoot'em Up -> Shooter
+      from: Choplifter (Japan) (En) (Proto)
+    Primary genre: Shoot'em Up -> Shooter
+      from: Choplifter (USA, Europe, Brazil) (En)
+    TGDB genre:    Action -> Action
+  [sega_sms] Dinobasher Starring Bignose the Caveman
+    Beta genre:    Platform -> Platform
+      from: Dinobasher Starring Bignose the Caveman (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_sms] Hook
+    Beta genre:    Platform -> Platform
+      from: Hook (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    Puzzle -> Puzzle
+  [sega_sms] NBA Jam
+    Beta genre:    Sports -> Sports
+      from: NBA Jam (Europe) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [sega_sms] Pat Riley Basketball
+    Beta genre:    Sports -> Sports
+      from: Pat Riley Basketball (USA) (Proto)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+  [sega_sms] Tecmo World Cup '92
+    Beta genre:    Sports -> Sports
+      from: Tecmo World Cup '92 (Europe) (Beta)
+    Primary genre: (none) -> (none)
+    TGDB genre:    MMO -> Action
+
+--- Games where beta genre matches primary/TGDB (201) ---
+  [nintendo_gb] 10-Pin Bowling
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_gb] Asterix & Obelix
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gb] B.C. Kid 2
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gb] Chou Mashin Eiyuu Den Wataru - Mazekko Monster
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gb] Eddie's Puzzle Time
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_gb] F-15 Strike Eagle II
+    Genre: Simulation -> Simulation (from beta, same as primary)
+  [nintendo_gb] F1 Challenge
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_gb] Jet Pack
+    Genre: Compilation -> Action (from beta, same as primary)
+  [nintendo_gb] Klustar
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_gb] Lunar Chase
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_gb] Mini Putt
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_gb] Pokemon - Yellow Version - Special Pikachu Edition
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gb] Space Invaders
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_gb] The Legend of Zelda - Link's Awakening DX
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gb] Triumph
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gb] Tsumeshougi - Kanki Godan
+    Genre: Board -> Board & Card (from beta, same as primary)
+  [nintendo_gb] ZAS
+    Genre: Shoot'em Up -> Shooter (from beta, same as primary)
+  [nintendo_gba] Aero the Acro-Bat - Rascal Rival Revenge
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gba] All-Star Baseball 2004
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_gba] Banjo-Kazooie - Grunty's Revenge
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gba] Blue Angelo - Angels from the Shrine
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gba] Contra Advance
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_gba] Dark Empire
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gba] Fanqiejiang Wangguo Da Maoxian
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gba] Flashback Legends
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_gba] Frank Herbert's Dune - Ornithopter Assault
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_gba] Huo-Wen Zhanji - Fengyin Zhi Jian
+    Genre: Strategy -> Strategy (from beta, same as primary)
+  [nintendo_gba] Lu-Hai-Kong Dazhan
+    Genre: Strategy -> Strategy (from beta, same as primary)
+  [nintendo_gba] Maliou Kadingche - Chaoji Saidao
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_gba] Maliou Yu Luyiji RPG
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gba] Manic Miner
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_gba] Sitafei De Chuanshuo
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gba] Sitafei De Chuanshuo 2
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gba] SpongeBob SquarePants - Revenge of the Flying Dutchman
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gba] Tongqin Yi Bi
+    Genre: Strategy -> Strategy (from beta, same as primary)
+  [nintendo_gba] Tootuff - The Gag Machine
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gba] Tyrian 2000
+    Genre: Shoot'em Up -> Shooter (from beta, same as primary)
+  [nintendo_gba] Yaobai Senxigang
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gba] Zhuanzhuanbang
+    Genre: Thinking -> Other (from beta, same as primary)
+  [nintendo_gba] Zhuanzhuanbang Tiantang
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_gbc] Card Sharks
+    Genre: Card -> Board & Card (from beta, same as primary)
+  [nintendo_gbc] Dragon Dance
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_gbc] DynaMike
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_gbc] Golf King
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_gbc] Hexcite
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_gbc] Lemmings
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_gbc] Pocket no Naka no Oukoku
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_gbc] Roadsters '98
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_gbc] South Park
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_gbc] Superman - Battle for Metropolis
+    Genre: Demo -> Other (from beta, same as primary)
+  [nintendo_gbc] Supershot Golf Robot
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_gbc] Suske en Wiske - De Tijdtemmers ~ Bob et Bobette - Les Dompteurs du Temps
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_gbc] The Legend of Zelda - Link's Awakening DX
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_gbc] Towers II - Plight of the Stargazer
+    Genre: Demo -> Other (from beta, same as primary)
+  [nintendo_gbc] Turok 2 - Seeds of Evil
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_gbc] Tyrannosaurus Tex
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_gbc] Tyrian 2000
+    Genre: Shoot'em Up -> Shooter (from beta, same as primary)
+  [nintendo_gbc] Wing Warriors
+    Genre: Shoot'em Up -> Shooter (from beta, same as primary)
+  [nintendo_n64] Die Hard 64
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_n64] Indiana Jones and the Infernal Machine [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_n64] O.D.T.
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_n64] Tommy Thunder
+    Genre: Lightgun Shooter -> Shooter (from beta, same as primary)
+  [nintendo_n64] Toon Panic
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_n64] Whack 'n' Roll
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_nes] Adventure Island III
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_nes] Block Out
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_nes] Bowling
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_nes] Bugs Bunny Birthday Bash
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_nes] Caltron - 9 in 1
+    Genre: Compilation -> Action (from beta, same as primary)
+  [nintendo_nes] Chuck Yeager's Fighter Combat
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_nes] Dino Hockey
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_nes] Drac's Night Out
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_nes] Geminim
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_nes] Godzilla - King of the Monsters
+    Genre: Strategy -> Strategy (from beta, same as primary)
+  [nintendo_nes] HeroQuest
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_nes] Hit the Ice
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_nes] John Smith - Special Agent
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_nes] Makai Island
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_nes] Millipede
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_nes] Mr. Assy - Momoco & Hanako
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_nes] Nebs 'n Debs
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_nes] Parasol Stars - The Story of Bubble Bobble III
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_nes] ROM City Rampage
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_nes] ROM City Rampage DX
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_nes] Sou Setsu Ryuu II - The Revenge
+    Genre: Beat'em Up -> Beat'em Up (from beta, same as primary)
+  [nintendo_nes] Square Deal
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_nes] Squashed
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_nes] Strider Hiryu
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_nes] Super Pitfall II
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_nes] The Bard's Tale - Tales of the Unknown
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_nes] The Goonies II - Fratelli Saigo no Chousen
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_nes] The Tale - Elrond no Eiyuu
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_nes] The Tower of Radia
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [nintendo_nes] Titan Warriors
+    Genre: Shoot'em Up -> Shooter (from beta, same as primary)
+  [nintendo_nes] U-Force Power Games
+    Genre: Compilation -> Action (from beta, same as primary)
+  [nintendo_nes] Witch n' Wiz
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [nintendo_nes] Zdey The Game
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] Apocalypse II
+    Genre: Shoot'em Up -> Shooter (from beta, same as primary)
+  [nintendo_snes] Atmosfear
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Baby T-Rex
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Barbie - Vacation Adventure
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_snes] Batman
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Batman - Revenge of the Joker
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Beethoven's 2nd
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] ClayFighter
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Congo - The Movie - Secret of Zinj
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_snes] Contra IV - The Alien Wars
+    Genre: Shoot'em Up -> Shooter (from beta, same as primary)
+  [nintendo_snes] Den'Z Traffic Panic
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Dorque & Imp
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] Eurit
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Fever Pitch Soccer [ON DISK]
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_snes] Flashback [ON DISK]
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] GunForce [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Human Grand Prix 2
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_snes] Jelly Boy 2
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Jurassic Park II - The Chaos Continues
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Maru's Quest
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] Mega lo Mania
+    Genre: Strategy -> Strategy (from beta, same as primary)
+  [nintendo_snes] Monsters
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_snes] Muhammad Ali Heavyweight Boxing
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_snes] Mutant Chronicles - Doom Troopers
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] NFL Football Game
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_snes] Nightmare Busters
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Prince of Persia 2 - The Shadow & the Flame
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] R-Type III - The Third Lightning [ON DISK]
+    Genre: Shoot'em Up -> Shooter (from beta, same as primary)
+  [nintendo_snes] Rally - The Final Round of the World Rally Championship
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_snes] Road Runner
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] Rock & Roll Racing
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_snes] Rocky Rodent [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Shooter
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_snes] Speedy Gonzales in Los Gatos Bandidos
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Spider-Man and the X-Men in Arcade's Revenge
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Spot Goes to Hollywood
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_snes] Star Fox 2
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [nintendo_snes] Super Baseball Simulator 1.000 2
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_snes] Super Donkey
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] Super Drift Out - World Rally Championships
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_snes] Super Full Metal
+    Genre: Strategy -> Strategy (from beta, same as primary)
+  [nintendo_snes] Super Ninja Boy [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Super Solitaire [ON DISK]
+    Genre: Card -> Board & Card (from beta, same as primary)
+  [nintendo_snes] Sylvester and Tweety
+    Genre: Adventure -> Adventure (from beta, same as primary)
+  [nintendo_snes] Targa
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Tarzan - Lord of the Jungle
+    Genre: Action -> Action (from beta, same as primary)
+  [nintendo_snes] Tom & Jerry
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] Total Football
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_snes] Wacky Races
+    Genre: Racing -> Driving (from beta, same as primary)
+  [nintendo_snes] Wile E's Revenge
+    Genre: Platform -> Platform (from beta, same as primary)
+  [nintendo_snes] World Soccer [ON DISK]
+    Genre: Sports -> Sports (from beta, same as primary)
+  [nintendo_snes] Zool
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_gg] BreakThru!
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [sega_gg] Cave Dude
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_gg] Dinobasher Starring Bignose the Caveman
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_gg] Empire Syndicate
+    Genre: Beat'em Up -> Beat'em Up (from beta, same as primary)
+  [sega_gg] Off the Wall
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [sega_gg] Street Battle
+    Genre: Fighting -> Fighting (from beta, same as primary)
+  [sega_gg] Wonder Boy III - The Dragon's Trap
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_gg] X-Men - GameMaster's Legacy [ON DISK]
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_smd] Abbaye des Morts, L'
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_smd] Akira [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Asterix and the Power of the Gods [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Baby Boom
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Baby's Day Out
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_smd] Beyond Zero Tolerance
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [sega_smd] Comix Zone [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Congo - The Game [ON DISK]
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_smd] Devilish
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Dexstar
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Dragon's Lair
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] DynoBlaze
+    Genre: Beat'em Up -> Beat'em Up (from beta, same as primary)
+  [sega_smd] Escape from Mars Starring Taz
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_smd] Gauntlet IV
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Gensou Senki Kokou no Ryuu - Crying Dragon [ON DISK]
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [sega_smd] Hardwired
+    Genre: Shooter -> Shooter (from beta, same as primary)
+  [sega_smd] Junker's High
+    Genre: Racing -> Driving (from beta, same as primary)
+  [sega_smd] Mega Bomberman - Special 8-Player-Demo [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Micro Machines - Military [ON DISK]
+    Genre: Racing -> Driving (from beta, same as primary)
+  [sega_smd] Mondu's Fight Palace
+    Genre: Fighting -> Fighting (from beta, same as primary)
+  [sega_smd] Mortal Kombat
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Mr. Nutz - Hoppin' Mad [ON DISK]
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_smd] Primal Rage [ON DISK]
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Putty Squad
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] R.B.I. Baseball '95 [ON DISK]
+    Genre: Sports -> Sports (from beta, same as primary)
+  [sega_smd] Ristar - The Shooting Star
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Robot Wreckage
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] ST II' Turbo [ON DISK]
+    Genre: Fighting -> Fighting (from beta, same as primary)
+  [sega_smd] Street Fighter II' - Champion Edition
+    Genre: Fighting -> Fighting (from beta, same as primary)
+  [sega_smd] The Super Shinobi
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] The Young Indiana Jones Chronicles
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_smd] Twisted Flipper
+    Genre: Pinball -> Pinball (from beta, same as primary)
+  [sega_smd] World of Illusion starring Mickey Mouse & Donald Duck
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_smd] Xin Qigai Wangzi [ON DISK]
+    Genre: Role-playing (RPG) -> Role-Playing (from beta, same as primary)
+  [sega_sms] 3D Gunner
+    Genre: Lightgun Shooter -> Shooter (from beta, same as primary)
+  [sega_sms] Battle Wings
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_sms] Blade Eagle
+    Genre: Action -> Action (from beta, same as primary)
+  [sega_sms] Lemmings 2 - The Tribes
+    Genre: Puzzle -> Puzzle (from beta, same as primary)
+  [sega_sms] Slap Shoot
+    Genre: Sports -> Sports (from beta, same as primary)
+  [sega_sms] Sonic's Edusoft
+    Genre: Educational -> Educational (from beta, same as primary)
+  [sega_sms] Super Golf
+    Genre: Sports -> Sports (from beta, same as primary)
+  [sega_sms] The Excellent Dizzy Collection
+    Genre: Compilation -> Action (from beta, same as primary)
+  [sega_sms] Tom & Jerry
+    Genre: Platform -> Platform (from beta, same as primary)
+  [sega_sms] Vampire
+    Genre: Platform -> Platform (from beta, same as primary)
+
+======================================================================
+MACHINE-READABLE SUMMARY
+======================================================================
+TOTAL_GROUPS=15767
+GROUPS_WITH_BETAS=2630
+GENRE_FROM_BETA=408
+GENRE_MISMATCH_BETA_VS_PRIMARY=1
+LIBRETRO_TGDB_MISMATCH=207
+USER_AFFECTED=64
+CONFLICTING_COUNT=207

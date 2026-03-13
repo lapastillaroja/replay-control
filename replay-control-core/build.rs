@@ -799,6 +799,14 @@ fn status_variant(status: &str) -> &'static str {
     }
 }
 
+/// Check if a No-Intro ROM name indicates a beta, prototype, sample, or demo.
+fn is_beta_or_proto(name: &str) -> bool {
+    name.contains("(Beta")
+        || name.contains("(Proto")
+        || name.contains("(Sample")
+        || name.contains("(Demo")
+}
+
 fn escape_str(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -1535,24 +1543,53 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
             let mut final_players: u8 = 0;
             let mut final_genre = String::new();
 
+            // Pass 1: Try primary (non-beta) ROMs first
             for &idx in indices {
-                let crc = nointro_entries[idx].crc32;
-                if final_players == 0
-                    && let Some(users_str) = maxusers.get(&crc)
-                {
-                    final_players = users_str.parse().unwrap_or(0);
+                let name = &nointro_entries[idx].name;
+                if is_beta_or_proto(name) {
+                    continue;
                 }
-                if final_genre.is_empty()
-                    && let Some(genre_str) = genres.get(&crc)
-                {
-                    final_genre = genre_str.clone();
+                let crc = nointro_entries[idx].crc32;
+                if final_players == 0 {
+                    if let Some(users_str) = maxusers.get(&crc) {
+                        final_players = users_str.parse().unwrap_or(0);
+                    }
+                }
+                if final_genre.is_empty() {
+                    if let Some(genre_str) = genres.get(&crc) {
+                        final_genre = genre_str.clone();
+                    }
                 }
                 if final_players > 0 && !final_genre.is_empty() {
                     break;
                 }
             }
 
-            // Fall back to TGDB data if libretro didn't have it
+            // Pass 2: Fall back to beta/proto ROMs if primary didn't match
+            if final_players == 0 || final_genre.is_empty() {
+                for &idx in indices {
+                    let name = &nointro_entries[idx].name;
+                    if !is_beta_or_proto(name) {
+                        continue;
+                    }
+                    let crc = nointro_entries[idx].crc32;
+                    if final_players == 0 {
+                        if let Some(users_str) = maxusers.get(&crc) {
+                            final_players = users_str.parse().unwrap_or(0);
+                        }
+                    }
+                    if final_genre.is_empty() {
+                        if let Some(genre_str) = genres.get(&crc) {
+                            final_genre = genre_str.clone();
+                        }
+                    }
+                    if final_players > 0 && !final_genre.is_empty() {
+                        break;
+                    }
+                }
+            }
+
+            // Pass 3: Fall back to TGDB data if libretro didn't have it
             if final_players == 0 {
                 final_players = tgdb_players;
             }
