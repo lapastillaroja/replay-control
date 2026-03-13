@@ -10,9 +10,19 @@
 # These files are NOT checked into git. Run this script after cloning or when
 # you want to refresh the data.
 #
-# Usage: ./scripts/download-metadata.sh
+# Usage: ./scripts/download-metadata.sh [--force]
+#
+# Options:
+#   --force   Re-download all files even if they already exist
 
 set -euo pipefail
+
+FORCE=false
+if [[ "${1:-}" == "--force" ]]; then
+    FORCE=true
+    echo "Force mode: re-downloading all files"
+    echo
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -29,8 +39,8 @@ download() {
     local dest="$2"
     local desc="$3"
 
-    if [ -f "$dest" ]; then
-        echo "  Already exists: $dest (skipping)"
+    if [ "$FORCE" = false ] && [ -f "$dest" ]; then
+        echo "  Already exists: $dest (skipping, use --force to re-download)"
         return 0
     fi
 

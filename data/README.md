@@ -1,34 +1,55 @@
-# Arcade Source Data
+# Build Data
 
 This folder contains downloaded source files used by `replay-control-core/build.rs` to
-generate the embedded arcade game database at compile time.
+generate the embedded game and arcade databases at compile time.
 
 These files are **not checked into git** (they are large and come from upstream
 repos). Only this README is tracked.
 
-## Contents
+## First-time setup
 
-| File                | Source | Description |
-|---------------------|--------|-------------|
-| `fbneo-arcade.dat`  | [libretro/FBNeo](https://github.com/libretro/FBNeo) | FBNeo ClrMame Pro XML (arcade only) |
-| `mame2003plus.xml`  | [libretro/mame2003-plus-libretro](https://github.com/libretro/mame2003-plus-libretro) | MAME 2003+ full XML |
-| `catver.ini`        | [libretro/mame2003-plus-libretro](https://github.com/libretro/mame2003-plus-libretro) | Category/genre mappings |
-
-## How to populate
-
-Run the download script from the project root:
+After cloning the repo, run both download scripts before building:
 
 ```sh
+./scripts/download-metadata.sh
 ./scripts/download-arcade-data.sh
 ```
 
-This downloads the latest versions of all source files into this folder. The
-script is idempotent and safe to run multiple times (it overwrites existing
-files).
+## Contents
+
+### Console metadata (`download-metadata.sh`)
+
+| Directory | Source | Description |
+|-----------|--------|-------------|
+| `no-intro/` | [libretro/libretro-database](https://github.com/libretro/libretro-database) | No-Intro DAT files (ROM identification by CRC32) |
+| `libretro-meta/genre/` | [libretro/libretro-database](https://github.com/libretro/libretro-database) | Genre classification by CRC32 |
+| `libretro-meta/maxusers/` | [libretro/libretro-database](https://github.com/libretro/libretro-database) | Player count by CRC32 |
+| `thegamesdb-latest.json` | [TheGamesDB](https://thegamesdb.net) | Rich metadata (year, genre, developer, players) |
+
+### Arcade metadata (`download-arcade-data.sh`)
+
+| File | Source | Description |
+|------|--------|-------------|
+| `fbneo-arcade.dat` | [libretro/FBNeo](https://github.com/libretro/FBNeo) | FBNeo ClrMame Pro XML (arcade only) |
+| `mame2003plus.xml` | [libretro/mame2003-plus-libretro](https://github.com/libretro/mame2003-plus-libretro) | MAME 2003+ full XML |
+| `catver.ini` | [libretro/mame2003-plus-libretro](https://github.com/libretro/mame2003-plus-libretro) | MAME 2003+ category/genre mappings |
+| `mame0285-arcade.xml` | [Progetto-SNAPS](https://www.progettosnaps.net) | MAME 0.285 arcade XML |
+| `catver-mame-current.ini` | [AntoPISA/MAME_SupportFiles](https://github.com/AntoPISA/MAME_SupportFiles) | Current MAME category/genre mappings |
 
 ## When to refresh
 
-These files change infrequently. Refresh when:
+Re-download when upstream data changes (e.g., a genre fix gets merged):
 
-- A new RePlayOS version ships with updated emulator cores
-- You want the latest game additions from FBNeo or MAME 2003+
+```sh
+# Re-download all metadata (including genre DATs)
+./scripts/download-metadata.sh --force
+
+# Re-download arcade data only
+./scripts/download-arcade-data.sh
+```
+
+After refreshing, rebuild to bake in the updated data:
+
+```sh
+cargo build -p replay-control-core
+```
