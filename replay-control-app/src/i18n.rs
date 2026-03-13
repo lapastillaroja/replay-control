@@ -326,7 +326,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         // Game library
         "metadata.rebuild_game_library" => "Rebuild Game Library",
         "metadata.rebuilding_game_library" => "Rebuilding...",
-        "metadata.game_library_rebuilt" => "Game library rebuild started",
+        "metadata.game_library_rebuilt" => "Game library rebuilt successfully",
         "metadata.confirm_rebuild_game_library" => {
             "Rebuild the game library? This re-scans all games from disk."
         }

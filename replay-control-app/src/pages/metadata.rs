@@ -634,6 +634,51 @@ fn watch_thumbnail_progress(
     }
 }
 
+/// Polls `is_metadata_busy()` every 2 seconds until the rebuild completes.
+/// On completion, shows a success message and refetches stats/coverage.
+#[allow(unused_variables, unreachable_code)]
+async fn poll_rebuild_completion(
+    rebuilding: RwSignal<bool>,
+    rebuild_result: RwSignal<Option<String>>,
+    stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
+    coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
+    i18n: crate::i18n::I18nContext,
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    return;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        loop {
+            gloo_timers::future::TimeoutFuture::new(2_000).await;
+            match server_fns::is_metadata_busy().await {
+                Ok(true) => {
+                    // Still running, keep polling.
+                }
+                Ok(false) => {
+                    // Rebuild complete.
+                    rebuild_result.set(Some(
+                        t(i18n.locale.get(), "metadata.game_library_rebuilt").to_string(),
+                    ));
+                    rebuilding.set(false);
+                    stats.refetch();
+                    coverage.refetch();
+                    break;
+                }
+                Err(_) => {
+                    // Server error — stop polling, show generic success
+                    // since the rebuild was accepted.
+                    rebuild_result.set(Some(
+                        t(i18n.locale.get(), "metadata.game_library_rebuilt").to_string(),
+                    ));
+                    rebuilding.set(false);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// Displays real-time import progress.
 #[component]
 fn ImportProgressDisplay(progress: RwSignal<Option<server_fns::ImportProgress>>) -> impl IntoView {
@@ -789,19 +834,19 @@ fn DataManagementSection(
     let on_rebuild = Callback::new(move |_: leptos::ev::MouseEvent| {
         rebuilding.set(true);
         rebuild_result.set(None);
+        confirming_rebuild.set(false);
         leptos::task::spawn_local(async move {
             match server_fns::rebuild_game_library().await {
                 Ok(()) => {
-                    rebuild_result.set(Some(
-                        t(i18n.locale.get(), "metadata.game_library_rebuilt").to_string(),
-                    ));
+                    // The rebuild runs in the background. Poll is_metadata_busy()
+                    // every 2 seconds until it completes.
+                    poll_rebuild_completion(rebuilding, rebuild_result, stats, coverage, i18n).await;
                 }
                 Err(e) => {
                     rebuild_result.set(Some(format!("Error: {e}")));
+                    rebuilding.set(false);
                 }
             }
-            rebuilding.set(false);
-            confirming_rebuild.set(false);
         });
     });
 

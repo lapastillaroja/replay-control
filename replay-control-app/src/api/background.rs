@@ -148,6 +148,23 @@ impl AppState {
     /// does a full populate first (scan ROMs + enrich). Otherwise just enriches
     /// existing entries with updated box art URLs and ratings.
     pub fn spawn_cache_enrichment(&self) {
+        self.spawn_cache_enrichment_inner(None);
+    }
+
+    /// Like `spawn_cache_enrichment`, but clears an `AtomicBool` flag when the
+    /// background work completes. Used by `rebuild_game_library` to signal that
+    /// the metadata operation slot is free again.
+    pub fn spawn_cache_enrichment_with_flag(
+        &self,
+        flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) {
+        self.spawn_cache_enrichment_inner(Some(flag));
+    }
+
+    fn spawn_cache_enrichment_inner(
+        &self,
+        done_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    ) {
         let state = self.clone();
         std::thread::spawn(move || {
             let storage = state.storage();
@@ -176,6 +193,11 @@ impl AppState {
                     "Post-import enrichment: done in {:.1}s",
                     start.elapsed().as_secs_f64()
                 );
+            }
+
+            // Clear the operation-in-progress flag if one was provided.
+            if let Some(flag) = done_flag {
+                flag.store(false, std::sync::atomic::Ordering::SeqCst);
             }
         });
     }

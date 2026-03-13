@@ -152,10 +152,25 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
 /// Rebuild the game library: clears game_library tables and triggers a full
 /// rescan + enrichment from disk. Use when baked-in data changes or to force
 /// a fresh scan of all systems.
+///
+/// Sets `metadata_operation_in_progress` to block concurrent DB access while
+/// the rebuild runs in the background. The flag is cleared when the background
+/// enrichment task completes.
 #[server(prefix = "/sfn")]
 pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+
+    // Atomically claim the operation slot.
+    if state
+        .metadata_operation_in_progress
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        return Err(ServerFnError::new(
+            "Another metadata operation is already running",
+        ));
+    }
+
     state.cache.invalidate();
-    state.spawn_cache_enrichment();
+    state.spawn_cache_enrichment_with_flag(state.metadata_operation_in_progress.clone());
     Ok(())
 }
