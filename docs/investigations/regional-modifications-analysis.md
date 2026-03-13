@@ -311,11 +311,11 @@ When `regional_variants()` returns results, the chip label is currently just the
 
 The original Step 4 proposed individual columns for homebrew/unlicensed/prerelease. This is now handled by the single `is_special` flag in Step 2, which catches all these categories with one column and one filter condition.
 
-### Priority order
+### Priority order and implementation status
 
-1. **Fix region display labels** (biggest impact, 184 cases, improves UX for legitimate variants)
-2. **Add `is_special` and exclude from variants/dedup/recommendations** (248 duplicate-label cases fixed, all non-standard ROMs filtered from recommendations)
-3. **Use `extract_tags()` for chip labels** (32 revision cases, makes revisions distinguishable)
+1. ~~**Fix region display labels**~~ — **DONE** (2026-03-14). Implemented via Step 3 (`extract_tags()`) which fixes this for free: "France", "Germany" etc. now show instead of "other".
+2. ~~**Add `is_special` and exclude from variants/dedup/recommendations**~~ — **DONE** (2026-03-14). `is_special` column added, filtered in all 6 recommendation queries + `regional_variants()` + `similar_by_genre()`. "Special Versions" chip row on game detail page. Commit `9a29b96`.
+3. ~~**Use `extract_tags()` for chip labels**~~ — **DONE** (2026-03-14). `related.rs` now uses `extract_tags()` for variant labels with arcade `display_name` fallback. Also added `is_clone = 0` filter to `regional_variants()`. Commit `5be5e06`.
 
 ## Implementation sketch
 

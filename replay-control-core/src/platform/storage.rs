@@ -188,3 +188,20 @@ fn find_usb_storage() -> Result<PathBuf> {
 
     Err(Error::StorageNotFound)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_local_returns_true_for_local_storage() {
+        assert!(StorageKind::Sd.is_local());
+        assert!(StorageKind::Usb.is_local());
+        assert!(StorageKind::Nvme.is_local());
+    }
+
+    #[test]
+    fn is_local_returns_false_for_nfs() {
+        assert!(!StorageKind::Nfs.is_local());
+    }
+}

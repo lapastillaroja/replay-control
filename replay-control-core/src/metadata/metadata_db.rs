@@ -2041,7 +2041,7 @@ mod tests {
 
     #[test]
     fn specials_returns_special_roms_sharing_base_title() {
-        let (db, _dir) = open_temp_db();
+        let (mut db, _dir) = open_temp_db();
 
         let mut original = make_cached_rom("snes", "Game (USA).sfc", false);
         original.base_title = "Game".into();
@@ -2069,7 +2069,7 @@ mod tests {
 
     #[test]
     fn recommendation_queries_exclude_special_roms() {
-        let (db, _dir) = open_temp_db();
+        let (mut db, _dir) = open_temp_db();
 
         let mut normal = make_cached_rom("snes", "Mario (USA).sfc", false);
         normal.base_title = "Mario".into();
@@ -2100,5 +2100,41 @@ mod tests {
             .unwrap();
         assert_eq!(similar.len(), 1);
         assert_eq!(similar[0].rom_filename, "Mario (USA).sfc");
+    }
+
+    #[test]
+    fn regional_variants_excludes_clones_and_specials() {
+        let (mut db, _dir) = open_temp_db();
+
+        let mut original = make_cached_rom("snes", "Game (USA).sfc", false);
+        original.base_title = "game".into();
+        original.region = "usa".into();
+
+        let mut europe = make_cached_rom("snes", "Game (Europe).sfc", false);
+        europe.base_title = "game".into();
+        europe.region = "europe".into();
+
+        // Clone should be excluded
+        let mut clone = make_cached_rom("snes", "Game (Japan).sfc", false);
+        clone.base_title = "game".into();
+        clone.region = "japan".into();
+        clone.is_clone = true;
+
+        // Special should be excluded
+        let mut special = make_cached_rom("snes", "Game (USA) (FastRom).sfc", false);
+        special.base_title = "game".into();
+        special.region = "usa".into();
+        special.is_special = true;
+
+        db.save_system_roms("snes", &[original, europe, clone, special], None)
+            .unwrap();
+
+        let variants = db.regional_variants("snes", "Game (USA).sfc").unwrap();
+        assert_eq!(variants.len(), 2);
+        let filenames: Vec<&str> = variants.iter().map(|(f, _, _)| f.as_str()).collect();
+        assert!(filenames.contains(&"Game (USA).sfc"));
+        assert!(filenames.contains(&"Game (Europe).sfc"));
+        assert!(!filenames.contains(&"Game (Japan).sfc")); // clone excluded
+        assert!(!filenames.contains(&"Game (USA) (FastRom).sfc")); // special excluded
     }
 }

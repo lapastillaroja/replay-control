@@ -662,19 +662,19 @@ Both features are closely related and should be implemented together, since the
 periodic background check (Feature 1) is the natural place to trigger the orphan
 cleanup (Feature 2).
 
-### Phase 1: ROM change detection (Feature 1, core)
+### Phase 1: ROM change detection (Feature 1, core) — **DONE** (2026-03-14)
 
-1. Add `check_stale_systems` method to `AppState` (background.rs) -- the
-   shared rescan logic called by the watcher event handler and from the
-   metadata page "Update" flow.
-2. Add `try_start_rom_watcher` (following the `try_start_config_watcher`
-   pattern): set up `notify` watcher on `roms/` for local storage types
-   (`Sd`, `Usb`, `Nvme`). Skip for `Nfs`.
-3. For NFS, no watcher or timer — rely on the existing manual "Update" flow
-   from the metadata page, which already calls `enrich_system_cache()` for
-   all systems.
-4. Include `roms/` directory mtime check for new system detection (watcher
-   path).
+Implemented in commit `5bec806`:
+
+1. `StorageKind::is_local()` method added to `storage.rs` — returns true for
+   `Sd`, `Usb`, `Nvme`, false for `Nfs`.
+2. `spawn_rom_watcher()` + `try_start_rom_watcher()` in `background.rs` —
+   recursive `notify` watcher on `roms/`, 3-second debounce, extracts
+   affected system names from event paths, invalidates cache + re-enriches.
+3. New system directory detection: when `roms/` top-level changes, refreshes
+   systems list and enriches newly discovered systems.
+4. NFS skipped entirely — manual "Update" from metadata page is sufficient.
+5. Wired up in `main.rs` startup sequence.
 
 ### Phase 2: Orphan identification and cleanup (Feature 2, core)
 
