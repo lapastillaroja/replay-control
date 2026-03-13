@@ -144,12 +144,12 @@ fn SearchShortcut() -> impl IntoView {
                         return;
                     }
                     // Don't intercept if user is typing in an input or textarea.
-                    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-                        if let Some(active) = doc.active_element() {
-                            let tag = active.tag_name().to_uppercase();
-                            if tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" {
-                                return;
-                            }
+                    if let Some(doc) = web_sys::window().and_then(|w| w.document())
+                        && let Some(active) = doc.active_element()
+                    {
+                        let tag = active.tag_name().to_uppercase();
+                        if tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" {
+                            return;
                         }
                     }
                     ev.prevent_default();
@@ -158,14 +158,12 @@ fn SearchShortcut() -> impl IntoView {
                         let href = w.location().pathname().unwrap_or_default();
                         if href == "/search" {
                             // Already on search page -- focus the input.
-                            if let Some(doc) = w.document() {
-                                if let Some(el) =
+                            if let Some(doc) = w.document()
+                                && let Some(el) =
                                     doc.query_selector(".search-page-input").ok().flatten()
-                                {
-                                    if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
-                                        let _ = input.focus();
-                                    }
-                                }
+                                && let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>()
+                            {
+                                let _ = input.focus();
                             }
                         } else {
                             navigate("/search", Default::default());

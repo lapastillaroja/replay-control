@@ -337,6 +337,7 @@ pub(crate) fn lookup_players(system: &str, rom_filename: &str) -> u8 {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[server(prefix = "/sfn")]
 pub async fn global_search(
     query: String,

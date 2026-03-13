@@ -128,6 +128,9 @@ pub struct CachedRom {
     pub genre: Option<String>,
     pub players: Option<u8>,
     pub rating: Option<f32>,
+    pub is_clone: bool,
+    pub base_title: String,
+    pub region: String,
 }
 
 /// Per-system cache metadata from the `rom_cache_meta` table.
@@ -232,6 +235,9 @@ impl MetadataDb {
                     genre TEXT,
                     players INTEGER,
                     rating REAL,
+                    is_clone INTEGER NOT NULL DEFAULT 0,
+                    base_title TEXT NOT NULL DEFAULT '',
+                    region TEXT NOT NULL DEFAULT '',
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -742,8 +748,9 @@ impl MetadataDb {
             let mut stmt = tx
                 .prepare(
                     "INSERT OR IGNORE INTO rom_cache (system, rom_filename, rom_path, display_name,
-                     size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                     size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating,
+                     is_clone, base_title, region)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare rom_cache insert: {e}")))?;
 
@@ -760,6 +767,9 @@ impl MetadataDb {
                     &rom.genre,
                     rom.players.map(|p| p as i32),
                     rom.rating,
+                    rom.is_clone,
+                    &rom.base_title,
+                    &rom.region,
                 ])
                 .map_err(|e| Error::Other(format!("Insert rom_cache failed: {e}")))?;
             }
@@ -792,7 +802,8 @@ impl MetadataDb {
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating
+                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_clone, base_title, region
                  FROM rom_cache WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_roms: {e}")))?;
@@ -1185,23 +1196,38 @@ impl MetadataDb {
 
     /// Get random cached ROMs with box art from all systems.
     /// Returns a diverse selection across different systems.
-    pub fn random_cached_roms_diverse(&self, count: usize) -> Result<Vec<CachedRom>> {
-        // Don't filter by box_art_url — games without box art show with a
-        // placeholder. Filtering by box_art_url biases recommendations toward
-        // systems whose thumbnails were downloaded on-demand (e.g., only Mega
-        // Drive games appear if the user browsed that system first).
+    /// Filters out arcade clones and deduplicates regional variants,
+    /// preferring the user's region preference.
+    pub fn random_cached_roms_diverse(
+        &self,
+        count: usize,
+        region_pref: &str,
+    ) -> Result<Vec<CachedRom>> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating
-                 FROM rom_cache
-                 ORDER BY RANDOM() LIMIT ?1",
+                "WITH deduped AS (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY system, base_title
+                        ORDER BY CASE
+                            WHEN region = ?2 THEN 0
+                            WHEN region = 'world' THEN 1
+                            ELSE 2
+                        END
+                    ) AS rn
+                    FROM rom_cache
+                    WHERE is_clone = 0
+                )
+                SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_clone, base_title, region
+                FROM deduped WHERE rn = 1
+                ORDER BY RANDOM() LIMIT ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare random_cached_roms_diverse: {e}")))?;
 
         let rows = stmt
-            .query_map(params![(count * 5) as i64], Self::row_to_cached_rom)
+            .query_map(params![(count * 5) as i64, region_pref], Self::row_to_cached_rom)
             .map_err(|e| Error::Other(format!("Query random_cached_roms_diverse: {e}")))?;
 
         Ok(rows.flatten().collect())
@@ -1213,7 +1239,8 @@ impl MetadataDb {
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating
+                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_clone, base_title, region
                  FROM rom_cache
                  WHERE system = ?1 AND box_art_url IS NOT NULL
                  ORDER BY RANDOM() LIMIT ?2",
@@ -1228,27 +1255,44 @@ impl MetadataDb {
     }
 
     /// Get top-rated cached ROMs across all systems.
-    /// Uses a subquery to select the top tier, then randomizes within it
+    /// Filters out arcade clones and deduplicates regional variants,
+    /// then selects from the top-rated pool and randomizes within it
     /// so each page load shows a different selection of highly-rated games.
-    pub fn top_rated_cached_roms(&self, count: usize) -> Result<Vec<CachedRom>> {
+    pub fn top_rated_cached_roms(
+        &self,
+        count: usize,
+        region_pref: &str,
+    ) -> Result<Vec<CachedRom>> {
         let pool_size = (count * 4).max(40) as i64;
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating
-                 FROM (
-                     SELECT * FROM rom_cache
-                     WHERE rating IS NOT NULL AND rating > 0
-                     ORDER BY rating DESC
-                     LIMIT ?1
-                 )
-                 ORDER BY RANDOM()",
+                "WITH deduped AS (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY system, base_title
+                        ORDER BY CASE
+                            WHEN region = ?2 THEN 0
+                            WHEN region = 'world' THEN 1
+                            ELSE 2
+                        END
+                    ) AS rn
+                    FROM rom_cache
+                    WHERE is_clone = 0 AND rating IS NOT NULL AND rating > 0
+                )
+                SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_clone, base_title, region
+                FROM (
+                    SELECT * FROM deduped WHERE rn = 1
+                    ORDER BY rating DESC
+                    LIMIT ?1
+                )
+                ORDER BY RANDOM()",
             )
             .map_err(|e| Error::Other(format!("Prepare top_rated_cached_roms: {e}")))?;
 
         let rows = stmt
-            .query_map(params![pool_size], Self::row_to_cached_rom)
+            .query_map(params![pool_size, region_pref], Self::row_to_cached_rom)
             .map_err(|e| Error::Other(format!("Query top_rated_cached_roms: {e}")))?;
 
         Ok(rows.flatten().collect())
@@ -1286,6 +1330,7 @@ impl MetadataDb {
     }
 
     /// Get non-favorited ROMs from a system, optionally filtered by genre.
+    /// Filters out arcade clones and deduplicates regional variants.
     /// Selects from top-rated games and randomizes via SQL so each load
     /// shows different recommendations. Used for "Because You Love" section.
     pub fn system_roms_excluding(
@@ -1294,6 +1339,7 @@ impl MetadataDb {
         exclude_filenames: &[&str],
         genre_filter: Option<&str>,
         count: usize,
+        region_pref: &str,
     ) -> Result<Vec<CachedRom>> {
         let exclude_set: std::collections::HashSet<&str> =
             exclude_filenames.iter().copied().collect();
@@ -1305,32 +1351,59 @@ impl MetadataDb {
             let mut stmt = self
                 .conn
                 .prepare(
-                    "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                            is_m3u, box_art_url, driver_status, genre, players, rating
-                     FROM (
-                         SELECT * FROM rom_cache
-                         WHERE system = ?1 AND genre = ?2
-                         ORDER BY rating DESC NULLS LAST
-                         LIMIT ?3
-                     )
-                     ORDER BY RANDOM()",
+                    "WITH deduped AS (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY system, base_title
+                            ORDER BY CASE
+                                WHEN region = ?4 THEN 0
+                                WHEN region = 'world' THEN 1
+                                ELSE 2
+                            END
+                        ) AS rn
+                        FROM rom_cache
+                        WHERE system = ?1 AND genre = ?2 AND is_clone = 0
+                    )
+                    SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                            is_m3u, box_art_url, driver_status, genre, players, rating,
+                            is_clone, base_title, region
+                    FROM (
+                        SELECT * FROM deduped WHERE rn = 1
+                        ORDER BY rating DESC NULLS LAST
+                        LIMIT ?3
+                    )
+                    ORDER BY RANDOM()",
                 )
                 .map_err(|e| Error::Other(format!("Prepare system_roms_excluding: {e}")))?;
 
             let rows = stmt
-                .query_map(params![system, genre, limit], Self::row_to_cached_rom)
+                .query_map(
+                    params![system, genre, limit, region_pref],
+                    Self::row_to_cached_rom,
+                )
                 .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
             rows.flatten().collect::<Vec<_>>()
         } else {
             let mut stmt = self
                 .conn
                 .prepare(
-                    "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                            is_m3u, box_art_url, driver_status, genre, players, rating
-                     FROM (
-                         SELECT * FROM rom_cache
-                         WHERE system = ?1
-                         ORDER BY rating DESC NULLS LAST
+                    "WITH deduped AS (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY system, base_title
+                            ORDER BY CASE
+                                WHEN region = ?3 THEN 0
+                                WHEN region = 'world' THEN 1
+                                ELSE 2
+                            END
+                        ) AS rn
+                        FROM rom_cache
+                        WHERE system = ?1 AND is_clone = 0
+                    )
+                    SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                            is_m3u, box_art_url, driver_status, genre, players, rating,
+                            is_clone, base_title, region
+                    FROM (
+                        SELECT * FROM deduped WHERE rn = 1
+                        ORDER BY rating DESC NULLS LAST
                          LIMIT ?2
                      )
                      ORDER BY RANDOM()",
@@ -1338,7 +1411,7 @@ impl MetadataDb {
                 .map_err(|e| Error::Other(format!("Prepare system_roms_excluding: {e}")))?;
 
             let rows = stmt
-                .query_map(params![system, limit], Self::row_to_cached_rom)
+                .query_map(params![system, limit, region_pref], Self::row_to_cached_rom)
                 .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
             rows.flatten().collect::<Vec<_>>()
         };
@@ -1364,6 +1437,9 @@ impl MetadataDb {
             genre: row.get(8)?,
             players: row.get::<_, Option<i32>>(9)?.map(|p| p as u8),
             rating: row.get(10)?,
+            is_clone: row.get(11)?,
+            base_title: row.get(12)?,
+            region: row.get(13)?,
         })
     }
 }

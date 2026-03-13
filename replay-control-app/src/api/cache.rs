@@ -438,22 +438,31 @@ impl RomCache {
             .iter()
             .map(|r| {
                 let rom_filename = &r.game.rom_filename;
-                let (genre, players_lookup) = if is_arcade {
-                    let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
-                    match arcade_db::lookup_arcade_game(stem) {
-                        Some(info) => (Some(info.normalized_genre.to_string()), Some(info.players)),
-                        None => (None, None),
+                let stem = rom_filename
+                    .rfind('.')
+                    .map(|i| &rom_filename[..i])
+                    .unwrap_or(rom_filename);
+
+                let (genre, players_lookup, is_clone, base_title) = if is_arcade {
+                    let arcade_stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+                    match arcade_db::lookup_arcade_game(arcade_stem) {
+                        Some(info) => (
+                            Some(info.normalized_genre.to_string()),
+                            Some(info.players),
+                            info.is_clone,
+                            replay_control_core::thumbnails::base_title(info.display_name),
+                        ),
+                        None => (None, None, false, replay_control_core::thumbnails::base_title(stem)),
                     }
                 } else {
-                    let stem = rom_filename
-                        .rfind('.')
-                        .map(|i| &rom_filename[..i])
-                        .unwrap_or(rom_filename);
                     let entry = game_db::lookup_game(system, stem);
                     let game = entry.map(|e| e.game).or_else(|| {
                         let normalized = game_db::normalize_filename(stem);
                         game_db::lookup_by_normalized_title(system, &normalized)
                     });
+                    let bt = r.game.display_name.as_deref()
+                        .map(replay_control_core::thumbnails::base_title)
+                        .unwrap_or_else(|| replay_control_core::thumbnails::base_title(stem));
                     match game {
                         Some(g) => (
                             if g.normalized_genre.is_empty() {
@@ -462,9 +471,21 @@ impl RomCache {
                                 Some(g.normalized_genre.to_string())
                             },
                             if g.players > 0 { Some(g.players) } else { None },
+                            false,
+                            bt,
                         ),
-                        None => (None, None),
+                        None => (None, None, false, bt),
                     }
+                };
+
+                let (_, region_priority) = replay_control_core::rom_tags::classify(rom_filename);
+                let region = match region_priority {
+                    replay_control_core::rom_tags::RegionPriority::Usa => "usa",
+                    replay_control_core::rom_tags::RegionPriority::Europe => "europe",
+                    replay_control_core::rom_tags::RegionPriority::Japan => "japan",
+                    replay_control_core::rom_tags::RegionPriority::World => "world",
+                    replay_control_core::rom_tags::RegionPriority::Other => "other",
+                    replay_control_core::rom_tags::RegionPriority::Unknown => "",
                 };
 
                 CachedRom {
@@ -479,6 +500,9 @@ impl RomCache {
                     genre,
                     players: players_lookup.or(r.players),
                     rating: r.rating,
+                    is_clone,
+                    base_title,
+                    region: region.to_string(),
                 }
             })
             .collect();

@@ -133,11 +133,11 @@ impl AppState {
     {
         let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
         // Drop stale connection if the DB file was deleted externally.
-        if let Some(ref db) = *guard {
-            if !db.db_path().exists() {
-                tracing::warn!("Metadata DB file deleted externally, re-opening");
-                *guard = None;
-            }
+        if let Some(ref db) = *guard
+            && !db.db_path().exists()
+        {
+            tracing::warn!("Metadata DB file deleted externally, re-opening");
+            *guard = None;
         }
         if guard.is_none() {
             // If a metadata operation (import, thumbnail update) has taken the
@@ -175,11 +175,11 @@ impl AppState {
             .lock()
             .expect("user_data_db lock poisoned");
         // Drop stale connection if the DB file was deleted externally.
-        if let Some(ref db) = *guard {
-            if !db.db_path().exists() {
-                tracing::warn!("User data DB file deleted externally, re-opening");
-                *guard = None;
-            }
+        if let Some(ref db) = *guard
+            && !db.db_path().exists()
+        {
+            tracing::warn!("User data DB file deleted externally, re-opening");
+            *guard = None;
         }
         if guard.is_none() {
             let storage = self.storage();

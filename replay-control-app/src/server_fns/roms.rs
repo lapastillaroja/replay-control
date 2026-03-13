@@ -34,6 +34,7 @@ pub struct RomDetail {
     pub variant_count: usize,
 }
 
+#[allow(clippy::too_many_arguments)]
 #[server(prefix = "/sfn")]
 pub async fn get_roms_page(
     system: String,

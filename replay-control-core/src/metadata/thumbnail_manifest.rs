@@ -177,12 +177,12 @@ pub fn fetch_repo_tree(
         let is_symlink = mode == "120000";
 
         // Filter out stub/broken files (< 200 bytes). Symlinks have no size.
-        if !is_symlink {
-            if let Some(blob_size) = size {
-                if blob_size > 0 && blob_size < 200 {
-                    continue;
-                }
-            }
+        if !is_symlink
+            && let Some(blob_size) = size
+            && blob_size > 0
+            && blob_size < 200
+        {
+            continue;
         }
 
         entries.push(ThumbnailEntry {

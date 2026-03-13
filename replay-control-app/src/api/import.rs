@@ -724,7 +724,6 @@ impl AppState {
         storage_root: &std::path::Path,
         system: &str,
     ) {
-        use replay_control_core::thumbnails::{self, base_title, strip_version, thumbnail_filename};
         use std::collections::HashMap;
 
         let rom_filenames = db.visible_filenames(system).unwrap_or_default();
@@ -733,12 +732,14 @@ impl AppState {
             .join("media")
             .join(system);
 
+        type DirIndex = (HashMap<String, String>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>);
+
         /// Build a filename index for a media subdirectory (boxart or snap).
-        /// Returns (exact, fuzzy, version) maps from normalized keys to relative paths.
+        /// Returns (exact, exact_ci, fuzzy, version) maps from normalized keys to relative paths.
         fn build_dir_index(
             dir: &std::path::Path,
             kind: &str,
-        ) -> (HashMap<String, String>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>) {
+        ) -> DirIndex {
             use replay_control_core::thumbnails::{base_title, strip_version};
 
             let mut exact = HashMap::new();
@@ -825,10 +826,10 @@ impl AppState {
 
             // Tier 3: version-stripped
             let vs = strip_version(&base);
-            if vs.len() < base.len() {
-                if let Some(path) = fuzzy.get(vs).or_else(|| version.get(vs)) {
-                    return Some(path.clone());
-                }
+            if vs.len() < base.len()
+                && let Some(path) = fuzzy.get(vs).or_else(|| version.get(vs))
+            {
+                return Some(path.clone());
             }
 
             None

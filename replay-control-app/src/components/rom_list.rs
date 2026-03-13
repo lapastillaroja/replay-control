@@ -93,10 +93,10 @@ pub fn RomList(system: String) -> impl IntoView {
         let timer_handle: StoredValue<Option<i32>> = StoredValue::new(None);
         Effect::new(move || {
             let val = search_input.get();
-            if let Some(handle) = timer_handle.get_value() {
-                if let Some(w) = web_sys::window() {
-                    w.clear_timeout_with_handle(handle);
-                }
+            if let Some(handle) = timer_handle.get_value()
+                && let Some(w) = web_sys::window()
+            {
+                w.clear_timeout_with_handle(handle);
             }
             let cb = Closure::<dyn Fn()>::new(move || {
                 debounced_search.set(val.clone());
@@ -107,13 +107,13 @@ pub fn RomList(system: String) -> impl IntoView {
                     set_search_query.set(Some(val.clone()));
                 }
             });
-            if let Some(window) = web_sys::window() {
-                if let Ok(handle) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+            if let Some(window) = web_sys::window()
+                && let Ok(handle) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
                     cb.as_ref().unchecked_ref(),
                     300,
-                ) {
-                    timer_handle.set_value(Some(handle));
-                }
+                )
+            {
+                timer_handle.set_value(Some(handle));
             }
             cb.forget();
         });
@@ -158,10 +158,10 @@ pub fn RomList(system: String) -> impl IntoView {
 
         // Clean up pending timer on unmount.
         on_cleanup(move || {
-            if let Some(handle) = timer_handle.get_value() {
-                if let Some(w) = web_sys::window() {
-                    w.clear_timeout_with_handle(handle);
-                }
+            if let Some(handle) = timer_handle.get_value()
+                && let Some(w) = web_sys::window()
+            {
+                w.clear_timeout_with_handle(handle);
             }
         });
     }
@@ -259,16 +259,16 @@ pub fn RomList(system: String) -> impl IntoView {
         use wasm_bindgen::prelude::*;
         use web_sys::js_sys;
 
-        let load_more_for_observer = load_more.clone();
+        let load_more_for_observer = load_more;
         Effect::new(move || {
             let Some(el) = sentinel_ref.get() else { return };
 
             let cb = Closure::<dyn Fn(js_sys::Array)>::new(move |entries: js_sys::Array| {
                 for entry in entries.iter() {
-                    if let Ok(entry) = entry.dyn_into::<web_sys::IntersectionObserverEntry>() {
-                        if entry.is_intersecting() {
-                            load_more_for_observer();
-                        }
+                    if let Ok(entry) = entry.dyn_into::<web_sys::IntersectionObserverEntry>()
+                        && entry.is_intersecting()
+                    {
+                        load_more_for_observer();
                     }
                 }
             });
@@ -614,6 +614,7 @@ fn DeleteConfirm(
 /// Update the URL query params for the ROM list page (replace, no navigation).
 /// Keeps all filter state in sync with the URL.
 #[cfg(feature = "hydrate")]
+#[allow(clippy::too_many_arguments)]
 fn update_filter_url(
     system: String,
     hide_hacks: bool,

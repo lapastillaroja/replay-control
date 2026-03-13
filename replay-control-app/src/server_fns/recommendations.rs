@@ -48,24 +48,31 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // Collect favorites from the in-memory cache (no filesystem or DB access).
     let favorites_info = collect_favorites_info(&state, &storage, &systems);
 
+    let region_pref = state.region_preference();
+    let region_str = region_pref.as_str();
+
     // Single DB access: run all SQL queries under one Mutex lock.
     let db_data = state.cache.with_db_read(&storage, |db| {
-        let random_pool = db.random_cached_roms_diverse(count).unwrap_or_default();
+        let random_pool = db
+            .random_cached_roms_diverse(count, region_str)
+            .unwrap_or_default();
         let genre_counts = db.genre_counts().unwrap_or_default();
         let multiplayer = db.multiplayer_count().unwrap_or(0);
-        let top_rated = db.top_rated_cached_roms(count * 3).unwrap_or_default();
+        let top_rated = db
+            .top_rated_cached_roms(count * 3, region_str)
+            .unwrap_or_default();
         let fav_roms = favorites_info.as_ref().map(|fi| {
             let exclude: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
             let top_genre = fi.top_genre.as_deref();
             let mut roms = db
-                .system_roms_excluding(&fi.system, &exclude, top_genre, count)
+                .system_roms_excluding(&fi.system, &exclude, top_genre, count, region_str)
                 .unwrap_or_default();
             // Fill with any genre if not enough genre-matching.
             if roms.len() < count && top_genre.is_some() {
                 let have: std::collections::HashSet<String> =
                     roms.iter().map(|r| r.rom_filename.clone()).collect();
                 let more = db
-                    .system_roms_excluding(&fi.system, &exclude, None, count)
+                    .system_roms_excluding(&fi.system, &exclude, None, count, region_str)
                     .unwrap_or_default();
                 for r in more {
                     if roms.len() >= count {
