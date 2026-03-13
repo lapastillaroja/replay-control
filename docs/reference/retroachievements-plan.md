@@ -256,9 +256,12 @@ The API key is stored on-device in `settings.cfg` (same as `github_api_key`). Th
 |---|---|---|
 | RA game index (per system) | Weekly or manual | Background task on startup, or "Sync" button |
 | User profile | On settings page load | When viewing RA profile section |
-| User progress (batch) | Every 15-30 min when app is active | Background timer, or manual "Refresh" |
-| Per-game achievements | On game detail page load | Lazy fetch, cached for 1 hour |
+| Per-game achievements + progress | On game detail page load | Lazy fetch per game, cached for 1 hour |
 | ROM-to-RA mapping | On first visit + when new ROMs added | Part of ROM scan, cached permanently |
+
+**Fetch approach:** Per-game lazy fetching (not batch). When the user opens a game detail page, fetch that game's achievements + progress from RA (using `GetGameInfoAndUserProgress` — a single call). Cache the result for 1 hour. This avoids the complexity and rate-limit risk of batch-fetching progress for entire systems at once.
+
+> **Why no batch fetch:** The `GetUserProgress` batch endpoint accepts comma-separated game IDs, but the practical limits are unclear and it's easy to hit rate limits with large libraries. Lazy per-game fetching is simpler, generates fewer API calls overall (most games are never viewed), and always gives fresh data when the user actually cares about it. Batch sync can be reconsidered in Phase 3 if users want system-wide progress overviews.
 
 ---
 
@@ -351,38 +354,21 @@ Achievement types from RA can be visually distinguished:
 
 ### 5.3 Games List: Achievement Badge
 
-On the `/games/:system` ROM list, show a small achievement indicator per game.
+> **Design note:** The current game list already shows a lot of information (box art, genre, players, rating icons, file size). Adding achievement progress risks visual overload. This needs careful design iteration — likely we should first **simplify** the game list (remove or rethink some of the existing info density) before adding achievement data.
 
-```
-┌──────────────────────────────────┐
-│ Super Nintendo          89 games │
-│ ┌─────────────────────────────┐  │
-│ │ 🔍 Search...               │  │
-│ └─────────────────────────────┘  │
-│                                  │
-│ ┌────┐ Super Mario World        │
-│ │    │ Platform · 1990           │
-│ │    │ ▓▓▓▓▓▓▓▓░░ 50% (45/89)  │
-│ └────┘                           │
-│                                  │
-│ ┌────┐ The Legend of Zelda       │
-│ │    │ Action RPG · 1991         │
-│ │    │ ★ Mastered                │
-│ └────┘                           │
-│                                  │
-│ ┌────┐ Donkey Kong Country      │
-│ │    │ Platform · 1994           │
-│ │    │ (no achievements)         │
-│ └────┘                           │
-└──────────────────────────────────┘
-```
+**Phase 1 approach:** Add a minimal, non-intrusive indicator — a small trophy icon or dot that indicates "has achievements" / "in progress" / "mastered", without adding text or progress bars. Full progress bars can come later after the game list design is revisited.
 
-Progress indicators:
-- `★ Mastered` (gold) -- 100% achievements
-- `✓ Beaten` (green) -- game beaten award
-- `▓▓▓░░ 45%` -- partial progress
-- No indicator -- game not in RA or user has no progress
-- `🏆 23` -- just show the achievement count if no user account configured
+**Game list redesign (separate task, prerequisite):**
+- Audit what information is currently shown per ROM card and whether all of it is useful
+- Consider what users actually scan for when browsing a system (title + box art are primary)
+- Consider making secondary info (genre, players, file size) expandable or hidden behind a tap
+- Only then layer in achievement indicators that complement the simplified layout
+
+Minimal indicators:
+- Small gold star icon: Mastered
+- Small green check icon: Beaten
+- Small trophy icon with count: Has achievements, partial or no progress
+- No indicator: Game not in RA
 
 ### 5.4 Home Page: Recent Achievements
 
@@ -410,25 +396,17 @@ On the `/` home page, add a section for recent achievements (below the existing 
 
 This data comes from `API_GetUserRecentAchievements` (with a large lookback window, e.g., `m=10080` for 7 days) and `API_GetUserProfile`.
 
-### 5.5 Creative Ideas
+### 5.5 Creative Ideas (Phase 3+)
 
-**"Unstarted games with achievements"** -- Cross-reference the user's ROM library with RA game index. Show games that have achievements but the user has 0% progress. Great for discovery.
+> **Note:** These are deferred to Phase 3+ to keep the home page focused. The home page already has several sections (Top Rated, Random, Recently Played). Adding too many achievement sections risks clutter. These should be added incrementally after evaluating the home page layout holistically.
 
-```
-┌──────────────────────────────────┐
-│ ── Ready to Earn ─────────────── │
-│ Games in your library with       │
-│ achievements you haven't tried:  │
-│                                  │
-│ Street Fighter II · 34 cheevos   │
-│ Castlevania · 28 cheevos         │
-│ Metroid · 19 cheevos             │
-└──────────────────────────────────┘
-```
+**"Unstarted games with achievements"** -- Cross-reference the user's ROM library with RA game index. Show games that have achievements but the user has 0% progress. Great for discovery. *Deferred to Phase 3.*
 
-**"Close to mastery"** -- Games where the user is >75% complete. Motivational nudge.
+**"Close to mastery"** -- Games where the user is >75% complete. Motivational nudge. *Deferred to Phase 3.*
 
-**"Achievement of the week"** -- Show the current RA community achievement of the week (from `API_GetAchievementOfTheWeek`). Light community connection.
+**"Achievement of the week"** -- Show the current RA community achievement of the week (from `API_GetAchievementOfTheWeek`). Light community connection. *Deferred to Phase 3.*
+
+**Design consideration:** Before adding these sections, evaluate the home page holistically. It may make more sense to create a dedicated `/achievements` page that aggregates all RA data (profile stats, recent achievements, unstarted games, close to mastery) rather than scattering sections across the home page.
 
 ---
 
@@ -536,12 +514,15 @@ pub struct RomAchievementSummary {
 
 ### HTTP Client
 
-Use `reqwest` (already in the Rust ecosystem, async, compiles for ARM). Wrap RA API calls in a thin client module:
+Use `hyper` (lightweight, already a transitive dependency via axum) instead of `reqwest` to avoid pulling in a heavy dependency. Since RA API calls are simple GET requests with JSON responses, hyper's client is sufficient:
 
 ```rust
 // In replay-control-core/src/retroachievements/client.rs
 pub struct RaClient {
-    http: reqwest::Client,
+    http: hyper_util::client::legacy::Client<
+        hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
+        http_body_util::Empty<bytes::Bytes>,
+    >,
     api_key: String,
 }
 
@@ -552,6 +533,8 @@ impl RaClient {
     // etc.
 }
 ```
+
+**Why hyper over reqwest:** hyper is already in the dependency tree (via axum/leptos), so no new dependency needed. reqwest adds ~30 crates and increases compile time. The RA API is simple REST (GET + JSON) with no cookies, redirects, or multipart — hyper is more than sufficient.
 
 ### Registration Pattern
 
@@ -603,18 +586,17 @@ server_fn::axum::register_explicit::<GetGameAchievements>();
 
 **Goal:** Achievement progress visible across the app, not just on individual game pages.
 
-1. **Games list badges**
-   - Batch lookup via `GetUserProgress` for all matched games in a system
-   - Show completion percentage or award badge on each ROM card
-   - Use cached data, refresh in background
-
-2. **Home page achievements section**
+1. **Home page achievements section**
    - Recent achievements via `GetUserRecentAchievements` (lookback: 7 days)
    - RA stats summary from cached profile data
 
-3. **Background sync**
-   - Periodic refresh of user progress for games in the library
-   - Update `ra_user_progress` table
+2. **Games list: minimal achievement indicators**
+   - Small trophy/star/check icons per ROM card (not progress bars)
+   - Uses cached data from game detail visits (no batch sync)
+   - **Prerequisite:** Game list design audit — currently shows too much info per card. Simplify first, then layer in achievement indicators.
+
+3. **Background sync** (conservative)
+   - Refresh profile stats periodically (not per-game progress)
    - Sync indicator in UI ("Last synced: 5 min ago")
 
 **Estimated effort:** 2-3 days
@@ -628,19 +610,23 @@ server_fn::axum::register_explicit::<GetGameAchievements>();
    - Store in `ra_rom_mapping.rom_md5`
    - Hash lookup against `ra_hashes` table for definitive matching
 
-2. **Unstarted games with achievements**
+2. **Dedicated achievements page** (`/achievements`)
+   - Aggregated view: profile stats, recent achievements, unstarted games, close to mastery
+   - Better than scattering sections across the home page
+
+3. **Unstarted games with achievements**
    - Cross-reference library with RA game index
-   - New section on home page or dedicated view
+   - Show on dedicated achievements page
 
-3. **Close to mastery**
+4. **Close to mastery**
    - Filter games where user progress is >75%
-   - Motivational section on home page
+   - Show on dedicated achievements page
 
-4. **Achievement images**
+5. **Achievement images**
    - Cache RA badge images locally (similar to box art caching)
    - Serve via the existing media handler
 
-5. **Manual game matching**
+6. **Manual game matching**
    - For games that don't auto-match, allow user to manually link a ROM to an RA game
    - Search RA game list by title, select the correct match
    - Store as `match_method = "manual"` in `ra_rom_mapping`
@@ -710,9 +696,10 @@ server_fn::axum::register_explicit::<GetGameAchievements>();
 
 ### Large Libraries
 
-- A user with 1000+ ROMs across multiple systems -- batch `GetUserProgress` accepts comma-separated game IDs but may have practical limits
-- Solution: paginate in groups of 50-100 game IDs per request
-- Cache all results; only re-fetch for games with recent activity
+- A user with 1000+ ROMs across multiple systems
+- Lazy per-game fetching means only visited games generate API calls — a library of 1000 ROMs with 200 unique visits generates 200 calls (cached for 1 hour each)
+- The RA game index sync (`GetGameList` per system) is the heaviest operation — runs once on setup, then weekly. For systems with thousands of games (e.g., NES), cache aggressively
+- No batch progress sync by default — avoids rate limit issues with large libraries
 
 ---
 
@@ -745,9 +732,11 @@ Feature-gated behind `retroachievements` in the core crate's `Cargo.toml` (simil
 
 ## 10. Dependencies
 
-- **`reqwest`** -- async HTTP client (already common in the Rust ecosystem; if not already a dependency, add with `rustls-tls` feature for ARM compatibility)
+- **`hyper` + `hyper-rustls` + `hyper-util`** -- HTTP client (already transitive dependencies via axum/leptos, so near-zero added compile cost)
+- **`http-body-util`** -- body utilities for hyper (already in dependency tree)
 - **`md5`** -- for ROM hashing in Phase 3 (small, no-dependency crate)
 - No RA client library exists for Rust -- we call the REST API directly, which is simpler and avoids an unnecessary dependency
+- **NOT using `reqwest`** -- would add ~30 transitive crates and increase compile time significantly, for no benefit given our simple GET-only API usage
 
 ---
 
