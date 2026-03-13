@@ -782,8 +782,10 @@ impl AppState {
 
         /// Look up a ROM in the directory index using the same fuzzy tiers
         /// as resolve_box_art / find_image_on_disk.
+        /// For arcade systems, `arcade_display` provides the translated display name.
         fn find_match(
             rom_filename: &str,
+            arcade_display: Option<&str>,
             exact: &HashMap<String, String>,
             fuzzy: &HashMap<String, String>,
             version: &HashMap<String, String>,
@@ -793,11 +795,24 @@ impl AppState {
                 .map(|i| &rom_filename[..i])
                 .unwrap_or(rom_filename);
             let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
-            let thumb_name = thumbnail_filename(stem);
+            let source = arcade_display.unwrap_or(stem);
+            let thumb_name = thumbnail_filename(source);
 
             // Tier 1: exact
             if let Some(path) = exact.get(&thumb_name) {
                 return Some(path.clone());
+            }
+
+            // Colon variants for arcade games.
+            if source.contains(':') {
+                let dash = thumbnail_filename(&source.replace(": ", " - ").replace(':', " -"));
+                if let Some(path) = exact.get(&dash) {
+                    return Some(path.clone());
+                }
+                let drop = thumbnail_filename(&source.replace(": ", " ").replace(':', ""));
+                if let Some(path) = exact.get(&drop) {
+                    return Some(path.clone());
+                }
             }
 
             // Tier 2: base title (strip tags)
@@ -834,11 +849,26 @@ impl AppState {
         let (box_exact, box_fuzzy, box_version) = build_dir_index(&boxart_dir, "boxart");
         let (snap_exact, snap_fuzzy, snap_version) = build_dir_index(&snap_dir, "snap");
 
+        let is_arcade = matches!(
+            system,
+            "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
+        );
+
         let mut updates: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
 
         for rom_filename in &rom_filenames {
-            let boxart_rel = find_match(rom_filename, &box_exact, &box_fuzzy, &box_version);
-            let snap_rel = find_match(rom_filename, &snap_exact, &snap_fuzzy, &snap_version);
+            let arcade_display = if is_arcade {
+                let stem = rom_filename
+                    .rfind('.')
+                    .map(|i| &rom_filename[..i])
+                    .unwrap_or(rom_filename);
+                replay_control_core::arcade_db::lookup_arcade_game(stem)
+                    .map(|info| info.display_name)
+            } else {
+                None
+            };
+            let boxart_rel = find_match(rom_filename, arcade_display, &box_exact, &box_fuzzy, &box_version);
+            let snap_rel = find_match(rom_filename, arcade_display, &snap_exact, &snap_fuzzy, &snap_version);
 
             if boxart_rel.is_some() || snap_rel.is_some() {
                 updates.push((

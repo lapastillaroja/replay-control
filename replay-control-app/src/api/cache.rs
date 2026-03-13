@@ -777,10 +777,35 @@ impl RomCache {
             .map(|i| &rom_filename[..i])
             .unwrap_or(rom_filename);
         let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
-        let thumb_name = thumbnail_filename(stem);
+
+        // For arcade ROMs, translate MAME codename to display name.
+        let is_arcade = matches!(
+            system,
+            "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
+        );
+        let display_name = if is_arcade {
+            replay_control_core::arcade_db::lookup_arcade_game(stem)
+                .map(|info| info.display_name)
+        } else {
+            None
+        };
+        let thumb_name = thumbnail_filename(display_name.unwrap_or(stem));
 
         if let Some(path) = index.exact.get(&thumb_name) {
             return Some(format!("/media/{system}/{path}"));
+        }
+
+        // Colon variants for arcade games (e.g., "Marvel vs. Capcom: Clash of Super Heroes").
+        let source = display_name.unwrap_or(stem);
+        if source.contains(':') {
+            let dash_variant = thumbnail_filename(&source.replace(": ", " - ").replace(':', " -"));
+            if let Some(path) = index.exact.get(&dash_variant) {
+                return Some(format!("/media/{system}/{path}"));
+            }
+            let drop_variant = thumbnail_filename(&source.replace(": ", " ").replace(':', ""));
+            if let Some(path) = index.exact.get(&drop_variant) {
+                return Some(format!("/media/{system}/{path}"));
+            }
         }
 
         // 3. Fuzzy match (strip tags).
