@@ -1,0 +1,308 @@
+================================================================================
+PLAYER COUNT COMPARISON: Baked-in game_db vs LaunchBox
+================================================================================
+
+Parsing game_db.rs...
+  nintendo_gb: 1619 entries, 1237 with players
+  nintendo_gba: 2270 entries, 1967 with players
+  nintendo_gbc: 1774 entries, 1116 with players
+  nintendo_n64: 585 entries, 493 with players
+  nintendo_nes: 4002 entries, 2218 with players
+  nintendo_snes: 2373 entries, 2180 with players
+  sega_gg: 495 entries, 418 with players
+  sega_smd: 1749 entries, 1361 with players
+  sega_sms: 752 entries, 440 with players
+
+Parsing LaunchBox XML...
+  nintendo_gb: 1543 entries, 1267 with players
+  nintendo_gba: 2281 entries, 1679 with players
+  nintendo_gbc: 1441 entries, 958 with players
+  nintendo_n64: 715 entries, 670 with players
+  nintendo_nes: 3503 entries, 3258 with players
+  nintendo_snes: 2667 entries, 2486 with players
+  sega_gg: 401 entries, 397 with players
+  sega_smd: 1936 entries, 1840 with players
+  sega_sms: 512 entries, 488 with players
+
+Scanning ROMs on disk...
+  nintendo_gb: 0 ROMs
+  nintendo_gba: 0 ROMs
+  nintendo_gbc: 0 ROMs
+  nintendo_n64: 380 ROMs
+  nintendo_nes: 0 ROMs
+  nintendo_snes: 2442 ROMs
+  sega_gg: 463 ROMs
+  sega_smd: 1723 ROMs
+  sega_sms: 567 ROMs
+
+================================================================================
+PER-SYSTEM PLAYER COUNT COMPARISON
+================================================================================
+
+--- nintendo_gb: NO ROMs on disk, skipping ---
+
+--- nintendo_gba: NO ROMs on disk, skipping ---
+
+--- nintendo_gbc: NO ROMs on disk, skipping ---
+
+--- nintendo_n64 (380 ROMs) ---
+  game_db coverage: 354/380 (93%)
+  LaunchBox coverage: 273/380 (71%)
+  Both have players: 273
+  Exact match: 247 (90%)
+  Close match (off by 1): 9 (3%)
+  Disagree (off by 2+): 17 (6%)
+  Notable disagreements (diff >= 2, first 10):
+    Micro Machines 64 Turbo: gamedb=8, LB=4 (diff=4)
+    Premier Manager 64: gamedb=1, LB=4 (diff=3)
+    64 Oozumou: gamedb=2, LB=4 (diff=2)
+    64 Oozumou 2: gamedb=2, LB=4 (diff=2)
+    AI Shougi 3: gamedb=2, LB=4 (diff=2)
+    Automobili Lamborghini: gamedb=2, LB=4 (diff=2)
+    Big Mountain 2000: gamedb=4, LB=2 (diff=2)
+    CyberTiger: gamedb=2, LB=4 (diff=2)
+    Flying Dragon: gamedb=4, LB=2 (diff=2)
+    Fox Sports College Hoops '99: gamedb=4, LB=2 (diff=2)
+
+--- nintendo_nes: NO ROMs on disk, skipping ---
+
+--- nintendo_snes (2442 ROMs) ---
+  game_db coverage: 2018/2442 (82%)
+  LaunchBox coverage: 1584/2442 (64%)
+  Both have players: 1504
+  Exact match: 1248 (82%)
+  Close match (off by 1): 163 (10%)
+  Disagree (off by 2+): 93 (6%)
+  Notable disagreements (diff >= 2, first 10):
+    Romance of the Three Kingdoms II: gamedb=4, LB=12 (diff=8)
+    Claymates: gamedb=8, LB=1 (diff=7)
+    Hanjuku Hero - Ah, Sekai yo Hanjuku Nare...!!: gamedb=8, LB=1 (diff=7)
+    Monstania: gamedb=8, LB=1 (diff=7)
+    Nobunaga no Yabou - Haouden: gamedb=1, LB=8 (diff=7)
+    Nobunaga's Ambition: gamedb=1, LB=8 (diff=7)
+    Romance of the Three Kingdoms III - Dragon of Destiny: gamedb=1, LB=8 (diff=7)
+    Romance of the Three Kingdoms IV - Wall of Fire: gamedb=1, LB=8 (diff=7)
+    Battle Cars: gamedb=2, LB=8 (diff=6)
+    Clay Fighter 2 - Judgment Clay: gamedb=2, LB=8 (diff=6)
+
+--- sega_gg (463 ROMs) ---
+  game_db coverage: 370/463 (79%)
+  LaunchBox coverage: 312/463 (67%)
+  Both have players: 310
+  Exact match: 266 (85%)
+  Close match (off by 1): 31 (10%)
+  Disagree (off by 2+): 13 (4%)
+  Notable disagreements (diff >= 2, first 10):
+    Magical Puzzle Popils: gamedb=4, LB=1 (diff=3)
+    MLBPA Baseball: gamedb=4, LB=1 (diff=3)
+    Phantasy Star Adventure: gamedb=4, LB=1 (diff=3)
+    Phantasy Star Gaiden: gamedb=4, LB=1 (diff=3)
+    Pinball Dreams: gamedb=4, LB=1 (diff=3)
+    Power Drive: gamedb=4, LB=1 (diff=3)
+    WWF Raw: gamedb=4, LB=1 (diff=3)
+    X-Men: gamedb=4, LB=1 (diff=3)
+    NBA Jam - Tournament Edition: gamedb=4, LB=2 (diff=2)
+    Pete Sampras Tennis: gamedb=4, LB=2 (diff=2)
+
+--- sega_smd (1723 ROMs) ---
+  game_db coverage: 1258/1723 (73%)
+  LaunchBox coverage: 1087/1723 (63%)
+  Both have players: 959
+  Exact match: 895 (93%)
+  Close match (off by 1): 42 (4%)
+  Disagree (off by 2+): 22 (2%)
+  Notable disagreements (diff >= 2, first 10):
+    Nobunaga no Yabou - Bushou Fuuunroku: gamedb=1, LB=8 (diff=7)
+    Nobunaga no Yabou - Haouden: gamedb=1, LB=8 (diff=7)
+    Power Drive: gamedb=1, LB=8 (diff=7)
+    Ultraman: gamedb=8, LB=1 (diff=7)
+    American Gladiators: gamedb=2, LB=8 (diff=6)
+    Foreman for Real: gamedb=8, LB=2 (diff=6)
+    Head-On Soccer: gamedb=2, LB=8 (diff=6)
+    World Trophy Soccer: gamedb=2, LB=8 (diff=6)
+    10 Super Jogos: gamedb=8, LB=4 (diff=4)
+    Dino Dini's Soccer: gamedb=8, LB=4 (diff=4)
+
+--- sega_sms (567 ROMs) ---
+  game_db coverage: 390/567 (68%)
+  LaunchBox coverage: 338/567 (59%)
+  Both have players: 314
+  Exact match: 298 (94%)
+  Close match (off by 1): 13 (4%)
+  Disagree (off by 2+): 3 (0%)
+  Notable disagreements (diff >= 2, first 10):
+    Summer Games: gamedb=4, LB=8 (diff=4)
+    Great Golf: gamedb=2, LB=4 (diff=2)
+    Trivial Pursuit - Genus Edition: gamedb=4, LB=6 (diff=2)
+
+================================================================================
+OVERALL SUMMARY
+================================================================================
+  Total ROMs on disk: 5575
+  game_db players coverage: 4390/5575 (78%)
+  LaunchBox players coverage: 3594/5575 (64%)
+  Both have players: 3360
+  Exact match: 2954/3360 (87%)
+  Close match (off by 1): 258/3360 (7%)
+  Disagree (off by 2+): 148/3360 (4%)
+
+================================================================================
+LaunchBox FILLS GAPS (has players where game_db doesn't)
+================================================================================
+  nintendo_n64: 0/26 gaps filled by LB (0%)
+  nintendo_snes: 80/424 gaps filled by LB (18%)
+  sega_gg: 2/93 gaps filled by LB (2%)
+  sega_smd: 128/465 gaps filled by LB (27%)
+  sega_sms: 24/177 gaps filled by LB (13%)
+
+================================================================================
+ALL NOTABLE DISAGREEMENTS (diff >= 2): 148 total
+================================================================================
+  [nintendo_snes] Romance of the Three Kingdoms II: gamedb=4, LB=12 (diff=8)
+  [nintendo_snes] Claymates: gamedb=8, LB=1 (diff=7)
+  [nintendo_snes] Hanjuku Hero - Ah, Sekai yo Hanjuku Nare...!!: gamedb=8, LB=1 (diff=7)
+  [nintendo_snes] Monstania: gamedb=8, LB=1 (diff=7)
+  [nintendo_snes] Nobunaga no Yabou - Haouden: gamedb=1, LB=8 (diff=7)
+  [nintendo_snes] Nobunaga's Ambition: gamedb=1, LB=8 (diff=7)
+  [nintendo_snes] Romance of the Three Kingdoms III - Dragon of Destiny: gamedb=1, LB=8 (diff=7)
+  [nintendo_snes] Romance of the Three Kingdoms IV - Wall of Fire: gamedb=1, LB=8 (diff=7)
+  [sega_smd] Nobunaga no Yabou - Bushou Fuuunroku: gamedb=1, LB=8 (diff=7)
+  [sega_smd] Nobunaga no Yabou - Haouden: gamedb=1, LB=8 (diff=7)
+  [sega_smd] Power Drive: gamedb=1, LB=8 (diff=7)
+  [sega_smd] Ultraman: gamedb=8, LB=1 (diff=7)
+  [nintendo_snes] Battle Cars: gamedb=2, LB=8 (diff=6)
+  [nintendo_snes] Clay Fighter 2 - Judgment Clay: gamedb=2, LB=8 (diff=6)
+  [nintendo_snes] Clay Fighter - Tournament Edition: gamedb=8, LB=2 (diff=6)
+  [nintendo_snes] Dino Dini's Soccer!: gamedb=8, LB=2 (diff=6)
+  [nintendo_snes] Super Fire Pro Wrestling III - Easy Type: gamedb=8, LB=2 (diff=6)
+  [nintendo_snes] Ultimate Mortal Kombat 3: gamedb=2, LB=8 (diff=6)
+  [nintendo_snes] World League Soccer: gamedb=2, LB=8 (diff=6)
+  [sega_smd] American Gladiators: gamedb=2, LB=8 (diff=6)
+  [sega_smd] Foreman for Real: gamedb=8, LB=2 (diff=6)
+  [sega_smd] Head-On Soccer: gamedb=2, LB=8 (diff=6)
+  [sega_smd] World Trophy Soccer: gamedb=2, LB=8 (diff=6)
+  [nintendo_n64] Micro Machines 64 Turbo: gamedb=8, LB=4 (diff=4)
+  [nintendo_snes] Emerald Dragon: gamedb=5, LB=1 (diff=4)
+  [nintendo_snes] Hammerlock Wrestling: gamedb=8, LB=4 (diff=4)
+  [nintendo_snes] International Superstar Soccer Deluxe: gamedb=8, LB=4 (diff=4)
+  [nintendo_snes] Magical Pop'n: gamedb=5, LB=1 (diff=4)
+  [nintendo_snes] Pinball Fantasies: gamedb=8, LB=4 (diff=4)
+  [nintendo_snes] Power Drive: gamedb=4, LB=8 (diff=4)
+  [nintendo_snes] Super Fire Pro Wrestling III - Final Bout: gamedb=8, LB=4 (diff=4)
+  [sega_smd] 10 Super Jogos: gamedb=8, LB=4 (diff=4)
+  [sega_smd] Dino Dini's Soccer: gamedb=8, LB=4 (diff=4)
+  [sega_smd] Micro Machines - Military: gamedb=8, LB=4 (diff=4)
+  [sega_smd] Romance of the Three Kingdoms II: gamedb=8, LB=12 (diff=4)
+  [sega_sms] Summer Games: gamedb=4, LB=8 (diff=4)
+  [nintendo_n64] Premier Manager 64: gamedb=1, LB=4 (diff=3)
+  [nintendo_snes] Computer Nouryoku Kaiseki - Ultra Baken: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Elite Soccer: gamedb=5, LB=2 (diff=3)
+  [nintendo_snes] Emmitt Smith Football: gamedb=5, LB=2 (diff=3)
+  [nintendo_snes] FIFA - Road to World Cup 98: gamedb=2, LB=5 (diff=3)
+  [nintendo_snes] FIFA Soccer 97: gamedb=2, LB=5 (diff=3)
+  [nintendo_snes] Heisei Shin Onigashima - Kouhen: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Heisei Shin Onigashima - Zenpen: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Heracles no Eikou III - Kamigami no Chinmoku: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Heracles no Eikou IV - Kamigami kara no Okurimono: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Leading Company: gamedb=1, LB=4 (diff=3)
+  [nintendo_snes] Lodoss-tou Senki: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Magical Drop 2: gamedb=5, LB=2 (diff=3)
+  [nintendo_snes] Might and Magic - Book II: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Might and Magic II: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Might and Magic III - Isles of Terra: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] NBA Live 98: gamedb=2, LB=5 (diff=3)
+  [nintendo_snes] Realm: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Scooby-Doo Mystery: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] SD Gundam G Next: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Shounin yo, Taishi o Idake!!: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Sterling Sharpe - End 2 End: gamedb=2, LB=5 (diff=3)
+  [nintendo_snes] Supercooked!: gamedb=1, LB=4 (diff=3)
+  [nintendo_snes] Super Double Yakuman II: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Super Real Mahjong PV Paradise - All-Star 4-nin Uchi: gamedb=1, LB=4 (diff=3)
+  [nintendo_snes] TNN Bass Tournament of Champions: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Top Management II: gamedb=4, LB=1 (diff=3)
+  [nintendo_snes] Wordtris: gamedb=1, LB=4 (diff=3)
+  [nintendo_snes] World Soccer 94 - Road to Glory: gamedb=5, LB=2 (diff=3)
+  [nintendo_snes] Yokoyama Mitsuteru Sangokushi Bangi - Sugoroku Eiyuu-ki: gamedb=1, LB=4 (diff=3)
+  [nintendo_snes] Yuujin no Furi Furi Girls: gamedb=4, LB=1 (diff=3)
+  [sega_gg] Magical Puzzle Popils: gamedb=4, LB=1 (diff=3)
+  [sega_gg] MLBPA Baseball: gamedb=4, LB=1 (diff=3)
+  [sega_gg] Phantasy Star Adventure: gamedb=4, LB=1 (diff=3)
+  [sega_gg] Phantasy Star Gaiden: gamedb=4, LB=1 (diff=3)
+  [sega_gg] Pinball Dreams: gamedb=4, LB=1 (diff=3)
+  [sega_gg] Power Drive: gamedb=4, LB=1 (diff=3)
+  [sega_gg] WWF Raw: gamedb=4, LB=1 (diff=3)
+  [sega_gg] X-Men: gamedb=4, LB=1 (diff=3)
+  [sega_smd] Championship Bowling: gamedb=1, LB=4 (diff=3)
+  [sega_smd] Fengkuang Taohuayuan: gamedb=1, LB=4 (diff=3)
+  [sega_smd] From TV Animation Slam Dunk - Kyougou Makkou Taiketsu!: gamedb=2, LB=5 (diff=3)
+  [sega_smd] Master of Weapon: gamedb=4, LB=1 (diff=3)
+  [nintendo_n64] 64 Oozumou: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] 64 Oozumou 2: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] AI Shougi 3: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] Automobili Lamborghini: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] Big Mountain 2000: gamedb=4, LB=2 (diff=2)
+  [nintendo_n64] CyberTiger: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] Flying Dragon: gamedb=4, LB=2 (diff=2)
+  [nintendo_n64] Fox Sports College Hoops '99: gamedb=4, LB=2 (diff=2)
+  [nintendo_n64] Jeremy McGrath Supercross 2000: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] John Romero's Daikatana: gamedb=4, LB=2 (diff=2)
+  [nintendo_n64] NHL Breakaway 99: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] Nintama Rantarou 64 Game Gallery: gamedb=4, LB=2 (diff=2)
+  [nintendo_n64] S.C.A.R.S.: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] Snowboard Kids 2: gamedb=2, LB=4 (diff=2)
+  [nintendo_n64] Utchan Nanchan no Hono no Challenger - Denryuu Ira Ira Bou: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Ace o Nerae!: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] American Battle Dome: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] American Gladiators: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Bakukyuu Renpatsu!! Super B-Daman: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Barkley Shut Up and Jam!: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Brunswick World - Tournament of Champions: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] College Football USA 97: gamedb=6, LB=4 (diff=2)
+  [nintendo_snes] Coron Land: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Crystal Beans from Dungeon Explorer: gamedb=1, LB=3 (diff=2)
+  [nintendo_snes] Family Feud: gamedb=8, LB=10 (diff=2)
+  [nintendo_snes] Finalset: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] FireStriker: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] From TV Animation Slam Dunk - SD Heat Up!!: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] HAL's Hole in One Golf: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Human Grand Prix IV - F1 Dream Battle: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Iron Commando - Koutetsu no Senshi: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Jikkyou Power Pro Wrestling '96 - Max Voltage: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Naruhodo! The World: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Natsume Championship Wrestling: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] NCAA Football: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Shin Nihon Pro Wrestling Kounin - '95 Tokyo Dome Battle 7: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Spark World: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Sports Illustrated - Championship Football & Baseball: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Stardust Suplex: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Super F1 Circus 3: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Super Famicom Wars: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Super Fire Pro Wrestling 2: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Super Fire Pro Wrestling - Queen's Special: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Super Fire Pro Wrestling X Premium: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Super Momotarou Dentetsu III: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Super Pinball II - The Amazing Odyssey: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Super Power League 2: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Super Power League 3: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Super Power League 4: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Super Puyo Puyo: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Super Trump Collection 2: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] Tecmo Secret of the Stars: gamedb=3, LB=1 (diff=2)
+  [nintendo_snes] Tekichuu Keiba Juku: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] True Golf Classics - Wicked 18: gamedb=4, LB=2 (diff=2)
+  [nintendo_snes] WeaponLord: gamedb=2, LB=4 (diff=2)
+  [nintendo_snes] Winter Olympic Games - Lillehammer '94: gamedb=2, LB=4 (diff=2)
+  [sega_gg] NBA Jam - Tournament Edition: gamedb=4, LB=2 (diff=2)
+  [sega_gg] Pete Sampras Tennis: gamedb=4, LB=2 (diff=2)
+  [sega_gg] Tengen World Cup Soccer: gamedb=4, LB=2 (diff=2)
+  [sega_gg] World Cup USA 94: gamedb=4, LB=2 (diff=2)
+  [sega_gg] World Series Baseball '95: gamedb=4, LB=2 (diff=2)
+  [sega_smd] Elitserien 95: gamedb=4, LB=2 (diff=2)
+  [sega_smd] Elitserien 96: gamedb=4, LB=2 (diff=2)
+  [sega_smd] NBA Live 98: gamedb=2, LB=4 (diff=2)
+  [sega_smd] NCAA Final Four Basketball: gamedb=2, LB=4 (diff=2)
+  [sega_smd] Summer Challenge: gamedb=8, LB=10 (diff=2)
+  [sega_smd] Winter Challenge: gamedb=8, LB=10 (diff=2)
+  [sega_sms] Great Golf: gamedb=2, LB=4 (diff=2)
+  [sega_sms] Trivial Pursuit - Genus Edition: gamedb=4, LB=6 (diff=2)
