@@ -465,13 +465,18 @@ pub(crate) fn find_image_on_disk(
     let rom_base_no_version = replay_control_core::thumbnails::strip_version(&rom_base);
     let has_version = rom_base_no_version.len() < rom_base.len();
 
+    let thumb_lower = thumb_name.to_lowercase();
+
     if let Ok(entries) = std::fs::read_dir(&kind_dir) {
+        let mut fuzzy_result: Option<String> = None;
+        let mut version_result: Option<String> = None;
+
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if let Some(img_stem) = name.strip_suffix(".png") {
-                let img_base = base_title(img_stem);
-                if img_base == rom_base {
+                // 1b. Case-insensitive exact match (preserves region tags)
+                if img_stem.to_lowercase() == thumb_lower {
                     let path = entry.path();
                     if is_valid_image(&path) {
                         return Some(format!("{kind}/{name}"));
@@ -480,17 +485,34 @@ pub(crate) fn find_image_on_disk(
                         return Some(format!("{kind}/{resolved}"));
                     }
                 }
-                // 3. Version-stripped match: "Virtua Tennis 2 v1.009" matches "Virtua Tennis 2"
-                if has_version && img_base == rom_base_no_version {
+
+                let img_base = base_title(img_stem);
+                // 2. Fuzzy match (strip tags)
+                if img_base == rom_base && fuzzy_result.is_none() {
                     let path = entry.path();
                     if is_valid_image(&path) {
-                        return Some(format!("{kind}/{name}"));
+                        fuzzy_result = Some(format!("{kind}/{name}"));
+                    } else if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                        fuzzy_result = Some(format!("{kind}/{resolved}"));
                     }
-                    if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
-                        return Some(format!("{kind}/{resolved}"));
+                }
+                // 3. Version-stripped match
+                if has_version && img_base == rom_base_no_version && version_result.is_none() {
+                    let path = entry.path();
+                    if is_valid_image(&path) {
+                        version_result = Some(format!("{kind}/{name}"));
+                    } else if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                        version_result = Some(format!("{kind}/{resolved}"));
                     }
                 }
             }
+        }
+
+        if let Some(result) = fuzzy_result {
+            return Some(result);
+        }
+        if let Some(result) = version_result {
+            return Some(result);
         }
     }
 

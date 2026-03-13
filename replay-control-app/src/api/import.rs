@@ -727,7 +727,7 @@ impl AppState {
         use replay_control_core::thumbnails::{self, strip_version, thumbnail_filename};
         use std::collections::HashMap;
 
-        let rom_filenames = thumbnails::list_rom_filenames(storage_root, system);
+        let rom_filenames = db.visible_filenames(system).unwrap_or_default();
         let media_base = storage_root
             .join(replay_control_core::storage::RC_DIR)
             .join("media")
@@ -738,7 +738,7 @@ impl AppState {
         fn build_dir_index(
             dir: &std::path::Path,
             kind: &str,
-        ) -> (HashMap<String, String>, HashMap<String, String>, HashMap<String, String>) {
+        ) -> (HashMap<String, String>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>) {
             let base_title = |s: &str| -> String {
                 let s = s.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(s);
                 s.find(" (")
@@ -750,6 +750,7 @@ impl AppState {
             };
 
             let mut exact = HashMap::new();
+            let mut exact_ci = HashMap::new();
             let mut fuzzy = HashMap::new();
             let mut version = HashMap::new();
 
@@ -768,6 +769,7 @@ impl AppState {
                         }
                         let path = format!("{kind}/{name_str}");
                         exact.insert(img_stem.to_string(), path.clone());
+                        exact_ci.entry(img_stem.to_lowercase()).or_insert_with(|| path.clone());
                         let bt = base_title(img_stem);
                         let vs = strip_version(&bt).to_string();
                         fuzzy.entry(bt.clone()).or_insert_with(|| path.clone());
@@ -777,7 +779,7 @@ impl AppState {
                     }
                 }
             }
-            (exact, fuzzy, version)
+            (exact, exact_ci, fuzzy, version)
         }
 
         /// Look up a ROM in the directory index using the same fuzzy tiers
@@ -787,6 +789,7 @@ impl AppState {
             rom_filename: &str,
             arcade_display: Option<&str>,
             exact: &HashMap<String, String>,
+            exact_ci: &HashMap<String, String>,
             fuzzy: &HashMap<String, String>,
             version: &HashMap<String, String>,
         ) -> Option<String> {
@@ -813,6 +816,11 @@ impl AppState {
                 if let Some(path) = exact.get(&drop) {
                     return Some(path.clone());
                 }
+            }
+
+            // Tier 1b: case-insensitive exact (preserves region tags)
+            if let Some(path) = exact_ci.get(&thumb_name.to_lowercase()) {
+                return Some(path.clone());
             }
 
             // Tier 2: base title (strip tags)
@@ -846,8 +854,8 @@ impl AppState {
         let boxart_dir = media_base.join("boxart");
         let snap_dir = media_base.join("snap");
 
-        let (box_exact, box_fuzzy, box_version) = build_dir_index(&boxart_dir, "boxart");
-        let (snap_exact, snap_fuzzy, snap_version) = build_dir_index(&snap_dir, "snap");
+        let (box_exact, box_exact_ci, box_fuzzy, box_version) = build_dir_index(&boxart_dir, "boxart");
+        let (snap_exact, snap_exact_ci, snap_fuzzy, snap_version) = build_dir_index(&snap_dir, "snap");
 
         let is_arcade = matches!(
             system,
@@ -867,8 +875,8 @@ impl AppState {
             } else {
                 None
             };
-            let boxart_rel = find_match(rom_filename, arcade_display, &box_exact, &box_fuzzy, &box_version);
-            let snap_rel = find_match(rom_filename, arcade_display, &snap_exact, &snap_fuzzy, &snap_version);
+            let boxart_rel = find_match(rom_filename, arcade_display, &box_exact, &box_exact_ci, &box_fuzzy, &box_version);
+            let snap_rel = find_match(rom_filename, arcade_display, &snap_exact, &snap_exact_ci, &snap_fuzzy, &snap_version);
 
             if boxart_rel.is_some() || snap_rel.is_some() {
                 updates.push((

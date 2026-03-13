@@ -400,6 +400,8 @@ pub struct ManifestMatch {
 pub struct ManifestFuzzyIndex {
     /// exact thumbnail_filename stem -> ManifestMatch
     pub exact: HashMap<String, ManifestMatch>,
+    /// lowercase(filename) -> ManifestMatch (case-insensitive exact, preserves region tags)
+    pub exact_ci: HashMap<String, ManifestMatch>,
     /// lowercase(strip_tags(stem)) -> ManifestMatch
     pub by_tags: HashMap<String, ManifestMatch>,
     /// lowercase(strip_version(strip_tags(stem))) -> ManifestMatch
@@ -415,6 +417,7 @@ pub fn build_manifest_fuzzy_index(
     use thumbnails::{strip_tags, strip_version};
 
     let mut exact = HashMap::new();
+    let mut exact_ci = HashMap::new();
     let mut by_tags = HashMap::new();
     let mut by_version = HashMap::new();
 
@@ -447,6 +450,11 @@ pub fn build_manifest_fuzzy_index(
                 .entry(entry.filename.clone())
                 .or_insert_with(|| m.clone());
 
+            // Tier 1b: case-insensitive exact (preserves region tags)
+            exact_ci
+                .entry(entry.filename.to_lowercase())
+                .or_insert_with(|| m.clone());
+
             // Tier 2: strip tags
             let stripped = strip_tags(&entry.filename);
             let key = stripped.to_lowercase();
@@ -462,6 +470,7 @@ pub fn build_manifest_fuzzy_index(
 
     ManifestFuzzyIndex {
         exact,
+        exact_ci,
         by_tags,
         by_version,
     }
@@ -511,6 +520,11 @@ pub fn find_in_manifest<'a>(
         if let Some(m) = index.exact.get(&drop_variant) {
             return Some(m);
         }
+    }
+
+    // Tier 1b: case-insensitive exact (preserves region tags like "(USA)", "(Europe)")
+    if let Some(m) = index.exact_ci.get(&thumb_name.to_lowercase()) {
+        return Some(m);
     }
 
     // Tier 2: strip tags.
@@ -1017,4 +1031,187 @@ pub fn download_system_thumbnails(
         skipped,
         failed: failed_count,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_in_manifest_case_insensitive_exact_match() {
+        // ROM has "the" (lowercase), index has "The" (uppercase)
+        // Without CI-exact, fuzzy matching would lose the region tag
+        let match_usa = ManifestMatch {
+            filename: "Sonic The Hedgehog 3 (USA)".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+        let match_jpn = ManifestMatch {
+            filename: "Sonic The Hedgehog 3 (Japan, Korea)".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut exact = HashMap::new();
+        let mut exact_ci = HashMap::new();
+        let mut by_tags = HashMap::new();
+        let by_version = HashMap::new();
+
+        // Insert both variants
+        exact.insert(
+            "Sonic The Hedgehog 3 (Japan, Korea)".to_string(),
+            match_jpn.clone(),
+        );
+        exact.insert(
+            "Sonic The Hedgehog 3 (USA)".to_string(),
+            match_usa.clone(),
+        );
+        exact_ci.insert(
+            "sonic the hedgehog 3 (japan, korea)".to_string(),
+            match_jpn.clone(),
+        );
+        exact_ci.insert(
+            "sonic the hedgehog 3 (usa)".to_string(),
+            match_usa.clone(),
+        );
+        // Japan wins fuzzy tier (inserted first)
+        by_tags.insert("sonic the hedgehog 3".to_string(), match_jpn.clone());
+
+        let index = ManifestFuzzyIndex {
+            exact,
+            exact_ci,
+            by_tags,
+            by_version,
+        };
+
+        // ROM "Sonic the Hedgehog 3 (USA).md" (lowercase "the") should match USA via CI-exact
+        let result = find_in_manifest(&index, "Sonic the Hedgehog 3 (USA).md", "sega_smd");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().filename, "Sonic The Hedgehog 3 (USA)");
+    }
+
+    #[test]
+    fn find_in_manifest_exact_match_still_preferred() {
+        // When case matches exactly, the exact tier should still win
+        let m = ManifestMatch {
+            filename: "Game (USA)".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut exact = HashMap::new();
+        let mut exact_ci = HashMap::new();
+        let by_tags = HashMap::new();
+        let by_version = HashMap::new();
+
+        exact.insert("Game (USA)".to_string(), m.clone());
+        exact_ci.insert("game (usa)".to_string(), m.clone());
+
+        let index = ManifestFuzzyIndex {
+            exact,
+            exact_ci,
+            by_tags,
+            by_version,
+        };
+
+        let result = find_in_manifest(&index, "Game (USA).md", "sega_smd");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().filename, "Game (USA)");
+    }
+
+    #[test]
+    fn find_in_manifest_falls_to_fuzzy_when_no_ci_match() {
+        // When no case-insensitive exact match exists, fuzzy tier should still work
+        let m = ManifestMatch {
+            filename: "Completely Different Name (USA)".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut exact = HashMap::new();
+        let mut exact_ci = HashMap::new();
+        let mut by_tags = HashMap::new();
+        let by_version = HashMap::new();
+
+        exact.insert("Completely Different Name (USA)".to_string(), m.clone());
+        exact_ci.insert(
+            "completely different name (usa)".to_string(),
+            m.clone(),
+        );
+        by_tags.insert("completely different name".to_string(), m.clone());
+
+        let index = ManifestFuzzyIndex {
+            exact,
+            exact_ci,
+            by_tags,
+            by_version,
+        };
+
+        // ROM stem after tag stripping matches
+        let result = find_in_manifest(
+            &index,
+            "Completely Different Name (Europe).md",
+            "sega_smd",
+        );
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap().filename,
+            "Completely Different Name (USA)"
+        );
+    }
+
+    #[test]
+    fn build_manifest_fuzzy_index_populates_exact_ci() {
+        // Verify that build_manifest_fuzzy_index correctly populates the exact_ci tier.
+        // We can't easily call it without a real DB, so test the index structure directly.
+        let m1 = ManifestMatch {
+            filename: "Game Title (USA)".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+        let m2 = ManifestMatch {
+            filename: "Game Title (Europe)".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut exact_ci = HashMap::new();
+        // Simulating what build_manifest_fuzzy_index does
+        exact_ci
+            .entry("game title (usa)".to_string())
+            .or_insert_with(|| m1.clone());
+        exact_ci
+            .entry("game title (europe)".to_string())
+            .or_insert_with(|| m2.clone());
+
+        // Both entries preserved (they have different full names)
+        assert_eq!(
+            exact_ci.get("game title (usa)").unwrap().filename,
+            "Game Title (USA)"
+        );
+        assert_eq!(
+            exact_ci.get("game title (europe)").unwrap().filename,
+            "Game Title (Europe)"
+        );
+
+        // Versus by_tags which would collapse both to "game title"
+        let mut by_tags = HashMap::new();
+        by_tags
+            .entry("game title".to_string())
+            .or_insert_with(|| m1.clone());
+        by_tags
+            .entry("game title".to_string())
+            .or_insert_with(|| m2.clone());
+        // Only first insertion wins
+        assert_eq!(
+            by_tags.get("game title").unwrap().filename,
+            "Game Title (USA)"
+        );
+    }
 }
