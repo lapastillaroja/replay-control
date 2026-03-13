@@ -724,7 +724,7 @@ impl AppState {
         storage_root: &std::path::Path,
         system: &str,
     ) {
-        use replay_control_core::thumbnails::{self, strip_version, thumbnail_filename};
+        use replay_control_core::thumbnails::{self, base_title, strip_version, thumbnail_filename};
         use std::collections::HashMap;
 
         let rom_filenames = db.visible_filenames(system).unwrap_or_default();
@@ -739,15 +739,7 @@ impl AppState {
             dir: &std::path::Path,
             kind: &str,
         ) -> (HashMap<String, String>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>) {
-            let base_title = |s: &str| -> String {
-                let s = s.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(s);
-                s.find(" (")
-                    .or_else(|| s.find(" ["))
-                    .map(|i| &s[..i])
-                    .unwrap_or(s)
-                    .trim()
-                    .to_lowercase()
-            };
+            use replay_control_core::thumbnails::{base_title, strip_version};
 
             let mut exact = HashMap::new();
             let mut exact_ci = HashMap::new();
@@ -793,6 +785,8 @@ impl AppState {
             fuzzy: &HashMap<String, String>,
             version: &HashMap<String, String>,
         ) -> Option<String> {
+            use replay_control_core::thumbnails::{base_title, strip_version, thumbnail_filename};
+
             let stem = rom_filename
                 .rfind('.')
                 .map(|i| &rom_filename[..i])
@@ -824,18 +818,7 @@ impl AppState {
             }
 
             // Tier 2: base title (strip tags)
-            let base = {
-                let s = thumb_name
-                    .rsplit_once(" ~ ")
-                    .map(|(_, r)| r)
-                    .unwrap_or(&thumb_name);
-                s.find(" (")
-                    .or_else(|| s.find(" ["))
-                    .map(|i| &s[..i])
-                    .unwrap_or(s)
-                    .trim()
-                    .to_lowercase()
-            };
+            let base = base_title(&thumb_name);
             if let Some(path) = fuzzy.get(&base) {
                 return Some(path.clone());
             }

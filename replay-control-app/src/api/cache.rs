@@ -657,15 +657,7 @@ impl RomCache {
         }
 
         // Build the index.
-        let base_title = |s: &str| -> String {
-            let s = s.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(s);
-            s.find(" (")
-                .or_else(|| s.find(" ["))
-                .map(|i| &s[..i])
-                .unwrap_or(s)
-                .trim()
-                .to_lowercase()
-        };
+        let base_title = replay_control_core::thumbnails::base_title;
 
         let mut exact = HashMap::new();
         let mut fuzzy = HashMap::new();
@@ -683,7 +675,7 @@ impl RomCache {
                     if !valid {
                         // Try resolving fake symlink.
                         if let Some(resolved) =
-                            crate::server_fns::try_resolve_fake_symlink(&full, &boxart_dir)
+                            replay_control_core::thumbnails::try_resolve_fake_symlink(&full, &boxart_dir)
                         {
                             let resolved_path = format!("boxart/{resolved}");
                             exact.insert(img_stem.to_string(), resolved_path.clone());
@@ -840,15 +832,7 @@ impl RomCache {
         }
 
         // 3. Fuzzy match (strip tags).
-        let base_title = |s: &str| -> String {
-            let s = s.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(s);
-            s.find(" (")
-                .or_else(|| s.find(" ["))
-                .map(|i| &s[..i])
-                .unwrap_or(s)
-                .trim()
-                .to_lowercase()
-        };
+        let base_title = replay_control_core::thumbnails::base_title;
 
         let rom_base = base_title(&thumb_name);
         if let Some(path) = index.fuzzy.get(&rom_base) {

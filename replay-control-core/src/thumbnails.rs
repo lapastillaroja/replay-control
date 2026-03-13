@@ -105,7 +105,7 @@ pub fn thumbnail_filename(rom_stem: &str) -> String {
 /// Strip parenthesized tags and trailing whitespace from a name for fuzzy matching.
 /// `"Indiana Jones and the Fate of Atlantis (Spanish)"` → `"Indiana Jones and the Fate of Atlantis"`
 /// `"Dark Seed"` → `"Dark Seed"` (unchanged)
-pub(crate) fn strip_tags(name: &str) -> &str {
+pub fn strip_tags(name: &str) -> &str {
     name.find(" (")
         .or_else(|| name.find(" ["))
         .map(|i| &name[..i])
@@ -142,6 +142,129 @@ pub fn strip_version(name: &str) -> &str {
         Some(pos) => name[..pos].trim(),
         None => name,
     }
+}
+
+/// Compute a lowercased base title for fuzzy image matching.
+///
+/// Handles tilde dual-names (`"Name1 ~ Name2"` → `"Name2"`), then strips
+/// parenthesized/bracketed tags and lowercases the result.
+pub fn base_title(name: &str) -> String {
+    let s = name.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(name);
+    strip_tags(s).to_lowercase()
+}
+
+/// Quick check that a file is likely a real image (not a git fake-symlink text file).
+pub fn is_valid_image(path: &Path) -> bool {
+    path.metadata().map(|m| m.len() >= 200).unwrap_or(false)
+}
+
+/// Try to resolve a small file as a git fake-symlink artifact.
+/// Reads its text content (a relative filename), checks if that file exists in
+/// `parent_dir` and passes `is_valid_image()`. Returns the target filename on
+/// success, `None` otherwise.
+pub fn try_resolve_fake_symlink(path: &Path, parent_dir: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let target_name = std::str::from_utf8(&bytes).ok()?.trim();
+    if target_name.is_empty() || !target_name.ends_with(".png") {
+        return None;
+    }
+    let target_path = parent_dir.join(target_name);
+    if target_path.exists() && is_valid_image(&target_path) {
+        Some(target_name.to_string())
+    } else {
+        None
+    }
+}
+
+/// Try to find an image file on disk for a ROM, checking exact and fuzzy name matches.
+///
+/// `media_base` is the system media directory (e.g., `.replay-control/media/sega_smd`).
+/// `kind` is the subdirectory name (e.g., `"boxart"` or `"snap"`).
+///
+/// Returns a relative path like `"boxart/Sonic The Hedgehog 3 (USA).png"` on match.
+pub fn find_image_on_disk(
+    media_base: &Path,
+    kind: &str,
+    rom_filename: &str,
+) -> Option<String> {
+    let kind_dir = media_base.join(kind);
+    if !kind_dir.exists() {
+        return None;
+    }
+
+    let stem = rom_filename
+        .rfind('.')
+        .map(|i| &rom_filename[..i])
+        .unwrap_or(rom_filename);
+    let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
+    let thumb_name = thumbnail_filename(stem);
+
+    // 1. Exact match
+    let exact = kind_dir.join(format!("{thumb_name}.png"));
+    if exact.exists() {
+        if is_valid_image(&exact) {
+            return Some(format!("{kind}/{thumb_name}.png"));
+        }
+        if let Some(resolved) = try_resolve_fake_symlink(&exact, &kind_dir) {
+            return Some(format!("{kind}/{resolved}"));
+        }
+    }
+
+    let rom_base = base_title(&thumb_name);
+    let rom_base_no_version = strip_version(&rom_base);
+    let has_version = rom_base_no_version.len() < rom_base.len();
+    let thumb_lower = thumb_name.to_lowercase();
+
+    if let Ok(entries) = std::fs::read_dir(&kind_dir) {
+        let mut fuzzy_result: Option<String> = None;
+        let mut version_result: Option<String> = None;
+
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if let Some(img_stem) = name.strip_suffix(".png") {
+                // 1b. Case-insensitive exact match (preserves region tags)
+                if img_stem.to_lowercase() == thumb_lower {
+                    let path = entry.path();
+                    if is_valid_image(&path) {
+                        return Some(format!("{kind}/{name}"));
+                    }
+                    if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                        return Some(format!("{kind}/{resolved}"));
+                    }
+                }
+
+                let img_base = base_title(img_stem);
+                // 2. Fuzzy match (strip tags)
+                if img_base == rom_base && fuzzy_result.is_none() {
+                    let path = entry.path();
+                    if is_valid_image(&path) {
+                        fuzzy_result = Some(format!("{kind}/{name}"));
+                    } else if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                        fuzzy_result = Some(format!("{kind}/{resolved}"));
+                    }
+                }
+                // 3. Version-stripped match
+                if has_version && img_base == rom_base_no_version && version_result.is_none() {
+                    let path = entry.path();
+                    if is_valid_image(&path) {
+                        version_result = Some(format!("{kind}/{name}"));
+                    } else if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                        version_result = Some(format!("{kind}/{resolved}"));
+                    }
+                }
+            }
+        }
+
+        if let Some(result) = fuzzy_result {
+            return Some(result);
+        }
+        if let Some(result) = version_result {
+            return Some(result);
+        }
+    }
+
+    None
 }
 
 /// Build a list of ROM filenames for a system from the filesystem.
