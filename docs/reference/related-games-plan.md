@@ -54,7 +54,7 @@ When no similar games found (no genre, or only game of that genre): section is h
 
 ### Existing Schema (no changes needed)
 
-The `rom_cache` table already has the columns we need:
+The `game_library` table already has the columns we need:
 
 ```sql
 -- PRIMARY KEY (system, rom_filename)
@@ -69,8 +69,8 @@ The `rom_cache` table already has the columns we need:
 Add one composite index to make the "More Like This" query fast:
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_rom_cache_genre
-  ON rom_cache (system, genre)
+CREATE INDEX IF NOT EXISTS idx_game_library_genre
+  ON game_library (system, genre)
   WHERE genre IS NOT NULL AND genre != '';
 ```
 
@@ -126,11 +126,11 @@ Implementation outline:
 
 ```sql
 -- Step 1: get current game's base_title
-SELECT base_title FROM rom_cache
+SELECT base_title FROM game_library
 WHERE system = ?1 AND rom_filename = ?2;
 
 -- Step 2: find all games with same base_title (only if base_title is non-empty)
-SELECT rom_filename, region FROM rom_cache
+SELECT rom_filename, region FROM game_library
 WHERE system = ?1 AND base_title = ?2 AND base_title != ''
 ORDER BY
   CASE region
@@ -145,11 +145,11 @@ ORDER BY
 Both can be combined into a single subquery:
 
 ```sql
-SELECT rom_filename, region FROM rom_cache
+SELECT rom_filename, region FROM game_library
 WHERE system = ?1
   AND base_title != ''
   AND base_title = (
-    SELECT base_title FROM rom_cache
+    SELECT base_title FROM game_library
     WHERE system = ?1 AND rom_filename = ?2
   )
 ORDER BY
@@ -168,7 +168,7 @@ ORDER BY
 SELECT system, rom_filename, rom_path, display_name, size_bytes,
        is_m3u, box_art_url, driver_status, genre, players, rating,
        is_clone, base_title, region
-FROM rom_cache
+FROM game_library
 WHERE system = ?1
   AND genre = ?2
   AND genre != ''
@@ -182,12 +182,12 @@ LIMIT 8;
 For arcade systems, first try matching by `arcade_category` (looked up from `arcade_db`), then fall back to genre:
 
 ```sql
--- The arcade_category is not in rom_cache, so we filter in Rust after querying by genre.
+-- The arcade_category is not in game_library, so we filter in Rust after querying by genre.
 -- Query a larger pool by genre, then prefer games whose arcade_category matches.
 SELECT system, rom_filename, rom_path, display_name, size_bytes,
        is_m3u, box_art_url, driver_status, genre, players, rating,
        is_clone, base_title, region
-FROM rom_cache
+FROM game_library
 WHERE system = ?1
   AND genre = ?2
   AND genre != ''
@@ -260,7 +260,7 @@ Insert between the Videos section and the Manual section:
 
 | File | Change |
 |------|--------|
-| `replay-control-core/src/metadata/metadata_db.rs` | Add `regional_variants()` and `similar_games()` methods on `MetadataDb`. Add `idx_rom_cache_genre` index in `create_rom_cache_tables()`. |
+| `replay-control-core/src/metadata/metadata_db.rs` | Add `regional_variants()` and `similar_games()` methods on `MetadataDb`. Add `idx_game_library_genre` index in `create_game_library_tables()`. |
 | `replay-control-app/src/server_fns/mod.rs` | Add `mod related;` and `pub use related::*;`. |
 | `replay-control-app/src/server_fns/related.rs` | **New file.** `RelatedGamesData`, `RegionalVariant` structs, `get_related_games` server function. |
 | `replay-control-app/src/pages/game_detail.rs` | Import and render `RelatedGamesSection`. Add `RelatedGamesSection`, `RegionalVariantsChips`, `SimilarGamesRow` components (or put them in a separate file under `components/`). |
@@ -280,4 +280,4 @@ Insert between the Videos section and the Manual section:
 | **Current game is the only one of its genre** | Query returns empty; section hidden |
 | **Game has genre but < 8 matches** | Show however many exist (no minimum) |
 | **NFS storage** | DB already uses `nolock` VFS fallback; no special handling needed |
-| **rom_cache not yet populated** | `with_db_read()` returns `None`; both sections hidden |
+| **game_library not yet populated** | `with_db_read()` returns `None`; both sections hidden |

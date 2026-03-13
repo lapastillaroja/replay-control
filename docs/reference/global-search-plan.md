@@ -8,7 +8,7 @@ A search feature that spans all systems, returning results grouped by system, wi
 
 **Why it matters:** The current search is per-system only — the user must first navigate to `/games`, pick a system, then search within it. If a user wants to find "Sonic" across their entire library (Genesis, Game Gear, Saturn, Dreamcast, Arcade), they must search each system individually. Global search removes this friction and makes the app feel like a unified game library.
 
-**Constraints:** Runs on Raspberry Pi hardware. ROM data comes from filesystem scans cached in memory with 30s TTL (`RomCache`). ~40 possible systems. Must remain snappy.
+**Constraints:** Runs on Raspberry Pi hardware. ROM data comes from filesystem scans cached in memory with 30s TTL (`GameLibrary`). ~40 possible systems. Must remain snappy.
 
 ---
 
@@ -178,7 +178,7 @@ Dice icon button picking a random game. Server function picks a random system (w
 
 ### How the cache works today
 
-`RomCache` in `api/mod.rs` stores:
+`GameLibrary` in `api/mod.rs` stores:
 - `systems: RwLock<Option<CacheEntry<Vec<SystemSummary>>>>` — all systems with game counts
 - `roms: RwLock<HashMap<String, CacheEntry<Vec<RomEntry>>>>` — per-system ROM lists
 

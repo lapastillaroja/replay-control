@@ -314,7 +314,7 @@ The `captures/` directory could grow large over time (hundreds or thousands of s
 
 ### Caching
 
-Follow the existing `RomCache` pattern. Add a `ScreenshotCache` (or extend `RomCache`) that caches per-system screenshot lists with the same TTL-based expiration:
+Follow the existing `GameLibrary` pattern. Add a `ScreenshotCache` (or extend `GameLibrary`) that caches per-system screenshot lists with the same TTL-based expiration:
 
 ```rust
 pub struct ScreenshotCache {

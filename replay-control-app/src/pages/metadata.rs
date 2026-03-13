@@ -749,13 +749,27 @@ fn ThumbnailProgressDisplay(
     }
 }
 
-/// Data Management section with three destructive actions.
+/// Data Management section with main and advanced actions.
+///
+/// Main actions (always visible):
+/// - Rebuild Game Library
+/// - Clear Downloaded Images
+///
+/// Advanced actions (collapsed by default):
+/// - Clear Metadata
+/// - Clear Thumbnail Index
 #[component]
 fn DataManagementSection(
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let show_advanced = RwSignal::new(false);
+
+    // Rebuild Game Library
+    let confirming_rebuild = RwSignal::new(false);
+    let rebuilding = RwSignal::new(false);
+    let rebuild_result = RwSignal::new(Option::<String>::None);
 
     // Clear Downloaded Images
     let confirming_images = RwSignal::new(false);
@@ -771,6 +785,25 @@ fn DataManagementSection(
     let confirming_metadata = RwSignal::new(false);
     let clearing_metadata = RwSignal::new(false);
     let metadata_result = RwSignal::new(Option::<String>::None);
+
+    let on_rebuild = Callback::new(move |_: leptos::ev::MouseEvent| {
+        rebuilding.set(true);
+        rebuild_result.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::rebuild_game_library().await {
+                Ok(()) => {
+                    rebuild_result.set(Some(
+                        t(i18n.locale.get(), "metadata.game_library_rebuilt").to_string(),
+                    ));
+                }
+                Err(e) => {
+                    rebuild_result.set(Some(format!("Error: {e}")));
+                }
+            }
+            rebuilding.set(false);
+            confirming_rebuild.set(false);
+        });
+    });
 
     let on_clear_images = Callback::new(move |_: leptos::ev::MouseEvent| {
         clearing_images.set(true);
@@ -835,6 +868,16 @@ fn DataManagementSection(
         <section class="section">
             <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.data_management")}</h2>
             <div class="manage-actions">
+                // Main actions (always visible)
+                <ClearActionCard
+                    confirming=confirming_rebuild
+                    clearing=rebuilding
+                    result=rebuild_result
+                    label_key="metadata.rebuild_game_library"
+                    clearing_key="metadata.rebuilding_game_library"
+                    confirm_key="metadata.confirm_rebuild_game_library"
+                    on_confirm=on_rebuild
+                />
                 <ClearActionCard
                     confirming=confirming_images
                     clearing=clearing_images
@@ -844,25 +887,40 @@ fn DataManagementSection(
                     confirm_key="metadata.confirm_clear_images"
                     on_confirm=on_clear_images
                 />
-                <ClearActionCard
-                    confirming=confirming_index
-                    clearing=clearing_index
-                    result=index_result
-                    label_key="metadata.clear_index"
-                    clearing_key="metadata.clearing_index"
-                    confirm_key="metadata.confirm_clear_index"
-                    on_confirm=on_clear_index
-                />
-                <ClearActionCard
-                    confirming=confirming_metadata
-                    clearing=clearing_metadata
-                    result=metadata_result
-                    label_key="metadata.clear_metadata"
-                    clearing_key="metadata.clearing_metadata"
-                    confirm_key="metadata.confirm_clear_metadata"
-                    on_confirm=on_clear_metadata
-                />
             </div>
+
+            // Advanced actions (collapsed by default)
+            <div class="advanced-toggle">
+                <button
+                    class="advanced-toggle-btn"
+                    on:click=move |_| show_advanced.update(|v| *v = !*v)
+                >
+                    <span class="advanced-toggle-icon">{move || if show_advanced.get() { "\u{25BC}" } else { "\u{25B6}" }}</span>
+                    {move || t(i18n.locale.get(), "metadata.advanced_actions")}
+                </button>
+            </div>
+            <Show when=move || show_advanced.get()>
+                <div class="manage-actions">
+                    <ClearActionCard
+                        confirming=confirming_metadata
+                        clearing=clearing_metadata
+                        result=metadata_result
+                        label_key="metadata.clear_metadata"
+                        clearing_key="metadata.clearing_metadata"
+                        confirm_key="metadata.confirm_clear_metadata"
+                        on_confirm=on_clear_metadata
+                    />
+                    <ClearActionCard
+                        confirming=confirming_index
+                        clearing=clearing_index
+                        result=index_result
+                        label_key="metadata.clear_index"
+                        clearing_key="metadata.clearing_index"
+                        confirm_key="metadata.confirm_clear_index"
+                        on_confirm=on_clear_index
+                    />
+                </div>
+            </Show>
         </section>
     }
 }

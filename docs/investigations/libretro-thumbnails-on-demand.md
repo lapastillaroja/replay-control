@@ -1656,17 +1656,17 @@ The manifest index is built once when `get_image_index()` constructs the `ImageI
 
 The existing cache hierarchy in `cache.rs`:
 - **L1**: In-memory `ImageIndex` (per-system, mtime-based invalidation, 300s hard TTL)
-- **L2**: SQLite `rom_cache` table (per-ROM `box_art_url` column, updated by `enrich_system_cache()`)
+- **L2**: SQLite `game_library` table (per-ROM `box_art_url` column, updated by `enrich_system_cache()`)
 - **L3**: Filesystem scan of `.replay-control/media/{system}/boxart/`
 
 When a new thumbnail is downloaded to disk:
 - **L3** is automatically up-to-date (the file now exists on disk)
 - **L1** becomes stale because `dir_mtime(boxart_dir)` changes when a new file is written. The next call to `get_image_index()` detects the mtime change via `ImageIndex::is_fresh()` and rebuilds from disk, picking up the new file. No explicit invalidation call is needed.
-- **L2** needs an explicit update to the `box_art_url` column in `rom_cache` for the affected ROM(s).
+- **L2** needs an explicit update to the `box_art_url` column in `game_library` for the affected ROM(s).
 
 ### 11.2 The `enrich_system_cache()` flow
 
-`enrich_system_cache()` in `cache.rs` updates L2 (rom_cache) with box art URLs and ratings. It:
+`enrich_system_cache()` in `cache.rs` updates L2 (game_library) with box art URLs and ratings. It:
 
 1. Gets the `ImageIndex` for the system via `get_image_index()` (L1 or rebuild from L3)
 2. Reads all ROM filenames from the L1 rom cache
@@ -1686,7 +1686,7 @@ fn after_system_download(state: &AppState, system: &str) {
         guard.remove(system);
     }
 
-    // Propagate new box art paths to L2 (rom_cache).
+    // Propagate new box art paths to L2 (game_library).
     state.cache.enrich_system_cache(state, system);
 }
 ```

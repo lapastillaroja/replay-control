@@ -8,14 +8,14 @@ main.rs:run()
   +-- AppState::new()
   |     MetadataDb::open()     -- creates/opens metadata.db (empty tables if fresh)
   |     UserDataDb::open()     -- creates/opens userdata.db
-  |     RomCache::new()        -- empty in-memory cache (L1)
+  |     GameLibrary::new()        -- empty in-memory cache (L1)
   |
   +-- spawn_storage_watcher()  -- tokio::spawn; first tick skipped (60s poll)
   |
   +-- spawn_cache_verification()
   |     tokio::spawn -> sleep(2s) -> spawn_blocking:
   |       if metadata_operation_in_progress -> SKIP (return)
-  |       load_all_system_meta() from rom_cache_meta (L2)
+  |       load_all_system_meta() from game_library_meta (L2)
   |       if empty -> populate_all_systems() [get_roms + enrich per system]
   |       if non-empty -> verify mtimes, re-scan stale systems
   |
@@ -53,7 +53,7 @@ run_import_blocking()
 
 ### Issue 1: Cache Verification Permanently Skipped After Auto-Import (CRITICAL) -- FIXED
 
-**Status:** Fixed in commit `309b8e4` — `spawn_cache_enrichment` now checks if rom_cache is empty and calls `populate_all_systems` when needed.
+**Status:** Fixed in commit `309b8e4` — `spawn_cache_enrichment` now checks if game_library is empty and calls `populate_all_systems` when needed.
 
 **Severity:** Critical
 **File:** `replay-control-app/src/api/background.rs:31-39`
@@ -92,7 +92,7 @@ includes enrichment).
 
 ### Issue 2: spawn_cache_enrichment Reads from Empty L1 Cache (CRITICAL) -- FIXED
 
-**Status:** Fixed in commit `309b8e4` — same fix as Issue 1; when rom_cache is empty, `populate_all_systems` runs `get_roms` (populating L1+L2) before enriching.
+**Status:** Fixed in commit `309b8e4` — same fix as Issue 1; when game_library is empty, `populate_all_systems` runs `get_roms` (populating L1+L2) before enriching.
 
 **Severity:** Critical
 **File:** `replay-control-app/src/api/cache.rs:1046-1059`, `background.rs:148-167`
@@ -113,13 +113,13 @@ they browse a system AND another enrichment is triggered.
 system that is missing from the L1 cache before calling `enrich_system_cache()`.
 Or, replace it with `populate_all_systems()` which already handles both.
 
-### Issue 3: Metadata Page Stats Depend on rom_cache (HIGH)
+### Issue 3: Metadata Page Stats Depend on game_library (HIGH)
 
 **Severity:** High
 **File:** `replay-control-core/src/metadata/metadata_db.rs:598-617, 707-727`
 
-Both `entries_per_system()` and `images_per_system()` use `INNER JOIN rom_cache`
-to compute per-system counts. If `rom_cache` is empty (because cache verification
+Both `entries_per_system()` and `images_per_system()` use `INNER JOIN game_library`
+to compute per-system counts. If `game_library` is empty (because cache verification
 was skipped and no systems have been browsed), these queries return 0 for all
 systems -- even when `game_metadata` has thousands of entries.
 
@@ -133,10 +133,10 @@ sees "12,345 entries imported" but "0 matched to ROMs" per system -- confusing.
 
 **Proposed fix (short-term):** When computing system coverage for display, fall
 back to counting `game_metadata` entries per system directly (without the join)
-if `rom_cache` appears empty. This gives the user correct import stats even before
+if `game_library` appears empty. This gives the user correct import stats even before
 the cache is warmed.
 
-**Proposed fix (long-term):** Ensure the rom_cache is always populated before the
+**Proposed fix (long-term):** Ensure the game_library is always populated before the
 metadata page can be accessed (fixes Issue 1).
 
 ### Issue 4: 10-Second Flag Delay Creates a Dead Window (MEDIUM)
@@ -203,7 +203,7 @@ blocking the response.
 ## Specific Scenario: DB Deletion + Restart
 
 ### Preconditions
-- metadata.db is deleted (or both metadata.db and any external rom_cache)
+- metadata.db is deleted (or both metadata.db and any external game_library)
 - ROMs and thumbnail images exist on disk from a previous session
 - `launchbox-metadata.xml` exists in `.replay-control/`
 
@@ -225,7 +225,7 @@ blocking the response.
 | Time | Event | Result |
 |------|-------|--------|
 | T+0 | Same as above | Same |
-| T+30-60s | Import finishes | Populates rom_cache for ALL systems (get_roms per system), THEN enriches all with box art/ratings |
+| T+30-60s | Import finishes | Populates game_library for ALL systems (get_roms per system), THEN enriches all with box art/ratings |
 | T+30-60s | Metadata page | Shows correct per-system coverage stats |
 | ... | User browses any system | Sees ROMs with box art and ratings immediately |
 
@@ -234,7 +234,7 @@ blocking the response.
 | Priority | Issue | Fix Effort | Impact |
 |----------|-------|------------|--------|
 | P0 | #1 + #2: Post-import should populate + enrich | Small | **DONE** (commit `309b8e4`) |
-| P1 | #3: Metadata stats depend on rom_cache | Small | Fixes confusing stats display |
+| P1 | #3: Metadata stats depend on game_library | Small | Fixes confusing stats display |
 | P2 | #6: No post-browse enrichment | Medium | Fixes lazy-load box art gap |
 | P3 | #4: 10s flag delay | Small | UX polish |
 | P4 | #5: Fragile timing | Small | Defensive hardening |
@@ -278,8 +278,8 @@ enrich for every system.
 ### P1 Fix: Add standalone entries_per_system query
 
 In `metadata_db.rs`, add a query that counts `game_metadata` entries per system
-without joining rom_cache. Use it as fallback in `get_system_coverage` when the
-rom_cache appears empty.
+without joining game_library. Use it as fallback in `get_system_coverage` when the
+game_library appears empty.
 
 ### P2 Fix: Trigger enrichment after cache miss
 
@@ -296,6 +296,6 @@ the cache doesn't currently hold. Options:
 - `<WORKSPACE>/replay-control-app/src/api/mod.rs` -- AppState definition, metadata_db() accessor
 - `<WORKSPACE>/replay-control-app/src/api/background.rs` -- spawn_cache_verification, populate_all_systems, spawn_cache_enrichment, spawn_auto_import
 - `<WORKSPACE>/replay-control-app/src/api/import.rs` -- start_import, run_import_blocking
-- `<WORKSPACE>/replay-control-app/src/api/cache.rs` -- RomCache, get_systems, get_roms, enrich_system_cache
+- `<WORKSPACE>/replay-control-app/src/api/cache.rs` -- GameLibrary, get_systems, get_roms, enrich_system_cache
 - `<WORKSPACE>/replay-control-app/src/server_fns/metadata.rs` -- get_metadata_stats, get_system_coverage
 - `<WORKSPACE>/replay-control-core/src/metadata/metadata_db.rs` -- stats(), entries_per_system(), images_per_system(), is_empty()

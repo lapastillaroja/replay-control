@@ -115,9 +115,9 @@ pub struct MetadataStats {
     pub last_updated_text: String,
 }
 
-/// A cached ROM entry from the `rom_cache` table.
+/// A cached ROM entry from the `game_library` table.
 #[derive(Debug, Clone)]
-pub struct CachedRom {
+pub struct GameEntry {
     pub system: String,
     pub rom_filename: String,
     pub rom_path: String,
@@ -137,9 +137,9 @@ pub struct CachedRom {
     pub is_special: bool,
 }
 
-/// Per-system cache metadata from the `rom_cache_meta` table.
+/// Per-system metadata from the `game_library_meta` table.
 #[derive(Debug, Clone)]
-pub struct CachedSystemMeta {
+pub struct SystemMeta {
     pub system: String,
     pub dir_mtime_secs: Option<i64>,
     pub scanned_at: i64,
@@ -157,7 +157,7 @@ impl MetadataDb {
     /// Tables to probe for corruption detection.
     const TABLES: &[&str] = &[
         "game_metadata",
-        "rom_cache",
+        "game_library",
         "data_sources",
         "thumbnail_index",
     ];
@@ -228,7 +228,7 @@ impl MetadataDb {
                 );
                 CREATE INDEX IF NOT EXISTS idx_thumbidx_repo ON thumbnail_index(repo_name);
 
-                CREATE TABLE IF NOT EXISTS rom_cache (
+                CREATE TABLE IF NOT EXISTS game_library (
                     system TEXT NOT NULL,
                     rom_filename TEXT NOT NULL,
                     rom_path TEXT NOT NULL,
@@ -249,7 +249,7 @@ impl MetadataDb {
                     PRIMARY KEY (system, rom_filename)
                 );
 
-                CREATE TABLE IF NOT EXISTS rom_cache_meta (
+                CREATE TABLE IF NOT EXISTS game_library_meta (
                     system TEXT PRIMARY KEY,
                     dir_mtime_secs INTEGER,
                     scanned_at INTEGER NOT NULL,
@@ -257,18 +257,13 @@ impl MetadataDb {
                     total_size_bytes INTEGER NOT NULL DEFAULT 0
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_rom_cache_genre
-                  ON rom_cache (system, genre)
-                  WHERE genre IS NOT NULL AND genre != '';",
+                CREATE INDEX IF NOT EXISTS idx_game_library_genre
+                  ON game_library (system, genre)
+                  WHERE genre IS NOT NULL AND genre != '';
+
+",
             )
             .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
-
-        // Migration: add is_special column if upgrading from an older schema.
-        // ALTER TABLE ... ADD COLUMN is idempotent-safe: if it already exists,
-        // SQLite returns an error we simply ignore.
-        let _ = self.conn.execute_batch(
-            "ALTER TABLE rom_cache ADD COLUMN is_special INTEGER NOT NULL DEFAULT 0;",
-        );
 
         Ok(())
     }
@@ -397,7 +392,7 @@ impl MetadataDb {
 
     /// Fetch all non-empty genres from `game_metadata` for a single system.
     /// Returns a map of `rom_filename -> genre`.
-    /// Used to fill empty `rom_cache.genre` entries during enrichment.
+    /// Used to fill empty `game_library.genre` entries during enrichment.
     pub fn system_metadata_genres(
         &self,
         system: &str,
@@ -425,7 +420,7 @@ impl MetadataDb {
         Ok(map)
     }
 
-    /// Fetch current genres from `rom_cache` for a single system.
+    /// Fetch current genres from `game_library` for a single system.
     /// Returns a map of `rom_filename -> genre` (only entries with non-empty genre).
     /// Used during enrichment to know which ROMs already have a genre.
     pub fn system_rom_genres(
@@ -437,7 +432,7 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, genre FROM rom_cache
+                "SELECT rom_filename, genre FROM game_library
                  WHERE system = ?1 AND genre IS NOT NULL AND genre != ''",
             )
             .map_err(|e| Error::Other(format!("Prepare system_rom_genres: {e}")))?;
@@ -673,23 +668,23 @@ impl MetadataDb {
 
     /// Count metadata entries per system, ordered by count descending.
     ///
-    /// Uses a LEFT JOIN with rom_cache for M3U dedup: when rom_cache is populated
-    /// for a system, only entries matching rom_cache are counted (disc files
-    /// referenced by .m3u playlists are excluded). When rom_cache is empty for a
-    /// system (e.g. cache not yet warmed after import), all game_metadata entries
+    /// Uses a LEFT JOIN with game_library for M3U dedup: when game_library is populated
+    /// for a system, only entries matching game_library are counted (disc files
+    /// referenced by .m3u playlists are excluded). When game_library is empty for a
+    /// system (e.g. library not yet warmed after import), all game_metadata entries
     /// are counted as a fallback to avoid showing 0.
     pub fn entries_per_system(&self) -> Result<Vec<(String, usize)>> {
         let mut stmt = self
             .conn
             .prepare(
-                // LEFT JOIN + NOT EXISTS fallback: use rom_cache for M3U dedup
+                // LEFT JOIN + NOT EXISTS fallback: use game_library for M3U dedup
                 // when available, fall back to raw game_metadata count when
-                // rom_cache is empty for a system.
+                // game_library is empty for a system.
                 "SELECT gm.system, COUNT(*) as cnt
                  FROM game_metadata gm
-                 LEFT JOIN rom_cache rc ON gm.system = rc.system AND gm.rom_filename = rc.rom_filename
-                 WHERE rc.rom_filename IS NOT NULL
-                    OR NOT EXISTS (SELECT 1 FROM rom_cache rc2 WHERE rc2.system = gm.system)
+                 LEFT JOIN game_library gl ON gm.system = gl.system AND gm.rom_filename = gl.rom_filename
+                 WHERE gl.rom_filename IS NOT NULL
+                    OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system)
                  GROUP BY gm.system ORDER BY cnt DESC",
             )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
@@ -795,7 +790,7 @@ impl MetadataDb {
     /// Count image entries per system.
     ///
     /// Same LEFT JOIN + NOT EXISTS fallback as [`entries_per_system`] — see its
-    /// doc comment for rationale on M3U dedup vs empty-cache fallback.
+    /// doc comment for rationale on M3U dedup vs empty-library fallback.
     pub fn images_per_system(&self) -> Result<Vec<(String, usize, usize)>> {
         let mut stmt = self
             .conn
@@ -805,9 +800,9 @@ impl MetadataDb {
                         SUM(CASE WHEN gm.box_art_path IS NOT NULL THEN 1 ELSE 0 END),
                         SUM(CASE WHEN gm.screenshot_path IS NOT NULL THEN 1 ELSE 0 END)
                  FROM game_metadata gm
-                 LEFT JOIN rom_cache rc ON gm.system = rc.system AND gm.rom_filename = rc.rom_filename
-                 WHERE rc.rom_filename IS NOT NULL
-                    OR NOT EXISTS (SELECT 1 FROM rom_cache rc2 WHERE rc2.system = gm.system)
+                 LEFT JOIN game_library gl ON gm.system = gl.system AND gm.rom_filename = gl.rom_filename
+                 WHERE gl.rom_filename IS NOT NULL
+                    OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system)
                  GROUP BY gm.system",
             )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
@@ -830,14 +825,14 @@ impl MetadataDb {
         &self.db_path
     }
 
-    // ── ROM Cache (L2 persistent cache) ──────────────────────────────
+    // ── Game Library (L2 persistent cache) ─────────────────────────────
 
-    /// Save a system's ROM list to the rom_cache table.
+    /// Save a system's game list to the game_library table.
     /// Replaces all existing entries for the system in a single transaction.
-    pub fn save_system_roms(
+    pub fn save_system_entries(
         &mut self,
         system: &str,
-        roms: &[CachedRom],
+        roms: &[GameEntry],
         dir_mtime_secs: Option<i64>,
     ) -> Result<()> {
         let tx = self
@@ -846,18 +841,18 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
 
         // Delete existing entries for this system.
-        tx.execute("DELETE FROM rom_cache WHERE system = ?1", params![system])
-            .map_err(|e| Error::Other(format!("Delete rom_cache failed: {e}")))?;
+        tx.execute("DELETE FROM game_library WHERE system = ?1", params![system])
+            .map_err(|e| Error::Other(format!("Delete game_library failed: {e}")))?;
 
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT OR IGNORE INTO rom_cache (system, rom_filename, rom_path, display_name,
+                    "INSERT OR IGNORE INTO game_library (system, rom_filename, rom_path, display_name,
                      size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating,
                      is_clone, base_title, region, is_translation, is_hack, is_special)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                 )
-                .map_err(|e| Error::Other(format!("Prepare rom_cache insert: {e}")))?;
+                .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
             for rom in roms {
                 stmt.execute(params![
@@ -879,7 +874,7 @@ impl MetadataDb {
                     rom.is_hack,
                     rom.is_special,
                 ])
-                .map_err(|e| Error::Other(format!("Insert rom_cache failed: {e}")))?;
+                .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
             }
         }
 
@@ -887,7 +882,7 @@ impl MetadataDb {
         let total_size: u64 = roms.iter().map(|r| r.size_bytes).sum();
         let now = unix_now();
         tx.execute(
-            "INSERT INTO rom_cache_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
+            "INSERT INTO game_library_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(system) DO UPDATE SET
                 dir_mtime_secs = excluded.dir_mtime_secs,
@@ -896,7 +891,7 @@ impl MetadataDb {
                 total_size_bytes = excluded.total_size_bytes",
             params![system, dir_mtime_secs, now, roms.len() as i64, total_size as i64],
         )
-        .map_err(|e| Error::Other(format!("Upsert rom_cache_meta failed: {e}")))?;
+        .map_err(|e| Error::Other(format!("Upsert game_library_meta failed: {e}")))?;
 
         tx.commit()
             .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
@@ -904,21 +899,21 @@ impl MetadataDb {
         Ok(())
     }
 
-    /// Load all cached ROMs for a system.
-    pub fn load_system_roms(&self, system: &str) -> Result<Vec<CachedRom>> {
+    /// Load all game entries for a system.
+    pub fn load_system_entries(&self, system: &str) -> Result<Vec<GameEntry>> {
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special
-                 FROM rom_cache WHERE system = ?1",
+                 FROM game_library WHERE system = ?1",
             )
-            .map_err(|e| Error::Other(format!("Prepare load_system_roms: {e}")))?;
+            .map_err(|e| Error::Other(format!("Prepare load_system_entries: {e}")))?;
 
         let rows = stmt
-            .query_map(params![system], Self::row_to_cached_rom)
-            .map_err(|e| Error::Other(format!("Query load_system_roms: {e}")))?;
+            .query_map(params![system], Self::row_to_game_entry)
+            .map_err(|e| Error::Other(format!("Query load_system_entries: {e}")))?;
 
         let mut result = Vec::new();
         for row in rows {
@@ -927,8 +922,8 @@ impl MetadataDb {
         Ok(result)
     }
 
-    /// Save just the system-level metadata (counts, mtime) without replacing ROM entries.
-    /// Used when we know game counts from scan_systems but haven't loaded ROMs yet.
+    /// Save just the system-level metadata (counts, mtime) without replacing game entries.
+    /// Used when we know game counts from scan_systems but haven't loaded entries yet.
     pub fn save_system_meta(
         &self,
         system: &str,
@@ -939,7 +934,7 @@ impl MetadataDb {
         let now = unix_now();
         self.conn
             .execute(
-                "INSERT INTO rom_cache_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
+                "INSERT INTO game_library_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
                  VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(system) DO UPDATE SET
                     dir_mtime_secs = excluded.dir_mtime_secs,
@@ -948,19 +943,19 @@ impl MetadataDb {
                     total_size_bytes = excluded.total_size_bytes",
                 rusqlite::params![system, dir_mtime_secs, now, rom_count as i64, total_size_bytes as i64],
             )
-            .map_err(|e| Error::Other(format!("Upsert rom_cache_meta: {e}")))?;
+            .map_err(|e| Error::Other(format!("Upsert game_library_meta: {e}")))?;
         Ok(())
     }
 
-    /// Load cache metadata for a single system.
-    pub fn load_system_meta(&self, system: &str) -> Result<Option<CachedSystemMeta>> {
+    /// Load library metadata for a single system.
+    pub fn load_system_meta(&self, system: &str) -> Result<Option<SystemMeta>> {
         self.conn
             .query_row(
                 "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes
-                 FROM rom_cache_meta WHERE system = ?1",
+                 FROM game_library_meta WHERE system = ?1",
                 params![system],
                 |row| {
-                    Ok(CachedSystemMeta {
+                    Ok(SystemMeta {
                         system: row.get(0)?,
                         dir_mtime_secs: row.get(1)?,
                         scanned_at: row.get(2)?,
@@ -973,19 +968,19 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Query load_system_meta: {e}")))
     }
 
-    /// Load cache metadata for all systems.
-    pub fn load_all_system_meta(&self) -> Result<Vec<CachedSystemMeta>> {
+    /// Load library metadata for all systems.
+    pub fn load_all_system_meta(&self) -> Result<Vec<SystemMeta>> {
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes
-                 FROM rom_cache_meta",
+                 FROM game_library_meta",
             )
             .map_err(|e| Error::Other(format!("Prepare load_all_system_meta: {e}")))?;
 
         let rows = stmt
             .query_map([], |row| {
-                Ok(CachedSystemMeta {
+                Ok(SystemMeta {
                     system: row.get(0)?,
                     dir_mtime_secs: row.get(1)?,
                     scanned_at: row.get(2)?,
@@ -1003,7 +998,7 @@ impl MetadataDb {
     }
 
     /// Batch update enrichment fields (box_art_url, genre, players, rating, driver_status)
-    /// for ROMs already in the cache.
+    /// for entries already in the game library.
     pub fn update_rom_enrichment(
         &mut self,
         system: &str,
@@ -1018,7 +1013,7 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "UPDATE rom_cache SET box_art_url = ?2, genre = ?3, players = ?4,
+                    "UPDATE game_library SET box_art_url = ?2, genre = ?3, players = ?4,
                             rating = ?5, driver_status = ?6
                      WHERE system = ?7 AND rom_filename = ?1",
                 )
@@ -1045,7 +1040,7 @@ impl MetadataDb {
         Ok(count)
     }
 
-    /// Batch update box_art_url, genre, and rating for ROMs in rom_cache.
+    /// Batch update box_art_url, genre, and rating for entries in game_library.
     /// Only updates non-None fields. Genre is only set when the existing
     /// value is NULL or empty (baked-in genre is never overwritten).
     pub fn update_box_art_genre_rating(
@@ -1061,14 +1056,14 @@ impl MetadataDb {
         {
             let mut art_stmt = tx
                 .prepare(
-                    "UPDATE rom_cache SET box_art_url = ?2
+                    "UPDATE game_library SET box_art_url = ?2
                      WHERE system = ?3 AND rom_filename = ?1",
                 )
                 .map_err(|e| Error::Other(format!("Prepare box_art update: {e}")))?;
 
             let mut genre_stmt = tx
                 .prepare(
-                    "UPDATE rom_cache SET genre = ?2
+                    "UPDATE game_library SET genre = ?2
                      WHERE system = ?3 AND rom_filename = ?1
                        AND (genre IS NULL OR genre = '')",
                 )
@@ -1076,7 +1071,7 @@ impl MetadataDb {
 
             let mut rating_stmt = tx
                 .prepare(
-                    "UPDATE rom_cache SET rating = ?2
+                    "UPDATE game_library SET rating = ?2
                      WHERE system = ?3 AND rom_filename = ?1",
                 )
                 .map_err(|e| Error::Other(format!("Prepare rating update: {e}")))?;
@@ -1105,17 +1100,17 @@ impl MetadataDb {
         Ok(())
     }
 
-    /// Clear the rom_cache and rom_cache_meta for a specific system.
-    pub fn clear_system_rom_cache(&self, system: &str) -> Result<()> {
+    /// Clear the game_library and game_library_meta for a specific system.
+    pub fn clear_system_game_library(&self, system: &str) -> Result<()> {
         self.conn
-            .execute("DELETE FROM rom_cache WHERE system = ?1", params![system])
-            .map_err(|e| Error::Other(format!("Clear system rom_cache: {e}")))?;
+            .execute("DELETE FROM game_library WHERE system = ?1", params![system])
+            .map_err(|e| Error::Other(format!("Clear system game_library: {e}")))?;
         self.conn
             .execute(
-                "DELETE FROM rom_cache_meta WHERE system = ?1",
+                "DELETE FROM game_library_meta WHERE system = ?1",
                 params![system],
             )
-            .map_err(|e| Error::Other(format!("Clear system rom_cache_meta: {e}")))?;
+            .map_err(|e| Error::Other(format!("Clear system game_library_meta: {e}")))?;
         Ok(())
     }
 
@@ -1123,7 +1118,7 @@ impl MetadataDb {
     pub fn visible_filenames(&self, system: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT rom_filename FROM rom_cache WHERE system = ?1")
+            .prepare("SELECT rom_filename FROM game_library WHERE system = ?1")
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
         let rows = stmt
             .query_map(params![system], |row| row.get(0))
@@ -1131,14 +1126,14 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Clear all rom_cache and rom_cache_meta entries.
-    pub fn clear_all_rom_cache(&self) -> Result<()> {
+    /// Clear all game_library and game_library_meta entries.
+    pub fn clear_all_game_library(&self) -> Result<()> {
         self.conn
-            .execute("DELETE FROM rom_cache", [])
-            .map_err(|e| Error::Other(format!("Clear rom_cache: {e}")))?;
+            .execute("DELETE FROM game_library", [])
+            .map_err(|e| Error::Other(format!("Clear game_library: {e}")))?;
         self.conn
-            .execute("DELETE FROM rom_cache_meta", [])
-            .map_err(|e| Error::Other(format!("Clear rom_cache_meta: {e}")))?;
+            .execute("DELETE FROM game_library_meta", [])
+            .map_err(|e| Error::Other(format!("Clear game_library_meta: {e}")))?;
         Ok(())
     }
 
@@ -1324,7 +1319,7 @@ impl MetadataDb {
         &self,
         count: usize,
         region_pref: &str,
-    ) -> Result<Vec<CachedRom>> {
+    ) -> Result<Vec<GameEntry>> {
         let mut stmt = self
             .conn
             .prepare(
@@ -1337,7 +1332,7 @@ impl MetadataDb {
                             ELSE 2
                         END
                     ) AS rn
-                    FROM rom_cache
+                    FROM game_library
                     WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
@@ -1349,28 +1344,28 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Prepare random_cached_roms_diverse: {e}")))?;
 
         let rows = stmt
-            .query_map(params![(count * 5) as i64, region_pref], Self::row_to_cached_rom)
+            .query_map(params![(count * 5) as i64, region_pref], Self::row_to_game_entry)
             .map_err(|e| Error::Other(format!("Query random_cached_roms_diverse: {e}")))?;
 
         Ok(rows.flatten().collect())
     }
 
     /// Get random cached ROMs with box art from a specific system.
-    pub fn random_cached_roms(&self, system: &str, count: usize) -> Result<Vec<CachedRom>> {
+    pub fn random_cached_roms(&self, system: &str, count: usize) -> Result<Vec<GameEntry>> {
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special
-                 FROM rom_cache
+                 FROM game_library
                  WHERE system = ?1 AND box_art_url IS NOT NULL AND is_special = 0
                  ORDER BY RANDOM() LIMIT ?2",
             )
             .map_err(|e| Error::Other(format!("Prepare random_cached_roms: {e}")))?;
 
         let rows = stmt
-            .query_map(params![system, count as i64], Self::row_to_cached_rom)
+            .query_map(params![system, count as i64], Self::row_to_game_entry)
             .map_err(|e| Error::Other(format!("Query random_cached_roms: {e}")))?;
 
         Ok(rows.flatten().collect())
@@ -1384,7 +1379,7 @@ impl MetadataDb {
         &self,
         count: usize,
         region_pref: &str,
-    ) -> Result<Vec<CachedRom>> {
+    ) -> Result<Vec<GameEntry>> {
         let pool_size = (count * 4).max(40) as i64;
         let mut stmt = self
             .conn
@@ -1398,7 +1393,7 @@ impl MetadataDb {
                             ELSE 2
                         END
                     ) AS rn
-                    FROM rom_cache
+                    FROM game_library
                     WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND rating IS NOT NULL AND rating > 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
@@ -1414,7 +1409,7 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Prepare top_rated_cached_roms: {e}")))?;
 
         let rows = stmt
-            .query_map(params![pool_size, region_pref], Self::row_to_cached_rom)
+            .query_map(params![pool_size, region_pref], Self::row_to_game_entry)
             .map_err(|e| Error::Other(format!("Query top_rated_cached_roms: {e}")))?;
 
         Ok(rows.flatten().collect())
@@ -1425,7 +1420,7 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT genre, COUNT(*) as cnt FROM rom_cache
+                "SELECT genre, COUNT(*) as cnt FROM game_library
                  WHERE genre IS NOT NULL AND genre != ''
                  GROUP BY genre ORDER BY cnt DESC",
             )
@@ -1444,7 +1439,7 @@ impl MetadataDb {
     pub fn multiplayer_count(&self) -> Result<usize> {
         self.conn
             .query_row(
-                "SELECT COUNT(*) FROM rom_cache WHERE players IS NOT NULL AND players >= 2",
+                "SELECT COUNT(*) FROM game_library WHERE players IS NOT NULL AND players >= 2",
                 [],
                 |row| row.get(0),
             )
@@ -1462,7 +1457,7 @@ impl MetadataDb {
         genre_filter: Option<&str>,
         count: usize,
         region_pref: &str,
-    ) -> Result<Vec<CachedRom>> {
+    ) -> Result<Vec<GameEntry>> {
         let exclude_set: std::collections::HashSet<&str> =
             exclude_filenames.iter().copied().collect();
 
@@ -1482,7 +1477,7 @@ impl MetadataDb {
                                 ELSE 2
                             END
                         ) AS rn
-                        FROM rom_cache
+                        FROM game_library
                         WHERE system = ?1 AND genre = ?2 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
@@ -1500,7 +1495,7 @@ impl MetadataDb {
             let rows = stmt
                 .query_map(
                     params![system, genre, limit, region_pref],
-                    Self::row_to_cached_rom,
+                    Self::row_to_game_entry,
                 )
                 .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
             rows.flatten().collect::<Vec<_>>()
@@ -1517,7 +1512,7 @@ impl MetadataDb {
                                 ELSE 2
                             END
                         ) AS rn
-                        FROM rom_cache
+                        FROM game_library
                         WHERE system = ?1 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
@@ -1533,7 +1528,7 @@ impl MetadataDb {
                 .map_err(|e| Error::Other(format!("Prepare system_roms_excluding: {e}")))?;
 
             let rows = stmt
-                .query_map(params![system, limit, region_pref], Self::row_to_cached_rom)
+                .query_map(params![system, limit, region_pref], Self::row_to_game_entry)
                 .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
             rows.flatten().collect::<Vec<_>>()
         };
@@ -1559,7 +1554,7 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, region, display_name FROM rom_cache
+                "SELECT rom_filename, region, display_name FROM game_library
                  WHERE system = ?1
                    AND base_title != ''
                    AND is_translation = 0
@@ -1567,7 +1562,7 @@ impl MetadataDb {
                    AND is_special = 0
                    AND is_clone = 0
                    AND base_title = (
-                       SELECT base_title FROM rom_cache
+                       SELECT base_title FROM game_library
                        WHERE system = ?1 AND rom_filename = ?2
                    )
                  ORDER BY
@@ -1605,12 +1600,12 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, display_name FROM rom_cache
+                "SELECT rom_filename, display_name FROM game_library
                  WHERE system = ?1
                    AND base_title != ''
                    AND is_translation = 1
                    AND base_title = (
-                       SELECT base_title FROM rom_cache
+                       SELECT base_title FROM game_library
                        WHERE system = ?1 AND rom_filename = ?2
                    )
                  ORDER BY display_name",
@@ -1637,12 +1632,12 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, display_name FROM rom_cache
+                "SELECT rom_filename, display_name FROM game_library
                  WHERE system = ?1
                    AND base_title != ''
                    AND is_hack = 1
                    AND base_title = (
-                       SELECT base_title FROM rom_cache
+                       SELECT base_title FROM game_library
                        WHERE system = ?1 AND rom_filename = ?2
                    )
                  ORDER BY display_name",
@@ -1669,12 +1664,12 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, display_name FROM rom_cache
+                "SELECT rom_filename, display_name FROM game_library
                  WHERE system = ?1
                    AND base_title != ''
                    AND is_special = 1
                    AND base_title = (
-                       SELECT base_title FROM rom_cache
+                       SELECT base_title FROM game_library
                        WHERE system = ?1 AND rom_filename = ?2
                    )
                  ORDER BY display_name",
@@ -1699,14 +1694,14 @@ impl MetadataDb {
         genre: &str,
         exclude_filename: &str,
         limit: usize,
-    ) -> Result<Vec<CachedRom>> {
+    ) -> Result<Vec<GameEntry>> {
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special
-                 FROM rom_cache
+                 FROM game_library
                  WHERE system = ?1
                    AND genre = ?2
                    AND genre != ''
@@ -1723,16 +1718,16 @@ impl MetadataDb {
         let rows = stmt
             .query_map(
                 params![system, genre, exclude_filename, limit as i64],
-                Self::row_to_cached_rom,
+                Self::row_to_game_entry,
             )
             .map_err(|e| Error::Other(format!("Query similar_by_genre: {e}")))?;
 
         Ok(rows.flatten().collect())
     }
 
-    /// Helper: convert a row to CachedRom (used by multiple queries).
-    fn row_to_cached_rom(row: &rusqlite::Row<'_>) -> rusqlite::Result<CachedRom> {
-        Ok(CachedRom {
+    /// Helper: convert a row to GameEntry (used by multiple queries).
+    fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
+        Ok(GameEntry {
             system: row.get(0)?,
             rom_filename: row.get(1)?,
             rom_path: row.get(2)?,
@@ -1792,8 +1787,8 @@ mod tests {
         }
     }
 
-    fn make_cached_rom(system: &str, filename: &str, is_m3u: bool) -> CachedRom {
-        CachedRom {
+    fn make_game_entry(system: &str, filename: &str, is_m3u: bool) -> GameEntry {
+        GameEntry {
             system: system.into(),
             rom_filename: filename.into(),
             rom_path: format!("/roms/{system}/{filename}"),
@@ -1814,16 +1809,16 @@ mod tests {
         }
     }
 
-    fn make_cached_rom_with_genre(system: &str, filename: &str, genre: &str) -> CachedRom {
-        CachedRom {
+    fn make_game_entry_with_genre(system: &str, filename: &str, genre: &str) -> GameEntry {
+        GameEntry {
             genre: Some(genre.into()),
-            ..make_cached_rom(system, filename, false)
+            ..make_game_entry(system, filename, false)
         }
     }
 
     #[test]
     fn genre_enrichment_fills_empty_genre_from_launchbox() {
-        // When rom_cache has no genre but game_metadata does,
+        // When game_library has no genre but game_metadata does,
         // update_box_art_genre_rating should fill it.
         let (mut db, _dir) = open_temp_db();
 
@@ -1832,9 +1827,9 @@ mod tests {
             ("sega_smd".into(), "Sonic.md".into(), make_metadata_with_genre("Platform")),
         ]).unwrap();
 
-        // rom_cache has Sonic with no genre
-        db.save_system_roms("sega_smd", &[
-            make_cached_rom("sega_smd", "Sonic.md", false),
+        // game_library has Sonic with no genre
+        db.save_system_entries("sega_smd", &[
+            make_game_entry("sega_smd", "Sonic.md", false),
         ], None).unwrap();
 
         // Enrich with genre from LaunchBox
@@ -1842,19 +1837,19 @@ mod tests {
             ("Sonic.md".into(), None, Some("Platform".into()), None),
         ]).unwrap();
 
-        let roms = db.load_system_roms("sega_smd").unwrap();
+        let roms = db.load_system_entries("sega_smd").unwrap();
         assert_eq!(roms[0].genre.as_deref(), Some("Platform"));
     }
 
     #[test]
     fn genre_enrichment_does_not_overwrite_existing_genre() {
-        // When rom_cache already has a baked-in genre, the SQL guard
+        // When game_library already has a baked-in genre, the SQL guard
         // (genre IS NULL OR genre = '') should prevent overwriting it.
         let (mut db, _dir) = open_temp_db();
 
-        // rom_cache has Sonic with baked-in "Shooter" (wrong but exists)
-        db.save_system_roms("sega_smd", &[
-            make_cached_rom_with_genre("sega_smd", "Sonic.md", "Shooter"),
+        // game_library has Sonic with baked-in "Shooter" (wrong but exists)
+        db.save_system_entries("sega_smd", &[
+            make_game_entry_with_genre("sega_smd", "Sonic.md", "Shooter"),
         ], None).unwrap();
 
         // Try to enrich with "Platform" from LaunchBox
@@ -1862,7 +1857,7 @@ mod tests {
             ("Sonic.md".into(), None, Some("Platform".into()), None),
         ]).unwrap();
 
-        let roms = db.load_system_roms("sega_smd").unwrap();
+        let roms = db.load_system_entries("sega_smd").unwrap();
         // Should still be "Shooter" — not overwritten
         assert_eq!(roms[0].genre.as_deref(), Some("Shooter"));
     }
@@ -1872,10 +1867,10 @@ mod tests {
         // Multiple ROMs: some with genre, some without. Only empty ones get filled.
         let (mut db, _dir) = open_temp_db();
 
-        db.save_system_roms("sega_smd", &[
-            make_cached_rom_with_genre("sega_smd", "Sonic.md", "Shooter"),
-            make_cached_rom("sega_smd", "Streets.md", false),
-            make_cached_rom("sega_smd", "Columns.md", false),
+        db.save_system_entries("sega_smd", &[
+            make_game_entry_with_genre("sega_smd", "Sonic.md", "Shooter"),
+            make_game_entry("sega_smd", "Streets.md", false),
+            make_game_entry("sega_smd", "Columns.md", false),
         ], None).unwrap();
 
         db.update_box_art_genre_rating("sega_smd", &[
@@ -1884,7 +1879,7 @@ mod tests {
             // Columns has no LaunchBox genre either — no enrichment tuple
         ]).unwrap();
 
-        let roms = db.load_system_roms("sega_smd").unwrap();
+        let roms = db.load_system_entries("sega_smd").unwrap();
         let sonic = roms.iter().find(|r| r.rom_filename == "Sonic.md").unwrap();
         let streets = roms.iter().find(|r| r.rom_filename == "Streets.md").unwrap();
         let columns = roms.iter().find(|r| r.rom_filename == "Columns.md").unwrap();
@@ -1898,8 +1893,8 @@ mod tests {
     }
 
     #[test]
-    fn entries_per_system_no_rom_cache_returns_all() {
-        // When rom_cache is empty, entries_per_system should count all
+    fn entries_per_system_no_game_library_returns_all() {
+        // When game_library is empty, entries_per_system should count all
         // game_metadata entries (fallback behavior).
         let (mut db, _dir) = open_temp_db();
         db.bulk_upsert(&[
@@ -1917,10 +1912,10 @@ mod tests {
     }
 
     #[test]
-    fn entries_per_system_with_rom_cache_deduplicates_m3u() {
-        // When rom_cache has data, entries_per_system should only count
-        // game_metadata entries that match rom_cache — disc files excluded
-        // by M3U dedup in rom_cache should not be counted.
+    fn entries_per_system_with_game_library_deduplicates_m3u() {
+        // When game_library has data, entries_per_system should only count
+        // game_metadata entries that match game_library — disc files excluded
+        // by M3U dedup in game_library should not be counted.
         let (mut db, _dir) = open_temp_db();
 
         // game_metadata has 3 entries for sega_cd: the .m3u + 2 disc files
@@ -1932,16 +1927,16 @@ mod tests {
         ])
         .unwrap();
 
-        // rom_cache only has the .m3u (disc files were deduped out)
-        db.save_system_roms(
+        // game_library only has the .m3u (disc files were deduped out)
+        db.save_system_entries(
             "sega_cd",
-            &[make_cached_rom("sega_cd", "Game.m3u", true)],
+            &[make_game_entry("sega_cd", "Game.m3u", true)],
             None,
         )
         .unwrap();
-        db.save_system_roms(
+        db.save_system_entries(
             "snes",
-            &[make_cached_rom("snes", "Mario.sfc", false)],
+            &[make_game_entry("snes", "Mario.sfc", false)],
             None,
         )
         .unwrap();
@@ -1957,7 +1952,7 @@ mod tests {
 
     #[test]
     fn entries_per_system_mixed_cached_and_uncached_systems() {
-        // One system has rom_cache data (should dedup), another doesn't
+        // One system has game_library data (should dedup), another doesn't
         // (should fall back to full count).
         let (mut db, _dir) = open_temp_db();
 
@@ -1969,10 +1964,10 @@ mod tests {
         ])
         .unwrap();
 
-        // Only sega_cd has rom_cache data
-        db.save_system_roms(
+        // Only sega_cd has game_library data
+        db.save_system_entries(
             "sega_cd",
-            &[make_cached_rom("sega_cd", "Game.m3u", true)],
+            &[make_game_entry("sega_cd", "Game.m3u", true)],
             None,
         )
         .unwrap();
@@ -1981,14 +1976,14 @@ mod tests {
         let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
         let snes = counts.iter().find(|(s, _)| s == "snes").unwrap();
 
-        // sega_cd: deduped via rom_cache → 1
+        // sega_cd: deduped via game_library → 1
         assert_eq!(sega_cd.1, 1);
-        // snes: no rom_cache, fallback to raw count → 2
+        // snes: no game_library, fallback to raw count → 2
         assert_eq!(snes.1, 2);
     }
 
     #[test]
-    fn images_per_system_no_rom_cache_returns_all() {
+    fn images_per_system_no_game_library_returns_all() {
         let (mut db, _dir) = open_temp_db();
         db.bulk_upsert(&[
             ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
@@ -2008,7 +2003,7 @@ mod tests {
     }
 
     #[test]
-    fn images_per_system_with_rom_cache_deduplicates_m3u() {
+    fn images_per_system_with_game_library_deduplicates_m3u() {
         let (mut db, _dir) = open_temp_db();
 
         db.bulk_upsert(&[
@@ -2024,10 +2019,10 @@ mod tests {
         ])
         .unwrap();
 
-        // rom_cache only has the .m3u
-        db.save_system_roms(
+        // game_library only has the .m3u
+        db.save_system_entries(
             "sega_cd",
-            &[make_cached_rom("sega_cd", "Game.m3u", true)],
+            &[make_game_entry("sega_cd", "Game.m3u", true)],
             None,
         )
         .unwrap();
@@ -2043,21 +2038,21 @@ mod tests {
     fn specials_returns_special_roms_sharing_base_title() {
         let (mut db, _dir) = open_temp_db();
 
-        let mut original = make_cached_rom("snes", "Game (USA).sfc", false);
+        let mut original = make_game_entry("snes", "Game (USA).sfc", false);
         original.base_title = "Game".into();
         original.region = "usa".into();
 
-        let mut fastrom = make_cached_rom("snes", "Game (USA) (FastRom).sfc", false);
+        let mut fastrom = make_game_entry("snes", "Game (USA) (FastRom).sfc", false);
         fastrom.base_title = "Game".into();
         fastrom.region = "usa".into();
         fastrom.is_special = true;
 
-        let mut hz60 = make_cached_rom("snes", "Game (Europe) (60hz).sfc", false);
+        let mut hz60 = make_game_entry("snes", "Game (Europe) (60hz).sfc", false);
         hz60.base_title = "Game".into();
         hz60.region = "europe".into();
         hz60.is_special = true;
 
-        db.save_system_roms("snes", &[original, fastrom, hz60], None)
+        db.save_system_entries("snes", &[original, fastrom, hz60], None)
             .unwrap();
 
         let specials = db.specials("snes", "Game (USA).sfc").unwrap();
@@ -2071,14 +2066,14 @@ mod tests {
     fn recommendation_queries_exclude_special_roms() {
         let (mut db, _dir) = open_temp_db();
 
-        let mut normal = make_cached_rom("snes", "Mario (USA).sfc", false);
+        let mut normal = make_game_entry("snes", "Mario (USA).sfc", false);
         normal.base_title = "Mario".into();
         normal.region = "usa".into();
         normal.box_art_url = Some("/img/mario.png".into());
         normal.rating = Some(4.5);
         normal.genre = Some("Platform".into());
 
-        let mut special = make_cached_rom("snes", "Mario (USA) (FastRom).sfc", false);
+        let mut special = make_game_entry("snes", "Mario (USA) (FastRom).sfc", false);
         special.base_title = "Mario FastRom".into();
         special.region = "usa".into();
         special.box_art_url = Some("/img/mario.png".into());
@@ -2086,7 +2081,7 @@ mod tests {
         special.genre = Some("Platform".into());
         special.is_special = true;
 
-        db.save_system_roms("snes", &[normal, special], None)
+        db.save_system_entries("snes", &[normal, special], None)
             .unwrap();
 
         // random_cached_roms should exclude is_special
@@ -2106,27 +2101,27 @@ mod tests {
     fn regional_variants_excludes_clones_and_specials() {
         let (mut db, _dir) = open_temp_db();
 
-        let mut original = make_cached_rom("snes", "Game (USA).sfc", false);
+        let mut original = make_game_entry("snes", "Game (USA).sfc", false);
         original.base_title = "game".into();
         original.region = "usa".into();
 
-        let mut europe = make_cached_rom("snes", "Game (Europe).sfc", false);
+        let mut europe = make_game_entry("snes", "Game (Europe).sfc", false);
         europe.base_title = "game".into();
         europe.region = "europe".into();
 
         // Clone should be excluded
-        let mut clone = make_cached_rom("snes", "Game (Japan).sfc", false);
+        let mut clone = make_game_entry("snes", "Game (Japan).sfc", false);
         clone.base_title = "game".into();
         clone.region = "japan".into();
         clone.is_clone = true;
 
         // Special should be excluded
-        let mut special = make_cached_rom("snes", "Game (USA) (FastRom).sfc", false);
+        let mut special = make_game_entry("snes", "Game (USA) (FastRom).sfc", false);
         special.base_title = "game".into();
         special.region = "usa".into();
         special.is_special = true;
 
-        db.save_system_roms("snes", &[original, europe, clone, special], None)
+        db.save_system_entries("snes", &[original, europe, clone, special], None)
             .unwrap();
 
         let variants = db.regional_variants("snes", "Game (USA).sfc").unwrap();

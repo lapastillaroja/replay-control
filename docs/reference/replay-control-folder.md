@@ -66,7 +66,7 @@ This file is created on first write. Missing keys use defaults.
 ### `metadata.db`
 SQLite database caching external game metadata. Stores:
 - **Game metadata** (`game_metadata` table): descriptions, ratings, publishers, genres (from LaunchBox XML import)
-- **ROM cache** (`rom_cache` / `rom_cache_meta` tables): L2 persistent cache for ROM listings with box art URLs and ratings
+- **Game library** (`game_library` / `game_library_meta` tables): L2 persistent cache for ROM listings with box art URLs and ratings
 - **Image paths**: relative paths to box art and screenshot files per ROM
 - **Thumbnail index** (`thumbnail_index` table): manifest of all available libretro-thumbnails images across ~40 repos
 - **Data sources** (`data_sources` table): version tracking for LaunchBox imports and per-repo libretro thumbnail index freshness

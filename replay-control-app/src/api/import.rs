@@ -309,7 +309,7 @@ impl AppState {
             }
         }
 
-        // Re-enrich rom_cache with freshly imported ratings.
+        // Re-enrich game library with freshly imported ratings.
         if succeeded {
             self.spawn_cache_enrichment();
         }
@@ -652,7 +652,7 @@ impl AppState {
             }
 
             // Update DB image paths for this system (same as the existing import does).
-            // Use the rom_filenames to update game_metadata box_art_path / screenshot_path.
+            // Use the ROM filenames to update game_metadata box_art_path / screenshot_path.
             Self::update_image_paths_from_disk(&mut db, &storage_root, system);
         }
 
@@ -667,7 +667,7 @@ impl AppState {
 
         let cancelled = cancel_ref.load(std::sync::atomic::Ordering::Relaxed);
 
-        // Re-enrich rom_cache with freshly downloaded box art.
+        // Re-enrich game library with freshly downloaded box art.
         if !cancelled {
             self.spawn_cache_enrichment();
         }

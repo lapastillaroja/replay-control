@@ -1,4 +1,4 @@
-# Genre Fallback Analysis: LaunchBox Genre Not Reaching rom_cache
+# Genre Fallback Analysis: LaunchBox Genre Not Reaching game_library
 
 ## Current State
 
@@ -8,19 +8,19 @@ There are three places genre data is sourced, each serving a different layer:
 
 1. **Baked-in game_db / arcade_db** (compile-time, embedded in binary)
    - `game_db::lookup_game()` for consoles, `arcade_db::lookup_arcade_game()` for arcade
-   - This is the **only** source used when building `rom_cache` entries
+   - This is the **only** source used when building `game_library` entries
 
 2. **LaunchBox fallback at display time** (`server_fns/mod.rs:278-310`, `enrich_from_metadata_cache()`)
    - Called by `resolve_game_info()` when building a `GameInfo` for the game detail page
    - Fills `info.genre` from `game_metadata.genre` when the baked-in genre is empty (line 308)
-   - This data is **never persisted back** to `rom_cache`
+   - This data is **never persisted back** to `game_library`
 
 3. **LaunchBox fallback in search** (`server_fns/search.rs:282-325`, `lookup_genre()`)
    - Called by `global_search()` for genre filtering and display, `get_related_games()` for "More Like This", and `get_all_genres()` / `get_system_genres()` for genre dropdown lists
    - Falls back to `game_metadata.genre` when the baked-in genre is empty (lines 313-322)
-   - This data is **never persisted back** to `rom_cache`
+   - This data is **never persisted back** to `game_library`
 
-### How Genre Flows into rom_cache
+### How Genre Flows into game_library
 
 During cache build (`cache.rs:417-528`, `save_roms_to_db()`):
 
@@ -30,8 +30,8 @@ ROM scan -> for each ROM:
         arcade_db::lookup_arcade_game(stem) -> info.normalized_genre
     else:
         game_db::lookup_game(system, stem) -> game.normalized_genre
-    -> CachedRom { genre, ... }
--> save_system_roms() writes to rom_cache table
+    -> GameEntry { genre, ... }
+-> save_system_entries() writes to game_library table
 ```
 
 The genre value comes **exclusively** from the baked-in databases. There is no LaunchBox lookup during this step.
@@ -46,20 +46,20 @@ enrich_system_cache():
     2. Load ratings from game_metadata (LaunchBox)
     3. Auto-match new ROMs to existing metadata by normalized title
     4. Build enrichment tuples: (filename, box_art_url, rating)  <-- NO genre
-    5. Call update_box_art_and_rating() -> UPDATE rom_cache SET box_art_url, rating
+    5. Call update_box_art_and_rating() -> UPDATE game_library SET box_art_url, rating
 ```
 
 The enrichment step updates **only** `box_art_url` and `rating`. Genre is not touched. The `update_box_art_and_rating()` SQL (metadata_db.rs:978-1022) confirms this -- it only has UPDATE statements for `box_art_url` and `rating`.
 
 ## The Gap
 
-### rom_cache.genre stays empty for games with no baked-in genre
+### game_library.genre stays empty for games with no baked-in genre
 
-When a game has no entry in `game_db` or `arcade_db` (or the entry has an empty genre), the `rom_cache.genre` column remains `NULL` or empty string. Even if LaunchBox has genre data for that exact game, it is never written to `rom_cache`.
+When a game has no entry in `game_db` or `arcade_db` (or the entry has an empty genre), the `game_library.genre` column remains `NULL` or empty string. Even if LaunchBox has genre data for that exact game, it is never written to `game_library`.
 
-### Impact on features that query rom_cache
+### Impact on features that query game_library
 
-These SQL-based features read `rom_cache.genre` directly and **never** see LaunchBox genre data:
+These SQL-based features read `game_library.genre` directly and **never** see LaunchBox genre data:
 
 | Feature | Query | File:Line |
 |---------|-------|-----------|
@@ -74,21 +74,21 @@ These SQL-based features read `rom_cache.genre` directly and **never** see Launc
 The `get_related_games()` function in `related.rs` demonstrates the asymmetry clearly:
 
 1. Line 61: It calls `lookup_genre()` which **does** fall back to LaunchBox -- so it finds genre "Platform" for a game like "Sonic & Knuckles"
-2. Line 87: It passes that genre to `similar_by_genre()` which queries `rom_cache.genre` -- so it finds similar games whose `rom_cache.genre` is "Platform"
-3. But **other** games that also have genre "Platform" only in LaunchBox (not in baked-in DB) will **not** appear in the results because their `rom_cache.genre` is empty
+2. Line 87: It passes that genre to `similar_by_genre()` which queries `game_library.genre` -- so it finds similar games whose `game_library.genre` is "Platform"
+3. But **other** games that also have genre "Platform" only in LaunchBox (not in baked-in DB) will **not** appear in the results because their `game_library.genre` is empty
 
 Similarly, `global_search()` uses `lookup_genre()` for the genre filter (with LaunchBox fallback), but the candidate ROMs whose genre is only in LaunchBox won't match the filter because `lookup_genre()` is called per-ROM (expensive but correct). However, the genre list dropdowns (`get_all_genres()`, `get_system_genres()`) iterate all ROMs calling `lookup_genre()` per-ROM so they **do** include LaunchBox genres. This means the dropdown shows genres that may return fewer results than expected.
 
 ## Proposed Fix: Genre Fallback During Cache Enrichment
 
-### Approach: Fill empty rom_cache.genre from LaunchBox during enrichment
+### Approach: Fill empty game_library.genre from LaunchBox during enrichment
 
-During `enrich_system_cache()`, after setting `box_art_url` and `rating`, also check if `rom_cache.genre` is empty and fill it from `game_metadata.genre` (LaunchBox) if available.
+During `enrich_system_cache()`, after setting `box_art_url` and `rating`, also check if `game_library.genre` is empty and fill it from `game_metadata.genre` (LaunchBox) if available.
 
 **Priority**: baked-in game_db/arcade_db genre (set during cache build) > LaunchBox genre (filled during enrichment if empty)
 
 This is the safe approach because:
-- Baked-in genre is already in rom_cache from cache build -- enrichment only fills gaps
+- Baked-in genre is already in game_library from cache build -- enrichment only fills gaps
 - LaunchBox coverage may be lower than baked-in (~65% vs ~80%) but fills the remaining ~15-20% that baked-in misses entirely
 - No risk of overwriting good data with worse data
 
@@ -112,7 +112,7 @@ After deploying the code change:
 
 1. `run_import_blocking()` (import.rs:201) runs the LaunchBox import
 2. On success, calls `self.spawn_cache_enrichment()` (import.rs:314)
-3. `spawn_cache_enrichment()` (background.rs:150-181) checks if rom_cache is empty:
+3. `spawn_cache_enrichment()` (background.rs:150-181) checks if game_library is empty:
    - If empty: calls `populate_all_systems()` which scans ROMs (using baked-in genre) then calls `enrich_system_cache()` -- **genre not updated from LaunchBox**
    - If not empty: calls `enrich_system_cache()` for each system -- **genre not updated from LaunchBox**
 4. `enrich_system_cache()` (cache.rs:1026-1112) only updates `box_art_url` and `rating` -- **genre not touched**
@@ -125,7 +125,7 @@ After deploying the code change:
 
 ### Code change
 
-The change adds genre loading from LaunchBox `game_metadata` and includes it in the enrichment tuples. Instead of only updating `box_art_url` and `rating`, we also update `genre` when the rom_cache entry has an empty genre and LaunchBox has one.
+The change adds genre loading from LaunchBox `game_metadata` and includes it in the enrichment tuples. Instead of only updating `box_art_url` and `rating`, we also update `genre` when the game_library entry has an empty genre and LaunchBox has one.
 
 In `enrich_system_cache()`, starting at line 1030, add genre loading alongside ratings:
 
@@ -141,7 +141,7 @@ In `enrich_system_cache()`, starting at line 1030, add genre loading alongside r
             .unwrap_or_default();
 
         // Load genres from game_metadata table (from LaunchBox import).
-        // Used to fill empty rom_cache.genre entries.
+        // Used to fill empty game_library.genre entries.
         let lb_genres: HashMap<String, String> = state
             .metadata_db()
             .and_then(|guard| {
@@ -194,7 +194,7 @@ In `enrich_system_cache()`, starting at line 1030, add genre loading alongside r
             .filter_map(|(filename, current_genre)| {
                 let art = self.resolve_box_art(state, &index, system, filename);
                 let rating = all_ratings.get(filename).map(|&r| r as f32);
-                // Fill genre from LaunchBox only when rom_cache has no genre.
+                // Fill genre from LaunchBox only when game_library has no genre.
                 let genre = if current_genre.as_ref().is_none_or(|g| g.is_empty()) {
                     lb_genres.get(filename).cloned()
                 } else {
@@ -250,7 +250,7 @@ In `enrich_system_cache()`, starting at line 1030, add genre loading alongside r
 In `replay-control-core/src/metadata/metadata_db.rs`, add a new method `update_enrichment()` that updates `box_art_url`, `genre`, and `rating` (or modify `update_box_art_and_rating()` to also handle genre). The simplest approach is to add a new method:
 
 ```rust
-    /// Batch update box_art_url, genre, and rating for ROMs in rom_cache.
+    /// Batch update box_art_url, genre, and rating for ROMs in game_library.
     /// Only updates non-None fields (preserves existing values).
     pub fn update_enrichment(
         &mut self,
@@ -265,14 +265,14 @@ In `replay-control-core/src/metadata/metadata_db.rs`, add a new method `update_e
         {
             let mut art_stmt = tx
                 .prepare(
-                    "UPDATE rom_cache SET box_art_url = ?2
+                    "UPDATE game_library SET box_art_url = ?2
                      WHERE system = ?3 AND rom_filename = ?1",
                 )
                 .map_err(|e| Error::Other(format!("Prepare box_art update: {e}")))?;
 
             let mut genre_stmt = tx
                 .prepare(
-                    "UPDATE rom_cache SET genre = ?2
+                    "UPDATE game_library SET genre = ?2
                      WHERE system = ?3 AND rom_filename = ?1
                        AND (genre IS NULL OR genre = '')",
                 )
@@ -280,7 +280,7 @@ In `replay-control-core/src/metadata/metadata_db.rs`, add a new method `update_e
 
             let mut rating_stmt = tx
                 .prepare(
-                    "UPDATE rom_cache SET rating = ?2
+                    "UPDATE game_library SET rating = ?2
                      WHERE system = ?3 AND rom_filename = ?1",
                 )
                 .map_err(|e| Error::Other(format!("Prepare rating update: {e}")))?;
@@ -314,17 +314,17 @@ Note the `WHERE (genre IS NULL OR genre = '')` guard on the genre UPDATE -- this
 
 ### Also needed: read current genre from L1 cache
 
-The current `enrich_system_cache()` reads only `rom_filename` from L1 cache (lines 1048-1061). The modified version needs to also read the current `genre` to decide whether to fill from LaunchBox. The `RomEntry` struct does not carry genre directly, but the L1 cache stores `RomEntry` values, not `CachedRom`. However, `RomEntry` has a `genre` field since it's populated from the `CachedRom` during L2->L1 promotion.
+The current `enrich_system_cache()` reads only `rom_filename` from L1 cache (lines 1048-1061). The modified version needs to also read the current `genre` to decide whether to fill from LaunchBox. The `RomEntry` struct does not carry genre directly, but the L1 cache stores `RomEntry` values, not `GameEntry`. However, `RomEntry` has a `genre` field since it's populated from the `GameEntry` during L2->L1 promotion.
 
-Actually, looking more carefully at the L1 cache: `roms` is `HashMap<String, CacheEntry<Vec<RomEntry>>>` (cache.rs:86). `RomEntry` is defined in `replay-control-core/src/roms.rs` and has a `game: GameCore` with fields like `rom_filename`, `display_name`, etc. It does **not** have a `genre` field directly. Genre would need to be read from the L2 database or from the CachedRom before it's converted.
+Actually, looking more carefully at the L1 cache: `roms` is `HashMap<String, CacheEntry<Vec<RomEntry>>>` (cache.rs:86). `RomEntry` is defined in `replay-control-core/src/roms.rs` and has a `game: GameCore` with fields like `rom_filename`, `display_name`, etc. It does **not** have a `genre` field directly. Genre would need to be read from the L2 database or from the GameEntry before it's converted.
 
-Alternative approach: instead of reading genre from L1, load the current rom_cache genres from L2 (SQLite) at the start of enrichment:
+Alternative approach: instead of reading genre from L1, load the current game_library genres from L2 (SQLite) at the start of enrichment:
 
 ```rust
-// Load current rom_cache genres to know which are empty.
+// Load current game_library genres to know which are empty.
 let current_genres: HashMap<String, Option<String>> = self
     .with_db_read(&storage, |db| {
-        db.load_system_roms(system)
+        db.load_system_entries(system)
             .map(|roms| {
                 roms.into_iter()
                     .map(|r| (r.rom_filename, r.genre))

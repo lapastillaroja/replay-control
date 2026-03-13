@@ -11,7 +11,7 @@ Analysis of the Replay Control app performance, with focus on Games page respons
 The app has several low-hanging fruit optimizations that would dramatically improve perceived and actual performance, particularly on the Pi's constrained hardware. The three highest-impact items were:
 
 1. **WASM bundle is 33 MB unoptimized, served uncompressed** (loading time) -- **FIXED**: `wasm-opt -Oz`, `[profile.wasm-release]`, pre-compressed `.wasm.gz`, `CompressionLayer`
-2. **`resolve_box_art_url()` does per-ROM filesystem I/O in a loop** (server response time) -- **FIXED**: per-system image index cache, box art URLs stored in SQLite `rom_cache`
+2. **`resolve_box_art_url()` does per-ROM filesystem I/O in a loop** (server response time) -- **FIXED**: per-system image index cache, box art URLs stored in SQLite `game_library`
 3. **Full ROM list is cloned from cache on every request, then filtered/paginated** (memory + CPU) -- **MITIGATED**: SQLite ROM cache with indexed queries
 
 ---
@@ -101,7 +101,7 @@ Or use a single `SELECT ... WHERE system = ?` to get all image paths for the sys
 
 **B) Cache the boxart directory listing** -- read the boxart directory once per system and build an in-memory index. Currently `find_image_on_disk()` calls `read_dir()` for every ROM that doesn't have a DB path. Build a `HashMap<String, String>` (lowercase base title -> filename) and reuse it.
 
-**C) Pre-populate box_art_url in the RomCache** -- when the cache entry is built (on `list_roms()`), also resolve box art URLs. This way the per-page cost is zero and the per-cache-miss cost is amortized.
+**C) Pre-populate box_art_url in the GameLibrary** -- when the cache entry is built (on `list_roms()`), also resolve box art URLs. This way the per-page cost is zero and the per-cache-miss cost is amortized.
 
 **D) Skip is_valid_image() for most files** -- the fake-symlink check (< 200 bytes) is a workaround for exFAT clones. On the Pi, the media files were copied from the repo, not cloned directly. Consider making the check conditional on storage type, or resolving fake symlinks once at import time (which `resolve_fake_symlinks_in_dir()` already does).
 
@@ -197,7 +197,7 @@ This happens on **every** `get_roms_page()` call (every page load, every search 
 
 ### Recommendations
 
-**A) Cache favorites in AppState** with a short TTL (5-10 seconds), similar to `RomCache`. Favorites change rarely (only when user clicks the star button, and we know exactly when that happens).
+**A) Cache favorites in AppState** with a short TTL (5-10 seconds), similar to `GameLibrary`. Favorites change rarely (only when user clicks the star button, and we know exactly when that happens).
 
 **B) Use a simpler function** that just checks `.fav` file existence (glob `{system}@*.fav`) without parsing the file contents or constructing `GameRef` objects. All we need for `mark_favorites()` is the set of filenames, not full `Favorite` structs.
 
@@ -363,7 +363,7 @@ For 5,000 ROMs, this is 10,000 string allocations (lowercase) + 10,000+ string c
 
 **A) Store pre-lowercased names in the cache** alongside the original data:
 ```rust
-struct CachedRom {
+struct GameEntry {
     entry: RomEntry,
     display_lower: String,
     filename_lower: String,

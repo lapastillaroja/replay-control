@@ -10,7 +10,7 @@ const STORAGE_CHECK_INTERVAL: u64 = 60;
 impl AppState {
     /// Verify L2 cache freshness on startup and pre-populate if empty.
     ///
-    /// - If L2 is empty (fresh DB): scan all systems with games to populate rom_cache.
+    /// - If L2 is empty (fresh DB): scan all systems with games to populate game library.
     ///   This ensures recommendations work on first visit without waiting for the user
     ///   to browse every system page.
     /// - If L2 has data: verify stored mtimes against filesystem, re-scan stale systems.
@@ -100,7 +100,7 @@ impl AppState {
     }
 
     /// Pre-populate L2 cache for all systems that have games.
-    /// Called on startup when the rom_cache is empty (fresh DB or after clear).
+    /// Called on startup when the game library is empty (fresh DB or after clear).
     /// After populating ROMs, enriches box art URLs and ratings.
     fn populate_all_systems(
         state: &AppState,
@@ -143,8 +143,8 @@ impl AppState {
         );
     }
 
-    /// Re-enrich rom_cache for all systems after a metadata or thumbnail import.
-    /// If rom_cache is empty (e.g., DB was deleted and recreated during import),
+    /// Re-enrich game library for all systems after a metadata or thumbnail import.
+    /// If game library is empty (e.g., DB was deleted and recreated during import),
     /// does a full populate first (scan ROMs + enrich). Otherwise just enriches
     /// existing entries with updated box art URLs and ratings.
     pub fn spawn_cache_enrichment(&self) {
@@ -153,13 +153,13 @@ impl AppState {
             let storage = state.storage();
             let region_pref = state.region_preference();
 
-            // Check if rom_cache is empty — if so, populate before enriching.
+            // Check if game library is empty — if so, populate before enriching.
             let is_empty = state.cache.with_db_read(&storage, |db| {
                 db.load_all_system_meta().map(|m| m.is_empty()).unwrap_or(true)
             }).unwrap_or(true);
 
             if is_empty {
-                tracing::info!("Post-import: rom_cache is empty, running full populate");
+                tracing::info!("Post-import: game library is empty, running full populate");
                 Self::populate_all_systems(&state, &storage, region_pref);
             } else {
                 let systems = state.cache.get_systems(&storage);

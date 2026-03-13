@@ -1,6 +1,6 @@
 # Recommendations Performance Optimization Plan
 
-> **Status:** Implemented. Recommendations now use the SQLite ROM cache (no per-ROM filesystem I/O). Genre/multiplayer aggregation runs via SQL queries against `rom_cache`. Box art URLs are cached in the `rom_cache` table. Client-side loading (non-blocking SSR) is implemented.
+> **Status:** Implemented. Recommendations now use the SQLite game library (no per-ROM filesystem I/O). Genre/multiplayer aggregation runs via SQL queries against `game_library`. Box art URLs are cached in the `game_library` table. Client-side loading (non-blocking SSR) is implemented.
 
 ## 1. Root Cause Breakdown
 
@@ -96,7 +96,7 @@ This alone solves the hang with zero backend changes. Estimated effort: 30 minut
 
 ### Strategy 2: Pre-computed aggregate stats (eliminates the hot loop)
 
-Add a new field to `RomCache`:
+Add a new field to `GameLibrary`:
 
 ```rust
 struct AggregateStats {
@@ -128,11 +128,11 @@ The home page loads picks immediately and stats in parallel, but neither blocks 
 
 The recommendations resource should NOT block SSR. It should be loaded after hydration via client-side fetch. The visual impact is minimal -- the recommendation sections appear ~100ms after the page loads, which feels like smooth progressive loading.
 
-Pre-computed stats should be stored in `RomCache` alongside the existing systems/roms caches, using the same mtime-based invalidation pattern. This is consistent with the existing architecture and avoids introducing a background scheduler.
+Pre-computed stats should be stored in `GameLibrary` alongside the existing systems/roms caches, using the same mtime-based invalidation pattern. This is consistent with the existing architecture and avoids introducing a background scheduler.
 
 ## 5. Integration with Existing Cache Infrastructure
 
-The `RomCache` at `<WORKSPACE>/replay-control-app/src/api/cache.rs` already has the right patterns:
+The `GameLibrary` at `<WORKSPACE>/replay-control-app/src/api/cache.rs` already has the right patterns:
 
 - `RwLock`-protected entries with mtime-based + TTL invalidation
 - `invalidate()` and `invalidate_system()` methods called after mutations
@@ -156,7 +156,7 @@ These queries execute in <1ms on SQLite. This would make `get_discover_stats()` 
 - File: `<WORKSPACE>/replay-control-app/src/pages/home.rs`
 
 **Step 2 (add aggregate stats cache)**:
-- Add `AggregateStats` struct and cache field to `RomCache` in `cache.rs`.
+- Add `AggregateStats` struct and cache field to `GameLibrary` in `cache.rs`.
 - Add `get_aggregate_stats()` method that computes genre counts and multiplayer count by iterating already-cached ROM data. Uses a `RwLock<Option<CacheEntry<AggregateStats>>>` with mtime-based invalidation against the main roms directory.
 - File: `<WORKSPACE>/replay-control-app/src/api/cache.rs`
 

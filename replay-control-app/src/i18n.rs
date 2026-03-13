@@ -323,6 +323,17 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.thumbnail_downloaded" => "downloaded",
         "metadata.thumbnail_indexed" => "indexed",
 
+        // Game library
+        "metadata.rebuild_game_library" => "Rebuild Game Library",
+        "metadata.rebuilding_game_library" => "Rebuilding...",
+        "metadata.game_library_rebuilt" => "Game library rebuild started",
+        "metadata.confirm_rebuild_game_library" => {
+            "Rebuild the game library? This re-scans all games from disk."
+        }
+
+        // Advanced data management
+        "metadata.advanced_actions" => "Advanced",
+
         // Data management
         "metadata.clear_images" => "Clear Downloaded Images",
         "metadata.clearing_images" => "Clearing...",

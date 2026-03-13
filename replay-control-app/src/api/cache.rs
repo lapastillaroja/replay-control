@@ -81,7 +81,7 @@ impl ImageIndex {
     }
 }
 
-pub struct RomCache {
+pub struct GameLibrary {
     systems: std::sync::RwLock<Option<CacheEntry<Vec<SystemSummary>>>>,
     roms: std::sync::RwLock<HashMap<String, CacheEntry<Vec<RomEntry>>>>,
     favorites: std::sync::RwLock<Option<FavoritesCache>>,
@@ -128,7 +128,7 @@ impl FavoritesCache {
     }
 }
 
-impl RomCache {
+impl GameLibrary {
     pub(crate) fn new(db: Arc<Mutex<Option<MetadataDb>>>) -> Self {
         Self {
             systems: std::sync::RwLock::new(None),
@@ -186,7 +186,7 @@ impl RomCache {
     }
 
     /// Get cached systems or scan and cache.
-    /// L1 (in-memory) → L2 (SQLite rom_cache_meta) → L3 (filesystem scan).
+    /// L1 (in-memory) → L2 (SQLite game_library_meta) → L3 (filesystem scan).
     pub fn get_systems(&self, storage: &StorageLocation) -> Vec<SystemSummary> {
         let roms_dir = storage.roms_dir();
 
@@ -198,7 +198,7 @@ impl RomCache {
             return entry.data.clone();
         }
 
-        // L2: Try SQLite rom_cache_meta (reconstructs SystemSummary from cached metadata).
+        // L2: Try SQLite game_library_meta (reconstructs SystemSummary from cached metadata).
         if let Some(summaries) = self.load_systems_from_db(storage)
             && !summaries.is_empty()
         {
@@ -221,7 +221,7 @@ impl RomCache {
         summaries
     }
 
-    /// Try to reconstruct SystemSummary list from SQLite rom_cache_meta.
+    /// Try to reconstruct SystemSummary list from SQLite game_library_meta.
     fn load_systems_from_db(&self, storage: &StorageLocation) -> Option<Vec<SystemSummary>> {
         use replay_control_core::systems;
 
@@ -233,7 +233,7 @@ impl RomCache {
         }
 
         // Build a lookup map from cached data.
-        let meta_map: HashMap<String, &replay_control_core::metadata_db::CachedSystemMeta> =
+        let meta_map: HashMap<String, &replay_control_core::metadata_db::SystemMeta> =
             cached_meta.iter().map(|m| (m.system.clone(), m)).collect();
 
         let mut summaries = Vec::new();
@@ -265,7 +265,7 @@ impl RomCache {
         Some(summaries)
     }
 
-    /// Write system summaries to SQLite rom_cache_meta.
+    /// Write system summaries to SQLite game_library_meta.
     fn save_systems_to_db(&self, storage: &StorageLocation, summaries: &[SystemSummary]) {
         let roms_dir = storage.roms_dir();
         self.with_db(storage, |db| {
@@ -290,7 +290,7 @@ impl RomCache {
     }
 
     /// Get cached ROM list for a system, or scan and cache.
-    /// L1 (in-memory) → L2 (SQLite rom_cache) → L3 (filesystem scan).
+    /// L1 (in-memory) → L2 (SQLite game_library) → L3 (filesystem scan).
     pub fn get_roms(
         &self,
         storage: &StorageLocation,
@@ -308,7 +308,7 @@ impl RomCache {
             return Ok(entry.data.clone());
         }
 
-        // L2: Try SQLite rom_cache.
+        // L2: Try SQLite game_library.
         if let Some(roms) = self.load_roms_from_db(storage, system, &system_dir) {
             // Store in L1.
             if let Ok(mut guard) = self.roms.write() {
@@ -331,16 +331,16 @@ impl RomCache {
         Ok(roms)
     }
 
-    /// Try to load ROMs from SQLite rom_cache, validating via mtime.
+    /// Try to load ROMs from SQLite game_library, validating via mtime.
     fn load_roms_from_db(
         &self,
         storage: &StorageLocation,
         system: &str,
         system_dir: &Path,
     ) -> Option<Vec<RomEntry>> {
-        use replay_control_core::metadata_db::CachedSystemMeta;
+        use replay_control_core::metadata_db::SystemMeta;
 
-        let meta: CachedSystemMeta = self
+        let meta: SystemMeta = self
             .with_db(storage, |db| db.load_system_meta(system))?
             .ok()??;
 
@@ -374,15 +374,15 @@ impl RomCache {
 
         // Load ROMs from DB.
         let cached_roms = self
-            .with_db(storage, |db| db.load_system_roms(system))?
+            .with_db(storage, |db| db.load_system_entries(system))?
             .ok()?;
 
         if cached_roms.is_empty() && meta.rom_count > 0 {
-            // Meta says we have ROMs but rom_cache is empty — need L3 scan.
+            // Meta says we have ROMs but game_library is empty — need L3 scan.
             return None;
         }
 
-        // Convert CachedRom → RomEntry.
+        // Convert GameEntry → RomEntry.
         let roms: Vec<RomEntry> = cached_roms
             .into_iter()
             .map(|cr| {
@@ -412,7 +412,7 @@ impl RomCache {
         Some(roms)
     }
 
-    /// Write ROM list to SQLite rom_cache for persistent storage.
+    /// Write ROM list to SQLite game_library for persistent storage.
     /// Enriches with genre/players from the baked-in game databases during write.
     fn save_roms_to_db(
         &self,
@@ -421,7 +421,7 @@ impl RomCache {
         roms: &[RomEntry],
         system_dir: &Path,
     ) {
-        use replay_control_core::metadata_db::CachedRom;
+        use replay_control_core::metadata_db::GameEntry;
         use replay_control_core::systems::{self, SystemCategory};
         use replay_control_core::{arcade_db, game_db};
 
@@ -434,7 +434,7 @@ impl RomCache {
         let is_arcade =
             systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
 
-        let cached_roms: Vec<CachedRom> = roms
+        let cached_roms: Vec<GameEntry> = roms
             .iter()
             .map(|r| {
                 let rom_filename = &r.game.rom_filename;
@@ -491,7 +491,7 @@ impl RomCache {
                     replay_control_core::rom_tags::RegionPriority::Unknown => "",
                 };
 
-                CachedRom {
+                GameEntry {
                     system: r.game.system.clone(),
                     rom_filename: rom_filename.clone(),
                     rom_path: r.game.rom_path.clone(),
@@ -518,7 +518,7 @@ impl RomCache {
             cached_roms.len()
         );
         let result = self.with_db_mut(storage, |db| {
-            db.save_system_roms(system, &cached_roms, mtime_secs)
+            db.save_system_entries(system, &cached_roms, mtime_secs)
         });
         match result {
             Some(Ok(())) => {
@@ -947,7 +947,7 @@ impl RomCache {
     }
 
     /// Invalidate all caches (after delete, rename, upload).
-    /// Clears both L1 (in-memory) and L2 (SQLite rom_cache).
+    /// Clears both L1 (in-memory) and L2 (SQLite game_library).
     pub fn invalidate(&self) {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
@@ -964,16 +964,16 @@ impl RomCache {
         if let Ok(mut guard) = self.images.write() {
             guard.clear();
         }
-        // L2: Clear SQLite rom_cache.
+        // L2: Clear SQLite game_library.
         if let Ok(guard) = self.db.lock()
             && let Some(ref db) = *guard
         {
-            let _ = db.clear_all_rom_cache();
+            let _ = db.clear_all_game_library();
         }
     }
 
     /// Invalidate cache for a specific system.
-    /// Clears both L1 (in-memory) and L2 (SQLite rom_cache) for the system.
+    /// Clears both L1 (in-memory) and L2 (SQLite game_library) for the system.
     pub fn invalidate_system(&self, system: &str) {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
@@ -981,11 +981,11 @@ impl RomCache {
         if let Ok(mut guard) = self.roms.write() {
             guard.remove(system);
         }
-        // L2: Clear SQLite rom_cache for this system.
+        // L2: Clear SQLite game_library for this system.
         if let Ok(guard) = self.db.lock()
             && let Some(ref db) = *guard
         {
-            let _ = db.clear_system_rom_cache(system);
+            let _ = db.clear_system_game_library(system);
         }
     }
 
@@ -1018,7 +1018,7 @@ impl RomCache {
         }
     }
 
-    /// Enrich box_art_url (and rating) for all ROMs in a system's rom_cache.
+    /// Enrich box_art_url (and rating) for all entries in a system's game library.
     /// Uses the image index for box art and game_metadata for ratings.
     /// Called after L2 write-through to populate fields that `list_roms()` doesn't set.
     ///
@@ -1036,13 +1036,13 @@ impl RomCache {
             .unwrap_or_default();
 
         // Load genres from game_metadata table (from LaunchBox import).
-        // Used to fill empty rom_cache.genre entries.
+        // Used to fill empty game_library.genre entries.
         let lb_genres: HashMap<String, String> = state
             .metadata_db()
             .and_then(|guard| guard.as_ref()?.system_metadata_genres(system).ok())
             .unwrap_or_default();
 
-        // Load current rom_cache genres from L2 to know which are already set.
+        // Load current game_library genres from L2 to know which are already set.
         let existing_genres: HashSet<String> = self
             .with_db_read(&storage, |db| {
                 db.system_rom_genres(system)
@@ -1083,7 +1083,7 @@ impl RomCache {
         }
 
         // Build enrichment tuples: (filename, box_art_url, genre, rating).
-        // Genre is only filled from LaunchBox when rom_cache has no genre.
+        // Genre is only filled from LaunchBox when game_library has no genre.
         let enrichments: Vec<(String, Option<String>, Option<String>, Option<f32>)> = rom_filenames
             .iter()
             .filter_map(|filename| {
@@ -1124,7 +1124,7 @@ impl RomCache {
                             rom.box_art_url = art.clone();
                         }
                         // RomEntry doesn't carry genre — L1 genre is
-                        // served via lookup_genre() which reads rom_cache.
+                        // served via lookup_genre() which reads game_library.
                         if let Some(r) = rating {
                             rom.rating = Some(*r);
                         }

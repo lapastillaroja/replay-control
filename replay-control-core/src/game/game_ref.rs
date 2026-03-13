@@ -111,7 +111,7 @@ impl GameRef {
     }
 
     /// Create a GameRef with a pre-resolved display name (from cache).
-    /// Skips the DB lookup — useful when restoring from SQLite rom_cache.
+    /// Skips the DB lookup — useful when restoring from the game library.
     pub fn new_with_display(
         system: &str,
         rom_filename: String,

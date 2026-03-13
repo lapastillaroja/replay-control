@@ -1,15 +1,15 @@
 # Persistent SQLite ROM Cache — Implementation Plan
 
-> **Status:** Implemented. `rom_cache` and `rom_cache_meta` tables added to `metadata.db`. L2 cache sits between in-memory L1 and filesystem L3 with mtime-based invalidation and write-through on scan. Also powers SQL-based recommendations queries. See `replay-control-core/src/metadata_db.rs` (`save_system_roms`, `load_roms_from_db`, `CachedRom`).
+> **Status:** Implemented. `game_library` and `game_library_meta` tables added to `metadata.db`. L2 cache sits between in-memory L1 and filesystem L3 with mtime-based invalidation and write-through on scan. Also powers SQL-based recommendations queries. See `replay-control-core/src/metadata_db.rs` (`save_system_entries`, `load_roms_from_db`, `GameEntry`).
 
 ## Goal
 
-Add a persistent L2 cache (SQLite) between the in-memory L1 cache (`RomCache`) and L3 filesystem scans. This eliminates cold-start penalties (430ms NFS / 95ms USB for systems, 4200ms for arcade_mame) and enables SQL-based queries for recommendations.
+Add a persistent L2 cache (SQLite) between the in-memory L1 cache (`GameLibrary`) and L3 filesystem scans. This eliminates cold-start penalties (430ms NFS / 95ms USB for systems, 4200ms for arcade_mame) and enables SQL-based queries for recommendations.
 
 ## Architecture
 
 ```
-Request → L1 (in-memory RomCache) → L2 (SQLite rom_cache) → L3 (filesystem scan)
+Request → L1 (in-memory GameLibrary) → L2 (SQLite game_library) → L3 (filesystem scan)
                                       ↑ write-through ←──────────┘
 ```
 
@@ -23,7 +23,7 @@ Request → L1 (in-memory RomCache) → L2 (SQLite rom_cache) → L3 (filesystem
 Extends existing `metadata.db` with two new tables:
 
 ```sql
-CREATE TABLE IF NOT EXISTS rom_cache (
+CREATE TABLE IF NOT EXISTS game_library (
     system TEXT NOT NULL,
     rom_filename TEXT NOT NULL,
     rom_path TEXT NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS rom_cache (
     PRIMARY KEY (system, rom_filename)
 );
 
-CREATE TABLE IF NOT EXISTS rom_cache_meta (
+CREATE TABLE IF NOT EXISTS game_library_meta (
     system TEXT PRIMARY KEY,
     dir_mtime_secs INTEGER,
     scanned_at INTEGER NOT NULL,
@@ -51,36 +51,36 @@ CREATE TABLE IF NOT EXISTS rom_cache_meta (
 
 ### Phase 1: Schema + Core DB Methods (`metadata_db.rs`)
 
-New structs: `CachedRom`, `CachedSystemMeta`
+New structs: `GameEntry`, `SystemMeta`
 
 New methods on `MetadataDb`:
-- `save_system_roms(system, roms, dir_mtime_secs)` — transactional bulk upsert
-- `load_system_roms(system) -> Vec<CachedRom>` — load all cached ROMs for a system
-- `load_system_meta(system) -> Option<CachedSystemMeta>` — per-system cache metadata
-- `load_all_system_meta() -> Vec<CachedSystemMeta>` — all systems' cache metadata
+- `save_system_entries(system, roms, dir_mtime_secs)` — transactional bulk upsert
+- `load_system_entries(system) -> Vec<GameEntry>` — load all cached ROMs for a system
+- `load_system_meta(system) -> Option<SystemMeta>` — per-system cache metadata
+- `load_all_system_meta() -> Vec<SystemMeta>` — all systems' cache metadata
 - `update_rom_enrichment(system, enrichments)` — batch update box_art_url, genre, players, rating, driver_status
-- `clear_system_rom_cache(system)` — delete one system from rom_cache + rom_cache_meta
-- `clear_all_rom_cache()` — delete all
+- `clear_system_game_library(system)` — delete one system from game_library + game_library_meta
+- `clear_all_game_library()` — delete all
 
 ### Phase 2: Cache Write-Through (`cache.rs`)
 
-- `RomCache` stores `Arc<Mutex<Option<MetadataDb>>>` (shared with `AppState`)
-- After L3 filesystem scan in `get_roms()`, write results to SQLite via `save_system_roms()`
-- After `get_systems()` scan, write system summaries via `save_system_roms()` (meta only)
+- `GameLibrary` stores `Arc<Mutex<Option<MetadataDb>>>` (shared with `AppState`)
+- After L3 filesystem scan in `get_roms()`, write results to SQLite via `save_system_entries()`
+- After `get_systems()` scan, write system summaries via `save_system_entries()` (meta only)
 - Lock ordering: never hold L1 RwLock and DB Mutex simultaneously
 
 ### Phase 3: Cache Read-Through (`cache.rs`)
 
-- On L1 miss in `get_roms()`, try `load_system_roms()` from SQLite before filesystem scan
-- Check `rom_cache_meta.dir_mtime_secs` against current filesystem mtime (one stat call)
-- If L2 fresh: convert `CachedRom` → `RomEntry`, store in L1, return
+- On L1 miss in `get_roms()`, try `load_system_entries()` from SQLite before filesystem scan
+- Check `game_library_meta.dir_mtime_secs` against current filesystem mtime (one stat call)
+- If L2 fresh: convert `GameEntry` → `RomEntry`, store in L1, return
 - If L2 stale: fall through to L3 filesystem scan
 - On L1 miss in `get_systems()`, try `load_all_system_meta()` to reconstruct `SystemSummary` list
 
 ### Phase 4: Background Mtime Verification (`background.rs`)
 
 - On startup, spawn a one-shot background task (after 2s delay)
-- For each system in `rom_cache_meta`, compare `dir_mtime_secs` with current filesystem mtime
+- For each system in `game_library_meta`, compare `dir_mtime_secs` with current filesystem mtime
 - Re-scan stale systems in the background (writes to L1 + L2)
 - Non-blocking: uses `tokio::task::spawn_blocking` for filesystem I/O
 
@@ -95,8 +95,8 @@ New query methods (for future recommendation optimization):
 
 ### Phase 6: Invalidation Wiring
 
-- `delete_rom()` / `rename_rom()` → `clear_system_rom_cache(system)` + existing `invalidate_system()`
-- `refresh_storage()` (storage changed) → `clear_all_rom_cache()` + existing `invalidate()`
+- `delete_rom()` / `rename_rom()` → `clear_system_game_library(system)` + existing `invalidate_system()`
+- `refresh_storage()` (storage changed) → `clear_all_game_library()` + existing `invalidate()`
 - Image import completion → batch `update_rom_enrichment()` for box_art_url
 - `invalidate()` and `invalidate_system()` updated to also clear L2
 
@@ -111,7 +111,7 @@ New query methods (for future recommendation optimization):
 
 ## Impact on Recommendations
 
-With the rom_cache table populated:
+With the game_library table populated:
 - **Random picks**: `SELECT ... ORDER BY RANDOM() LIMIT 6` — instant, no system iteration
 - **Genre counts**: Single SQL query instead of iterating all systems' ROMs in memory
 - **Multiplayer count**: Single SQL query instead of per-ROM lookup

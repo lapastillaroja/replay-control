@@ -78,7 +78,7 @@ Because server functions are defined in a library crate, Rust's linker strips th
 `AppState` is the central server-side state, held in `Arc`-wrapped fields:
 - `storage: Arc<RwLock<StorageLocation>>` -- hot-swappable storage location
 - `config: Arc<RwLock<ReplayConfig>>` -- replay.cfg contents, re-read on refresh
-- `cache: Arc<RomCache>` -- TTL-based filesystem scan cache (30s expiry)
+- `cache: Arc<GameLibrary>` -- TTL-based filesystem scan cache (30s expiry)
 - `metadata_db: Arc<Mutex<Option<MetadataDb>>>` -- lazily-opened SQLite handle
 - `import_progress / image_import_progress` -- shared progress for background tasks
 - `image_import_cancel: Arc<AtomicBool>` -- cooperative cancellation flag
@@ -243,7 +243,7 @@ Kept for external tool access (curl, scripts):
 - Mirror types pattern (`types.rs`) bridges the SSR/hydrate feature boundary
 - `resolve_game_info()` is the single function bridging arcade_db and game_db
 - `enrich_from_metadata_cache()` augments game info with external metadata
-- TTL-based caching (`RomCache`) avoids repeated filesystem scans
+- TTL-based caching (`GameLibrary`) avoids repeated filesystem scans
 - Cooperative cancellation via `AtomicBool` for long-running imports
 
 **Error Handling**:
@@ -272,7 +272,7 @@ Kept for external tool access (curl, scripts):
 
 ### Areas of Concern
 
-1. **api/mod.rs at 1,439 lines**: Contains `AppState`, `RomCache`, background task spawning, storage watcher, auto-import, and the full image import orchestration pipeline. It handles too many concerns.
+1. **api/mod.rs at 1,439 lines**: Contains `AppState`, `GameLibrary`, background task spawning, storage watcher, auto-import, and the full image import orchestration pipeline. It handles too many concerns.
 
 2. **game_detail.rs at 1,195 lines**: 8+ sub-components for a single page. The video section alone is substantial. Some of these could be extracted to their own files.
 
@@ -288,7 +288,7 @@ Kept for external tool access (curl, scripts):
 Filesystem scan (core/roms.rs)
   --> RomEntry { game: GameRef, size_bytes, is_m3u, is_favorite, ... }
   --> mark_favorites() enriches is_favorite flag
-  --> RomCache (api/mod.rs) caches results for 30s
+  --> GameLibrary (api/mod.rs) caches results for 30s
   --> get_roms_page() server function:
       - Paginates via offset/PAGE_SIZE (100 items)
       - Calls resolve_game_info() per ROM for display names
@@ -326,7 +326,7 @@ User types in search input
   --> 300ms debounce (Effect with set_timeout)
   --> URL param sync (?q=..., ?genre=..., etc.)
   --> global_search() server function:
-      - Scans ALL systems via RomCache
+      - Scans ALL systems via GameLibrary
       - For each ROM: resolve_game_info() + search_score()
       - search_score() ranks: exact match > starts-with > contains > display name match
       - Applies filters: hide_hacks, hide_translations, hide_betas, hide_clones, multiplayer, genre
@@ -503,12 +503,12 @@ This section documents features and changes added after the initial analysis was
 
 **1. Split api/mod.rs into focused modules**
 
-At 1,439 lines, this file handles AppState, RomCache, background tasks, config management, storage detection, metadata DB, and image import orchestration. The image import orchestration alone is hundreds of lines. Proposed split:
+At 1,439 lines, this file handles AppState, GameLibrary, background tasks, config management, storage detection, metadata DB, and image import orchestration. The image import orchestration alone is hundreds of lines. Proposed split:
 
 ```
 api/
   mod.rs          # AppState definition + new/storage/config methods
-  cache.rs        # RomCache with TTL logic
+  cache.rs        # GameLibrary with TTL logic
   background.rs   # spawn_storage_watcher, spawn_auto_import
   import.rs       # start_import, start_image_import, image import orchestration
 ```
@@ -543,7 +543,7 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 
 **8. Search performance**
 
-`global_search()` iterates over all ROMs across all systems on every search request. For large collections (10K+ ROMs), this could benefit from a pre-built search index. However, the RomCache already avoids repeated filesystem scans, and the 30s TTL keeps results fresh.
+`global_search()` iterates over all ROMs across all systems on every search request. For large collections (10K+ ROMs), this could benefit from a pre-built search index. However, the GameLibrary already avoids repeated filesystem scans, and the 30s TTL keeps results fresh.
 
 ---
 
@@ -569,7 +569,7 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 ### Known Limitations
 
 9. **Metadata import blocks the DB mutex** -- During metadata import, the `metadata_db` Mutex is held by the import task. Other requests needing metadata (ROM list enrichment, search) must wait or get stale data.
-10. **RomCache clones entire ROM lists** -- `get_roms()` returns `Vec<RomEntry>` by cloning. For systems with thousands of ROMs, this creates significant allocation pressure on every cache hit.
+10. **GameLibrary clones entire ROM lists** -- `get_roms()` returns `Vec<RomEntry>` by cloning. For systems with thousands of ROMs, this creates significant allocation pressure on every cache hit.
 11. **SearchShortcut leaks event listener** -- The `Closure::forget()` call in `SearchShortcut` leaks the keydown listener. In a SPA with long sessions, this is a minor memory leak. In practice, only one listener is ever created.
 12. **No offline support** -- Despite having a service worker registered, the `sw.js` is minimal and does not implement caching strategies. The PWA works only when connected to the server.
 
@@ -607,7 +607,7 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 | `server_fns/system.rs` | 145 | System info, systems, recents, logs, refresh storage |
 | `server_fns/metadata.rs` | 127 | Metadata import, download, coverage, clear, regenerate |
 | `server_fns/favorites.rs` | 113 | Favorites CRUD, organize, group, flatten |
-| `api/mod.rs` | 1,439 | AppState, RomCache, background tasks, import orchestration |
+| `api/mod.rs` | 1,439 | AppState, GameLibrary, background tasks, import orchestration |
 | `main.rs` | 358 | CLI args, 55 register_explicit calls, Axum router setup, `build_router()` extraction |
 | `api/favorites.rs` | 104 | REST API favorites routes |
 | `api/roms.rs` | 97 | REST API ROM routes |

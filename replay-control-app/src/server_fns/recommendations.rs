@@ -36,8 +36,8 @@ pub struct RecommendationData {
     pub top_rated: Option<Vec<RecommendedGame>>,
 }
 
-/// Get recommendation data from SQLite rom_cache + filesystem image resolution.
-/// Returns empty data gracefully if rom_cache is not yet populated.
+/// Get recommendation data from SQLite game_library + filesystem image resolution.
+/// Returns empty data gracefully if game_library is not yet populated.
 #[server(prefix = "/sfn")]
 pub async fn get_recommendations(count: usize) -> Result<RecommendationData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -139,7 +139,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     };
 
     // Resolve box art from filesystem (same approach as recents/favorites/games).
-    // The pre-cached rom_cache.box_art_url may be stale or NULL.
+    // The pre-cached game_library.box_art_url may be stale or NULL.
     resolve_box_art_for_picks(&state, &mut random_picks);
     if let Some(ref mut fp) = favorites_picks {
         resolve_box_art_for_picks(&state, &mut fp.picks);
@@ -232,7 +232,7 @@ fn collect_favorites_info(
 /// Select diverse picks from a pool: prefer one per system, then fill with a cap.
 #[cfg(feature = "ssr")]
 fn diversify_picks(
-    pool: Vec<replay_control_core::metadata_db::CachedRom>,
+    pool: Vec<replay_control_core::metadata_db::GameEntry>,
     count: usize,
     systems: &[SystemSummary],
 ) -> Vec<RecommendedGame> {
@@ -303,11 +303,11 @@ pub(super) fn resolve_box_art_for_picks(state: &crate::api::AppState, picks: &mu
     }
 }
 
-/// Convert CachedRom to RecommendedGame. box_art_url is resolved later by the caller.
+/// Convert GameEntry to RecommendedGame. box_art_url is resolved later by the caller.
 #[cfg(feature = "ssr")]
 pub(super) fn to_recommended(
     system: &str,
-    rom: &replay_control_core::metadata_db::CachedRom,
+    rom: &replay_control_core::metadata_db::GameEntry,
     systems: &[SystemSummary],
 ) -> Option<RecommendedGame> {
     let display_name = rom

@@ -36,14 +36,14 @@ Investigation date: 2026-03-12
 - Extracts just the filename component from potentially absolute paths (handles ScummVM style).
 - `looks_like_filename()`: requires a dot, length < 512, no control chars except tab.
 
-## 2. M3U Files in `rom_cache`
+## 2. M3U Files in `game_library`
 
 **File:** `replay-control-core/src/metadata_db.rs`
 
 ### Schema
 
 ```sql
-CREATE TABLE IF NOT EXISTS rom_cache (
+CREATE TABLE IF NOT EXISTS game_library (
     system TEXT NOT NULL,
     rom_filename TEXT NOT NULL,
     rom_path TEXT NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS rom_cache (
 );
 ```
 
-The `is_m3u` column is stored as an integer (0/1). `CachedRom` has `is_m3u: bool`.
+The `is_m3u` column is stored as an integer (0/1). `GameEntry` has `is_m3u: bool`.
 
 ### Dedup Timing: Before Caching
 
@@ -69,14 +69,14 @@ The dedup logic is applied **before** data reaches the cache. The flow is:
    The resulting `Vec<RomEntry>` already has disc files removed and M3U sizes aggregated.
 
 2. **L2 (SQLite write-through):** `save_roms_to_db()` in `cache.rs` converts each post-dedup
-   `RomEntry` into a `CachedRom` and calls `db.save_system_roms()`. The SQLite table only stores
+   `RomEntry` into a `GameEntry` and calls `db.save_system_entries()`. The SQLite table only stores
    the deduplicated list.
 
-3. **L2 (SQLite read):** `load_roms_from_db()` reads `CachedRom` entries and converts back to
+3. **L2 (SQLite read):** `load_roms_from_db()` reads `GameEntry` entries and converts back to
    `RomEntry`. Since only M3U entries (not their referenced discs) were stored, the loaded
    data is already deduplicated.
 
-This means: **disc files referenced by M3U playlists never appear in `rom_cache`**. Only the
+This means: **disc files referenced by M3U playlists never appear in `game_library`**. Only the
 M3U entry itself is stored, with its `size_bytes` already reflecting the aggregate of itself
 plus all referenced disc files.
 
@@ -188,7 +188,7 @@ The cache uses **directory mtime** for invalidation:
   On access, it compares with the current mtime. Stale entries fall through.
   Hard TTL of 300 seconds as a fallback.
 
-- **L2 (SQLite):** `rom_cache_meta.dir_mtime_secs` stores the directory mtime as Unix timestamp.
+- **L2 (SQLite):** `game_library_meta.dir_mtime_secs` stores the directory mtime as Unix timestamp.
   On load, `load_roms_from_db()` compares stored mtime with current. Mismatch triggers L3 rescan.
 
 ### M3U-Specific Mtime Concerns
@@ -210,7 +210,7 @@ This is a real but minor edge case: users rarely edit M3U files directly. And wh
 parent directory's mtime. However, the mtime check is on the system directory (e.g.,
 `roms/sharp_x68k/`), and most M3U-using systems have flat layouts.
 
-**The `invalidate()` and `invalidate_system()` methods** in `RomCache` clear both L1 and L2
+**The `invalidate()` and `invalidate_system()` methods** in `GameLibrary` clear both L1 and L2
 caches entirely. These are called after explicit user actions (delete, rename, upload), so those
 operations bypass the mtime issue entirely.
 
@@ -235,7 +235,7 @@ CREATE TABLE IF NOT EXISTS m3u_references (
     disc_filename TEXT NOT NULL,
     disc_index INTEGER NOT NULL,
     PRIMARY KEY (system, m3u_filename, disc_filename),
-    FOREIGN KEY (system, m3u_filename) REFERENCES rom_cache(system, rom_filename)
+    FOREIGN KEY (system, m3u_filename) REFERENCES game_library(system, rom_filename)
 );
 ```
 
@@ -266,7 +266,7 @@ theoretical inconsistency.
 
 ### 6e. Aggregate Disc File Sizes at Cache Level
 
-Currently, `size_bytes` in `rom_cache` stores the pre-aggregated M3U size (M3U file size + sum
+Currently, `size_bytes` in `game_library` stores the pre-aggregated M3U size (M3U file size + sum
 of referenced disc sizes). This is correct but means the original disc sizes are lost. If disc
 references were stored separately (6a), sizes could be reconstructed without re-scanning.
 

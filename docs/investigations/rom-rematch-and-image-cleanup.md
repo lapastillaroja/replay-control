@@ -26,7 +26,7 @@ The ROM appears in the game list automatically. The cache invalidation chain is:
 
 1. Adding a file to a directory updates the directory's mtime.
 2. On the next request (or at startup via `spawn_cache_verification`), the cache
-   checks `dir_mtime()` against the stored `rom_cache_meta.dir_mtime_secs`.
+   checks `dir_mtime()` against the stored `game_library_meta.dir_mtime_secs`.
 3. Mtime mismatch triggers an L3 filesystem scan (`list_roms()`), which discovers
    the new ROM and writes through to L1 + L2.
 4. `spawn_cache_verification` (background.rs:17-100) calls `get_roms()` for stale
@@ -97,7 +97,7 @@ ROMs are added, the new ROMs are only detected when:
 - The hard TTL expires (300 seconds) and a request triggers a rescan
 
 The home page game counts stay stale until the system is visited, because
-`get_systems` reads from L2 `rom_cache_meta` without checking individual system
+`get_systems` reads from L2 `game_library_meta` without checking individual system
 directory mtimes.
 
 **File**: `replay-control-app/src/api/background.rs`
@@ -122,7 +122,7 @@ coverage stats slightly inaccurate.
 
 #### Gap 3: New system directories not detected
 
-`spawn_cache_verification` only iterates systems already in `rom_cache_meta`.
+`spawn_cache_verification` only iterates systems already in `game_library_meta`.
 If ROMs are added for a system that has never been scanned (e.g., user creates
 a new `roms/atari_lynx/` directory), it won't be detected until:
 - A user visits the home page and triggers `get_systems` (L3 scan)
@@ -398,7 +398,7 @@ Thumbnails are referenced in two places:
    `update_image_paths_from_disk` (import.rs:736-894) and `bulk_update_image_paths`
    (metadata_db.rs:643-691).
 
-2. **`rom_cache.box_art_url`**: Full URL paths like
+2. **`game_library.box_art_url`**: Full URL paths like
    `"/media/nintendo_snes/boxart/Super Mario World (USA).png"`. Set by
    `enrich_system_cache` -> `resolve_box_art`.
 
@@ -408,7 +408,7 @@ When a user deletes a ROM via the app's delete feature:
 
 1. The ROM file is removed from disk.
 2. `cache.invalidate_system(system)` clears L1 + L2 for that system
-   (cache.rs:975-988), which deletes the `rom_cache` row.
+   (cache.rs:975-988), which deletes the `game_library` row.
 3. The `game_metadata` row is NOT deleted (it stays orphaned in the DB).
 4. The thumbnail files on disk are NOT deleted.
 5. The `ImageIndex` is not invalidated (but will refresh on next access).
@@ -418,20 +418,20 @@ When a user deletes a ROM externally (scp, file manager):
 1. The ROM file is removed.
 2. On next cache invalidation (mtime change detected), the L3 scan produces a
    new ROM list that excludes the deleted ROM.
-3. `save_system_roms` (metadata_db.rs:768-835) does `DELETE FROM rom_cache WHERE
+3. `save_system_entries` (metadata_db.rs:768-835) does `DELETE FROM game_library WHERE
    system = ?1` followed by re-insert of all current ROMs. This effectively
-   removes the deleted ROM's `rom_cache` entry.
+   removes the deleted ROM's `game_library` entry.
 4. But again, `game_metadata` rows and thumbnail files remain orphaned.
 
 #### How `update_image_paths_from_disk` works (import.rs:736-894)
 
 This function scans the media directory and fuzzy-matches thumbnail filenames
-against `visible_filenames` (ROMs in `rom_cache`). It updates
+against `visible_filenames` (ROMs in `game_library`). It updates
 `game_metadata.box_art_path` and `game_metadata.screenshot_path`. It does NOT
 delete orphaned files -- it only writes paths into the DB.
 
 The function `visible_filenames` (metadata_db.rs:1039-1048) queries
-`rom_cache` for filenames. If a ROM has been removed from `rom_cache`, its
+`game_library` for filenames. If a ROM has been removed from `game_library`, its
 thumbnail won't be matched by `update_image_paths_from_disk`, but the file
 remains on disk.
 
@@ -479,7 +479,7 @@ After a cache rescan detects that ROMs have been removed from a system (the
 new ROM count is less than the previous count), run an orphan sweep for that
 system.
 
-**File**: `replay-control-app/src/api/cache.rs` (new method on `RomCache`)
+**File**: `replay-control-app/src/api/cache.rs` (new method on `GameLibrary`)
 **File**: `replay-control-core/src/metadata/thumbnails.rs` (new function)
 
 ##### Step 1: Identify orphaned thumbnails (core crate)
@@ -541,12 +541,12 @@ pub fn delete_orphaned_metadata(&mut self, system: &str) -> Result<usize>
 DELETE FROM game_metadata
 WHERE system = ?1
   AND rom_filename NOT IN (
-    SELECT rom_filename FROM rom_cache WHERE system = ?1
+    SELECT rom_filename FROM game_library WHERE system = ?1
   )
 ```
 
-This deletes `game_metadata` rows for ROMs that no longer exist in `rom_cache`
-for a given system. Should be called after `save_system_roms` completes for a
+This deletes `game_metadata` rows for ROMs that no longer exist in `game_library`
+for a given system. Should be called after `save_system_entries` completes for a
 stale system.
 
 **Estimated lines**: ~15 lines.
@@ -711,11 +711,11 @@ Implemented in commit `5bec806`:
 | File | Role |
 |------|------|
 | `replay-control-app/src/api/background.rs` | Startup verification, periodic watcher, auto-import |
-| `replay-control-app/src/api/cache.rs` | RomCache, get_roms, enrich_system_cache, auto_match_metadata, resolve_box_art, queue_on_demand_download |
+| `replay-control-app/src/api/cache.rs` | GameLibrary, get_roms, enrich_system_cache, auto_match_metadata, resolve_box_art, queue_on_demand_download |
 | `replay-control-app/src/api/import.rs` | Metadata import, thumbnail update pipeline, update_image_paths_from_disk |
 | `replay-control-app/src/api/mod.rs` | AppState, refresh_storage |
 | `replay-control-core/src/platform/storage.rs` | StorageLocation, StorageKind (Sd/Usb/Nvme/Nfs), used for watcher vs poll branching |
-| `replay-control-core/src/metadata/metadata_db.rs` | game_metadata table, rom_cache table, save_system_roms, bulk_update_image_paths |
+| `replay-control-core/src/metadata/metadata_db.rs` | game_metadata table, game_library table, save_system_entries, bulk_update_image_paths |
 | `replay-control-core/src/metadata/thumbnails.rs` | Thumbnail naming, fuzzy matching (base_title, strip_version, strip_tags), media_dir_size, clear_media |
 | `replay-control-core/src/metadata/thumbnail_manifest.rs` | Manifest index, on-demand download, save_thumbnail |
 | `replay-control-core/src/metadata/launchbox.rs` | LaunchBox XML import, build_rom_index, normalize_title |

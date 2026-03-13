@@ -265,7 +265,7 @@ Uses the existing `ReplayConfig` parser for the `key = "value"` format.
 
 ### Cache Invalidation
 
-The `RomCache` caches sorted ROM lists. When the region preference changes, the cached sort order becomes stale. Two options:
+The `GameLibrary` caches sorted ROM lists. When the region preference changes, the cached sort order becomes stale. Two options:
 
 1. **Invalidate on change**: When `set_region_preference` is called, also call `self.cache.invalidate()`. Simple and correct. The next request triggers a re-scan and re-sort.
 
@@ -305,7 +305,7 @@ pub fn list_roms(
 
 Option B: Keep `list_roms()` unchanged and sort in the app layer.
 
-**Recommendation**: Option A. The core layer already sorts, so it should sort correctly. The app layer passes the preference down. The `RomCache::get_roms()` method would also need the parameter, which naturally invalidates the cache when the preference changes (since the cache key could include the preference, or the cache is simply cleared on preference change).
+**Recommendation**: Option A. The core layer already sorts, so it should sort correctly. The app layer passes the preference down. The `GameLibrary::get_roms()` method would also need the parameter, which naturally invalidates the cache when the preference changes (since the cache key could include the preference, or the cache is simply cleared on preference change).
 
 However, adding a parameter to `list_roms()` means the core crate needs to know about `RegionPreference`. Since `RegionPreference` is closely related to `RegionPriority` (both live in the same domain), defining it in the core crate alongside `RegionPriority` in `rom_tags.rs` is natural.
 
@@ -471,7 +471,7 @@ If two users access the app from different browsers with different region prefer
 | Add `ReplayConfig::region_preference()` accessor | `replay-control-core/src/config.rs` | 5 min |
 | Add `AppState::region_preference()` method | `replay-control-app/src/api/mod.rs` | 5 min |
 | Update `list_roms()` to accept `RegionPreference` | `replay-control-core/src/roms.rs` | 10 min |
-| Update `RomCache::get_roms()` to pass preference | `replay-control-app/src/api/mod.rs` | 10 min |
+| Update `GameLibrary::get_roms()` to pass preference | `replay-control-app/src/api/mod.rs` | 10 min |
 | Update `search_score()` to accept `RegionPreference` | `replay-control-app/src/server_fns.rs` | 10 min |
 | Update `get_roms_page()` to read preference | `replay-control-app/src/server_fns.rs` | 5 min |
 | Unit tests for `sort_key()` with all preferences | `replay-control-core/src/rom_tags.rs` | 15 min |
@@ -516,7 +516,7 @@ If two users access the app from different browsers with different region prefer
 | `replay-control-core/src/rom_tags.rs` | Added `RegionPreference` enum, `RegionPriority::sort_key()` method, `from_str_value()`, `as_str()` | Done |
 | `replay-control-core/src/settings.rs` | New file: `read_region_preference()`, `write_region_preference()` | Done |
 | `replay-control-core/src/roms.rs` | Added `RegionPreference` parameter to `list_roms()` | Done |
-| `replay-control-app/src/api/mod.rs` | Added `region_preference()` to `AppState`, updated `RomCache::get_roms()` | Done |
+| `replay-control-app/src/api/mod.rs` | Added `region_preference()` to `AppState`, updated `GameLibrary::get_roms()` | Done |
 | `replay-control-app/src/server_fns/search.rs` | Updated `search_score()` to accept `RegionPreference` | Done |
 | `replay-control-app/src/server_fns/settings.rs` | Added `get_region_preference`, `save_region_preference` | Done |
 | `replay-control-app/src/main.rs` | Registered new server functions | Done |

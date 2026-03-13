@@ -34,7 +34,7 @@ WITH deduped AS (
         PARTITION BY system, base_title
         ORDER BY CASE WHEN region = ?pref THEN 0 WHEN region = 'world' THEN 1 ELSE 2 END
     ) AS rn
-    FROM rom_cache
+    FROM game_library
     WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0
 )
 SELECT ... FROM deduped WHERE rn = 1
@@ -273,7 +273,7 @@ This is the biggest bang-for-buck change -- it fixes 184 of the 450 duplicate-la
 
 #### 2. Add `is_special` flag for non-standard ROMs
 
-Add a single boolean column `is_special INTEGER NOT NULL DEFAULT 0` to the `rom_cache` table. This catches **all ROM categories that should not appear in normal recommendations or the regional variants chip row**:
+Add a single boolean column `is_special INTEGER NOT NULL DEFAULT 0` to the `game_library` table. This catches **all ROM categories that should not appear in normal recommendations or the regional variants chip row**:
 
 | Category | Tag patterns detected | `classify()` tier today | Count in romset |
 |---|---|---|---|
@@ -319,9 +319,9 @@ The original Step 4 proposed individual columns for homebrew/unlicensed/prerelea
 
 ## Implementation sketch
 
-### Step 1: Store display region in rom_cache
+### Step 1: Store display region in game_library
 
-In `cache.rs` where `CachedRom` is built, change the region mapping:
+In `cache.rs` where `GameEntry` is built, change the region mapping:
 
 ```
 // Instead of mapping to priority bucket names:
@@ -332,7 +332,7 @@ In `cache.rs` where `CachedRom` is built, change the region mapping:
 
 The `extract_tags()` function already normalizes regions to display strings. Extract just the region part (first component before any comma in the tags output, or the region from the paren tags).
 
-Add a `region_priority` field to `CachedRom` (u8 or string) for use in dedup ORDER BY, keeping `region` as the display string.
+Add a `region_priority` field to `GameEntry` (u8 or string) for use in dedup ORDER BY, keeping `region` as the display string.
 
 Update dedup CTEs to use `region_priority` instead of `region` for the CASE expression.
 
@@ -422,7 +422,7 @@ Where `has_patch_tag()` is a small helper (or inline check) that scans for `(Fas
 Schema change:
 
 ```sql
-CREATE TABLE IF NOT EXISTS rom_cache (
+CREATE TABLE IF NOT EXISTS game_library (
     ...
     is_translation INTEGER NOT NULL DEFAULT 0,
     is_hack INTEGER NOT NULL DEFAULT 0,
@@ -460,16 +460,16 @@ WHERE system = ?1 AND base_title != '' AND is_translation = 0 AND is_hack = 0 AN
 WHERE system = ?1 AND base_title != '' AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND ...
 ```
 
-Add `is_special` to the `CachedRom` struct and `row_to_cached_rom` mapper. Update SELECT column lists in all queries that read from `rom_cache`.
+Add `is_special` to the `GameEntry` struct and `row_to_game_entry` mapper. Update SELECT column lists in all queries that read from `game_library`.
 
 #### 2e. Migration
 
-The `rom_cache` table is rebuilt from scratch on each cache scan (not a persistent user database), so there is no migration concern. Adding the column to the CREATE TABLE statement and the INSERT logic is sufficient. Existing caches will be rebuilt on next scan.
+The `game_library` table is rebuilt from scratch on each cache scan (not a persistent user database), so there is no migration concern. Adding the column to the CREATE TABLE statement and the INSERT logic is sufficient. Existing caches will be rebuilt on next scan.
 
 #### 2f. Effort estimate
 
 - `rom_tags.rs`: ~15 lines (add FastROM/60Hz detection to `classify()`, move `sample` from noise to pre-release)
-- `cache.rs`: ~5 lines (compute `is_special`, add to `CachedRom` construction)
+- `cache.rs`: ~5 lines (compute `is_special`, add to `GameEntry` construction)
 - `metadata_db.rs`: ~20 lines (add column to schema, add field to struct/mapper, add filter to 6 queries)
 - Tests: ~20 lines (verify classify returns correct tiers for FastROM/60Hz/Sample, verify is_special derivation)
 - Total: ~60 lines, ~1-2 hours
@@ -478,7 +478,7 @@ The `rom_cache` table is rebuilt from scratch on each cache scan (not a persiste
 
 ### How the cover picker works
 
-The "Change Cover" feature on the game detail page uses `thumbnail_index` (the libretro-thumbnails manifest stored in SQLite) as its data source — NOT `rom_cache`. The function `find_boxart_variants()` in `thumbnail_manifest.rs` works as follows:
+The "Change Cover" feature on the game detail page uses `thumbnail_index` (the libretro-thumbnails manifest stored in SQLite) as its data source — NOT `game_library`. The function `find_boxart_variants()` in `thumbnail_manifest.rs` works as follows:
 
 1. Strips the ROM filename to its base title using `strip_tags()` + `thumbnail_filename()` (lowercased, no region/tag info)
 2. Queries the `thumbnail_index` table for all `Named_Boxarts` entries whose stripped filename matches

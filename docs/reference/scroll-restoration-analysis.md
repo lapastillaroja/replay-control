@@ -361,11 +361,11 @@ use leptos::prelude::*;
 
 #[derive(Clone, Default)]
 pub struct PageCache {
-    pub rom_lists: RwSignal<HashMap<String, CachedRomList>>,
+    pub rom_lists: RwSignal<HashMap<String, GameEntryList>>,
 }
 
 #[derive(Clone)]
-pub struct CachedRomList {
+pub struct GameEntryList {
     pub first_page_roms: Vec<RomEntry>,
     pub extra_roms: Vec<RomEntry>,
     pub total: usize,

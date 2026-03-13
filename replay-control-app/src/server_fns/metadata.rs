@@ -74,7 +74,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         _ => (Vec::new(), Vec::new()),
     };
 
-    // Get total games per system from ROM cache.
+    // Get total games per system from game library.
     let storage = state.storage();
     let systems = state.cache.get_systems(&storage);
 
@@ -146,5 +146,16 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
             "A metadata operation is already running",
         ));
     }
+    Ok(())
+}
+
+/// Rebuild the game library: clears game_library tables and triggers a full
+/// rescan + enrichment from disk. Use when baked-in data changes or to force
+/// a fresh scan of all systems.
+#[server(prefix = "/sfn")]
+pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    state.cache.invalidate();
+    state.spawn_cache_enrichment();
     Ok(())
 }

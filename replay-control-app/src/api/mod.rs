@@ -7,7 +7,7 @@ pub mod roms;
 pub mod system_info;
 pub mod upload;
 
-pub use cache::RomCache;
+pub use cache::GameLibrary;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,7 +21,7 @@ pub struct AppState {
     pub storage: Arc<std::sync::RwLock<StorageLocation>>,
     pub config: Arc<std::sync::RwLock<ReplayConfig>>,
     pub config_path: Option<PathBuf>,
-    pub cache: Arc<RomCache>,
+    pub cache: Arc<GameLibrary>,
     /// When set, --storage-path was given on the CLI and auto-detection is skipped.
     pub storage_path_override: Option<PathBuf>,
     /// When Some, the app uses this skin index instead of reading from replay.cfg.
@@ -104,7 +104,7 @@ impl AppState {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
-            cache: Arc::new(RomCache::new(metadata_db.clone())),
+            cache: Arc::new(GameLibrary::new(metadata_db.clone())),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(None)),
             metadata_db,

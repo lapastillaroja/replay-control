@@ -2,7 +2,7 @@
 
 ## Problem
 
-The "Regional Variants" section on the game detail page groups ROMs by `base_title` in the `rom_cache` table. Since `base_title` is computed by stripping parenthesized/bracketed tags and lowercasing (via `thumbnails::base_title()`), **translations end up with the same `base_title` as the original**:
+The "Regional Variants" section on the game detail page groups ROMs by `base_title` in the `game_library` table. Since `base_title` is computed by stripping parenthesized/bracketed tags and lowercasing (via `thumbnails::base_title()`), **translations end up with the same `base_title` as the original**:
 
 ```
 Super Mario World (USA).smc                    -> base_title: "super mario world"
@@ -35,7 +35,7 @@ This means the regional variants chips for Super Mario World currently show all 
 - `sega_sms`: 402 (in `02 Translations/`)
 - `sega_gg`: 149 (in `02 Translations/`)
 
-These are in numbered subfolders (not `_`-prefixed), so they ARE scanned into `rom_cache`.
+These are in numbered subfolders (not `_`-prefixed), so they ARE scanned into `game_library`.
 
 ### No-Intro DATs do NOT contain translations
 
@@ -55,7 +55,7 @@ The `PARTITION BY system, base_title` dedup used in `random_cached_roms_diverse(
 
 Translations should NOT appear in the regional variants chips. They are fan-modified copies of a specific region's ROM, not official regional releases.
 
-**How:** Add an `is_translation INTEGER NOT NULL DEFAULT 0` column to `rom_cache`. Filter it out in the `regional_variants()` query.
+**How:** Add an `is_translation INTEGER NOT NULL DEFAULT 0` column to `game_library`. Filter it out in the `regional_variants()` query.
 
 ### 2. Add a "Translations" section on the game detail page
 
@@ -73,10 +73,10 @@ The `PARTITION BY system, base_title` dedup windows should also exclude translat
 
 ## Data Model Changes
 
-### New column on `rom_cache`
+### New column on `game_library`
 
 ```sql
-ALTER TABLE rom_cache ADD COLUMN is_translation INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE game_library ADD COLUMN is_translation INTEGER NOT NULL DEFAULT 0;
 ```
 
 Alternative considered: a `translation_lang TEXT` column storing the normalized language code ("ES", "PT-BR", "EN", etc.) -- this would enable richer display ("ES Translation", "EN Translation") in the chips. However, the display name already contains this info via `extract_tags()` (e.g., `"Super Mario World (USA, ES Translation)"`), so a boolean is sufficient for filtering. The translation language can be extracted at display time from the existing `display_name` or `rom_filename`.
@@ -85,28 +85,28 @@ Alternative considered: a `translation_lang TEXT` column storing the normalized 
 
 ### Population
 
-In `cache.rs` where `CachedRom` is built, the `classify()` function already returns `RomTier::Translation` for translations. Use this:
+In `cache.rs` where `GameEntry` is built, the `classify()` function already returns `RomTier::Translation` for translations. Use this:
 
 ```rust
 let (tier, region_priority) = replay_control_core::rom_tags::classify(rom_filename);
 let is_translation = tier == RomTier::Translation;
 ```
 
-### CachedRom struct
+### GameEntry struct
 
-Add `is_translation: bool` to `CachedRom` in `metadata_db.rs`. Add it to the INSERT/SELECT column lists (there are ~10 queries to update).
+Add `is_translation: bool` to `GameEntry` in `metadata_db.rs`. Add it to the INSERT/SELECT column lists (there are ~10 queries to update).
 
 ## SQL Query Changes
 
 ### Regional Variants (filter out translations)
 
 ```sql
-SELECT rom_filename, region FROM rom_cache
+SELECT rom_filename, region FROM game_library
 WHERE system = ?1
   AND base_title != ''
   AND is_translation = 0
   AND base_title = (
-      SELECT base_title FROM rom_cache
+      SELECT base_title FROM game_library
       WHERE system = ?1 AND rom_filename = ?2
   )
 ORDER BY
@@ -122,12 +122,12 @@ ORDER BY
 ### New: Translations of the same game
 
 ```sql
-SELECT rom_filename, display_name FROM rom_cache
+SELECT rom_filename, display_name FROM game_library
 WHERE system = ?1
   AND base_title != ''
   AND is_translation = 1
   AND base_title = (
-      SELECT base_title FROM rom_cache
+      SELECT base_title FROM game_library
       WHERE system = ?1 AND rom_filename = ?2
   )
 ORDER BY display_name;
@@ -135,7 +135,7 @@ ORDER BY display_name;
 
 ### Home page dedup queries (all `PARTITION BY` queries)
 
-Add `AND is_translation = 0` to the inner `FROM rom_cache WHERE ...` clause in each dedup CTE. This affects:
+Add `AND is_translation = 0` to the inner `FROM game_library WHERE ...` clause in each dedup CTE. This affects:
 - `random_cached_roms_diverse()`
 - `top_rated_cached_roms()`
 - `system_roms_excluding()` (both branches)
@@ -237,13 +237,13 @@ Add to all `.ftl` files:
 | **Multiple translations to the same language** (e.g., two Spanish translations by different hackers) | Both appear as chips. The label may be the same ("ES Translation"); the filenames differ. Could add the hacker credit to distinguish, but the filename tooltip on hover is probably sufficient for now. |
 | **Translation that is also a hack** (e.g., `(Hack) (Translated En)`) | `classify()` returns `RomTier::Hack`, not `Translation`, because hack check comes first. This ROM would NOT get `is_translation = true`. This is correct -- it's a hack first. We could refine this later if needed, but hacks are already excluded from dedup. |
 | **FastROM + translation** (e.g., `Actraiser (Japan) (FastRom) (Translated En).sfc`) | `classify()` returns `Translation` because FastROM is not a tier modifier (it's a patch tag). `is_translation` = true. The chip label would be "EN Translation, FastROM" from `extract_tags`. |
-| **rom_cache migration** | Use `ALTER TABLE ADD COLUMN ... DEFAULT 0` so existing rows get `is_translation = 0`. On next cache refresh, the column is populated correctly. No forced cache rebuild needed. |
+| **game_library migration** | Use `ALTER TABLE ADD COLUMN ... DEFAULT 0` so existing rows get `is_translation = 0`. On next cache refresh, the column is populated correctly. No forced cache rebuild needed. |
 
 ## Files to Modify
 
 | File | Change |
 |------|--------|
-| `replay-control-core/src/metadata/metadata_db.rs` | Add `is_translation` to `CachedRom`, schema, INSERT/SELECT, all dedup CTEs. Add `translations()` method. Modify `regional_variants()` to filter `is_translation = 0`. |
+| `replay-control-core/src/metadata/metadata_db.rs` | Add `is_translation` to `GameEntry`, schema, INSERT/SELECT, all dedup CTEs. Add `translations()` method. Modify `regional_variants()` to filter `is_translation = 0`. |
 | `replay-control-app/src/api/cache.rs` | Populate `is_translation` from `classify()` tier during cache build. |
 | `replay-control-app/src/server_fns/related.rs` | Add `TranslationVariant` struct, extend `RelatedGamesData`, call `translations()` in `get_related_games`. |
 | `replay-control-app/src/server_fns/mod.rs` | Re-export `TranslationVariant`. |
@@ -256,7 +256,7 @@ Add to all `.ftl` files:
 
 ### Phase 1: Translations (current)
 
-1. Add `is_translation` column to schema + `CachedRom` struct
+1. Add `is_translation` column to schema + `GameEntry` struct
 2. Populate `is_translation` in cache build
 3. Filter translations from `regional_variants()` query
 4. Filter translations from dedup CTEs (home page queries)
@@ -274,7 +274,7 @@ Same pattern as translations, but for ROM hacks (e.g., `Super Mario World (USA) 
 
 **What to add:**
 
-1. **`is_hack INTEGER NOT NULL DEFAULT 0`** column on `rom_cache`. Populated from `rom_tags::classify()` returning `RomTier::Hack`.
+1. **`is_hack INTEGER NOT NULL DEFAULT 0`** column on `game_library`. Populated from `rom_tags::classify()` returning `RomTier::Hack`.
 2. **Filter hacks from regional variants**: `AND is_hack = 0` in the `regional_variants()` query.
 3. **Filter hacks from home page dedup**: `AND is_hack = 0` in all `PARTITION BY` CTEs, alongside `is_translation = 0`.
 4. **Hide "Change Cover" on hack ROM detail pages**: same approach as translations — suppress `has_variants` when `is_hack` is true.
@@ -285,7 +285,7 @@ Same pattern as translations, but for ROM hacks (e.g., `Super Mario World (USA) 
    Hacks              (Hack, Hack v1.2 by Author, ...)
    More Like This     (genre-based scroll cards)
    ```
-6. **`hacks()` DB method**: query `rom_cache WHERE is_hack = 1 AND base_title = (subquery)`, similar to `translations()`.
+6. **`hacks()` DB method**: query `game_library WHERE is_hack = 1 AND base_title = (subquery)`, similar to `translations()`.
 7. **i18n key**: `game_detail.hacks` => "Hacks"
 
 **Edge cases:**

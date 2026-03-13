@@ -2,7 +2,7 @@
 
 ## Current Architecture
 
-### What's cached (in-memory `RomCache`)
+### What's cached (in-memory `GameLibrary`)
 | Data | Key | Invalidation | Notes |
 |------|-----|-------------|-------|
 | System list | global | mtime + 5min TTL | `scan_systems()` — reads all 46 system dirs |
@@ -92,7 +92,7 @@ Already fast. The mtime check (single `stat()`) is working well.
 
 **Problem**: `resolve_box_art_url()` does per-ROM I/O (DB query + stat) on every page load.
 
-**Solution**: Add a per-system image filename cache to `RomCache`:
+**Solution**: Add a per-system image filename cache to `GameLibrary`:
 ```
 HashMap<String, HashMap<String, String>>  // system → (rom_filename → box_art_url)
 ```
@@ -110,7 +110,7 @@ HashMap<String, HashMap<String, String>>  // system → (rom_filename → box_ar
 
 **Problem**: `list_recents()` scans `_recent/` directory every home page load.
 
-**Solution**: Add recents to `RomCache` with mtime-based invalidation (same pattern as existing caches).
+**Solution**: Add recents to `GameLibrary` with mtime-based invalidation (same pattern as existing caches).
 
 **Impact**: Saves ~8ms NFS / ~5ms USB per home page load. Small but free.
 
@@ -118,7 +118,7 @@ HashMap<String, HashMap<String, String>>  // system → (rom_filename → box_ar
 
 **Problem**: `get_info()` calls `list_favorites()` directly (full filesystem walk) instead of using the cached favorites.
 
-**Solution**: Add `get_favorites_count()` to `RomCache` that returns the total count from the cached data.
+**Solution**: Add `get_favorites_count()` to `GameLibrary` that returns the total count from the cached data.
 
 **Impact**: Saves ~41ms NFS / ~10ms USB per home page load.
 
@@ -279,10 +279,10 @@ CREATE TABLE image_cache (
 
 ### Design
 
-Extend `metadata.db` with a `rom_cache` table:
+Extend `metadata.db` with a `game_library` table:
 
 ```sql
-CREATE TABLE rom_cache (
+CREATE TABLE game_library (
     system TEXT NOT NULL,
     rom_filename TEXT NOT NULL,
     rom_path TEXT NOT NULL,
@@ -298,7 +298,7 @@ CREATE TABLE rom_cache (
 );
 
 -- For "last scanned" tracking per system
-CREATE TABLE rom_cache_meta (
+CREATE TABLE game_library_meta (
     system TEXT PRIMARY KEY,
     dir_mtime INTEGER,        -- filesystem mtime of system dir
     scanned_at INTEGER,       -- when we last scanned
@@ -310,12 +310,12 @@ CREATE TABLE rom_cache_meta (
 ### Flow
 
 **On request for ROM list:**
-1. Check `rom_cache_meta` for system — compare `dir_mtime` with current filesystem mtime
-2. If fresh: `SELECT * FROM rom_cache WHERE system = ? ORDER BY display_name` → return directly
-3. If stale: scan filesystem, update `rom_cache` + `rom_cache_meta`, return
+1. Check `game_library_meta` for system — compare `dir_mtime` with current filesystem mtime
+2. If fresh: `SELECT * FROM game_library WHERE system = ? ORDER BY display_name` → return directly
+3. If stale: scan filesystem, update `game_library` + `game_library_meta`, return
 
 **On server startup:**
-1. Load `rom_cache_meta` for all systems → in-memory summary (system list + counts)
+1. Load `game_library_meta` for all systems → in-memory summary (system list + counts)
 2. No filesystem scanning needed for initial page load
 3. Background task: verify mtimes, re-scan stale systems
 

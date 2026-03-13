@@ -125,7 +125,7 @@ In the server function `add_favorite` and `remove_favorite`:
 ```rust
 state.cache.invalidate_favorites();
 ```
-There is a dedicated `invalidate_favorites()` method on `RomCache`.
+There is a dedicated `invalidate_favorites()` method on `GameLibrary`.
 
 ## Proposed Changes
 

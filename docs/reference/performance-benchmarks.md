@@ -98,7 +98,7 @@ The arcade games page improvement (4200ms → 5ms) is the same effect at scale: 
 
 ### Changes
 
-- **L2 cache**: `rom_cache` + `rom_cache_meta` SQLite tables persist ROM scan results across server restarts
+- **L2 cache**: `game_library` + `game_library_meta` SQLite tables persist ROM scan results across server restarts
 - **Three-layer architecture**: L1 (in-memory) → L2 (SQLite) → L3 (filesystem scan) with write-through
 - **mtime-based invalidation**: Single `stat()` validates L2 freshness; background startup verification
 - **Nolock-first DB open**: Try `nolock=1` URI first (instant), fall back to WAL mode — eliminates 5s timeout on NFS
@@ -142,12 +142,12 @@ The arcade games page improvement (4200ms → 5ms) is the same effect at scale: 
 ### Changes
 
 - **SSR recommendations**: All 5 sections render server-side via `Resource` + `Transition` — visible on first paint
-- **SQL-powered queries**: Random picks, top-rated, genre counts, multiplayer count — all from `rom_cache` via SQL
-- **L2 warmup on startup**: When rom_cache is empty, background task pre-populates all systems + enriches box art URLs and ratings
-- **Box art + rating enrichment**: Image index resolution + LaunchBox ratings written to rom_cache during warmup
+- **SQL-powered queries**: Random picks, top-rated, genre counts, multiplayer count — all from `game_library` via SQL
+- **L2 warmup on startup**: When game_library is empty, background task pre-populates all systems + enriches box art URLs and ratings
+- **Box art + rating enrichment**: Image index resolution + LaunchBox ratings written to game_library during warmup
 - **Five recommendation sections**: Random picks, favorites-based ("Because you love…"), top-rated, discover (genre/multiplayer pills)
-- **Race condition fix**: LaunchBox auto-import no longer clears rom_cache (was wiping warmup data)
-- **UNIQUE constraint fix**: `INSERT OR IGNORE` in save_system_roms handles duplicate ROM entries from M3U dedup
+- **Race condition fix**: LaunchBox auto-import no longer clears game_library (was wiping warmup data)
+- **UNIQUE constraint fix**: `INSERT OR IGNORE` in save_system_entries handles duplicate ROM entries from M3U dedup
 
 ### L2 Warmup Times (ms, from fresh DB)
 
@@ -197,7 +197,7 @@ Note: NFS cold-start dominated by NFS dir reads for recents box art. Pi cold-sta
 
 - **Full SSR recommendations**: All 5 sections visible in initial HTML — no client-side loading needed
 - **Pi warm TTFB: 37ms** — excellent for single-user retro gaming device
-- **Recommendation endpoint: 0.3-0.5ms** — SQL queries on enriched rom_cache are near-instant
+- **Recommendation endpoint: 0.3-0.5ms** — SQL queries on enriched game_library are near-instant
 - **Load test throughput lower than without recs** (81 vs 323 req/s local): expected, since SSR now renders 20+ game cards with box art. Irrelevant for single-user Pi use case
 - **L2 warmup: 1.9s on Pi** — pre-populates 27K ROMs with box art and ratings from fresh DB
 - **Enrichment coverage**: 13,483 ROMs with box art, 12,012 with ratings (from 27K total)
@@ -218,7 +218,7 @@ Note: NFS cold-start dominated by NFS dir reads for recents box art. Pi cold-sta
 ### Architecture
 
 ```
-Request → L1 (in-memory HashMap) → L2 (SQLite rom_cache) → L3 (filesystem scan)
+Request → L1 (in-memory HashMap) → L2 (SQLite game_library) → L3 (filesystem scan)
                                      ↑ write-through         ↑ write-through
 ```
 
@@ -234,12 +234,12 @@ Request → L1 (in-memory HashMap) → L2 (SQLite rom_cache) → L3 (filesystem 
 | Network | Pre-compressed `.wasm.gz`, `CompressionLayer` for dynamic gzip | `main.rs` |
 | Cache L1 | In-memory favorites, recents, systems, ROMs with mtime invalidation | `cache.rs` |
 | Cache L1 | Per-system image index (HashMap) for O(1) box art lookups | `cache.rs` |
-| Cache L2 | SQLite `rom_cache` + `rom_cache_meta` with nolock-first NFS support | `metadata_db.rs` |
+| Cache L2 | SQLite `game_library` + `game_library_meta` with nolock-first NFS support | `metadata_db.rs` |
 | Cache L2 | Background warmup + box art/rating enrichment on startup | `background.rs` |
 | Render | `content-visibility: auto` on `.rom-item` | CSS |
 | Render | Explicit `width`/`height` on thumbnail `<img>` | `rom_list.rs` |
 | SSR | Recommendations rendered server-side via `Transition` | `home.rs` |
-| SQL | All recommendation queries from enriched `rom_cache` — no filesystem | `recommendations.rs` |
+| SQL | All recommendation queries from enriched `game_library` — no filesystem | `recommendations.rs` |
 
 ### Key Numbers
 

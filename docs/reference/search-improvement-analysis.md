@@ -30,7 +30,7 @@ This happens because search results are filtered from an alphabetically sorted l
 
 2. **Alphabetical sort** (`roms.rs` line 82-86): ROMs are sorted by `display_name` (or `rom_filename` if no display name). This is a pure alphabetical sort with no awareness of ROM type.
 
-3. **Caching** (`replay-control-app/src/api/mod.rs` -- `RomCache`): The sorted list is cached for 30 seconds to avoid repeated filesystem scans.
+3. **Caching** (`replay-control-app/src/api/mod.rs` -- `GameLibrary`): The sorted list is cached for 30 seconds to avoid repeated filesystem scans.
 
 4. **Search scoring** (`replay-control-app/src/server_fns/search.rs` -- `search_score()`): A multi-tier scoring function that assigns a relevance score based on match quality (exact > prefix > word-boundary > substring > filename-only > word-level), with bonuses for short names and preferred region, and penalties for hacks/translations/pre-release ROMs.
 
@@ -372,7 +372,7 @@ Filters are applied before search scoring on the server side for efficiency.
 - Scoring adds O(n * m) where n = ROMs in system and m = query length -- still fast for ~10K ROMs
 - The tiered sort is O(n log n) same as current sort, just with a different comparator
 - No additional I/O needed -- everything is derived from filenames already in memory
-- The cache (`RomCache`) continues to work since the sorted order is stable
+- The cache (`GameLibrary`) continues to work since the sorted order is stable
 
 ---
 
@@ -906,9 +906,9 @@ Use `lookup_ratings()` with all ROM filenames in the system, or add a new `Metad
 
 Cost: one extra DB query per `get_roms_page()` call when the rating filter is active. The HashMap stays in memory for the duration of the request (not cached across requests).
 
-**Option B: Cache ratings in `RomCache`**
+**Option B: Cache ratings in `GameLibrary`**
 
-Extend the existing `RomCache` (which caches ROM lists for 30 seconds) to also cache ratings per system. This amortizes the DB cost across multiple requests but adds memory usage and cache invalidation complexity.
+Extend the existing `GameLibrary` (which caches ROM lists for 30 seconds) to also cache ratings per system. This amortizes the DB cost across multiple requests but adds memory usage and cache invalidation complexity.
 
 **Recommendation**: Option A for simplicity. A single `SELECT system, rom_filename, rating FROM game_metadata WHERE system = ?1 AND rating IS NOT NULL` query is well within acceptable latency for a request-scoped lookup. Only execute this query when a rating filter or rating sort is actually requested.
 
@@ -973,5 +973,5 @@ Rating filter/sort should be in the same filter panel as existing filters (hide 
 2. **Add `sort_by: Rating`** option to `get_roms_page()` for non-search browsing. Unrated games sort last.
 3. **Do not modify `search_score()`**. Ratings should not influence search relevance scoring. Keep the function pure and DB-free.
 4. **Do not implement search modifiers** ("top rated", "best") -- use explicit UI controls instead.
-5. **Use request-scoped batch lookup** (Option A) rather than caching ratings in `RomCache`.
+5. **Use request-scoped batch lookup** (Option A) rather than caching ratings in `GameLibrary`.
 6. **Handle unrated games explicitly** in the UI with counts, messages, and an "include unrated" toggle.

@@ -148,6 +148,33 @@
     margin-top: 8px;
 }
 
+/* ── Advanced Toggle ──────────────────────────────────────────── */
+
+.advanced-toggle {
+    margin-top: 16px;
+}
+
+.advanced-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px 0;
+    transition: color 0.2s;
+}
+
+.advanced-toggle-btn:hover {
+    color: var(--text);
+}
+
+.advanced-toggle-icon {
+    font-size: 0.7rem;
+}
+
 /* ── Progress Display ──────────────────────────────────────────── */
 
 .import-progress {

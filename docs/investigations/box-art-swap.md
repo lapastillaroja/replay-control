@@ -635,8 +635,8 @@ The ROM list page and the game detail page resolve box art through *different* c
 
 **Path A -- ROM list (batch resolution via `ImageIndex`):**
 - `get_roms_page()` in `replay-control-app/src/server_fns/roms.rs:165` calls `cache.resolve_box_art()`
-- `RomCache::resolve_box_art()` in `replay-control-app/src/api/cache.rs:747` checks: db_paths -> exact -> fuzzy -> version -> on-demand manifest
-- `RomCache::get_image_index()` in `cache.rs:608` builds the `ImageIndex` with `db_paths` from `game_metadata.box_art_path`
+- `GameLibrary::resolve_box_art()` in `replay-control-app/src/api/cache.rs:747` checks: db_paths -> exact -> fuzzy -> version -> on-demand manifest
+- `GameLibrary::get_image_index()` in `cache.rs:608` builds the `ImageIndex` with `db_paths` from `game_metadata.box_art_path`
 
 **Path B -- Game detail page (single-ROM resolution):**
 - `get_rom_detail()` in `roms.rs:228` calls `resolve_game_info()`
