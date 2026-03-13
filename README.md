@@ -182,11 +182,12 @@ See `docs/features.md` for detailed per-page tracking of implemented, planned, a
 Since everything runs on the Pi, the app is a single merged crate with SSR:
 
 1. **`replay-control-core`** (library crate)
-   - ROM file operations (list, upload, delete, rename, move, dedup)
-   - RePlayOS config parser (replay.cfg)
-   - System info (storage, Pi model, network)
-   - Metadata management (pluggable providers)
-   - Backup engine
+   - `platform/` — RePlayOS config parser (`replay.cfg`), storage detection, system definitions
+   - `game/` — Arcade DB (28K+ entries), non-arcade game DB (34K+ entries), ROM tag parsing, game references
+   - `library/` — ROM file operations (list, dedup, M3U), favorites, recently played
+   - `metadata/` — SQLite metadata cache, LaunchBox XML import, thumbnail matching, user data DB
+   - `capture/` — Screenshots, video URLs, video management
+   - `settings/` — App settings, skin/theme management
 
 2. **`replay-control-app`** (binary + library crate, dual-feature)
    - **`ssr` feature:** Axum web server with SSR rendering + REST API + server functions
@@ -204,6 +205,13 @@ replay/
 ├── Cargo.toml              (workspace: replay-control-core, replay-control-app)
 ├── build.sh                (builds WASM + server)
 ├── replay-control-core/            (library — business logic, native only)
+│   └── src/
+│       ├── platform/       (config, storage, systems)
+│       ├── game/           (arcade_db, game_db, game_ref, rom_tags)
+│       ├── library/        (favorites, recents, roms)
+│       ├── metadata/       (db_common, launchbox, metadata_db, thumbnail_manifest, thumbnails, user_data_db)
+│       ├── capture/        (screenshots, video_url, videos)
+│       └── settings/       (settings, skins)
 ├── replay-control-app/             (merged server + frontend)
 │   ├── Cargo.toml          (features: ssr, hydrate)
 │   ├── src/
