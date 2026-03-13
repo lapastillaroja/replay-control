@@ -134,8 +134,12 @@ impl RegionPriority {
     }
 }
 
-/// Classify a ROM filename into a tier and region priority for sorting.
-pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
+/// Classify a ROM filename into a tier, region priority, and special flag.
+///
+/// The `is_special` bool is `true` for ROMs that should be excluded from
+/// recommendations and the regional variants chip row: FastROM patches,
+/// 60Hz patches, unlicensed, homebrew, pre-release, and pirate ROMs.
+pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
     let stem = filename
         .rfind('.')
         .map(|i| &filename[..i])
@@ -149,9 +153,12 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
     let mut is_beta = false;
     let mut is_proto = false;
     let mut is_demo = false;
+    let mut is_sample = false;
     let mut is_unlicensed = false;
     let mut is_aftermarket = false;
     let mut is_pirate = false;
+    let mut has_fastrom = false;
+    let mut has_60hz = false;
 
     for tag in ParenTags::new(stem) {
         let trimmed = tag.trim();
@@ -193,6 +200,10 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
             is_demo = true;
             continue;
         }
+        if lower == "sample" {
+            is_sample = true;
+            continue;
+        }
         if lower == "unl" || lower == "unlicensed" {
             is_unlicensed = true;
             continue;
@@ -203,6 +214,14 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
         }
         if lower == "pirate" {
             is_pirate = true;
+            continue;
+        }
+        if lower == "fastrom" {
+            has_fastrom = true;
+            continue;
+        }
+        if lower == "60hz" {
+            has_60hz = true;
             continue;
         }
         if !is_noise_tag(&lower) && looks_like_region(trimmed) {
@@ -220,7 +239,7 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
 
     let tier = if is_pirate {
         RomTier::Pirate
-    } else if is_beta || is_proto || is_demo {
+    } else if is_beta || is_proto || is_demo || is_sample {
         RomTier::PreRelease
     } else if is_hack {
         RomTier::Hack
@@ -238,7 +257,15 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority) {
         RomTier::Original
     };
 
-    (tier, region_priority)
+    // is_special: non-standard ROMs that should be excluded from recommendations
+    // and the regional variants chip row.
+    let is_special = matches!(
+        tier,
+        RomTier::Unlicensed | RomTier::Homebrew | RomTier::PreRelease | RomTier::Pirate
+    ) || has_fastrom
+        || has_60hz;
+
+    (tier, region_priority, is_special)
 }
 
 /// Map a region tag to a sort priority.
@@ -294,6 +321,7 @@ pub fn extract_tags(filename: &str) -> String {
     let mut is_beta = false;
     let mut is_proto = false;
     let mut is_demo = false;
+    let mut is_sample = false;
     let mut is_unlicensed = false;
     let mut is_aftermarket = false;
     let mut is_pirate = false;
@@ -355,6 +383,10 @@ pub fn extract_tags(filename: &str) -> String {
         }
         if lower == "demo" || lower.starts_with("demo ") {
             is_demo = true;
+            continue;
+        }
+        if lower == "sample" {
+            is_sample = true;
             continue;
         }
         if lower == "unl" || lower == "unlicensed" {
@@ -436,6 +468,9 @@ pub fn extract_tags(filename: &str) -> String {
     }
     if is_demo {
         parts.push("Demo".to_string());
+    }
+    if is_sample {
+        parts.push("Sample".to_string());
     }
     if is_unlicensed {
         parts.push("Unlicensed".to_string());
@@ -728,7 +763,6 @@ fn is_noise_tag(lower: &str) -> bool {
             | "np" // Nintendo Power
             | "bs" // BS-X Satellaview
             | "program"
-            | "sample"
             | "ntsc"
             | "pal"
             | "sufami turbo"
@@ -1218,114 +1252,114 @@ mod tests {
 
     #[test]
     fn classify_original_usa() {
-        let (tier, region) = classify("Super Mario World (USA).sfc");
+        let (tier, region, _) = classify("Super Mario World (USA).sfc");
         assert_eq!(tier, RomTier::Original);
         assert_eq!(region, RegionPriority::Usa);
     }
 
     #[test]
     fn classify_original_world() {
-        let (tier, region) = classify("Tetris (World).nes");
+        let (tier, region, _) = classify("Tetris (World).nes");
         assert_eq!(tier, RomTier::Original);
         assert_eq!(region, RegionPriority::World);
     }
 
     #[test]
     fn classify_original_europe() {
-        let (tier, region) = classify("Game (Europe).sfc");
+        let (tier, region, _) = classify("Game (Europe).sfc");
         assert_eq!(tier, RomTier::Original);
         assert_eq!(region, RegionPriority::Europe);
     }
 
     #[test]
     fn classify_original_japan() {
-        let (tier, region) = classify("Game (Japan).sfc");
+        let (tier, region, _) = classify("Game (Japan).sfc");
         assert_eq!(tier, RomTier::Original);
         assert_eq!(region, RegionPriority::Japan);
     }
 
     #[test]
     fn classify_revision() {
-        let (tier, _) = classify("Game (USA) (Rev 1).sfc");
+        let (tier, _, _) = classify("Game (USA) (Rev 1).sfc");
         assert_eq!(tier, RomTier::Revision);
     }
 
     #[test]
     fn classify_region_variant() {
-        let (tier, region) = classify("Game (Spain).sfc");
+        let (tier, region, _) = classify("Game (Spain).sfc");
         assert_eq!(tier, RomTier::RegionVariant);
         assert_eq!(region, RegionPriority::Other);
     }
 
     #[test]
     fn classify_translation_paren() {
-        let (tier, _) = classify("Game (USA) (Traducido Es).sfc");
+        let (tier, _, _) = classify("Game (USA) (Traducido Es).sfc");
         assert_eq!(tier, RomTier::Translation);
     }
 
     #[test]
     fn classify_translation_bracket() {
-        let (tier, _) = classify("Game (UE) [T-Spa1.0v_Wave].md");
+        let (tier, _, _) = classify("Game (UE) [T-Spa1.0v_Wave].md");
         assert_eq!(tier, RomTier::Translation);
     }
 
     #[test]
     fn classify_hack() {
-        let (tier, _) = classify("Game (Hack).sfc");
+        let (tier, _, _) = classify("Game (Hack).sfc");
         assert_eq!(tier, RomTier::Hack);
     }
 
     #[test]
     fn classify_smw_hack() {
-        let (tier, _) = classify("Custom Level (SMW Hack).sfc");
+        let (tier, _, _) = classify("Custom Level (SMW Hack).sfc");
         assert_eq!(tier, RomTier::Hack);
     }
 
     #[test]
     fn classify_beta() {
-        let (tier, _) = classify("Game (Beta).sfc");
+        let (tier, _, _) = classify("Game (Beta).sfc");
         assert_eq!(tier, RomTier::PreRelease);
     }
 
     #[test]
     fn classify_proto() {
-        let (tier, _) = classify("Game (Proto).sfc");
+        let (tier, _, _) = classify("Game (Proto).sfc");
         assert_eq!(tier, RomTier::PreRelease);
     }
 
     #[test]
     fn classify_prototype() {
-        let (tier, _) = classify("Game (Prototype).sfc");
+        let (tier, _, _) = classify("Game (Prototype).sfc");
         assert_eq!(tier, RomTier::PreRelease);
     }
 
     #[test]
     fn classify_demo() {
-        let (tier, _) = classify("Game (Demo).sfc");
+        let (tier, _, _) = classify("Game (Demo).sfc");
         assert_eq!(tier, RomTier::PreRelease);
     }
 
     #[test]
     fn classify_unlicensed() {
-        let (tier, _) = classify("Game (Unl).sfc");
+        let (tier, _, _) = classify("Game (Unl).sfc");
         assert_eq!(tier, RomTier::Unlicensed);
     }
 
     #[test]
     fn classify_homebrew() {
-        let (tier, _) = classify("Game (Homebrew).sfc");
+        let (tier, _, _) = classify("Game (Homebrew).sfc");
         assert_eq!(tier, RomTier::Homebrew);
     }
 
     #[test]
     fn classify_aftermarket() {
-        let (tier, _) = classify("Game (Aftermarket).sfc");
+        let (tier, _, _) = classify("Game (Aftermarket).sfc");
         assert_eq!(tier, RomTier::Homebrew);
     }
 
     #[test]
     fn classify_pirate() {
-        let (tier, _) = classify("Game (Pirate).sfc");
+        let (tier, _, _) = classify("Game (Pirate).sfc");
         assert_eq!(tier, RomTier::Pirate);
     }
 
@@ -1334,19 +1368,19 @@ mod tests {
     #[test]
     fn classify_pirate_beats_hack() {
         // If both (Hack) and (Pirate) are present, Pirate tier should win
-        let (tier, _) = classify("Game (Hack) (Pirate).sfc");
+        let (tier, _, _) = classify("Game (Hack) (Pirate).sfc");
         assert_eq!(tier, RomTier::Pirate);
     }
 
     #[test]
     fn classify_prerelease_beats_hack() {
-        let (tier, _) = classify("Game (Hack) (Beta).sfc");
+        let (tier, _, _) = classify("Game (Hack) (Beta).sfc");
         assert_eq!(tier, RomTier::PreRelease);
     }
 
     #[test]
     fn classify_hack_beats_translation() {
-        let (tier, _) = classify("Game (Traducido Es) (Hack).sfc");
+        let (tier, _, _) = classify("Game (Traducido Es) (Hack).sfc");
         assert_eq!(tier, RomTier::Hack);
     }
 
@@ -1354,14 +1388,14 @@ mod tests {
 
     #[test]
     fn classify_no_tags() {
-        let (tier, region) = classify("Game.sfc");
+        let (tier, region, _) = classify("Game.sfc");
         assert_eq!(tier, RomTier::Original);
         assert_eq!(region, RegionPriority::Unknown);
     }
 
     #[test]
     fn classify_no_extension() {
-        let (tier, region) = classify("Game (USA)");
+        let (tier, region, _) = classify("Game (USA)");
         assert_eq!(tier, RomTier::Original);
         assert_eq!(region, RegionPriority::Usa);
     }
@@ -1370,25 +1404,25 @@ mod tests {
 
     #[test]
     fn classify_goodtools_u() {
-        let (_, region) = classify("Game (U).sfc");
+        let (_, region, _) = classify("Game (U).sfc");
         assert_eq!(region, RegionPriority::Usa);
     }
 
     #[test]
     fn classify_goodtools_e() {
-        let (_, region) = classify("Game (E).sfc");
+        let (_, region, _) = classify("Game (E).sfc");
         assert_eq!(region, RegionPriority::Europe);
     }
 
     #[test]
     fn classify_goodtools_j() {
-        let (_, region) = classify("Game (J).sfc");
+        let (_, region, _) = classify("Game (J).sfc");
         assert_eq!(region, RegionPriority::Japan);
     }
 
     #[test]
     fn classify_goodtools_w() {
-        let (_, region) = classify("Game (W).sfc");
+        let (_, region, _) = classify("Game (W).sfc");
         assert_eq!(region, RegionPriority::World);
     }
 
@@ -1543,5 +1577,78 @@ mod tests {
         ] {
             assert_eq!(RegionPreference::from_str_value(pref.as_str()), pref);
         }
+    }
+
+    // ==========================================
+    // is_special tests
+    // ==========================================
+
+    #[test]
+    fn classify_fastrom_is_special() {
+        let (tier, _, is_special) = classify("Game (USA) (FastRom).sfc");
+        assert_eq!(tier, RomTier::Original);
+        assert!(is_special, "FastROM patch should be is_special");
+    }
+
+    #[test]
+    fn classify_60hz_is_special() {
+        let (tier, _, is_special) = classify("Game (Europe) (60hz).sfc");
+        assert_eq!(tier, RomTier::Original);
+        assert!(is_special, "60Hz patch should be is_special");
+    }
+
+    #[test]
+    fn classify_sample_is_prerelease() {
+        let (tier, _, is_special) = classify("Game (Sample).sfc");
+        assert_eq!(tier, RomTier::PreRelease);
+        assert!(is_special, "Sample should be PreRelease and is_special");
+    }
+
+    #[test]
+    fn classify_unlicensed_is_special() {
+        let (_, _, is_special) = classify("Game (Unl).sfc");
+        assert!(is_special, "Unlicensed should be is_special");
+    }
+
+    #[test]
+    fn classify_homebrew_is_special() {
+        let (_, _, is_special) = classify("Game (Homebrew).sfc");
+        assert!(is_special, "Homebrew should be is_special");
+    }
+
+    #[test]
+    fn classify_prerelease_is_special() {
+        let (_, _, is_special) = classify("Game (Beta).sfc");
+        assert!(is_special, "PreRelease should be is_special");
+    }
+
+    #[test]
+    fn classify_pirate_is_special() {
+        let (_, _, is_special) = classify("Game (Pirate).sfc");
+        assert!(is_special, "Pirate should be is_special");
+    }
+
+    #[test]
+    fn classify_original_not_special() {
+        let (_, _, is_special) = classify("Super Mario World (USA).sfc");
+        assert!(!is_special, "Original should NOT be is_special");
+    }
+
+    #[test]
+    fn classify_revision_not_special() {
+        let (_, _, is_special) = classify("Game (USA) (Rev 1).sfc");
+        assert!(!is_special, "Revision should NOT be is_special");
+    }
+
+    #[test]
+    fn classify_translation_not_special() {
+        let (_, _, is_special) = classify("Game (USA) (Traducido Es).sfc");
+        assert!(!is_special, "Translation should NOT be is_special");
+    }
+
+    #[test]
+    fn classify_hack_not_special() {
+        let (_, _, is_special) = classify("Game (Hack).sfc");
+        assert!(!is_special, "Hack should NOT be is_special");
     }
 }

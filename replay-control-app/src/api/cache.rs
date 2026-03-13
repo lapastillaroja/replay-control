@@ -478,7 +478,8 @@ impl RomCache {
                     }
                 };
 
-                let (tier, region_priority) = replay_control_core::rom_tags::classify(rom_filename);
+                let (tier, region_priority, is_special) =
+                    replay_control_core::rom_tags::classify(rom_filename);
                 let is_translation = tier == replay_control_core::rom_tags::RomTier::Translation;
                 let is_hack = tier == replay_control_core::rom_tags::RomTier::Hack;
                 let region = match region_priority {
@@ -507,6 +508,7 @@ impl RomCache {
                     region: region.to_string(),
                     is_translation,
                     is_hack,
+                    is_special,
                 }
             })
             .collect();
@@ -1033,6 +1035,22 @@ impl RomCache {
             .and_then(|guard| guard.as_ref()?.system_ratings(system).ok())
             .unwrap_or_default();
 
+        // Load genres from game_metadata table (from LaunchBox import).
+        // Used to fill empty rom_cache.genre entries.
+        let lb_genres: HashMap<String, String> = state
+            .metadata_db()
+            .and_then(|guard| guard.as_ref()?.system_metadata_genres(system).ok())
+            .unwrap_or_default();
+
+        // Load current rom_cache genres from L2 to know which are already set.
+        let existing_genres: HashSet<String> = self
+            .with_db_read(&storage, |db| {
+                db.system_rom_genres(system)
+                    .map(|map| map.into_keys().collect())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
         // Auto-match new ROMs: build a normalized-title index from existing
         // game_metadata entries so ROMs added after the last import can inherit
         // metadata from entries that share the same normalized title.
@@ -1064,16 +1082,22 @@ impl RomCache {
             return;
         }
 
-        // Build enrichment tuples: (filename, box_art_url, rating)
-        let enrichments: Vec<(String, Option<String>, Option<f32>)> = rom_filenames
+        // Build enrichment tuples: (filename, box_art_url, genre, rating).
+        // Genre is only filled from LaunchBox when rom_cache has no genre.
+        let enrichments: Vec<(String, Option<String>, Option<String>, Option<f32>)> = rom_filenames
             .iter()
             .filter_map(|filename| {
                 let art = self.resolve_box_art(state, &index, system, filename);
                 let rating = all_ratings.get(filename).map(|&r| r as f32);
-                if art.is_none() && rating.is_none() {
+                let genre = if !existing_genres.contains(filename) {
+                    lb_genres.get(filename).cloned()
+                } else {
+                    None
+                };
+                if art.is_none() && rating.is_none() && genre.is_none() {
                     return None;
                 }
-                Some((filename.clone(), art, rating))
+                Some((filename.clone(), art, genre, rating))
             })
             .collect();
 
@@ -1082,10 +1106,10 @@ impl RomCache {
         }
 
         let count = enrichments.len();
-        // Use targeted SQL update for just box_art_url and rating.
+        // Use targeted SQL update for box_art_url, genre, and rating.
         self.with_db_mut(&storage, |db| {
-            if let Err(e) = db.update_box_art_and_rating(system, &enrichments) {
-                tracing::warn!("Box art enrichment failed for {system}: {e}");
+            if let Err(e) = db.update_box_art_genre_rating(system, &enrichments) {
+                tracing::warn!("Enrichment failed for {system}: {e}");
             }
         });
 
@@ -1094,11 +1118,13 @@ impl RomCache {
             && let Some(entry) = guard.get_mut(system)
         {
             for rom in &mut entry.data {
-                for (filename, art, rating) in &enrichments {
+                for (filename, art, _genre, rating) in &enrichments {
                     if rom.game.rom_filename == *filename {
                         if art.is_some() {
                             rom.box_art_url = art.clone();
                         }
+                        // RomEntry doesn't carry genre — L1 genre is
+                        // served via lookup_genre() which reads rom_cache.
                         if let Some(r) = rating {
                             rom.rating = Some(*r);
                         }
@@ -1108,7 +1134,7 @@ impl RomCache {
             }
         }
 
-        tracing::debug!("L2 enrichment: {system} — {count} ROMs updated with box art/ratings");
+        tracing::debug!("L2 enrichment: {system} — {count} ROMs updated with box art/genre/ratings");
     }
 
     /// Auto-match new ROMs against existing LaunchBox metadata by normalized title.

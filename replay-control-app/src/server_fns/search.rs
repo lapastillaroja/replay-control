@@ -222,7 +222,7 @@ pub(crate) fn search_score(
             Some((word_base, _)) => {
                 // Apply the same bonuses/penalties as other tiers
                 let length_bonus: u32 = if display_name.len() < 40 { 100 } else { 0 };
-                let (tier, region) = replay_control_core::rom_tags::classify(filename);
+                let (tier, region, _) = replay_control_core::rom_tags::classify(filename);
                 let tier_penalty = match tier {
                     replay_control_core::rom_tags::RomTier::Original => 0,
                     replay_control_core::rom_tags::RomTier::Revision => 5,
@@ -251,7 +251,7 @@ pub(crate) fn search_score(
     let length_bonus: u32 = if display_name.len() < 40 { 100 } else { 0 };
 
     // Tier penalty: deprioritize non-original ROMs
-    let (tier, region) = replay_control_core::rom_tags::classify(filename);
+    let (tier, region, _) = replay_control_core::rom_tags::classify(filename);
     let tier_penalty = match tier {
         replay_control_core::rom_tags::RomTier::Original => 0,
         replay_control_core::rom_tags::RomTier::Revision => 5,
@@ -420,7 +420,7 @@ pub async fn global_search(
             .filter(|r| {
                 // Apply tier-based filters (hacks, translations, betas/protos).
                 if hide_hacks || hide_translations || hide_betas {
-                    let (tier, _) = rom_tags::classify(&r.game.rom_filename);
+                    let (tier, _, _) = rom_tags::classify(&r.game.rom_filename);
                     if hide_hacks && tier == rom_tags::RomTier::Hack {
                         return false;
                     }

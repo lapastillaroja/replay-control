@@ -35,6 +35,9 @@ pub struct RomDetail {
     /// Whether this ROM is a hack (suppresses "Change cover" affordance).
     #[serde(default)]
     pub is_hack: bool,
+    /// Whether this ROM is a special version (FastROM, 60Hz, unlicensed, etc.).
+    #[serde(default)]
+    pub is_special: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -73,7 +76,7 @@ pub async fn get_roms_page(
         .into_iter()
         .filter(|r| {
             if hide_hacks || hide_translations || hide_betas {
-                let (tier, _) = rom_tags::classify(&r.game.rom_filename);
+                let (tier, _, _) = rom_tags::classify(&r.game.rom_filename);
                 if hide_hacks && tier == rom_tags::RomTier::Hack {
                     return false;
                 }
@@ -270,7 +273,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         })
         .unwrap_or(0);
 
-    let (tier, _) = replay_control_core::rom_tags::classify(&filename);
+    let (tier, _, is_special) = replay_control_core::rom_tags::classify(&filename);
     let is_hack = tier == replay_control_core::rom_tags::RomTier::Hack;
 
     Ok(RomDetail {
@@ -281,6 +284,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         user_screenshots,
         variant_count,
         is_hack,
+        is_special,
     })
 }
 

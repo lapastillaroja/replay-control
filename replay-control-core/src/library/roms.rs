@@ -115,8 +115,8 @@ pub fn list_roms(
             .display_name
             .as_deref()
             .unwrap_or(&b.game.rom_filename);
-        let (a_tier, a_region) = rom_tags::classify(&a.game.rom_filename);
-        let (b_tier, b_region) = rom_tags::classify(&b.game.rom_filename);
+        let (a_tier, a_region, _) = rom_tags::classify(&a.game.rom_filename);
+        let (b_tier, b_region, _) = rom_tags::classify(&b.game.rom_filename);
         a_name
             .to_lowercase()
             .cmp(&b_name.to_lowercase())

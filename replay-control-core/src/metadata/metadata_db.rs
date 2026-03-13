@@ -134,6 +134,7 @@ pub struct CachedRom {
     pub region: String,
     pub is_translation: bool,
     pub is_hack: bool,
+    pub is_special: bool,
 }
 
 /// Per-system cache metadata from the `rom_cache_meta` table.
@@ -244,6 +245,7 @@ impl MetadataDb {
                     region TEXT NOT NULL DEFAULT '',
                     is_translation INTEGER NOT NULL DEFAULT 0,
                     is_hack INTEGER NOT NULL DEFAULT 0,
+                    is_special INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -260,6 +262,13 @@ impl MetadataDb {
                   WHERE genre IS NOT NULL AND genre != '';",
             )
             .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
+
+        // Migration: add is_special column if upgrading from an older schema.
+        // ALTER TABLE ... ADD COLUMN is idempotent-safe: if it already exists,
+        // SQLite returns an error we simply ignore.
+        let _ = self.conn.execute_batch(
+            "ALTER TABLE rom_cache ADD COLUMN is_special INTEGER NOT NULL DEFAULT 0;",
+        );
 
         Ok(())
     }
@@ -378,6 +387,66 @@ impl MetadataDb {
                 Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
             })
             .map_err(|e| Error::Other(format!("System ratings query: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    }
+
+    /// Fetch all non-empty genres from `game_metadata` for a single system.
+    /// Returns a map of `rom_filename -> genre`.
+    /// Used to fill empty `rom_cache.genre` entries during enrichment.
+    pub fn system_metadata_genres(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, String>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, genre FROM game_metadata
+                 WHERE system = ?1 AND genre IS NOT NULL AND genre != ''",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_metadata_genres: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("System metadata genres query: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    }
+
+    /// Fetch current genres from `rom_cache` for a single system.
+    /// Returns a map of `rom_filename -> genre` (only entries with non-empty genre).
+    /// Used during enrichment to know which ROMs already have a genre.
+    pub fn system_rom_genres(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, String>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, genre FROM rom_cache
+                 WHERE system = ?1 AND genre IS NOT NULL AND genre != ''",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_rom_genres: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("System rom genres query: {e}")))?;
 
         let mut map = HashMap::new();
         for row in rows.flatten() {
@@ -785,8 +854,8 @@ impl MetadataDb {
                 .prepare(
                     "INSERT OR IGNORE INTO rom_cache (system, rom_filename, rom_path, display_name,
                      size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating,
-                     is_clone, base_title, region, is_translation, is_hack)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                     is_clone, base_title, region, is_translation, is_hack, is_special)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare rom_cache insert: {e}")))?;
 
@@ -808,6 +877,7 @@ impl MetadataDb {
                     &rom.region,
                     rom.is_translation,
                     rom.is_hack,
+                    rom.is_special,
                 ])
                 .map_err(|e| Error::Other(format!("Insert rom_cache failed: {e}")))?;
             }
@@ -841,7 +911,7 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack
+                        is_clone, base_title, region, is_translation, is_hack, is_special
                  FROM rom_cache WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_roms: {e}")))?;
@@ -975,12 +1045,13 @@ impl MetadataDb {
         Ok(count)
     }
 
-    /// Batch update box_art_url and rating for ROMs in rom_cache.
-    /// Only updates non-None fields (preserves existing genre/players/driver_status).
-    pub fn update_box_art_and_rating(
+    /// Batch update box_art_url, genre, and rating for ROMs in rom_cache.
+    /// Only updates non-None fields. Genre is only set when the existing
+    /// value is NULL or empty (baked-in genre is never overwritten).
+    pub fn update_box_art_genre_rating(
         &mut self,
         system: &str,
-        enrichments: &[(String, Option<String>, Option<f32>)],
+        enrichments: &[(String, Option<String>, Option<String>, Option<f32>)],
     ) -> Result<()> {
         let tx = self
             .conn
@@ -995,6 +1066,14 @@ impl MetadataDb {
                 )
                 .map_err(|e| Error::Other(format!("Prepare box_art update: {e}")))?;
 
+            let mut genre_stmt = tx
+                .prepare(
+                    "UPDATE rom_cache SET genre = ?2
+                     WHERE system = ?3 AND rom_filename = ?1
+                       AND (genre IS NULL OR genre = '')",
+                )
+                .map_err(|e| Error::Other(format!("Prepare genre update: {e}")))?;
+
             let mut rating_stmt = tx
                 .prepare(
                     "UPDATE rom_cache SET rating = ?2
@@ -1002,11 +1081,16 @@ impl MetadataDb {
                 )
                 .map_err(|e| Error::Other(format!("Prepare rating update: {e}")))?;
 
-            for (filename, box_art_url, rating) in enrichments {
+            for (filename, box_art_url, genre, rating) in enrichments {
                 if let Some(url) = box_art_url {
                     art_stmt
                         .execute(params![filename, url, system])
                         .map_err(|e| Error::Other(format!("Update box_art_url: {e}")))?;
+                }
+                if let Some(g) = genre {
+                    genre_stmt
+                        .execute(params![filename, g, system])
+                        .map_err(|e| Error::Other(format!("Update genre: {e}")))?;
                 }
                 if let Some(r) = rating {
                     rating_stmt
@@ -1254,11 +1338,11 @@ impl MetadataDb {
                         END
                     ) AS rn
                     FROM rom_cache
-                    WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0
+                    WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack
+                        is_clone, base_title, region, is_translation, is_hack, is_special
                 FROM deduped WHERE rn = 1
                 ORDER BY RANDOM() LIMIT ?1",
             )
@@ -1278,9 +1362,9 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack
+                        is_clone, base_title, region, is_translation, is_hack, is_special
                  FROM rom_cache
-                 WHERE system = ?1 AND box_art_url IS NOT NULL
+                 WHERE system = ?1 AND box_art_url IS NOT NULL AND is_special = 0
                  ORDER BY RANDOM() LIMIT ?2",
             )
             .map_err(|e| Error::Other(format!("Prepare random_cached_roms: {e}")))?;
@@ -1315,11 +1399,11 @@ impl MetadataDb {
                         END
                     ) AS rn
                     FROM rom_cache
-                    WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND rating IS NOT NULL AND rating > 0
+                    WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND rating IS NOT NULL AND rating > 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack
+                        is_clone, base_title, region, is_translation, is_hack, is_special
                 FROM (
                     SELECT * FROM deduped WHERE rn = 1
                     ORDER BY rating DESC
@@ -1399,11 +1483,11 @@ impl MetadataDb {
                             END
                         ) AS rn
                         FROM rom_cache
-                        WHERE system = ?1 AND genre = ?2 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0
+                        WHERE system = ?1 AND genre = ?2 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, players, rating,
-                            is_clone, base_title, region, is_translation, is_hack
+                            is_clone, base_title, region, is_translation, is_hack, is_special
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
                         ORDER BY rating DESC NULLS LAST
@@ -1434,11 +1518,11 @@ impl MetadataDb {
                             END
                         ) AS rn
                         FROM rom_cache
-                        WHERE system = ?1 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0
+                        WHERE system = ?1 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, players, rating,
-                            is_clone, base_title, region, is_translation, is_hack
+                            is_clone, base_title, region, is_translation, is_hack, is_special
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
                         ORDER BY rating DESC NULLS LAST
@@ -1477,6 +1561,7 @@ impl MetadataDb {
                    AND base_title != ''
                    AND is_translation = 0
                    AND is_hack = 0
+                   AND is_special = 0
                    AND base_title = (
                        SELECT base_title FROM rom_cache
                        WHERE system = ?1 AND rom_filename = ?2
@@ -1565,6 +1650,38 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Find special versions of a game: other ROMs sharing the same base_title that are special.
+    /// Returns (rom_filename, display_name) pairs sorted by display_name.
+    /// Returns an empty Vec if the game has no base_title or no specials exist.
+    pub fn specials(
+        &self,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, display_name FROM rom_cache
+                 WHERE system = ?1
+                   AND base_title != ''
+                   AND is_special = 1
+                   AND base_title = (
+                       SELECT base_title FROM rom_cache
+                       WHERE system = ?1 AND rom_filename = ?2
+                   )
+                 ORDER BY display_name",
+            )
+            .map_err(|e| Error::Other(format!("Prepare specials: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system, rom_filename], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query specials: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
     /// Find similar games by genre within the same system.
     /// Excludes the given ROM, clones, and games without a genre.
     /// Returns randomized results up to `limit`.
@@ -1580,7 +1697,7 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack
+                        is_clone, base_title, region, is_translation, is_hack, is_special
                  FROM rom_cache
                  WHERE system = ?1
                    AND genre = ?2
@@ -1589,6 +1706,7 @@ impl MetadataDb {
                    AND is_clone = 0
                    AND is_translation = 0
                    AND is_hack = 0
+                   AND is_special = 0
                  ORDER BY RANDOM()
                  LIMIT ?4",
             )
@@ -1623,6 +1741,7 @@ impl MetadataDb {
             region: row.get(13)?,
             is_translation: row.get(14)?,
             is_hack: row.get(15)?,
+            is_special: row.get(16)?,
         })
     }
 }
@@ -1658,6 +1777,13 @@ mod tests {
         }
     }
 
+    fn make_metadata_with_genre(genre: &str) -> GameMetadata {
+        GameMetadata {
+            genre: Some(genre.into()),
+            ..make_metadata(None)
+        }
+    }
+
     fn make_cached_rom(system: &str, filename: &str, is_m3u: bool) -> CachedRom {
         CachedRom {
             system: system.into(),
@@ -1676,7 +1802,91 @@ mod tests {
             region: String::new(),
             is_translation: false,
             is_hack: false,
+            is_special: false,
         }
+    }
+
+    fn make_cached_rom_with_genre(system: &str, filename: &str, genre: &str) -> CachedRom {
+        CachedRom {
+            genre: Some(genre.into()),
+            ..make_cached_rom(system, filename, false)
+        }
+    }
+
+    #[test]
+    fn genre_enrichment_fills_empty_genre_from_launchbox() {
+        // When rom_cache has no genre but game_metadata does,
+        // update_box_art_genre_rating should fill it.
+        let (mut db, _dir) = open_temp_db();
+
+        // game_metadata has genre "Platform" for Sonic
+        db.bulk_upsert(&[
+            ("sega_smd".into(), "Sonic.md".into(), make_metadata_with_genre("Platform")),
+        ]).unwrap();
+
+        // rom_cache has Sonic with no genre
+        db.save_system_roms("sega_smd", &[
+            make_cached_rom("sega_smd", "Sonic.md", false),
+        ], None).unwrap();
+
+        // Enrich with genre from LaunchBox
+        db.update_box_art_genre_rating("sega_smd", &[
+            ("Sonic.md".into(), None, Some("Platform".into()), None),
+        ]).unwrap();
+
+        let roms = db.load_system_roms("sega_smd").unwrap();
+        assert_eq!(roms[0].genre.as_deref(), Some("Platform"));
+    }
+
+    #[test]
+    fn genre_enrichment_does_not_overwrite_existing_genre() {
+        // When rom_cache already has a baked-in genre, the SQL guard
+        // (genre IS NULL OR genre = '') should prevent overwriting it.
+        let (mut db, _dir) = open_temp_db();
+
+        // rom_cache has Sonic with baked-in "Shooter" (wrong but exists)
+        db.save_system_roms("sega_smd", &[
+            make_cached_rom_with_genre("sega_smd", "Sonic.md", "Shooter"),
+        ], None).unwrap();
+
+        // Try to enrich with "Platform" from LaunchBox
+        db.update_box_art_genre_rating("sega_smd", &[
+            ("Sonic.md".into(), None, Some("Platform".into()), None),
+        ]).unwrap();
+
+        let roms = db.load_system_roms("sega_smd").unwrap();
+        // Should still be "Shooter" — not overwritten
+        assert_eq!(roms[0].genre.as_deref(), Some("Shooter"));
+    }
+
+    #[test]
+    fn genre_enrichment_mixed_empty_and_existing() {
+        // Multiple ROMs: some with genre, some without. Only empty ones get filled.
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_roms("sega_smd", &[
+            make_cached_rom_with_genre("sega_smd", "Sonic.md", "Shooter"),
+            make_cached_rom("sega_smd", "Streets.md", false),
+            make_cached_rom("sega_smd", "Columns.md", false),
+        ], None).unwrap();
+
+        db.update_box_art_genre_rating("sega_smd", &[
+            ("Sonic.md".into(), None, Some("Platform".into()), None),
+            ("Streets.md".into(), None, Some("Beat'em Up".into()), None),
+            // Columns has no LaunchBox genre either — no enrichment tuple
+        ]).unwrap();
+
+        let roms = db.load_system_roms("sega_smd").unwrap();
+        let sonic = roms.iter().find(|r| r.rom_filename == "Sonic.md").unwrap();
+        let streets = roms.iter().find(|r| r.rom_filename == "Streets.md").unwrap();
+        let columns = roms.iter().find(|r| r.rom_filename == "Columns.md").unwrap();
+
+        // Sonic: baked-in "Shooter" preserved
+        assert_eq!(sonic.genre.as_deref(), Some("Shooter"));
+        // Streets: empty → filled with "Beat'em Up"
+        assert_eq!(streets.genre.as_deref(), Some("Beat'em Up"));
+        // Columns: still empty (no enrichment data)
+        assert_eq!(columns.genre, None);
     }
 
     #[test]
@@ -1819,5 +2029,68 @@ mod tests {
 
         // Only 1 boxart counted (the .m3u match), not 3
         assert_eq!(sega_cd.1, 1);
+    }
+
+    #[test]
+    fn specials_returns_special_roms_sharing_base_title() {
+        let (db, _dir) = open_temp_db();
+
+        let mut original = make_cached_rom("snes", "Game (USA).sfc", false);
+        original.base_title = "Game".into();
+        original.region = "usa".into();
+
+        let mut fastrom = make_cached_rom("snes", "Game (USA) (FastRom).sfc", false);
+        fastrom.base_title = "Game".into();
+        fastrom.region = "usa".into();
+        fastrom.is_special = true;
+
+        let mut hz60 = make_cached_rom("snes", "Game (Europe) (60hz).sfc", false);
+        hz60.base_title = "Game".into();
+        hz60.region = "europe".into();
+        hz60.is_special = true;
+
+        db.save_system_roms("snes", &[original, fastrom, hz60], None)
+            .unwrap();
+
+        let specials = db.specials("snes", "Game (USA).sfc").unwrap();
+        assert_eq!(specials.len(), 2);
+        let filenames: Vec<&str> = specials.iter().map(|(f, _)| f.as_str()).collect();
+        assert!(filenames.contains(&"Game (USA) (FastRom).sfc"));
+        assert!(filenames.contains(&"Game (Europe) (60hz).sfc"));
+    }
+
+    #[test]
+    fn recommendation_queries_exclude_special_roms() {
+        let (db, _dir) = open_temp_db();
+
+        let mut normal = make_cached_rom("snes", "Mario (USA).sfc", false);
+        normal.base_title = "Mario".into();
+        normal.region = "usa".into();
+        normal.box_art_url = Some("/img/mario.png".into());
+        normal.rating = Some(4.5);
+        normal.genre = Some("Platform".into());
+
+        let mut special = make_cached_rom("snes", "Mario (USA) (FastRom).sfc", false);
+        special.base_title = "Mario FastRom".into();
+        special.region = "usa".into();
+        special.box_art_url = Some("/img/mario.png".into());
+        special.rating = Some(4.5);
+        special.genre = Some("Platform".into());
+        special.is_special = true;
+
+        db.save_system_roms("snes", &[normal, special], None)
+            .unwrap();
+
+        // random_cached_roms should exclude is_special
+        let random = db.random_cached_roms("snes", 10).unwrap();
+        assert_eq!(random.len(), 1);
+        assert_eq!(random[0].rom_filename, "Mario (USA).sfc");
+
+        // similar_by_genre should exclude is_special
+        let similar = db
+            .similar_by_genre("snes", "Platform", "Other.sfc", 10)
+            .unwrap();
+        assert_eq!(similar.len(), 1);
+        assert_eq!(similar[0].rom_filename, "Mario (USA).sfc");
     }
 }
