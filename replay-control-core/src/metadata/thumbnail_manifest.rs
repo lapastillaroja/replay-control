@@ -757,12 +757,20 @@ pub fn find_boxart_variants(
                 continue;
             }
 
+            let is_symlink = entry.symlink_target.is_some();
             let local_path = media_base.join(format!("{}.png", entry.filename));
             let is_downloaded = local_path.exists()
                 && local_path
                     .metadata()
                     .map(|m| m.len() >= 200)
                     .unwrap_or(false);
+
+            // Skip undownloaded symlinks — GitHub raw serves the symlink text
+            // content (a filename) instead of the actual PNG, producing a
+            // broken image. The real file is already in the list as its own entry.
+            if is_symlink && !is_downloaded {
+                continue;
+            }
 
             let image_url = if is_downloaded {
                 format!("/media/{system}/boxart/{}.png", entry.filename)
@@ -841,6 +849,12 @@ pub fn count_boxart_variants(db: &MetadataDb, system: &str, rom_filename: &str) 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
             if entry_base != base_title {
+                continue;
+            }
+
+            // Skip symlink entries — they are duplicates of real entries and
+            // can't be previewed from GitHub raw (serves symlink text, not PNG).
+            if entry.symlink_target.is_some() {
                 continue;
             }
 

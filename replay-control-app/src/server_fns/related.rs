@@ -117,19 +117,29 @@ pub async fn get_related_games(
     };
 
     // Build regional variants (only if more than 1).
+    // Use extract_tags() for richer labels (e.g., "Japan, Rev 1" instead of "japan").
+    // For arcade ROMs (no parenthesized tags), fall back to the display name.
     let regional_variants = if variants_raw.len() > 1 {
         variants_raw
             .into_iter()
-            .map(|(rom_fn, region)| {
+            .map(|(rom_fn, region, display_name)| {
                 let is_current = rom_fn == filename;
                 let href = format!(
                     "/games/{}/{}",
                     system,
                     urlencoding::encode(&rom_fn)
                 );
+                let tags = replay_control_core::rom_tags::extract_tags(&rom_fn);
+                let label = if !tags.is_empty() {
+                    tags
+                } else if let Some(dn) = display_name {
+                    dn
+                } else {
+                    region
+                };
                 RegionalVariant {
                     rom_filename: rom_fn,
-                    region,
+                    region: label,
                     href,
                     is_current,
                 }

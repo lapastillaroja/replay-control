@@ -1548,20 +1548,24 @@ impl MetadataDb {
     /// Find regional variants of a game: other ROMs sharing the same base_title.
     /// Returns (rom_filename, region) pairs sorted by region priority (USA, Europe, Japan first).
     /// Returns an empty Vec if the game has no base_title or only one region exists.
+    /// Find regional variants of a game: other ROMs sharing the same base_title
+    /// that are not translations, hacks, specials, or arcade clones.
+    /// Returns `(rom_filename, region, display_name)` tuples.
     pub fn regional_variants(
         &self,
         system: &str,
         rom_filename: &str,
-    ) -> Result<Vec<(String, String)>> {
+    ) -> Result<Vec<(String, String, Option<String>)>> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, region FROM rom_cache
+                "SELECT rom_filename, region, display_name FROM rom_cache
                  WHERE system = ?1
                    AND base_title != ''
                    AND is_translation = 0
                    AND is_hack = 0
                    AND is_special = 0
+                   AND is_clone = 0
                    AND base_title = (
                        SELECT base_title FROM rom_cache
                        WHERE system = ?1 AND rom_filename = ?2
@@ -1579,7 +1583,11 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map(params![system, rom_filename], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
             })
             .map_err(|e| Error::Other(format!("Query regional_variants: {e}")))?;
 
