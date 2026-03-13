@@ -89,7 +89,10 @@ pub fn BoxArtPicker(
                     <span class="boxart-picker-title">
                         {move || t(i18n.locale.get(), "game_detail.choose_boxart")}
                     </span>
-                    <button class="boxart-picker-close" on:click=move |_| on_close.run(())>
+                    <button class="boxart-picker-close" on:click=move |ev: leptos::ev::MouseEvent| {
+                        ev.stop_propagation();
+                        on_close.run(());
+                    }>
                         {"\u{2715}"}
                     </button>
                 </div>
