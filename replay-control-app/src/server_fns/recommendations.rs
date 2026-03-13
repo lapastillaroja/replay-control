@@ -102,7 +102,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         .map(|(genre, count)| GenreCount { genre, count })
         .collect();
 
-    // --- Favorites picks ---
+    // --- Favorites picks (pool already randomized by SQL) ---
     let mut favorites_picks = favorites_info.and_then(|fi| {
         let roms = fav_roms?;
         if roms.is_empty() {
@@ -123,7 +123,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         })
     });
 
-    // --- Top rated: diversity across systems ---
+    // --- Top rated: pool already randomized by SQL, diversify across systems ---
     let mut top_rated = if top_rated_pool.is_empty() {
         None
     } else {
@@ -160,25 +160,51 @@ struct FavoritesInfo {
 }
 
 /// Collect favorites info from the in-memory cache — no filesystem access.
+/// Randomly picks among systems that have favorites (weighted by sqrt of count)
+/// so the section rotates across systems on each page load.
 #[cfg(feature = "ssr")]
 fn collect_favorites_info(
     state: &crate::api::AppState,
     storage: &replay_control_core::storage::StorageLocation,
     systems: &[SystemSummary],
 ) -> Option<FavoritesInfo> {
-    let (top_system, fav_filenames) = state.cache.get_top_favorited_system(storage)?;
+    let all_favorites = state.cache.get_all_favorited_systems(storage)?;
+    if all_favorites.is_empty() {
+        return None;
+    }
+
+    // Build a weighted pool: systems with more favorites appear more often.
+    // Weight = sqrt(count) to avoid overwhelming dominance by large collections.
+    let mut weighted: Vec<(&str, &Vec<String>)> = Vec::new();
+    for (system, filenames) in &all_favorites {
+        if !filenames.is_empty() {
+            let weight = (filenames.len() as f64).sqrt().ceil() as usize;
+            for _ in 0..weight {
+                weighted.push((system.as_str(), filenames));
+            }
+        }
+    }
+
+    if weighted.is_empty() {
+        return None;
+    }
+
+    // Pick a random entry from the weighted pool.
+    use rand::Rng;
+    let idx = rand::rng().random_range(0..weighted.len());
+    let (chosen_system, fav_filenames) = weighted[idx];
 
     let system_display = systems
         .iter()
-        .find(|s| s.folder_name == top_system)
+        .find(|s| s.folder_name == chosen_system)
         .map(|s| s.display_name.clone())
-        .unwrap_or_else(|| top_system.clone());
+        .unwrap_or_else(|| chosen_system.to_string());
 
     // Determine top genre from favorites using baked-in game DB.
     let mut genre_counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
-    for filename in &fav_filenames {
-        let genre = super::search::lookup_genre(&top_system, filename);
+    for filename in fav_filenames {
+        let genre = super::search::lookup_genre(chosen_system, filename);
         if !genre.is_empty() {
             *genre_counts.entry(genre).or_default() += 1;
         }
@@ -189,9 +215,9 @@ fn collect_favorites_info(
         .map(|(g, _)| g);
 
     Some(FavoritesInfo {
-        system: top_system,
+        system: chosen_system.to_string(),
         system_display,
-        fav_filenames,
+        fav_filenames: fav_filenames.clone(),
         top_genre,
     })
 }

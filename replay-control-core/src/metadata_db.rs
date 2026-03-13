@@ -1216,21 +1216,27 @@ impl MetadataDb {
     }
 
     /// Get top-rated cached ROMs across all systems.
+    /// Uses a subquery to select the top tier, then randomizes within it
+    /// so each page load shows a different selection of highly-rated games.
     pub fn top_rated_cached_roms(&self, count: usize) -> Result<Vec<CachedRom>> {
+        let pool_size = (count * 4).max(40) as i64;
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating
-                 FROM rom_cache
-                 WHERE rating IS NOT NULL AND rating > 0
-                 ORDER BY rating DESC
-                 LIMIT ?1",
+                 FROM (
+                     SELECT * FROM rom_cache
+                     WHERE rating IS NOT NULL AND rating > 0
+                     ORDER BY rating DESC
+                     LIMIT ?1
+                 )
+                 ORDER BY RANDOM()",
             )
             .map_err(|e| Error::Other(format!("Prepare top_rated_cached_roms: {e}")))?;
 
         let rows = stmt
-            .query_map(params![count as i64], Self::row_to_cached_rom)
+            .query_map(params![pool_size], Self::row_to_cached_rom)
             .map_err(|e| Error::Other(format!("Query top_rated_cached_roms: {e}")))?;
 
         Ok(rows.flatten().collect())
@@ -1267,8 +1273,9 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Query multiplayer_count: {e}")))
     }
 
-    /// Get non-favorited ROMs from a system, optionally filtered by genre,
-    /// sorted by rating descending. Used for favorites-based recommendations.
+    /// Get non-favorited ROMs from a system, optionally filtered by genre.
+    /// Selects from top-rated games and randomizes via SQL so each load
+    /// shows different recommendations. Used for "Because You Love" section.
     pub fn system_roms_excluding(
         &self,
         system: &str,
@@ -1279,8 +1286,8 @@ impl MetadataDb {
         let exclude_set: std::collections::HashSet<&str> =
             exclude_filenames.iter().copied().collect();
 
-        // Fetch extra to account for exclusions filtered in Rust.
-        let limit = (count + exclude_filenames.len()) as i64 * 2;
+        // Fetch a larger pool to allow for exclusion filtering.
+        let limit = ((count + exclude_filenames.len()) * 4).max(40) as i64;
 
         let roms = if let Some(genre) = genre_filter {
             let mut stmt = self
@@ -1288,10 +1295,13 @@ impl MetadataDb {
                 .prepare(
                     "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, players, rating
-                     FROM rom_cache
-                     WHERE system = ?1 AND genre = ?2
-                     ORDER BY rating DESC NULLS LAST
-                     LIMIT ?3",
+                     FROM (
+                         SELECT * FROM rom_cache
+                         WHERE system = ?1 AND genre = ?2
+                         ORDER BY rating DESC NULLS LAST
+                         LIMIT ?3
+                     )
+                     ORDER BY RANDOM()",
                 )
                 .map_err(|e| Error::Other(format!("Prepare system_roms_excluding: {e}")))?;
 
@@ -1305,10 +1315,13 @@ impl MetadataDb {
                 .prepare(
                     "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, players, rating
-                     FROM rom_cache
-                     WHERE system = ?1
-                     ORDER BY rating DESC NULLS LAST
-                     LIMIT ?2",
+                     FROM (
+                         SELECT * FROM rom_cache
+                         WHERE system = ?1
+                         ORDER BY rating DESC NULLS LAST
+                         LIMIT ?2
+                     )
+                     ORDER BY RANDOM()",
                 )
                 .map_err(|e| Error::Other(format!("Prepare system_roms_excluding: {e}")))?;
 

@@ -554,6 +554,37 @@ impl RomCache {
             .map(|(system, files)| (system.clone(), files.iter().cloned().collect()))
     }
 
+    /// Get all systems that have favorites, with their filenames.
+    /// Used by recommendations to rotate across favorited systems.
+    pub fn get_all_favorited_systems(
+        &self,
+        storage: &StorageLocation,
+    ) -> Option<HashMap<String, Vec<String>>> {
+        let favs_dir = storage.favorites_dir();
+
+        let extract = |data: &HashMap<String, HashSet<String>>| -> HashMap<String, Vec<String>> {
+            data.iter()
+                .filter(|(_, files)| !files.is_empty())
+                .map(|(system, files)| (system.clone(), files.iter().cloned().collect()))
+                .collect()
+        };
+
+        if let Ok(guard) = self.favorites.read()
+            && let Some(ref cache) = *guard
+            && cache.is_fresh(&favs_dir)
+        {
+            let result = extract(&cache.data);
+            return if result.is_empty() { None } else { Some(result) };
+        }
+
+        let new_cache = FavoritesCache::new(storage);
+        let result = extract(&new_cache.data);
+        if let Ok(mut guard) = self.favorites.write() {
+            *guard = Some(new_cache);
+        }
+        if result.is_empty() { None } else { Some(result) }
+    }
+
     /// Get the total count of favorited games (all systems).
     /// Uses the cached favorites to avoid filesystem traversal.
     pub fn get_favorites_count(&self, storage: &StorageLocation) -> usize {
