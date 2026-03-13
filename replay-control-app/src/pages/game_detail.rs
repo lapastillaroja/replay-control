@@ -132,8 +132,9 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let has_screenshot = game.screenshot_url.is_some();
 
     // Box art variant picker state.
+    // Suppress "Change cover" for hack ROMs — they should inherit the base ROM's cover.
     let variant_count = detail.variant_count;
-    let has_variants = variant_count > 1;
+    let has_variants = variant_count > 1 && !detail.is_hack;
     let show_picker = RwSignal::new(false);
 
     // User captures
@@ -663,14 +664,18 @@ fn RelatedGamesSection(
                     Ok(data) => {
                         let has_variants = data.regional_variants.len() > 1;
                         let has_translations = !data.translations.is_empty();
+                        let has_hacks = !data.hacks.is_empty();
                         let has_similar = !data.similar_games.is_empty();
-                        if !has_variants && !has_translations && !has_similar {
+                        if !has_variants && !has_translations && !has_hacks && !has_similar {
                             view! { <div /> }.into_any()
                         } else {
                             let variant_chips: Vec<ChipItem> = data.regional_variants.iter().map(|v| {
                                 ChipItem { label: v.region.clone(), href: v.href.clone(), is_current: v.is_current }
                             }).collect();
                             let translation_chips: Vec<ChipItem> = data.translations.iter().map(|v| {
+                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
+                            }).collect();
+                            let hack_chips: Vec<ChipItem> = data.hacks.iter().map(|v| {
                                 ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
                             }).collect();
                             view! {
@@ -684,6 +689,12 @@ fn RelatedGamesSection(
                                     <GameChipRow
                                         title_key="game_detail.translations"
                                         chips=translation_chips.clone()
+                                    />
+                                </Show>
+                                <Show when=move || has_hacks>
+                                    <GameChipRow
+                                        title_key="game_detail.hacks"
+                                        chips=hack_chips.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_similar>

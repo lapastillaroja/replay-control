@@ -2,13 +2,15 @@ use super::*;
 #[cfg(feature = "ssr")]
 use super::recommendations::{resolve_box_art_for_picks, to_recommended};
 
-/// Related games data: regional variants + translations + similar games by genre.
+/// Related games data: regional variants + translations + hacks + similar games by genre.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelatedGamesData {
     /// Other regions of the same game. Empty if only one region exists.
     pub regional_variants: Vec<RegionalVariant>,
     /// Translations of the same game. Empty if no translations exist.
     pub translations: Vec<TranslationVariant>,
+    /// Hacks of the same game. Empty if no hacks exist.
+    pub hacks: Vec<HackVariant>,
     /// Games from the same system + genre. Empty if no genre or no matches.
     pub similar_games: Vec<RecommendedGame>,
 }
@@ -28,6 +30,17 @@ pub struct RegionalVariant {
 pub struct TranslationVariant {
     pub rom_filename: String,
     /// Short label extracted from the filename tags, e.g., "ES Translation".
+    pub label: String,
+    pub href: String,
+    /// True if this is the current game (for active chip styling).
+    pub is_current: bool,
+}
+
+/// A hack variant chip linking to a hacked version of the same game.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HackVariant {
+    pub rom_filename: String,
+    /// Short label extracted from the filename tags, e.g., "Hack".
     pub label: String,
     pub href: String,
     /// True if this is the current game (for active chip styling).
@@ -64,6 +77,7 @@ pub async fn get_related_games(
     let db_data = state.cache.with_db_read(&storage, |db| {
         let variants = db.regional_variants(&system, &filename).unwrap_or_default();
         let translations_raw = db.translations(&system, &filename).unwrap_or_default();
+        let hacks_raw = db.hacks(&system, &filename).unwrap_or_default();
 
         let similar = if genre.is_empty() {
             Vec::new()
@@ -74,13 +88,14 @@ pub async fn get_related_games(
                 .unwrap_or_default()
         };
 
-        (variants, translations_raw, similar)
+        (variants, translations_raw, hacks_raw, similar)
     });
 
-    let Some((variants_raw, translations_raw, similar_pool)) = db_data else {
+    let Some((variants_raw, translations_raw, hacks_raw, similar_pool)) = db_data else {
         return Ok(RelatedGamesData {
             regional_variants: Vec::new(),
             translations: Vec::new(),
+            hacks: Vec::new(),
             similar_games: Vec::new(),
         });
     };
@@ -139,6 +154,37 @@ pub async fn get_related_games(
         })
         .collect();
 
+    // Build hacks list.
+    let hacks: Vec<HackVariant> = hacks_raw
+        .into_iter()
+        .map(|(rom_fn, display_name)| {
+            let is_current = rom_fn == filename;
+            let href = format!(
+                "/games/{}/{}",
+                system,
+                urlencoding::encode(&rom_fn)
+            );
+            // Extract hack-related labels from the filename tags.
+            let tags = replay_control_core::rom_tags::extract_tags(&rom_fn);
+            let label = tags
+                .split(", ")
+                .find(|part| part.contains("Hack"))
+                .unwrap_or(&tags)
+                .to_string();
+            let label = if label.is_empty() {
+                display_name.unwrap_or_else(|| rom_fn.clone())
+            } else {
+                label
+            };
+            HackVariant {
+                rom_filename: rom_fn,
+                label,
+                href,
+                is_current,
+            }
+        })
+        .collect();
+
     // Build similar games, applying arcade category preference.
     let mut similar_games: Vec<RecommendedGame> = if is_arcade && arcade_category.is_some() {
         let cat = arcade_category.as_deref().unwrap();
@@ -178,6 +224,7 @@ pub async fn get_related_games(
     Ok(RelatedGamesData {
         regional_variants,
         translations,
+        hacks,
         similar_games,
     })
 }

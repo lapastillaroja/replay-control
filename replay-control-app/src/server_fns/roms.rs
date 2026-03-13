@@ -32,6 +32,9 @@ pub struct RomDetail {
     /// Number of distinct box art variants available (for "Change cover" affordance).
     #[serde(default)]
     pub variant_count: usize,
+    /// Whether this ROM is a hack (suppresses "Change cover" affordance).
+    #[serde(default)]
+    pub is_hack: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -267,6 +270,9 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         })
         .unwrap_or(0);
 
+    let (tier, _) = replay_control_core::rom_tags::classify(&filename);
+    let is_hack = tier == replay_control_core::rom_tags::RomTier::Hack;
+
     Ok(RomDetail {
         game,
         size_bytes: rom.size_bytes,
@@ -274,6 +280,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         is_favorite,
         user_screenshots,
         variant_count,
+        is_hack,
     })
 }
 

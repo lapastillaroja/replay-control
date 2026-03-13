@@ -265,6 +265,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.confirm_delete" => "Confirm Delete",
         "game_detail.regional_variants" => "Regional Variants",
         "game_detail.translations" => "Translations",
+        "game_detail.hacks" => "Hacks",
         "game_detail.more_like_this" => "More Like This",
         "game_detail.change_cover" => "Change cover",
         "game_detail.choose_boxart" => "Choose Box Art",
