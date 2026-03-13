@@ -51,7 +51,9 @@ run_import_blocking()
 
 ## Identified Issues
 
-### Issue 1: Cache Verification Permanently Skipped After Auto-Import (CRITICAL)
+### Issue 1: Cache Verification Permanently Skipped After Auto-Import (CRITICAL) -- FIXED
+
+**Status:** Fixed in commit `309b8e4` — `spawn_cache_enrichment` now checks if rom_cache is empty and calls `populate_all_systems` when needed.
 
 **Severity:** Critical
 **File:** `replay-control-app/src/api/background.rs:31-39`
@@ -88,7 +90,9 @@ if succeeded {
 Where `spawn_full_cache_warmup` calls `populate_all_systems` (which already
 includes enrichment).
 
-### Issue 2: spawn_cache_enrichment Reads from Empty L1 Cache (CRITICAL)
+### Issue 2: spawn_cache_enrichment Reads from Empty L1 Cache (CRITICAL) -- FIXED
+
+**Status:** Fixed in commit `309b8e4` — same fix as Issue 1; when rom_cache is empty, `populate_all_systems` runs `get_roms` (populating L1+L2) before enriching.
 
 **Severity:** Critical
 **File:** `replay-control-app/src/api/cache.rs:1046-1059`, `background.rs:148-167`
@@ -229,7 +233,7 @@ blocking the response.
 
 | Priority | Issue | Fix Effort | Impact |
 |----------|-------|------------|--------|
-| P0 | #1 + #2: Post-import should populate + enrich | Small | Fixes the primary scenario |
+| P0 | #1 + #2: Post-import should populate + enrich | Small | **DONE** (commit `309b8e4`) |
 | P1 | #3: Metadata stats depend on rom_cache | Small | Fixes confusing stats display |
 | P2 | #6: No post-browse enrichment | Medium | Fixes lazy-load box art gap |
 | P3 | #4: 10s flag delay | Small | UX polish |

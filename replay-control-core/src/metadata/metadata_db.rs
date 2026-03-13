@@ -133,6 +133,7 @@ pub struct CachedRom {
     pub base_title: String,
     pub region: String,
     pub is_translation: bool,
+    pub is_hack: bool,
 }
 
 /// Per-system cache metadata from the `rom_cache_meta` table.
@@ -242,6 +243,7 @@ impl MetadataDb {
                     base_title TEXT NOT NULL DEFAULT '',
                     region TEXT NOT NULL DEFAULT '',
                     is_translation INTEGER NOT NULL DEFAULT 0,
+                    is_hack INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -601,11 +603,25 @@ impl MetadataDb {
     }
 
     /// Count metadata entries per system, ordered by count descending.
+    ///
+    /// Uses a LEFT JOIN with rom_cache for M3U dedup: when rom_cache is populated
+    /// for a system, only entries matching rom_cache are counted (disc files
+    /// referenced by .m3u playlists are excluded). When rom_cache is empty for a
+    /// system (e.g. cache not yet warmed after import), all game_metadata entries
+    /// are counted as a fallback to avoid showing 0.
     pub fn entries_per_system(&self) -> Result<Vec<(String, usize)>> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT gm.system, COUNT(*) as cnt FROM game_metadata gm INNER JOIN rom_cache rc ON gm.system = rc.system AND gm.rom_filename = rc.rom_filename GROUP BY gm.system ORDER BY cnt DESC",
+                // LEFT JOIN + NOT EXISTS fallback: use rom_cache for M3U dedup
+                // when available, fall back to raw game_metadata count when
+                // rom_cache is empty for a system.
+                "SELECT gm.system, COUNT(*) as cnt
+                 FROM game_metadata gm
+                 LEFT JOIN rom_cache rc ON gm.system = rc.system AND gm.rom_filename = rc.rom_filename
+                 WHERE rc.rom_filename IS NOT NULL
+                    OR NOT EXISTS (SELECT 1 FROM rom_cache rc2 WHERE rc2.system = gm.system)
+                 GROUP BY gm.system ORDER BY cnt DESC",
             )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -708,14 +724,22 @@ impl MetadataDb {
     }
 
     /// Count image entries per system.
+    ///
+    /// Same LEFT JOIN + NOT EXISTS fallback as [`entries_per_system`] — see its
+    /// doc comment for rationale on M3U dedup vs empty-cache fallback.
     pub fn images_per_system(&self) -> Result<Vec<(String, usize, usize)>> {
         let mut stmt = self
             .conn
             .prepare(
+                // See entries_per_system() for why we use LEFT JOIN + NOT EXISTS.
                 "SELECT gm.system,
                         SUM(CASE WHEN gm.box_art_path IS NOT NULL THEN 1 ELSE 0 END),
                         SUM(CASE WHEN gm.screenshot_path IS NOT NULL THEN 1 ELSE 0 END)
-                 FROM game_metadata gm INNER JOIN rom_cache rc ON gm.system = rc.system AND gm.rom_filename = rc.rom_filename GROUP BY gm.system",
+                 FROM game_metadata gm
+                 LEFT JOIN rom_cache rc ON gm.system = rc.system AND gm.rom_filename = rc.rom_filename
+                 WHERE rc.rom_filename IS NOT NULL
+                    OR NOT EXISTS (SELECT 1 FROM rom_cache rc2 WHERE rc2.system = gm.system)
+                 GROUP BY gm.system",
             )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -761,8 +785,8 @@ impl MetadataDb {
                 .prepare(
                     "INSERT OR IGNORE INTO rom_cache (system, rom_filename, rom_path, display_name,
                      size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating,
-                     is_clone, base_title, region, is_translation)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                     is_clone, base_title, region, is_translation, is_hack)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare rom_cache insert: {e}")))?;
 
@@ -783,6 +807,7 @@ impl MetadataDb {
                     &rom.base_title,
                     &rom.region,
                     rom.is_translation,
+                    rom.is_hack,
                 ])
                 .map_err(|e| Error::Other(format!("Insert rom_cache failed: {e}")))?;
             }
@@ -816,7 +841,7 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation
+                        is_clone, base_title, region, is_translation, is_hack
                  FROM rom_cache WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_roms: {e}")))?;
@@ -1229,11 +1254,11 @@ impl MetadataDb {
                         END
                     ) AS rn
                     FROM rom_cache
-                    WHERE is_clone = 0 AND is_translation = 0
+                    WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation
+                        is_clone, base_title, region, is_translation, is_hack
                 FROM deduped WHERE rn = 1
                 ORDER BY RANDOM() LIMIT ?1",
             )
@@ -1253,7 +1278,7 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation
+                        is_clone, base_title, region, is_translation, is_hack
                  FROM rom_cache
                  WHERE system = ?1 AND box_art_url IS NOT NULL
                  ORDER BY RANDOM() LIMIT ?2",
@@ -1290,11 +1315,11 @@ impl MetadataDb {
                         END
                     ) AS rn
                     FROM rom_cache
-                    WHERE is_clone = 0 AND is_translation = 0 AND rating IS NOT NULL AND rating > 0
+                    WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND rating IS NOT NULL AND rating > 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation
+                        is_clone, base_title, region, is_translation, is_hack
                 FROM (
                     SELECT * FROM deduped WHERE rn = 1
                     ORDER BY rating DESC
@@ -1374,11 +1399,11 @@ impl MetadataDb {
                             END
                         ) AS rn
                         FROM rom_cache
-                        WHERE system = ?1 AND genre = ?2 AND is_clone = 0 AND is_translation = 0
+                        WHERE system = ?1 AND genre = ?2 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, players, rating,
-                            is_clone, base_title, region, is_translation
+                            is_clone, base_title, region, is_translation, is_hack
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
                         ORDER BY rating DESC NULLS LAST
@@ -1409,11 +1434,11 @@ impl MetadataDb {
                             END
                         ) AS rn
                         FROM rom_cache
-                        WHERE system = ?1 AND is_clone = 0 AND is_translation = 0
+                        WHERE system = ?1 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, players, rating,
-                            is_clone, base_title, region, is_translation
+                            is_clone, base_title, region, is_translation, is_hack
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
                         ORDER BY rating DESC NULLS LAST
@@ -1451,6 +1476,7 @@ impl MetadataDb {
                  WHERE system = ?1
                    AND base_title != ''
                    AND is_translation = 0
+                   AND is_hack = 0
                    AND base_title = (
                        SELECT base_title FROM rom_cache
                        WHERE system = ?1 AND rom_filename = ?2
@@ -1507,6 +1533,38 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Find hacks of a game: other ROMs sharing the same base_title that are hacks.
+    /// Returns (rom_filename, display_name) pairs sorted by display_name.
+    /// Returns an empty Vec if the game has no base_title or no hacks exist.
+    pub fn hacks(
+        &self,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, display_name FROM rom_cache
+                 WHERE system = ?1
+                   AND base_title != ''
+                   AND is_hack = 1
+                   AND base_title = (
+                       SELECT base_title FROM rom_cache
+                       WHERE system = ?1 AND rom_filename = ?2
+                   )
+                 ORDER BY display_name",
+            )
+            .map_err(|e| Error::Other(format!("Prepare hacks: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system, rom_filename], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query hacks: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
     /// Find similar games by genre within the same system.
     /// Excludes the given ROM, clones, and games without a genre.
     /// Returns randomized results up to `limit`.
@@ -1522,7 +1580,7 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region, is_translation
+                        is_clone, base_title, region, is_translation, is_hack
                  FROM rom_cache
                  WHERE system = ?1
                    AND genre = ?2
@@ -1530,6 +1588,7 @@ impl MetadataDb {
                    AND rom_filename != ?3
                    AND is_clone = 0
                    AND is_translation = 0
+                   AND is_hack = 0
                  ORDER BY RANDOM()
                  LIMIT ?4",
             )
@@ -1563,6 +1622,7 @@ impl MetadataDb {
             base_title: row.get(12)?,
             region: row.get(13)?,
             is_translation: row.get(14)?,
+            is_hack: row.get(15)?,
         })
     }
 }
@@ -1572,4 +1632,192 @@ fn unix_now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Open a MetadataDb backed by a temp directory.
+    fn open_temp_db() -> (MetadataDb, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = MetadataDb::open(dir.path()).unwrap();
+        (db, dir)
+    }
+
+    fn make_metadata(box_art: Option<&str>) -> GameMetadata {
+        GameMetadata {
+            description: None,
+            rating: Some(4.0),
+            publisher: None,
+            genre: None,
+            source: "test".into(),
+            fetched_at: 0,
+            box_art_path: box_art.map(String::from),
+            screenshot_path: None,
+        }
+    }
+
+    fn make_cached_rom(system: &str, filename: &str, is_m3u: bool) -> CachedRom {
+        CachedRom {
+            system: system.into(),
+            rom_filename: filename.into(),
+            rom_path: format!("/roms/{system}/{filename}"),
+            display_name: None,
+            size_bytes: 1000,
+            is_m3u,
+            box_art_url: None,
+            driver_status: None,
+            genre: None,
+            players: None,
+            rating: None,
+            is_clone: false,
+            base_title: String::new(),
+            region: String::new(),
+            is_translation: false,
+            is_hack: false,
+        }
+    }
+
+    #[test]
+    fn entries_per_system_no_rom_cache_returns_all() {
+        // When rom_cache is empty, entries_per_system should count all
+        // game_metadata entries (fallback behavior).
+        let (mut db, _dir) = open_temp_db();
+        db.bulk_upsert(&[
+            ("sega_smd".into(), "Sonic.md".into(), make_metadata(None)),
+            ("sega_smd".into(), "Streets.md".into(), make_metadata(None)),
+            ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
+        ])
+        .unwrap();
+
+        let counts = db.entries_per_system().unwrap();
+        assert_eq!(counts.len(), 2);
+        // Ordered by count DESC
+        assert_eq!(counts[0], ("sega_smd".into(), 2));
+        assert_eq!(counts[1], ("snes".into(), 1));
+    }
+
+    #[test]
+    fn entries_per_system_with_rom_cache_deduplicates_m3u() {
+        // When rom_cache has data, entries_per_system should only count
+        // game_metadata entries that match rom_cache — disc files excluded
+        // by M3U dedup in rom_cache should not be counted.
+        let (mut db, _dir) = open_temp_db();
+
+        // game_metadata has 3 entries for sega_cd: the .m3u + 2 disc files
+        db.bulk_upsert(&[
+            ("sega_cd".into(), "Game.m3u".into(), make_metadata(None)),
+            ("sega_cd".into(), "Game (Disc 1).cue".into(), make_metadata(None)),
+            ("sega_cd".into(), "Game (Disc 2).cue".into(), make_metadata(None)),
+            ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
+        ])
+        .unwrap();
+
+        // rom_cache only has the .m3u (disc files were deduped out)
+        db.save_system_roms(
+            "sega_cd",
+            &[make_cached_rom("sega_cd", "Game.m3u", true)],
+            None,
+        )
+        .unwrap();
+        db.save_system_roms(
+            "snes",
+            &[make_cached_rom("snes", "Mario.sfc", false)],
+            None,
+        )
+        .unwrap();
+
+        let counts = db.entries_per_system().unwrap();
+        let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
+        let snes = counts.iter().find(|(s, _)| s == "snes").unwrap();
+
+        // sega_cd: only 1 (the .m3u), not 3
+        assert_eq!(sega_cd.1, 1);
+        assert_eq!(snes.1, 1);
+    }
+
+    #[test]
+    fn entries_per_system_mixed_cached_and_uncached_systems() {
+        // One system has rom_cache data (should dedup), another doesn't
+        // (should fall back to full count).
+        let (mut db, _dir) = open_temp_db();
+
+        db.bulk_upsert(&[
+            ("sega_cd".into(), "Game.m3u".into(), make_metadata(None)),
+            ("sega_cd".into(), "Game (Disc 1).cue".into(), make_metadata(None)),
+            ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
+            ("snes".into(), "Zelda.sfc".into(), make_metadata(None)),
+        ])
+        .unwrap();
+
+        // Only sega_cd has rom_cache data
+        db.save_system_roms(
+            "sega_cd",
+            &[make_cached_rom("sega_cd", "Game.m3u", true)],
+            None,
+        )
+        .unwrap();
+
+        let counts = db.entries_per_system().unwrap();
+        let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
+        let snes = counts.iter().find(|(s, _)| s == "snes").unwrap();
+
+        // sega_cd: deduped via rom_cache → 1
+        assert_eq!(sega_cd.1, 1);
+        // snes: no rom_cache, fallback to raw count → 2
+        assert_eq!(snes.1, 2);
+    }
+
+    #[test]
+    fn images_per_system_no_rom_cache_returns_all() {
+        let (mut db, _dir) = open_temp_db();
+        db.bulk_upsert(&[
+            ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
+            ("snes".into(), "Zelda.sfc".into(), make_metadata(None)),
+        ])
+        .unwrap();
+        // bulk_upsert doesn't write image paths; use bulk_update_image_paths.
+        db.bulk_update_image_paths(&[
+            ("snes".into(), "Mario.sfc".into(), Some("/img/mario.png".into()), None),
+        ])
+        .unwrap();
+
+        let imgs = db.images_per_system().unwrap();
+        assert_eq!(imgs.len(), 1);
+        // (system, boxart_count, screenshot_count)
+        assert_eq!(imgs[0], ("snes".into(), 1, 0));
+    }
+
+    #[test]
+    fn images_per_system_with_rom_cache_deduplicates_m3u() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.bulk_upsert(&[
+            ("sega_cd".into(), "Game.m3u".into(), make_metadata(None)),
+            ("sega_cd".into(), "Game (Disc 1).cue".into(), make_metadata(None)),
+            ("sega_cd".into(), "Game (Disc 2).cue".into(), make_metadata(None)),
+        ])
+        .unwrap();
+        db.bulk_update_image_paths(&[
+            ("sega_cd".into(), "Game.m3u".into(), Some("/img/game.png".into()), None),
+            ("sega_cd".into(), "Game (Disc 1).cue".into(), Some("/img/game.png".into()), None),
+            ("sega_cd".into(), "Game (Disc 2).cue".into(), Some("/img/game.png".into()), None),
+        ])
+        .unwrap();
+
+        // rom_cache only has the .m3u
+        db.save_system_roms(
+            "sega_cd",
+            &[make_cached_rom("sega_cd", "Game.m3u", true)],
+            None,
+        )
+        .unwrap();
+
+        let imgs = db.images_per_system().unwrap();
+        let sega_cd = imgs.iter().find(|(s, _, _)| s == "sega_cd").unwrap();
+
+        // Only 1 boxart counted (the .m3u match), not 3
+        assert_eq!(sega_cd.1, 1);
+    }
 }
