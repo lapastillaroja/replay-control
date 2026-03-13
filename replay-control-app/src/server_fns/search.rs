@@ -287,7 +287,7 @@ pub(crate) fn lookup_genre(system: &str, rom_filename: &str) -> String {
     let is_arcade =
         systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
 
-    if is_arcade {
+    let baked_genre = if is_arcade {
         let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
         arcade_db::lookup_arcade_game(stem)
             .map(|info| info.normalized_genre.to_string())
@@ -304,7 +304,24 @@ pub(crate) fn lookup_genre(system: &str, rom_filename: &str) -> String {
         });
         game.map(|g| g.normalized_genre.to_string())
             .unwrap_or_default()
+    };
+
+    if !baked_genre.is_empty() {
+        return baked_genre;
     }
+
+    // Fallback: check LaunchBox metadata for genre.
+    let state = leptos::prelude::expect_context::<crate::api::AppState>();
+    if let Some(guard) = state.metadata_db()
+        && let Some(db) = guard.as_ref()
+        && let Ok(Some(meta)) = db.lookup(system, rom_filename)
+        && let Some(genre) = meta.genre
+        && !genre.is_empty()
+    {
+        return genre;
+    }
+
+    String::new()
 }
 
 /// Look up the max player count for a ROM on a given system.

@@ -89,6 +89,7 @@ pub struct GameMetadata {
     pub description: Option<String>,
     pub rating: Option<f64>,
     pub publisher: Option<String>,
+    pub genre: Option<String>,
     pub source: String,
     pub fetched_at: i64,
     pub box_art_path: Option<String>,
@@ -198,6 +199,7 @@ impl MetadataDb {
                     description TEXT,
                     rating REAL,
                     publisher TEXT,
+                    genre TEXT,
                     source TEXT NOT NULL,
                     fetched_at INTEGER NOT NULL,
                     box_art_path TEXT,
@@ -265,7 +267,7 @@ impl MetadataDb {
         let result = self
             .conn
             .query_row(
-                "SELECT description, rating, publisher, source, fetched_at, box_art_path, screenshot_path
+                "SELECT description, rating, publisher, genre, source, fetched_at, box_art_path, screenshot_path
                  FROM game_metadata WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
                 |row| {
@@ -273,10 +275,11 @@ impl MetadataDb {
                         description: row.get(0)?,
                         rating: row.get(1)?,
                         publisher: row.get(2)?,
-                        source: row.get(3)?,
-                        fetched_at: row.get(4)?,
-                        box_art_path: row.get(5)?,
-                        screenshot_path: row.get(6)?,
+                        genre: row.get(3)?,
+                        source: row.get(4)?,
+                        fetched_at: row.get(5)?,
+                        box_art_path: row.get(6)?,
+                        screenshot_path: row.get(7)?,
                     })
                 },
             )
@@ -388,7 +391,7 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, description, rating, publisher, source, fetched_at,
+                "SELECT rom_filename, description, rating, publisher, genre, source, fetched_at,
                         box_art_path, screenshot_path
                  FROM game_metadata WHERE system = ?1",
             )
@@ -402,10 +405,11 @@ impl MetadataDb {
                         description: row.get(1)?,
                         rating: row.get(2)?,
                         publisher: row.get(3)?,
-                        source: row.get(4)?,
-                        fetched_at: row.get(5)?,
-                        box_art_path: row.get(6)?,
-                        screenshot_path: row.get(7)?,
+                        genre: row.get(4)?,
+                        source: row.get(5)?,
+                        fetched_at: row.get(6)?,
+                        box_art_path: row.get(7)?,
+                        screenshot_path: row.get(8)?,
                     },
                 ))
             })
@@ -455,12 +459,13 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, source, fetched_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, genre, source, fetched_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                      ON CONFLICT(system, rom_filename) DO UPDATE SET
                         description = excluded.description,
                         rating = excluded.rating,
                         publisher = excluded.publisher,
+                        genre = excluded.genre,
                         source = excluded.source,
                         fetched_at = excluded.fetched_at",
                 )
@@ -473,6 +478,7 @@ impl MetadataDb {
                     meta.description,
                     meta.rating,
                     meta.publisher,
+                    meta.genre,
                     meta.source,
                     meta.fetched_at,
                 ])

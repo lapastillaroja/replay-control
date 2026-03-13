@@ -304,6 +304,10 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
                 if meta.publisher.is_some() {
                     info.publisher = meta.publisher;
                 }
+                // Use LaunchBox genre as fallback when baked-in DB has none.
+                if info.genre.is_empty() && meta.genre.is_some() {
+                    info.genre = meta.genre.unwrap_or_default();
+                }
                 // Only set box_art_url from metadata if no override was set above.
                 if info.box_art_url.is_none()
                     && let Some(ref path) = meta.box_art_path

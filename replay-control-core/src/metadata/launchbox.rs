@@ -88,6 +88,7 @@ struct LbGame {
     overview: String,
     rating: Option<f64>,
     publisher: String,
+    genre: String,
 }
 
 /// Normalize a game title for fuzzy matching.
@@ -178,7 +179,7 @@ pub fn import_launchbox(
         stats.total_source += 1;
 
         // Skip entries with no useful data.
-        if game.overview.is_empty() && game.rating.is_none() {
+        if game.overview.is_empty() && game.rating.is_none() && game.genre.is_empty() {
             stats.skipped += 1;
             return;
         }
@@ -200,6 +201,11 @@ pub fn import_launchbox(
                         None
                     } else {
                         Some(game.publisher.clone())
+                    },
+                    genre: if game.genre.is_empty() {
+                        None
+                    } else {
+                        Some(game.genre.clone())
                     },
                     source: "launchbox".to_string(),
                     fetched_at: now,
@@ -265,6 +271,7 @@ fn parse_xml<R: BufRead>(
     let mut overview = String::new();
     let mut rating: Option<f64> = None;
     let mut publisher = String::new();
+    let mut genre = String::new();
 
     loop {
         match xml.read_event_into(&mut buf) {
@@ -278,6 +285,7 @@ fn parse_xml<R: BufRead>(
                     overview.clear();
                     rating = None;
                     publisher.clear();
+                    genre.clear();
                 } else if in_game {
                     current_tag = tag.to_string();
                 }
@@ -293,6 +301,7 @@ fn parse_xml<R: BufRead>(
                             rating = text.parse::<f64>().ok();
                         }
                         "Publisher" => publisher.push_str(&text),
+                        "Genres" => genre.push_str(&text),
                         _ => {}
                     }
                 }
@@ -308,6 +317,7 @@ fn parse_xml<R: BufRead>(
                             overview: std::mem::take(&mut overview),
                             rating,
                             publisher: std::mem::take(&mut publisher),
+                            genre: std::mem::take(&mut genre),
                         };
                         for folder in system_folders {
                             on_game(&game, folder);

@@ -1219,6 +1219,7 @@ impl RomCache {
                         description: donor_meta.description.clone(),
                         rating: donor_meta.rating,
                         publisher: donor_meta.publisher.clone(),
+                        genre: donor_meta.genre.clone(),
                         source: "launchbox-auto".to_string(),
                         fetched_at: now,
                         box_art_path: None,
