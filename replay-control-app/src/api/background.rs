@@ -389,4 +389,268 @@ impl AppState {
                 .iter()
                 .any(|p| p.file_name().is_some_and(|n| n == config_filename))
     }
+
+    /// Spawn a filesystem watcher on the `roms/` directory for local storage.
+    ///
+    /// Only starts for local storage kinds (`Sd`, `Usb`, `Nvme`) where
+    /// inotify works reliably. NFS is excluded because inotify does not
+    /// detect changes made by other NFS clients. For NFS, users trigger
+    /// rescans manually via the metadata page "Update" button.
+    pub fn spawn_rom_watcher(&self) {
+        let storage = self.storage();
+        if !storage.kind.is_local() {
+            tracing::debug!(
+                "ROM watcher skipped for {:?} storage (inotify unreliable on NFS)",
+                storage.kind
+            );
+            return;
+        }
+
+        let roms_dir = storage.roms_dir();
+        if !roms_dir.exists() {
+            tracing::debug!(
+                "ROM watcher skipped: roms directory does not exist ({})",
+                roms_dir.display()
+            );
+            return;
+        }
+
+        let state = self.clone();
+        tokio::spawn(async move {
+            let watcher_active = Self::try_start_rom_watcher(state, roms_dir).await;
+            if watcher_active {
+                tracing::info!("ROM directory watcher active");
+            } else {
+                tracing::warn!(
+                    "ROM directory watcher could not be started; \
+                     new ROMs will be detected on page visit or next restart"
+                );
+            }
+        });
+    }
+
+    /// Try to set up a `notify` filesystem watcher on the `roms/` directory.
+    /// Returns `true` if the watcher was started successfully.
+    ///
+    /// Watches recursively for create/modify/remove events. On change,
+    /// extracts the affected system folder name from the event path and
+    /// triggers `get_roms` + `enrich_system_cache` after a debounce window.
+    ///
+    /// When a top-level change is detected in the `roms/` directory itself
+    /// (new system directory created), triggers a `get_systems` refresh.
+    async fn try_start_rom_watcher(state: AppState, roms_dir: PathBuf) -> bool {
+        use notify::{RecursiveMode, Watcher, recommended_watcher};
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+
+        let mut watcher =
+            match recommended_watcher(move |res: Result<notify::Event, notify::Error>| match res {
+                Ok(event) => {
+                    let _ = tx.blocking_send(event);
+                }
+                Err(e) => {
+                    tracing::warn!("ROM watcher error: {e}");
+                }
+            }) {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::warn!("Failed to create ROM watcher: {e}");
+                    return false;
+                }
+            };
+
+        if let Err(e) = watcher.watch(&roms_dir, RecursiveMode::Recursive) {
+            tracing::warn!(
+                "Failed to watch roms directory {}: {e}",
+                roms_dir.display()
+            );
+            return false;
+        }
+
+        tracing::info!("Watching {} for ROM changes", roms_dir.display());
+
+        tokio::spawn(async move {
+            let _watcher = watcher; // prevent drop
+
+            // Debounce: batch rapid filesystem events (e.g., bulk copy) before
+            // triggering a rescan. 3 seconds balances responsiveness vs thrashing.
+            const DEBOUNCE: Duration = Duration::from_secs(3);
+
+            loop {
+                // Wait for the next event.
+                let Some(event) = rx.recv().await else {
+                    tracing::warn!("ROM watcher channel closed");
+                    break;
+                };
+
+                if !Self::is_rom_event(&event) {
+                    continue;
+                }
+
+                // Collect affected system folder names from this and subsequent
+                // events within the debounce window.
+                let mut affected_systems = std::collections::HashSet::new();
+                let mut roms_dir_changed = false;
+                Self::collect_rom_event_systems(
+                    &event,
+                    &roms_dir,
+                    &mut affected_systems,
+                    &mut roms_dir_changed,
+                );
+
+                tracing::debug!(
+                    "ROM change detected ({:?}), debouncing...",
+                    event.kind
+                );
+
+                // Drain further events within the debounce window.
+                let deadline = tokio::time::Instant::now() + DEBOUNCE;
+                loop {
+                    match tokio::time::timeout_at(deadline, rx.recv()).await {
+                        Ok(Some(ev)) => {
+                            if Self::is_rom_event(&ev) {
+                                Self::collect_rom_event_systems(
+                                    &ev,
+                                    &roms_dir,
+                                    &mut affected_systems,
+                                    &mut roms_dir_changed,
+                                );
+                            }
+                        }
+                        Ok(None) => break, // Channel closed
+                        Err(_) => break,   // Debounce window expired
+                    }
+                }
+
+                // Skip if a metadata operation is running (import, thumbnail
+                // update) — opening a second nolock DB connection would corrupt.
+                if state
+                    .metadata_operation_in_progress
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    tracing::debug!(
+                        "Metadata operation in progress, skipping ROM watcher rescan"
+                    );
+                    continue;
+                }
+
+                // Run the rescan in a blocking thread to avoid blocking the
+                // async event loop.
+                let state_clone = state.clone();
+                let affected = affected_systems.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let storage = state_clone.storage();
+                    let region_pref = state_clone.region_preference();
+
+                    // Invalidate L1+L2 for each affected system so get_roms
+                    // does a fresh L3 filesystem scan.
+                    for system in &affected {
+                        state_clone.cache.invalidate_system(system);
+                    }
+
+                    // Re-scan each affected system.
+                    if !affected.is_empty() {
+                        tracing::info!(
+                            "ROM watcher: re-scanning {} system(s): {}",
+                            affected.len(),
+                            affected.iter().cloned().collect::<Vec<_>>().join(", ")
+                        );
+                        for system in &affected {
+                            let _ = state_clone.cache.get_roms(&storage, system, region_pref);
+                            state_clone.cache.enrich_system_cache(&state_clone, system);
+                        }
+                    }
+
+                    // If the roms/ directory itself changed (new subdirectory
+                    // created or removed), refresh the systems list to discover
+                    // new systems and update game counts.
+                    if roms_dir_changed {
+                        tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
+                        // invalidate_system already cleared L1 systems cache,
+                        // so get_systems will go through L2 (now updated by
+                        // get_roms above) or L3.
+                        let systems = state_clone.cache.get_systems(&storage);
+                        // Enrich any newly discovered systems that weren't in
+                        // the affected set (e.g., the system directory was
+                        // created in a previous event batch, and ROMs are being
+                        // added now via a separate copy operation).
+                        for sys in &systems {
+                            if sys.game_count > 0 && !affected.contains(&sys.folder_name) {
+                                let _ = state_clone.cache.get_roms(
+                                    &storage,
+                                    &sys.folder_name,
+                                    region_pref,
+                                );
+                                state_clone
+                                    .cache
+                                    .enrich_system_cache(&state_clone, &sys.folder_name);
+                            }
+                        }
+                    } else if !affected.is_empty() {
+                        // Game counts may have changed — refresh the systems
+                        // list. L1 was already cleared by invalidate_system.
+                        let _ = state_clone.cache.get_systems(&storage);
+                    }
+                })
+                .await;
+            }
+        });
+
+        true
+    }
+
+    /// Check whether a notify event is relevant to ROM files/directories.
+    fn is_rom_event(event: &notify::Event) -> bool {
+        use notify::EventKind;
+
+        matches!(
+            event.kind,
+            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+        )
+    }
+
+    /// Extract system folder names from event paths and detect top-level
+    /// roms/ directory changes.
+    ///
+    /// Event paths are absolute (e.g., `/media/usb/roms/nintendo_snes/game.sfc`).
+    /// We strip the `roms_dir` prefix and take the first path component as
+    /// the system folder name. If the event is directly on a child of
+    /// `roms/` (e.g., a new directory was created), we flag `roms_dir_changed`.
+    fn collect_rom_event_systems(
+        event: &notify::Event,
+        roms_dir: &std::path::Path,
+        affected_systems: &mut std::collections::HashSet<String>,
+        roms_dir_changed: &mut bool,
+    ) {
+        for path in &event.paths {
+            let relative = match path.strip_prefix(roms_dir) {
+                Ok(rel) => rel,
+                Err(_) => continue,
+            };
+
+            // Get the first path component (the system folder name).
+            let mut components = relative.components();
+            let Some(first) = components.next() else {
+                // Event on roms/ directory itself.
+                *roms_dir_changed = true;
+                continue;
+            };
+
+            let system_name = first.as_os_str().to_string_lossy();
+
+            // Skip internal directories (e.g., _favorites, _recent).
+            if system_name.starts_with('_') {
+                continue;
+            }
+
+            // If the event path has only one component (no further child),
+            // it's a direct child of roms/ — either a new system directory
+            // was created or an entry was removed.
+            if components.next().is_none() {
+                *roms_dir_changed = true;
+            }
+
+            affected_systems.insert(system_name.into_owned());
+        }
+    }
 }

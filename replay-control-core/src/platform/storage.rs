@@ -21,6 +21,15 @@ pub enum StorageKind {
     Nfs,
 }
 
+impl StorageKind {
+    /// Returns `true` for local filesystems where inotify works reliably.
+    /// NFS is excluded because inotify does not detect changes made by
+    /// other NFS clients (only local VFS operations generate events).
+    pub fn is_local(self) -> bool {
+        matches!(self, Self::Sd | Self::Usb | Self::Nvme)
+    }
+}
+
 /// Directory name for Replay Control data on ROM storage.
 pub const RC_DIR: &str = ".replay-control";
 /// Filename for the user-saved video links JSON.

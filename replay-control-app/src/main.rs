@@ -67,6 +67,10 @@ mod ssr {
         // Verify L2 cache freshness in background (re-scans stale systems).
         app_state.spawn_cache_verification();
 
+        // Watch the roms/ directory for changes on local storage (inotify).
+        // Skipped for NFS where inotify is unreliable for remote changes.
+        app_state.spawn_rom_watcher();
+
         // Auto-import metadata if launchbox-metadata.xml exists and DB is empty.
         app_state.spawn_auto_import();
 
