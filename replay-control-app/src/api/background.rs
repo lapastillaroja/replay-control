@@ -144,25 +144,39 @@ impl AppState {
     }
 
     /// Re-enrich rom_cache for all systems after a metadata or thumbnail import.
-    /// Updates box_art_url and rating columns with freshly imported data.
+    /// If rom_cache is empty (e.g., DB was deleted and recreated during import),
+    /// does a full populate first (scan ROMs + enrich). Otherwise just enriches
+    /// existing entries with updated box art URLs and ratings.
     pub fn spawn_cache_enrichment(&self) {
         let state = self.clone();
         std::thread::spawn(move || {
             let storage = state.storage();
-            let systems = state.cache.get_systems(&storage);
-            let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
-            tracing::info!(
-                "Post-import enrichment: updating {} system(s)",
-                with_games.len()
-            );
-            let start = std::time::Instant::now();
-            for sys in &with_games {
-                state.cache.enrich_system_cache(&state, &sys.folder_name);
+            let region_pref = state.region_preference();
+
+            // Check if rom_cache is empty — if so, populate before enriching.
+            let is_empty = state.cache.with_db_read(&storage, |db| {
+                db.load_all_system_meta().map(|m| m.is_empty()).unwrap_or(true)
+            }).unwrap_or(true);
+
+            if is_empty {
+                tracing::info!("Post-import: rom_cache is empty, running full populate");
+                Self::populate_all_systems(&state, &storage, region_pref);
+            } else {
+                let systems = state.cache.get_systems(&storage);
+                let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
+                tracing::info!(
+                    "Post-import enrichment: updating {} system(s)",
+                    with_games.len()
+                );
+                let start = std::time::Instant::now();
+                for sys in &with_games {
+                    state.cache.enrich_system_cache(&state, &sys.folder_name);
+                }
+                tracing::info!(
+                    "Post-import enrichment: done in {:.1}s",
+                    start.elapsed().as_secs_f64()
+                );
             }
-            tracing::info!(
-                "Post-import enrichment: done in {:.1}s",
-                start.elapsed().as_secs_f64()
-            );
         });
     }
 
