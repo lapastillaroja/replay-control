@@ -9,7 +9,7 @@ use crate::components::hero_card::GameScrollCard;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
-use crate::server_fns::{self, RecommendedGame, RegionalVariant, RomDetail};
+use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
 
 #[component]
@@ -662,13 +662,29 @@ fn RelatedGamesSection(
                 Ok::<_, ServerFnError>(match data {
                     Ok(data) => {
                         let has_variants = data.regional_variants.len() > 1;
+                        let has_translations = !data.translations.is_empty();
                         let has_similar = !data.similar_games.is_empty();
-                        if !has_variants && !has_similar {
+                        if !has_variants && !has_translations && !has_similar {
                             view! { <div /> }.into_any()
                         } else {
+                            let variant_chips: Vec<ChipItem> = data.regional_variants.iter().map(|v| {
+                                ChipItem { label: v.region.clone(), href: v.href.clone(), is_current: v.is_current }
+                            }).collect();
+                            let translation_chips: Vec<ChipItem> = data.translations.iter().map(|v| {
+                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
+                            }).collect();
                             view! {
                                 <Show when=move || has_variants>
-                                    <RegionalVariantsChips variants=data.regional_variants.clone() />
+                                    <GameChipRow
+                                        title_key="game_detail.regional_variants"
+                                        chips=variant_chips.clone()
+                                    />
+                                </Show>
+                                <Show when=move || has_translations>
+                                    <GameChipRow
+                                        title_key="game_detail.translations"
+                                        chips=translation_chips.clone()
+                                    />
                                 </Show>
                                 <Show when=move || has_similar>
                                     <SimilarGamesRow games=data.similar_games.clone() />
@@ -683,19 +699,28 @@ fn RelatedGamesSection(
     }
 }
 
-/// Horizontal chip row showing regional variants as clickable links.
+/// A single chip item for the generic chip row.
+#[derive(Debug, Clone)]
+struct ChipItem {
+    label: String,
+    href: String,
+    is_current: bool,
+}
+
+/// Generic horizontal chip row showing clickable links with a section title.
+/// Reuses `.regional-variants` and `.region-chip` CSS classes.
 #[component]
-fn RegionalVariantsChips(variants: Vec<RegionalVariant>) -> impl IntoView {
+fn GameChipRow(title_key: &'static str, chips: Vec<ChipItem>) -> impl IntoView {
     let i18n = use_i18n();
 
     view! {
         <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.regional_variants")}</h2>
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), title_key)}</h2>
             <div class="regional-variants">
-                {variants.into_iter().map(|v| {
-                    let class = if v.is_current { "region-chip active" } else { "region-chip" };
+                {chips.into_iter().map(|chip| {
+                    let class = if chip.is_current { "region-chip active" } else { "region-chip" };
                     view! {
-                        <A href=v.href attr:class=class>{v.region}</A>
+                        <A href=chip.href attr:class=class>{chip.label}</A>
                     }
                 }).collect::<Vec<_>>()}
             </div>

@@ -131,6 +131,7 @@ pub struct CachedRom {
     pub is_clone: bool,
     pub base_title: String,
     pub region: String,
+    pub is_translation: bool,
 }
 
 /// Per-system cache metadata from the `rom_cache_meta` table.
@@ -238,6 +239,7 @@ impl MetadataDb {
                     is_clone INTEGER NOT NULL DEFAULT 0,
                     base_title TEXT NOT NULL DEFAULT '',
                     region TEXT NOT NULL DEFAULT '',
+                    is_translation INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -753,8 +755,8 @@ impl MetadataDb {
                 .prepare(
                     "INSERT OR IGNORE INTO rom_cache (system, rom_filename, rom_path, display_name,
                      size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating,
-                     is_clone, base_title, region)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                     is_clone, base_title, region, is_translation)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare rom_cache insert: {e}")))?;
 
@@ -774,6 +776,7 @@ impl MetadataDb {
                     rom.is_clone,
                     &rom.base_title,
                     &rom.region,
+                    rom.is_translation,
                 ])
                 .map_err(|e| Error::Other(format!("Insert rom_cache failed: {e}")))?;
             }
@@ -807,7 +810,7 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region
+                        is_clone, base_title, region, is_translation
                  FROM rom_cache WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_roms: {e}")))?;
@@ -1220,11 +1223,11 @@ impl MetadataDb {
                         END
                     ) AS rn
                     FROM rom_cache
-                    WHERE is_clone = 0
+                    WHERE is_clone = 0 AND is_translation = 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region
+                        is_clone, base_title, region, is_translation
                 FROM deduped WHERE rn = 1
                 ORDER BY RANDOM() LIMIT ?1",
             )
@@ -1244,7 +1247,7 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region
+                        is_clone, base_title, region, is_translation
                  FROM rom_cache
                  WHERE system = ?1 AND box_art_url IS NOT NULL
                  ORDER BY RANDOM() LIMIT ?2",
@@ -1281,11 +1284,11 @@ impl MetadataDb {
                         END
                     ) AS rn
                     FROM rom_cache
-                    WHERE is_clone = 0 AND rating IS NOT NULL AND rating > 0
+                    WHERE is_clone = 0 AND is_translation = 0 AND rating IS NOT NULL AND rating > 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region
+                        is_clone, base_title, region, is_translation
                 FROM (
                     SELECT * FROM deduped WHERE rn = 1
                     ORDER BY rating DESC
@@ -1365,11 +1368,11 @@ impl MetadataDb {
                             END
                         ) AS rn
                         FROM rom_cache
-                        WHERE system = ?1 AND genre = ?2 AND is_clone = 0
+                        WHERE system = ?1 AND genre = ?2 AND is_clone = 0 AND is_translation = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, players, rating,
-                            is_clone, base_title, region
+                            is_clone, base_title, region, is_translation
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
                         ORDER BY rating DESC NULLS LAST
@@ -1400,11 +1403,11 @@ impl MetadataDb {
                             END
                         ) AS rn
                         FROM rom_cache
-                        WHERE system = ?1 AND is_clone = 0
+                        WHERE system = ?1 AND is_clone = 0 AND is_translation = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, players, rating,
-                            is_clone, base_title, region
+                            is_clone, base_title, region, is_translation
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
                         ORDER BY rating DESC NULLS LAST
@@ -1441,6 +1444,7 @@ impl MetadataDb {
                 "SELECT rom_filename, region FROM rom_cache
                  WHERE system = ?1
                    AND base_title != ''
+                   AND is_translation = 0
                    AND base_title = (
                        SELECT base_title FROM rom_cache
                        WHERE system = ?1 AND rom_filename = ?2
@@ -1465,6 +1469,38 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Find translations of a game: other ROMs sharing the same base_title that are translations.
+    /// Returns (rom_filename, display_name) pairs sorted by display_name.
+    /// Returns an empty Vec if the game has no base_title or no translations exist.
+    pub fn translations(
+        &self,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, display_name FROM rom_cache
+                 WHERE system = ?1
+                   AND base_title != ''
+                   AND is_translation = 1
+                   AND base_title = (
+                       SELECT base_title FROM rom_cache
+                       WHERE system = ?1 AND rom_filename = ?2
+                   )
+                 ORDER BY display_name",
+            )
+            .map_err(|e| Error::Other(format!("Prepare translations: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system, rom_filename], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query translations: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
     /// Find similar games by genre within the same system.
     /// Excludes the given ROM, clones, and games without a genre.
     /// Returns randomized results up to `limit`.
@@ -1480,13 +1516,14 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, players, rating,
-                        is_clone, base_title, region
+                        is_clone, base_title, region, is_translation
                  FROM rom_cache
                  WHERE system = ?1
                    AND genre = ?2
                    AND genre != ''
                    AND rom_filename != ?3
                    AND is_clone = 0
+                   AND is_translation = 0
                  ORDER BY RANDOM()
                  LIMIT ?4",
             )
@@ -1519,6 +1556,7 @@ impl MetadataDb {
             is_clone: row.get(11)?,
             base_title: row.get(12)?,
             region: row.get(13)?,
+            is_translation: row.get(14)?,
         })
     }
 }

@@ -478,7 +478,8 @@ impl RomCache {
                     }
                 };
 
-                let (_, region_priority) = replay_control_core::rom_tags::classify(rom_filename);
+                let (tier, region_priority) = replay_control_core::rom_tags::classify(rom_filename);
+                let is_translation = tier == replay_control_core::rom_tags::RomTier::Translation;
                 let region = match region_priority {
                     replay_control_core::rom_tags::RegionPriority::Usa => "usa",
                     replay_control_core::rom_tags::RegionPriority::Europe => "europe",
@@ -503,6 +504,7 @@ impl RomCache {
                     is_clone,
                     base_title,
                     region: region.to_string(),
+                    is_translation,
                 }
             })
             .collect();
