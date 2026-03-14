@@ -54,7 +54,7 @@ favorites/recents).
 
 ### Recommended future work
 Build a dedicated "Media" section with video-appropriate UI. See
-`docs/reference/alpha-player-analysis.md` for a full analysis.
+`research/investigations/alpha-player-analysis.md` for a full analysis.
 
 ### Priority
 Low — Alpha Player is a niche feature and hiding it has no user-facing
@@ -99,4 +99,4 @@ Medium — affects any user who adds ROMs outside the companion app (common for
 power users using SCP/NFS). Workaround: manually trigger re-import/update from
 the Metadata page.
 
-See `docs/reference/thumbnail-new-roms-behavior.md` for full analysis.
+See `research/plans/thumbnail-new-roms-behavior.md` for full analysis.

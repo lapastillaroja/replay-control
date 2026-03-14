@@ -1,5 +1,7 @@
 # ROM Matching
 
+> **Note**: See also `docs/features/metadata.md` and `docs/features/thumbnails.md` for current-state documentation of matching and metadata resolution.
+
 How Replay identifies games, resolves display names, and matches ROMs to external metadata. This documents the **implemented** logic as of March 2026.
 
 ---

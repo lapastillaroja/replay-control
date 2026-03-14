@@ -75,7 +75,7 @@ RePlayOS is a **Linux distribution** featuring a custom **libretro frontend** de
 
 ## Current Status
 
-See `docs/features.md` for detailed per-page tracking of implemented, planned, and future features.
+See `docs/features/index.md` for detailed per-page tracking of implemented, planned, and future features.
 
 ### Implemented
 - **ROM browsing & management** — browse by system, search, rename, delete, favorite toggle, infinite scroll with pagination
@@ -90,8 +90,8 @@ See `docs/features.md` for detailed per-page tracking of implemented, planned, a
 - **Installation** — `install.sh` supports SSH and SD card deployment methods
 
 ### Not Yet Implemented
-- **Screenshots browser** — browsing and managing RePlayOS screenshots (see `docs/reference/screenshots-analysis.md`)
-- **Game launching** — launching games from the web UI (see `docs/reference/game-launching.md`)
+- **Screenshots browser** — browsing and managing RePlayOS screenshots (see `research/investigations/screenshots-analysis.md`)
+- **Game launching** — launching games from the web UI (see `docs/features/game-launching.md`)
 - **Remote control** — triggering actions on RePlayOS from the web UI
 - **Backup & sync** — backup ROM library, save states, config
 - **RetroAchievements integration** — show earned achievements per game

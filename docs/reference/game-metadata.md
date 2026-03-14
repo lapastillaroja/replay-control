@@ -1,5 +1,7 @@
 # Game Metadata
 
+> **Note**: For current-state developer documentation, see `docs/features/metadata.md`. This file provides the original evaluation and planning context.
+
 How game metadata works in Replay today, what's missing, and the plan for enriching it with external sources.
 
 **Last updated:** March 2026
@@ -10,7 +12,7 @@ How game metadata works in Replay today, what's missing, and the plan for enrich
 
 ### Embedded Databases
 
-Replay ships two embedded metadata databases, compiled into the binary at build time via PHF maps. They are separate modules with different data models and build pipelines (see `reference/arcade-db-unification-analysis.md` for the rationale).
+Replay ships two embedded metadata databases, compiled into the binary at build time via PHF maps. They are separate modules with different data models and build pipelines (see `research/investigations/arcade-db-unification-analysis.md` for the rationale).
 
 **game_db** (non-arcade systems, ~34K ROM entries across 20+ systems):
 - Two-level model: `CanonicalGame` (shared per game) + `GameEntry` (per ROM variant)
@@ -512,7 +514,7 @@ The page is accessible from the More menu and provides:
 - **Cache management** — clear all metadata, clear images only, clear source cache. Each with confirmation and space-to-be-freed estimate
 - **Attribution** — visible source credits as required by data licenses
 
-See `docs/features.md` (Metadata Management section) for the full feature breakdown and future ideas.
+See `docs/features/index.md` (Metadata Management section) for the full feature breakdown and future ideas.
 
 ---
 
