@@ -603,9 +603,10 @@ impl AppState {
                         p.step_total = total_systems;
                         p.downloaded = prev_downloaded + downloaded;
                         p.elapsed_secs = start.elapsed().as_secs();
-                        // Encode per-system progress in current_label.
+                        // Encode per-system progress in current_label (1-based for display).
                         if total > 0 {
-                            p.current_label = format!("{system_display}: {processed}/{total}");
+                            let display_n = (processed + 1).min(total);
+                            p.current_label = format!("{system_display}: {display_n}/{total}");
                         }
                     }
                 },
