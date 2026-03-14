@@ -56,7 +56,7 @@ pub fn scan_systems(storage: &StorageLocation) -> Vec<SystemSummary> {
     for system in systems::visible_systems() {
         let system_dir = roms_dir.join(system.folder_name);
         let (count, size) = if system_dir.exists() {
-            count_roms_recursive(&system_dir, system)
+            count_roms_recursive(&system_dir, system, &roms_dir)
         } else {
             (0, 0)
         };
@@ -205,14 +205,15 @@ pub fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
     duplicates
 }
 
-fn count_roms_recursive(dir: &Path, system: &System) -> (usize, u64) {
-    count_roms_inner(dir, system, &HashSet::new())
+fn count_roms_recursive(dir: &Path, system: &System, roms_root: &Path) -> (usize, u64) {
+    count_roms_inner(dir, system, &HashSet::new(), roms_root)
 }
 
 fn count_roms_inner(
     dir: &Path,
     system: &System,
     parent_m3u_refs: &HashSet<String>,
+    roms_root: &Path,
 ) -> (usize, u64) {
     let mut count = 0usize;
     let mut size = 0u64;
@@ -279,7 +280,7 @@ fn count_roms_inner(
 
     // Recurse into subdirectories, passing down the M3U references.
     for subdir in subdirs {
-        let (sub_count, sub_size) = count_roms_inner(&subdir, system, &referenced);
+        let (sub_count, sub_size) = count_roms_inner(&subdir, system, &referenced, roms_root);
         count += sub_count;
         size += sub_size;
     }
@@ -308,6 +309,10 @@ fn count_roms_inner(
         for f in &files {
             let lower = f.filename.to_lowercase();
             if f.is_m3u {
+                // Skip orphan M3Us whose targets don't exist on disk.
+                if !m3u_has_target_on_disk(&f.path, roms_root) {
+                    continue;
+                }
                 m3u_count += 1;
                 m3u_size += f.size;
             } else if all_refs.contains(&lower) {
@@ -417,6 +422,51 @@ fn parse_m3u_references(m3u_path: &Path) -> Vec<String> {
     refs
 }
 
+/// Check whether an M3U file's target(s) exist on disk.
+///
+/// Reads the M3U content, extracts each referenced path, and checks if at
+/// least one target file exists. Handles absolute Pi-side paths like
+/// `/media/nfs/roms/scummvm/Game/Game.svm` by extracting the portion after
+/// `/roms/` and resolving it relative to `roms_root`.
+fn m3u_has_target_on_disk(m3u_path: &Path, roms_root: &Path) -> bool {
+    let file = match std::fs::File::open(m3u_path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+
+    let reader = BufReader::new(file.take(8192));
+    for line_result in reader.lines() {
+        let line = match line_result {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if !looks_like_filename(trimmed) {
+            break;
+        }
+        let normalized = trimmed.replace('\\', "/");
+
+        // Try resolving via /roms/ prefix (absolute Pi-side paths).
+        if let Some(after_roms) = normalized.split("/roms/").nth(1) {
+            if roms_root.join(after_roms).exists() {
+                return true;
+            }
+        }
+
+        // Try resolving relative to the M3U file's parent directory.
+        if let Some(parent) = m3u_path.parent() {
+            if parent.join(&normalized).exists() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 /// Check whether a string looks like a valid filename reference in an M3U.
 /// Rejects binary data lines and overly long strings.
 fn looks_like_filename(s: &str) -> bool {
@@ -472,6 +522,12 @@ fn apply_m3u_dedup(roms: &mut Vec<RomEntry>, roms_root: &Path) {
         return;
     }
 
+    // Collect the set of M3U indices that have at least one reference.
+    let m3u_indices_with_refs: HashSet<usize> = referenced_by_m3u
+        .values()
+        .flat_map(|v| v.iter().copied())
+        .collect();
+
     // Build a set of ROM indices to remove (disc files referenced by M3U).
     // Also accumulate sizes to add to each M3U entry.
     let mut m3u_extra_size: HashMap<usize, u64> = HashMap::new();
@@ -491,6 +547,15 @@ fn apply_m3u_dedup(roms: &mut Vec<RomEntry>, roms_root: &Path) {
         }
     }
 
+    // Orphan M3U detection: an M3U whose references matched zero collected
+    // ROMs is a stub (e.g., ScummVM wrapper M3U without actual game files).
+    // Remove these so they don't appear as phantom entries.
+    for &m3u_idx in &m3u_indices_with_refs {
+        if !m3u_extra_size.contains_key(&m3u_idx) {
+            indices_to_remove.insert(m3u_idx);
+        }
+    }
+
     if indices_to_remove.is_empty() {
         return;
     }
@@ -500,7 +565,7 @@ fn apply_m3u_dedup(roms: &mut Vec<RomEntry>, roms_root: &Path) {
         roms[m3u_idx].size_bytes += extra;
     }
 
-    // Remove referenced disc files, preserving order of remaining entries.
+    // Remove referenced disc files and orphan M3Us, preserving order.
     let mut idx = 0;
     roms.retain(|_| {
         let keep = !indices_to_remove.contains(&idx);
@@ -814,6 +879,195 @@ mod tests {
         let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
         assert_eq!(roms.len(), 2, "Expected 2 ROMs (M3Us only), got: {roms:?}");
         assert!(roms.iter().all(|r| r.is_m3u));
+    }
+
+    #[test]
+    fn scummvm_svm_extension_recognized() {
+        let sys = systems::find_system("scummvm").unwrap();
+        assert!(
+            sys.extensions.contains(&"svm"),
+            "ScummVM system should include 'svm' extension"
+        );
+        assert!(is_rom_file(Path::new("game.svm"), sys));
+        assert!(is_rom_file(Path::new("game.SVM"), sys));
+        assert!(is_rom_file(Path::new("game.scummvm"), sys));
+    }
+
+    #[test]
+    fn scummvm_svm_with_m3u_hides_svm() {
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        let game_dir = scummvm_dir.join("My Game (CD)");
+        fs::create_dir_all(&game_dir).unwrap();
+
+        // M3U references .svm in subfolder (absolute Pi-side path)
+        fs::write(
+            scummvm_dir.join("My Game (CD).m3u"),
+            "/media/nfs/roms/scummvm/My Game (CD)/My Game (CD).svm\n",
+        )
+        .unwrap();
+        fs::write(game_dir.join("My Game (CD).svm"), "scummvm-id").unwrap();
+        fs::write(game_dir.join("DATA.PAK"), &[0u8; 5000]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        // list_roms: only M3U should appear, .svm hidden
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        assert_eq!(roms.len(), 1, "Expected 1 ROM (M3U only), got: {roms:?}");
+        assert!(roms[0].is_m3u);
+        assert_eq!(roms[0].game.rom_filename, "My Game (CD).m3u");
+
+        // scan_systems: count should be 1
+        let summaries = scan_systems(&storage);
+        let scummvm = summaries
+            .iter()
+            .find(|s| s.folder_name == "scummvm")
+            .unwrap();
+        assert_eq!(scummvm.game_count, 1);
+    }
+
+    #[test]
+    fn scummvm_orphan_m3u_hidden() {
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        fs::create_dir_all(&scummvm_dir).unwrap();
+
+        // M3U references a .svm that does NOT exist on disk — this is a stub
+        fs::write(
+            scummvm_dir.join("Missing Game.m3u"),
+            "/media/nfs/roms/scummvm/Missing Game/Missing Game.svm\n",
+        )
+        .unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        // list_roms: orphan M3U should be hidden
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        assert_eq!(
+            roms.len(),
+            0,
+            "Orphan M3U should be hidden, got: {roms:?}"
+        );
+
+        // scan_systems: count should be 0
+        let summaries = scan_systems(&storage);
+        let scummvm = summaries
+            .iter()
+            .find(|s| s.folder_name == "scummvm")
+            .unwrap();
+        assert_eq!(
+            scummvm.game_count, 0,
+            "Orphan M3U should not be counted"
+        );
+    }
+
+    #[test]
+    fn scummvm_svm_without_m3u_shown() {
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        let game_dir = scummvm_dir.join("Standalone Game");
+        fs::create_dir_all(&game_dir).unwrap();
+
+        // .svm file with no M3U wrapper — should be shown as-is
+        fs::write(game_dir.join("Standalone Game.svm"), "scummvm-id").unwrap();
+        fs::write(game_dir.join("DATA.PAK"), &[0u8; 2000]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        assert_eq!(
+            roms.len(),
+            1,
+            "Standalone .svm should appear, got: {roms:?}"
+        );
+        assert_eq!(roms[0].game.rom_filename, "Standalone Game.svm");
+        assert!(!roms[0].is_m3u);
+
+        // scan_systems: should count 1
+        let summaries = scan_systems(&storage);
+        let scummvm = summaries
+            .iter()
+            .find(|s| s.folder_name == "scummvm")
+            .unwrap();
+        assert_eq!(scummvm.game_count, 1);
+    }
+
+    #[test]
+    fn psx_m3u_multi_disc_not_affected() {
+        // Ensure PSX multi-disc M3U behavior is preserved:
+        // M3U shown, disc .chd files hidden.
+        let tmp = tempdir();
+        let psx_dir = tmp.join("roms/sony_psx");
+        fs::create_dir_all(&psx_dir).unwrap();
+
+        // Multi-disc PSX game with M3U
+        fs::write(
+            psx_dir.join("Final Fantasy VII.m3u"),
+            "Final Fantasy VII (Disc 1).chd\nFinal Fantasy VII (Disc 2).chd\nFinal Fantasy VII (Disc 3).chd\n",
+        )
+        .unwrap();
+        fs::write(psx_dir.join("Final Fantasy VII (Disc 1).chd"), &[0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Final Fantasy VII (Disc 2).chd"), &[0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Final Fantasy VII (Disc 3).chd"), &[0u8; 500]).unwrap();
+
+        // Single-disc PSX game (no M3U)
+        fs::write(psx_dir.join("Crash Bandicoot.chd"), &[0u8; 300]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        // list_roms: M3U + standalone game
+        let roms = list_roms(&storage, "sony_psx", RegionPreference::default()).unwrap();
+        assert_eq!(roms.len(), 2, "Expected 2 ROMs, got: {roms:?}");
+
+        let m3u = roms.iter().find(|r| r.is_m3u).unwrap();
+        assert_eq!(m3u.game.rom_filename, "Final Fantasy VII.m3u");
+        // M3U size should include disc file sizes
+        let m3u_own_size = fs::metadata(psx_dir.join("Final Fantasy VII.m3u"))
+            .unwrap()
+            .len();
+        assert_eq!(m3u.size_bytes, m3u_own_size + 1500);
+
+        let standalone = roms.iter().find(|r| !r.is_m3u).unwrap();
+        assert_eq!(standalone.game.rom_filename, "Crash Bandicoot.chd");
+
+        // scan_systems: should count 2
+        let summaries = scan_systems(&storage);
+        let psx = summaries
+            .iter()
+            .find(|s| s.folder_name == "sony_psx")
+            .unwrap();
+        assert_eq!(psx.game_count, 2);
+    }
+
+    #[test]
+    fn x68k_m3u_multi_disc_not_affected() {
+        // Ensure X68000 multi-disc M3U behavior is preserved.
+        let tmp = tempdir();
+        let x68k_dir = tmp.join("roms/sharp_x68k");
+        fs::create_dir_all(&x68k_dir).unwrap();
+
+        fs::write(
+            x68k_dir.join("Game.m3u"),
+            "Game (Disk 1).dim\nGame (Disk 2).dim\n",
+        )
+        .unwrap();
+        fs::write(x68k_dir.join("Game (Disk 1).dim"), &[0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 2).dim"), &[0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Other.dim"), &[0u8; 50]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default()).unwrap();
+        assert_eq!(roms.len(), 2, "Expected 2 ROMs (M3U + standalone), got: {roms:?}");
+        assert!(roms.iter().any(|r| r.is_m3u && r.game.rom_filename == "Game.m3u"));
+        assert!(roms.iter().any(|r| r.game.rom_filename == "Other.dim"));
+
+        let summaries = scan_systems(&storage);
+        let x68k = summaries
+            .iter()
+            .find(|s| s.folder_name == "sharp_x68k")
+            .unwrap();
+        assert_eq!(x68k.game_count, 2);
     }
 
     use std::sync::atomic::{AtomicU32, Ordering};

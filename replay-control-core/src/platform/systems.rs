@@ -210,7 +210,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "ScummVM",
         manufacturer: "Various",
         category: SystemCategory::Computer,
-        extensions: &["scummvm"],
+        extensions: &["scummvm", "svm"],
     },
     System {
         folder_name: "sega_32x",
