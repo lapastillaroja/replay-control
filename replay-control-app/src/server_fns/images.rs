@@ -34,6 +34,17 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+
+    // Guard: refuse to run during rebuild/import/thumbnail update.
+    if state
+        .metadata_operation_in_progress
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return Err(ServerFnError::new(
+            "Cannot cleanup while a metadata operation is running",
+        ));
+    }
+
     let storage = state.storage();
 
     // 1. Delete orphaned metadata rows.

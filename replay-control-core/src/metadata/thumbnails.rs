@@ -416,16 +416,26 @@ pub fn find_orphaned_thumbnails(
             .filter_map(|url| url.strip_prefix(&prefix).map(|s| s.to_string()))
             .collect();
 
-        // Scan boxart/ and snap/ subdirectories for image files.
-        for kind in &["boxart", "snap"] {
-            let kind_dir = system_media.join(kind);
-            if !kind_dir.exists() {
-                continue;
-            }
+        // Safety: skip systems where enrichment hasn't run yet.
+        // If game_library has entries but no box_art_url is set, enrichment is still
+        // in progress — deleting now would wipe all images.
+        if referenced.is_empty() {
+            continue;
+        }
+
+        // Only scan boxart/ — snap images have no corresponding URL column in
+        // game_library, so we can't determine which are orphaned.
+        let kind = "boxart";
+        let kind_dir = system_media.join(kind);
+        if kind_dir.exists() {
             let entries = match std::fs::read_dir(&kind_dir) {
                 Ok(e) => e,
                 Err(_) => continue,
             };
+
+            let mut system_orphans = Vec::new();
+            let mut total_files = 0usize;
+
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_file() {
@@ -436,12 +446,20 @@ pub fn find_orphaned_thumbnails(
                 if !filename.ends_with(".png") {
                     continue;
                 }
-                // Build the relative path like "boxart/Sonic.png"
+                total_files += 1;
                 let relative = format!("{kind}/{filename}");
                 if !referenced.contains(&relative) {
-                    orphans.push((system.clone(), path));
+                    system_orphans.push((system.clone(), path));
                 }
             }
+
+            // Safety net: if >80% of images would be deleted, something is wrong
+            // (likely stale game_library). Skip this system entirely.
+            if total_files > 0 && system_orphans.len() * 100 / total_files > 80 {
+                continue;
+            }
+
+            orphans.extend(system_orphans);
         }
     }
 
