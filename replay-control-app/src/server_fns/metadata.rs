@@ -153,9 +153,9 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
 /// rescan + enrichment from disk. Use when baked-in data changes or to force
 /// a fresh scan of all systems.
 ///
-/// Sets `metadata_operation_in_progress` to block concurrent DB access while
+/// Sets `metadata_operation_in_progress` so the UI shows a busy banner while
 /// the rebuild runs in the background. The flag is cleared when the background
-/// enrichment task completes.
+/// enrichment task completes (or on error/panic).
 #[server(prefix = "/sfn")]
 pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -170,7 +170,11 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         ));
     }
 
+    // Clear L1+L2 cache. invalidate() uses the direct DB mutex (not
+    // metadata_db()), so it works fine with the flag already set.
     state.cache.invalidate();
+
+    // Rebuild in background; the flag is cleared when done (or on panic).
     state.spawn_cache_enrichment_with_flag(state.metadata_operation_in_progress.clone());
     Ok(())
 }

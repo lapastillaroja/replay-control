@@ -167,37 +167,52 @@ impl AppState {
     ) {
         let state = self.clone();
         std::thread::spawn(move || {
-            let storage = state.storage();
-            let region_pref = state.region_preference();
+            // Use catch_unwind to guarantee the done_flag is cleared even if
+            // anything in the enrichment pipeline panics. Without this, a panic
+            // leaves metadata_operation_in_progress stuck forever.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let storage = state.storage();
+                let region_pref = state.region_preference();
 
-            // Check if game library is empty — if so, populate before enriching.
-            let is_empty = state.cache.with_db_read(&storage, |db| {
-                db.load_all_system_meta().map(|m| m.is_empty()).unwrap_or(true)
-            }).unwrap_or(true);
+                // Check if game library is empty — if so, populate before enriching.
+                let is_empty = state.cache.with_db_read(&storage, |db| {
+                    db.load_all_system_meta().map(|m| m.is_empty()).unwrap_or(true)
+                }).unwrap_or(true);
 
-            if is_empty {
-                tracing::info!("Post-import: game library is empty, running full populate");
-                Self::populate_all_systems(&state, &storage, region_pref);
-            } else {
-                let systems = state.cache.get_systems(&storage);
-                let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
-                tracing::info!(
-                    "Post-import enrichment: updating {} system(s)",
-                    with_games.len()
-                );
-                let start = std::time::Instant::now();
-                for sys in &with_games {
-                    state.cache.enrich_system_cache(&state, &sys.folder_name);
+                if is_empty {
+                    tracing::info!("Post-import: game library is empty, running full populate");
+                    Self::populate_all_systems(&state, &storage, region_pref);
+                } else {
+                    let systems = state.cache.get_systems(&storage);
+                    let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
+                    tracing::info!(
+                        "Post-import enrichment: updating {} system(s)",
+                        with_games.len()
+                    );
+                    let start = std::time::Instant::now();
+                    for sys in &with_games {
+                        state.cache.enrich_system_cache(&state, &sys.folder_name);
+                    }
+                    tracing::info!(
+                        "Post-import enrichment: done in {:.1}s",
+                        start.elapsed().as_secs_f64()
+                    );
                 }
-                tracing::info!(
-                    "Post-import enrichment: done in {:.1}s",
-                    start.elapsed().as_secs_f64()
-                );
+            }));
+
+            if let Err(panic) = result {
+                let msg = panic
+                    .downcast_ref::<String>()
+                    .map(|s| s.as_str())
+                    .or_else(|| panic.downcast_ref::<&str>().copied())
+                    .unwrap_or("unknown panic");
+                tracing::error!("Cache enrichment panicked: {msg}");
             }
 
-            // Clear the operation-in-progress flag if one was provided.
+            // Always clear the operation-in-progress flag, even after a panic.
             if let Some(flag) = done_flag {
                 flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                tracing::debug!("Cache enrichment: cleared metadata_operation_in_progress flag");
             }
         });
     }
