@@ -896,7 +896,7 @@ impl GameLibrary {
         // 4. Version-stripped match.
         let rom_base_no_version = strip_version(&rom_base);
         if rom_base_no_version.len() < rom_base.len()
-            && let Some(path) = index.version.get(rom_base_no_version)
+            && let Some(path) = index.fuzzy.get(rom_base_no_version).or_else(|| index.version.get(rom_base_no_version))
         {
             return Some(format!("/media/{system}/{path}"));
         }
