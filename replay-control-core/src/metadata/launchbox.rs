@@ -27,8 +27,11 @@ struct LbGame {
     overview: String,
     rating: Option<f64>,
     publisher: String,
+    developer: String,
     genre: String,
     max_players: Option<u8>,
+    release_year: Option<u16>,
+    cooperative: bool,
 }
 
 /// Normalize a game title for fuzzy matching.
@@ -125,7 +128,8 @@ pub fn import_launchbox(
         stats.total_source += 1;
 
         // Skip entries with no useful data.
-        if game.overview.is_empty() && game.rating.is_none() && game.genre.is_empty() && game.max_players.is_none() {
+        if game.overview.is_empty() && game.rating.is_none() && game.genre.is_empty() && game.max_players.is_none()
+            && game.developer.is_empty() && game.release_year.is_none() && !game.cooperative {
             stats.skipped += 1;
             return;
         }
@@ -148,12 +152,19 @@ pub fn import_launchbox(
                     } else {
                         Some(game.publisher.clone())
                     },
+                    developer: if game.developer.is_empty() {
+                        None
+                    } else {
+                        Some(game.developer.clone())
+                    },
                     genre: if game.genre.is_empty() {
                         None
                     } else {
                         Some(game.genre.clone())
                     },
                     players: game.max_players,
+                    release_year: game.release_year,
+                    cooperative: game.cooperative,
                     source: "launchbox".to_string(),
                     fetched_at: now,
                     box_art_path: None,
@@ -218,8 +229,11 @@ fn parse_xml<R: BufRead>(
     let mut overview = String::new();
     let mut rating: Option<f64> = None;
     let mut publisher = String::new();
+    let mut developer = String::new();
     let mut genre = String::new();
     let mut max_players: Option<u8> = None;
+    let mut release_year: Option<u16> = None;
+    let mut cooperative = false;
 
     loop {
         match xml.read_event_into(&mut buf) {
@@ -233,8 +247,11 @@ fn parse_xml<R: BufRead>(
                     overview.clear();
                     rating = None;
                     publisher.clear();
+                    developer.clear();
                     genre.clear();
                     max_players = None;
+                    release_year = None;
+                    cooperative = false;
                 } else if in_game {
                     current_tag = tag.to_string();
                 }
@@ -250,6 +267,7 @@ fn parse_xml<R: BufRead>(
                             rating = text.parse::<f64>().ok();
                         }
                         "Publisher" => publisher.push_str(&text),
+                        "Developer" => developer.push_str(&text),
                         "Genres" => genre.push_str(&text),
                         "MaxPlayers" => {
                             if let Ok(n) = text.parse::<u8>() {
@@ -257,6 +275,15 @@ fn parse_xml<R: BufRead>(
                                     max_players = Some(n);
                                 }
                             }
+                        }
+                        "ReleaseDate" => {
+                            // Format: "1999-01-01T00:00:00-05:00" — extract year.
+                            if text.len() >= 4 {
+                                release_year = text[..4].parse::<u16>().ok();
+                            }
+                        }
+                        "Cooperative" => {
+                            cooperative = text.trim().eq_ignore_ascii_case("true");
                         }
                         _ => {}
                     }
@@ -273,8 +300,11 @@ fn parse_xml<R: BufRead>(
                             overview: std::mem::take(&mut overview),
                             rating,
                             publisher: std::mem::take(&mut publisher),
+                            developer: std::mem::take(&mut developer),
                             genre: std::mem::take(&mut genre),
                             max_players,
+                            release_year,
+                            cooperative,
                         };
                         for folder in system_folders {
                             on_game(&game, folder);

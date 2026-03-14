@@ -89,8 +89,11 @@ pub struct GameMetadata {
     pub description: Option<String>,
     pub rating: Option<f64>,
     pub publisher: Option<String>,
+    pub developer: Option<String>,
     pub genre: Option<String>,
     pub players: Option<u8>,
+    pub release_year: Option<u16>,
+    pub cooperative: bool,
     pub source: String,
     pub fetched_at: i64,
     pub box_art_path: Option<String>,
@@ -205,8 +208,11 @@ impl MetadataDb {
                     description TEXT,
                     rating REAL,
                     publisher TEXT,
+                    developer TEXT,
                     genre TEXT,
                     players INTEGER,
+                    release_year INTEGER,
+                    cooperative INTEGER NOT NULL DEFAULT 0,
                     source TEXT NOT NULL,
                     fetched_at INTEGER NOT NULL,
                     box_art_path TEXT,
@@ -283,7 +289,8 @@ impl MetadataDb {
         let result = self
             .conn
             .query_row(
-                "SELECT description, rating, publisher, genre, players, source, fetched_at, box_art_path, screenshot_path
+                "SELECT description, rating, publisher, developer, genre, players, release_year,
+                        cooperative, source, fetched_at, box_art_path, screenshot_path
                  FROM game_metadata WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
                 |row| {
@@ -291,12 +298,15 @@ impl MetadataDb {
                         description: row.get(0)?,
                         rating: row.get(1)?,
                         publisher: row.get(2)?,
-                        genre: row.get(3)?,
-                        players: row.get::<_, Option<i32>>(4)?.map(|p| p as u8),
-                        source: row.get(5)?,
-                        fetched_at: row.get(6)?,
-                        box_art_path: row.get(7)?,
-                        screenshot_path: row.get(8)?,
+                        developer: row.get(3)?,
+                        genre: row.get(4)?,
+                        players: row.get::<_, Option<i32>>(5)?.map(|p| p as u8),
+                        release_year: row.get::<_, Option<i32>>(6)?.map(|y| y as u16),
+                        cooperative: row.get::<_, i32>(7)? != 0,
+                        source: row.get(8)?,
+                        fetched_at: row.get(9)?,
+                        box_art_path: row.get(10)?,
+                        screenshot_path: row.get(11)?,
                     })
                 },
             )
@@ -461,6 +471,66 @@ impl MetadataDb {
         Ok(map)
     }
 
+    /// Fetch all non-null release years from `game_metadata` for a single system.
+    /// Returns a map of `rom_filename -> release_year`.
+    /// Used to fill empty release year entries during enrichment.
+    pub fn system_metadata_release_years(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, u16>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, release_year FROM game_metadata
+                 WHERE system = ?1 AND release_year IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_metadata_release_years: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? as u16))
+            })
+            .map_err(|e| Error::Other(format!("System metadata release_years query: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    }
+
+    /// Fetch all non-empty developers from `game_metadata` for a single system.
+    /// Returns a map of `rom_filename -> developer`.
+    /// Used to fill empty developer entries during enrichment.
+    pub fn system_metadata_developers(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, String>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, developer FROM game_metadata
+                 WHERE system = ?1 AND developer IS NOT NULL AND developer != ''",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_metadata_developers: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("System metadata developers query: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    }
+
     /// Fetch current genres from `game_library` for a single system.
     /// Returns a map of `rom_filename -> genre` (only entries with non-empty genre).
     /// Used during enrichment to know which ROMs already have a genre.
@@ -526,8 +596,8 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, description, rating, publisher, genre, players, source, fetched_at,
-                        box_art_path, screenshot_path
+                "SELECT rom_filename, description, rating, publisher, developer, genre, players,
+                        release_year, cooperative, source, fetched_at, box_art_path, screenshot_path
                  FROM game_metadata WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare system_metadata_all: {e}")))?;
@@ -540,12 +610,15 @@ impl MetadataDb {
                         description: row.get(1)?,
                         rating: row.get(2)?,
                         publisher: row.get(3)?,
-                        genre: row.get(4)?,
-                        players: row.get::<_, Option<i32>>(5)?.map(|p| p as u8),
-                        source: row.get(6)?,
-                        fetched_at: row.get(7)?,
-                        box_art_path: row.get(8)?,
-                        screenshot_path: row.get(9)?,
+                        developer: row.get(4)?,
+                        genre: row.get(5)?,
+                        players: row.get::<_, Option<i32>>(6)?.map(|p| p as u8),
+                        release_year: row.get::<_, Option<i32>>(7)?.map(|y| y as u16),
+                        cooperative: row.get::<_, i32>(8)? != 0,
+                        source: row.get(9)?,
+                        fetched_at: row.get(10)?,
+                        box_art_path: row.get(11)?,
+                        screenshot_path: row.get(12)?,
                     },
                 ))
             })
@@ -562,14 +635,18 @@ impl MetadataDb {
     pub fn upsert(&self, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
         self.conn
             .execute(
-                "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, genre, players, source, fetched_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, developer,
+                    genre, players, release_year, cooperative, source, fetched_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                  ON CONFLICT(system, rom_filename) DO UPDATE SET
                     description = excluded.description,
                     rating = excluded.rating,
                     publisher = excluded.publisher,
+                    developer = excluded.developer,
                     genre = excluded.genre,
                     players = excluded.players,
+                    release_year = excluded.release_year,
+                    cooperative = excluded.cooperative,
                     source = excluded.source,
                     fetched_at = excluded.fetched_at",
                 params![
@@ -578,8 +655,11 @@ impl MetadataDb {
                     meta.description,
                     meta.rating,
                     meta.publisher,
+                    meta.developer,
                     meta.genre,
                     meta.players.map(|p| p as i32),
+                    meta.release_year.map(|y| y as i32),
+                    meta.cooperative as i32,
                     meta.source,
                     meta.fetched_at,
                 ],
@@ -599,14 +679,18 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, genre, players, source, fetched_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                    "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, developer,
+                        genre, players, release_year, cooperative, source, fetched_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                      ON CONFLICT(system, rom_filename) DO UPDATE SET
                         description = excluded.description,
                         rating = excluded.rating,
                         publisher = excluded.publisher,
+                        developer = excluded.developer,
                         genre = excluded.genre,
                         players = excluded.players,
+                        release_year = excluded.release_year,
+                        cooperative = excluded.cooperative,
                         source = excluded.source,
                         fetched_at = excluded.fetched_at",
                 )
@@ -619,8 +703,11 @@ impl MetadataDb {
                     meta.description,
                     meta.rating,
                     meta.publisher,
+                    meta.developer,
                     meta.genre,
                     meta.players.map(|p| p as i32),
+                    meta.release_year.map(|y| y as i32),
+                    meta.cooperative as i32,
                     meta.source,
                     meta.fetched_at,
                 ])
@@ -1970,8 +2057,11 @@ mod tests {
             description: None,
             rating: Some(4.0),
             publisher: None,
+            developer: None,
             genre: None,
             players: None,
+            release_year: None,
+            cooperative: false,
             source: "test".into(),
             fetched_at: 0,
             box_art_path: box_art.map(String::from),
@@ -2035,7 +2125,7 @@ mod tests {
 
         // Enrich with genre from LaunchBox
         db.update_box_art_genre_rating("sega_smd", &[
-            ("Sonic.md".into(), None, Some("Platform".into()), None),
+            ("Sonic.md".into(), None, Some("Platform".into()), None, None),
         ]).unwrap();
 
         let roms = db.load_system_entries("sega_smd").unwrap();
@@ -2055,7 +2145,7 @@ mod tests {
 
         // Try to enrich with "Platform" from LaunchBox
         db.update_box_art_genre_rating("sega_smd", &[
-            ("Sonic.md".into(), None, Some("Platform".into()), None),
+            ("Sonic.md".into(), None, Some("Platform".into()), None, None),
         ]).unwrap();
 
         let roms = db.load_system_entries("sega_smd").unwrap();
@@ -2075,8 +2165,8 @@ mod tests {
         ], None).unwrap();
 
         db.update_box_art_genre_rating("sega_smd", &[
-            ("Sonic.md".into(), None, Some("Platform".into()), None),
-            ("Streets.md".into(), None, Some("Beat'em Up".into()), None),
+            ("Sonic.md".into(), None, Some("Platform".into()), None, None),
+            ("Streets.md".into(), None, Some("Beat'em Up".into()), None, None),
             // Columns has no LaunchBox genre either — no enrichment tuple
         ]).unwrap();
 
