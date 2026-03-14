@@ -32,6 +32,7 @@ body {
     color: var(--text);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
 }
 
 /* Links reset — router <A> elements should not look like links */

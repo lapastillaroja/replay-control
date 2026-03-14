@@ -114,10 +114,7 @@
 }
 
 .overview-system {
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-word;
 }
 
 /* ── Data Management Actions ───────────────────────────────────── */

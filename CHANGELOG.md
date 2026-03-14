@@ -6,6 +6,12 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## 2026-03-14
 
+- fix: metadata page horizontal overflow on mobile — system names wrap instead of truncating (`61226ab`)
+- fix: on-demand thumbnail download panics outside Tokio runtime, breaking enrichment and thumbnail counts after rebuild (`ac36347`)
+- fix: thumbnail download counter starts at 1 instead of 0 (`170f638`)
+- feat: redesign metadata page layout with embedded DB stats — reorder sections, add built-in game data info card (`d0b2349`)
+- feat: add unified GameInfo API with lightweight RomListEntry for ROM list views (`2adcf2b`)
+- feat: parse `<Developer>`, `<ReleaseDate>`, `<Cooperative>` from LaunchBox XML (`68b267b`)
 - feat: filter non-playable MAME entries at build time, preserve 26 BIOS with `is_bios` flag — arcade DB 28,593 → 15,440 entries (`adf12a2`)
 - fix: version-stripped box art matching checks fuzzy index too — fixes Dreamcast TOSEC-named ROMs (`7af0a5f`)
 - docs: add player count improvement analysis (`081ae64`)
