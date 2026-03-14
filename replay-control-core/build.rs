@@ -231,13 +231,62 @@ fn main() {
         );
     }
 
+    // 8. Mark entries with "System / BIOS" category as BIOS, even if not flagged by the parser.
+    //    This catches entries that weren't detected via isbios/runnable attributes but are
+    //    categorized as BIOS in catver.ini.
+    for entry in entries_map.values_mut() {
+        if entry.category.starts_with("System / BIOS") {
+            entry.is_bios = true;
+        }
+    }
+
+    // 9. Filter out non-game machines by category.
+    //    These are completely removed from the DB — no value to users on a retro gaming device.
+    //    Must happen AFTER catver overlays so categories are available for filtering.
+    let total_before_filter = entries_map.len();
+    let non_game_prefixes = [
+        "Electromechanical",
+        "Slot Machine",
+        "Gambling",
+        "Computer",
+        "Handheld",
+        "Game Console",
+        "Calculator",
+        "Printer",
+        "Utilities",
+        "System",
+    ];
+    entries_map.retain(|_, entry| {
+        // Keep BIOS entries — they're flagged and filtered at the app layer
+        if entry.is_bios {
+            return true;
+        }
+        if entry.category.is_empty() {
+            return true; // Keep entries without a category (can't determine if non-game)
+        }
+        !non_game_prefixes
+            .iter()
+            .any(|prefix| entry.category.starts_with(prefix))
+    });
+    let non_game_filtered = total_before_filter - entries_map.len();
+    println!(
+        "cargo:warning=Arcade DB: Filtered {} non-game machines by category",
+        non_game_filtered
+    );
+
     // Convert to sorted vec for deterministic output
     let mut entries: Vec<GameEntry> = entries_map.into_values().collect();
     entries.sort_by(|a, b| a.rom_name.cmp(&b.rom_name));
 
+    // Report build stats
+    let bios_count = entries.iter().filter(|e| e.is_bios).count();
+    let playable_count = entries.iter().filter(|e| !e.is_bios).count();
     println!(
-        "cargo:warning=Arcade DB: Total unique entries: {}",
-        entries.len()
+        "cargo:warning=Arcade DB: Total entries: {} (playable: {}, BIOS: {}, non-game filtered: {})",
+        entries.len(),
+        playable_count,
+        bios_count,
+        non_game_filtered
     );
 
     // Report player count coverage
@@ -264,6 +313,7 @@ struct GameEntry {
     rotation: String,
     status: String,
     is_clone: bool,
+    is_bios: bool,
     parent: String,
     category: String,
 }
@@ -299,6 +349,7 @@ fn parse_csv(path: &Path) -> Vec<GameEntry> {
             rotation: record.get(5).unwrap_or("0").to_string(),
             status: record.get(6).unwrap_or("unknown").to_string(),
             is_clone,
+            is_bios: false,
             parent: record.get(8).unwrap_or("").to_string(),
             category: record.get(9).unwrap_or("").to_string(),
         });
@@ -336,6 +387,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<GameEntry> {
     let mut current_year = String::new();
     let mut current_manufacturer = String::new();
     let mut current_element = String::new(); // tracks which child element we're inside
+    let mut current_is_bios = false;
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -349,6 +401,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<GameEntry> {
                         current_description.clear();
                         current_year.clear();
                         current_manufacturer.clear();
+                        current_is_bios = false;
 
                         for attr in e.attributes().filter_map(|a| a.ok()) {
                             match attr.key.local_name().as_ref() {
@@ -359,6 +412,10 @@ fn parse_fbneo_dat(path: &Path) -> Vec<GameEntry> {
                                 b"cloneof" => {
                                     current_cloneof =
                                         String::from_utf8_lossy(&attr.value).into_owned();
+                                }
+                                b"isbios" => {
+                                    let val = String::from_utf8_lossy(&attr.value);
+                                    current_is_bios = val == "yes";
                                 }
                                 _ => {}
                             }
@@ -394,6 +451,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<GameEntry> {
                                 rotation: "unknown".to_string(),
                                 status: "unknown".to_string(),
                                 is_clone,
+                                is_bios: current_is_bios,
                                 parent: current_cloneof.clone(),
                                 category: String::new(),
                             });
@@ -446,6 +504,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<GameEntry> {
     let mut current_players: u8 = 0;
     let mut current_status = String::new();
     let mut current_element = String::new();
+    let mut current_is_bios = false;
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -462,6 +521,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<GameEntry> {
                         current_orientation = "unknown".to_string();
                         current_players = 0;
                         current_status = "unknown".to_string();
+                        current_is_bios = false;
 
                         for attr in e.attributes().filter_map(|a| a.ok()) {
                             match attr.key.local_name().as_ref() {
@@ -472,6 +532,12 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<GameEntry> {
                                 b"cloneof" => {
                                     current_cloneof =
                                         String::from_utf8_lossy(&attr.value).into_owned();
+                                }
+                                b"runnable" => {
+                                    let val = String::from_utf8_lossy(&attr.value);
+                                    if val == "no" {
+                                        current_is_bios = true;
+                                    }
                                 }
                                 _ => {}
                             }
@@ -540,6 +606,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<GameEntry> {
                                 rotation: current_orientation.clone(),
                                 status: current_status.clone(),
                                 is_clone,
+                                is_bios: current_is_bios,
                                 parent: current_cloneof.clone(),
                                 category: String::new(),
                             });
@@ -681,6 +748,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<GameEntry> {
                                 rotation: current_rotate.clone(),
                                 status: current_status.clone(),
                                 is_clone,
+                                is_bios: false, // MAME current XML is pre-filtered to exclude BIOS
                                 parent: current_cloneof.clone(),
                                 category: String::new(),
                             });
@@ -957,6 +1025,7 @@ fn generate_phf_map(out: &mut impl Write, entries: &[GameEntry]) {
                 rotation: {}, \
                 status: {}, \
                 is_clone: {}, \
+                is_bios: {}, \
                 parent: \"{}\", \
                 category: \"{}\", \
                 normalized_genre: \"{}\" \
@@ -969,6 +1038,7 @@ fn generate_phf_map(out: &mut impl Write, entries: &[GameEntry]) {
             rotation_variant(&entry.rotation),
             status_variant(&entry.status),
             entry.is_clone,
+            entry.is_bios,
             escape_str(&entry.parent),
             escape_str(&entry.category),
             escape_str(norm_genre),

@@ -34,6 +34,8 @@ pub struct ArcadeGameInfo {
     pub status: DriverStatus,
     /// Whether this ROM is a clone/variant of another game.
     pub is_clone: bool,
+    /// Whether this ROM is a BIOS/system ROM (not directly playable).
+    pub is_bios: bool,
     /// Parent ROM name if this is a clone, empty otherwise.
     pub parent: &'static str,
     /// Genre/category (e.g., "Fighter / 2D"). May be empty.
@@ -231,9 +233,23 @@ mod tests {
     }
 
     #[test]
+    fn bios_entry_flagged() {
+        let info = lookup_arcade_game("neogeo").expect("neogeo BIOS should exist in DB");
+        assert!(info.is_bios, "neogeo should be flagged as BIOS");
+    }
+
+    #[test]
+    fn regular_game_not_bios() {
+        let info = lookup_arcade_game("mslug6").expect("mslug6 should exist");
+        assert!(!info.is_bios, "mslug6 should not be flagged as BIOS");
+    }
+
+    #[test]
     fn total_entry_count() {
-        // After merging Flycast + FBNeo + MAME 2003+ + MAME current, we should have 25K+ entries
+        // After merging Flycast + FBNeo + MAME 2003+ + MAME current and filtering non-game
+        // machines (slot machines, gambling, computers, handhelds, etc.), we should have 15K+ entries.
+        // BIOS entries are preserved (with is_bios flag) but non-game machines are excluded.
         let count = ARCADE_DB.len();
-        assert!(count >= 25000, "Expected 25000+ entries, got {count}");
+        assert!(count >= 15000, "Expected 15000+ entries, got {count}");
     }
 }

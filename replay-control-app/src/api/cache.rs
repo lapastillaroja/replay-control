@@ -436,7 +436,7 @@ impl GameLibrary {
 
         let cached_roms: Vec<GameEntry> = roms
             .iter()
-            .map(|r| {
+            .filter_map(|r| {
                 let rom_filename = &r.game.rom_filename;
                 let stem = rom_filename
                     .rfind('.')
@@ -448,6 +448,10 @@ impl GameLibrary {
                     let arcade_stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
                     match arcade_db::lookup_arcade_game(arcade_stem) {
                         Some(info) => {
+                            // Skip BIOS entries — they're not playable games
+                            if info.is_bios {
+                                return None;
+                            }
                             // genre = raw category (e.g., "Maze / Shooter")
                             let detail = if info.category.is_empty() {
                                 None
@@ -514,7 +518,7 @@ impl GameLibrary {
                     replay_control_core::rom_tags::RegionPriority::Unknown => "",
                 };
 
-                GameEntry {
+                Some(GameEntry {
                     system: r.game.system.clone(),
                     rom_filename: rom_filename.clone(),
                     rom_path: r.game.rom_path.clone(),
@@ -533,7 +537,7 @@ impl GameLibrary {
                     is_translation,
                     is_hack,
                     is_special,
-                }
+                })
             })
             .collect();
 
