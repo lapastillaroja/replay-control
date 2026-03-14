@@ -126,6 +126,20 @@ replay/
 Both features share the same components, pages, and types. Server functions (`#[server]`) are direct calls on the server and HTTP requests on the client.
 
 
+## Commit style
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) for all commit messages:
+
+```
+feat: add region preference setting
+fix: resolve hydration warnings on games page
+refactor: rename rom_cache → game_library
+perf: 98% faster page loads via cache optimizations
+test: add arcade image matching pipeline tests
+docs: update metadata design doc
+chore: update build script
+```
+
 ## Development tips
 
 - Always rebuild both WASM and server after changing shared types (`types.rs`, `server_fns.rs`). Stale WASM causes hydration failures.
