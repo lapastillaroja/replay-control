@@ -33,7 +33,7 @@ Check `game_metadata.box_art_path` (set during image import). If present, the im
 `base_title()` strips region/revision tags `(...)` and `[...]`, lowercases, and reorders trailing articles ("Title, The" becomes "The Title"). Matches against files on disk.
 
 ### Tier 4: Version-Stripped Match
-`strip_version()` further removes version numbers and revision indicators from the tag-stripped name for even looser matching.
+`strip_version()` further removes version numbers and revision indicators from the tag-stripped name for even looser matching. This tier checks both exact files on disk and the fuzzy index, fixing cases like Dreamcast TOSEC-named ROMs (e.g., `v1.004`) matching No-Intro thumbnails.
 
 ### Tier 5: On-Demand Download
 If no local match is found but the `thumbnail_index` has a manifest entry, `queue_on_demand_download()` fetches the single PNG from `raw.githubusercontent.com` in a background thread. The image appears on the next page load.
@@ -43,6 +43,10 @@ If no local match is found but the `thumbnail_index` has a manifest entry, `queu
 Arcade ROMs use MAME codenames (`sf2.zip`), not human-readable names. The matching pipeline translates codenames to display names via `arcade_db` before matching against thumbnail filenames.
 
 Multi-repo support: `arcade_dc` maps to both Sega Naomi and Sega Naomi 2 repos. The `thumbnail_repo_names()` function handles this mapping.
+
+## Thumbnail Counts
+
+The metadata page displays per-system thumbnail counts. These are derived from `game_library.box_art_url` (live enrichment data) rather than `game_metadata.box_art_path` (stale import-time data). This ensures counts reflect the current state of enriched games, not historical import records that may reference deleted or orphaned images.
 
 ## Image Import (Legacy Git Clone Path)
 

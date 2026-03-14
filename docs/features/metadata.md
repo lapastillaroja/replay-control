@@ -4,7 +4,7 @@ How game metadata is sourced, imported, and used.
 
 ## Design Principle: Offline-First
 
-Replay Control is designed to work fully offline from the first install. The embedded databases (game_db, arcade_db) are compiled into the binary and provide genre, players, year, and display names for ~34K console ROMs and ~28K arcade games without any network access.
+Replay Control is designed to work fully offline from the first install. The embedded databases (game_db, arcade_db) are compiled into the binary and provide genre, players, year, and display names for ~34K console ROMs and ~15K playable arcade games without any network access.
 
 When connected to the internet, users can optionally enrich their library further: downloading LaunchBox metadata (descriptions, ratings) and libretro-thumbnails (box art, screenshots). These online sources fill gaps that the baked-in data doesn't cover but are never required.
 
@@ -12,18 +12,21 @@ When connected to the internet, users can optionally enrich their library furthe
 
 Two PHF maps are compiled into the binary via `build.rs`:
 
-### arcade_db (~28,593 entries)
+### arcade_db (~15,440 entries, 15,414 playable)
 
 Covers all four arcade system folders: `arcade_mame`, `arcade_fbneo`, `arcade_mame_2k3p`, `arcade_dc`.
 
-Fields: `display_name`, `year`, `manufacturer`, `players`, `rotation`, `driver_status`, `is_clone`, `parent`, `category`, `normalized_genre`.
+Fields: `display_name`, `year`, `manufacturer`, `players`, `rotation`, `driver_status`, `is_clone`, `is_bios`, `parent`, `category`, `normalized_genre`.
 
 Build-time merge order (later overrides earlier, except Flycast which is always preserved):
 1. Flycast CSV (hand-curated Naomi/Atomiswave, ~300 entries)
 2. FBNeo DAT (~8K entries)
 3. MAME 2003+ XML (~5K entries, adds players/rotation/status)
 4. MAME 0.285 XML (~27K entries, most complete)
-5. catver.ini overlays for genre/category
+5. catver.ini v0.285 merged with category.ini v0.285 (~49,801 category entries)
+6. nplayers.ini v0.278 (~427 player count fills for entries missing players from XML)
+
+Non-playable entries are filtered at build time: 13,153 non-game machines (slot machines, gambling, computers, electromechanical, etc.) are excluded by category prefix matching. 26 BIOS entries are preserved with `is_bios` flag for future system info pages but filtered from game lists at display time.
 
 Source data is downloaded via `./scripts/download-arcade-data.sh` into the gitignored `data/` directory.
 
@@ -53,11 +56,24 @@ The user downloads a ~460 MB XML file from LaunchBox containing ~108K game entri
 
 Matching uses `normalize_title()`: strip parenthetical/bracket tags, reorder articles ("Title, The" -> "The Title"), keep only lowercase alphanumeric.
 
-Data stored: description, rating, publisher, genre, max players.
+Data stored: description, rating, publisher, genre, max players (from `<MaxPlayers>` XML field).
 
 ### Genre Fallback
 
 When the baked-in database has no genre for a ROM, `enrich_system_cache()` fills it from LaunchBox's `game_metadata.genre`. This happens automatically after import. The baked-in genre always takes priority (LaunchBox only fills gaps).
+
+### Player Count Fallback
+
+Similarly, when a ROM has no player count from the baked-in database, enrichment falls back to `game_metadata.players` (parsed from LaunchBox's `<MaxPlayers>` field). This is critical for 11 systems that have 0% baked-in player coverage (amstrad_cpc, sharp_x68k, sega_sg, sega_32x, sega_st, sega_cd, sega_dc, sony_psx, ibm_pc, scummvm, commodore_ami).
+
+### Orphaned Image Cleanup
+
+The metadata page provides a "Cleanup Orphaned Images" button that removes downloaded images no longer associated with any game in the library. The cleanup:
+- Scans `boxart/` directories for each system (snap has no URL column to cross-reference)
+- Compares files on disk against active `game_library.box_art_url` entries
+- Applies an 80% safety net per system (refuses to delete if >80% would be removed)
+- Skips systems where no box art URLs have been enriched yet
+- Protected by `metadata_operation_in_progress` guard to prevent races with other operations
 
 ## Unified GameInfo API
 
