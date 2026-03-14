@@ -141,7 +141,11 @@ pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str
                     rom_path: rom_path.to_string(),
                     display_name: info.display_name.to_string(),
                     year: info.year.to_string(),
-                    genre: info.normalized_genre.to_string(),
+                    genre: if info.category.is_empty() {
+                        info.normalized_genre.to_string()
+                    } else {
+                        info.category.to_string()
+                    },
                     developer: info.manufacturer.to_string(),
                     players: info.players,
                     rotation: Some(rotation.to_string()),
@@ -243,7 +247,7 @@ pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str
                 })
                 .unwrap_or_default(),
             genre: game_meta
-                .map(|g| g.normalized_genre.to_string())
+                .map(|g| if g.genre.is_empty() { g.normalized_genre } else { g.genre }.to_string())
                 .unwrap_or_default(),
             developer: game_meta
                 .map(|g| g.developer.to_string())

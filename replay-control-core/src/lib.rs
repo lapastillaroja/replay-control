@@ -10,6 +10,7 @@ mod game;
 pub use game::arcade_db;
 pub use game::game_db;
 pub use game::game_ref;
+pub use game::genre;
 pub use game::rom_tags;
 
 mod library;

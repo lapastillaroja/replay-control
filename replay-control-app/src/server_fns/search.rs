@@ -400,6 +400,22 @@ pub async fn global_search(
             Err(_) => continue,
         };
 
+        // Batch-load genre groups for this system (used for genre filter AND display).
+        let system_genre_groups: std::collections::HashMap<String, String> = state
+            .cache
+            .with_db_read(&storage, |db| {
+                db.load_system_entries(&sys.folder_name)
+                    .map(|entries| {
+                        entries
+                            .into_iter()
+                            .filter(|e| !e.genre_group.is_empty())
+                            .map(|e| (e.rom_filename, e.genre_group))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
         // Batch-load ratings for this system when a minimum rating filter is active.
         let system_ratings = if min_rating.is_some() {
             if let Some(guard) = state.metadata_db() {
@@ -448,12 +464,13 @@ pub async fn global_search(
                 true
             })
             .filter(|r| {
-                // Apply genre filter.
+                // Apply genre filter using genre_group from game_library.
                 if genre.is_empty() {
                     return true;
                 }
-                let rom_genre = lookup_genre(&sys.folder_name, &r.game.rom_filename);
-                rom_genre.eq_ignore_ascii_case(&genre)
+                system_genre_groups
+                    .get(&r.game.rom_filename)
+                    .is_some_and(|gg| gg.eq_ignore_ascii_case(&genre))
             })
             .filter(|r| {
                 if !multiplayer_only {
@@ -535,7 +552,11 @@ pub async fn global_search(
             .map(|mut rom| {
                 rom.box_art_url =
                     resolve_box_art_url(&state, &sys.folder_name, &rom.game.rom_filename);
-                let genre_str = lookup_genre(&sys.folder_name, &rom.game.rom_filename);
+                // Use genre_group from batch-loaded map; fall back to lookup_genre.
+                let genre_str = system_genre_groups
+                    .get(&rom.game.rom_filename)
+                    .cloned()
+                    .unwrap_or_else(|| lookup_genre(&sys.folder_name, &rom.game.rom_filename));
                 let players_val = lookup_players(&sys.folder_name, &rom.game.rom_filename);
                 let rating = ratings_map
                     .get(&rom.game.rom_filename)
@@ -583,56 +604,33 @@ pub async fn global_search(
 
 #[server(prefix = "/sfn")]
 pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
-    use std::collections::BTreeSet;
-
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.get_systems(&storage);
-    let mut genres = BTreeSet::new();
 
-    for sys in &systems {
-        if sys.game_count == 0 {
-            continue;
-        }
-        let roms = match state
-            .cache
-            .get_roms(&storage, &sys.folder_name, state.region_preference())
-        {
-            Ok(roms) => roms,
-            Err(_) => continue,
-        };
-        for rom in &roms {
-            let g = lookup_genre(&sys.folder_name, &rom.game.rom_filename);
-            if !g.is_empty() {
-                genres.insert(g);
-            }
-        }
-    }
+    // Use a single SQL query on game_library instead of iterating all ROMs.
+    let genres = state
+        .cache
+        .with_db_read(&storage, |db| db.all_genre_groups().unwrap_or_default())
+        .unwrap_or_default();
 
-    Ok(genres.into_iter().collect())
+    Ok(genres)
 }
 
 /// Get genres available for a specific system.
 #[server(prefix = "/sfn")]
 pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnError> {
-    use std::collections::BTreeSet;
-
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let roms = state
+
+    // Use a single SQL query on game_library instead of iterating all ROMs.
+    let genres = state
         .cache
-        .get_roms(&storage, &system, state.region_preference())
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .with_db_read(&storage, |db| {
+            db.system_genre_groups(&system).unwrap_or_default()
+        })
+        .unwrap_or_default();
 
-    let mut genres = BTreeSet::new();
-    for rom in &roms {
-        let g = lookup_genre(&system, &rom.game.rom_filename);
-        if !g.is_empty() {
-            genres.insert(g);
-        }
-    }
-
-    Ok(genres.into_iter().collect())
+    Ok(genres)
 }
 
 #[cfg(all(test, feature = "ssr"))]

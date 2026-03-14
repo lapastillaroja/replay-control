@@ -126,7 +126,10 @@ pub struct GameEntry {
     pub is_m3u: bool,
     pub box_art_url: Option<String>,
     pub driver_status: Option<String>,
+    /// Detail/original genre (e.g., "Maze / Shooter", "Shoot'em Up").
     pub genre: Option<String>,
+    /// Normalized genre group (e.g., "Shooter", "Maze"). Used for filtering/grouping.
+    pub genre_group: String,
     pub players: Option<u8>,
     pub rating: Option<f32>,
     pub is_clone: bool,
@@ -238,6 +241,7 @@ impl MetadataDb {
                     box_art_url TEXT,
                     driver_status TEXT,
                     genre TEXT,
+                    genre_group TEXT NOT NULL DEFAULT '',
                     players INTEGER,
                     rating REAL,
                     is_clone INTEGER NOT NULL DEFAULT 0,
@@ -260,6 +264,10 @@ impl MetadataDb {
                 CREATE INDEX IF NOT EXISTS idx_game_library_genre
                   ON game_library (system, genre)
                   WHERE genre IS NOT NULL AND genre != '';
+
+                CREATE INDEX IF NOT EXISTS idx_game_library_genre_group
+                  ON game_library (system, genre_group)
+                  WHERE genre_group != '';
 
 ",
             )
@@ -848,9 +856,9 @@ impl MetadataDb {
             let mut stmt = tx
                 .prepare(
                     "INSERT OR IGNORE INTO game_library (system, rom_filename, rom_path, display_name,
-                     size_bytes, is_m3u, box_art_url, driver_status, genre, players, rating,
+                     size_bytes, is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                      is_clone, base_title, region, is_translation, is_hack, is_special)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -865,6 +873,7 @@ impl MetadataDb {
                     &rom.box_art_url,
                     &rom.driver_status,
                     &rom.genre,
+                    &rom.genre_group,
                     rom.players.map(|p| p as i32),
                     rom.rating,
                     rom.is_clone,
@@ -905,7 +914,7 @@ impl MetadataDb {
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special
                  FROM game_library WHERE system = ?1",
             )
@@ -1013,18 +1022,23 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "UPDATE game_library SET box_art_url = ?2, genre = ?3, players = ?4,
-                            rating = ?5, driver_status = ?6
-                     WHERE system = ?7 AND rom_filename = ?1",
+                    "UPDATE game_library SET box_art_url = ?2, genre = ?3, genre_group = ?4,
+                            players = ?5, rating = ?6, driver_status = ?7
+                     WHERE system = ?8 AND rom_filename = ?1",
                 )
                 .map_err(|e| Error::Other(format!("Prepare update_rom_enrichment: {e}")))?;
 
             for (filename, box_art_url, genre, players, rating, driver_status) in enrichments {
+                let genre_group = genre
+                    .as_deref()
+                    .map(crate::genre::normalize_genre)
+                    .unwrap_or("");
                 let updated = stmt
                     .execute(params![
                         filename,
                         box_art_url,
                         genre,
+                        genre_group,
                         players.map(|p| p as i32),
                         rating,
                         driver_status,
@@ -1063,8 +1077,8 @@ impl MetadataDb {
 
             let mut genre_stmt = tx
                 .prepare(
-                    "UPDATE game_library SET genre = ?2
-                     WHERE system = ?3 AND rom_filename = ?1
+                    "UPDATE game_library SET genre = ?2, genre_group = ?3
+                     WHERE system = ?4 AND rom_filename = ?1
                        AND (genre IS NULL OR genre = '')",
                 )
                 .map_err(|e| Error::Other(format!("Prepare genre update: {e}")))?;
@@ -1083,8 +1097,9 @@ impl MetadataDb {
                         .map_err(|e| Error::Other(format!("Update box_art_url: {e}")))?;
                 }
                 if let Some(g) = genre {
+                    let gg = crate::genre::normalize_genre(g);
                     genre_stmt
-                        .execute(params![filename, g, system])
+                        .execute(params![filename, g, gg, system])
                         .map_err(|e| Error::Other(format!("Update genre: {e}")))?;
                 }
                 if let Some(r) = rating {
@@ -1336,7 +1351,7 @@ impl MetadataDb {
                     WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special
                 FROM deduped WHERE rn = 1
                 ORDER BY RANDOM() LIMIT ?1",
@@ -1356,7 +1371,7 @@ impl MetadataDb {
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special
                  FROM game_library
                  WHERE system = ?1 AND box_art_url IS NOT NULL AND is_special = 0
@@ -1397,7 +1412,7 @@ impl MetadataDb {
                     WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND rating IS NOT NULL AND rating > 0
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special
                 FROM (
                     SELECT * FROM deduped WHERE rn = 1
@@ -1420,9 +1435,9 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT genre, COUNT(*) as cnt FROM game_library
-                 WHERE genre IS NOT NULL AND genre != ''
-                 GROUP BY genre ORDER BY cnt DESC",
+                "SELECT genre_group, COUNT(*) as cnt FROM game_library
+                 WHERE genre_group != ''
+                 GROUP BY genre_group ORDER BY cnt DESC",
             )
             .map_err(|e| Error::Other(format!("Prepare genre_counts: {e}")))?;
 
@@ -1444,6 +1459,44 @@ impl MetadataDb {
                 |row| row.get(0),
             )
             .map_err(|e| Error::Other(format!("Query multiplayer_count: {e}")))
+    }
+
+    /// Get all distinct genre groups across the entire game library.
+    /// Returns sorted genre group names (excludes empty strings).
+    pub fn all_genre_groups(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT DISTINCT genre_group FROM game_library
+                 WHERE genre_group != ''
+                 ORDER BY genre_group",
+            )
+            .map_err(|e| Error::Other(format!("Prepare all_genre_groups: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query all_genre_groups: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get distinct genre groups for a specific system.
+    /// Returns sorted genre group names (excludes empty strings).
+    pub fn system_genre_groups(&self, system: &str) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT DISTINCT genre_group FROM game_library
+                 WHERE system = ?1 AND genre_group != ''
+                 ORDER BY genre_group",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_genre_groups: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query system_genre_groups: {e}")))?;
+
+        Ok(rows.flatten().collect())
     }
 
     /// Get non-favorited ROMs from a system, optionally filtered by genre.
@@ -1478,10 +1531,10 @@ impl MetadataDb {
                             END
                         ) AS rn
                         FROM game_library
-                        WHERE system = ?1 AND genre = ?2 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
+                        WHERE system = ?1 AND genre_group = ?2 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                            is_m3u, box_art_url, driver_status, genre, players, rating,
+                            is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                             is_clone, base_title, region, is_translation, is_hack, is_special
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
@@ -1516,7 +1569,7 @@ impl MetadataDb {
                         WHERE system = ?1 AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                            is_m3u, box_art_url, driver_status, genre, players, rating,
+                            is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                             is_clone, base_title, region, is_translation, is_hack, is_special
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
@@ -1686,8 +1739,14 @@ impl MetadataDb {
     }
 
     /// Find similar games by genre within the same system.
-    /// Excludes the given ROM, clones, and games without a genre.
-    /// Returns randomized results up to `limit`.
+    ///
+    /// Uses a two-tier weighted query:
+    /// - Exact `genre` match gets relevance=2 (same detailed genre)
+    /// - `genre_group` match gets relevance=1 (same genre family)
+    ///
+    /// Results are ordered by relevance (exact first), then randomized
+    /// within each tier. Excludes the given ROM, clones, translations,
+    /// hacks, specials, and games without a genre.
     pub fn similar_by_genre(
         &self,
         system: &str,
@@ -1695,29 +1754,34 @@ impl MetadataDb {
         exclude_filename: &str,
         limit: usize,
     ) -> Result<Vec<GameEntry>> {
+        // Compute the genre_group for the input genre to find family matches.
+        let genre_group = crate::genre::normalize_genre(genre);
+
         let mut stmt = self
             .conn
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, players, rating,
+                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special
                  FROM game_library
                  WHERE system = ?1
-                   AND genre = ?2
-                   AND genre != ''
-                   AND rom_filename != ?3
+                   AND (genre = ?2 OR genre_group = ?3)
+                   AND genre_group != ''
+                   AND rom_filename != ?4
                    AND is_clone = 0
                    AND is_translation = 0
                    AND is_hack = 0
                    AND is_special = 0
-                 ORDER BY RANDOM()
-                 LIMIT ?4",
+                 ORDER BY
+                   CASE WHEN genre = ?2 THEN 0 ELSE 1 END,
+                   RANDOM()
+                 LIMIT ?5",
             )
             .map_err(|e| Error::Other(format!("Prepare similar_by_genre: {e}")))?;
 
         let rows = stmt
             .query_map(
-                params![system, genre, exclude_filename, limit as i64],
+                params![system, genre, genre_group, exclude_filename, limit as i64],
                 Self::row_to_game_entry,
             )
             .map_err(|e| Error::Other(format!("Query similar_by_genre: {e}")))?;
@@ -1737,14 +1801,15 @@ impl MetadataDb {
             box_art_url: row.get(6)?,
             driver_status: row.get(7)?,
             genre: row.get(8)?,
-            players: row.get::<_, Option<i32>>(9)?.map(|p| p as u8),
-            rating: row.get(10)?,
-            is_clone: row.get(11)?,
-            base_title: row.get(12)?,
-            region: row.get(13)?,
-            is_translation: row.get(14)?,
-            is_hack: row.get(15)?,
-            is_special: row.get(16)?,
+            genre_group: row.get::<_, String>(9)?,
+            players: row.get::<_, Option<i32>>(10)?.map(|p| p as u8),
+            rating: row.get(11)?,
+            is_clone: row.get(12)?,
+            base_title: row.get(13)?,
+            region: row.get(14)?,
+            is_translation: row.get(15)?,
+            is_hack: row.get(16)?,
+            is_special: row.get(17)?,
         })
     }
 }
@@ -1798,6 +1863,7 @@ mod tests {
             box_art_url: None,
             driver_status: None,
             genre: None,
+            genre_group: String::new(),
             players: None,
             rating: None,
             is_clone: false,
@@ -1812,6 +1878,7 @@ mod tests {
     fn make_game_entry_with_genre(system: &str, filename: &str, genre: &str) -> GameEntry {
         GameEntry {
             genre: Some(genre.into()),
+            genre_group: crate::genre::normalize_genre(genre).to_string(),
             ..make_game_entry(system, filename, false)
         }
     }
@@ -2066,19 +2133,17 @@ mod tests {
     fn recommendation_queries_exclude_special_roms() {
         let (mut db, _dir) = open_temp_db();
 
-        let mut normal = make_game_entry("snes", "Mario (USA).sfc", false);
+        let mut normal = make_game_entry_with_genre("snes", "Mario (USA).sfc", "Platform");
         normal.base_title = "Mario".into();
         normal.region = "usa".into();
         normal.box_art_url = Some("/img/mario.png".into());
         normal.rating = Some(4.5);
-        normal.genre = Some("Platform".into());
 
-        let mut special = make_game_entry("snes", "Mario (USA) (FastRom).sfc", false);
+        let mut special = make_game_entry_with_genre("snes", "Mario (USA) (FastRom).sfc", "Platform");
         special.base_title = "Mario FastRom".into();
         special.region = "usa".into();
         special.box_art_url = Some("/img/mario.png".into());
         special.rating = Some(4.5);
-        special.genre = Some("Platform".into());
         special.is_special = true;
 
         db.save_system_entries("snes", &[normal, special], None)

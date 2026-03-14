@@ -443,16 +443,30 @@ impl GameLibrary {
                     .map(|i| &rom_filename[..i])
                     .unwrap_or(rom_filename);
 
-                let (genre, players_lookup, is_clone, base_title) = if is_arcade {
+                // Two-tier genre: `genre` = detail/original, `genre_group` = normalized.
+                let (genre, genre_group, players_lookup, is_clone, base_title) = if is_arcade {
                     let arcade_stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
                     match arcade_db::lookup_arcade_game(arcade_stem) {
-                        Some(info) => (
-                            Some(info.normalized_genre.to_string()),
-                            Some(info.players),
-                            info.is_clone,
-                            replay_control_core::thumbnails::base_title(info.display_name),
-                        ),
-                        None => (None, None, false, replay_control_core::thumbnails::base_title(stem)),
+                        Some(info) => {
+                            // genre = raw category (e.g., "Maze / Shooter")
+                            let detail = if info.category.is_empty() {
+                                None
+                            } else {
+                                Some(info.category.to_string())
+                            };
+                            // genre_group = normalized (e.g., "Maze")
+                            let group = replay_control_core::genre::normalize_genre(
+                                info.category,
+                            ).to_string();
+                            (
+                                detail,
+                                group,
+                                Some(info.players),
+                                info.is_clone,
+                                replay_control_core::thumbnails::base_title(info.display_name),
+                            )
+                        }
+                        None => (None, String::new(), None, false, replay_control_core::thumbnails::base_title(stem)),
                     }
                 } else {
                     let entry = game_db::lookup_game(system, stem);
@@ -464,17 +478,26 @@ impl GameLibrary {
                         .map(replay_control_core::thumbnails::base_title)
                         .unwrap_or_else(|| replay_control_core::thumbnails::base_title(stem));
                     match game {
-                        Some(g) => (
-                            if g.normalized_genre.is_empty() {
+                        Some(g) => {
+                            // genre = raw genre from game_db (e.g., "Shoot'em Up")
+                            let detail = if g.genre.is_empty() {
                                 None
                             } else {
-                                Some(g.normalized_genre.to_string())
-                            },
-                            if g.players > 0 { Some(g.players) } else { None },
-                            false,
-                            bt,
-                        ),
-                        None => (None, None, false, bt),
+                                Some(g.genre.to_string())
+                            };
+                            // genre_group = normalized (e.g., "Shooter")
+                            let group = replay_control_core::genre::normalize_genre(
+                                g.genre,
+                            ).to_string();
+                            (
+                                detail,
+                                group,
+                                if g.players > 0 { Some(g.players) } else { None },
+                                false,
+                                bt,
+                            )
+                        }
+                        None => (None, String::new(), None, false, bt),
                     }
                 };
 
@@ -501,6 +524,7 @@ impl GameLibrary {
                     box_art_url: r.box_art_url.clone(),
                     driver_status: r.driver_status.clone(),
                     genre,
+                    genre_group,
                     players: players_lookup.or(r.players),
                     rating: r.rating,
                     is_clone,

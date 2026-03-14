@@ -70,21 +70,12 @@ pub async fn get_related_games(
     let storage = state.storage();
     let systems = state.cache.get_systems(&storage);
 
-    // Look up genre from the game DB/arcade DB (same source as game detail).
-    let genre = super::search::lookup_genre(&system, &filename);
-
-    // For arcade: look up the category for preferential sorting.
+    // Look up the detail genre from game_library for two-tier similar matching.
+    // The detail genre (e.g., "Maze / Shooter") is passed to similar_by_genre(),
+    // which internally normalizes it to genre_group for broader matching.
     use replay_control_core::systems::{self, SystemCategory};
     let sys_info = systems::find_system(&system);
     let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
-    let arcade_category = if is_arcade {
-        let stem = filename.strip_suffix(".zip").unwrap_or(&filename);
-        replay_control_core::arcade_db::lookup_arcade_game(stem)
-            .map(|info| info.category.to_string())
-            .filter(|c| !c.is_empty())
-    } else {
-        None
-    };
 
     // Single DB access for all queries.
     let db_data = state.cache.with_db_read(&storage, |db| {
@@ -93,12 +84,28 @@ pub async fn get_related_games(
         let hacks_raw = db.hacks(&system, &filename).unwrap_or_default();
         let specials_raw = db.specials(&system, &filename).unwrap_or_default();
 
-        let similar = if genre.is_empty() {
+        // Get the detail genre from game_library for this ROM.
+        let detail_genre = db
+            .load_system_entries(&system)
+            .ok()
+            .and_then(|entries| {
+                entries
+                    .into_iter()
+                    .find(|e| e.rom_filename == filename)
+                    .and_then(|e| e.genre.filter(|g| !g.is_empty()))
+            })
+            .or_else(|| {
+                // Fallback to lookup_genre if not in DB yet.
+                let g = super::search::lookup_genre(&system, &filename);
+                if g.is_empty() { None } else { Some(g) }
+            })
+            .unwrap_or_default();
+
+        let similar = if detail_genre.is_empty() {
             Vec::new()
         } else {
-            // For arcade: query a larger pool so we can prefer same-category games.
             let limit = if is_arcade { 24 } else { 8 };
-            db.similar_by_genre(&system, &genre, &filename, limit)
+            db.similar_by_genre(&system, &detail_genre, &filename, limit)
                 .unwrap_or_default()
         };
 
@@ -236,38 +243,14 @@ pub async fn get_related_games(
         })
         .collect();
 
-    // Build similar games, applying arcade category preference.
-    let mut similar_games: Vec<RecommendedGame> = if is_arcade && arcade_category.is_some() {
-        let cat = arcade_category.as_deref().unwrap();
-        // Partition into same-category and other.
-        let (mut same_cat, mut other): (Vec<_>, Vec<_>) =
-            similar_pool.into_iter().partition(|rom| {
-                let stem = rom
-                    .rom_filename
-                    .strip_suffix(".zip")
-                    .unwrap_or(&rom.rom_filename);
-                replay_control_core::arcade_db::lookup_arcade_game(stem)
-                    .map(|info| info.category == cat)
-                    .unwrap_or(false)
-            });
-
-        // Take up to 8, preferring same-category.
-        same_cat.truncate(8);
-        let remaining = 8 - same_cat.len();
-        other.truncate(remaining);
-        same_cat.extend(other);
-
-        same_cat
-            .iter()
-            .filter_map(|rom| to_recommended(&system, rom, &systems))
-            .collect()
-    } else {
-        similar_pool
-            .iter()
-            .take(8)
-            .filter_map(|rom| to_recommended(&system, rom, &systems))
-            .collect()
-    };
+    // Build similar games. The two-tier similar_by_genre query already orders
+    // by exact genre match first (relevance=2) then genre_group (relevance=1),
+    // so we just take the top results.
+    let mut similar_games: Vec<RecommendedGame> = similar_pool
+        .iter()
+        .take(8)
+        .filter_map(|rom| to_recommended(&system, rom, &systems))
+        .collect();
 
     // Resolve box art from filesystem.
     resolve_box_art_for_picks(&state, &mut similar_games);

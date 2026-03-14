@@ -207,13 +207,27 @@ fn collect_favorites_info(
         .map(|s| s.display_name.clone())
         .unwrap_or_else(|| chosen_system.to_string());
 
-    // Determine top genre from favorites using baked-in game DB.
+    // Determine top genre_group from favorites using game_library DB.
+    let genre_map: std::collections::HashMap<String, String> = state
+        .cache
+        .with_db_read(storage, |db| {
+            db.load_system_entries(chosen_system)
+                .map(|entries| {
+                    entries
+                        .into_iter()
+                        .filter(|e| !e.genre_group.is_empty())
+                        .map(|e| (e.rom_filename, e.genre_group))
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+
     let mut genre_counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
     for filename in fav_filenames {
-        let genre = super::search::lookup_genre(chosen_system, filename);
-        if !genre.is_empty() {
-            *genre_counts.entry(genre).or_default() += 1;
+        if let Some(gg) = genre_map.get(filename) {
+            *genre_counts.entry(gg.clone()).or_default() += 1;
         }
     }
     let top_genre = genre_counts

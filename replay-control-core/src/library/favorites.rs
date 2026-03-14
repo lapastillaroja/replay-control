@@ -315,36 +315,31 @@ fn criteria_folder_raw(
             .map(|s| s.display_name.to_string())
             .unwrap_or_else(|| system.to_string()),
         OrganizeCriteria::Genre => {
-            if is_arcade {
-                // Use arcade_db for genre resolution.
+            // Use the unified runtime normalizer for consistent genre groups.
+            let raw_genre = if is_arcade {
                 let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
-                let genre = crate::arcade_db::lookup_arcade_game(stem)
-                    .map(|info| info.normalized_genre)
-                    .unwrap_or("");
-                if genre.is_empty() {
-                    "Other".to_string()
-                } else {
-                    genre.to_string()
-                }
+                crate::arcade_db::lookup_arcade_game(stem)
+                    .map(|info| info.category)
+                    .unwrap_or("")
             } else {
-                // Use game_db for genre resolution.
                 let stem = rom_filename
                     .rfind('.')
                     .map(|i| &rom_filename[..i])
                     .unwrap_or(rom_filename);
-                let genre = game_db::lookup_game(system, stem)
-                    .map(|e| e.game.normalized_genre)
+                game_db::lookup_game(system, stem)
+                    .map(|e| e.game.genre)
                     .or_else(|| {
                         let normalized = game_db::normalize_filename(stem);
                         game_db::lookup_by_normalized_title(system, &normalized)
-                            .map(|g| g.normalized_genre)
+                            .map(|g| g.genre)
                     })
-                    .unwrap_or("");
-                if genre.is_empty() {
-                    "Other".to_string()
-                } else {
-                    genre.to_string()
-                }
+                    .unwrap_or("")
+            };
+            let genre_group = crate::genre::normalize_genre(raw_genre);
+            if genre_group.is_empty() {
+                "Other".to_string()
+            } else {
+                genre_group.to_string()
             }
         }
         OrganizeCriteria::Players => {

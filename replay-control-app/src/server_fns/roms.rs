@@ -71,6 +71,26 @@ pub async fn get_roms_page(
         .get_roms(&storage, &system, region_pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Batch-load genre groups for genre filtering (single DB query).
+    let genre_groups: std::collections::HashMap<String, String> = if !genre.is_empty() {
+        state
+            .cache
+            .with_db_read(&storage, |db| {
+                db.load_system_entries(&system)
+                    .map(|entries| {
+                        entries
+                            .into_iter()
+                            .filter(|e| !e.genre_group.is_empty())
+                            .map(|e| (e.rom_filename, e.genre_group))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+
     // Apply tier-based, clone, and genre filters before search scoring.
     let pre_filtered: Vec<RomEntry> = all_roms
         .into_iter()
@@ -103,11 +123,13 @@ pub async fn get_roms_page(
             true
         })
         .filter(|r| {
+            // Apply genre filter using genre_group from game_library.
             if genre.is_empty() {
                 return true;
             }
-            let rom_genre = lookup_genre(&system, &r.game.rom_filename);
-            rom_genre.eq_ignore_ascii_case(&genre)
+            genre_groups
+                .get(&r.game.rom_filename)
+                .is_some_and(|gg| gg.eq_ignore_ascii_case(&genre))
         })
         .filter(|r| {
             if !multiplayer_only {
