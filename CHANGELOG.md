@@ -1,0 +1,133 @@
+# Changelog
+
+Chronological timeline of changes to the Replay Control companion app for RePlayOS.
+
+---
+
+## 2026-03-14
+
+- fix: resolve Leptos hydration warnings on games page (`a2dfedc`)
+- fix: guarantee `metadata_operation_in_progress` is cleared after rebuild, even on panic (`f5c16f8`)
+- feat: block DB operations during game library rebuild with completion feedback (`ec47b6d`)
+- refactor: rename `rom_cache` → `game_library` across codebase (`412793b`)
+- test: fix broken tests and add coverage for is_special, variants, is_local (`cdd250e`)
+- fix: improved variant labels, filtered arcade clones, skip broken symlink previews (`5be5e06`)
+- feat: auto-detect new/changed ROMs via inotify filesystem watcher on local storage (`5bec806`)
+
+## 2026-03-13
+
+- feat: `is_special` flag to filter FastROM patches, unlicensed, homebrew, pre-release, and pirate ROMs (`9a29b96`)
+- feat: `is_hack` support — filter hacks from variants/dedup, show in dedicated Hacks section (`fdbd788`)
+- fix: metadata stats use LEFT JOIN with game library fallback for M3U dedup (`54ced4f`)
+- feat: app-specific config file (`.replay-control/settings.cfg`) separate from `replay.cfg` (`9a29b96`)
+- fix: populate game library after import when cache is empty — startup race condition (`309b8e4`)
+- feat: genre fallback from LaunchBox when baked-in game_db has no genre (`f36b6b9`)
+- fix: prioritize primary ROMs over betas for genre assignment in build (`89e4410`)
+- feat: translation detection and filtering from variants/dedup with dedicated Translations section (`6a503d6`)
+- fix: stop event propagation on boxart picker close button (`55a2cd6`)
+- feat: related games section with genre-based similarity (`3ef8199`)
+- fix: re-enrich game library after metadata/thumbnail imports (`fa76dcc`)
+- fix: trailing article normalization in `base_title` for variant grouping (`5262c66`)
+- feat: deduplicate recommendations by filtering clones and regional variants (`68f8938`)
+- refactor: organize core crate into logical subdirectories (`4b14f20`)
+- fix: case-insensitive exact matching for thumbnail resolution (`bb8391c`)
+- fix: M3U dedup metadata stats, MAME/FBNeo fallback, PSX m3u extension (`e5e2426`)
+- feat: randomize ordering for top-rated and favorites-based recommendation picks (`f46514f`)
+- test: arcade image matching pipeline tests (`74e571e`)
+- fix: arcade DB translation for thumbnail matching (`a36a6fe`)
+- fix: resolve recommendation box art from filesystem (`acbf4d5`)
+- fix: fuzzy matching in `update_image_paths_from_disk` (`48912cf`)
+- fix: invalidate image cache after metadata import (`b1fd6e1`)
+- feat: switch thumbnail indexing from git clone to GitHub REST API (`f7e2438`)
+- fix: fall back to log files when journald is disabled (`a943c8c`)
+
+## 2026-03-12
+
+- feat: metadata busy banner and graceful DB unavailability handling (`a702a1d`)
+- feat: NVMe storage support for Pi 5 PCIe (`1cee7eb`)
+- refactor: shared DB initialization with eager open and corruption recovery (`83654d0`)
+- fix: recommendations biased toward systems with downloaded thumbnails (`94675b0`)
+- fix: eager DB open with auto-reopen on external file deletion (`b69ff78`)
+- fix: filter out stub thumbnails (<200 bytes) during indexing (`6dac291`)
+- fix: M3U Windows backslash paths and comma-inverted display names (`ef3258d`)
+- feat: auto-match metadata for externally added ROMs using normalized title index (`bf66440`)
+- feat: box art swap — pick alternate cover art per ROM from region variants (`abe23ac`)
+- style: resolve all clippy warnings across codebase (`5c27f7f`)
+- fix: region preference styling, SSR genres, and box art swap design (`cb85f8c`)
+- feat: prevent parallel metadata operations with atomic guard (`701510e`)
+- feat: manifest-based thumbnail index stored in SQLite for on-demand downloads from GitHub (`29f175d`)
+- feat: enhance `dev.sh` with Pi deployment mode, add `strip=debuginfo` to dev profile (`82ef3ac`)
+- feat: recents entry creation on successful launch for immediate home page reflection (`b09c8b6`)
+- perf: build optimization with `dev.build-override` opt-level 2 (`acb6c94`)
+- refactor: replace `reqwest` with `curl` subprocess for HTTP calls, eliminating 11 TLS crates (`9ffc41e`)
+- fix: SSR recommendations with L2 warmup, enrichment, and race condition fixes (`36d4505`)
+- feat: persistent SQLite game library (L2 cache) with write-through and `nolock` fallback for NFS (`cd47235`)
+- perf: 98% faster page loads via tier 1+2 cache optimizations (`6a4e767`)
+
+## 2026-03-11
+
+- feat: favorites/rating-based recommendations and ScummVM dedup fix (`3385e18`)
+- feat: home page recommendation blocks — random picks, top genres, multiplayer, favorites-based, top-rated (`e102987`)
+- feat: M3U multi-disc support — hide individual disc files when playlist exists, aggregate sizes (`de13e74`)
+- feat: metadata-enriched search using genre and year, min-rating filter (`c075242`)
+- feat: word-level fuzzy search matching with word-boundary scoring (`6b76abc`)
+- fix: auto-delete image repos after match, add cache management (`449e03c`)
+- test: integration tests (50+ tests including 15 integration), extract router builder (`8a0bb34`)
+- feat: region preference setting affecting sort order and search scoring (`faa135d`)
+- feat: megabit size display for 24 cartridge-based systems, split CSS into 17 modules (`7c385b8`)
+- refactor: extract game detail sub-components, typed filter state (`93dc64b`)
+- refactor: split server functions and API into domain modules (`efc04b5`)
+- refactor: extract reusable components — RebootButton, unified Transition, auto-close SSE stream (`e37ee72`)
+- feat: arcade driver status badges, favorites filter, rating display, multiplayer filter (`7ef4564`, `54ceb93`)
+- fix: validate metadata DB image paths against disk to catch fake-symlink artifacts (`49413d9`)
+- feat: box art thumbnails on home page and favorites, storage disk usage bar (`1926e53`)
+- feat: extended search filters and ROM list filter persistence (`5349b87`)
+- refactor: merge Games tab into Home page, rename to Games (`ab1695b`)
+- feat: user screenshots gallery with fullscreen lightbox viewer (`138cd3d`)
+- feat: game launching on RePlayOS with health check and automatic recovery restart (`6f221e4`)
+- fix: search input focus on client-side navigation (`2281faa`)
+- feat: search icon in top bar, recent searches, random game button, "/" shortcut (`618cb9c`)
+- fix: `.fav` suffix in recently played entries and deduplication (`08b28ad`)
+
+## 2026-03-10
+
+- feat: game videos — search via Piped/Invidious APIs, inline preview, pin/save (`b8145d8`)
+- feat: dedicated `/search` page with URL-persisted query params (`b620800`)
+- feat: image import with SSE progress streaming and cancel support (`638e026`)
+- feat: global cross-system search with genre, driver status, and favorites-only filters (`b3bb571`)
+- feat: arcade image support via multi-repo mapping (Atomiswave + Naomi + Naomi 2) (`d46a257`)
+- fix: improved arcade LaunchBox matching (`b1d5aa1`)
+- feat: game images — per-system image download from libretro-thumbnails (`7c53237`)
+- feat: background metadata import with progress tracking, auto-import, per-system coverage (`f13a9f2`)
+- feat: LaunchBox XML metadata import with streaming parser and normalized title matching (`1f9b515`)
+- refactor: skin sync toggle and theme-to-skin rename (`f4e7cd0`)
+- feat: interactive skin selection and CSS theming (`b82964a`)
+
+## 2026-03-09
+
+- feat: hostname configuration with mDNS address update (`a3c8386`)
+- feat: skin theming — browse and apply RePlayOS skins, sync app colors to active skin (`f0cb7bf`)
+- feat: Wi-Fi configuration page and NFS share settings page (`e3f27a3`)
+- feat: favorites organization for grouping by system subfolder (`9311e90`)
+- feat: internationalization (i18n) support (`9311e90`)
+- feat: dynamic storage detection with config file watcher (SD, USB, NFS) (`f685eef`)
+- feat: embedded non-arcade game database (~34K ROM entries across 20+ systems) (`693be18`)
+- feat: ROM filename parsing for No-Intro and GoodTools naming conventions (`693be18`)
+- feat: install script and aarch64 cross-compilation support (`ab0e032`)
+- feat: storage type card and empty state on home page (`780dec8`)
+- feat: system display name in ROM list header (`53a30c1`)
+- fix: add timestamps to favorites for true "recently added" ordering (`2b7f172`)
+- feat: game detail page with system, filename, size, format, and arcade metadata (`43a316a`)
+- feat: expanded arcade DB with FBNeo, MAME 2003+, and MAME current — 28,593 entries (`5f78bf9`)
+- feat: embedded arcade database (PHF map) with Flycast, Naomi, and Atomiswave data (`b54aab7`)
+- feat: unfavorite action on favorites page with `ErrorBoundary` handling (`5f688c6`)
+- feat: PWA support with manifest and service worker, in-memory cache layer (`c4f1556`)
+
+## 2026-03-08
+
+- feat: initial project setup — Leptos 0.7 SSR app with WASM hydration, Axum server, client-side routing (`af1d5e9`)
+- feat: ROM browsing by system with infinite scroll and pagination (`af1d5e9`)
+- feat: per-ROM favorite toggle, rename, and delete with confirmation (`af1d5e9`)
+- feat: home page with last played hero card, recently played scroll, and library stats grid (`af1d5e9`)
+- feat: favorites page with per-system cards (`af1d5e9`)
+- chore: dev script (`dev.sh`) with auto-reload support (`a59c0a2`)
