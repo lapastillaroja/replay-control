@@ -160,8 +160,9 @@ mod ssr {
                     use axum::http::StatusCode;
                     use axum::response::IntoResponse;
 
-                    // Prevent path traversal.
-                    if path.contains("..") {
+                    // Prevent path traversal (check segments, not substrings —
+                    // filenames like "MASTER VER..png" contain ".." legitimately).
+                    if path.split('/').any(|s| s == "..") {
                         return StatusCode::BAD_REQUEST.into_response();
                     }
 
@@ -201,7 +202,7 @@ mod ssr {
                     use axum::http::StatusCode;
                     use axum::response::IntoResponse;
 
-                    if path.contains("..") {
+                    if path.split('/').any(|s| s == "..") {
                         return StatusCode::BAD_REQUEST.into_response();
                     }
 
