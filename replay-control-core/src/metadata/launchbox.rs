@@ -14,72 +14,11 @@ use crate::arcade_db;
 use crate::error::{Error, Result};
 use crate::metadata_db::{GameMetadata, ImportStats, MetadataDb};
 
-/// Mapping from LaunchBox platform names to our system folder names.
-/// A single platform can map to multiple system folders (e.g. "Arcade" covers
-/// arcade_mame, arcade_fbneo, and arcade_mame_2k3p).
+/// Build the LaunchBox platform → system folder mapping from the centralized
+/// system definitions in `systems.rs`. Adding a new system with
+/// `launchbox_platforms` automatically enables LaunchBox import for it.
 fn platform_map() -> HashMap<&'static str, Vec<&'static str>> {
-    let mut m: HashMap<&str, Vec<&str>> = HashMap::new();
-    let mut ins = |platform: &'static str, folder: &'static str| {
-        m.entry(platform).or_default().push(folder);
-    };
-    // Arcade — all arcade folders share the same MAME-style naming
-    ins("Arcade", "arcade_mame");
-    ins("Arcade", "arcade_fbneo");
-    ins("Arcade", "arcade_mame_2k3p");
-    // Sega arcade boards → arcade_dc
-    ins("Sammy Atomiswave", "arcade_dc");
-    ins("Sega Naomi", "arcade_dc");
-    ins("Sega Naomi 2", "arcade_dc");
-    // Atari
-    ins("Atari 2600", "atari_2600");
-    ins("Atari 5200", "atari_5200");
-    ins("Atari 7800", "atari_7800");
-    ins("Atari Jaguar", "atari_jaguar");
-    ins("Atari Lynx", "atari_lynx");
-    // Computers
-    ins("Amstrad CPC", "amstrad_cpc");
-    ins("Commodore Amiga", "commodore_ami");
-    ins("Commodore 64", "commodore_c64");
-    ins("MS-DOS", "ibm_pc");
-    ins("Microsoft MSX", "microsoft_msx");
-    ins("Microsoft MSX2", "microsoft_msx");
-    ins("Sharp X68000", "sharp_x68k");
-    ins("Sinclair ZX Spectrum", "sinclair_zx");
-    // NEC
-    ins("NEC TurboGrafx-16", "nec_pce");
-    ins("NEC TurboGrafx-CD", "nec_pcecd");
-    ins("NEC PC Engine", "nec_pce");
-    ins("NEC PC Engine CD-ROM", "nec_pcecd");
-    // Nintendo
-    ins("Nintendo DS", "nintendo_ds");
-    ins("Nintendo Game Boy", "nintendo_gb");
-    ins("Nintendo Game Boy Advance", "nintendo_gba");
-    ins("Nintendo Game Boy Color", "nintendo_gbc");
-    ins("Nintendo 64", "nintendo_n64");
-    ins("Nintendo Entertainment System", "nintendo_nes");
-    ins("Super Nintendo Entertainment System", "nintendo_snes");
-    // Panasonic / Philips
-    ins("3DO Interactive Multiplayer", "panasonic_3do");
-    ins("Philips CD-i", "philips_cdi");
-    // Sega
-    ins("Sega 32X", "sega_32x");
-    ins("Sega CD", "sega_cd");
-    ins("Sega Dreamcast", "sega_dc");
-    ins("Sega Game Gear", "sega_gg");
-    ins("Sega Genesis", "sega_smd");
-    ins("Sega Mega Drive", "sega_smd");
-    ins("Sega Master System", "sega_sms");
-    ins("Sega Saturn", "sega_st");
-    ins("Sega SG-1000", "sega_sg");
-    // SNK
-    ins("SNK Neo Geo AES", "snk_ng");
-    ins("SNK Neo Geo MVS", "snk_ng");
-    ins("SNK Neo Geo CD", "snk_ngcd");
-    ins("SNK Neo Geo Pocket", "snk_ngp");
-    ins("SNK Neo Geo Pocket Color", "snk_ngp");
-    // Sony
-    ins("Sony Playstation", "sony_psx");
-    m
+    crate::systems::launchbox_platform_map()
 }
 
 /// Parsed game entry from LaunchBox XML.

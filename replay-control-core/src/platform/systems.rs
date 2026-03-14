@@ -8,6 +8,11 @@ pub struct System {
     pub manufacturer: &'static str,
     pub category: SystemCategory,
     pub extensions: &'static [&'static str],
+    /// LaunchBox platform names that map to this system folder.
+    /// Used by the LaunchBox XML import to match games to systems.
+    /// Empty slice means no LaunchBox mapping (system won't get LaunchBox metadata).
+    #[serde(skip)]
+    pub launchbox_platforms: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -29,6 +34,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Various",
         category: SystemCategory::Arcade,
         extensions: &["zip"],
+        launchbox_platforms: &["Arcade"],
     },
     System {
         folder_name: "arcade_mame",
@@ -36,6 +42,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Various",
         category: SystemCategory::Arcade,
         extensions: &["zip"],
+        launchbox_platforms: &["Arcade"],
     },
     System {
         folder_name: "arcade_mame_2k3p",
@@ -43,6 +50,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Various",
         category: SystemCategory::Arcade,
         extensions: &["zip"],
+        launchbox_platforms: &["Arcade"],
     },
     System {
         folder_name: "arcade_dc",
@@ -50,6 +58,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Various",
         category: SystemCategory::Arcade,
         extensions: &["zip", "chd"],
+        launchbox_platforms: &["Sammy Atomiswave", "Sega Naomi", "Sega Naomi 2"],
     },
     System {
         folder_name: "atari_2600",
@@ -57,6 +66,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Atari",
         category: SystemCategory::Console,
         extensions: &["a26", "bin"],
+        launchbox_platforms: &["Atari 2600"],
     },
     System {
         folder_name: "atari_5200",
@@ -64,6 +74,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Atari",
         category: SystemCategory::Console,
         extensions: &["a52", "bin"],
+        launchbox_platforms: &["Atari 5200"],
     },
     System {
         folder_name: "atari_7800",
@@ -71,6 +82,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Atari",
         category: SystemCategory::Console,
         extensions: &["a78", "bin"],
+        launchbox_platforms: &["Atari 7800"],
     },
     System {
         folder_name: "atari_jaguar",
@@ -78,6 +90,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Atari",
         category: SystemCategory::Console,
         extensions: &["j64", "jag", "rom", "abs"],
+        launchbox_platforms: &["Atari Jaguar"],
     },
     System {
         folder_name: "atari_lynx",
@@ -85,6 +98,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Atari",
         category: SystemCategory::Handheld,
         extensions: &["lnx"],
+        launchbox_platforms: &["Atari Lynx"],
     },
     System {
         folder_name: "amstrad_cpc",
@@ -92,6 +106,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Amstrad",
         category: SystemCategory::Computer,
         extensions: &["dsk", "sna", "tap", "cdt"],
+        launchbox_platforms: &["Amstrad CPC"],
     },
     System {
         folder_name: "commodore_ami",
@@ -99,6 +114,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
         extensions: &["adf", "hdf", "ipf", "lha"],
+        launchbox_platforms: &["Commodore Amiga"],
     },
     System {
         folder_name: "commodore_amicd",
@@ -106,6 +122,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
         extensions: &["iso", "cue", "chd"],
+        launchbox_platforms: &[],
     },
     System {
         folder_name: "commodore_c64",
@@ -113,6 +130,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
         extensions: &["d64", "t64", "tap", "prg", "crt"],
+        launchbox_platforms: &["Commodore 64"],
     },
     System {
         folder_name: "ibm_pc",
@@ -120,6 +138,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "IBM",
         category: SystemCategory::Computer,
         extensions: &["zip", "exe", "com", "bat", "conf"],
+        launchbox_platforms: &["MS-DOS"],
     },
     System {
         folder_name: "microsoft_msx",
@@ -127,6 +146,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Microsoft",
         category: SystemCategory::Computer,
         extensions: &["rom", "mx1", "mx2", "dsk"],
+        launchbox_platforms: &["Microsoft MSX", "Microsoft MSX2"],
     },
     System {
         folder_name: "nec_pce",
@@ -134,6 +154,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "NEC",
         category: SystemCategory::Console,
         extensions: &["pce", "sgx"],
+        launchbox_platforms: &["NEC TurboGrafx-16", "NEC PC Engine"],
     },
     System {
         folder_name: "nec_pcecd",
@@ -141,6 +162,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "NEC",
         category: SystemCategory::Console,
         extensions: &["cue", "chd", "ccd"],
+        launchbox_platforms: &["NEC TurboGrafx-CD", "NEC PC Engine CD-ROM"],
     },
     System {
         folder_name: "nintendo_ds",
@@ -148,6 +170,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
         extensions: &["nds"],
+        launchbox_platforms: &["Nintendo DS"],
     },
     System {
         folder_name: "nintendo_gb",
@@ -155,6 +178,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
         extensions: &["gb"],
+        launchbox_platforms: &["Nintendo Game Boy"],
     },
     System {
         folder_name: "nintendo_gba",
@@ -162,6 +186,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
         extensions: &["gba"],
+        launchbox_platforms: &["Nintendo Game Boy Advance"],
     },
     System {
         folder_name: "nintendo_gbc",
@@ -169,6 +194,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
         extensions: &["gbc"],
+        launchbox_platforms: &["Nintendo Game Boy Color"],
     },
     System {
         folder_name: "nintendo_n64",
@@ -176,6 +202,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
         extensions: &["z64", "n64", "v64"],
+        launchbox_platforms: &["Nintendo 64"],
     },
     System {
         folder_name: "nintendo_nes",
@@ -183,6 +210,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
         extensions: &["nes", "unif", "unf"],
+        launchbox_platforms: &["Nintendo Entertainment System"],
     },
     System {
         folder_name: "nintendo_snes",
@@ -190,6 +218,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
         extensions: &["smc", "sfc"],
+        launchbox_platforms: &["Super Nintendo Entertainment System"],
     },
     System {
         folder_name: "panasonic_3do",
@@ -197,6 +226,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Panasonic",
         category: SystemCategory::Console,
         extensions: &["iso", "chd", "cue"],
+        launchbox_platforms: &["3DO Interactive Multiplayer"],
     },
     System {
         folder_name: "philips_cdi",
@@ -204,6 +234,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Philips",
         category: SystemCategory::Console,
         extensions: &["chd", "iso", "cue"],
+        launchbox_platforms: &["Philips CD-i"],
     },
     System {
         folder_name: "scummvm",
@@ -211,6 +242,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Various",
         category: SystemCategory::Computer,
         extensions: &["scummvm", "svm"],
+        launchbox_platforms: &["ScummVM"],
     },
     System {
         folder_name: "sega_32x",
@@ -218,6 +250,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sega",
         category: SystemCategory::Console,
         extensions: &["32x", "bin"],
+        launchbox_platforms: &["Sega 32X"],
     },
     System {
         folder_name: "sega_cd",
@@ -225,6 +258,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sega",
         category: SystemCategory::Console,
         extensions: &["chd", "cue", "iso"],
+        launchbox_platforms: &["Sega CD"],
     },
     System {
         folder_name: "sega_dc",
@@ -232,6 +266,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sega",
         category: SystemCategory::Console,
         extensions: &["gdi", "chd", "cdi"],
+        launchbox_platforms: &["Sega Dreamcast"],
     },
     System {
         folder_name: "sega_gg",
@@ -239,6 +274,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sega",
         category: SystemCategory::Handheld,
         extensions: &["gg"],
+        launchbox_platforms: &["Sega Game Gear"],
     },
     System {
         folder_name: "sega_sg",
@@ -246,6 +282,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sega",
         category: SystemCategory::Console,
         extensions: &["sg"],
+        launchbox_platforms: &["Sega SG-1000"],
     },
     System {
         folder_name: "sega_smd",
@@ -253,6 +290,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sega",
         category: SystemCategory::Console,
         extensions: &["md", "bin", "gen", "smd"],
+        launchbox_platforms: &["Sega Genesis", "Sega Mega Drive"],
     },
     System {
         folder_name: "sega_sms",
@@ -260,6 +298,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sega",
         category: SystemCategory::Console,
         extensions: &["sms"],
+        launchbox_platforms: &["Sega Master System"],
     },
     System {
         folder_name: "sega_st",
@@ -267,6 +306,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sega",
         category: SystemCategory::Console,
         extensions: &["chd", "cue", "iso"],
+        launchbox_platforms: &["Sega Saturn"],
     },
     System {
         folder_name: "sharp_x68k",
@@ -274,6 +314,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sharp",
         category: SystemCategory::Computer,
         extensions: &["dim", "hdf", "m3u"],
+        launchbox_platforms: &["Sharp X68000"],
     },
     System {
         folder_name: "sinclair_zx",
@@ -281,6 +322,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sinclair",
         category: SystemCategory::Computer,
         extensions: &["tzx", "tap", "z80", "sna"],
+        launchbox_platforms: &["Sinclair ZX Spectrum"],
     },
     System {
         folder_name: "snk_ng",
@@ -288,6 +330,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "SNK",
         category: SystemCategory::Console,
         extensions: &["zip"],
+        launchbox_platforms: &["SNK Neo Geo AES", "SNK Neo Geo MVS"],
     },
     System {
         folder_name: "snk_ngcd",
@@ -295,6 +338,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "SNK",
         category: SystemCategory::Console,
         extensions: &["chd", "cue"],
+        launchbox_platforms: &["SNK Neo Geo CD"],
     },
     System {
         folder_name: "snk_ngp",
@@ -302,6 +346,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "SNK",
         category: SystemCategory::Handheld,
         extensions: &["ngp", "ngc"],
+        launchbox_platforms: &["SNK Neo Geo Pocket", "SNK Neo Geo Pocket Color"],
     },
     System {
         folder_name: "sony_psx",
@@ -309,6 +354,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Sony",
         category: SystemCategory::Console,
         extensions: &["chd", "cue", "bin", "img", "pbp", "m3u"],
+        launchbox_platforms: &["Sony Playstation"],
     },
     System {
         folder_name: "alpha_player",
@@ -316,6 +362,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "RePlayOS",
         category: SystemCategory::Utility,
         extensions: &["mkv", "avi", "mp4", "mp3", "flac", "ogg"],
+        launchbox_platforms: &[],
     },
 ];
 
@@ -398,6 +445,19 @@ pub fn find_system_uses_megabit(folder_name: &str) -> bool {
 /// All systems that should be shown in the UI (excludes hidden ones).
 pub fn visible_systems() -> impl Iterator<Item = &'static System> {
     SYSTEMS.iter().filter(|s| !s.is_hidden())
+}
+
+/// Build a map from LaunchBox platform names to system folder names.
+/// Derived from the `launchbox_platforms` field on each `System`.
+pub fn launchbox_platform_map() -> std::collections::HashMap<&'static str, Vec<&'static str>> {
+    let mut m: std::collections::HashMap<&'static str, Vec<&'static str>> =
+        std::collections::HashMap::new();
+    for sys in SYSTEMS {
+        for &platform in sys.launchbox_platforms {
+            m.entry(platform).or_default().push(sys.folder_name);
+        }
+    }
+    m
 }
 
 /// Look up a system by its folder name.
@@ -522,5 +582,39 @@ mod tests {
     fn find_system_uses_megabit_unknown() {
         assert!(!find_system_uses_megabit("totally_unknown"));
         assert!(!find_system_uses_megabit(""));
+    }
+
+    #[test]
+    fn launchbox_platform_map_covers_non_utility_systems() {
+        // Every non-utility, non-hidden system should have at least one
+        // LaunchBox platform mapping. This catches forgotten mappings when
+        // adding new systems.
+        let exceptions = ["commodore_amicd"]; // No LaunchBox platform exists
+        for sys in SYSTEMS {
+            if sys.category == SystemCategory::Utility || exceptions.contains(&sys.folder_name) {
+                continue;
+            }
+            assert!(
+                !sys.launchbox_platforms.is_empty(),
+                "System '{}' has no LaunchBox platform mapping. \
+                 Add launchbox_platforms to its definition in systems.rs.",
+                sys.folder_name
+            );
+        }
+    }
+
+    #[test]
+    fn launchbox_platform_map_values_are_valid_systems() {
+        let map = launchbox_platform_map();
+        for (platform, folders) in &map {
+            for folder in folders {
+                assert!(
+                    find_system(folder).is_some(),
+                    "LaunchBox platform '{}' maps to unknown system folder '{}'",
+                    platform,
+                    folder
+                );
+            }
+        }
     }
 }
