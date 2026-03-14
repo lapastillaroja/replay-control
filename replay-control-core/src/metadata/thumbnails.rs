@@ -223,9 +223,31 @@ pub fn find_image_on_disk(
     let has_version = rom_base_no_version.len() < rom_base.len();
     let thumb_lower = thumb_name.to_lowercase();
 
+    // Pre-compute slash parts for tier 4 matching.
+    let search_base = if has_version {
+        rom_base_no_version
+    } else {
+        &rom_base
+    };
+    let slash_parts: Vec<&str> = if search_base.contains(" / ") || search_base.contains(" _ ") {
+        let sep = if search_base.contains(" / ") {
+            " / "
+        } else {
+            " _ "
+        };
+        search_base
+            .split(sep)
+            .map(|p| p.trim())
+            .filter(|p| p.len() >= 5)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     if let Ok(entries) = std::fs::read_dir(&kind_dir) {
         let mut fuzzy_result: Option<String> = None;
         let mut version_result: Option<String> = None;
+        let mut slash_result: Option<String> = None;
 
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -261,6 +283,15 @@ pub fn find_image_on_disk(
                         version_result = Some(format!("{kind}/{resolved}"));
                     }
                 }
+                // 4. Slash dual-name match
+                if slash_result.is_none() && slash_parts.iter().any(|part| *part == img_base) {
+                    let path = entry.path();
+                    if is_valid_image(&path) {
+                        slash_result = Some(format!("{kind}/{name}"));
+                    } else if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                        slash_result = Some(format!("{kind}/{resolved}"));
+                    }
+                }
             }
         }
 
@@ -268,6 +299,9 @@ pub fn find_image_on_disk(
             return Some(result);
         }
         if let Some(result) = version_result {
+            return Some(result);
+        }
+        if let Some(result) = slash_result {
             return Some(result);
         }
     }

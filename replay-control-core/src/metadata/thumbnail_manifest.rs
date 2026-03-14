@@ -544,6 +544,36 @@ pub fn find_in_manifest<'a>(
         return Some(m);
     }
 
+    // Tier 4: slash dual-name matching.
+    // Arcade display names often contain " / " separating English and Japanese
+    // titles (e.g., "Animal Basket / Hustle Tamaire Kyousou"). The thumbnail
+    // repo may list only the primary (English) name. Try each side independently.
+    let search_key = if version_key.len() < key.len() {
+        version_key
+    } else {
+        &key
+    };
+    if search_key.contains(" / ") || search_key.contains(" _ ") {
+        // After thumbnail_filename(), "/" becomes "_", so check both patterns.
+        let separator = if search_key.contains(" / ") {
+            " / "
+        } else {
+            " _ "
+        };
+        for part in search_key.split(separator) {
+            let part = part.trim();
+            if part.len() >= 5 {
+                if let Some(m) = index
+                    .by_tags
+                    .get(part)
+                    .or_else(|| index.by_version.get(part))
+                {
+                    return Some(m);
+                }
+            }
+        }
+    }
+
     None
 }
 
@@ -1227,5 +1257,132 @@ mod tests {
             by_tags.get("game title").unwrap().filename,
             "Game Title (USA)"
         );
+    }
+
+    #[test]
+    fn find_in_manifest_slash_dual_name_matches_primary() {
+        // Arcade display name: "Animal Basket / Hustle Tamaire Kyousou (19 Jan 2005)"
+        // thumbnail_filename replaces '/' with '_':
+        //   "Animal Basket _ Hustle Tamaire Kyousou (19 Jan 2005)"
+        // strip_tags: "Animal Basket _ Hustle Tamaire Kyousou"
+        // The repo only has "Animal Basket" — tier 4 should split on " _ " and match.
+        let m = ManifestMatch {
+            filename: "Animal Basket".to_string(),
+            is_symlink: false,
+            repo_url_name: "Atomiswave".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut by_tags = HashMap::new();
+        by_tags.insert("animal basket".to_string(), m.clone());
+
+        let index = ManifestFuzzyIndex {
+            exact: HashMap::new(),
+            exact_ci: HashMap::new(),
+            by_tags,
+            by_version: HashMap::new(),
+        };
+
+        // Simulate: ROM "anmlbskt.zip" resolves via arcade_db to
+        // "Animal Basket / Hustle Tamaire Kyousou (19 Jan 2005)"
+        // After thumbnail_filename: "Animal Basket _ Hustle Tamaire Kyousou (19 Jan 2005)"
+        // After strip_tags: "animal basket _ hustle tamaire kyousou"
+        // Tiers 1-3 fail. Tier 4 splits on " _ " and tries "animal basket" — match.
+        let thumb = "Animal Basket _ Hustle Tamaire Kyousou (19 Jan 2005)";
+        let result = find_in_manifest_with_thumb_name(&index, thumb);
+        assert!(result.is_some(), "Slash dual-name should match primary part");
+        assert_eq!(result.unwrap().filename, "Animal Basket");
+    }
+
+    #[test]
+    fn find_in_manifest_slash_skips_short_parts() {
+        // "Mushiking IV / V / VI" — parts "V" and "VI" are too short (< 5 chars).
+        // Only "Mushiking IV" should be tried (but it still has 12 chars).
+        let m = ManifestMatch {
+            filename: "Something Else".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut by_tags = HashMap::new();
+        // A very short title "v" should NOT be matched
+        by_tags.insert("v".to_string(), m.clone());
+
+        let index = ManifestFuzzyIndex {
+            exact: HashMap::new(),
+            exact_ci: HashMap::new(),
+            by_tags,
+            by_version: HashMap::new(),
+        };
+
+        // After thumbnail_filename and strip_tags, the search key would be
+        // "mushiking iv _ v _ vi" — parts "v" and "vi" are < 5 chars.
+        let thumb = "Mushiking IV _ V _ VI (World)";
+        let result = find_in_manifest_with_thumb_name(&index, thumb);
+        assert!(
+            result.is_none(),
+            "Should not match on short slash parts"
+        );
+    }
+
+    /// Helper for testing find_in_manifest with a pre-computed thumbnail name,
+    /// bypassing the arcade_db lookup and filename extraction.
+    fn find_in_manifest_with_thumb_name<'a>(
+        index: &'a ManifestFuzzyIndex,
+        thumb_name: &str,
+    ) -> Option<&'a ManifestMatch> {
+        use crate::thumbnails::{strip_tags, strip_version};
+
+        // Tier 1: exact
+        if let Some(m) = index.exact.get(thumb_name) {
+            return Some(m);
+        }
+        // Tier 1b: CI exact
+        if let Some(m) = index.exact_ci.get(&thumb_name.to_lowercase()) {
+            return Some(m);
+        }
+        // Tier 2: strip tags
+        let key = strip_tags(thumb_name).to_lowercase();
+        if let Some(m) = index.by_tags.get(&key) {
+            return Some(m);
+        }
+        // Tier 3: version-stripped
+        let version_key = strip_version(&key);
+        if version_key.len() < key.len() {
+            if let Some(m) = index
+                .by_tags
+                .get(version_key)
+                .or_else(|| index.by_version.get(version_key))
+            {
+                return Some(m);
+            }
+        }
+        // Tier 4: slash dual-name
+        let search_key = if version_key.len() < key.len() {
+            version_key
+        } else {
+            &key
+        };
+        if search_key.contains(" / ") || search_key.contains(" _ ") {
+            let separator = if search_key.contains(" / ") {
+                " / "
+            } else {
+                " _ "
+            };
+            for part in search_key.split(separator) {
+                let part = part.trim();
+                if part.len() >= 5 {
+                    if let Some(m) = index
+                        .by_tags
+                        .get(part)
+                        .or_else(|| index.by_version.get(part))
+                    {
+                        return Some(m);
+                    }
+                }
+            }
+        }
+        None
     }
 }

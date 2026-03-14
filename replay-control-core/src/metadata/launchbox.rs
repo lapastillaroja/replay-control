@@ -77,8 +77,14 @@ pub fn normalize_title(name: &str) -> String {
         stripped.to_string()
     };
 
-    // Step 3: Keep only alphanumeric, lowercase.
-    reordered
+    // Step 3: Strip TOSEC version strings (e.g., "v1.000", "v2.0").
+    // TOSEC filenames like "Game v1.000 (1999)(Sega)(PAL)" have the (...)
+    // content removed in step 1, leaving "Game v1.000". The version suffix
+    // prevents matching against LaunchBox titles like "Game".
+    let version_stripped = crate::thumbnails::strip_version(&reordered);
+
+    // Step 4: Keep only alphanumeric, lowercase.
+    version_stripped
         .chars()
         .filter(|c| c.is_alphanumeric())
         .map(|c| c.to_ascii_lowercase())
@@ -458,5 +464,80 @@ fn scan_rom_dir_recursive(
                 index.entry(key).or_default().push(filename);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_title_basic() {
+        assert_eq!(normalize_title("Super Mario World"), "supermarioworld");
+    }
+
+    #[test]
+    fn normalize_title_strips_tags() {
+        assert_eq!(
+            normalize_title("Sonic The Hedgehog (USA)"),
+            "sonicthehedgehog"
+        );
+        assert_eq!(
+            normalize_title("Game [!] (Europe)"),
+            "game"
+        );
+    }
+
+    #[test]
+    fn normalize_title_reorders_article() {
+        assert_eq!(
+            normalize_title("Legend of Zelda, The"),
+            "thelegendofzelda"
+        );
+        assert_eq!(
+            normalize_title("Legend of Zelda, The - A Link to the Past"),
+            "thelegendofzeldaalinktothepast"
+        );
+    }
+
+    #[test]
+    fn normalize_title_strips_tosec_version() {
+        // TOSEC-named Dreamcast ROMs: "(...)"-wrapped metadata is stripped,
+        // but the bare version string "v1.000" must also be removed.
+        assert_eq!(
+            normalize_title("The House of the Dead 2 v1.000 (1999)(Sega)(PAL)(M6)[!]"),
+            "thehouseofthedead2"
+        );
+        assert_eq!(
+            normalize_title("Metropolis Street Racer v1.009 (2000)(Sega)(PAL)(M5)[!]"),
+            "metropolisstreetracer"
+        );
+    }
+
+    #[test]
+    fn normalize_title_preserves_v_in_words() {
+        // "vs" and "v" in normal words should NOT be stripped
+        assert_eq!(
+            normalize_title("Alien vs Predator"),
+            "alienvspredator"
+        );
+        assert_eq!(normalize_title("Marvel"), "marvel");
+    }
+
+    #[test]
+    fn normalize_title_version_with_multiple_dots() {
+        assert_eq!(
+            normalize_title("Game v1.2.3"),
+            "game"
+        );
+    }
+
+    #[test]
+    fn normalize_title_version_at_end_only() {
+        // "v2 Special Edition" has non-version text after — should NOT strip
+        assert_eq!(
+            normalize_title("Game v2 Special Edition"),
+            "gamev2specialedition"
+        );
     }
 }

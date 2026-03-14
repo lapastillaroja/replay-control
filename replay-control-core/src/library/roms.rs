@@ -585,7 +585,23 @@ fn is_rom_file(path: &Path, system: &System) -> bool {
         return true;
     }
 
-    system.extensions.iter().any(|e| *e == ext_lower)
+    if !system.extensions.iter().any(|e| *e == ext_lower) {
+        return false;
+    }
+
+    // Filter supplementary GD-ROM disc images in arcade_dc.
+    // Files like "gdl-0010.chd" and "gds-0009a.chd" are MAME GD-ROM data
+    // required alongside the parent ZIP ROM — they are not standalone games.
+    if system.folder_name == "arcade_dc" && ext_lower == "chd" {
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            let lower = stem.to_ascii_lowercase();
+            if lower.starts_with("gdl-") || lower.starts_with("gds-") {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 #[cfg(test)]
@@ -600,6 +616,28 @@ mod tests {
         assert!(is_rom_file(Path::new("game.NES"), sys));
         assert!(!is_rom_file(Path::new("game.txt"), sys));
         assert!(is_rom_file(Path::new("multi.m3u"), sys));
+    }
+
+    #[test]
+    fn arcade_dc_filters_gdrom_chd_files() {
+        let sys = systems::find_system("arcade_dc").unwrap();
+        // ZIP ROMs are valid
+        assert!(is_rom_file(Path::new("ikaruga.zip"), sys));
+        // Standalone CHD (non-GD-ROM name) should be valid
+        assert!(is_rom_file(Path::new("somegame.chd"), sys));
+        // GD-ROM disc images should be filtered out
+        assert!(!is_rom_file(Path::new("gdl-0010.chd"), sys));
+        assert!(!is_rom_file(Path::new("gds-0009a.chd"), sys));
+        assert!(!is_rom_file(Path::new("GDL-0010.chd"), sys));
+        assert!(!is_rom_file(Path::new("GDS-0009A.CHD"), sys));
+    }
+
+    #[test]
+    fn non_arcade_dc_chd_not_filtered() {
+        // CHD files in other systems should NOT be filtered
+        let sega_dc = systems::find_system("sega_dc").unwrap();
+        assert!(is_rom_file(Path::new("game.chd"), sega_dc));
+        assert!(is_rom_file(Path::new("gdl-0010.chd"), sega_dc));
     }
 
     #[test]
