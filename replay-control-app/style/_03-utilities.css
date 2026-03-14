@@ -25,31 +25,3 @@
     0%, 100% { opacity: 0.6; }
     50% { opacity: 0.9; }
 }
-
-/* Pull-to-refresh indicator */
-.ptr-indicator {
-    height: 0;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: height 0.2s ease, opacity 0.2s ease;
-}
-
-.ptr-spinner {
-    width: 24px;
-    height: 24px;
-    border: 2.5px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    transition: transform 0.05s linear;
-}
-
-.ptr-loading .ptr-spinner {
-    animation: ptr-spin 0.6s linear infinite;
-}
-
-@keyframes ptr-spin {
-    to { transform: rotate(360deg); }
-}

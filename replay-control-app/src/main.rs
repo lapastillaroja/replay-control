@@ -363,15 +363,6 @@ mod ssr {
                     )
                 }),
             )
-            .route(
-                "/pull-to-refresh.js",
-                axum::routing::get(|| async {
-                    (
-                        [("content-type", "application/javascript")],
-                        include_str!("../static/pull-to-refresh.js"),
-                    )
-                }),
-            )
             .layer(CompressionLayer::new().gzip(true))
             .layer(CorsLayer::permissive());
 

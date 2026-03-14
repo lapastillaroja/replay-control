@@ -63,7 +63,6 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <script>
                     "if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }"
                 </script>
-                <script src="/pull-to-refresh.js" defer></script>
             </head>
             <body>
                 <App />
