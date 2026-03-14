@@ -109,13 +109,72 @@ else
     fi
 fi
 
-# Download supplemental catver.ini for current MAME (covers games not in MAME 2003+)
-# This is from AntoPISA's MAME_SupportFiles repo (v0.274, most comprehensive freely
-# downloadable version). Categories rarely change between versions.
+# Download supplemental catver.ini for current MAME (covers games not in MAME 2003+).
+#
+# We merge two sources from AntoPISA's MAME_SupportFiles repo:
+#   1. catver.ini — romname=category format, but often lags behind MAME releases
+#   2. category.ini — category-as-section format, updated more frequently (tracks latest MAME)
+#
+# The merge script converts category.ini entries to catver format and adds any
+# entries not already present in catver.ini, producing a single merged file.
 CATVER_MAME_URL="https://raw.githubusercontent.com/AntoPISA/MAME_SupportFiles/refs/heads/main/catver.ini/catver.ini"
+CATEGORY_INI_URL="https://raw.githubusercontent.com/AntoPISA/MAME_SupportFiles/refs/heads/main/category.ini/category.ini"
+
+CATVER_MAME_OUTPUT="$DATA_DIR/catver-mame-current.ini"
+CATVER_TMP="$DATA_DIR/.catver-raw.ini"
+CATEGORY_TMP="$DATA_DIR/.category-raw.ini"
+
 download \
     "$CATVER_MAME_URL" \
-    "$DATA_DIR/catver-mame-current.ini" \
-    "catver.ini for current MAME (from MAME_SupportFiles)"
+    "$CATVER_TMP" \
+    "catver.ini (MAME categories from MAME_SupportFiles)"
+
+download \
+    "$CATEGORY_INI_URL" \
+    "$CATEGORY_TMP" \
+    "category.ini (MAME categories, updated more frequently)"
+
+if [ -f "$CATVER_TMP" ] && [ -f "$CATEGORY_TMP" ]; then
+    echo "Merging catver.ini + category.ini into catver-mame-current.ini..."
+    python3 "$SCRIPT_DIR/merge-catver.py" "$CATVER_TMP" "$CATEGORY_TMP" "$CATVER_MAME_OUTPUT"
+    rm -f "$CATVER_TMP" "$CATEGORY_TMP"
+    echo
+elif [ -f "$CATVER_TMP" ]; then
+    # Fallback: use catver.ini alone if category.ini failed
+    mv "$CATVER_TMP" "$CATVER_MAME_OUTPUT"
+    echo "  (category.ini unavailable, using catver.ini only)"
+    echo
+fi
+
+# Download nplayers.ini — player count data for arcade games.
+# This supplements MAME/FBNeo metadata with player counts for entries that lack them.
+# Source: http://nplayers.arcadebelgium.be (CC BY-SA 3.0)
+NPLAYERS_VERSION="0278"
+NPLAYERS_ZIP="$DATA_DIR/nplayers${NPLAYERS_VERSION}.zip"
+NPLAYERS_OUTPUT="$DATA_DIR/nplayers.ini"
+
+if [ -f "$NPLAYERS_OUTPUT" ]; then
+    echo "nplayers.ini already exists at $NPLAYERS_OUTPUT, skipping."
+    echo "  Delete it and re-run to refresh."
+    echo
+else
+    download \
+        "http://nplayers.arcadebelgium.be/files/nplayers${NPLAYERS_VERSION}.zip" \
+        "$NPLAYERS_ZIP" \
+        "nplayers.ini (player count data, v${NPLAYERS_VERSION})"
+
+    if [ -f "$NPLAYERS_ZIP" ]; then
+        echo "Extracting nplayers.ini from archive..."
+        unzip -o -j "$NPLAYERS_ZIP" nplayers.ini -d "$DATA_DIR" >/dev/null 2>&1
+        if [ -f "$NPLAYERS_OUTPUT" ]; then
+            NPLAYERS_SIZE=$(stat --printf="%s" "$NPLAYERS_OUTPUT" 2>/dev/null || stat -f "%z" "$NPLAYERS_OUTPUT" 2>/dev/null)
+            echo "  OK: $NPLAYERS_OUTPUT ($NPLAYERS_SIZE bytes)"
+        else
+            echo "  ERROR: nplayers.ini not found in archive" >&2
+        fi
+        rm -f "$NPLAYERS_ZIP"
+        echo
+    fi
+fi
 
 echo "All source data downloaded to $DATA_DIR"

@@ -46,6 +46,10 @@ fn main() {
         "cargo::rerun-if-changed={}",
         sources_dir.join("catver-mame-current.ini").display()
     );
+    println!(
+        "cargo::rerun-if-changed={}",
+        sources_dir.join("nplayers.ini").display()
+    );
 
     // Collect all game entries keyed by rom_name.
     // We use a HashMap for deduplication — later sources with richer metadata win.
@@ -202,6 +206,31 @@ fn main() {
         );
     }
 
+    // 7. Parse nplayers.ini — overlay player counts for entries that still have players == 0.
+    //    This is a fallback source: it only fills in player data where none exists from
+    //    MAME XML or Flycast sources. Format: "romname=2P sim" or "romname=4P alt / 2P sim"
+    let nplayers_path = sources_dir.join("nplayers.ini");
+    if nplayers_path.exists() {
+        let nplayers = parse_nplayers_ini(&nplayers_path);
+        println!(
+            "cargo:warning=Arcade DB: nplayers.ini loaded {} player count mappings",
+            nplayers.len()
+        );
+        let mut applied = 0u32;
+        for (rom_name, players) in &nplayers {
+            if let Some(entry) = entries_map.get_mut(rom_name)
+                && entry.players == 0
+            {
+                entry.players = *players;
+                applied += 1;
+            }
+        }
+        println!(
+            "cargo:warning=Arcade DB: Applied {} player count overlays from nplayers.ini",
+            applied
+        );
+    }
+
     // Convert to sorted vec for deterministic output
     let mut entries: Vec<GameEntry> = entries_map.into_values().collect();
     entries.sort_by(|a, b| a.rom_name.cmp(&b.rom_name));
@@ -209,6 +238,17 @@ fn main() {
     println!(
         "cargo:warning=Arcade DB: Total unique entries: {}",
         entries.len()
+    );
+
+    // Report player count coverage
+    let with_players = entries.iter().filter(|e| e.players > 0).count();
+    let without_players = entries.len() - with_players;
+    println!(
+        "cargo:warning=Arcade DB: Player coverage: {}/{} ({:.1}%), missing: {}",
+        with_players,
+        entries.len(),
+        with_players as f64 / entries.len() as f64 * 100.0,
+        without_players
     );
 
     // Generate the PHF map
@@ -712,6 +752,97 @@ fn parse_catver_ini(path: &Path) -> HashMap<String, String> {
     }
 
     categories
+}
+
+/// Parse nplayers.ini to extract rom_name -> max player count mappings.
+///
+/// Format:
+/// ```ini
+/// ;; comment lines
+/// [NPlayers]
+/// pacman=2P alt
+/// sf2=2P sim
+/// gauntlet=4P sim
+/// ```
+///
+/// Player count values: "1P", "2P alt", "2P sim", "4P alt / 2P sim", etc.
+/// We extract the maximum player count from the first number found.
+/// Entries with "???", "Device", "Non-arcade", "BIOS", or "Pinball" are skipped.
+fn parse_nplayers_ini(path: &Path) -> HashMap<String, u8> {
+    let mut players_map = HashMap::new();
+    let file = File::open(path).unwrap_or_else(|e| {
+        panic!("Failed to open nplayers.ini at {}: {}", path.display(), e);
+    });
+    let reader = BufReader::new(file);
+
+    let mut in_nplayers_section = false;
+
+    for line in reader.lines() {
+        let line = line.unwrap_or_default();
+        let trimmed = line.trim();
+
+        // Skip empty lines and comments
+        if trimmed.is_empty() || trimmed.starts_with(';') {
+            continue;
+        }
+
+        // Check for section headers
+        if trimmed.starts_with('[') {
+            in_nplayers_section = trimmed == "[NPlayers]";
+            continue;
+        }
+
+        if in_nplayers_section {
+            if let Some((rom_name, value)) = trimmed.split_once('=') {
+                let rom_name = rom_name.trim();
+                let value = value.trim();
+
+                // Skip non-game entries
+                if value == "???"
+                    || value == "Device"
+                    || value == "Non-arcade"
+                    || value == "BIOS"
+                    || value == "Pinball"
+                {
+                    continue;
+                }
+
+                // Parse player count from values like "2P sim", "4P alt / 2P sim", "1P"
+                // For compound entries like "4P alt / 2P sim", take the first (max) number
+                if let Some(players) = parse_nplayers_value(value) {
+                    players_map.insert(rom_name.to_string(), players);
+                }
+            }
+        }
+    }
+
+    players_map
+}
+
+/// Parse an nplayers.ini value string to extract the max player count.
+///
+/// Examples:
+///   "1P"           -> 1
+///   "2P alt"       -> 2
+///   "2P sim"       -> 2
+///   "4P alt / 2P sim" -> 4
+///   "8P sim"       -> 8
+fn parse_nplayers_value(value: &str) -> Option<u8> {
+    // Find the first occurrence of a digit followed by 'P'
+    // For compound values like "4P alt / 2P sim", the first number is the max
+    for part in value.split('/') {
+        let part = part.trim();
+        if let Some(p_pos) = part.find('P') {
+            // Extract digits immediately before 'P'
+            let prefix = &part[..p_pos];
+            if let Ok(n) = prefix.trim().parse::<u8>() {
+                if n > 0 {
+                    return Some(n);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Normalize an arcade catver.ini category to the shared genre taxonomy.
