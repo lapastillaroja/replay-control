@@ -51,6 +51,14 @@ pub fn lookup_arcade_game(rom_name: &str) -> Option<&'static ArcadeGameInfo> {
     ARCADE_DB.get(rom_name)
 }
 
+/// MAME version used as the primary data source.
+pub const MAME_VERSION: &str = "0.285";
+
+/// Total number of entries in the arcade database.
+pub fn entry_count() -> usize {
+    ARCADE_DB.len()
+}
+
 /// Get the display name for a ROM filename, falling back to the filename itself.
 ///
 /// Accepts filenames with or without the `.zip` extension.

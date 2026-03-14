@@ -159,6 +159,20 @@ pub fn supported_systems() -> &'static [&'static str] {
     GAME_DB_SYSTEMS
 }
 
+/// Total number of ROM entries across all systems.
+pub fn total_rom_entries() -> usize {
+    GAME_DB_SYSTEMS
+        .iter()
+        .filter_map(|system| get_system_db(system))
+        .map(|db| db.len())
+        .sum()
+}
+
+/// Number of systems with game DB coverage.
+pub fn system_count() -> usize {
+    GAME_DB_SYSTEMS.len()
+}
+
 /// Check if a system has game DB coverage.
 pub fn has_system(system: &str) -> bool {
     GAME_DB_SYSTEMS.contains(&system)

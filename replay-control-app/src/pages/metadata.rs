@@ -5,7 +5,7 @@ use server_fn::ServerFnError;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns::{self, ImportState, ThumbnailPhase};
-use crate::util::format_size;
+use crate::util::{format_number, format_size};
 
 #[component]
 pub fn MetadataPage() -> impl IntoView {
@@ -14,6 +14,7 @@ pub fn MetadataPage() -> impl IntoView {
     let coverage = Resource::new(|| (), |_| server_fns::get_system_coverage());
     let data_source = Resource::new(|| (), |_| server_fns::get_thumbnail_data_source());
     let image_stats = Resource::new(|| (), |_| server_fns::get_image_stats());
+    let builtin_stats = Resource::new(|| (), |_| server_fns::get_builtin_db_stats());
 
     // LaunchBox import state
     let importing = RwSignal::new(false);
@@ -184,9 +185,99 @@ pub fn MetadataPage() -> impl IntoView {
                 <h2 class="page-title">{move || t(i18n.locale.get(), "metadata.title")}</h2>
             </div>
 
+            // ── System Overview ───────────────────────────────────────
+            <section class="section">
+                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.system_overview")}</h2>
+                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                        {move || Suspend::new(async move {
+                            let locale = i18n.locale.get();
+                            let data = coverage.await?;
+
+                            let has_any_data = data.iter().any(|c| c.with_metadata > 0 || c.with_thumbnail > 0);
+
+                            Ok::<_, ServerFnError>(if !has_any_data {
+                                view! {
+                                    <p class="game-section-empty">{t(locale, "metadata.no_systems")}</p>
+                                }.into_any()
+                            } else {
+                                let rows = data.into_iter()
+                                    .filter(|c| c.with_metadata > 0 || c.with_thumbnail > 0)
+                                    .map(|c| {
+                                        let desc_pct = if c.total_games > 0 && c.with_metadata > 0 {
+                                            format!("{}%", (c.with_metadata as f64 / c.total_games as f64 * 100.0) as u32)
+                                        } else {
+                                            "--".to_string()
+                                        };
+                                        let thumb_pct = if c.total_games > 0 && c.with_thumbnail > 0 {
+                                            format!("{}%", (c.with_thumbnail as f64 / c.total_games as f64 * 100.0) as u32)
+                                        } else {
+                                            "--".to_string()
+                                        };
+                                        view! {
+                                            <tr>
+                                                <td class="overview-system">{c.display_name}</td>
+                                                <td class="overview-num">{c.total_games}</td>
+                                                <td class="overview-num">{desc_pct}</td>
+                                                <td class="overview-num">{thumb_pct}</td>
+                                            </tr>
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                                view! {
+                                    <div class="overview-table-wrap">
+                                        <table class="overview-table">
+                                            <thead>
+                                                <tr>
+                                                    <th class="overview-system">{t(locale, "metadata.col_system")}</th>
+                                                    <th class="overview-num">{t(locale, "metadata.col_games")}</th>
+                                                    <th class="overview-num">{t(locale, "metadata.col_desc")}</th>
+                                                    <th class="overview-num">{t(locale, "metadata.col_thumb")}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>{rows}</tbody>
+                                        </table>
+                                    </div>
+                                }.into_any()
+                            })
+                        })}
+                    </Transition>
+                </ErrorBoundary>
+            </section>
+
             // ── Data Sources ──────────────────────────────────────────
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.data_sources")}</h2>
+
+                // Built-in data info block
+                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                    <Transition fallback=move || ()>
+                        {move || Suspend::new(async move {
+                            let locale = i18n.locale.get();
+                            let bs = builtin_stats.await?;
+                            Ok::<_, ServerFnError>(view! {
+                                <div class="data-source-card builtin-info">
+                                    <div class="data-source-header">
+                                        <span class="data-source-name">{t(locale, "metadata.builtin")}</span>
+                                    </div>
+                                    <p class="data-source-summary">
+                                        {format!(
+                                            "{} {} {} — {} {} {} {}",
+                                            format_number(bs.arcade_entries),
+                                            t(locale, "metadata.builtin_arcade_summary"),
+                                            bs.arcade_mame_version,
+                                            format_number(bs.game_rom_entries),
+                                            t(locale, "metadata.builtin_console_summary_entries"),
+                                            bs.game_system_count,
+                                            t(locale, "metadata.builtin_console_summary_systems"),
+                                        )}
+                                    </p>
+                                    <p class="settings-hint">{t(locale, "metadata.builtin_hint")}</p>
+                                </div>
+                            })
+                        })}
+                    </Transition>
+                </ErrorBoundary>
 
                 // Descriptions & Ratings (LaunchBox)
                 <div class="data-source-card">
@@ -334,66 +425,6 @@ pub fn MetadataPage() -> impl IntoView {
                         <p class="settings-saved">{move || thumb_message.get().unwrap_or_default()}</p>
                     </Show>
                 </div>
-            </section>
-
-            // ── System Overview ───────────────────────────────────────
-            <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.system_overview")}</h2>
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                        {move || Suspend::new(async move {
-                            let locale = i18n.locale.get();
-                            let data = coverage.await?;
-
-                            let has_any_data = data.iter().any(|c| c.with_metadata > 0 || c.with_thumbnail > 0);
-
-                            Ok::<_, ServerFnError>(if !has_any_data {
-                                view! {
-                                    <p class="game-section-empty">{t(locale, "metadata.no_systems")}</p>
-                                }.into_any()
-                            } else {
-                                let rows = data.into_iter()
-                                    .filter(|c| c.with_metadata > 0 || c.with_thumbnail > 0)
-                                    .map(|c| {
-                                        let desc_pct = if c.total_games > 0 && c.with_metadata > 0 {
-                                            format!("{}%", (c.with_metadata as f64 / c.total_games as f64 * 100.0) as u32)
-                                        } else {
-                                            "--".to_string()
-                                        };
-                                        let thumb_pct = if c.total_games > 0 && c.with_thumbnail > 0 {
-                                            format!("{}%", (c.with_thumbnail as f64 / c.total_games as f64 * 100.0) as u32)
-                                        } else {
-                                            "--".to_string()
-                                        };
-                                        view! {
-                                            <tr>
-                                                <td class="overview-system">{c.display_name}</td>
-                                                <td class="overview-num">{c.total_games}</td>
-                                                <td class="overview-num">{desc_pct}</td>
-                                                <td class="overview-num">{thumb_pct}</td>
-                                            </tr>
-                                        }
-                                    })
-                                    .collect::<Vec<_>>();
-                                view! {
-                                    <div class="overview-table-wrap">
-                                        <table class="overview-table">
-                                            <thead>
-                                                <tr>
-                                                    <th class="overview-system">{t(locale, "metadata.col_system")}</th>
-                                                    <th class="overview-num">{t(locale, "metadata.col_games")}</th>
-                                                    <th class="overview-num">{t(locale, "metadata.col_desc")}</th>
-                                                    <th class="overview-num">{t(locale, "metadata.col_thumb")}</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>{rows}</tbody>
-                                        </table>
-                                    </div>
-                                }.into_any()
-                            })
-                        })}
-                    </Transition>
-                </ErrorBoundary>
             </section>
 
             // ── Data Management ───────────────────────────────────────

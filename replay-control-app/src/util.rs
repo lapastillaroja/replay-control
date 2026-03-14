@@ -1,3 +1,16 @@
+/// Format a number with thousands separators (e.g., 15440 -> "15,440").
+pub fn format_number(n: usize) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result
+}
+
 /// Format a byte count as a human-readable string (KB / MB / GB).
 pub fn format_size(bytes: u64) -> String {
     const GB: u64 = 1_073_741_824;

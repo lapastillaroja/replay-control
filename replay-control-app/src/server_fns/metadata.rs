@@ -103,6 +103,28 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
     Ok(coverage)
 }
 
+/// Stats for the built-in (compile-time) metadata databases.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuiltinDbStats {
+    pub arcade_entries: usize,
+    pub arcade_mame_version: String,
+    pub game_rom_entries: usize,
+    pub game_system_count: usize,
+}
+
+/// Get stats for the built-in (compile-time) metadata databases.
+#[server(prefix = "/sfn")]
+pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
+    use replay_control_core::{arcade_db, game_db};
+
+    Ok(BuiltinDbStats {
+        arcade_entries: arcade_db::entry_count(),
+        arcade_mame_version: arcade_db::MAME_VERSION.to_string(),
+        game_rom_entries: game_db::total_rom_entries(),
+        game_system_count: game_db::system_count(),
+    })
+}
+
 /// Clear all cached metadata.
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {

@@ -143,6 +143,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ResetBoxartOverride>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRelatedGames>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")

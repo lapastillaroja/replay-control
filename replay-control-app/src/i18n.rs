@@ -355,6 +355,17 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.metadata_cleared" => "Metadata cleared",
         "metadata.confirm_clear_metadata" => "Delete all game descriptions and ratings?",
 
+        // Built-in metadata
+        "metadata.builtin" => "Built-in Game Data",
+        "metadata.builtin_arcade" => "Arcade Database",
+        "metadata.builtin_arcade_summary" => "entries, MAME",
+        "metadata.builtin_console" => "Console Database",
+        "metadata.builtin_console_summary_entries" => "ROM entries across",
+        "metadata.builtin_console_summary_systems" => "systems",
+        "metadata.builtin_hint" => {
+            "Names, genres, player counts, and other metadata compiled into the app. No import needed."
+        }
+
         "metadata.attribution" => "Attribution",
         "metadata.attribution_text" => {
             "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails. Data is cached locally for offline use and is not redistributed."
