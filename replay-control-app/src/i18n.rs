@@ -339,6 +339,11 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.clearing_images" => "Clearing...",
         "metadata.cleared_images" => "Images cleared",
         "metadata.confirm_clear_images" => "Delete all downloaded box art and screenshots?",
+        "metadata.cleanup_orphans" => "Cleanup Orphaned Images",
+        "metadata.cleaning_orphans" => "Cleaning up...",
+        "metadata.confirm_cleanup_orphans" => {
+            "Delete images and metadata for ROMs that no longer exist?"
+        }
         "metadata.clear_index" => "Clear Thumbnail Index",
         "metadata.clearing_index" => "Clearing...",
         "metadata.index_cleared" => "Thumbnail index cleared",

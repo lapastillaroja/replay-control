@@ -26,3 +26,37 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     replay_control_core::thumbnails::clear_media(&storage.root)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
+
+/// Cleanup orphaned images: delete metadata rows and thumbnail files for ROMs
+/// that no longer exist in the game library.
+///
+/// Returns `(metadata_rows_deleted, image_files_deleted, bytes_freed)`.
+#[server(prefix = "/sfn")]
+pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+
+    // 1. Delete orphaned metadata rows.
+    let metadata_deleted = match state.metadata_db() {
+        Some(guard) if guard.as_ref().is_some() => guard
+            .as_ref()
+            .unwrap()
+            .delete_orphaned_metadata()
+            .map_err(|e| ServerFnError::new(e.to_string()))?,
+        _ => 0,
+    };
+
+    // 2. Delete orphaned thumbnail files.
+    let (files_deleted, bytes_freed) = match state.metadata_db() {
+        Some(guard) if guard.as_ref().is_some() => {
+            replay_control_core::thumbnails::delete_orphaned_thumbnails(
+                &storage.root,
+                guard.as_ref().unwrap(),
+            )
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+        }
+        _ => (0, 0),
+    };
+
+    Ok((metadata_deleted, files_deleted, bytes_freed))
+}

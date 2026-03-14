@@ -775,11 +775,20 @@ impl MetadataDb {
     }
 
     /// Count entries that have image paths.
+    ///
+    /// Only counts `game_metadata` rows that have a matching entry in `game_library`,
+    /// so orphaned metadata rows (for ROMs that have been deleted) are excluded.
+    /// Falls back to counting all `game_metadata` rows when `game_library` is empty
+    /// (e.g., library not yet warmed).
     pub fn image_stats(&self) -> Result<(usize, usize)> {
         let with_boxart: usize = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM game_metadata WHERE box_art_path IS NOT NULL",
+                "SELECT COUNT(*) FROM game_metadata gm
+                 LEFT JOIN game_library gl ON gm.system = gl.system AND gm.rom_filename = gl.rom_filename
+                 WHERE gm.box_art_path IS NOT NULL
+                   AND (gl.rom_filename IS NOT NULL
+                        OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system))",
                 [],
                 |row| row.get(0),
             )
@@ -787,12 +796,64 @@ impl MetadataDb {
         let with_screenshot: usize = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM game_metadata WHERE screenshot_path IS NOT NULL",
+                "SELECT COUNT(*) FROM game_metadata gm
+                 LEFT JOIN game_library gl ON gm.system = gl.system AND gm.rom_filename = gl.rom_filename
+                 WHERE gm.screenshot_path IS NOT NULL
+                   AND (gl.rom_filename IS NOT NULL
+                        OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system))",
                 [],
                 |row| row.get(0),
             )
             .map_err(|e| Error::Other(format!("Image stats query failed: {e}")))?;
         Ok((with_boxart, with_screenshot))
+    }
+
+    /// Delete `game_metadata` rows where the ROM no longer exists in `game_library`.
+    ///
+    /// Only deletes for systems that have entries in `game_library` (i.e., the library
+    /// has been populated). Returns the number of deleted rows.
+    pub fn delete_orphaned_metadata(&self) -> Result<usize> {
+        let count = self
+            .conn
+            .execute(
+                "DELETE FROM game_metadata
+                 WHERE EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = game_metadata.system)
+                   AND (system, rom_filename) NOT IN (
+                       SELECT system, rom_filename FROM game_library
+                   )",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Delete orphaned metadata failed: {e}")))?;
+        Ok(count)
+    }
+
+    /// Get all distinct `box_art_url` values from `game_library` for a given system.
+    ///
+    /// Returns the URL paths (e.g., `/media/sega_smd/boxart/Sonic.png`).
+    pub fn active_box_art_urls(&self, system: &str) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT DISTINCT box_art_url FROM game_library
+                 WHERE system = ?1 AND box_art_url IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Query active_box_art_urls failed: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query active_box_art_urls failed: {e}")))?;
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get all systems that have entries in `game_library`.
+    pub fn active_systems(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT system FROM game_library")
+            .map_err(|e| Error::Other(format!("Query active_systems failed: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query active_systems failed: {e}")))?;
+        Ok(rows.flatten().collect())
     }
 
     /// Count image entries per system.

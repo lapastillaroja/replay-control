@@ -114,6 +114,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemCoverage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::CleanupOrphanedImages>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemLogs>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameVideos>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::AddGameVideo>();

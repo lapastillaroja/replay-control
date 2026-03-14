@@ -3,7 +3,8 @@
 //! Maps RePlayOS system folder names to libretro-thumbnails repo names,
 //! normalizes filenames, and provides fuzzy matching utilities.
 
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
@@ -375,6 +376,103 @@ pub fn clear_media(storage_root: &Path) -> Result<()> {
         std::fs::remove_dir_all(&media_dir).map_err(|e| Error::io(&media_dir, e))?;
     }
     Ok(())
+}
+
+/// Find orphaned thumbnail files that are not referenced by any active ROM.
+///
+/// An image file is considered orphaned if no entry in `game_library` for its system
+/// has a `box_art_url` pointing to that file. This approach is simpler and more
+/// reliable than trying to reverse-engineer the fuzzy matching pipeline.
+///
+/// Returns a list of `(system, file_path)` pairs for each orphaned image.
+pub fn find_orphaned_thumbnails(
+    storage_root: &Path,
+    db: &crate::metadata_db::MetadataDb,
+) -> Result<Vec<(String, PathBuf)>> {
+    let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
+    if !media_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let active_systems = db.active_systems()?;
+    let mut orphans = Vec::new();
+
+    // Only check systems that have entries in game_library.
+    // Systems without game_library entries may have images from a previous scan
+    // that haven't been warmed yet — we don't want to delete those.
+    for system in &active_systems {
+        let system_media = media_dir.join(system);
+        if !system_media.exists() {
+            continue;
+        }
+
+        // Get all box_art_url values for this system and extract the filesystem-relative
+        // image paths. URLs look like `/media/sega_smd/boxart/Sonic.png`, so we strip
+        // the `/media/<system>/` prefix to get `boxart/Sonic.png`.
+        let prefix = format!("/media/{system}/");
+        let referenced: HashSet<String> = db
+            .active_box_art_urls(system)?
+            .into_iter()
+            .filter_map(|url| url.strip_prefix(&prefix).map(|s| s.to_string()))
+            .collect();
+
+        // Scan boxart/ and snap/ subdirectories for image files.
+        for kind in &["boxart", "snap"] {
+            let kind_dir = system_media.join(kind);
+            if !kind_dir.exists() {
+                continue;
+            }
+            let entries = match std::fs::read_dir(&kind_dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let filename = entry.file_name();
+                let filename = filename.to_string_lossy();
+                if !filename.ends_with(".png") {
+                    continue;
+                }
+                // Build the relative path like "boxart/Sonic.png"
+                let relative = format!("{kind}/{filename}");
+                if !referenced.contains(&relative) {
+                    orphans.push((system.clone(), path));
+                }
+            }
+        }
+    }
+
+    Ok(orphans)
+}
+
+/// Delete orphaned thumbnail files and return `(count_deleted, bytes_freed)`.
+///
+/// Uses [`find_orphaned_thumbnails`] to identify files, then deletes each one.
+pub fn delete_orphaned_thumbnails(
+    storage_root: &Path,
+    db: &crate::metadata_db::MetadataDb,
+) -> Result<(usize, u64)> {
+    let orphans = find_orphaned_thumbnails(storage_root, db)?;
+    let mut deleted = 0usize;
+    let mut bytes_freed = 0u64;
+
+    for (_system, path) in &orphans {
+        let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+        match std::fs::remove_file(path) {
+            Ok(()) => {
+                deleted += 1;
+                bytes_freed += size;
+            }
+            Err(e) => {
+                tracing::debug!("Failed to delete orphaned thumbnail {}: {e}", path.display());
+            }
+        }
+    }
+
+    Ok((deleted, bytes_freed))
 }
 
 #[cfg(test)]

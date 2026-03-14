@@ -821,6 +821,11 @@ fn DataManagementSection(
     let clearing_images = RwSignal::new(false);
     let images_result = RwSignal::new(Option::<String>::None);
 
+    // Cleanup Orphaned Images
+    let confirming_orphans = RwSignal::new(false);
+    let cleaning_orphans = RwSignal::new(false);
+    let orphans_result = RwSignal::new(Option::<String>::None);
+
     // Clear Thumbnail Index
     let confirming_index = RwSignal::new(false);
     let clearing_index = RwSignal::new(false);
@@ -866,6 +871,26 @@ fn DataManagementSection(
             }
             clearing_images.set(false);
             confirming_images.set(false);
+        });
+    });
+
+    let on_cleanup_orphans = Callback::new(move |_: leptos::ev::MouseEvent| {
+        cleaning_orphans.set(true);
+        orphans_result.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::cleanup_orphaned_images().await {
+                Ok((metadata_deleted, files_deleted, bytes_freed)) => {
+                    let size = format_size(bytes_freed);
+                    orphans_result.set(Some(format!(
+                        "Cleaned up {files_deleted} images ({size}), {metadata_deleted} metadata rows"
+                    )));
+                }
+                Err(e) => {
+                    orphans_result.set(Some(format!("Error: {e}")));
+                }
+            }
+            cleaning_orphans.set(false);
+            confirming_orphans.set(false);
         });
     });
 
@@ -931,6 +956,15 @@ fn DataManagementSection(
                     clearing_key="metadata.clearing_images"
                     confirm_key="metadata.confirm_clear_images"
                     on_confirm=on_clear_images
+                />
+                <ClearActionCard
+                    confirming=confirming_orphans
+                    clearing=cleaning_orphans
+                    result=orphans_result
+                    label_key="metadata.cleanup_orphans"
+                    clearing_key="metadata.cleaning_orphans"
+                    confirm_key="metadata.confirm_cleanup_orphans"
+                    on_confirm=on_cleanup_orphans
                 />
             </div>
 
