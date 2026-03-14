@@ -90,6 +90,7 @@ pub struct GameMetadata {
     pub rating: Option<f64>,
     pub publisher: Option<String>,
     pub genre: Option<String>,
+    pub players: Option<u8>,
     pub source: String,
     pub fetched_at: i64,
     pub box_art_path: Option<String>,
@@ -205,6 +206,7 @@ impl MetadataDb {
                     rating REAL,
                     publisher TEXT,
                     genre TEXT,
+                    players INTEGER,
                     source TEXT NOT NULL,
                     fetched_at INTEGER NOT NULL,
                     box_art_path TEXT,
@@ -281,7 +283,7 @@ impl MetadataDb {
         let result = self
             .conn
             .query_row(
-                "SELECT description, rating, publisher, genre, source, fetched_at, box_art_path, screenshot_path
+                "SELECT description, rating, publisher, genre, players, source, fetched_at, box_art_path, screenshot_path
                  FROM game_metadata WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
                 |row| {
@@ -290,10 +292,11 @@ impl MetadataDb {
                         rating: row.get(1)?,
                         publisher: row.get(2)?,
                         genre: row.get(3)?,
-                        source: row.get(4)?,
-                        fetched_at: row.get(5)?,
-                        box_art_path: row.get(6)?,
-                        screenshot_path: row.get(7)?,
+                        players: row.get::<_, Option<i32>>(4)?.map(|p| p as u8),
+                        source: row.get(5)?,
+                        fetched_at: row.get(6)?,
+                        box_art_path: row.get(7)?,
+                        screenshot_path: row.get(8)?,
                     })
                 },
             )
@@ -428,6 +431,36 @@ impl MetadataDb {
         Ok(map)
     }
 
+    /// Fetch all non-null player counts from `game_metadata` for a single system.
+    /// Returns a map of `rom_filename -> players`.
+    /// Used to fill empty `game_library.players` entries during enrichment.
+    pub fn system_metadata_players(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, u8>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, players FROM game_metadata
+                 WHERE system = ?1 AND players IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_metadata_players: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? as u8))
+            })
+            .map_err(|e| Error::Other(format!("System metadata players query: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    }
+
     /// Fetch current genres from `game_library` for a single system.
     /// Returns a map of `rom_filename -> genre` (only entries with non-empty genre).
     /// Used during enrichment to know which ROMs already have a genre.
@@ -458,6 +491,34 @@ impl MetadataDb {
         Ok(map)
     }
 
+    /// Fetch current player counts from `game_library` for a single system.
+    /// Returns the set of `rom_filename` values that already have a players value.
+    /// Used during enrichment to know which ROMs already have player data.
+    pub fn system_rom_players(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashSet<String>> {
+        use std::collections::HashSet;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename FROM game_library
+                 WHERE system = ?1 AND players IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_rom_players: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("System rom players query: {e}")))?;
+
+        let mut set = HashSet::new();
+        for row in rows.flatten() {
+            set.insert(row);
+        }
+        Ok(set)
+    }
+
     /// Fetch all metadata entries for a system.
     /// Returns a vec of `(rom_filename, GameMetadata)`.
     /// Used for normalized-title matching when enriching new ROMs.
@@ -465,7 +526,7 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, description, rating, publisher, genre, source, fetched_at,
+                "SELECT rom_filename, description, rating, publisher, genre, players, source, fetched_at,
                         box_art_path, screenshot_path
                  FROM game_metadata WHERE system = ?1",
             )
@@ -480,10 +541,11 @@ impl MetadataDb {
                         rating: row.get(2)?,
                         publisher: row.get(3)?,
                         genre: row.get(4)?,
-                        source: row.get(5)?,
-                        fetched_at: row.get(6)?,
-                        box_art_path: row.get(7)?,
-                        screenshot_path: row.get(8)?,
+                        players: row.get::<_, Option<i32>>(5)?.map(|p| p as u8),
+                        source: row.get(6)?,
+                        fetched_at: row.get(7)?,
+                        box_art_path: row.get(8)?,
+                        screenshot_path: row.get(9)?,
                     },
                 ))
             })
@@ -500,12 +562,14 @@ impl MetadataDb {
     pub fn upsert(&self, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
         self.conn
             .execute(
-                "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, source, fetched_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, genre, players, source, fetched_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT(system, rom_filename) DO UPDATE SET
                     description = excluded.description,
                     rating = excluded.rating,
                     publisher = excluded.publisher,
+                    genre = excluded.genre,
+                    players = excluded.players,
                     source = excluded.source,
                     fetched_at = excluded.fetched_at",
                 params![
@@ -514,6 +578,8 @@ impl MetadataDb {
                     meta.description,
                     meta.rating,
                     meta.publisher,
+                    meta.genre,
+                    meta.players.map(|p| p as i32),
                     meta.source,
                     meta.fetched_at,
                 ],
@@ -533,13 +599,14 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, genre, source, fetched_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                    "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, genre, players, source, fetched_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                      ON CONFLICT(system, rom_filename) DO UPDATE SET
                         description = excluded.description,
                         rating = excluded.rating,
                         publisher = excluded.publisher,
                         genre = excluded.genre,
+                        players = excluded.players,
                         source = excluded.source,
                         fetched_at = excluded.fetched_at",
                 )
@@ -553,6 +620,7 @@ impl MetadataDb {
                     meta.rating,
                     meta.publisher,
                     meta.genre,
+                    meta.players.map(|p| p as i32),
                     meta.source,
                     meta.fetched_at,
                 ])
@@ -856,33 +924,24 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Count image entries per system.
+    /// Count games with thumbnails per system from `game_library.box_art_url`.
     ///
-    /// Same LEFT JOIN + NOT EXISTS fallback as [`entries_per_system`] — see its
-    /// doc comment for rationale on M3U dedup vs empty-library fallback.
-    pub fn images_per_system(&self) -> Result<Vec<(String, usize, usize)>> {
+    /// This is the live source of truth — rebuilt every enrichment pass.
+    /// Returns `(system, count_with_box_art)` tuples.
+    pub fn thumbnails_per_system(&self) -> Result<Vec<(String, usize)>> {
         let mut stmt = self
             .conn
             .prepare(
-                // See entries_per_system() for why we use LEFT JOIN + NOT EXISTS.
-                "SELECT gm.system,
-                        SUM(CASE WHEN gm.box_art_path IS NOT NULL THEN 1 ELSE 0 END),
-                        SUM(CASE WHEN gm.screenshot_path IS NOT NULL THEN 1 ELSE 0 END)
-                 FROM game_metadata gm
-                 LEFT JOIN game_library gl ON gm.system = gl.system AND gm.rom_filename = gl.rom_filename
-                 WHERE gl.rom_filename IS NOT NULL
-                    OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system)
-                 GROUP BY gm.system",
+                "SELECT system,
+                        SUM(CASE WHEN box_art_url IS NOT NULL THEN 1 ELSE 0 END)
+                 FROM game_library
+                 GROUP BY system",
             )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
         let rows = stmt
             .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, usize>(1)?,
-                    row.get::<_, usize>(2)?,
-                ))
+                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
             })
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -1115,13 +1174,13 @@ impl MetadataDb {
         Ok(count)
     }
 
-    /// Batch update box_art_url, genre, and rating for entries in game_library.
-    /// Only updates non-None fields. Genre is only set when the existing
-    /// value is NULL or empty (baked-in genre is never overwritten).
+    /// Batch update box_art_url, genre, players, and rating for entries in game_library.
+    /// Only updates non-None fields. Genre and players are only set when the existing
+    /// value is NULL or empty (baked-in data is never overwritten).
     pub fn update_box_art_genre_rating(
         &mut self,
         system: &str,
-        enrichments: &[(String, Option<String>, Option<String>, Option<f32>)],
+        enrichments: &[(String, Option<String>, Option<String>, Option<u8>, Option<f32>)],
     ) -> Result<()> {
         let tx = self
             .conn
@@ -1144,6 +1203,14 @@ impl MetadataDb {
                 )
                 .map_err(|e| Error::Other(format!("Prepare genre update: {e}")))?;
 
+            let mut players_stmt = tx
+                .prepare(
+                    "UPDATE game_library SET players = ?2
+                     WHERE system = ?3 AND rom_filename = ?1
+                       AND players IS NULL",
+                )
+                .map_err(|e| Error::Other(format!("Prepare players update: {e}")))?;
+
             let mut rating_stmt = tx
                 .prepare(
                     "UPDATE game_library SET rating = ?2
@@ -1151,7 +1218,7 @@ impl MetadataDb {
                 )
                 .map_err(|e| Error::Other(format!("Prepare rating update: {e}")))?;
 
-            for (filename, box_art_url, genre, rating) in enrichments {
+            for (filename, box_art_url, genre, players, rating) in enrichments {
                 if let Some(url) = box_art_url {
                     art_stmt
                         .execute(params![filename, url, system])
@@ -1162,6 +1229,11 @@ impl MetadataDb {
                     genre_stmt
                         .execute(params![filename, g, gg, system])
                         .map_err(|e| Error::Other(format!("Update genre: {e}")))?;
+                }
+                if let Some(p) = players {
+                    players_stmt
+                        .execute(params![filename, *p as i32, system])
+                        .map_err(|e| Error::Other(format!("Update players: {e}")))?;
                 }
                 if let Some(r) = rating {
                     rating_stmt
@@ -1899,6 +1971,7 @@ mod tests {
             rating: Some(4.0),
             publisher: None,
             genre: None,
+            players: None,
             source: "test".into(),
             fetched_at: 0,
             box_art_path: box_art.map(String::from),
@@ -2111,55 +2184,56 @@ mod tests {
     }
 
     #[test]
-    fn images_per_system_no_game_library_returns_all() {
+    fn thumbnails_per_system_counts_box_art_url() {
         let (mut db, _dir) = open_temp_db();
-        db.bulk_upsert(&[
-            ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
-            ("snes".into(), "Zelda.sfc".into(), make_metadata(None)),
-        ])
-        .unwrap();
-        // bulk_upsert doesn't write image paths; use bulk_update_image_paths.
-        db.bulk_update_image_paths(&[
-            ("snes".into(), "Mario.sfc".into(), Some("/img/mario.png".into()), None),
-        ])
-        .unwrap();
 
-        let imgs = db.images_per_system().unwrap();
-        assert_eq!(imgs.len(), 1);
-        // (system, boxart_count, screenshot_count)
-        assert_eq!(imgs[0], ("snes".into(), 1, 0));
+        let mut with_art = make_game_entry("snes", "Mario.sfc", false);
+        with_art.box_art_url = Some("/img/mario.png".into());
+
+        let without_art = make_game_entry("snes", "Zelda.sfc", false);
+
+        db.save_system_entries("snes", &[with_art, without_art], None)
+            .unwrap();
+
+        let thumbs = db.thumbnails_per_system().unwrap();
+        assert_eq!(thumbs.len(), 1);
+        // (system, count_with_box_art)
+        assert_eq!(thumbs[0], ("snes".into(), 1));
     }
 
     #[test]
-    fn images_per_system_with_game_library_deduplicates_m3u() {
+    fn thumbnails_per_system_empty_library_returns_empty() {
+        let (db, _dir) = open_temp_db();
+
+        let thumbs = db.thumbnails_per_system().unwrap();
+        assert!(thumbs.is_empty());
+    }
+
+    #[test]
+    fn thumbnails_per_system_multiple_systems() {
         let (mut db, _dir) = open_temp_db();
 
-        db.bulk_upsert(&[
-            ("sega_cd".into(), "Game.m3u".into(), make_metadata(None)),
-            ("sega_cd".into(), "Game (Disc 1).cue".into(), make_metadata(None)),
-            ("sega_cd".into(), "Game (Disc 2).cue".into(), make_metadata(None)),
-        ])
-        .unwrap();
-        db.bulk_update_image_paths(&[
-            ("sega_cd".into(), "Game.m3u".into(), Some("/img/game.png".into()), None),
-            ("sega_cd".into(), "Game (Disc 1).cue".into(), Some("/img/game.png".into()), None),
-            ("sega_cd".into(), "Game (Disc 2).cue".into(), Some("/img/game.png".into()), None),
-        ])
-        .unwrap();
+        let mut snes_game = make_game_entry("snes", "Mario.sfc", false);
+        snes_game.box_art_url = Some("/img/mario.png".into());
 
-        // game_library only has the .m3u
-        db.save_system_entries(
-            "sega_cd",
-            &[make_game_entry("sega_cd", "Game.m3u", true)],
-            None,
-        )
-        .unwrap();
+        let mut gba_game1 = make_game_entry("gba", "Metroid.gba", false);
+        gba_game1.box_art_url = Some("/img/metroid.png".into());
 
-        let imgs = db.images_per_system().unwrap();
-        let sega_cd = imgs.iter().find(|(s, _, _)| s == "sega_cd").unwrap();
+        let mut gba_game2 = make_game_entry("gba", "Zelda.gba", false);
+        gba_game2.box_art_url = Some("/img/zelda.png".into());
 
-        // Only 1 boxart counted (the .m3u match), not 3
-        assert_eq!(sega_cd.1, 1);
+        let gba_game3 = make_game_entry("gba", "NoArt.gba", false);
+
+        db.save_system_entries("snes", &[snes_game], None).unwrap();
+        db.save_system_entries("gba", &[gba_game1, gba_game2, gba_game3], None)
+            .unwrap();
+
+        let thumbs = db.thumbnails_per_system().unwrap();
+        let snes = thumbs.iter().find(|(s, _)| s == "snes").unwrap();
+        let gba = thumbs.iter().find(|(s, _)| s == "gba").unwrap();
+
+        assert_eq!(snes.1, 1);
+        assert_eq!(gba.1, 2);
     }
 
     #[test]

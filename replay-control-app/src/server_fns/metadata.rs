@@ -58,18 +58,18 @@ pub async fn get_import_progress() -> Result<Option<ImportProgress>, ServerFnErr
 pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    // Get metadata entries and image counts per system from DB.
+    // Get metadata entries and thumbnail counts per system from DB.
     // Return empty data when DB is unavailable (e.g., during import).
-    let (entries_per_system, images_per_system) = match state.metadata_db() {
+    let (entries_per_system, thumbnails_per_system) = match state.metadata_db() {
         Some(guard) if guard.as_ref().is_some() => {
             let db = guard.as_ref().unwrap();
             let entries = db
                 .entries_per_system()
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
-            let images = db
-                .images_per_system()
+            let thumbnails = db
+                .thumbnails_per_system()
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
-            (entries, images)
+            (entries, thumbnails)
         }
         _ => (Vec::new(), Vec::new()),
     };
@@ -80,10 +80,8 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 
     let mut meta_map: std::collections::HashMap<String, usize> =
         entries_per_system.into_iter().collect();
-    let mut thumb_map: std::collections::HashMap<String, usize> = images_per_system
-        .into_iter()
-        .map(|(s, boxart, _snap)| (s, boxart))
-        .collect();
+    let mut thumb_map: std::collections::HashMap<String, usize> =
+        thumbnails_per_system.into_iter().collect();
 
     let mut coverage: Vec<SystemCoverage> = systems
         .into_iter()
