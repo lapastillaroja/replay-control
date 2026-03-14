@@ -28,6 +28,7 @@ struct LbGame {
     rating: Option<f64>,
     publisher: String,
     genre: String,
+    max_players: Option<u8>,
 }
 
 /// Normalize a game title for fuzzy matching.
@@ -124,7 +125,7 @@ pub fn import_launchbox(
         stats.total_source += 1;
 
         // Skip entries with no useful data.
-        if game.overview.is_empty() && game.rating.is_none() && game.genre.is_empty() {
+        if game.overview.is_empty() && game.rating.is_none() && game.genre.is_empty() && game.max_players.is_none() {
             stats.skipped += 1;
             return;
         }
@@ -152,6 +153,7 @@ pub fn import_launchbox(
                     } else {
                         Some(game.genre.clone())
                     },
+                    players: game.max_players,
                     source: "launchbox".to_string(),
                     fetched_at: now,
                     box_art_path: None,
@@ -217,6 +219,7 @@ fn parse_xml<R: BufRead>(
     let mut rating: Option<f64> = None;
     let mut publisher = String::new();
     let mut genre = String::new();
+    let mut max_players: Option<u8> = None;
 
     loop {
         match xml.read_event_into(&mut buf) {
@@ -231,6 +234,7 @@ fn parse_xml<R: BufRead>(
                     rating = None;
                     publisher.clear();
                     genre.clear();
+                    max_players = None;
                 } else if in_game {
                     current_tag = tag.to_string();
                 }
@@ -247,6 +251,13 @@ fn parse_xml<R: BufRead>(
                         }
                         "Publisher" => publisher.push_str(&text),
                         "Genres" => genre.push_str(&text),
+                        "MaxPlayers" => {
+                            if let Ok(n) = text.parse::<u8>() {
+                                if n >= 1 && n <= 8 {
+                                    max_players = Some(n);
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -263,6 +274,7 @@ fn parse_xml<R: BufRead>(
                             rating,
                             publisher: std::mem::take(&mut publisher),
                             genre: std::mem::take(&mut genre),
+                            max_players,
                         };
                         for folder in system_folders {
                             on_game(&game, folder);

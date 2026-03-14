@@ -1066,12 +1066,26 @@ impl GameLibrary {
             .and_then(|guard| guard.as_ref()?.system_metadata_genres(system).ok())
             .unwrap_or_default();
 
+        // Load player counts from game_metadata table (from LaunchBox import).
+        // Used to fill empty game_library.players entries as a fallback.
+        let lb_players: HashMap<String, u8> = state
+            .metadata_db()
+            .and_then(|guard| guard.as_ref()?.system_metadata_players(system).ok())
+            .unwrap_or_default();
+
         // Load current game_library genres from L2 to know which are already set.
         let existing_genres: HashSet<String> = self
             .with_db_read(&storage, |db| {
                 db.system_rom_genres(system)
                     .map(|map| map.into_keys().collect())
                     .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        // Load current game_library players from L2 to know which already have player data.
+        let existing_players: HashSet<String> = self
+            .with_db_read(&storage, |db| {
+                db.system_rom_players(system).unwrap_or_default()
             })
             .unwrap_or_default();
 
@@ -1106,9 +1120,9 @@ impl GameLibrary {
             return;
         }
 
-        // Build enrichment tuples: (filename, box_art_url, genre, rating).
-        // Genre is only filled from LaunchBox when game_library has no genre.
-        let enrichments: Vec<(String, Option<String>, Option<String>, Option<f32>)> = rom_filenames
+        // Build enrichment tuples: (filename, box_art_url, genre, players, rating).
+        // Genre and players are only filled from LaunchBox when game_library has no value.
+        let enrichments: Vec<(String, Option<String>, Option<String>, Option<u8>, Option<f32>)> = rom_filenames
             .iter()
             .filter_map(|filename| {
                 let art = self.resolve_box_art(state, &index, system, filename);
@@ -1118,10 +1132,15 @@ impl GameLibrary {
                 } else {
                     None
                 };
-                if art.is_none() && rating.is_none() && genre.is_none() {
+                let players = if !existing_players.contains(filename) {
+                    lb_players.get(filename).copied()
+                } else {
+                    None
+                };
+                if art.is_none() && rating.is_none() && genre.is_none() && players.is_none() {
                     return None;
                 }
-                Some((filename.clone(), art, genre, rating))
+                Some((filename.clone(), art, genre, players, rating))
             })
             .collect();
 
@@ -1142,7 +1161,7 @@ impl GameLibrary {
             && let Some(entry) = guard.get_mut(system)
         {
             for rom in &mut entry.data {
-                for (filename, art, _genre, rating) in &enrichments {
+                for (filename, art, _genre, players, rating) in &enrichments {
                     if rom.game.rom_filename == *filename {
                         if art.is_some() {
                             rom.box_art_url = art.clone();
@@ -1152,13 +1171,16 @@ impl GameLibrary {
                         if let Some(r) = rating {
                             rom.rating = Some(*r);
                         }
+                        if rom.players.is_none() {
+                            rom.players = *players;
+                        }
                         break;
                     }
                 }
             }
         }
 
-        tracing::debug!("L2 enrichment: {system} — {count} ROMs updated with box art/genre/ratings");
+        tracing::debug!("L2 enrichment: {system} — {count} ROMs updated with box art/genre/players/ratings");
     }
 
     /// Auto-match new ROMs against existing LaunchBox metadata by normalized title.
@@ -1272,6 +1294,7 @@ impl GameLibrary {
                         rating: donor_meta.rating,
                         publisher: donor_meta.publisher.clone(),
                         genre: donor_meta.genre.clone(),
+                        players: donor_meta.players,
                         source: "launchbox-auto".to_string(),
                         fetched_at: now,
                         box_art_path: None,
