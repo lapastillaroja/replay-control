@@ -308,15 +308,16 @@ pub fn RomList(system: String) -> impl IntoView {
                 filters
                 show_clones=Signal::derive(move || is_arcade.get())
             />
-            {move || {
-                genres_resource.get().and_then(|res| res.ok()).and_then(|genre_list| {
-                    if genre_list.is_empty() {
-                        None
-                    } else {
-                        Some(view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> })
+            <Suspense>
+                {move || Suspend::new(async move {
+                    match genres_resource.await {
+                        Ok(genre_list) if !genre_list.is_empty() => {
+                            Some(view! { <crate::components::genre_dropdown::GenreDropdown genre=filters.genre genre_list /> })
+                        }
+                        _ => None,
                     }
-                })
-            }}
+                })}
+            </Suspense>
         </div>
         <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "games.loading_roms")}</div> }>
             {move || Suspend::new(async move {

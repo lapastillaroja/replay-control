@@ -7,12 +7,12 @@ use crate::components::rom_list::RomList;
 #[component]
 pub fn SystemRomView() -> impl IntoView {
     let params = use_params_map();
-    let system = move || params.read().get("system").unwrap_or_default();
+    let system = params.read_untracked().get("system").unwrap_or_default();
 
     view! {
         <div class="page games-page">
             <div class="system-rom-view">
-                <RomList system=system() />
+                <RomList system />
             </div>
         </div>
     }
