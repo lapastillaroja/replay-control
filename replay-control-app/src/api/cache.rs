@@ -946,7 +946,7 @@ impl GameLibrary {
         let pending = state.pending_downloads.clone();
         let cache = state.cache.clone();
 
-        tokio::task::spawn_blocking(move || {
+        std::thread::spawn(move || {
             match download_thumbnail(&m, "Named_Boxarts") {
                 Ok(bytes) => {
                     if let Err(e) = save_thumbnail(
