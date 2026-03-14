@@ -23,7 +23,6 @@ pub use settings::skins;
 mod capture;
 pub use capture::screenshots;
 pub use capture::video_url;
-pub use capture::videos;
 
 #[cfg(feature = "metadata")]
 mod metadata;

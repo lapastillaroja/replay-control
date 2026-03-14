@@ -3,7 +3,7 @@ use super::*;
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::VideoEntry;
 #[cfg(feature = "ssr")]
-pub use replay_control_core::videos::VideoEntry;
+pub use replay_control_core::user_data_db::VideoEntry;
 
 /// A video recommendation from Piped search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,12 +22,15 @@ pub async fn get_game_videos(
     rom_filename: String,
 ) -> Result<Vec<VideoEntry>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
-    let game_key = format!("{system}/{rom_filename}");
-    Ok(replay_control_core::videos::get_videos(
-        &storage.root,
-        &game_key,
-    ))
+    let ud_guard = state
+        .user_data_db()
+        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
+    let ud_db = ud_guard
+        .as_ref()
+        .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
+    ud_db
+        .get_game_videos(&system, &rom_filename)
+        .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Add a video to a game (from manual paste or recommendation pin).
@@ -41,8 +44,6 @@ pub async fn add_game_video(
     tag: Option<String>,
 ) -> Result<VideoEntry, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
-    let game_key = format!("{system}/{rom_filename}");
 
     let parsed =
         replay_control_core::video_url::parse_video_url(&url).map_err(ServerFnError::new)?;
@@ -63,8 +64,17 @@ pub async fn add_game_video(
         tag,
     };
 
-    replay_control_core::videos::add_video(&storage.root, &game_key, entry.clone())
-        .map_err(ServerFnError::new)?;
+    {
+        let ud_guard = state
+            .user_data_db()
+            .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
+        let ud_db = ud_guard
+            .as_ref()
+            .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
+        ud_db
+            .add_game_video(&system, &rom_filename, &entry)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+    }
 
     Ok(entry)
 }
@@ -77,10 +87,15 @@ pub async fn remove_game_video(
     video_id: String,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
-    let game_key = format!("{system}/{rom_filename}");
-    replay_control_core::videos::remove_video(&storage.root, &game_key, &video_id)
-        .map_err(ServerFnError::new)
+    let ud_guard = state
+        .user_data_db()
+        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
+    let ud_db = ud_guard
+        .as_ref()
+        .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
+    ud_db
+        .remove_game_video(&system, &rom_filename, &video_id)
+        .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Search for video recommendations via the Piped API.

@@ -116,7 +116,7 @@ pub struct SystemCoverage {
     pub with_thumbnail: usize,
 }
 
-/// Mirror of `replay_control_core::videos::VideoEntry` for WASM.
+/// Mirror of `replay_control_core::user_data_db::VideoEntry` for WASM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoEntry {
     pub id: String,

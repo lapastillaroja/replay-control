@@ -32,8 +32,6 @@ impl StorageKind {
 
 /// Directory name for Replay Control data on ROM storage.
 pub const RC_DIR: &str = ".replay-control";
-/// Filename for the user-saved video links JSON.
-pub const VIDEOS_FILE: &str = "videos.json";
 /// Filename for app-specific user settings.
 pub const SETTINGS_FILE: &str = "settings.cfg";
 

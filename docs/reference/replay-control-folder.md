@@ -1,5 +1,6 @@
 # The `.replay-control/` Folder
 
+> **Note**: See `docs/features/storage.md` for current-state documentation of storage and the `.replay-control/` directory.
 > Location: `<rom_storage>/.replay-control/`
 > Defined as: `RC_DIR` constant in `replay-control-core/src/storage.rs`
 
@@ -25,9 +26,8 @@ The `.replay-control/` directory is the companion app's data folder on the ROM s
 └── .replay-control/               # Companion app data directory
     ├── settings.cfg               # App-specific settings (region preference, etc.)
     ├── metadata.db                # SQLite database — game metadata cache
-    ├── user_data.db               # SQLite database — user customizations (box art overrides, etc.)
+    ├── user_data.db               # SQLite database — user customizations (box art overrides, saved videos)
     ├── launchbox-metadata.xml     # LaunchBox XML dump (downloaded or manually placed)
-    ├── videos.json                # User-saved video links per game
     │
     ├── media/                     # Game images (box art + screenshots)
     │   ├── nintendo_snes/
@@ -96,13 +96,6 @@ The LaunchBox metadata XML dump (~460 MB, ~78K game entries). Either:
 
 Parsed during import to populate `metadata.db`. Kept on disk for re-imports.
 
-### `videos.json`
-User-saved video links per game. JSON format with a `games` map keyed by `"{system}/{rom_filename}"`. Each entry stores URL, platform, video ID, title, tag (trailer/gameplay/1cc), and timestamp.
-
-Separate from `metadata.db` so video data survives metadata clears. Written atomically (write `.tmp` then `rename`). Mutex-guarded via AppState.
-
-**Source code**: `replay-control-core/src/videos.rs`, `replay-control-core/src/video_url.rs`
-
 ### `media/<system>/boxart/` and `media/<system>/snap/`
 PNG image files imported from [libretro-thumbnails](https://github.com/libretro-thumbnails) GitHub repos. One subdirectory per system.
 
@@ -140,7 +133,7 @@ On a typical collection:
 | `METADATA_DB_FILE` | `metadata_db.rs` | `"metadata.db"` filename constant |
 | `USER_DATA_DB_FILE` | `user_data_db.rs` | `"user_data.db"` filename constant |
 | `UserDataDb::open()` | `user_data_db.rs` | Opens/creates `user_data.db` |
-| `VIDEOS_FILE` | `storage.rs` | `"videos.json"` filename constant |
+| `UserDataDb::add_game_video()` | `user_data_db.rs` | Saves a video link to `game_videos` table |
 | `StorageLocation::rc_dir()` | `storage.rs` | Returns `<root>/.replay-control` path |
 | `MetadataDb::open()` | `metadata_db.rs:83` | Opens/creates `metadata.db` |
 | `import_system_thumbnails()` | `thumbnails.rs:294` | Copies images from cloned repo to `media/` |

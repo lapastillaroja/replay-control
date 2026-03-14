@@ -1,6 +1,6 @@
 # Game Videos Feature — Implementation Plan
 
-> **Status:** Implemented. All core features (paste URLs, search via Piped/Invidious, pin/remove, embedded playback, duplicate detection) are live. See `replay-control-core/src/video_url.rs`, `replay-control-core/src/videos.rs`, `replay-control-app/src/server_fns/videos.rs`, and the Videos section in `replay-control-app/src/pages/game_detail.rs`.
+> **Status:** Implemented. All core features (paste URLs, search via Piped/Invidious, pin/remove, embedded playback, duplicate detection) are live. Video storage migrated from `videos.json` to `game_videos` table in `user_data.db` (2026-03-14). See `replay-control-core/src/capture/video_url.rs`, `replay-control-core/src/metadata/user_data_db.rs`, `replay-control-app/src/server_fns/videos.rs`, and the Videos section in `replay-control-app/src/pages/game_detail.rs`.
 
 ## Overview
 
