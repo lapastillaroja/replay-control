@@ -3,7 +3,7 @@ use super::*;
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomPage {
-    pub roms: Vec<RomEntry>,
+    pub roms: Vec<RomListEntry>,
     pub total: usize,
     pub has_more: bool,
     /// Human-readable system name (e.g., "Arcade (Atomiswave/Naomi)")
@@ -247,8 +247,29 @@ pub async fn get_roms_page(
         }
     }
 
+    // Convert RomEntry → RomListEntry with always-resolved display_name.
+    let list_entries: Vec<RomListEntry> = roms
+        .into_iter()
+        .map(|rom| RomListEntry {
+            display_name: rom
+                .game
+                .display_name
+                .unwrap_or_else(|| rom.game.rom_filename.clone()),
+            system: rom.game.system,
+            rom_filename: rom.game.rom_filename,
+            rom_path: rom.game.rom_path,
+            size_bytes: rom.size_bytes,
+            is_m3u: rom.is_m3u,
+            is_favorite: rom.is_favorite,
+            box_art_url: rom.box_art_url,
+            driver_status: rom.driver_status,
+            rating: rom.rating,
+            players: rom.players,
+        })
+        .collect();
+
     Ok(RomPage {
-        roms,
+        roms: list_entries,
         total,
         has_more,
         system_display,

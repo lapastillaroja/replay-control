@@ -5,7 +5,7 @@ use leptos_router::hooks::{query_signal_with_options, use_query_map};
 
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::i18n::{t, use_i18n};
-use crate::server_fns::{self, PAGE_SIZE, RomEntry};
+use crate::server_fns::{self, PAGE_SIZE, RomListEntry};
 use crate::util::format_size_for_system;
 
 /// ROM list with built-in search, pagination, and infinite scroll.
@@ -167,7 +167,7 @@ pub fn RomList(system: String) -> impl IntoView {
     }
 
     // Extra ROMs loaded after the first page.
-    let (extra_roms, set_extra_roms) = signal(Vec::<RomEntry>::new());
+    let (extra_roms, set_extra_roms) = signal(Vec::<RomListEntry>::new());
     let (has_more, set_has_more) = signal(false);
     let (loading_more, set_loading_more) = signal(false);
     let (offset, set_offset) = signal(PAGE_SIZE);
@@ -404,7 +404,7 @@ pub fn RomList(system: String) -> impl IntoView {
 /// A single ROM row with favorite toggle, rename, and delete actions.
 #[component]
 fn RomItem(
-    rom: RomEntry,
+    rom: RomListEntry,
     confirm_delete: ReadSignal<Option<String>>,
     set_confirm_delete: WriteSignal<Option<String>>,
     renaming: ReadSignal<Option<String>>,
@@ -413,24 +413,24 @@ fn RomItem(
     set_rename_value: WriteSignal<String>,
     set_version: WriteSignal<u32>,
 ) -> impl IntoView {
-    let filename = StoredValue::new(rom.game.rom_filename.clone());
-    let display_name = StoredValue::new(rom.game.display_name.clone());
-    let relative_path = StoredValue::new(rom.game.rom_path.clone());
-    let system = StoredValue::new(rom.game.system.clone());
+    let filename = StoredValue::new(rom.rom_filename.clone());
+    let display_name = StoredValue::new(rom.display_name.clone());
+    let relative_path = StoredValue::new(rom.rom_path.clone());
+    let system = StoredValue::new(rom.system.clone());
     let box_art_url = StoredValue::new(rom.box_art_url.clone());
     let has_box_art = rom.box_art_url.is_some();
     let driver_status = rom.driver_status.clone();
     let rating = rom.rating;
     let is_fav = RwSignal::new(rom.is_favorite);
-    let size = format_size_for_system(rom.size_bytes, &rom.game.system);
+    let size = format_size_for_system(rom.size_bytes, &rom.system);
     let ext = format!(
         ".{}",
-        rom.game.rom_filename.rsplit('.').next().unwrap_or("")
+        rom.rom_filename.rsplit('.').next().unwrap_or("")
     );
     let path_display = {
         // Strip the system prefix (e.g. "/roms/sega_smd/") and show the rest.
         // If there's no subfolder, this is just the filename.
-        let p = rom.game.rom_path.as_str();
+        let p = rom.rom_path.as_str();
         let mut slashes = 0;
         let stripped = p
             .char_indices()
@@ -444,22 +444,18 @@ fn RomItem(
                 }
                 None
             })
-            .unwrap_or(&rom.game.rom_filename);
+            .unwrap_or(&rom.rom_filename);
         stripped.to_string()
     };
 
     let game_href = {
-        let sys = rom.game.system.clone();
-        let fname = rom.game.rom_filename.clone();
+        let sys = rom.system.clone();
+        let fname = rom.rom_filename.clone();
         format!("/games/{}/{}", sys, urlencoding::encode(&fname))
     };
     let game_href = StoredValue::new(game_href);
 
-    let shown_name = move || {
-        display_name
-            .get_value()
-            .unwrap_or_else(|| filename.get_value())
-    };
+    let shown_name = move || display_name.get_value();
 
     let is_deleting = move || confirm_delete.get().as_deref() == Some(&*relative_path.get_value());
     let is_renaming = move || renaming.get().as_deref() == Some(&*relative_path.get_value());

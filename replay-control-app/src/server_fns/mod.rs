@@ -35,6 +35,36 @@ pub use replay_control_core::favorites::OrganizeCriteria;
 
 pub const PAGE_SIZE: usize = 100;
 
+/// Lightweight entry for ROM list views (game browser, search results).
+///
+/// Unlike `GameInfo` (which carries full metadata for the detail page),
+/// this contains only the fields needed to render a ROM row in a list.
+/// `display_name` is always resolved (never None) so the UI never needs
+/// to fall back to the filename.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RomListEntry {
+    pub system: String,
+    pub rom_filename: String,
+    pub rom_path: String,
+    /// Always resolved — either from arcade_db, game_db, or filename derivation.
+    pub display_name: String,
+    pub size_bytes: u64,
+    pub is_m3u: bool,
+    #[serde(default)]
+    pub is_favorite: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub box_art_url: Option<String>,
+    /// Arcade driver emulation status (Working/Imperfect/Preliminary/Unknown).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver_status: Option<String>,
+    /// Game rating (0.0-5.0 scale), from metadata DB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<f32>,
+    /// Maximum number of players, from game_db or arcade_db.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub players: Option<u8>,
+}
+
 /// Unified game metadata returned by server functions.
 /// Populated from arcade_db or game_db depending on the system,
 /// but consumers never need to know which source was used.
