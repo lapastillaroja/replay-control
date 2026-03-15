@@ -116,8 +116,8 @@
 
 .recommendation-thumb {
     flex-shrink: 0;
-    width: 120px;
-    height: 68px;
+    width: 7.5rem;
+    height: 4.25rem;
     object-fit: cover;
     border-radius: 4px;
     background: var(--surface);

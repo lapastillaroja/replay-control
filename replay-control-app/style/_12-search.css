@@ -164,16 +164,16 @@
 }
 
 .search-result-thumb {
-    height: 40px;
+    height: 2.5rem;
     width: auto;
-    max-width: 56px;
+    max-width: 3.5rem;
     object-fit: contain;
     border-radius: 3px;
 }
 
 .search-result-thumb-placeholder {
-    width: 40px;
-    height: 40px;
+    width: 2.5rem;
+    height: 2.5rem;
     background: var(--border);
     border-radius: 3px;
 }

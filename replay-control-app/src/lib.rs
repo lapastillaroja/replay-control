@@ -42,10 +42,12 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     let skin_index = state.effective_skin();
     let theme_color = skins::theme_color(skin_index);
     let skin_css = skins::theme_css(skin_index).unwrap_or_default();
+    let font_size = replay_control_core::settings::read_font_size(&state.storage().root);
+    let html_class = if font_size == "large" { "font-large" } else { "" };
 
     view! {
         <!DOCTYPE html>
-        <html lang="en">
+        <html lang="en" class=html_class>
             <head>
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />

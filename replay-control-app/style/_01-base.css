@@ -35,6 +35,10 @@ body {
     overflow-x: hidden;
 }
 
+html.font-large {
+    font-size: 130%;
+}
+
 /* Links reset — router <A> elements should not look like links */
 a, a:visited, a:hover, a:active {
     color: inherit;

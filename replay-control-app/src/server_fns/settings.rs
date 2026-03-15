@@ -261,6 +261,23 @@ pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
     Ok(())
 }
 
+/// Get the font size preference from `.replay-control/settings.cfg`.
+#[server(prefix = "/sfn")]
+pub async fn get_font_size() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    Ok(replay_control_core::settings::read_font_size(&storage.root))
+}
+
+/// Save the font size preference to `.replay-control/settings.cfg`.
+#[server(prefix = "/sfn")]
+pub async fn save_font_size(size: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    replay_control_core::settings::write_font_size(&storage.root, &size)
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
 /// Get the GitHub API key from `.replay-control/settings.cfg`.
 #[server(prefix = "/sfn")]
 pub async fn get_github_api_key() -> Result<String, ServerFnError> {

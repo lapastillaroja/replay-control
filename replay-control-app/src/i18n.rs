@@ -156,6 +156,10 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.storage_changed" => "Storage updated",
         "more.storage_unchanged" => "Storage unchanged",
 
+        // Text size
+        "more.text_size" => "Text Size",
+        "more.text_size_hint" => "Adjust the app text size",
+
         // Region preference
         "more.region" => "Region",
         "region.title" => "Region Preference",

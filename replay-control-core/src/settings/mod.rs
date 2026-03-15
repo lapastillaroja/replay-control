@@ -55,6 +55,50 @@ pub fn write_region_preference(storage_root: &Path, pref: RegionPreference) -> R
     Ok(())
 }
 
+/// Read the font size preference from `.replay-control/settings.cfg`.
+/// Returns `"normal"` or `"large"`, defaults to `"normal"`.
+pub fn read_font_size(storage_root: &Path) -> String {
+    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+    let config = match ReplayConfig::from_file(&path) {
+        Ok(c) => c,
+        Err(_) => return "normal".to_string(),
+    };
+    let value = config.get("font_size").unwrap_or("normal");
+    match value {
+        "large" => "large".to_string(),
+        _ => "normal".to_string(),
+    }
+}
+
+/// Write the font size preference to `.replay-control/settings.cfg`.
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_font_size(storage_root: &Path, size: &str) -> Result<()> {
+    let rc_dir = storage_root.join(RC_DIR);
+    if !rc_dir.exists() {
+        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
+    }
+
+    let path = rc_dir.join(SETTINGS_FILE);
+
+    let mut config = if path.exists() {
+        ReplayConfig::from_file(&path)?
+    } else {
+        ReplayConfig::parse("")?
+    };
+
+    let value = if size == "large" { "large" } else { "normal" };
+    config.set("font_size", value);
+
+    if path.exists() {
+        config.write_to_file(&path, &path)?;
+    } else {
+        let content = format!("font_size = \"{value}\"\n");
+        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
+    }
+
+    Ok(())
+}
+
 /// Read the GitHub API key from `.replay-control/settings.cfg`.
 /// Returns `None` if the file doesn't exist or the key is empty.
 pub fn read_github_api_key(storage_root: &Path) -> Option<String> {

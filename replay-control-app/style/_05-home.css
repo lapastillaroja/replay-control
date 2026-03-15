@@ -14,17 +14,17 @@
 }
 
 .hero-thumb {
-    height: 56px;
+    height: 3.5rem;
     width: auto;
-    max-width: 80px;
+    max-width: 5rem;
     object-fit: contain;
     border-radius: 4px;
     flex-shrink: 0;
 }
 
 .hero-thumb-placeholder {
-    width: 56px;
-    height: 56px;
+    width: 3.5rem;
+    height: 3.5rem;
     background: var(--border);
     border-radius: 4px;
     flex-shrink: 0;
@@ -56,7 +56,7 @@
     flex-direction: column;
     align-items: center;
     flex-shrink: 0;
-    width: 130px;
+    width: 8.125rem;
     background: var(--surface);
     border-radius: var(--radius-sm);
     padding: 12px;
@@ -70,17 +70,17 @@
 }
 
 .recent-thumb {
-    height: 80px;
+    height: 5rem;
     width: auto;
-    max-width: 100px;
+    max-width: 6.25rem;
     object-fit: contain;
     border-radius: 3px;
     margin-bottom: 8px;
 }
 
 .recent-thumb-placeholder {
-    width: 56px;
-    height: 80px;
+    width: 3.5rem;
+    height: 5rem;
     background: var(--border);
     border-radius: 3px;
     margin-bottom: 8px;

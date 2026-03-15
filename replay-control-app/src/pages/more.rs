@@ -12,6 +12,7 @@ pub fn MorePage() -> impl IntoView {
     let i18n = use_i18n();
     let info = Resource::new(|| (), |_| server_fns::get_info());
     let region = Resource::new(|| (), |_| server_fns::get_region_preference());
+    let font_size = Resource::new(|| (), |_| server_fns::get_font_size());
 
     view! {
         <div class="page more-page">
@@ -34,6 +35,17 @@ pub fn MorePage() -> impl IntoView {
                     {move || Suspend::new(async move {
                         let current = region.await?;
                         Ok::<_, ServerFnError>(view! { <RegionSelector current /> })
+                    })}
+                </Transition>
+            </ErrorBoundary>
+
+            <h3 class="section-title">{move || t(i18n.locale.get(), "more.text_size")}</h3>
+            <p class="form-hint">{move || t(i18n.locale.get(), "more.text_size_hint")}</p>
+            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    {move || Suspend::new(async move {
+                        let current = font_size.await?;
+                        Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
                     })}
                 </Transition>
             </ErrorBoundary>
@@ -128,6 +140,68 @@ fn RegionSelector(current: String) -> impl IntoView {
             let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
             view! { <div class=class>{msg}</div> }
         })}
+    }
+}
+
+#[component]
+fn TextSizeToggle(current: String) -> impl IntoView {
+    let active = RwSignal::new(current);
+    let saving = RwSignal::new(false);
+
+    let on_select = move |size: &'static str| {
+        if saving.get_untracked() || active.read().as_str() == size {
+            return;
+        }
+        saving.set(true);
+        leptos::task::spawn_local(async move {
+            if server_fns::save_font_size(size.to_string()).await.is_ok() {
+                active.set(size.to_string());
+                // Reload the page so the SSR body class updates.
+                #[cfg(feature = "hydrate")]
+                {
+                    let _ = web_sys::window()
+                        .and_then(|w| w.location().reload().ok());
+                }
+            }
+            saving.set(false);
+        });
+    };
+
+    let on_normal = move |_| on_select("normal");
+    let on_large = move |_| on_select("large");
+
+    let normal_class = move || {
+        if active.read().as_str() == "normal" {
+            "text-size-btn text-size-btn-normal active"
+        } else {
+            "text-size-btn text-size-btn-normal"
+        }
+    };
+    let large_class = move || {
+        if active.read().as_str() == "large" {
+            "text-size-btn text-size-btn-large active"
+        } else {
+            "text-size-btn text-size-btn-large"
+        }
+    };
+
+    view! {
+        <div class="text-size-toggle">
+            <button
+                class=normal_class
+                on:click=on_normal
+                disabled=move || saving.get()
+            >
+                "A"
+            </button>
+            <button
+                class=large_class
+                on:click=on_large
+                disabled=move || saving.get()
+            >
+                "A"
+            </button>
+        </div>
     }
 }
 

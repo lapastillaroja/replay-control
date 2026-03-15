@@ -11,7 +11,7 @@
 }
 
 .user-capture-thumb {
-    max-height: 160px;
+    max-height: 10rem;
     border-radius: 6px;
     flex-shrink: 0;
     border: 1px solid var(--border);

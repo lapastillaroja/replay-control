@@ -161,6 +161,41 @@ select.form-input option {
     border: 1px solid color-mix(in srgb, var(--error) 20%, transparent);
 }
 
+/* Text size toggle */
+.text-size-toggle {
+    display: flex;
+    gap: 8px;
+}
+
+.text-size-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 600;
+}
+
+.text-size-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--surface-hover);
+}
+
+.text-size-btn-normal {
+    font-size: 0.9rem;
+}
+
+.text-size-btn-large {
+    font-size: 1.3rem;
+}
+
 /* Settings hints and feedback */
 .settings-hint {
     font-size: 0.85rem;
