@@ -373,6 +373,8 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "metadata.builtin_console" => "Console Database",
         "metadata.builtin_console_summary_entries" => "ROM entries across",
         "metadata.builtin_console_summary_systems" => "systems",
+        "metadata.builtin_wikidata_entries" => "Wikidata series entries across",
+        "metadata.builtin_wikidata_series" => "series",
         "metadata.builtin_hint" => {
             "Names, genres, player counts, and other metadata compiled into the app. No import needed."
         }

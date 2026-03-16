@@ -110,18 +110,22 @@ pub struct BuiltinDbStats {
     pub arcade_mame_version: String,
     pub game_rom_entries: usize,
     pub game_system_count: usize,
+    pub wikidata_series_entries: usize,
+    pub wikidata_series_count: usize,
 }
 
 /// Get stats for the built-in (compile-time) metadata databases.
 #[server(prefix = "/sfn")]
 pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
-    use replay_control_core::{arcade_db, game_db};
+    use replay_control_core::{arcade_db, game_db, series_db};
 
     Ok(BuiltinDbStats {
         arcade_entries: arcade_db::entry_count(),
         arcade_mame_version: arcade_db::MAME_VERSION.to_string(),
         game_rom_entries: game_db::total_rom_entries(),
         game_system_count: game_db::system_count(),
+        wikidata_series_entries: series_db::entry_count(),
+        wikidata_series_count: series_db::all_series_names().len(),
     })
 }
 

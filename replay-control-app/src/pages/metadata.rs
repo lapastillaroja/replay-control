@@ -262,7 +262,7 @@ pub fn MetadataPage() -> impl IntoView {
                                     </div>
                                     <p class="data-source-summary">
                                         {format!(
-                                            "{} {} {} — {} {} {} {}",
+                                            "{} {} {} — {} {} {} {} — {} {} {} {}",
                                             format_number(bs.arcade_entries),
                                             t(locale, "metadata.builtin_arcade_summary"),
                                             bs.arcade_mame_version,
@@ -270,6 +270,10 @@ pub fn MetadataPage() -> impl IntoView {
                                             t(locale, "metadata.builtin_console_summary_entries"),
                                             bs.game_system_count,
                                             t(locale, "metadata.builtin_console_summary_systems"),
+                                            format_number(bs.wikidata_series_entries),
+                                            t(locale, "metadata.builtin_wikidata_entries"),
+                                            bs.wikidata_series_count,
+                                            t(locale, "metadata.builtin_wikidata_series"),
                                         )}
                                     </p>
                                     <p class="settings-hint">{t(locale, "metadata.builtin_hint")}</p>

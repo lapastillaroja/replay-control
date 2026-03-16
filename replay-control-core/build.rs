@@ -21,6 +21,9 @@ fn main() {
     // --- Game DB generation (non-arcade systems) ---
     generate_game_db(&out_dir, &sources_dir);
 
+    // --- Series DB generation (Wikidata series data) ---
+    generate_series_db(&out_dir, &sources_dir);
+
     // Rerun if any data file changes
     println!(
         "cargo::rerun-if-changed={}",
@@ -2200,4 +2203,185 @@ fn write_dispatch_code(out: &mut impl Write, system_names: &[&str]) {
     writeln!(out, "        _ => &[],").unwrap();
     writeln!(out, "    }}").unwrap();
     writeln!(out, "}}").unwrap();
+}
+
+// =============================================================================
+// Series DB generation (Wikidata series data)
+// =============================================================================
+
+/// A single entry from the Wikidata series JSON.
+#[derive(serde::Deserialize)]
+struct WikidataSeriesEntry {
+    game_title: String,
+    #[serde(default)]
+    series_name: Option<String>,
+    system: String,
+    #[serde(default)]
+    series_order: Option<i32>,
+    #[serde(default)]
+    follows: Option<String>,
+    #[serde(default)]
+    followed_by: Option<String>,
+}
+
+/// Generate the series_db.rs file from data/wikidata/series.json.
+///
+/// Produces a flat static array of series entries and a normalized title
+/// index for matching at scan time.
+fn generate_series_db(out_dir: &str, sources_dir: &Path) {
+    let dest_path = Path::new(out_dir).join("series_db.rs");
+    let mut out = BufWriter::new(File::create(&dest_path).unwrap());
+
+    let series_path = sources_dir.join("wikidata").join("series.json");
+    println!(
+        "cargo::rerun-if-changed={}",
+        series_path.display()
+    );
+
+    if !series_path.exists() {
+        println!("cargo:warning=Series DB: Wikidata series.json not found, generating empty series DB");
+        write_empty_series_db(&mut out);
+        return;
+    }
+
+    let file = File::open(&series_path).unwrap();
+    let reader = BufReader::new(file);
+    let entries: Vec<WikidataSeriesEntry> =
+        serde_json::from_reader(reader).unwrap_or_else(|e| {
+            println!("cargo:warning=Series DB: Failed to parse series.json: {e}");
+            Vec::new()
+        });
+
+    if entries.is_empty() {
+        println!("cargo:warning=Series DB: No entries in series.json, generating empty series DB");
+        write_empty_series_db(&mut out);
+        return;
+    }
+
+    // Build the static data array.
+    // Each entry: (system, normalized_title, series_name, series_order, follows, followed_by)
+    writeln!(out, "/// Wikidata series entry: system, normalized game title, series name, order, follows, followed_by.").unwrap();
+    writeln!(out, "#[derive(Debug, Clone)]").unwrap();
+    writeln!(out, "pub struct WikidataSeriesEntry {{").unwrap();
+    writeln!(out, "    pub system: &'static str,").unwrap();
+    writeln!(out, "    pub normalized_title: &'static str,").unwrap();
+    writeln!(out, "    pub series_name: &'static str,").unwrap();
+    writeln!(out, "    pub series_order: Option<i32>,").unwrap();
+    writeln!(out, "    pub follows: &'static str,").unwrap();
+    writeln!(out, "    pub followed_by: &'static str,").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out).unwrap();
+
+    // Emit the entries array.
+    writeln!(out, "static WIKIDATA_SERIES_ENTRIES: &[WikidataSeriesEntry] = &[").unwrap();
+
+    let mut count = 0usize;
+    let mut with_series = 0usize;
+    let mut with_ordinal = 0usize;
+    let mut with_sequel = 0usize;
+
+    for entry in &entries {
+        let normalized = normalize_title_for_wikidata(&entry.game_title);
+        if normalized.is_empty() {
+            continue;
+        }
+
+        let series_name = entry.series_name.as_deref().unwrap_or("");
+        let order = entry.series_order;
+        let follows = entry.follows.as_deref().unwrap_or("");
+        let followed_by = entry.followed_by.as_deref().unwrap_or("");
+
+        // Skip entries with no useful data
+        if series_name.is_empty() && follows.is_empty() && followed_by.is_empty() {
+            continue;
+        }
+
+        let order_str = match order {
+            Some(n) => format!("Some({n})"),
+            None => "None".to_string(),
+        };
+
+        writeln!(
+            out,
+            "    WikidataSeriesEntry {{ system: \"{}\", normalized_title: \"{}\", series_name: \"{}\", series_order: {}, follows: \"{}\", followed_by: \"{}\" }},",
+            escape_str(&entry.system),
+            escape_str(&normalized),
+            escape_str(series_name),
+            order_str,
+            escape_str(follows),
+            escape_str(followed_by),
+        )
+        .unwrap();
+
+        count += 1;
+        if !series_name.is_empty() {
+            with_series += 1;
+        }
+        if order.is_some() {
+            with_ordinal += 1;
+        }
+        if !follows.is_empty() || !followed_by.is_empty() {
+            with_sequel += 1;
+        }
+    }
+
+    writeln!(out, "];").unwrap();
+    writeln!(out).unwrap();
+
+    // Emit accessor function.
+    writeln!(out, "/// Get all Wikidata series entries.").unwrap();
+    writeln!(
+        out,
+        "pub fn wikidata_series() -> &'static [WikidataSeriesEntry] {{"
+    )
+    .unwrap();
+    writeln!(out, "    WIKIDATA_SERIES_ENTRIES").unwrap();
+    writeln!(out, "}}").unwrap();
+
+    println!(
+        "cargo:warning=Series DB: {count} entries ({with_series} with series, {with_ordinal} with ordinal, {with_sequel} with sequel info)"
+    );
+}
+
+/// Write empty statics when no series data is available.
+fn write_empty_series_db(out: &mut impl Write) {
+    writeln!(out, "#[derive(Debug, Clone)]").unwrap();
+    writeln!(out, "pub struct WikidataSeriesEntry {{").unwrap();
+    writeln!(out, "    pub system: &'static str,").unwrap();
+    writeln!(out, "    pub normalized_title: &'static str,").unwrap();
+    writeln!(out, "    pub series_name: &'static str,").unwrap();
+    writeln!(out, "    pub series_order: Option<i32>,").unwrap();
+    writeln!(out, "    pub follows: &'static str,").unwrap();
+    writeln!(out, "    pub followed_by: &'static str,").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out).unwrap();
+    writeln!(
+        out,
+        "static WIKIDATA_SERIES_ENTRIES: &[WikidataSeriesEntry] = &[];"
+    )
+    .unwrap();
+    writeln!(out).unwrap();
+    writeln!(
+        out,
+        "pub fn wikidata_series() -> &'static [WikidataSeriesEntry] {{"
+    )
+    .unwrap();
+    writeln!(out, "    WIKIDATA_SERIES_ENTRIES").unwrap();
+    writeln!(out, "}}").unwrap();
+}
+
+/// Normalize a Wikidata game title for matching against our library.
+///
+/// Same logic as `normalize_title()` but applied to Wikidata labels
+/// which don't have parenthesized tags.
+fn normalize_title_for_wikidata(title: &str) -> String {
+    let trimmed = title.trim();
+    let mut result = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        if ch.is_alphanumeric() || ch == ' ' {
+            result.push(ch.to_ascii_lowercase());
+        }
+    }
+    let parts: Vec<&str> = result.split_whitespace().collect();
+    parts.join(" ")
 }

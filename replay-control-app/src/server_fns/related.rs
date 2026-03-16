@@ -17,6 +17,8 @@ pub struct RelatedGamesData {
     pub alias_variants: Vec<RecommendedGame>,
     /// Other games in the same series/franchise (cross-system).
     pub series_siblings: Vec<RecommendedGame>,
+    /// Series name from Wikidata (e.g., "Streets of Rage"). Empty if using algorithmic fallback.
+    pub series_name: String,
     /// Games from the same system + genre. Empty if no genre or no matches.
     pub similar_games: Vec<RecommendedGame>,
 }
@@ -108,10 +110,24 @@ pub async fn get_related_games(
             })
             .unwrap_or_default();
 
-        // Series siblings: games with same series_key, different base_title, cross-system.
-        let series_raw = db
-            .series_siblings(&series_key, &base_title, &region_pref_str, 20)
-            .unwrap_or_default();
+        // Series siblings: prefer Wikidata data (has ordering), fall back to algorithmic series_key.
+        let (series_raw, series_name_raw) = {
+            let wikidata = db
+                .wikidata_series_siblings(&system, &base_title, &region_pref_str, 20)
+                .unwrap_or_default();
+            if !wikidata.is_empty() {
+                // Wikidata series found: use it (entries come with optional order).
+                let sname = db.lookup_series_name(&system, &base_title).unwrap_or_default();
+                let entries: Vec<_> = wikidata.into_iter().map(|(entry, _order)| entry).collect();
+                (entries, sname)
+            } else {
+                // Fall back to algorithmic series_key matching.
+                let fallback = db
+                    .series_siblings(&series_key, &base_title, &region_pref_str, 20)
+                    .unwrap_or_default();
+                (fallback, String::new())
+            }
+        };
 
         // Alias variants: cross-name variants via game_alias table.
         let alias_raw = db
@@ -126,10 +142,10 @@ pub async fn get_related_games(
                 .unwrap_or_default()
         };
 
-        (variants, translations_raw, hacks_raw, specials_raw, series_raw, alias_raw, similar)
+        (variants, translations_raw, hacks_raw, specials_raw, series_raw, series_name_raw, alias_raw, similar, base_title)
     });
 
-    let Some((variants_raw, translations_raw, hacks_raw, specials_raw, series_raw, alias_raw, similar_pool)) = db_data
+    let Some((variants_raw, translations_raw, hacks_raw, specials_raw, series_raw, series_name, alias_raw, similar_pool, base_title)) = db_data
     else {
         return Ok(RelatedGamesData {
             regional_variants: Vec::new(),
@@ -138,6 +154,7 @@ pub async fn get_related_games(
             specials: Vec::new(),
             alias_variants: Vec::new(),
             series_siblings: Vec::new(),
+            series_name: String::new(),
             similar_games: Vec::new(),
         });
     };
@@ -263,9 +280,30 @@ pub async fn get_related_games(
         .collect();
 
     // Build alias variants (cross-name versions like "Bare Knuckle" / "Streets of Rage").
+    // Label logic: if the title is the same as the current game (just a regional variant),
+    // show only the region (e.g., "Europe"). If the title is different (cross-name variant),
+    // show the different name + region (e.g., "Vampire Killer (Japan)").
+    let current_bt = &base_title;
     let mut alias_variants: Vec<RecommendedGame> = alias_raw
         .iter()
-        .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
+        .filter_map(|rom| {
+            let mut game = to_recommended(&rom.system, rom, &systems)?;
+            let tags = replay_control_core::rom_tags::extract_tags(&rom.rom_filename);
+            let name = rom.display_name.as_deref().unwrap_or(&rom.rom_filename);
+            let title = name.find(" (").map(|i| &name[..i]).unwrap_or(name);
+            let same_name = rom.base_title == *current_bt;
+            let label = if same_name && !tags.is_empty() {
+                // Same game, different region — just show the region
+                tags
+            } else if !tags.is_empty() {
+                // Different name — show name + region
+                format!("{title} ({tags})")
+            } else {
+                title.to_string()
+            };
+            game.label = Some(label);
+            Some(game)
+        })
         .collect();
     resolve_box_art_for_picks(&state, &mut alias_variants);
 
@@ -295,6 +333,7 @@ pub async fn get_related_games(
         specials,
         alias_variants,
         series_siblings,
+        series_name,
         similar_games,
     })
 }
