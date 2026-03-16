@@ -562,10 +562,10 @@ impl GameLibrary {
                                 group,
                                 Some(info.players),
                                 info.is_clone,
-                                replay_control_core::thumbnails::base_title(info.display_name),
+                                replay_control_core::title_utils::base_title(info.display_name),
                             )
                         }
-                        None => (None, String::new(), None, false, replay_control_core::thumbnails::base_title(stem)),
+                        None => (None, String::new(), None, false, replay_control_core::title_utils::base_title(stem)),
                     }
                 } else {
                     // Try CRC-based lookup first (if we have a hash match),
@@ -580,8 +580,8 @@ impl GameLibrary {
                         game_db::lookup_by_normalized_title(system, &normalized)
                     });
                     let bt = r.game.display_name.as_deref()
-                        .map(replay_control_core::thumbnails::base_title)
-                        .unwrap_or_else(|| replay_control_core::thumbnails::base_title(stem));
+                        .map(replay_control_core::title_utils::base_title)
+                        .unwrap_or_else(|| replay_control_core::title_utils::base_title(stem));
                     match game {
                         Some(g) => {
                             // genre = raw genre from game_db (e.g., "Shoot'em Up")
@@ -622,6 +622,9 @@ impl GameLibrary {
                 // Look up hash result for this ROM file.
                 let hash = hash_results.get(rom_filename);
 
+                // Compute series_key from base_title for franchise grouping.
+                let series_key = replay_control_core::title_utils::series_key(&base_title);
+
                 Some(GameEntry {
                     system: r.game.system.clone(),
                     rom_filename: rom_filename.clone(),
@@ -644,6 +647,7 @@ impl GameLibrary {
                     crc32: hash.map(|h| h.crc32),
                     hash_mtime: hash.map(|h| h.mtime_secs),
                     hash_matched_name: hash.and_then(|h| h.matched_name.clone()),
+                    series_key,
                 })
             })
             .collect();
@@ -657,10 +661,90 @@ impl GameLibrary {
         });
         match result {
             Some(Ok(())) => {
-                tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len())
+                tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len());
+
+                // Populate TGDB aliases from embedded build-time data.
+                self.populate_tgdb_aliases(storage, system, &cached_roms);
             }
             Some(Err(e)) => tracing::warn!("L2 write-through: {system} FAILED: {e}"),
             None => tracing::warn!("L2 write-through: {system} skipped (DB unavailable)"),
+        }
+    }
+
+    /// Populate game_alias table with TGDB alternate names for a system.
+    ///
+    /// Matches canonical games in the embedded TGDB data to `game_library`
+    /// entries via normalized title, then inserts their alternate names.
+    fn populate_tgdb_aliases(
+        &self,
+        storage: &StorageLocation,
+        system: &str,
+        roms: &[replay_control_core::metadata_db::GameEntry],
+    ) {
+        use replay_control_core::game_db;
+        use replay_control_core::systems::{self, SystemCategory};
+
+        let is_arcade =
+            systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
+
+        // TGDB alternates are only available for non-arcade systems with game_db coverage.
+        if is_arcade || !game_db::has_system(system) {
+            return;
+        }
+
+        let alternates = game_db::system_alternates(system);
+        if alternates.is_empty() {
+            return;
+        }
+
+        let games = match game_db::system_games(system) {
+            Some(g) => g,
+            None => return,
+        };
+
+        // Build a map of base_title -> set of base_titles for games in the library.
+        let library_base_titles: std::collections::HashSet<&str> = roms
+            .iter()
+            .filter(|r| !r.base_title.is_empty())
+            .map(|r| r.base_title.as_str())
+            .collect();
+
+        let mut aliases: Vec<(String, String, String, String, String)> = Vec::new();
+
+        for &(game_id, alt_names) in alternates {
+            if let Some(game) = games.get(game_id as usize) {
+                let bt = replay_control_core::title_utils::base_title(game.display_name);
+                if !library_base_titles.contains(bt.as_str()) {
+                    continue; // Game not in user's library
+                }
+
+                for alt in alt_names {
+                    let alt_normalized = replay_control_core::title_utils::base_title(alt);
+                    if alt_normalized != bt && !alt_normalized.is_empty() {
+                        aliases.push((
+                            system.to_string(),
+                            bt.clone(),
+                            alt_normalized,
+                            String::new(), // TGDB doesn't have region info for alternates
+                            "tgdb".to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        if aliases.is_empty() {
+            return;
+        }
+
+        let count = aliases.len();
+        let result = self.with_db_mut(storage, |db| db.bulk_insert_aliases(&aliases));
+        match result {
+            Some(Ok(n)) => {
+                tracing::debug!("TGDB aliases for {system}: {n}/{count} inserted")
+            }
+            Some(Err(e)) => tracing::warn!("TGDB aliases for {system}: insert failed: {e}"),
+            None => {}
         }
     }
 

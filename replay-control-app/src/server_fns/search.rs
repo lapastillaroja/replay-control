@@ -383,6 +383,31 @@ pub async fn global_search(
         per_system_limit
     };
 
+    // Search aliases for cross-name expansion (e.g., "Bare Knuckle" -> "Streets of Rage").
+    let alias_hits: std::collections::HashSet<(String, String)> = if !q.is_empty() {
+        state
+            .cache
+            .with_db_read(&storage, |db| {
+                db.search_aliases(&q)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        std::collections::HashSet::new()
+    };
+
+    // Build a set of base_titles per system that matched via alias.
+    let alias_base_titles: std::collections::HashMap<String, std::collections::HashSet<String>> = {
+        let mut map: std::collections::HashMap<String, std::collections::HashSet<String>> =
+            std::collections::HashMap::new();
+        for (sys, bt) in &alias_hits {
+            map.entry(sys.clone()).or_default().insert(bt.clone());
+        }
+        map
+    };
+
     let mut groups: Vec<SystemSearchGroup> = Vec::new();
     let mut total_results = 0usize;
 
@@ -402,17 +427,26 @@ pub async fn global_search(
             Err(_) => continue,
         };
 
-        // Batch-load genre groups for this system (used for genre filter AND display).
-        let system_genre_groups: std::collections::HashMap<String, String> = state
+        // Batch-load genre groups and base_titles for this system.
+        let (system_genre_groups, system_base_titles): (
+            std::collections::HashMap<String, String>,
+            std::collections::HashMap<String, String>,
+        ) = state
             .cache
             .with_db_read(&storage, |db| {
                 db.load_system_entries(&sys.folder_name)
                     .map(|entries| {
-                        entries
-                            .into_iter()
+                        let genres: std::collections::HashMap<String, String> = entries
+                            .iter()
                             .filter(|e| !e.genre_group.is_empty())
-                            .map(|e| (e.rom_filename, e.genre_group))
-                            .collect()
+                            .map(|e| (e.rom_filename.clone(), e.genre_group.clone()))
+                            .collect();
+                        let base_titles: std::collections::HashMap<String, String> = entries
+                            .iter()
+                            .filter(|e| !e.base_title.is_empty())
+                            .map(|e| (e.rom_filename.clone(), e.base_title.clone()))
+                            .collect();
+                        (genres, base_titles)
                     })
                     .unwrap_or_default()
             })
@@ -510,7 +544,21 @@ pub async fn global_search(
                         .display_name
                         .as_deref()
                         .unwrap_or(&r.game.rom_filename);
-                    let score = search_score(&q, display, &r.game.rom_filename, region_pref, region_secondary);
+                    let mut score = search_score(&q, display, &r.game.rom_filename, region_pref, region_secondary);
+
+                    // Alias expansion: if this ROM's base_title was found via alias search,
+                    // give it a minimum score so it appears in results.
+                    if score == 0 {
+                        if let Some(system_aliases) = alias_base_titles.get(&sys.folder_name) {
+                            if let Some(bt) = system_base_titles.get(&r.game.rom_filename) {
+                                if system_aliases.contains(bt) {
+                                    // Score it like a word-level match (below substring tier).
+                                    score = 350;
+                                }
+                            }
+                        }
+                    }
+
                     if score > 0 { Some((score, r)) } else { None }
                 }
             })
@@ -673,6 +721,7 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(
             (5_000..10_000).contains(&score),
@@ -689,6 +738,7 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(
             (2_000..5_000).contains(&score),
@@ -706,6 +756,7 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(
             (1_000..2_000).contains(&score),
@@ -761,12 +812,14 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         let word = search_score(
             "mario",
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(
             prefix > word,
@@ -781,12 +834,14 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         let substr = search_score(
             "ari",
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(
             word > substr,
@@ -801,6 +856,7 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         let filename = search_score("usa", "Tetris", "Tetris (USA).nes", PREF, SEC);
         assert!(
@@ -818,12 +874,14 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         let long = search_score(
             "mario",
             "Super Mario World - Long Subtitle That Makes It Over 40 Characters",
             "Super Mario World - Long Subtitle (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(
             short > long,
@@ -840,12 +898,14 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         let hack = search_score(
             "mario",
             "Super Mario World",
             "Super Mario World (Hack).sfc",
             PREF,
+            SEC,
         );
         assert!(
             original > hack,
@@ -860,12 +920,14 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             PREF,
+            SEC,
         );
         let translated = search_score(
             "mario",
             "Super Mario World",
             "Super Mario World (Traducido Es).sfc",
             PREF,
+            SEC,
         );
         assert!(
             original > translated,
@@ -882,6 +944,7 @@ mod tests {
             "Asterix & Obelix",
             "Asterix & Obelix (Europe).sfc",
             PREF,
+            SEC,
         );
         assert!(
             score >= 10_000,
@@ -896,6 +959,7 @@ mod tests {
             "X-Men - Mutant Apocalypse",
             "X-Men - Mutant Apocalypse (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(score > 0, "Query with dash should match");
     }
@@ -977,6 +1041,7 @@ mod tests {
             "Sonic The Hedgehog 3",
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
+            SEC,
         );
         assert!(
             score > 0,
@@ -995,6 +1060,7 @@ mod tests {
             "The Legend of Zelda - A Link to the Past",
             "Legend of Zelda, The - A Link to the Past (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(
             score > 0,
@@ -1012,12 +1078,14 @@ mod tests {
             "Sonic The Hedgehog 3",
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
+            SEC,
         );
         let adventures = search_score(
             "sonic 3",
             "Sonic Adventures 3D Edition",
             "Sonic Adventures 3D Edition (USA).md",
             PREF,
+            SEC,
         );
         assert!(
             hedgehog > adventures,
@@ -1032,6 +1100,7 @@ mod tests {
             "Sonic The Hedgehog 3",
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
+            SEC,
         );
         assert_eq!(score, 0);
     }
@@ -1044,6 +1113,7 @@ mod tests {
             "Sonic The Hedgehog 3",
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
+            SEC,
         );
         assert_eq!(score, 0, "Not all query words present, should return 0");
     }
@@ -1056,12 +1126,14 @@ mod tests {
             "Sonic The Hedgehog 3",
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
+            SEC,
         );
         let word = search_score(
             "sonic 3",
             "Sonic The Hedgehog 3",
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
+            SEC,
         );
         assert!(
             substring > word,
@@ -1076,6 +1148,7 @@ mod tests {
             "X-Men - Mutant Apocalypse",
             "X-Men - Mutant Apocalypse (USA).sfc",
             PREF,
+            SEC,
         );
         assert!(
             score > 0,
@@ -1100,6 +1173,7 @@ mod tests {
             "Super Mario Kart",
             "Super Mario Kart (USA).sfc",
             PREF,
+            SEC,
         );
         // "mario kart" IS a contiguous substring of "Super Mario Kart"
         assert!(
@@ -1130,6 +1204,7 @@ mod tests {
             "Sonic The Hedgehog 3",
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
+            SEC,
         );
         let blast = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF, SEC);
         assert!(

@@ -309,6 +309,11 @@ impl AppState {
             }
         }
 
+        // Import LaunchBox alternate names into game_alias table.
+        if succeeded {
+            self.import_launchbox_aliases(&xml_path);
+        }
+
         // Re-enrich game library with freshly imported ratings.
         if succeeded {
             self.spawn_cache_enrichment();
@@ -329,6 +334,123 @@ impl AppState {
             }
             flag_ref.store(false, std::sync::atomic::Ordering::SeqCst);
         });
+    }
+
+    /// Import LaunchBox `<GameAlternateName>` entries into the `game_alias` table.
+    ///
+    /// Parses alternate names from the XML, groups them by DatabaseID,
+    /// then matches them to `game_library` entries via the LaunchBox `<Game>` entries.
+    fn import_launchbox_aliases(&self, xml_path: &std::path::Path) {
+        use replay_control_core::launchbox;
+        use replay_control_core::title_utils;
+
+        // Parse alternate names from XML.
+        let alt_names = match launchbox::parse_alternate_names(xml_path) {
+            Ok(names) => names,
+            Err(e) => {
+                tracing::warn!("Failed to parse LaunchBox alternate names: {e}");
+                return;
+            }
+        };
+
+        if alt_names.is_empty() {
+            return;
+        }
+
+        // Group alternates by DatabaseID -> Vec<(alternate_name, region)>.
+        let mut by_db_id: std::collections::HashMap<String, Vec<(String, String)>> =
+            std::collections::HashMap::new();
+        for alt in &alt_names {
+            by_db_id
+                .entry(alt.database_id.clone())
+                .or_default()
+                .push((alt.alternate_name.clone(), alt.region.clone()));
+        }
+
+        // We need to match DatabaseIDs to game_library base_titles.
+        // The LaunchBox <Game> entries have DatabaseID and Name fields.
+        // During import, we matched games by normalized title to rom_filename.
+        // We need to re-parse the XML to build a DatabaseID -> Name mapping,
+        // but that would be expensive. Instead, we'll use a simpler approach:
+        // for each alternate name group, normalize the primary game name (from the
+        // <Game> element with that DatabaseID) and find its base_title in game_library.
+        //
+        // Since we don't have a direct DatabaseID -> base_title mapping yet,
+        // we'll match alternate names against game_library base_titles directly:
+        // normalize each alternate name and check if it matches any base_title.
+        // If it does, we add the mapping.
+        //
+        // This is a simplified approach that catches the most common cases.
+
+        // Load all base_titles from game_library.
+        let base_titles: std::collections::HashMap<String, Vec<String>> = {
+            let guard = self.metadata_db.lock().expect("metadata_db lock");
+            let db = match guard.as_ref() {
+                Some(db) => db,
+                None => return,
+            };
+            let systems = db.active_systems().unwrap_or_default();
+            let mut map: std::collections::HashMap<String, Vec<String>> =
+                std::collections::HashMap::new();
+            for system in &systems {
+                if let Ok(entries) = db.load_system_entries(system) {
+                    for entry in entries {
+                        if !entry.base_title.is_empty() {
+                            map.entry(entry.base_title.clone())
+                                .or_default()
+                                .push(system.clone());
+                        }
+                    }
+                }
+            }
+            map
+        };
+
+        // For each DatabaseID group, check if any alternate name normalizes to a known base_title.
+        // If it does, create alias entries linking the other alternates to that base_title.
+        let mut aliases: Vec<(String, String, String, String, String)> = Vec::new();
+
+        for (_, alts) in &by_db_id {
+            // Find which alternates match existing base_titles.
+            let mut matched_bt: Option<(String, String)> = None; // (base_title, system)
+            for (alt_name, _) in alts {
+                let normalized = title_utils::base_title(alt_name);
+                if let Some(systems) = base_titles.get(&normalized) {
+                    matched_bt = Some((normalized, systems[0].clone()));
+                    break;
+                }
+            }
+
+            if let Some((bt, system)) = matched_bt {
+                // Insert all other alternates as aliases of this base_title.
+                for (alt_name, region) in alts {
+                    let alt_normalized = title_utils::base_title(alt_name);
+                    if alt_normalized != bt && !alt_normalized.is_empty() {
+                        aliases.push((
+                            system.clone(),
+                            bt.clone(),
+                            alt_normalized,
+                            region.clone(),
+                            "launchbox".to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        if aliases.is_empty() {
+            tracing::debug!("LaunchBox aliases: no matches found");
+            return;
+        }
+
+        let count = aliases.len();
+        let mut guard = self.metadata_db.lock().expect("metadata_db lock");
+        if let Some(db) = guard.as_mut() {
+            match db.bulk_insert_aliases(&aliases) {
+                Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
+                Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
+            }
+        }
     }
 
     // ── Thumbnail Update (Manifest + Download) ──────────────────────

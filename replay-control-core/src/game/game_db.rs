@@ -178,6 +178,19 @@ pub fn has_system(system: &str) -> bool {
     GAME_DB_SYSTEMS.contains(&system)
 }
 
+/// Get TGDB alternate names for all games in a system.
+///
+/// Returns `(game_id, &[alternate_name])` pairs. The `game_id` can be used
+/// with `get_system_games()` to look up the canonical game.
+pub fn system_alternates(system: &str) -> &'static [(u16, &'static [&'static str])] {
+    get_system_alternates(system)
+}
+
+/// Get the canonical games array for a system.
+pub fn system_games(system: &str) -> Option<&'static [CanonicalGame]> {
+    get_system_games(system)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -103,64 +103,9 @@ pub fn thumbnail_filename(rom_stem: &str) -> String {
         .collect()
 }
 
-/// Strip parenthesized tags and trailing whitespace from a name for fuzzy matching.
-/// `"Indiana Jones and the Fate of Atlantis (Spanish)"` → `"Indiana Jones and the Fate of Atlantis"`
-/// `"Dark Seed"` → `"Dark Seed"` (unchanged)
-pub fn strip_tags(name: &str) -> &str {
-    name.find(" (")
-        .or_else(|| name.find(" ["))
-        .map(|i| &name[..i])
-        .unwrap_or(name)
-        .trim()
-}
-
-/// Strip GDI/TOSEC version strings from a name for fuzzy matching.
-/// `"Sonic Adventure 2 v1.008"` → `"Sonic Adventure 2"`
-/// `"Sega Rally 2 v1 001"` → `"Sega Rally 2"`
-/// Returns the original string if no version pattern is found.
-pub fn strip_version(name: &str) -> &str {
-    // Look for " v" followed by a digit, then optional digits/dots/spaces/underscores
-    let bytes = name.as_bytes();
-    let mut i = 0;
-    let mut last_version_start = None;
-    while i + 2 < bytes.len() {
-        if bytes[i] == b' '
-            && bytes[i + 1] == b'v'
-            && bytes.get(i + 2).is_some_and(|b| b.is_ascii_digit())
-        {
-            // Check that everything after " v\d" is digits, dots, spaces, or underscores
-            let rest = &bytes[i + 2..];
-            if rest
-                .iter()
-                .all(|b| b.is_ascii_digit() || *b == b'.' || *b == b' ' || *b == b'_')
-            {
-                last_version_start = Some(i);
-            }
-        }
-        i += 1;
-    }
-    match last_version_start {
-        Some(pos) => name[..pos].trim(),
-        None => name,
-    }
-}
-
-/// Compute a lowercased base title for fuzzy image matching.
-///
-/// Handles tilde dual-names (`"Name1 ~ Name2"` → `"Name2"`), strips
-/// parenthesized/bracketed tags, lowercases the result, and normalizes
-/// trailing articles (`", The"` / `", A"` / `", An"`) to the front.
-pub fn base_title(name: &str) -> String {
-    let s = name.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(name);
-    let lower = strip_tags(s).to_lowercase();
-    for article in &[", the", ", an", ", a"] {
-        if let Some(title) = lower.strip_suffix(article) {
-            let art = &article[2..]; // skip ", "
-            return format!("{art} {title}");
-        }
-    }
-    lower
-}
+// Re-export title utilities from their canonical home in `title_utils`.
+// These were originally defined here but moved to `title_utils` for broader reuse.
+pub use crate::title_utils::{base_title, strip_tags, strip_version};
 
 /// Quick check that a file is likely a real image (not a git fake-symlink text file).
 pub fn is_valid_image(path: &Path) -> bool {

@@ -150,6 +150,10 @@ pub struct GameEntry {
     /// No-Intro canonical name if CRC32 matched the DAT data.
     /// NULL means either not hashed, or hashed but no match.
     pub hash_matched_name: Option<String>,
+    /// Algorithmic series key for franchise grouping.
+    /// Computed by stripping trailing numbers/roman numerals from `base_title`.
+    /// Empty string means no series could be extracted.
+    pub series_key: String,
 }
 
 /// Per-system metadata from the `game_library_meta` table.
@@ -175,6 +179,7 @@ impl MetadataDb {
         "game_library",
         "data_sources",
         "thumbnail_index",
+        "game_alias",
     ];
 
     /// Open (or create) the metadata database at `<storage_root>/.replay-control/metadata.db`.
@@ -269,6 +274,7 @@ impl MetadataDb {
                     crc32 INTEGER,
                     hash_mtime INTEGER,
                     hash_matched_name TEXT,
+                    series_key TEXT NOT NULL DEFAULT '',
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -287,6 +293,21 @@ impl MetadataDb {
                 CREATE INDEX IF NOT EXISTS idx_game_library_genre_group
                   ON game_library (system, genre_group)
                   WHERE genre_group != '';
+
+                CREATE INDEX IF NOT EXISTS idx_game_library_series_key
+                  ON game_library (series_key)
+                  WHERE series_key != '';
+
+                CREATE TABLE IF NOT EXISTS game_alias (
+                    system TEXT NOT NULL,
+                    base_title TEXT NOT NULL,
+                    alias_name TEXT NOT NULL,
+                    alias_region TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL,
+                    PRIMARY KEY (system, base_title, alias_name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_game_alias_name
+                    ON game_alias(alias_name COLLATE NOCASE);
 
 ",
             )
@@ -1076,9 +1097,9 @@ impl MetadataDb {
                     "INSERT OR IGNORE INTO game_library (system, rom_filename, rom_path, display_name,
                      size_bytes, is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                      is_clone, base_title, region, is_translation, is_hack, is_special,
-                     crc32, hash_mtime, hash_matched_name)
+                     crc32, hash_mtime, hash_matched_name, series_key)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-                             ?19, ?20, ?21)",
+                             ?19, ?20, ?21, ?22)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -1105,6 +1126,7 @@ impl MetadataDb {
                     rom.crc32.map(|c| c as i64),
                     rom.hash_mtime,
                     &rom.hash_matched_name,
+                    &rom.series_key,
                 ])
                 .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
             }
@@ -1139,7 +1161,7 @@ impl MetadataDb {
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name
+                        crc32, hash_mtime, hash_matched_name, series_key
                  FROM game_library WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_entries: {e}")))?;
@@ -1657,7 +1679,7 @@ impl MetadataDb {
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name
+                        crc32, hash_mtime, hash_matched_name, series_key
                  FROM game_library
                  WHERE system = ?1 AND box_art_url IS NOT NULL AND is_special = 0
                  ORDER BY RANDOM() LIMIT ?2",
@@ -2064,7 +2086,7 @@ impl MetadataDb {
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name
+                        crc32, hash_mtime, hash_matched_name, series_key
                  FROM game_library
                  WHERE system = ?1
                    AND (genre = ?2 OR genre_group = ?3)
@@ -2091,6 +2113,227 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Find series siblings: games with the same `series_key` but different `base_title`,
+    /// across ALL systems (cross-system series).
+    ///
+    /// Deduplicates by `(system, base_title)` to pick one ROM per game per system,
+    /// preferring the given region. Returns at most `limit` results.
+    pub fn series_siblings(
+        &self,
+        series_key: &str,
+        current_base_title: &str,
+        region_pref: &str,
+        limit: usize,
+    ) -> Result<Vec<GameEntry>> {
+        if series_key.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "WITH deduped AS (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY system, base_title
+                        ORDER BY CASE
+                            WHEN region = ?2 THEN 0
+                            WHEN region = 'world' THEN 1
+                            ELSE 2
+                        END
+                    ) AS rn
+                    FROM game_library
+                    WHERE series_key = ?1
+                      AND series_key != ''
+                      AND base_title != ?3
+                      AND is_clone = 0
+                      AND is_translation = 0
+                      AND is_hack = 0
+                      AND is_special = 0
+                )
+                SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
+                        is_clone, base_title, region, is_translation, is_hack, is_special,
+                        crc32, hash_mtime, hash_matched_name, series_key
+                FROM deduped WHERE rn = 1
+                ORDER BY display_name
+                LIMIT ?4",
+            )
+            .map_err(|e| Error::Other(format!("Prepare series_siblings: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![series_key, region_pref, current_base_title, limit as i64],
+                Self::row_to_game_entry,
+            )
+            .map_err(|e| Error::Other(format!("Query series_siblings: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Insert or update a game alias (cross-name variant).
+    pub fn upsert_alias(
+        &self,
+        system: &str,
+        base_title: &str,
+        alias_name: &str,
+        alias_region: &str,
+        source: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO game_alias (system, base_title, alias_name, alias_region, source)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![system, base_title, alias_name, alias_region, source],
+            )
+            .map_err(|e| Error::Other(format!("Upsert alias failed: {e}")))?;
+        Ok(())
+    }
+
+    /// Bulk insert game aliases within a single transaction.
+    pub fn bulk_insert_aliases(
+        &mut self,
+        aliases: &[(String, String, String, String, String)], // (system, base_title, alias_name, alias_region, source)
+    ) -> Result<usize> {
+        if aliases.is_empty() {
+            return Ok(0);
+        }
+
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+
+        let mut count = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR REPLACE INTO game_alias (system, base_title, alias_name, alias_region, source)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .map_err(|e| Error::Other(format!("Prepare bulk_insert_aliases: {e}")))?;
+
+            for (system, base_title, alias_name, alias_region, source) in aliases {
+                stmt.execute(params![system, base_title, alias_name, alias_region, source])
+                    .map_err(|e| Error::Other(format!("Insert alias failed: {e}")))?;
+                count += 1;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(count)
+    }
+
+    /// Find cross-name variants of a game using game_alias.
+    ///
+    /// Given a ROM's system and base_title, find other games in the same system
+    /// that are linked via aliases (same game, different name).
+    /// Returns ROMs that are either:
+    /// - directly aliased to the current game's base_title, or
+    /// - share an alias group (their base_title appears as an alias for the same canonical game)
+    pub fn alias_variants(
+        &self,
+        system: &str,
+        base_title: &str,
+        current_filename: &str,
+        region_pref: &str,
+    ) -> Result<Vec<GameEntry>> {
+        // Strategy: find all base_titles that share an alias group with the current game.
+        // The current game's base_title might appear as an alias_name for some canonical base_title,
+        // or some other base_title might appear as an alias_name for the current game's base_title.
+        let mut stmt = self
+            .conn
+            .prepare(
+                "WITH related_titles AS (
+                    -- Games whose base_title is an alias of the current game
+                    SELECT DISTINCT gl.base_title AS bt
+                    FROM game_alias ga
+                    JOIN game_library gl ON gl.system = ga.system AND gl.base_title = ga.alias_name
+                    WHERE ga.system = ?1 AND ga.base_title = ?2
+                    UNION
+                    -- The canonical base_title that the current game is an alias of
+                    SELECT DISTINCT ga.base_title AS bt
+                    FROM game_alias ga
+                    WHERE ga.system = ?1 AND ga.alias_name = ?2
+                    UNION
+                    -- Games that are aliases of the same canonical title
+                    SELECT DISTINCT ga2.alias_name AS bt
+                    FROM game_alias ga
+                    JOIN game_alias ga2 ON ga2.system = ga.system AND ga2.base_title = ga.base_title
+                    WHERE ga.system = ?1 AND ga.alias_name = ?2
+                ),
+                deduped AS (
+                    SELECT gl.*, ROW_NUMBER() OVER (
+                        PARTITION BY gl.system, gl.base_title
+                        ORDER BY CASE
+                            WHEN gl.region = ?4 THEN 0
+                            WHEN gl.region = 'world' THEN 1
+                            ELSE 2
+                        END
+                    ) AS rn
+                    FROM game_library gl
+                    WHERE gl.system = ?1
+                      AND gl.base_title IN (SELECT bt FROM related_titles)
+                      AND gl.base_title != ?2
+                      AND gl.rom_filename != ?3
+                      AND gl.is_clone = 0
+                      AND gl.is_translation = 0
+                      AND gl.is_hack = 0
+                      AND gl.is_special = 0
+                )
+                SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
+                        is_clone, base_title, region, is_translation, is_hack, is_special,
+                        crc32, hash_mtime, hash_matched_name, series_key
+                FROM deduped WHERE rn = 1
+                ORDER BY display_name",
+            )
+            .map_err(|e| Error::Other(format!("Prepare alias_variants: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![system, base_title, current_filename, region_pref],
+                Self::row_to_game_entry,
+            )
+            .map_err(|e| Error::Other(format!("Query alias_variants: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Search game aliases: find base_titles whose aliases match the query.
+    ///
+    /// Returns `(system, base_title)` pairs where an alias matches the query.
+    /// Used by search to expand results (e.g., searching "Bare Knuckle" finds "Streets of Rage").
+    pub fn search_aliases(
+        &self,
+        query: &str,
+    ) -> Result<Vec<(String, String)>> {
+        let like_pattern = format!("%{query}%");
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT DISTINCT system, base_title FROM game_alias
+                 WHERE alias_name LIKE ?1 COLLATE NOCASE",
+            )
+            .map_err(|e| Error::Other(format!("Prepare search_aliases: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![like_pattern], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query search_aliases: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Clear all game aliases.
+    pub fn clear_aliases(&self) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM game_alias", [])
+            .map_err(|e| Error::Other(format!("Clear game_alias failed: {e}")))?;
+        Ok(())
+    }
+
     /// Helper: convert a row to GameEntry (used by multiple queries).
     fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
@@ -2115,6 +2358,7 @@ impl MetadataDb {
             crc32: row.get::<_, Option<i64>>(18)?.map(|c| c as u32),
             hash_mtime: row.get(19)?,
             hash_matched_name: row.get(20)?,
+            series_key: row.get::<_, String>(21).unwrap_or_default(),
         })
     }
 }

@@ -666,8 +666,10 @@ fn RelatedGamesSection(
                         let has_translations = !data.translations.is_empty();
                         let has_hacks = !data.hacks.is_empty();
                         let has_specials = !data.specials.is_empty();
+                        let has_aliases = !data.alias_variants.is_empty();
+                        let has_series = !data.series_siblings.is_empty();
                         let has_similar = !data.similar_games.is_empty();
-                        if !has_variants && !has_translations && !has_hacks && !has_specials && !has_similar {
+                        if !has_variants && !has_translations && !has_hacks && !has_specials && !has_aliases && !has_series && !has_similar {
                             view! { <div /> }.into_any()
                         } else {
                             let variant_chips: Vec<ChipItem> = data.regional_variants.iter().map(|v| {
@@ -707,8 +709,23 @@ fn RelatedGamesSection(
                                         chips=special_chips.clone()
                                     />
                                 </Show>
+                                <Show when=move || has_aliases>
+                                    <SimilarGamesRow
+                                        games=data.alias_variants.clone()
+                                        title_key="game_detail.other_versions"
+                                    />
+                                </Show>
+                                <Show when=move || has_series>
+                                    <SimilarGamesRow
+                                        games=data.series_siblings.clone()
+                                        title_key="game_detail.more_in_series"
+                                    />
+                                </Show>
                                 <Show when=move || has_similar>
-                                    <SimilarGamesRow games=data.similar_games.clone() />
+                                    <SimilarGamesRow
+                                        games=data.similar_games.clone()
+                                        title_key="game_detail.more_like_this"
+                                    />
                                 </Show>
                             }.into_any()
                         }
@@ -751,12 +768,15 @@ fn GameChipRow(title_key: &'static str, chips: Vec<ChipItem>) -> impl IntoView {
 
 /// Horizontal scrollable row of similar games, reusing GameScrollCard.
 #[component]
-fn SimilarGamesRow(games: Vec<RecommendedGame>) -> impl IntoView {
+fn SimilarGamesRow(
+    games: Vec<RecommendedGame>,
+    #[prop(default = "game_detail.more_like_this")] title_key: &'static str,
+) -> impl IntoView {
     let i18n = use_i18n();
 
     view! {
         <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.more_like_this")}</h2>
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), title_key)}</h2>
             <div class="recent-scroll">
                 {games.into_iter().map(|game| {
                     view! {

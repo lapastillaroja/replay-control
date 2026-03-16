@@ -1145,6 +1145,8 @@ struct TgdbEntry {
     genre_ids: Vec<u32>,
     #[allow(dead_code)]
     developer_ids: Vec<u32>,
+    /// Alternate names for cross-name variant matching.
+    alternates: Vec<String>,
 }
 
 /// Canonical game after grouping ROM variants.
@@ -1154,6 +1156,8 @@ struct CanonicalGameBuild {
     genre: String,
     developer: String,
     players: u8,
+    /// TGDB alternate names for cross-name variant matching.
+    alternates: Vec<String>,
 }
 
 /// ROM entry with its canonical game assignment.
@@ -1575,6 +1579,15 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
             })
             .unwrap_or_default();
 
+        let alternates: Vec<String> = game["alternates"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let normalized = normalize_title_for_tgdb(&title);
         let key = (normalized, platform);
 
@@ -1585,6 +1598,7 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
             players,
             genre_ids,
             developer_ids,
+            alternates,
         });
     }
 
@@ -1724,6 +1738,7 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
             let mut year: u16 = 0;
             let mut tgdb_players: u8 = 0;
             let mut tgdb_genre = String::new();
+            let mut tgdb_alternates: Vec<String> = Vec::new();
 
             // Try matching against each TGDB platform ID for this system
             let tgdb_normalized = normalize_title_for_tgdb(&display_name);
@@ -1734,6 +1749,7 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
                     if !tgdb_entry.genre_ids.is_empty() {
                         tgdb_genre = tgdb_genre_name(tgdb_entry.genre_ids[0]).to_string();
                     }
+                    tgdb_alternates = tgdb_entry.alternates.clone();
                     tgdb_match_count += 1;
                     break;
                 }
@@ -1804,6 +1820,7 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
                 genre: final_genre,
                 developer: String::new(), // Developer lookup not available in TGDB dump
                 players: final_players,
+                alternates: tgdb_alternates,
             });
 
             // Create ROM entries for all variants
@@ -1897,6 +1914,11 @@ fn write_empty_system(out: &mut impl Write, prefix: &str) {
     writeln!(
         out,
         "static {prefix}_NORM_INDEX: phf::Map<&'static str, u16> = phf::Map {{ key: 0, disps: &[], entries: &[] }};"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "static {prefix}_ALTERNATES: &[(u16, &[&str])] = &[];"
     )
     .unwrap();
     writeln!(out).unwrap();
@@ -2036,6 +2058,37 @@ fn write_system_code(
         );
     }
     writeln!(out).unwrap();
+
+    // 5. TGDB alternates array: (game_id, &[alternate_names])
+    //    Only emit games that have alternates.
+    let games_with_alts: Vec<(usize, &[String])> = games
+        .iter()
+        .enumerate()
+        .filter(|(_, g)| !g.alternates.is_empty())
+        .map(|(id, g)| (id, g.alternates.as_slice()))
+        .collect();
+
+    if games_with_alts.is_empty() {
+        writeln!(
+            out,
+            "static {prefix}_ALTERNATES: &[(u16, &[&str])] = &[];"
+        )
+        .unwrap();
+    } else {
+        writeln!(out, "static {prefix}_ALTERNATES: &[(u16, &[&str])] = &[").unwrap();
+        for (game_id, alts) in &games_with_alts {
+            let alt_strs: Vec<String> = alts.iter().map(|a| format!("\"{}\"", escape_str(a))).collect();
+            writeln!(
+                out,
+                "    ({}u16, &[{}]),",
+                game_id,
+                alt_strs.join(", ")
+            )
+            .unwrap();
+        }
+        writeln!(out, "];").unwrap();
+    }
+    writeln!(out).unwrap();
 }
 
 /// Write the dispatch functions that route system folder names to per-system maps.
@@ -2125,6 +2178,26 @@ fn write_dispatch_code(out: &mut impl Write, system_names: &[&str]) {
         .unwrap();
     }
     writeln!(out, "        _ => None,").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out).unwrap();
+
+    // Dispatch function for TGDB alternates
+    writeln!(
+        out,
+        "fn get_system_alternates(system: &str) -> &'static [(u16, &'static [&'static str])] {{"
+    )
+    .unwrap();
+    writeln!(out, "    match system {{").unwrap();
+    for sys in GAME_DB_SYSTEMS {
+        writeln!(
+            out,
+            "        \"{}\" => {}_ALTERNATES,",
+            sys.folder_name, sys.rust_prefix
+        )
+        .unwrap();
+    }
+    writeln!(out, "        _ => &[],").unwrap();
     writeln!(out, "    }}").unwrap();
     writeln!(out, "}}").unwrap();
 }

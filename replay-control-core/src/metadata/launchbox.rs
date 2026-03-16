@@ -24,6 +24,7 @@ fn platform_map() -> HashMap<&'static str, Vec<&'static str>> {
 /// Parsed game entry from LaunchBox XML.
 struct LbGame {
     name: String,
+    database_id: String,
     overview: String,
     rating: Option<f64>,
     publisher: String,
@@ -85,7 +86,7 @@ pub fn normalize_title(name: &str) -> String {
     // TOSEC filenames like "Game v1.000 (1999)(Sega)(PAL)" have the (...)
     // content removed in step 1, leaving "Game v1.000". The version suffix
     // prevents matching against LaunchBox titles like "Game".
-    let version_stripped = crate::thumbnails::strip_version(&reordered);
+    let version_stripped = crate::title_utils::strip_version(&reordered);
 
     // Step 4: Keep only alphanumeric, lowercase.
     version_stripped
@@ -225,6 +226,7 @@ fn parse_xml<R: BufRead>(
 
     // Current game fields being accumulated.
     let mut name = String::new();
+    let mut database_id = String::new();
     let mut platform = String::new();
     let mut overview = String::new();
     let mut rating: Option<f64> = None;
@@ -243,6 +245,7 @@ fn parse_xml<R: BufRead>(
                 if tag == "Game" {
                     in_game = true;
                     name.clear();
+                    database_id.clear();
                     platform.clear();
                     overview.clear();
                     rating = None;
@@ -261,6 +264,7 @@ fn parse_xml<R: BufRead>(
                     let text = e.unescape().unwrap_or_default();
                     match current_tag.as_str() {
                         "Name" => name.push_str(&text),
+                        "DatabaseID" => database_id.push_str(&text),
                         "Platform" => platform.push_str(&text),
                         "Overview" => overview.push_str(&text),
                         "CommunityRating" => {
@@ -297,6 +301,7 @@ fn parse_xml<R: BufRead>(
                     if let Some(system_folders) = platforms.get(platform.as_str()) {
                         let game = LbGame {
                             name: std::mem::take(&mut name),
+                            database_id: std::mem::take(&mut database_id),
                             overview: std::mem::take(&mut overview),
                             rating,
                             publisher: std::mem::take(&mut publisher),
@@ -324,6 +329,86 @@ fn parse_xml<R: BufRead>(
     }
 
     Ok(())
+}
+
+/// A parsed alternate name entry from LaunchBox XML.
+pub struct LbAlternateName {
+    pub database_id: String,
+    pub alternate_name: String,
+    pub region: String,
+}
+
+/// Parse `<GameAlternateName>` entries from a LaunchBox metadata XML file.
+///
+/// Returns a list of alternate name entries grouped by database ID.
+/// These can be matched to games during import to populate the `game_alias` table.
+pub fn parse_alternate_names(xml_path: &Path) -> Result<Vec<LbAlternateName>> {
+    let file = std::fs::File::open(xml_path).map_err(|e| Error::io(xml_path, e))?;
+    let reader = std::io::BufReader::with_capacity(256 * 1024, file);
+    let mut xml = Reader::from_reader(reader);
+    xml.config_mut().trim_text(true);
+
+    let mut buf = Vec::with_capacity(4096);
+    let mut in_alt = false;
+    let mut current_tag = String::new();
+
+    let mut alt_name = String::new();
+    let mut database_id = String::new();
+    let mut region = String::new();
+
+    let mut results = Vec::new();
+
+    loop {
+        match xml.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let qname = e.name();
+                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
+                if tag == "GameAlternateName" {
+                    in_alt = true;
+                    alt_name.clear();
+                    database_id.clear();
+                    region.clear();
+                } else if in_alt {
+                    current_tag = tag.to_string();
+                }
+            }
+            Ok(Event::Text(ref e)) => {
+                if in_alt {
+                    let text = e.unescape().unwrap_or_default();
+                    match current_tag.as_str() {
+                        "AlternateName" => alt_name.push_str(&text),
+                        "DatabaseID" => database_id.push_str(&text),
+                        "Region" => region.push_str(&text),
+                        _ => {}
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let qname = e.name();
+                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
+                if tag == "GameAlternateName" && in_alt {
+                    in_alt = false;
+                    if !alt_name.is_empty() && !database_id.is_empty() {
+                        results.push(LbAlternateName {
+                            database_id: std::mem::take(&mut database_id),
+                            alternate_name: std::mem::take(&mut alt_name),
+                            region: std::mem::take(&mut region),
+                        });
+                    }
+                }
+                current_tag.clear();
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                tracing::warn!("XML parse error (alternates) at position {}: {e}", xml.error_position());
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    tracing::info!("LaunchBox alternate names: {} entries parsed", results.len());
+    Ok(results)
 }
 
 /// The LaunchBox metadata download URL.

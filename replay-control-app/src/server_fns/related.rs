@@ -2,7 +2,7 @@ use super::*;
 #[cfg(feature = "ssr")]
 use super::recommendations::{resolve_box_art_for_picks, to_recommended};
 
-/// Related games data: regional variants + translations + hacks + specials + similar games by genre.
+/// Related games data: regional variants + translations + hacks + specials + series + similar games.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelatedGamesData {
     /// Other regions of the same game. Empty if only one region exists.
@@ -13,6 +13,10 @@ pub struct RelatedGamesData {
     pub hacks: Vec<HackVariant>,
     /// Special versions of the same game (FastROM, 60Hz, unlicensed, etc.).
     pub specials: Vec<SpecialVariant>,
+    /// Cross-name variants of the same game (e.g., "Bare Knuckle" / "Streets of Rage").
+    pub alias_variants: Vec<RecommendedGame>,
+    /// Other games in the same series/franchise (cross-system).
+    pub series_siblings: Vec<RecommendedGame>,
     /// Games from the same system + genre. Empty if no genre or no matches.
     pub similar_games: Vec<RecommendedGame>,
 }
@@ -77,6 +81,9 @@ pub async fn get_related_games(
     let sys_info = systems::find_system(&system);
     let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
 
+    let region_pref = state.region_preference();
+    let region_pref_str = format!("{:?}", region_pref).to_lowercase();
+
     // Single DB access for all queries.
     let db_data = state.cache.with_db_read(&storage, |db| {
         let variants = db.regional_variants(&system, &filename).unwrap_or_default();
@@ -84,21 +91,31 @@ pub async fn get_related_games(
         let hacks_raw = db.hacks(&system, &filename).unwrap_or_default();
         let specials_raw = db.specials(&system, &filename).unwrap_or_default();
 
-        // Get the detail genre from game_library for this ROM.
-        let detail_genre = db
+        // Get the current game's base_title, series_key for relationship queries.
+        let current_entry = db
             .load_system_entries(&system)
             .ok()
-            .and_then(|entries| {
-                entries
-                    .into_iter()
-                    .find(|e| e.rom_filename == filename)
-                    .and_then(|e| e.genre.filter(|g| !g.is_empty()))
-            })
+            .and_then(|entries| entries.into_iter().find(|e| e.rom_filename == filename));
+
+        let base_title = current_entry.as_ref().map(|e| e.base_title.clone()).unwrap_or_default();
+        let series_key = current_entry.as_ref().map(|e| e.series_key.clone()).unwrap_or_default();
+        let detail_genre = current_entry
+            .as_ref()
+            .and_then(|e| e.genre.clone().filter(|g| !g.is_empty()))
             .or_else(|| {
-                // Fallback to lookup_genre if not in DB yet.
                 let g = super::search::lookup_genre(&system, &filename);
                 if g.is_empty() { None } else { Some(g) }
             })
+            .unwrap_or_default();
+
+        // Series siblings: games with same series_key, different base_title, cross-system.
+        let series_raw = db
+            .series_siblings(&series_key, &base_title, &region_pref_str, 20)
+            .unwrap_or_default();
+
+        // Alias variants: cross-name variants via game_alias table.
+        let alias_raw = db
+            .alias_variants(&system, &base_title, &filename, &region_pref_str)
             .unwrap_or_default();
 
         let similar = if detail_genre.is_empty() {
@@ -109,16 +126,18 @@ pub async fn get_related_games(
                 .unwrap_or_default()
         };
 
-        (variants, translations_raw, hacks_raw, specials_raw, similar)
+        (variants, translations_raw, hacks_raw, specials_raw, series_raw, alias_raw, similar)
     });
 
-    let Some((variants_raw, translations_raw, hacks_raw, specials_raw, similar_pool)) = db_data
+    let Some((variants_raw, translations_raw, hacks_raw, specials_raw, series_raw, alias_raw, similar_pool)) = db_data
     else {
         return Ok(RelatedGamesData {
             regional_variants: Vec::new(),
             translations: Vec::new(),
             hacks: Vec::new(),
             specials: Vec::new(),
+            alias_variants: Vec::new(),
+            series_siblings: Vec::new(),
             similar_games: Vec::new(),
         });
     };
@@ -243,6 +262,20 @@ pub async fn get_related_games(
         })
         .collect();
 
+    // Build alias variants (cross-name versions like "Bare Knuckle" / "Streets of Rage").
+    let mut alias_variants: Vec<RecommendedGame> = alias_raw
+        .iter()
+        .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
+        .collect();
+    resolve_box_art_for_picks(&state, &mut alias_variants);
+
+    // Build series siblings (other games in the same franchise, cross-system).
+    let mut series_siblings: Vec<RecommendedGame> = series_raw
+        .iter()
+        .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
+        .collect();
+    resolve_box_art_for_picks(&state, &mut series_siblings);
+
     // Build similar games. The two-tier similar_by_genre query already orders
     // by exact genre match first (relevance=2) then genre_group (relevance=1),
     // so we just take the top results.
@@ -260,6 +293,8 @@ pub async fn get_related_games(
         translations,
         hacks,
         specials,
+        alias_variants,
+        series_siblings,
         similar_games,
     })
 }
