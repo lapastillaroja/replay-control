@@ -65,6 +65,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <script>
                     "if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }"
                 </script>
+                <script defer src="/ptr-init.js"></script>
             </head>
             <body>
                 <App />

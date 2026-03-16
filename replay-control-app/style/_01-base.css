@@ -48,3 +48,22 @@ a, a:visited, a:hover, a:active {
 .app-title-link {
     color: var(--accent);
 }
+
+/* ── Pull-to-refresh (iOS standalone PWA only) ─────────────────────────── */
+
+/* Disable iOS rubber-band bounce in standalone PWA — PTR library handles it */
+html.is-ios-standalone {
+    overscroll-behavior-y: none;
+}
+
+/* PTR indicator styling — match the app's dark theme */
+html.is-ios-standalone .ptr--ptr {
+    background-color: var(--surface);
+    box-shadow: inset 0 -3px 5px rgba(0, 0, 0, 0.25);
+}
+
+html.is-ios-standalone .ptr--text,
+html.is-ios-standalone .ptr--icon {
+    color: var(--text-secondary);
+    font-size: 1.4rem;
+}

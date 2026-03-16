@@ -367,6 +367,24 @@ mod ssr {
                     )
                 }),
             )
+            .route(
+                "/ptr-init.js",
+                axum::routing::get(|| async {
+                    (
+                        [("content-type", "application/javascript")],
+                        include_str!("../static/ptr-init.js"),
+                    )
+                }),
+            )
+            .route(
+                "/pulltorefresh.min.js",
+                axum::routing::get(|| async {
+                    (
+                        [("content-type", "application/javascript")],
+                        include_str!("../static/pulltorefresh.min.js"),
+                    )
+                }),
+            )
             .layer(CompressionLayer::new().gzip(true))
             .layer(CorsLayer::permissive());
 
