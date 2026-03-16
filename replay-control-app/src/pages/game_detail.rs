@@ -666,10 +666,11 @@ fn RelatedGamesSection(
                         let has_translations = !data.translations.is_empty();
                         let has_hacks = !data.hacks.is_empty();
                         let has_specials = !data.specials.is_empty();
+                        let has_arcade_versions = !data.arcade_versions.is_empty();
                         let has_aliases = !data.alias_variants.is_empty();
                         let has_series = !data.series_siblings.is_empty();
                         let has_similar = !data.similar_games.is_empty();
-                        if !has_variants && !has_translations && !has_hacks && !has_specials && !has_aliases && !has_series && !has_similar {
+                        if !has_variants && !has_translations && !has_hacks && !has_specials && !has_arcade_versions && !has_aliases && !has_series && !has_similar {
                             view! { <div /> }.into_any()
                         } else {
                             let variant_chips: Vec<ChipItem> = data.regional_variants.iter().map(|v| {
@@ -682,6 +683,9 @@ fn RelatedGamesSection(
                                 ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
                             }).collect();
                             let special_chips: Vec<ChipItem> = data.specials.iter().map(|v| {
+                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
+                            }).collect();
+                            let arcade_version_chips: Vec<ChipItem> = data.arcade_versions.iter().map(|v| {
                                 ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
                             }).collect();
                             view! {
@@ -707,6 +711,12 @@ fn RelatedGamesSection(
                                     <GameChipRow
                                         title_key="game_detail.special_versions"
                                         chips=special_chips.clone()
+                                    />
+                                </Show>
+                                <Show when=move || has_arcade_versions>
+                                    <GameChipRow
+                                        title_key="game_detail.arcade_versions"
+                                        chips=arcade_version_chips.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_aliases>

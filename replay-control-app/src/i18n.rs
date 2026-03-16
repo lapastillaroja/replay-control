@@ -273,6 +273,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.delete" => "Delete",
         "game_detail.confirm_delete" => "Confirm Delete",
         "game_detail.regional_variants" => "Regional Variants",
+        "game_detail.arcade_versions" => "Arcade Versions",
         "game_detail.translations" => "Translations",
         "game_detail.hacks" => "Hacks",
         "game_detail.special_versions" => "Special Versions",
