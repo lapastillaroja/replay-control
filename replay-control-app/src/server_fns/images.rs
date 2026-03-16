@@ -36,10 +36,7 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
     let state = expect_context::<crate::api::AppState>();
 
     // Guard: refuse to run during rebuild/import/thumbnail update.
-    if state
-        .metadata_operation_in_progress
-        .load(std::sync::atomic::Ordering::Relaxed)
-    {
+    if state.import.is_busy() {
         return Err(ServerFnError::new(
             "Cannot cleanup while a metadata operation is running",
         ));

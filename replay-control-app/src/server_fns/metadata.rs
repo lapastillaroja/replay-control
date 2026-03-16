@@ -32,7 +32,7 @@ pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnE
         return Err(ServerFnError::new(format!("File not found: {xml_path}")));
     }
 
-    if !state.start_import(path) {
+    if !state.import.start_import(path, state.clone()) {
         return Err(ServerFnError::new(
             "Another metadata operation is already running",
         ));
@@ -46,11 +46,7 @@ pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnE
 #[server(prefix = "/sfn")]
 pub async fn get_import_progress() -> Result<Option<ImportProgress>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state
-        .import_progress
-        .read()
-        .expect("import_progress lock poisoned");
-    Ok(guard.clone())
+    Ok(state.import.progress())
 }
 
 /// Get per-system metadata coverage stats.
@@ -147,7 +143,10 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state.regenerate_metadata().map_err(ServerFnError::new)
+    state
+        .import
+        .regenerate_metadata(&state)
+        .map_err(ServerFnError::new)
 }
 
 /// Check if a metadata operation is currently running (import or thumbnail update).
@@ -155,9 +154,15 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn is_metadata_busy() -> Result<bool, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(state
-        .metadata_operation_in_progress
-        .load(std::sync::atomic::Ordering::Relaxed))
+    Ok(state.import.is_busy())
+}
+
+/// Check if the background game library scan (warmup) is in progress.
+/// Used by the home page to show a "Scanning games..." message.
+#[server(prefix = "/sfn")]
+pub async fn is_scanning() -> Result<bool, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(state.is_warmup_in_progress())
 }
 
 /// Download LaunchBox metadata from the internet, extract, and import.
@@ -165,7 +170,7 @@ pub async fn is_metadata_busy() -> Result<bool, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn download_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    if !state.start_metadata_download() {
+    if !state.import.start_metadata_download(&state) {
         return Err(ServerFnError::new(
             "A metadata operation is already running",
         ));
@@ -177,28 +182,28 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
 /// rescan + enrichment from disk. Use when baked-in data changes or to force
 /// a fresh scan of all systems.
 ///
-/// Sets `metadata_operation_in_progress` so the UI shows a busy banner while
-/// the rebuild runs in the background. The flag is cleared when the background
-/// enrichment task completes (or on error/panic).
+/// Sets the busy flag so the UI shows a busy banner while the rebuild runs
+/// in the background. The flag is cleared when the background enrichment
+/// task completes (or on error/panic).
 #[server(prefix = "/sfn")]
 pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    // Atomically claim the operation slot.
-    if state
-        .metadata_operation_in_progress
-        .swap(true, std::sync::atomic::Ordering::SeqCst)
-    {
+    // Check if already busy (use the import pipeline's shared busy flag).
+    if state.import.is_busy() {
         return Err(ServerFnError::new(
             "Another metadata operation is already running",
         ));
     }
 
-    // Clear L1+L2 cache. invalidate() uses the direct DB mutex (not
-    // metadata_db()), so it works fine with the flag already set.
+    // We need the raw busy flag for spawn_cache_enrichment_with_flag.
+    // Use a temporary AtomicBool flag for the enrichment lifecycle.
+    let rebuild_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+
+    // Clear L1+L2 cache.
     state.cache.invalidate();
 
     // Rebuild in background; the flag is cleared when done (or on panic).
-    state.spawn_cache_enrichment_with_flag(state.metadata_operation_in_progress.clone());
+    state.spawn_cache_enrichment_with_flag(rebuild_flag);
     Ok(())
 }

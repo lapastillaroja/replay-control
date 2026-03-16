@@ -93,10 +93,6 @@ pub struct GameLibrary {
     /// Shared flag: true while background startup scan is running.
     /// When set, get_roms() returns empty instead of blocking on L3 scan.
     pub warmup_in_progress: Arc<std::sync::atomic::AtomicBool>,
-    /// Shared reference to AppState's metadata_operation_in_progress flag.
-    /// Prevents with_db/with_db_mut from re-opening a second connection
-    /// while import/thumbnail tasks have taken the DB via guard.take().
-    metadata_op_in_progress: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Cached favorites: per-system set of favorited filenames.
@@ -136,10 +132,7 @@ impl FavoritesCache {
 }
 
 impl GameLibrary {
-    pub(crate) fn new(
-        db: Arc<Mutex<Option<MetadataDb>>>,
-        metadata_op_flag: Arc<std::sync::atomic::AtomicBool>,
-    ) -> Self {
+    pub(crate) fn new(db: Arc<Mutex<Option<MetadataDb>>>) -> Self {
         Self {
             systems: std::sync::RwLock::new(None),
             roms: std::sync::RwLock::new(HashMap::new()),
@@ -148,7 +141,6 @@ impl GameLibrary {
             images: std::sync::RwLock::new(HashMap::new()),
             db,
             warmup_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            metadata_op_in_progress: metadata_op_flag,
         }
     }
 
@@ -162,21 +154,13 @@ impl GameLibrary {
     }
 
     /// Try to open the DB if not yet open, then run a read-only closure.
-    /// Returns None if a metadata operation (import/thumbnail update) has
-    /// taken the connection — avoids opening a second concurrent connection.
+    /// Returns None if the DB can't be opened.
     fn with_db<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
     where
         F: FnOnce(&MetadataDb) -> R,
     {
         let mut guard = self.db.lock().ok()?;
         if guard.is_none() {
-            // Don't re-open while a metadata operation holds the connection.
-            if self
-                .metadata_op_in_progress
-                .load(std::sync::atomic::Ordering::SeqCst)
-            {
-                return None;
-            }
             match MetadataDb::open(&storage.root) {
                 Ok(db) => *guard = Some(db),
                 Err(e) => {
@@ -189,21 +173,13 @@ impl GameLibrary {
     }
 
     /// Try to open the DB if not yet open, then run a mutable closure.
-    /// Returns None if a metadata operation (import/thumbnail update) has
-    /// taken the connection — avoids opening a second concurrent connection.
+    /// Returns None if the DB can't be opened.
     fn with_db_mut<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
     where
         F: FnOnce(&mut MetadataDb) -> R,
     {
         let mut guard = self.db.lock().ok()?;
         if guard.is_none() {
-            // Don't re-open while a metadata operation holds the connection.
-            if self
-                .metadata_op_in_progress
-                .load(std::sync::atomic::Ordering::SeqCst)
-            {
-                return None;
-            }
             match MetadataDb::open(&storage.root) {
                 Ok(db) => *guard = Some(db),
                 Err(e) => {
@@ -319,9 +295,61 @@ impl GameLibrary {
         });
     }
 
-    /// Get cached ROM list for a system, or scan and cache.
-    /// L1 (in-memory) → L2 (SQLite game_library) → L3 (filesystem scan).
+    /// Get cached ROM list for a system.
+    /// Checks L1 (in-memory) → L2 (SQLite game_library).
+    /// If neither has data and warmup is in progress, returns empty.
+    /// Otherwise falls through to a full L3 filesystem scan.
     pub fn get_roms(
+        &self,
+        storage: &StorageLocation,
+        system: &str,
+        region_pref: RegionPreference,
+        region_secondary: Option<RegionPreference>,
+    ) -> Result<Vec<RomEntry>, replay_control_core::error::Error> {
+        // L1/L2: try cached data.
+        if let Some(roms) = self.get_roms_cached(storage, system) {
+            return Ok(roms);
+        }
+
+        // During warmup, return empty — the background pipeline will populate.
+        if self.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::debug!("get_roms({system}): returning empty (warmup in progress)");
+            return Ok(Vec::new());
+        }
+
+        // L3: full filesystem scan (user-triggered, outside warmup).
+        self.scan_and_cache_system(storage, system, region_pref, region_secondary)
+    }
+
+    /// Try L1 (in-memory) then L2 (SQLite) for cached ROM data.
+    /// Returns None if neither has fresh data.
+    fn get_roms_cached(&self, storage: &StorageLocation, system: &str) -> Option<Vec<RomEntry>> {
+        let key = system.to_string();
+        let system_dir = storage.roms_dir().join(system);
+
+        // L1: in-memory cache.
+        if let Ok(guard) = self.roms.read() {
+            if let Some(entry) = guard.get(&key) {
+                if entry.is_fresh(&system_dir) {
+                    return Some(entry.data.clone());
+                }
+            }
+        }
+
+        // L2: SQLite game_library.
+        if let Some(roms) = self.load_roms_from_db(storage, system, &system_dir) {
+            if let Ok(mut guard) = self.roms.write() {
+                guard.insert(key, CacheEntry::new(roms.clone(), &system_dir));
+            }
+            return Some(roms);
+        }
+
+        None
+    }
+
+    /// Scan a system from filesystem and populate L1+L2 cache.
+    /// Called by the background pipeline during warmup and by get_roms() outside warmup.
+    pub fn scan_and_cache_system(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -331,32 +359,6 @@ impl GameLibrary {
         let key = system.to_string();
         let system_dir = storage.roms_dir().join(system);
 
-        // L1: Try in-memory cache.
-        if let Ok(guard) = self.roms.read()
-            && let Some(entry) = guard.get(&key)
-            && entry.is_fresh(&system_dir)
-        {
-            return Ok(entry.data.clone());
-        }
-
-        // L2: Try SQLite game_library.
-        if let Some(roms) = self.load_roms_from_db(storage, system, &system_dir) {
-            // Store in L1.
-            if let Ok(mut guard) = self.roms.write() {
-                guard.insert(key, CacheEntry::new(roms.clone(), &system_dir));
-            }
-            return Ok(roms);
-        }
-
-        // If background warmup is running, return empty instead of blocking
-        // on a full L3 scan. The warmup will populate L2 and subsequent requests
-        // will find data there.
-        if self.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst) {
-            tracing::debug!("L3 scan for {system}: skipped (warmup in progress)");
-            return Ok(Vec::new());
-        }
-
-        // L3: Cache miss — full filesystem scan.
         tracing::debug!("L3 scan for {system}: starting filesystem scan");
         let mut roms = replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)?;
         tracing::debug!("L3 scan for {system}: found {} ROMs", roms.len());
@@ -1684,3 +1686,60 @@ impl GameLibrary {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warmup_flag_lifecycle() {
+        let db = Arc::new(Mutex::new(None));
+        let cache = GameLibrary::new(db);
+
+        // Initially false.
+        assert!(!cache.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst));
+
+        // Set during warmup.
+        cache.warmup_in_progress.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(cache.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst));
+
+        // Cleared after warmup.
+        cache.warmup_in_progress.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(!cache.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn warmup_flag_blocks_l3_scan() {
+        let db = Arc::new(Mutex::new(None));
+        let cache = GameLibrary::new(db);
+
+        // Set warmup in progress.
+        cache.warmup_in_progress.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        // Create a minimal temp storage so get_roms can check the flag.
+        let tmp = std::env::temp_dir().join(format!(
+            "replay-cache-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("roms/test_system")).unwrap();
+        let storage = replay_control_core::storage::StorageLocation::from_path(
+            tmp.clone(),
+            replay_control_core::storage::StorageKind::Sd,
+        );
+
+        // get_roms should return empty during warmup.
+        let result = cache.get_roms(
+            &storage,
+            "test_system",
+            replay_control_core::rom_tags::RegionPreference::Usa,
+            None,
+        );
+        assert!(result.unwrap().is_empty());
+
+        // Clear warmup flag.
+        cache.warmup_in_progress.store(false, std::sync::atomic::Ordering::SeqCst);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}

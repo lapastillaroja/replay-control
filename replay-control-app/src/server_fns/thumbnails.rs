@@ -47,7 +47,7 @@ pub struct DataSourceSummary {
 #[server(prefix = "/sfn")]
 pub async fn update_thumbnails() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    if !state.start_thumbnail_update() {
+    if !state.thumbnails.start_thumbnail_update(&state) {
         return Err(ServerFnError::new(
             "Another metadata operation is already running",
         ));
@@ -59,9 +59,7 @@ pub async fn update_thumbnails() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn cancel_thumbnail_update() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state
-        .thumbnail_cancel
-        .store(true, std::sync::atomic::Ordering::Relaxed);
+    state.thumbnails.request_cancel();
     Ok(())
 }
 
@@ -69,11 +67,7 @@ pub async fn cancel_thumbnail_update() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_thumbnail_progress() -> Result<Option<ThumbnailProgress>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state
-        .thumbnail_progress
-        .read()
-        .expect("thumbnail_progress lock poisoned");
-    Ok(guard.clone())
+    Ok(state.thumbnails.progress())
 }
 
 /// Get data source info for the "Thumbnails (libretro)" section.

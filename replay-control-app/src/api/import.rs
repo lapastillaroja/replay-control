@@ -1,45 +1,71 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
+
+use replay_control_core::metadata_db::MetadataDb;
 
 use super::AppState;
 
-impl AppState {
+// ── ImportPipeline ─────────────────────────────────────────────────
+
+/// Manages metadata imports (LaunchBox XML → metadata DB).
+///
+/// The `busy` flag provides mutual exclusion between import and thumbnail
+/// operations (they share the same flag) **and** serves as a UI indicator.
+pub struct ImportPipeline {
+    /// Shared flag: true while any metadata DB operation is running.
+    /// Shared with `ThumbnailPipeline` for mutual exclusion.
+    busy: Arc<AtomicBool>,
+    progress: Arc<RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
+}
+
+impl ImportPipeline {
+    pub fn new(busy: Arc<AtomicBool>) -> Self {
+        Self {
+            busy,
+            progress: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Check if a metadata operation is currently running.
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::Acquire)
+    }
+
+    /// Get current import progress (clone).
+    pub fn progress(
+        &self,
+    ) -> Option<replay_control_core::metadata_db::ImportProgress> {
+        self.progress.read().expect("import_progress lock poisoned").clone()
+    }
+
     /// Start a background metadata import from a LaunchBox XML file.
     /// Returns `false` if another metadata operation is already running.
-    pub fn start_import(&self, xml_path: PathBuf) -> bool {
+    pub fn start_import(&self, xml_path: PathBuf, state: AppState) -> bool {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
         // Atomically claim the operation slot.
-        if self
-            .metadata_operation_in_progress
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.busy.swap(true, Ordering::SeqCst) {
             return false;
         }
 
         // Check if already running (shouldn't happen with the atomic guard, but be safe).
         {
-            let guard = self
-                .import_progress
-                .read()
-                .expect("import_progress lock poisoned");
+            let guard = self.progress.read().expect("import_progress lock poisoned");
             if let Some(ref p) = *guard
                 && matches!(
                     p.state,
                     ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
                 )
             {
-                self.metadata_operation_in_progress
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                self.busy.store(false, Ordering::SeqCst);
                 return false;
             }
         }
 
         // Set initial progress.
         {
-            let mut guard = self
-                .import_progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.progress.write().expect("import_progress lock poisoned");
             *guard = Some(ImportProgress {
                 state: ImportState::BuildingIndex,
                 processed: 0,
@@ -50,10 +76,10 @@ impl AppState {
             });
         }
 
-        let state = self.clone();
+        let state = state.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            state.run_import_blocking(xml_path, start);
+            state.import.run_import_blocking(&state, xml_path, start);
         });
 
         true
@@ -61,18 +87,18 @@ impl AppState {
 
     /// Clear metadata DB and re-import from `launchbox-metadata.xml` if present.
     /// Returns an error message if the XML file is not found.
-    pub fn regenerate_metadata(&self) -> Result<(), String> {
+    pub fn regenerate_metadata(&self, state: &AppState) -> Result<(), String> {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;
 
         // Clear existing metadata.
-        if let Some(guard) = self.metadata_db()
+        if let Some(guard) = state.metadata_db()
             && let Some(db) = guard.as_ref()
         {
             db.clear().map_err(|e| e.to_string())?;
         }
 
         // Find launchbox-metadata.xml (with fallback to old name) and trigger re-import.
-        let storage = self.storage();
+        let storage = state.storage();
         let rc_dir = storage.rc_dir();
         let xml_path = rc_dir.join(LAUNCHBOX_XML);
         let xml_path = if xml_path.exists() {
@@ -92,48 +118,38 @@ impl AppState {
             ));
         }
 
-        self.start_import(xml_path);
+        self.start_import(xml_path, state.clone());
         Ok(())
     }
 
     /// Download LaunchBox Metadata.zip, extract, clear DB, and re-import.
     /// Runs entirely in a background thread. Returns false if another metadata
     /// operation is already running.
-    pub fn start_metadata_download(&self) -> bool {
+    pub fn start_metadata_download(&self, state: &AppState) -> bool {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
         // Atomically claim the operation slot.
-        if self
-            .metadata_operation_in_progress
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.busy.swap(true, Ordering::SeqCst) {
             return false;
         }
 
         // Check if already running (shouldn't happen with the atomic guard, but be safe).
         {
-            let guard = self
-                .import_progress
-                .read()
-                .expect("import_progress lock poisoned");
+            let guard = self.progress.read().expect("import_progress lock poisoned");
             if let Some(ref p) = *guard
                 && matches!(
                     p.state,
                     ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
                 )
             {
-                self.metadata_operation_in_progress
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                self.busy.store(false, Ordering::SeqCst);
                 return false;
             }
         }
 
         // Set initial progress to Downloading.
         {
-            let mut guard = self
-                .import_progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.progress.write().expect("import_progress lock poisoned");
             *guard = Some(ImportProgress {
                 state: ImportState::Downloading,
                 processed: 0,
@@ -144,7 +160,7 @@ impl AppState {
             });
         }
 
-        let state = self.clone();
+        let state = state.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
             let storage = state.storage();
@@ -155,7 +171,8 @@ impl AppState {
                 Ok(path) => path,
                 Err(e) => {
                     let mut guard = state
-                        .import_progress
+                        .import
+                        .progress
                         .write()
                         .expect("import_progress lock poisoned");
                     if let Some(ref mut p) = *guard {
@@ -163,9 +180,7 @@ impl AppState {
                         p.error = Some(format!("Download failed: {e}"));
                         p.elapsed_secs = start.elapsed().as_secs();
                     }
-                    state
-                        .metadata_operation_in_progress
-                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                    state.import.busy.store(false, Ordering::SeqCst);
                     return;
                 }
             };
@@ -181,7 +196,8 @@ impl AppState {
             // Update elapsed before starting import.
             {
                 let mut guard = state
-                    .import_progress
+                    .import
+                    .progress
                     .write()
                     .expect("import_progress lock poisoned");
                 if let Some(ref mut p) = *guard {
@@ -190,7 +206,7 @@ impl AppState {
             }
 
             // Now run the import (this updates import_progress internally).
-            state.run_import_blocking(xml_path, start);
+            state.import.run_import_blocking(&state, xml_path, start);
         });
 
         true
@@ -198,16 +214,13 @@ impl AppState {
 
     /// Run the metadata import synchronously (called from spawn_blocking).
     /// Separated from start_import to allow reuse from start_metadata_download.
-    fn run_import_blocking(&self, xml_path: PathBuf, start: std::time::Instant) {
+    fn run_import_blocking(&self, state: &AppState, xml_path: PathBuf, start: std::time::Instant) {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
         // Build ROM index.
-        let storage_root = self.storage().root.clone();
+        let storage_root = state.storage().root.clone();
         {
-            let mut guard = self
-                .import_progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.progress.write().expect("import_progress lock poisoned");
             if let Some(ref mut p) = *guard {
                 p.state = ImportState::BuildingIndex;
                 p.elapsed_secs = start.elapsed().as_secs();
@@ -218,47 +231,38 @@ impl AppState {
 
         // Update progress to Parsing.
         {
-            let mut guard = self
-                .import_progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.progress.write().expect("import_progress lock poisoned");
             if let Some(ref mut p) = *guard {
                 p.state = ImportState::Parsing;
                 p.elapsed_secs = start.elapsed().as_secs();
             }
         }
 
-        // Take DB from shared state so we have exclusive ownership for the
-        // duration of the import.  The metadata_operation_in_progress flag
-        // prevents metadata_db() from re-opening a second connection.
-        let db = {
-            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
-            guard.take()
-        };
-        let mut db = match db {
+        // Hold DB lock for the duration of the import. This blocks other
+        // threads' with_db() calls but prevents concurrent connection issues.
+        // TODO: acquire/release per-batch for better concurrency.
+        let db_ref = state.metadata_db.clone();
+        let mut db_guard = db_ref.lock().expect("metadata_db lock poisoned");
+        let db = match db_guard.as_mut() {
             Some(db) => db,
             None => {
                 tracing::error!("Metadata DB unavailable at import start (connection missing)");
-                let mut guard = self
-                    .import_progress
-                    .write()
-                    .expect("import_progress lock poisoned");
+                let mut guard = self.progress.write().expect("import_progress lock poisoned");
                 if let Some(ref mut p) = *guard {
                     p.state = ImportState::Failed;
                     p.error = Some("Metadata DB unavailable".to_string());
                     p.elapsed_secs = start.elapsed().as_secs();
                 }
-                self.metadata_operation_in_progress
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                self.busy.store(false, Ordering::SeqCst);
                 return;
             }
         };
 
-        let progress_ref = self.import_progress.clone();
+        let progress_ref = self.progress.clone();
         let start_ref = start;
         let result = replay_control_core::launchbox::import_launchbox(
             &xml_path,
-            &mut db,
+            db,
             &rom_index,
             |processed, matched, inserted| {
                 let mut guard = progress_ref.write().expect("import_progress lock poisoned");
@@ -271,25 +275,28 @@ impl AppState {
             },
         );
 
-        // Put DB back.
-        {
-            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
-            *guard = Some(db);
-        }
-
         // Invalidate image cache so updated metadata paths are picked up.
-        self.cache.invalidate_images();
+        state.cache.invalidate_images();
 
-        let succeeded = result.is_ok();
+        let (succeeded, parse_result) = match &result {
+            Ok((_, pr)) => (true, Some(pr)),
+            Err(_) => (false, None),
+        };
+
+        // Import LaunchBox alternate names into game_alias table.
+        // Uses the ParseResult from the single-pass XML parse (no re-reading).
+        if let Some(pr) = parse_result {
+            tracing::debug!("Starting LaunchBox alias import ({} alternates, {} game names)",
+                pr.alternate_names.len(), pr.game_names.len());
+            Self::import_launchbox_aliases(db, pr);
+            tracing::debug!("LaunchBox alias import complete");
+        }
 
         // Update final progress.
         {
-            let mut guard = self
-                .import_progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.progress.write().expect("import_progress lock poisoned");
             match result {
-                Ok(stats) => {
+                Ok((stats, _)) => {
                     *guard = Some(ImportProgress {
                         state: ImportState::Complete,
                         processed: stats.total_source,
@@ -309,96 +316,57 @@ impl AppState {
             }
         }
 
-        // Import LaunchBox alternate names into game_alias table.
-        if succeeded {
-            self.import_launchbox_aliases(&xml_path);
+        // Release DB lock before enrichment (enrichment needs it too).
+        tracing::debug!("Import: releasing DB lock, succeeded={succeeded}");
+        drop(db_guard);
+
+        // Re-enrich game library with freshly imported data.
+        // Skip during startup auto-import: the pipeline handles populate/enrichment
+        // sequentially to avoid races. For user-triggered imports, enrich immediately.
+        if succeeded && !state.is_warmup_in_progress() {
+            state.spawn_cache_enrichment();
         }
 
-        // Re-enrich game library with freshly imported ratings.
-        if succeeded {
-            self.spawn_cache_enrichment();
-        }
-
-        // Clear progress after a short delay so SSE clients can read the
-        // terminal state, then the slot becomes None for future operations.
-        let progress_ref = self.import_progress.clone();
-        let flag_ref = self.metadata_operation_in_progress.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-            let mut guard = progress_ref.write().expect("lock");
-            if guard
-                .as_ref()
-                .is_some_and(|p| matches!(p.state, ImportState::Complete | ImportState::Failed))
-            {
-                *guard = None;
-            }
-            flag_ref.store(false, std::sync::atomic::Ordering::SeqCst);
-        });
+        // Clear busy flag immediately. Progress stays in Complete/Failed state
+        // until the next import starts (UI reads it and shows the result).
+        self.busy.store(false, Ordering::SeqCst);
     }
 
-    /// Import LaunchBox `<GameAlternateName>` entries into the `game_alias` table.
+    /// Import LaunchBox alternate names into the `game_alias` table.
     ///
-    /// Parses alternate names from the XML, groups them by DatabaseID,
-    /// then matches them to `game_library` entries via the LaunchBox `<Game>` entries.
-    fn import_launchbox_aliases(&self, xml_path: &std::path::Path) {
-        use replay_control_core::launchbox;
-
-        // Parse alternate names from XML.
-        let alt_names = match launchbox::parse_alternate_names(xml_path) {
-            Ok(names) => names,
-            Err(e) => {
-                tracing::warn!("Failed to parse LaunchBox alternate names: {e}");
-                return;
-            }
-        };
+    /// Uses the `ParseResult` from the single-pass XML parse — no re-reading.
+    fn import_launchbox_aliases(
+        db: &mut MetadataDb,
+        parse_result: &replay_control_core::launchbox::ParseResult,
+    ) {
+        let alt_names = &parse_result.alternate_names;
+        let game_names = &parse_result.game_names;
 
         if alt_names.is_empty() {
             return;
         }
 
-        // Parse primary game names (DatabaseID -> Name) to include in alias groups.
-        let game_names = launchbox::parse_game_names(xml_path).unwrap_or_default();
-
         // Group alternates by DatabaseID -> Vec<(name, region)>.
         // Include the primary game name so that alias groups contain ALL names for a game.
         let mut by_db_id: std::collections::HashMap<String, Vec<(String, String)>> =
             std::collections::HashMap::new();
-        for alt in &alt_names {
+        for alt in alt_names {
             by_db_id
                 .entry(alt.database_id.clone())
                 .or_default()
                 .push((alt.alternate_name.clone(), alt.region.clone()));
         }
         // Add primary game name to each group (with empty region).
-        for (db_id, primary_name) in &game_names {
+        for (db_id, primary_name) in game_names {
             by_db_id
                 .entry(db_id.clone())
                 .or_default()
                 .push((primary_name.clone(), String::new()));
         }
 
-        // We need to match DatabaseIDs to game_library base_titles.
-        // The LaunchBox <Game> entries have DatabaseID and Name fields.
-        // During import, we matched games by normalized title to rom_filename.
-        // We need to re-parse the XML to build a DatabaseID -> Name mapping,
-        // but that would be expensive. Instead, we'll use a simpler approach:
-        // for each alternate name group, normalize the primary game name (from the
-        // <Game> element with that DatabaseID) and find its base_title in game_library.
-        //
-        // Since we don't have a direct DatabaseID -> base_title mapping yet,
-        // we'll match alternate names against game_library base_titles directly:
-        // normalize each alternate name and check if it matches any base_title.
-        // If it does, we add the mapping.
-        //
-        // This is a simplified approach that catches the most common cases.
-
         // Load all base_titles from game_library.
+        tracing::debug!("LaunchBox aliases: loading base_titles from game_library...");
         let base_titles: std::collections::HashMap<String, Vec<String>> = {
-            let guard = self.metadata_db.lock().expect("metadata_db lock");
-            let db = match guard.as_ref() {
-                Some(db) => db,
-                None => return,
-            };
             let systems = db.active_systems().unwrap_or_default();
             let mut map: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
@@ -446,8 +414,6 @@ impl AppState {
 
             if let Some((bt, system)) = matched_bt {
                 // Insert all other alternates as aliases of this base_title.
-                // resolve_to_library_title ensures alias_name uses the library's
-                // actual base_title (with dashes) rather than the external name (with colons).
                 for (alt_name, region) in alts {
                     let resolved = resolve_to_library_title(alt_name, &library_exact, &library_fuzzy);
                     if resolved != bt && !resolved.is_empty() {
@@ -469,22 +435,50 @@ impl AppState {
         }
 
         let count = aliases.len();
-        let mut guard = self.metadata_db.lock().expect("metadata_db lock");
-        if let Some(db) = guard.as_mut() {
-            match db.bulk_insert_aliases(&aliases) {
-                Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
-                Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
-            }
+        match db.bulk_insert_aliases(&aliases) {
+            Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
+            Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
+        }
+    }
+}
+
+// ── ThumbnailPipeline ──────────────────────────────────────────────
+
+/// Manages the two-phase thumbnail pipeline (index + download).
+///
+/// Shares the `busy` flag with `ImportPipeline` for mutual exclusion.
+pub struct ThumbnailPipeline {
+    /// Shared flag: true while any metadata DB operation is running.
+    /// Shared with `ImportPipeline` for mutual exclusion.
+    busy: Arc<AtomicBool>,
+    progress: Arc<RwLock<Option<crate::server_fns::ThumbnailProgress>>>,
+    cancel: Arc<AtomicBool>,
+}
+
+impl ThumbnailPipeline {
+    pub fn new(busy: Arc<AtomicBool>) -> Self {
+        Self {
+            busy,
+            progress: Arc::new(RwLock::new(None)),
+            cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    // ── Thumbnail Update (Manifest + Download) ──────────────────────
+    /// Get current thumbnail pipeline progress (clone).
+    pub fn progress(&self) -> Option<crate::server_fns::ThumbnailProgress> {
+        self.progress.read().expect("thumbnail_progress lock poisoned").clone()
+    }
+
+    /// Request cancellation of the current thumbnail update.
+    pub fn request_cancel(&self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
 
     /// Check if a thumbnail update is already running.
     fn is_thumbnail_update_running(&self) -> bool {
         use crate::server_fns::ThumbnailPhase;
         let guard = self
-            .thumbnail_progress
+            .progress
             .read()
             .expect("thumbnail_progress lock poisoned");
         guard.as_ref().is_some_and(|p| {
@@ -497,30 +491,25 @@ impl AppState {
 
     /// Start the two-phase thumbnail pipeline in the background.
     /// Returns `false` if another metadata operation is already running.
-    pub fn start_thumbnail_update(&self) -> bool {
+    pub fn start_thumbnail_update(&self, state: &AppState) -> bool {
         // Atomically claim the operation slot.
-        if self
-            .metadata_operation_in_progress
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.busy.swap(true, Ordering::SeqCst) {
             return false;
         }
 
         if self.is_thumbnail_update_running() {
-            self.metadata_operation_in_progress
-                .store(false, std::sync::atomic::Ordering::SeqCst);
+            self.busy.store(false, Ordering::SeqCst);
             return false;
         }
 
         use crate::server_fns::{ThumbnailPhase, ThumbnailProgress};
 
-        self.thumbnail_cancel
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.cancel.store(false, Ordering::Relaxed);
 
         // Write initial progress before spawning.
         {
             let mut guard = self
-                .thumbnail_progress
+                .progress
                 .write()
                 .expect("thumbnail_progress lock poisoned");
             *guard = Some(ThumbnailProgress {
@@ -535,58 +524,53 @@ impl AppState {
             });
         }
 
-        let state = self.clone();
+        let state = state.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            state.run_thumbnail_update_blocking(start);
+            state.thumbnails.run_thumbnail_update_blocking(&state, start);
         });
 
         true
     }
 
     /// Run the two-phase thumbnail pipeline (blocking, called from spawn_blocking).
-    fn run_thumbnail_update_blocking(&self, start: std::time::Instant) {
+    fn run_thumbnail_update_blocking(&self, state: &AppState, start: std::time::Instant) {
         use crate::server_fns::{ThumbnailPhase, ThumbnailProgress};
         use replay_control_core::thumbnail_manifest;
         use replay_control_core::thumbnails::ThumbnailKind;
 
-        let storage_root = self.storage().root.clone();
+        let storage_root = state.storage().root.clone();
 
-        // Take DB from shared state so we have exclusive ownership for the
-        // duration of the thumbnail update.  The metadata_operation_in_progress
-        // flag prevents metadata_db() from re-opening a second connection.
-        let db = {
-            let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
-            guard.take()
-        };
-        let mut db = match db {
+        // Lock DB for the duration of the thumbnail update.
+        let db_ref = state.metadata_db.clone();
+        let mut db_guard = db_ref.lock().expect("metadata_db lock poisoned");
+        let db = match db_guard.as_mut() {
             Some(db) => db,
             None => {
                 tracing::error!(
                     "Metadata DB unavailable at thumbnail update start (connection missing)"
                 );
-                let mut guard = self.thumbnail_progress.write().expect("lock");
+                let mut guard = self.progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Failed;
                     p.error = Some("Metadata DB unavailable".to_string());
                     p.elapsed_secs = start.elapsed().as_secs();
                 }
-                self.metadata_operation_in_progress
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                self.busy.store(false, Ordering::SeqCst);
                 return;
             }
         };
 
         // ── Phase 1: Index refresh ──────────────────────────────────
 
-        let progress_ref = self.thumbnail_progress.clone();
-        let cancel_ref = &self.thumbnail_cancel;
+        let progress_ref = self.progress.clone();
+        let cancel_ref = &self.cancel;
 
         // Read GitHub API key from settings (if configured).
         let api_key = replay_control_core::settings::read_github_api_key(&storage_root);
 
         let index_result = thumbnail_manifest::import_all_manifests(
-            &mut db,
+            db,
             &|repos_done, repos_total, current_repo| {
                 let mut guard = progress_ref.write().expect("lock");
                 if let Some(ref mut p) = *guard {
@@ -634,22 +618,19 @@ impl AppState {
                                 .unwrap_or("unknown"),
                         )
                     };
-                    let mut guard = self.thumbnail_progress.write().expect("lock");
+                    let mut guard = self.progress.write().expect("lock");
                     if let Some(ref mut p) = *guard {
                         p.phase = ThumbnailPhase::Failed;
                         p.error = Some(msg);
                         p.elapsed_secs = start.elapsed().as_secs();
                     }
-                    let mut guard = self.metadata_db.lock().expect("lock");
-                    *guard = Some(db);
-                    self.metadata_operation_in_progress
-                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                    self.busy.store(false, Ordering::SeqCst);
                     return;
                 }
 
                 // Update progress with index results.
                 {
-                    let mut guard = self.thumbnail_progress.write().expect("lock");
+                    let mut guard = self.progress.write().expect("lock");
                     if let Some(ref mut p) = *guard {
                         p.entries_indexed = stats.total_entries;
                         p.elapsed_secs = start.elapsed().as_secs();
@@ -658,39 +639,32 @@ impl AppState {
                 stats
             }
             Err(e) => {
-                let mut guard = self.thumbnail_progress.write().expect("lock");
+                let mut guard = self.progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Failed;
                     p.error = Some(format!("Index failed: {e}"));
                     p.elapsed_secs = start.elapsed().as_secs();
                 }
-                // Put DB back before returning.
-                let mut guard = self.metadata_db.lock().expect("lock");
-                *guard = Some(db);
-                self.metadata_operation_in_progress
-                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                self.busy.store(false, Ordering::SeqCst);
                 return;
             }
         };
 
         // Check cancellation between phases.
-        if cancel_ref.load(std::sync::atomic::Ordering::Relaxed) {
-            let mut guard = self.thumbnail_progress.write().expect("lock");
+        if cancel_ref.load(Ordering::Relaxed) {
+            let mut guard = self.progress.write().expect("lock");
             if let Some(ref mut p) = *guard {
                 p.phase = ThumbnailPhase::Cancelled;
                 p.elapsed_secs = start.elapsed().as_secs();
             }
-            let mut guard = self.metadata_db.lock().expect("lock");
-            *guard = Some(db);
-            self.metadata_operation_in_progress
-                .store(false, std::sync::atomic::Ordering::SeqCst);
+            self.busy.store(false, Ordering::SeqCst);
             return;
         }
 
         // ── Phase 2: Download images ────────────────────────────────
 
         {
-            let mut guard = self.thumbnail_progress.write().expect("lock");
+            let mut guard = self.progress.write().expect("lock");
             if let Some(ref mut p) = *guard {
                 p.phase = ThumbnailPhase::Downloading;
                 p.step_done = 0;
@@ -701,8 +675,8 @@ impl AppState {
         }
 
         // Collect systems that have ROMs and a thumbnail repo.
-        let storage = self.storage();
-        let systems = self.cache.get_systems(&storage);
+        let storage = state.storage();
+        let systems = state.cache.get_systems(&storage);
         let supported: Vec<String> = systems
             .into_iter()
             .filter(|s| s.game_count > 0)
@@ -717,7 +691,7 @@ impl AppState {
         let mut total_failed = 0usize;
 
         for (i, system) in supported.iter().enumerate() {
-            if cancel_ref.load(std::sync::atomic::Ordering::Relaxed) {
+            if cancel_ref.load(Ordering::Relaxed) {
                 break;
             }
 
@@ -727,7 +701,7 @@ impl AppState {
 
             // Update progress for this system.
             {
-                let mut guard = self.thumbnail_progress.write().expect("lock");
+                let mut guard = self.progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
                     p.current_label = system_display.clone();
                     p.step_done = i;
@@ -736,12 +710,12 @@ impl AppState {
                 }
             }
 
-            let progress_ref = self.thumbnail_progress.clone();
+            let progress_ref = self.progress.clone();
             let prev_downloaded = total_downloaded;
 
             // Download boxart for this system.
             let result = thumbnail_manifest::download_system_thumbnails(
-                &db,
+                db,
                 &storage_root,
                 system,
                 ThumbnailKind::Boxart,
@@ -773,10 +747,10 @@ impl AppState {
             }
 
             // Also download snaps for this system.
-            if !cancel_ref.load(std::sync::atomic::Ordering::Relaxed) {
+            if !cancel_ref.load(Ordering::Relaxed) {
                 let prev_downloaded = total_downloaded;
                 let result = thumbnail_manifest::download_system_thumbnails(
-                    &db,
+                    db,
                     &storage_root,
                     system,
                     ThumbnailKind::Snap,
@@ -803,28 +777,25 @@ impl AppState {
 
             // Update DB image paths for this system (same as the existing import does).
             // Use the ROM filenames to update game_metadata box_art_path / screenshot_path.
-            Self::update_image_paths_from_disk(&mut db, &storage_root, system);
+            Self::update_image_paths_from_disk(db, &storage_root, system);
         }
 
-        // Put DB back.
-        {
-            let mut guard = self.metadata_db.lock().expect("lock");
-            *guard = Some(db);
-        }
+        // Release DB lock before enrichment.
+        drop(db_guard);
 
         // Invalidate the image cache so new thumbnails are picked up.
-        self.cache.invalidate_images();
+        state.cache.invalidate_images();
 
-        let cancelled = cancel_ref.load(std::sync::atomic::Ordering::Relaxed);
+        let cancelled = cancel_ref.load(Ordering::Relaxed);
 
         // Re-enrich game library with freshly downloaded box art.
         if !cancelled {
-            self.spawn_cache_enrichment();
+            state.spawn_cache_enrichment();
         }
 
         // Set final progress.
         {
-            let mut guard = self.thumbnail_progress.write().expect("lock");
+            let mut guard = self.progress.write().expect("lock");
             if cancelled {
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Cancelled;
@@ -861,30 +832,16 @@ impl AppState {
             }
         }
 
-        // Clear progress after a short delay so SSE clients can read the
-        // terminal state, then the slot becomes None for future operations.
-        let progress_ref = self.thumbnail_progress.clone();
-        let flag_ref = self.metadata_operation_in_progress.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-            let mut guard = progress_ref.write().expect("lock");
-            if guard.as_ref().is_some_and(|p| {
-                matches!(
-                    p.phase,
-                    ThumbnailPhase::Complete | ThumbnailPhase::Failed | ThumbnailPhase::Cancelled
-                )
-            }) {
-                *guard = None;
-            }
-            flag_ref.store(false, std::sync::atomic::Ordering::SeqCst);
-        });
+        // Clear busy flag immediately. Progress stays in terminal state
+        // until the next thumbnail update starts.
+        self.busy.store(false, Ordering::SeqCst);
     }
 
     /// Scan the media directory for a system and update game_metadata image paths.
     /// Uses fuzzy matching (base title + version-stripped) to bridge naming gaps
     /// between ROM filenames and libretro-thumbnails manifest names.
     fn update_image_paths_from_disk(
-        db: &mut replay_control_core::metadata_db::MetadataDb,
+        db: &mut MetadataDb,
         storage_root: &std::path::Path,
         system: &str,
     ) {
@@ -1041,5 +998,67 @@ impl AppState {
         {
             tracing::warn!("Failed to update image paths for {system}: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn import_and_thumbnail_share_busy_flag() {
+        let busy = Arc::new(AtomicBool::new(false));
+        let import = ImportPipeline::new(busy.clone());
+        let thumbnails = ThumbnailPipeline::new(busy.clone());
+
+        assert!(!import.is_busy());
+
+        // Simulate import claiming the slot.
+        busy.store(true, Ordering::SeqCst);
+        assert!(import.is_busy());
+        // Thumbnail pipeline should also see it as busy (mutual exclusion).
+        assert!(thumbnails.progress().is_none());
+        // The busy flag is shared.
+        busy.store(false, Ordering::SeqCst);
+        assert!(!import.is_busy());
+    }
+
+    #[test]
+    fn import_progress_initially_none() {
+        let busy = Arc::new(AtomicBool::new(false));
+        let import = ImportPipeline::new(busy);
+        assert!(import.progress().is_none());
+    }
+
+    #[test]
+    fn thumbnail_progress_initially_none() {
+        let busy = Arc::new(AtomicBool::new(false));
+        let thumbnails = ThumbnailPipeline::new(busy);
+        assert!(thumbnails.progress().is_none());
+    }
+
+    #[test]
+    fn thumbnail_cancel_initially_false() {
+        let busy = Arc::new(AtomicBool::new(false));
+        let thumbnails = ThumbnailPipeline::new(busy);
+        // Requesting cancel should not panic.
+        thumbnails.request_cancel();
+    }
+
+    #[test]
+    fn mutual_exclusion_prevents_concurrent_operations() {
+        let busy = Arc::new(AtomicBool::new(false));
+        let _import = ImportPipeline::new(busy.clone());
+        let _thumbnails = ThumbnailPipeline::new(busy.clone());
+
+        // First swap claims the slot.
+        assert!(!busy.swap(true, Ordering::SeqCst));
+        // Second swap detects it's already claimed.
+        assert!(busy.swap(true, Ordering::SeqCst));
+        // Release.
+        busy.store(false, Ordering::SeqCst);
+        // Now claiming works again.
+        assert!(!busy.swap(true, Ordering::SeqCst));
     }
 }

@@ -1,13 +1,15 @@
-mod background;
+pub(crate) mod background;
 pub(crate) mod cache;
 pub mod favorites;
-mod import;
+pub mod import;
 pub mod recents;
 pub mod roms;
 pub mod system_info;
 pub mod upload;
 
+pub use background::BackgroundManager;
 pub use cache::GameLibrary;
+pub use import::{ImportPipeline, ThumbnailPipeline};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -33,15 +35,10 @@ pub struct AppState {
     /// User data DB handle (lazily opened on first access).
     pub(crate) user_data_db:
         Arc<std::sync::Mutex<Option<replay_control_core::user_data_db::UserDataDb>>>,
-    /// Progress of the current metadata import (None = no import running).
-    pub import_progress:
-        Arc<std::sync::RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
-    /// Progress of the current thumbnail update pipeline (None = no update running).
-    pub thumbnail_progress: Arc<std::sync::RwLock<Option<crate::server_fns::ThumbnailProgress>>>,
-    /// Set to `true` to request cancellation of the current thumbnail update.
-    pub thumbnail_cancel: Arc<std::sync::atomic::AtomicBool>,
-    /// Guard: true while any metadata DB operation is running (import or thumbnail update).
-    pub metadata_operation_in_progress: Arc<std::sync::atomic::AtomicBool>,
+    /// Import pipeline (metadata import operations).
+    pub import: Arc<ImportPipeline>,
+    /// Thumbnail pipeline (index + download operations).
+    pub thumbnails: Arc<ThumbnailPipeline>,
     /// Track in-flight on-demand thumbnail downloads to avoid duplicates.
     pub pending_downloads: Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
 }
@@ -100,20 +97,24 @@ impl AppState {
             .map_err(|e| format!("Failed to open user data DB: {e}"))?;
         tracing::info!("User data DB ready at {}", user_data_db.db_path().display());
         let user_data_db = Arc::new(std::sync::Mutex::new(Some(user_data_db)));
-        let metadata_op_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Shared busy flag for mutual exclusion between import and thumbnail operations.
+        let busy_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let import = Arc::new(ImportPipeline::new(busy_flag.clone()));
+        let thumbnails = Arc::new(ThumbnailPipeline::new(busy_flag.clone()));
+
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
-            cache: Arc::new(GameLibrary::new(metadata_db.clone(), metadata_op_flag.clone())),
+            cache: Arc::new(GameLibrary::new(metadata_db.clone())),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(None)),
             metadata_db,
             user_data_db,
-            import_progress: Arc::new(std::sync::RwLock::new(None)),
-            thumbnail_progress: Arc::new(std::sync::RwLock::new(None)),
-            thumbnail_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            metadata_operation_in_progress: metadata_op_flag,
+            import,
+            thumbnails,
             pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
         })
     }
@@ -125,8 +126,7 @@ impl AppState {
     }
 
     /// Get a lock on the metadata DB, lazily opening it on first access.
-    /// Returns None if the DB can't be opened (e.g., storage not available)
-    /// or if a metadata operation has temporarily taken the connection.
+    /// Returns None if the DB can't be opened (e.g., storage not available).
     /// Re-opens automatically if the DB file was deleted externally.
     pub fn metadata_db(
         &self,
@@ -141,15 +141,6 @@ impl AppState {
             *guard = None;
         }
         if guard.is_none() {
-            // If a metadata operation (import, thumbnail update) has taken the
-            // connection out of the mutex, don't open a second one — two nolock
-            // connections to the same file causes corruption.
-            if self
-                .metadata_operation_in_progress
-                .load(std::sync::atomic::Ordering::SeqCst)
-            {
-                return None;
-            }
             let storage = self.storage();
             match replay_control_core::metadata_db::MetadataDb::open(&storage.root) {
                 Ok(db) => {
@@ -307,6 +298,14 @@ impl AppState {
         } else {
             PathBuf::from("/media/sd/config/replay.cfg")
         }
+    }
+
+    /// Check if the background warmup (L2 populate) is in progress.
+    /// Used by the UI to show a "Scanning games..." message.
+    pub fn is_warmup_in_progress(&self) -> bool {
+        self.cache
+            .warmup_in_progress
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

@@ -61,18 +61,9 @@ mod ssr {
             }
         };
 
-        // Spawn background storage re-detection task.
-        app_state.clone().spawn_storage_watcher();
-
-        // Verify L2 cache freshness in background (re-scans stale systems).
-        app_state.spawn_cache_verification();
-
-        // Watch the roms/ directory for changes on local storage (inotify).
-        // Skipped for NFS where inotify is unreliable for remote changes.
-        app_state.spawn_rom_watcher();
-
-        // Auto-import metadata if launchbox-metadata.xml exists and DB is empty.
-        app_state.spawn_auto_import();
+        // Start the ordered background pipeline (auto-import → cache verify →
+        // enrichment) and filesystem watchers.
+        api::BackgroundManager::start(app_state.clone());
 
         // Explicitly register all server functions (inventory auto-registration
         // doesn't work when the functions are in a library crate).
@@ -148,6 +139,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRelatedGames>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::IsScanning>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
@@ -241,7 +233,7 @@ mod ssr {
                 use std::convert::Infallible;
                 use tokio_stream::StreamExt;
 
-                let progress_ref = state.import_progress.clone();
+                let import = state.import.clone();
                 let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
 
                 let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
@@ -250,8 +242,8 @@ mod ssr {
                 .map({
                     let idle_count = idle_count.clone();
                     move |_| {
-                        let guard = progress_ref.read().expect("lock");
-                        let is_active = guard.as_ref().is_some_and(|p| {
+                        let progress = import.progress();
+                        let is_active = progress.as_ref().is_some_and(|p| {
                             use replay_control_app::server_fns::ImportState;
                             matches!(
                                 p.state,
@@ -260,11 +252,10 @@ mod ssr {
                                     | ImportState::Parsing
                             )
                         });
-                        let json = match &*guard {
+                        let json = match &progress {
                             Some(p) => serde_json::to_string(p).unwrap_or_default(),
                             None => "null".to_string(),
                         };
-                        drop(guard);
 
                         if is_active {
                             idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
@@ -296,7 +287,7 @@ mod ssr {
                 use std::convert::Infallible;
                 use tokio_stream::StreamExt;
 
-                let progress_ref = state.thumbnail_progress.clone();
+                let thumbnails = state.thumbnails.clone();
                 let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
 
                 let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
@@ -305,19 +296,18 @@ mod ssr {
                 .map({
                     let idle_count = idle_count.clone();
                     move |_| {
-                        let guard = progress_ref.read().expect("lock");
-                        let is_active = guard.as_ref().is_some_and(|p| {
+                        let progress = thumbnails.progress();
+                        let is_active = progress.as_ref().is_some_and(|p| {
                             use replay_control_app::server_fns::ThumbnailPhase;
                             matches!(
                                 p.phase,
                                 ThumbnailPhase::Indexing | ThumbnailPhase::Downloading
                             )
                         });
-                        let json = match &*guard {
+                        let json = match &progress {
                             Some(p) => serde_json::to_string(p).unwrap_or_default(),
                             None => "null".to_string(),
                         };
-                        drop(guard);
 
                         if is_active {
                             idle_count.store(0, std::sync::atomic::Ordering::Relaxed);

@@ -4,7 +4,8 @@ use crate::i18n::{t, use_i18n};
 use crate::server_fns;
 
 /// A thin banner shown at the top of the page when a metadata operation
-/// (import or thumbnail update) is running. Polls every ~3 seconds and
+/// (import or thumbnail update) is running, or when the background game
+/// library scan (warmup) is in progress. Polls every ~3 seconds and
 /// auto-hides when the operation finishes.
 #[component]
 pub fn MetadataBusyBanner() -> impl IntoView {
@@ -42,13 +43,25 @@ pub fn MetadataBusyBanner() -> impl IntoView {
         async move { server_fns::is_metadata_busy().await.unwrap_or(false) }
     });
 
+    let scanning = LocalResource::new(move || {
+        let _ = tick.get();
+        async move { server_fns::is_scanning().await.unwrap_or(false) }
+    });
+
     let is_busy = move || busy.get().map(|v| *v).unwrap_or(false);
+    let is_scanning = move || scanning.get().map(|v| *v).unwrap_or(false);
 
     view! {
-        <Show when=is_busy fallback=|| ()>
+        <Show when=move || is_busy() || is_scanning() fallback=|| ()>
             <div class="metadata-busy-banner">
                 <span class="metadata-busy-spinner"></span>
-                {move || t(i18n.locale.get(), "metadata.busy_banner")}
+                {move || {
+                    if is_busy() {
+                        t(i18n.locale.get(), "metadata.busy_banner")
+                    } else {
+                        t(i18n.locale.get(), "metadata.scanning_banner")
+                    }
+                }}
             </div>
         </Show>
     }

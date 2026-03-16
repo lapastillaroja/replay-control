@@ -435,6 +435,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
             "Metadata update in progress \u{2014} some info may be temporarily unavailable"
         }
 
+        // Scanning banner (background warmup)
+        "metadata.scanning_banner" => "Scanning game library...",
+
         // Common
         "common.loading" => "Loading...",
         "common.error" => "Error",

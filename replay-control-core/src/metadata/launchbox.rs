@@ -104,7 +104,7 @@ pub fn import_launchbox(
     db: &mut MetadataDb,
     rom_index: &HashMap<(String, String), Vec<String>>,
     mut on_progress: impl FnMut(usize, usize, usize),
-) -> Result<ImportStats> {
+) -> Result<(ImportStats, ParseResult)> {
     let file = std::fs::File::open(xml_path).map_err(|e| Error::io(xml_path, e))?;
     let reader = std::io::BufReader::with_capacity(256 * 1024, file);
 
@@ -124,7 +124,7 @@ pub fn import_launchbox(
     // Batch buffer for bulk inserts.
     let mut batch: Vec<(String, String, GameMetadata)> = Vec::with_capacity(1000);
 
-    parse_xml(reader, &platforms, |game, system_folder| {
+    let parse_result = parse_xml(reader, &platforms, |game, system_folder| {
         stats.total_source += 1;
 
         // Skip entries with no useful data.
@@ -203,7 +203,7 @@ pub fn import_launchbox(
         stats.skipped,
     );
 
-    Ok(stats)
+    Ok((stats, parse_result))
 }
 
 /// Stream-parse the LaunchBox XML, calling `on_game` for each game entry
@@ -211,20 +211,33 @@ pub fn import_launchbox(
 ///
 /// When a platform maps to multiple system folders, `on_game` is called once
 /// per folder so the caller can match against all of them.
+/// Result of a single-pass XML parse: game metadata + alternate names + DatabaseID→Name map.
+pub struct ParseResult {
+    /// Alternate names grouped by DatabaseID.
+    pub alternate_names: Vec<LbAlternateName>,
+    /// DatabaseID → primary game name mapping (for including primary name in alias groups).
+    pub game_names: HashMap<String, String>,
+}
+
 fn parse_xml<R: BufRead>(
     reader: R,
     platforms: &HashMap<&str, Vec<&str>>,
     mut on_game: impl FnMut(&LbGame, &str),
-) -> Result<()> {
+) -> Result<ParseResult> {
     let mut xml = Reader::from_reader(reader);
     xml.config_mut().trim_text(true);
 
     let mut buf = Vec::with_capacity(4096);
-    let mut in_game = false;
+
+    // State tracking for which element type we're inside.
+    #[derive(PartialEq)]
+    enum Context { None, Game, AlternateName }
+    let mut ctx = Context::None;
     let mut current_tag = String::new();
 
-    // Current game fields being accumulated.
+    // Game fields.
     let mut name = String::new();
+    let mut database_id = String::new();
     let mut platform = String::new();
     let mut overview = String::new();
     let mut rating: Option<f64> = None;
@@ -235,37 +248,57 @@ fn parse_xml<R: BufRead>(
     let mut release_year: Option<u16> = None;
     let mut cooperative = false;
 
+    // AlternateName fields.
+    let mut alt_name = String::new();
+    let mut alt_db_id = String::new();
+    let mut alt_region = String::new();
+
+    // Collected results.
+    let mut alternate_names = Vec::new();
+    let mut game_names = HashMap::new();
+
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
                 let qname = e.name();
                 let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
-                if tag == "Game" {
-                    in_game = true;
-                    name.clear();
-                    platform.clear();
-                    overview.clear();
-                    rating = None;
-                    publisher.clear();
-                    developer.clear();
-                    genre.clear();
-                    max_players = None;
-                    release_year = None;
-                    cooperative = false;
-                } else if in_game {
-                    current_tag = tag.to_string();
+                match tag {
+                    "Game" => {
+                        ctx = Context::Game;
+                        name.clear();
+                        database_id.clear();
+                        platform.clear();
+                        overview.clear();
+                        rating = None;
+                        publisher.clear();
+                        developer.clear();
+                        genre.clear();
+                        max_players = None;
+                        release_year = None;
+                        cooperative = false;
+                    }
+                    "GameAlternateName" => {
+                        ctx = Context::AlternateName;
+                        alt_name.clear();
+                        alt_db_id.clear();
+                        alt_region.clear();
+                    }
+                    _ => {
+                        if ctx != Context::None {
+                            current_tag = tag.to_string();
+                        }
+                    }
                 }
             }
             Ok(Event::Text(ref e)) => {
-                if in_game {
-                    let text = e.unescape().unwrap_or_default();
-                    match current_tag.as_str() {
+                let text = e.unescape().unwrap_or_default();
+                match ctx {
+                    Context::Game => match current_tag.as_str() {
                         "Name" => name.push_str(&text),
+                        "DatabaseID" => database_id.push_str(&text),
                         "Platform" => platform.push_str(&text),
                         "Overview" => overview.push_str(&text),
-                        "CommunityRating" => {
-                            rating = text.parse::<f64>().ok();
-                        }
+                        "CommunityRating" => { rating = text.parse::<f64>().ok(); }
                         "Publisher" => publisher.push_str(&text),
                         "Developer" => developer.push_str(&text),
                         "Genres" => genre.push_str(&text),
@@ -277,7 +310,6 @@ fn parse_xml<R: BufRead>(
                             }
                         }
                         "ReleaseDate" => {
-                            // Format: "1999-01-01T00:00:00-05:00" — extract year.
                             if text.len() >= 4 {
                                 release_year = text[..4].parse::<u16>().ok();
                             }
@@ -286,44 +318,74 @@ fn parse_xml<R: BufRead>(
                             cooperative = text.trim().eq_ignore_ascii_case("true");
                         }
                         _ => {}
-                    }
+                    },
+                    Context::AlternateName => match current_tag.as_str() {
+                        "AlternateName" => alt_name.push_str(&text),
+                        "DatabaseID" => alt_db_id.push_str(&text),
+                        "Region" => alt_region.push_str(&text),
+                        _ => {}
+                    },
+                    Context::None => {}
                 }
             }
             Ok(Event::End(ref e)) => {
                 let qname = e.name();
                 let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
-                if tag == "Game" && in_game {
-                    in_game = false;
-                    if let Some(system_folders) = platforms.get(platform.as_str()) {
-                        let game = LbGame {
-                            name: std::mem::take(&mut name),
-                            overview: std::mem::take(&mut overview),
-                            rating,
-                            publisher: std::mem::take(&mut publisher),
-                            developer: std::mem::take(&mut developer),
-                            genre: std::mem::take(&mut genre),
-                            max_players,
-                            release_year,
-                            cooperative,
-                        };
-                        for folder in system_folders {
-                            on_game(&game, folder);
+                match tag {
+                    "Game" if ctx == Context::Game => {
+                        ctx = Context::None;
+                        // Collect DatabaseID → Name mapping for all games.
+                        if !name.is_empty() && !database_id.is_empty() {
+                            game_names.insert(database_id.clone(), name.clone());
+                        }
+                        // Callback for games matching our platforms.
+                        if let Some(system_folders) = platforms.get(platform.as_str()) {
+                            let game = LbGame {
+                                name: std::mem::take(&mut name),
+                                overview: std::mem::take(&mut overview),
+                                rating,
+                                publisher: std::mem::take(&mut publisher),
+                                developer: std::mem::take(&mut developer),
+                                genre: std::mem::take(&mut genre),
+                                max_players,
+                                release_year,
+                                cooperative,
+                            };
+                            for folder in system_folders {
+                                on_game(&game, folder);
+                            }
                         }
                     }
+                    "GameAlternateName" if ctx == Context::AlternateName => {
+                        ctx = Context::None;
+                        if !alt_name.is_empty() && !alt_db_id.is_empty() {
+                            alternate_names.push(LbAlternateName {
+                                database_id: std::mem::take(&mut alt_db_id),
+                                alternate_name: std::mem::take(&mut alt_name),
+                                region: std::mem::take(&mut alt_region),
+                            });
+                        }
+                    }
+                    _ => {}
                 }
                 current_tag.clear();
             }
             Ok(Event::Eof) => break,
             Err(e) => {
                 tracing::warn!("XML parse error at position {}: {e}", xml.error_position());
-                // Continue parsing despite errors.
             }
             _ => {}
         }
         buf.clear();
     }
 
-    Ok(())
+    tracing::info!(
+        "LaunchBox alternate names: {} entries parsed, {} game names collected",
+        alternate_names.len(),
+        game_names.len()
+    );
+
+    Ok(ParseResult { alternate_names, game_names })
 }
 
 /// A parsed alternate name entry from LaunchBox XML.
@@ -331,143 +393,6 @@ pub struct LbAlternateName {
     pub database_id: String,
     pub alternate_name: String,
     pub region: String,
-}
-
-/// Parse `<GameAlternateName>` entries from a LaunchBox metadata XML file.
-///
-/// Returns a list of alternate name entries grouped by database ID.
-/// These can be matched to games during import to populate the `game_alias` table.
-pub fn parse_alternate_names(xml_path: &Path) -> Result<Vec<LbAlternateName>> {
-    let file = std::fs::File::open(xml_path).map_err(|e| Error::io(xml_path, e))?;
-    let reader = std::io::BufReader::with_capacity(256 * 1024, file);
-    let mut xml = Reader::from_reader(reader);
-    xml.config_mut().trim_text(true);
-
-    let mut buf = Vec::with_capacity(4096);
-    let mut in_alt = false;
-    let mut current_tag = String::new();
-
-    let mut alt_name = String::new();
-    let mut database_id = String::new();
-    let mut region = String::new();
-
-    let mut results = Vec::new();
-
-    loop {
-        match xml.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                let qname = e.name();
-                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
-                if tag == "GameAlternateName" {
-                    in_alt = true;
-                    alt_name.clear();
-                    database_id.clear();
-                    region.clear();
-                } else if in_alt {
-                    current_tag = tag.to_string();
-                }
-            }
-            Ok(Event::Text(ref e)) => {
-                if in_alt {
-                    let text = e.unescape().unwrap_or_default();
-                    match current_tag.as_str() {
-                        "AlternateName" => alt_name.push_str(&text),
-                        "DatabaseID" => database_id.push_str(&text),
-                        "Region" => region.push_str(&text),
-                        _ => {}
-                    }
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                let qname = e.name();
-                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
-                if tag == "GameAlternateName" && in_alt {
-                    in_alt = false;
-                    if !alt_name.is_empty() && !database_id.is_empty() {
-                        results.push(LbAlternateName {
-                            database_id: std::mem::take(&mut database_id),
-                            alternate_name: std::mem::take(&mut alt_name),
-                            region: std::mem::take(&mut region),
-                        });
-                    }
-                }
-                current_tag.clear();
-            }
-            Ok(Event::Eof) => break,
-            Err(e) => {
-                tracing::warn!("XML parse error (alternates) at position {}: {e}", xml.error_position());
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-
-    tracing::info!("LaunchBox alternate names: {} entries parsed", results.len());
-    Ok(results)
-}
-
-/// Parse `<Game>` entries from a LaunchBox metadata XML file, returning a
-/// mapping of DatabaseID → primary game name. Used to include the primary
-/// name in alias groups alongside `<GameAlternateName>` entries.
-pub fn parse_game_names(xml_path: &Path) -> Result<HashMap<String, String>> {
-    let file = std::fs::File::open(xml_path).map_err(|e| Error::io(xml_path, e))?;
-    let reader = std::io::BufReader::with_capacity(256 * 1024, file);
-    let mut xml = Reader::from_reader(reader);
-    xml.config_mut().trim_text(true);
-
-    let mut buf = Vec::with_capacity(4096);
-    let mut in_game = false;
-    let mut current_tag = String::new();
-    let mut name = String::new();
-    let mut database_id = String::new();
-
-    let mut results = HashMap::new();
-
-    loop {
-        match xml.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                let qname = e.name();
-                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
-                if tag == "Game" {
-                    in_game = true;
-                    name.clear();
-                    database_id.clear();
-                } else if in_game {
-                    current_tag = tag.to_string();
-                }
-            }
-            Ok(Event::Text(ref e)) => {
-                if in_game {
-                    let text = e.unescape().unwrap_or_default();
-                    match current_tag.as_str() {
-                        "Name" => name.push_str(&text),
-                        "DatabaseID" => database_id.push_str(&text),
-                        _ => {}
-                    }
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                let qname = e.name();
-                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
-                if tag == "Game" && in_game {
-                    in_game = false;
-                    if !name.is_empty() && !database_id.is_empty() {
-                        results.insert(
-                            std::mem::take(&mut database_id),
-                            std::mem::take(&mut name),
-                        );
-                    }
-                }
-                current_tag.clear();
-            }
-            Ok(Event::Eof) => break,
-            Err(_) => {}
-            _ => {}
-        }
-        buf.clear();
-    }
-
-    Ok(results)
 }
 
 /// The LaunchBox metadata download URL.

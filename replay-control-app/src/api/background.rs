@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use super::AppState;
@@ -7,99 +7,188 @@ use super::cache::dir_mtime;
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
 
-impl AppState {
-    /// Verify L2 cache freshness on startup and pre-populate if empty.
-    ///
-    /// - If L2 is empty (fresh DB): scan all systems with games to populate game library.
-    ///   This ensures recommendations work on first visit without waiting for the user
-    ///   to browse every system page.
-    /// - If L2 has data: verify stored mtimes against filesystem, re-scan stale systems.
-    pub fn spawn_cache_verification(&self) {
-        let state = self.clone();
+/// Simple RAII guard that runs a closure on drop.
+mod guard {
+    pub struct Guard<F: FnOnce()>(Option<F>);
+    impl<F: FnOnce()> Guard<F> {
+        pub fn new(f: F) -> Self { Self(Some(f)) }
+    }
+    impl<F: FnOnce()> Drop for Guard<F> {
+        fn drop(&mut self) {
+            if let Some(f) = self.0.take() { f(); }
+        }
+    }
+}
+
+/// Orchestrates the ordered background startup pipeline and long-running watchers.
+///
+/// Pipeline order:
+///   Phase 1: Auto-import (if launchbox XML exists + DB empty)
+///      ↓ waits for completion
+///   Phase 2: Cache verification / populate (scan all systems)
+///      ↓ waits for completion
+///   Phase 3: Enrichment (box art matching, metadata)
+///      ↓ done
+///   Phase 4: Start watchers (ROM dir, config file)
+pub struct BackgroundManager;
+
+impl BackgroundManager {
+    /// Start the ordered background pipeline.
+    pub fn start(state: AppState) {
+        // Spawn the ordered pipeline in a blocking thread.
+        let pipeline_state = state.clone();
         tokio::spawn(async move {
-            // Brief delay to let the server start accepting requests.
-            tokio::time::sleep(Duration::from_secs(2)).await;
-
             let result = tokio::task::spawn_blocking(move || {
-                let storage = state.storage();
-                let roms_dir = storage.roms_dir();
-                let region_pref = state.region_preference();
-                let region_secondary = state.region_preference_secondary();
-
-                // Skip if a metadata operation (e.g. auto-import) is already
-                // running — opening a second nolock connection to the same DB
-                // file would cause corruption.
-                if state
-                    .metadata_operation_in_progress
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                {
-                    tracing::debug!(
-                        "Metadata operation in progress, skipping cache verification"
-                    );
-                    return;
-                }
-
-                // Load all cached system metadata from L2.
-                // Use metadata_db() accessor (which handles lazy open) instead
-                // of locking the raw mutex, so we go through the standard path.
-                let cached_meta = {
-                    let guard = state.metadata_db();
-                    guard.and_then(|g| g.as_ref()?.load_all_system_meta().ok())
-                };
-
-                let cached_meta = cached_meta.unwrap_or_default();
-
-                if cached_meta.is_empty() {
-                    // Fresh DB — pre-populate L2 for all systems with games.
-                    state.cache.warmup_in_progress.store(true, std::sync::atomic::Ordering::SeqCst);
-                    Self::populate_all_systems(&state, &storage, region_pref, region_secondary);
-                    state.cache.warmup_in_progress.store(false, std::sync::atomic::Ordering::SeqCst);
-                    return;
-                }
-
-                let mut stale_count = 0usize;
-                for meta in &cached_meta {
-                    let system_dir = roms_dir.join(&meta.system);
-                    let current_mtime_secs = dir_mtime(&system_dir).and_then(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH)
-                            .ok()
-                            .map(|d| d.as_secs() as i64)
-                    });
-
-                    let is_stale = match (meta.dir_mtime_secs, current_mtime_secs) {
-                        (Some(cached), Some(current)) => cached != current,
-                        (Some(_), None) => false, // Can't read — trust cache
-                        (None, _) => true,        // No mtime stored — re-scan
-                    };
-
-                    if is_stale {
-                        tracing::info!("Background re-scan: {} (mtime changed)", meta.system);
-                        // Trigger L3 scan by calling get_roms (which writes through to L1+L2).
-                        let _ = state.cache.get_roms(&storage, &meta.system, region_pref, region_secondary);
-                        state.cache.enrich_system_cache(&state, &meta.system);
-                        stale_count += 1;
-                    }
-                }
-
-                if stale_count > 0 {
-                    tracing::info!(
-                        "Background cache verification: re-scanned {stale_count} stale system(s)"
-                    );
-                    // Also refresh the systems list since counts may have changed.
-                    let _ = state.cache.get_systems(&storage);
-                } else {
-                    tracing::debug!(
-                        "Background cache verification: all {} system(s) fresh",
-                        cached_meta.len()
-                    );
-                }
+                Self::run_pipeline(&pipeline_state);
             })
             .await;
 
             if let Err(e) = result {
-                tracing::warn!("Background cache verification failed: {e}");
+                tracing::warn!("Background startup pipeline failed: {e}");
             }
         });
+
+        // Start watchers immediately (they're independent of the pipeline).
+        state.clone().spawn_storage_watcher();
+        state.spawn_rom_watcher();
+    }
+
+    /// Run the ordered startup pipeline (blocking).
+    fn run_pipeline(state: &AppState) {
+        // Brief delay to let the server start accepting requests.
+        std::thread::sleep(Duration::from_secs(2));
+
+        // Set warmup flag for the pipeline duration. Cleared on drop via guard,
+        // even if a phase panics.
+        state
+            .cache
+            .warmup_in_progress
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let warmup_flag = state.cache.warmup_in_progress.clone();
+        let _warmup_guard = guard::Guard::new(move || {
+            warmup_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        // Phase 1: Auto-import (if launchbox XML exists + DB empty).
+        Self::phase_auto_import(state);
+
+        // Wait for auto-import to finish before proceeding.
+        while state.import.is_busy() {
+            std::thread::sleep(Duration::from_millis(500));
+        }
+
+        // Phase 2: Cache verification / populate.
+        Self::phase_cache_verification(state);
+
+        // Phase 3: Enrichment is handled inside populate_all_systems
+        // (which calls enrich_system_cache for each system). For stale
+        // systems in the verification path, enrichment is also inline.
+        // Nothing extra to do here.
+    }
+
+    /// Phase 1: Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
+    fn phase_auto_import(state: &AppState) {
+        use replay_control_core::metadata_db::LAUNCHBOX_XML;
+
+        let storage = state.storage();
+        let rc_dir = storage.rc_dir();
+        let xml_path = rc_dir.join(LAUNCHBOX_XML);
+        // Backwards-compat: fall back to old upstream name if user placed it manually.
+        let xml_path = if xml_path.exists() {
+            xml_path
+        } else {
+            let old_path = rc_dir.join("Metadata.xml");
+            if old_path.exists() {
+                old_path
+            } else {
+                xml_path
+            }
+        };
+
+        if !xml_path.exists() {
+            tracing::debug!(
+                "No {} at {}, skipping auto-import",
+                LAUNCHBOX_XML,
+                xml_path.display()
+            );
+            return;
+        }
+
+        let should_import = if let Some(guard) = state.metadata_db() {
+            guard
+                .as_ref()
+                .and_then(|db| db.is_empty().ok())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if should_import {
+            tracing::info!("Auto-importing metadata from {}", xml_path.display());
+            state.import.start_import(xml_path, state.clone());
+        }
+    }
+
+    /// Phase 2: Verify L2 cache freshness on startup and pre-populate if empty.
+    fn phase_cache_verification(state: &AppState) {
+        let storage = state.storage();
+        let roms_dir = storage.roms_dir();
+        let region_pref = state.region_preference();
+        let region_secondary = state.region_preference_secondary();
+
+        // Load all cached system metadata from L2.
+        let cached_meta = {
+            let guard = state.metadata_db();
+            guard.and_then(|g| g.as_ref()?.load_all_system_meta().ok())
+        };
+
+        let cached_meta = cached_meta.unwrap_or_default();
+
+        if cached_meta.is_empty() {
+            // Fresh DB -- pre-populate L2 for all systems with games.
+            // warmup_in_progress is already set by run_pipeline().
+            Self::populate_all_systems(state, &storage, region_pref, region_secondary);
+            return;
+        }
+
+        let mut stale_count = 0usize;
+        for meta in &cached_meta {
+            let system_dir = roms_dir.join(&meta.system);
+            let current_mtime_secs = dir_mtime(&system_dir).and_then(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_secs() as i64)
+            });
+
+            let is_stale = match (meta.dir_mtime_secs, current_mtime_secs) {
+                (Some(cached), Some(current)) => cached != current,
+                (Some(_), None) => false, // Can't read -- trust cache
+                (None, _) => true,        // No mtime stored -- re-scan
+            };
+
+            if is_stale {
+                tracing::info!("Background re-scan: {} (mtime changed)", meta.system);
+                let _ =
+                    state
+                        .cache
+                        .scan_and_cache_system(&storage, &meta.system, region_pref, region_secondary);
+                state.cache.enrich_system_cache(state, &meta.system);
+                stale_count += 1;
+            }
+        }
+
+        if stale_count > 0 {
+            tracing::info!(
+                "Background cache verification: re-scanned {stale_count} stale system(s)"
+            );
+            // Also refresh the systems list since counts may have changed.
+            let _ = state.cache.get_systems(&storage);
+        } else {
+            tracing::debug!(
+                "Background cache verification: all {} system(s) fresh",
+                cached_meta.len()
+            );
+        }
     }
 
     /// Pre-populate L2 cache for all systems that have games.
@@ -121,8 +210,14 @@ impl AppState {
         let start = std::time::Instant::now();
         let mut total_roms = 0usize;
         for sys in &with_games {
-            match state.cache.get_roms(storage, &sys.folder_name, region_pref, region_secondary) {
-                Ok(roms) => total_roms += roms.len(),
+            match state
+                .cache
+                .scan_and_cache_system(storage, &sys.folder_name, region_pref, region_secondary)
+            {
+                Ok(roms) => {
+                    tracing::debug!("L2 warmup: {} — {} ROMs", sys.folder_name, roms.len());
+                    total_roms += roms.len();
+                }
                 Err(e) => tracing::warn!("L2 warmup: failed to scan {}: {e}", sys.folder_name),
             }
         }
@@ -140,13 +235,19 @@ impl AppState {
         }
 
         tracing::info!(
-            "L2 warmup: done — {} ROMs across {} systems in {:.1}s",
+            "L2 warmup: done -- {} ROMs across {} systems in {:.1}s",
             total_roms,
             with_games.len(),
             start.elapsed().as_secs_f64()
         );
     }
+}
 
+// ── Methods that remain on AppState ────────────────────────────────
+//
+// These are the long-running watchers and the cache enrichment helper
+// that various parts of the code still call on AppState.
+impl AppState {
     /// Re-enrich game library for all systems after a metadata or thumbnail import.
     /// If game library is empty (e.g., DB was deleted and recreated during import),
     /// does a full populate first (scan ROMs + enrich). Otherwise just enriches
@@ -179,17 +280,28 @@ impl AppState {
                 let region_pref = state.region_preference();
                 let region_secondary = state.region_preference_secondary();
 
-                // Check if game library is empty — if so, populate before enriching.
-                let is_empty = state.cache.with_db_read(&storage, |db| {
-                    db.load_all_system_meta().map(|m| m.is_empty()).unwrap_or(true)
-                }).unwrap_or(true);
+                // Check if game library is empty -- if so, populate before enriching.
+                let is_empty = state
+                    .cache
+                    .with_db_read(&storage, |db| {
+                        db.load_all_system_meta()
+                            .map(|m| m.is_empty())
+                            .unwrap_or(true)
+                    })
+                    .unwrap_or(true);
 
                 if is_empty {
                     tracing::info!("Post-import: game library is empty, running full populate");
-                    Self::populate_all_systems(&state, &storage, region_pref, region_secondary);
+                    BackgroundManager::populate_all_systems_public(
+                        &state,
+                        &storage,
+                        region_pref,
+                        region_secondary,
+                    );
                 } else {
                     let systems = state.cache.get_systems(&storage);
-                    let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
+                    let with_games: Vec<_> =
+                        systems.iter().filter(|s| s.game_count > 0).collect();
                     tracing::info!(
                         "Post-import enrichment: updating {} system(s)",
                         with_games.len()
@@ -216,53 +328,10 @@ impl AppState {
 
             // Always clear the operation-in-progress flag, even after a panic.
             if let Some(flag) = done_flag {
-                flag.store(false, std::sync::atomic::Ordering::SeqCst);
+                flag.store(false, Ordering::SeqCst);
                 tracing::debug!("Cache enrichment: cleared metadata_operation_in_progress flag");
             }
         });
-    }
-
-    /// Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
-    pub fn spawn_auto_import(&self) {
-        use replay_control_core::metadata_db::LAUNCHBOX_XML;
-
-        let storage = self.storage();
-        let rc_dir = storage.rc_dir();
-        let xml_path = rc_dir.join(LAUNCHBOX_XML);
-        // Backwards-compat: fall back to old upstream name if user placed it manually.
-        let xml_path = if xml_path.exists() {
-            xml_path
-        } else {
-            let old_path = rc_dir.join("Metadata.xml");
-            if old_path.exists() {
-                old_path
-            } else {
-                xml_path
-            }
-        };
-
-        if !xml_path.exists() {
-            tracing::debug!(
-                "No {} at {}, skipping auto-import",
-                LAUNCHBOX_XML,
-                xml_path.display()
-            );
-            return;
-        }
-
-        let should_import = if let Some(guard) = self.metadata_db() {
-            guard
-                .as_ref()
-                .and_then(|db| db.is_empty().ok())
-                .unwrap_or(false)
-        } else {
-            false
-        };
-
-        if should_import {
-            tracing::info!("Auto-importing metadata from {}", xml_path.display());
-            self.start_import(xml_path);
-        }
     }
 
     /// Spawn a background task that watches `replay.cfg` for changes and
@@ -293,7 +362,7 @@ impl AppState {
             // The 60-second poll always runs as a fallback.
             let mut interval =
                 tokio::time::interval(std::time::Duration::from_secs(STORAGE_CHECK_INTERVAL));
-            // Skip the first (immediate) tick — we just initialized.
+            // Skip the first (immediate) tick -- we just initialized.
             interval.tick().await;
             loop {
                 interval.tick().await;
@@ -308,10 +377,10 @@ impl AppState {
 
     /// Try to set up a `notify` filesystem watcher on the config file.
     /// Returns `true` if the watcher was started successfully.
-    async fn try_start_config_watcher(state: AppState, config_path: PathBuf) -> bool {
+    async fn try_start_config_watcher(state: AppState, config_path: std::path::PathBuf) -> bool {
         use notify::{RecursiveMode, Watcher, recommended_watcher};
 
-        // Watch the parent directory — the file itself may not exist yet, and
+        // Watch the parent directory -- the file itself may not exist yet, and
         // some editors write to a temp file then rename, which only shows up as
         // an event on the directory.
         let watch_dir = match config_path.parent() {
@@ -362,7 +431,7 @@ impl AppState {
         tracing::info!("Watching {} for config changes", watch_dir.display());
 
         // Spawn the event-processing loop. We keep `watcher` alive by moving
-        // it into this task — dropping it would stop watching.
+        // it into this task -- dropping it would stop watching.
         tokio::spawn(async move {
             let _watcher = watcher; // prevent drop
 
@@ -401,7 +470,7 @@ impl AppState {
                             break;
                         }
                         Err(_) => {
-                            // Timeout — debounce window expired
+                            // Timeout -- debounce window expired
                             break;
                         }
                     }
@@ -480,7 +549,7 @@ impl AppState {
     ///
     /// When a top-level change is detected in the `roms/` directory itself
     /// (new system directory created), triggers a `get_systems` refresh.
-    async fn try_start_rom_watcher(state: AppState, roms_dir: PathBuf) -> bool {
+    async fn try_start_rom_watcher(state: AppState, roms_dir: std::path::PathBuf) -> bool {
         use notify::{RecursiveMode, Watcher, recommended_watcher};
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
@@ -564,14 +633,12 @@ impl AppState {
                     }
                 }
 
-                // Skip if a metadata operation is running (import, thumbnail
-                // update) — opening a second nolock DB connection would corrupt.
-                if state
-                    .metadata_operation_in_progress
-                    .load(std::sync::atomic::Ordering::SeqCst)
+                // Skip if startup warmup or a metadata operation is running.
+                if state.cache.warmup_in_progress.load(Ordering::Acquire)
+                    || state.import.is_busy()
                 {
                     tracing::debug!(
-                        "Metadata operation in progress, skipping ROM watcher rescan"
+                        "Background operation in progress, skipping ROM watcher rescan"
                     );
                     continue;
                 }
@@ -599,7 +666,12 @@ impl AppState {
                             affected.iter().cloned().collect::<Vec<_>>().join(", ")
                         );
                         for system in &affected {
-                            let _ = state_clone.cache.get_roms(&storage, system, region_pref, region_secondary);
+                            let _ = state_clone.cache.scan_and_cache_system(
+                                &storage,
+                                system,
+                                region_pref,
+                                region_secondary,
+                            );
                             state_clone.cache.enrich_system_cache(&state_clone, system);
                         }
                     }
@@ -608,18 +680,13 @@ impl AppState {
                     // created or removed), refresh the systems list to discover
                     // new systems and update game counts.
                     if roms_dir_changed {
-                        tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
-                        // invalidate_system already cleared L1 systems cache,
-                        // so get_systems will go through L2 (now updated by
-                        // get_roms above) or L3.
+                        tracing::info!(
+                            "ROM watcher: roms/ directory changed, refreshing systems"
+                        );
                         let systems = state_clone.cache.get_systems(&storage);
-                        // Enrich any newly discovered systems that weren't in
-                        // the affected set (e.g., the system directory was
-                        // created in a previous event batch, and ROMs are being
-                        // added now via a separate copy operation).
                         for sys in &systems {
                             if sys.game_count > 0 && !affected.contains(&sys.folder_name) {
-                                let _ = state_clone.cache.get_roms(
+                                let _ = state_clone.cache.scan_and_cache_system(
                                     &storage,
                                     &sys.folder_name,
                                     region_pref,
@@ -631,8 +698,6 @@ impl AppState {
                             }
                         }
                     } else if !affected.is_empty() {
-                        // Game counts may have changed — refresh the systems
-                        // list. L1 was already cleared by invalidate_system.
                         let _ = state_clone.cache.get_systems(&storage);
                     }
                 })
@@ -655,11 +720,6 @@ impl AppState {
 
     /// Extract system folder names from event paths and detect top-level
     /// roms/ directory changes.
-    ///
-    /// Event paths are absolute (e.g., `/media/usb/roms/nintendo_snes/game.sfc`).
-    /// We strip the `roms_dir` prefix and take the first path component as
-    /// the system folder name. If the event is directly on a child of
-    /// `roms/` (e.g., a new directory was created), we flag `roms_dir_changed`.
     fn collect_rom_event_systems(
         event: &notify::Event,
         roms_dir: &std::path::Path,
@@ -688,7 +748,7 @@ impl AppState {
             }
 
             // If the event path has only one component (no further child),
-            // it's a direct child of roms/ — either a new system directory
+            // it's a direct child of roms/ -- either a new system directory
             // was created or an entry was removed.
             if components.next().is_none() {
                 *roms_dir_changed = true;
@@ -696,5 +756,17 @@ impl AppState {
 
             affected_systems.insert(system_name.into_owned());
         }
+    }
+}
+
+impl BackgroundManager {
+    /// Public wrapper for populate_all_systems, used by spawn_cache_enrichment.
+    pub(crate) fn populate_all_systems_public(
+        state: &AppState,
+        storage: &replay_control_core::storage::StorageLocation,
+        region_pref: replay_control_core::rom_tags::RegionPreference,
+        region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
+    ) {
+        Self::populate_all_systems(state, storage, region_pref, region_secondary);
     }
 }
