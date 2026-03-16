@@ -100,11 +100,12 @@ impl AppState {
             .map_err(|e| format!("Failed to open user data DB: {e}"))?;
         tracing::info!("User data DB ready at {}", user_data_db.db_path().display());
         let user_data_db = Arc::new(std::sync::Mutex::new(Some(user_data_db)));
+        let metadata_op_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
-            cache: Arc::new(GameLibrary::new(metadata_db.clone())),
+            cache: Arc::new(GameLibrary::new(metadata_db.clone(), metadata_op_flag.clone())),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(None)),
             metadata_db,
@@ -112,7 +113,7 @@ impl AppState {
             import_progress: Arc::new(std::sync::RwLock::new(None)),
             thumbnail_progress: Arc::new(std::sync::RwLock::new(None)),
             thumbnail_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            metadata_operation_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            metadata_operation_in_progress: metadata_op_flag,
             pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
         })
     }
@@ -275,6 +276,22 @@ impl AppState {
                 let mut guard = self.storage.write().expect("storage lock poisoned");
                 *guard = new_storage;
             }
+
+            // Close old DB connections so they re-open at the new storage root
+            // on next access.  The cache's `db` field is the same Arc, so
+            // setting metadata_db to None also affects cache.with_db().
+            {
+                let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+                *guard = None;
+            }
+            {
+                let mut guard = self
+                    .user_data_db
+                    .lock()
+                    .expect("user_data_db lock poisoned");
+                *guard = None;
+            }
+
             self.cache.invalidate();
         }
 

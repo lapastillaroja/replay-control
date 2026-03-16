@@ -93,6 +93,10 @@ pub struct GameLibrary {
     /// Shared flag: true while background startup scan is running.
     /// When set, get_roms() returns empty instead of blocking on L3 scan.
     pub warmup_in_progress: Arc<std::sync::atomic::AtomicBool>,
+    /// Shared reference to AppState's metadata_operation_in_progress flag.
+    /// Prevents with_db/with_db_mut from re-opening a second connection
+    /// while import/thumbnail tasks have taken the DB via guard.take().
+    metadata_op_in_progress: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Cached favorites: per-system set of favorited filenames.
@@ -132,7 +136,10 @@ impl FavoritesCache {
 }
 
 impl GameLibrary {
-    pub(crate) fn new(db: Arc<Mutex<Option<MetadataDb>>>) -> Self {
+    pub(crate) fn new(
+        db: Arc<Mutex<Option<MetadataDb>>>,
+        metadata_op_flag: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
         Self {
             systems: std::sync::RwLock::new(None),
             roms: std::sync::RwLock::new(HashMap::new()),
@@ -141,6 +148,7 @@ impl GameLibrary {
             images: std::sync::RwLock::new(HashMap::new()),
             db,
             warmup_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            metadata_op_in_progress: metadata_op_flag,
         }
     }
 
@@ -154,12 +162,21 @@ impl GameLibrary {
     }
 
     /// Try to open the DB if not yet open, then run a read-only closure.
+    /// Returns None if a metadata operation (import/thumbnail update) has
+    /// taken the connection — avoids opening a second concurrent connection.
     fn with_db<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
     where
         F: FnOnce(&MetadataDb) -> R,
     {
         let mut guard = self.db.lock().ok()?;
         if guard.is_none() {
+            // Don't re-open while a metadata operation holds the connection.
+            if self
+                .metadata_op_in_progress
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return None;
+            }
             match MetadataDb::open(&storage.root) {
                 Ok(db) => *guard = Some(db),
                 Err(e) => {
@@ -172,12 +189,21 @@ impl GameLibrary {
     }
 
     /// Try to open the DB if not yet open, then run a mutable closure.
+    /// Returns None if a metadata operation (import/thumbnail update) has
+    /// taken the connection — avoids opening a second concurrent connection.
     fn with_db_mut<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
     where
         F: FnOnce(&mut MetadataDb) -> R,
     {
         let mut guard = self.db.lock().ok()?;
         if guard.is_none() {
+            // Don't re-open while a metadata operation holds the connection.
+            if self
+                .metadata_op_in_progress
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return None;
+            }
             match MetadataDb::open(&storage.root) {
                 Ok(db) => *guard = Some(db),
                 Err(e) => {

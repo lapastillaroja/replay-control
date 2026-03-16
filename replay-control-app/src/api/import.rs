@@ -228,30 +228,30 @@ impl AppState {
             }
         }
 
-        // Take DB from state.
+        // Take DB from shared state so we have exclusive ownership for the
+        // duration of the import.  The metadata_operation_in_progress flag
+        // prevents metadata_db() from re-opening a second connection.
         let db = {
             let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
             guard.take()
         };
         let mut db = match db {
             Some(db) => db,
-            None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
-                Ok(db) => db,
-                Err(e) => {
-                    let mut guard = self
-                        .import_progress
-                        .write()
-                        .expect("import_progress lock poisoned");
-                    if let Some(ref mut p) = *guard {
-                        p.state = ImportState::Failed;
-                        p.error = Some(format!("Cannot open metadata DB: {e}"));
-                        p.elapsed_secs = start.elapsed().as_secs();
-                    }
-                    self.metadata_operation_in_progress
-                        .store(false, std::sync::atomic::Ordering::SeqCst);
-                    return;
+            None => {
+                tracing::error!("Metadata DB unavailable at import start (connection missing)");
+                let mut guard = self
+                    .import_progress
+                    .write()
+                    .expect("import_progress lock poisoned");
+                if let Some(ref mut p) = *guard {
+                    p.state = ImportState::Failed;
+                    p.error = Some("Metadata DB unavailable".to_string());
+                    p.elapsed_secs = start.elapsed().as_secs();
                 }
-            },
+                self.metadata_operation_in_progress
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                return;
+            }
         };
 
         let progress_ref = self.import_progress.clone();
@@ -552,27 +552,29 @@ impl AppState {
 
         let storage_root = self.storage().root.clone();
 
-        // Take DB from state.
+        // Take DB from shared state so we have exclusive ownership for the
+        // duration of the thumbnail update.  The metadata_operation_in_progress
+        // flag prevents metadata_db() from re-opening a second connection.
         let db = {
             let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
             guard.take()
         };
         let mut db = match db {
             Some(db) => db,
-            None => match replay_control_core::metadata_db::MetadataDb::open(&storage_root) {
-                Ok(db) => db,
-                Err(e) => {
-                    let mut guard = self.thumbnail_progress.write().expect("lock");
-                    if let Some(ref mut p) = *guard {
-                        p.phase = ThumbnailPhase::Failed;
-                        p.error = Some(format!("Cannot open metadata DB: {e}"));
-                        p.elapsed_secs = start.elapsed().as_secs();
-                    }
-                    self.metadata_operation_in_progress
-                        .store(false, std::sync::atomic::Ordering::SeqCst);
-                    return;
+            None => {
+                tracing::error!(
+                    "Metadata DB unavailable at thumbnail update start (connection missing)"
+                );
+                let mut guard = self.thumbnail_progress.write().expect("lock");
+                if let Some(ref mut p) = *guard {
+                    p.phase = ThumbnailPhase::Failed;
+                    p.error = Some("Metadata DB unavailable".to_string());
+                    p.elapsed_secs = start.elapsed().as_secs();
                 }
-            },
+                self.metadata_operation_in_progress
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                return;
+            }
         };
 
         // ── Phase 1: Index refresh ──────────────────────────────────
