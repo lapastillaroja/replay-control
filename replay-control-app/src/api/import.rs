@@ -32,6 +32,19 @@ impl ImportPipeline {
         self.busy.load(Ordering::Acquire)
     }
 
+    /// Atomically claim the shared busy flag. Returns `true` if the slot was
+    /// successfully claimed (was previously free). Callers must ensure the flag
+    /// is cleared when their operation completes.
+    pub fn claim_busy(&self) -> bool {
+        !self.busy.swap(true, Ordering::SeqCst)
+    }
+
+    /// Get a clone of the shared busy flag Arc, for passing to
+    /// `spawn_cache_enrichment_with_flag` (which clears it on completion).
+    pub fn busy_flag(&self) -> Arc<AtomicBool> {
+        self.busy.clone()
+    }
+
     /// Get current import progress (clone).
     pub fn progress(
         &self,
@@ -1060,5 +1073,25 @@ mod tests {
         busy.store(false, Ordering::SeqCst);
         // Now claiming works again.
         assert!(!busy.swap(true, Ordering::SeqCst));
+    }
+
+    #[test]
+    fn claim_busy_returns_true_when_free() {
+        let busy = Arc::new(AtomicBool::new(false));
+        let import = ImportPipeline::new(busy.clone());
+
+        // First claim succeeds.
+        assert!(import.claim_busy());
+        assert!(import.is_busy());
+
+        // Second claim fails (already held).
+        assert!(!import.claim_busy());
+
+        // Release via busy_flag.
+        import.busy_flag().store(false, Ordering::SeqCst);
+        assert!(!import.is_busy());
+
+        // Can claim again.
+        assert!(import.claim_busy());
     }
 }

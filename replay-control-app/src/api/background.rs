@@ -22,14 +22,11 @@ mod guard {
 
 /// Orchestrates the ordered background startup pipeline and long-running watchers.
 ///
-/// Pipeline order:
-///   Phase 1: Auto-import (if launchbox XML exists + DB empty)
-///      ↓ waits for completion
-///   Phase 2: Cache verification / populate (scan all systems)
-///      ↓ waits for completion
-///   Phase 3: Enrichment (box art matching, metadata)
-///      ↓ done
-///   Phase 4: Start watchers (ROM dir, config file)
+/// Pipeline phases (sequential, blocking):
+///   1. Auto-import — if a LaunchBox XML file exists and the DB is empty
+///   2. Cache populate/verify — scan all systems, enrich box art + ratings
+///
+/// Filesystem watchers (config file, ROM directory) run independently.
 pub struct BackgroundManager;
 
 impl BackgroundManager {
@@ -63,10 +60,10 @@ impl BackgroundManager {
         state
             .cache
             .warmup_in_progress
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+            .store(true, Ordering::SeqCst);
         let warmup_flag = state.cache.warmup_in_progress.clone();
         let _warmup_guard = guard::Guard::new(move || {
-            warmup_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+            warmup_flag.store(false, Ordering::SeqCst);
         });
 
         // Phase 1: Auto-import (if launchbox XML exists + DB empty).
@@ -77,13 +74,8 @@ impl BackgroundManager {
             std::thread::sleep(Duration::from_millis(500));
         }
 
-        // Phase 2: Cache verification / populate.
+        // Phase 2: Cache verification / populate (enrichment is inline).
         Self::phase_cache_verification(state);
-
-        // Phase 3: Enrichment is handled inside populate_all_systems
-        // (which calls enrich_system_cache for each system). For stale
-        // systems in the verification path, enrichment is also inline.
-        // Nothing extra to do here.
     }
 
     /// Phase 1: Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
@@ -194,7 +186,7 @@ impl BackgroundManager {
     /// Pre-populate L2 cache for all systems that have games.
     /// Called on startup when the game library is empty (fresh DB or after clear).
     /// After populating ROMs, enriches box art URLs and ratings.
-    fn populate_all_systems(
+    pub(crate) fn populate_all_systems(
         state: &AppState,
         storage: &replay_control_core::storage::StorageLocation,
         region_pref: replay_control_core::rom_tags::RegionPreference,
@@ -274,7 +266,7 @@ impl AppState {
         std::thread::spawn(move || {
             // Use catch_unwind to guarantee the done_flag is cleared even if
             // anything in the enrichment pipeline panics. Without this, a panic
-            // leaves metadata_operation_in_progress stuck forever.
+            // leaves the busy flag stuck forever.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let storage = state.storage();
                 let region_pref = state.region_preference();
@@ -292,7 +284,7 @@ impl AppState {
 
                 if is_empty {
                     tracing::info!("Post-import: game library is empty, running full populate");
-                    BackgroundManager::populate_all_systems_public(
+                    BackgroundManager::populate_all_systems(
                         &state,
                         &storage,
                         region_pref,
@@ -326,10 +318,10 @@ impl AppState {
                 tracing::error!("Cache enrichment panicked: {msg}");
             }
 
-            // Always clear the operation-in-progress flag, even after a panic.
+            // Always clear the busy flag, even after a panic.
             if let Some(flag) = done_flag {
                 flag.store(false, Ordering::SeqCst);
-                tracing::debug!("Cache enrichment: cleared metadata_operation_in_progress flag");
+                tracing::debug!("Cache enrichment: cleared busy flag");
             }
         });
     }
@@ -756,17 +748,5 @@ impl AppState {
 
             affected_systems.insert(system_name.into_owned());
         }
-    }
-}
-
-impl BackgroundManager {
-    /// Public wrapper for populate_all_systems, used by spawn_cache_enrichment.
-    pub(crate) fn populate_all_systems_public(
-        state: &AppState,
-        storage: &replay_control_core::storage::StorageLocation,
-        region_pref: replay_control_core::rom_tags::RegionPreference,
-        region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
-    ) {
-        Self::populate_all_systems(state, storage, region_pref, region_secondary);
     }
 }

@@ -182,28 +182,25 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
 /// rescan + enrichment from disk. Use when baked-in data changes or to force
 /// a fresh scan of all systems.
 ///
-/// Sets the busy flag so the UI shows a busy banner while the rebuild runs
-/// in the background. The flag is cleared when the background enrichment
-/// task completes (or on error/panic).
+/// Claims the shared busy flag so the UI shows a busy banner and concurrent
+/// import/thumbnail operations are blocked while the rebuild runs in the
+/// background. The flag is cleared when the background enrichment task
+/// completes (or on error/panic).
 #[server(prefix = "/sfn")]
 pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    // Check if already busy (use the import pipeline's shared busy flag).
-    if state.import.is_busy() {
+    // Atomically claim the shared busy flag (same one used by import + thumbnails).
+    if !state.import.claim_busy() {
         return Err(ServerFnError::new(
             "Another metadata operation is already running",
         ));
     }
 
-    // We need the raw busy flag for spawn_cache_enrichment_with_flag.
-    // Use a temporary AtomicBool flag for the enrichment lifecycle.
-    let rebuild_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-
     // Clear L1+L2 cache.
     state.cache.invalidate();
 
-    // Rebuild in background; the flag is cleared when done (or on panic).
-    state.spawn_cache_enrichment_with_flag(rebuild_flag);
+    // Rebuild in background; the shared busy flag is cleared when done (or on panic).
+    state.spawn_cache_enrichment_with_flag(state.import.busy_flag());
     Ok(())
 }
