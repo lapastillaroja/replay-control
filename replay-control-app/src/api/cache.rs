@@ -90,6 +90,9 @@ pub struct GameLibrary {
     images: std::sync::RwLock<HashMap<String, ImageIndex>>,
     /// Shared reference to the metadata DB for L2 persistent cache.
     db: Arc<Mutex<Option<MetadataDb>>>,
+    /// Shared flag: true while background startup scan is running.
+    /// When set, get_roms() returns empty instead of blocking on L3 scan.
+    pub warmup_in_progress: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Cached favorites: per-system set of favorited filenames.
@@ -137,6 +140,7 @@ impl GameLibrary {
             recents: std::sync::RwLock::new(None),
             images: std::sync::RwLock::new(HashMap::new()),
             db,
+            warmup_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -316,6 +320,14 @@ impl GameLibrary {
                 guard.insert(key, CacheEntry::new(roms.clone(), &system_dir));
             }
             return Ok(roms);
+        }
+
+        // If background warmup is running, return empty instead of blocking
+        // on a full L3 scan. The warmup will populate L2 and subsequent requests
+        // will find data there.
+        if self.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::debug!("L3 scan for {system}: skipped (warmup in progress)");
+            return Ok(Vec::new());
         }
 
         // L3: Cache miss — full filesystem scan.

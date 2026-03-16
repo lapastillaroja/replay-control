@@ -51,7 +51,9 @@ impl AppState {
 
                 if cached_meta.is_empty() {
                     // Fresh DB — pre-populate L2 for all systems with games.
+                    state.cache.warmup_in_progress.store(true, std::sync::atomic::Ordering::SeqCst);
                     Self::populate_all_systems(&state, &storage, region_pref, region_secondary);
+                    state.cache.warmup_in_progress.store(false, std::sync::atomic::Ordering::SeqCst);
                     return;
                 }
 
