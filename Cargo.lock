@@ -2044,6 +2044,7 @@ dependencies = [
 name = "replay-control-core"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "csv",
  "phf",
  "phf_codegen",

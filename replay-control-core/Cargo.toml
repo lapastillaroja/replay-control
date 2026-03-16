@@ -16,6 +16,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 quick-xml = { version = "0.37", optional = true }
+crc32fast = "1"
 
 [[bin]]
 name = "metadata_report"

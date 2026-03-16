@@ -16,6 +16,7 @@ pub use game::rom_tags;
 mod library;
 pub use library::favorites;
 pub use library::recents;
+pub use library::rom_hash;
 pub use library::roms;
 
 pub mod settings;

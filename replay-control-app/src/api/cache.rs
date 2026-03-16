@@ -320,14 +320,19 @@ impl GameLibrary {
 
         // L3: Cache miss — full filesystem scan.
         tracing::debug!("L3 scan for {system}: starting filesystem scan");
-        let roms = replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)?;
+        let mut roms = replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)?;
         tracing::debug!("L3 scan for {system}: found {} ROMs", roms.len());
+
+        // Hash-and-identify step: for hash-eligible systems, compute CRC32 hashes
+        // and look up canonical names in the embedded No-Intro DAT data.
+        let hash_results = self.hash_roms_for_system(storage, system, &mut roms);
+
         if let Ok(mut guard) = self.roms.write() {
             guard.insert(key.clone(), CacheEntry::new(roms.clone(), &system_dir));
         }
 
         // Write-through to L2.
-        self.save_roms_to_db(storage, system, &roms, &system_dir);
+        self.save_roms_to_db(storage, system, &roms, &system_dir, &hash_results);
 
         Ok(roms)
     }
@@ -413,6 +418,94 @@ impl GameLibrary {
         Some(roms)
     }
 
+    /// Hash ROM files for a hash-eligible system and apply identification results.
+    ///
+    /// For eligible systems (cartridge-based with No-Intro CRC data), this:
+    /// 1. Loads cached hashes from the database
+    /// 2. Computes CRC32 for new/modified files
+    /// 3. Looks up CRC32 in the No-Intro index
+    /// 4. Overrides display names for matched ROMs (via `GameRef::new()` with the
+    ///    canonical No-Intro name)
+    ///
+    /// Returns a map of rom_filename -> HashResult for use by save_roms_to_db.
+    fn hash_roms_for_system(
+        &self,
+        storage: &StorageLocation,
+        system: &str,
+        roms: &mut [RomEntry],
+    ) -> HashMap<String, replay_control_core::rom_hash::HashResult> {
+        use replay_control_core::rom_hash::{self, HashResult};
+
+        if !rom_hash::is_hash_eligible(system) {
+            return HashMap::new();
+        }
+
+        // Load cached hashes from L2 (database).
+        let cached_hashes = self
+            .with_db(storage, |db| db.load_cached_hashes(system))
+            .and_then(|r| r.ok())
+            .unwrap_or_default();
+
+        // Build input list: (rom_filename, rom_path, size_bytes).
+        let rom_files: Vec<(String, String, u64)> = roms
+            .iter()
+            .filter(|r| !r.is_m3u) // Skip M3U playlists
+            .map(|r| {
+                (
+                    r.game.rom_filename.clone(),
+                    r.game.rom_path.clone(),
+                    r.size_bytes,
+                )
+            })
+            .collect();
+
+        let results =
+            rom_hash::hash_and_identify(system, &rom_files, &cached_hashes, &storage.root);
+
+        // Build a lookup map for applying results.
+        let mut result_map: HashMap<String, HashResult> = HashMap::new();
+        for result in results {
+            result_map.insert(result.rom_filename.clone(), result);
+        }
+
+        // Apply hash-matched display names to RomEntries.
+        // When a CRC match gives us a canonical No-Intro name (e.g.,
+        // "Super Mario World (USA)"), re-resolve the display name through
+        // GameRef::new() using that canonical name as the filename stem.
+        // This gives us the proper display name with tags.
+        for rom in roms.iter_mut() {
+            if let Some(hash_result) = result_map.get(&rom.game.rom_filename) {
+                if let Some(ref matched_name) = hash_result.matched_name {
+                    // The matched_name is the No-Intro canonical filename stem
+                    // (e.g., "Super Mario World (USA)"). Use game_display_name()
+                    // to get the clean display title, then apply tags from the
+                    // original filename.
+                    let canonical_filename = format!("{matched_name}.rom");
+                    if let Some(display) =
+                        replay_control_core::game_db::game_display_name(system, &canonical_filename)
+                    {
+                        let with_tags = replay_control_core::rom_tags::display_name_with_tags(
+                            display,
+                            &rom.game.rom_filename,
+                        );
+                        rom.game.display_name = Some(with_tags);
+                    }
+                }
+            }
+        }
+
+        if !result_map.is_empty() {
+            let matched = result_map.values().filter(|r| r.matched_name.is_some()).count();
+            tracing::debug!(
+                "Hash-and-identify for {system}: {} hashed, {} matched No-Intro",
+                result_map.len(),
+                matched
+            );
+        }
+
+        result_map
+    }
+
     /// Write ROM list to SQLite game_library for persistent storage.
     /// Enriches with genre/players from the baked-in game databases during write.
     fn save_roms_to_db(
@@ -421,6 +514,7 @@ impl GameLibrary {
         system: &str,
         roms: &[RomEntry],
         system_dir: &Path,
+        hash_results: &HashMap<String, replay_control_core::rom_hash::HashResult>,
     ) {
         use replay_control_core::metadata_db::GameEntry;
         use replay_control_core::systems::{self, SystemCategory};
@@ -474,7 +568,13 @@ impl GameLibrary {
                         None => (None, String::new(), None, false, replay_control_core::thumbnails::base_title(stem)),
                     }
                 } else {
-                    let entry = game_db::lookup_game(system, stem);
+                    // Try CRC-based lookup first (if we have a hash match),
+                    // then fall back to filename-based lookup.
+                    let hash_entry = hash_results
+                        .get(rom_filename)
+                        .and_then(|hr| hr.matched_name.as_ref())
+                        .and_then(|name| game_db::lookup_game(system, name));
+                    let entry = hash_entry.or_else(|| game_db::lookup_game(system, stem));
                     let game = entry.map(|e| e.game).or_else(|| {
                         let normalized = game_db::normalize_filename(stem);
                         game_db::lookup_by_normalized_title(system, &normalized)
@@ -519,6 +619,9 @@ impl GameLibrary {
                     replay_control_core::rom_tags::RegionPriority::Unknown => "",
                 };
 
+                // Look up hash result for this ROM file.
+                let hash = hash_results.get(rom_filename);
+
                 Some(GameEntry {
                     system: r.game.system.clone(),
                     rom_filename: rom_filename.clone(),
@@ -538,6 +641,9 @@ impl GameLibrary {
                     is_translation,
                     is_hack,
                     is_special,
+                    crc32: hash.map(|h| h.crc32),
+                    hash_mtime: hash.map(|h| h.mtime_secs),
+                    hash_matched_name: hash.and_then(|h| h.matched_name.clone()),
                 })
             })
             .collect();

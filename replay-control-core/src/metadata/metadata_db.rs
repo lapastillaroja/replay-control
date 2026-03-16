@@ -142,6 +142,14 @@ pub struct GameEntry {
     pub is_translation: bool,
     pub is_hack: bool,
     pub is_special: bool,
+    /// CRC32 hash of the ROM file. NULL for CD/computer/arcade systems.
+    pub crc32: Option<u32>,
+    /// File mtime (seconds since UNIX epoch) when the CRC32 was computed.
+    /// Used as a cache key: if the file's mtime changes, the hash is stale.
+    pub hash_mtime: Option<i64>,
+    /// No-Intro canonical name if CRC32 matched the DAT data.
+    /// NULL means either not hashed, or hashed but no match.
+    pub hash_matched_name: Option<String>,
 }
 
 /// Per-system metadata from the `game_library_meta` table.
@@ -258,6 +266,9 @@ impl MetadataDb {
                     is_translation INTEGER NOT NULL DEFAULT 0,
                     is_hack INTEGER NOT NULL DEFAULT 0,
                     is_special INTEGER NOT NULL DEFAULT 0,
+                    crc32 INTEGER,
+                    hash_mtime INTEGER,
+                    hash_matched_name TEXT,
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -1064,8 +1075,10 @@ impl MetadataDb {
                 .prepare(
                     "INSERT OR IGNORE INTO game_library (system, rom_filename, rom_path, display_name,
                      size_bytes, is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                     is_clone, base_title, region, is_translation, is_hack, is_special)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                     is_clone, base_title, region, is_translation, is_hack, is_special,
+                     crc32, hash_mtime, hash_matched_name)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
+                             ?19, ?20, ?21)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -1089,6 +1102,9 @@ impl MetadataDb {
                     rom.is_translation,
                     rom.is_hack,
                     rom.is_special,
+                    rom.crc32.map(|c| c as i64),
+                    rom.hash_mtime,
+                    &rom.hash_matched_name,
                 ])
                 .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
             }
@@ -1122,7 +1138,8 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special
+                        is_clone, base_title, region, is_translation, is_hack, is_special,
+                        crc32, hash_mtime, hash_matched_name
                  FROM game_library WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_entries: {e}")))?;
@@ -1211,6 +1228,46 @@ impl MetadataDb {
             result.push(row.map_err(|e| Error::Other(format!("Row read failed: {e}")))?);
         }
         Ok(result)
+    }
+
+    /// Load cached hash data for all ROMs of a system from the game_library table.
+    ///
+    /// Returns a map of rom_filename -> CachedHash for entries that have a
+    /// non-NULL crc32 value. Used by `hash_and_identify()` to skip re-hashing
+    /// files whose mtime hasn't changed.
+    pub fn load_cached_hashes(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, crate::rom_hash::CachedHash>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, crc32, hash_mtime, hash_matched_name
+                 FROM game_library
+                 WHERE system = ?1 AND crc32 IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare load_cached_hashes: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    crate::rom_hash::CachedHash {
+                        crc32: row.get::<_, i64>(1)? as u32,
+                        hash_mtime: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                        matched_name: row.get(3)?,
+                    },
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Query load_cached_hashes: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
     }
 
     /// Batch update enrichment fields (box_art_url, genre, players, rating, driver_status)
@@ -1575,7 +1632,8 @@ impl MetadataDb {
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special
+                        is_clone, base_title, region, is_translation, is_hack, is_special,
+                        crc32, hash_mtime, hash_matched_name
                 FROM deduped WHERE rn = 1
                 ORDER BY RANDOM() LIMIT ?1",
             )
@@ -1598,7 +1656,8 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special
+                        is_clone, base_title, region, is_translation, is_hack, is_special,
+                        crc32, hash_mtime, hash_matched_name
                  FROM game_library
                  WHERE system = ?1 AND box_art_url IS NOT NULL AND is_special = 0
                  ORDER BY RANDOM() LIMIT ?2",
@@ -1642,7 +1701,8 @@ impl MetadataDb {
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special
+                        is_clone, base_title, region, is_translation, is_hack, is_special,
+                        crc32, hash_mtime, hash_matched_name
                 FROM (
                     SELECT * FROM deduped WHERE rn = 1
                     ORDER BY rating DESC
@@ -1770,7 +1830,8 @@ impl MetadataDb {
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                            is_clone, base_title, region, is_translation, is_hack, is_special
+                            is_clone, base_title, region, is_translation, is_hack, is_special,
+                            crc32, hash_mtime, hash_matched_name
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
                         ORDER BY rating DESC NULLS LAST
@@ -1806,7 +1867,8 @@ impl MetadataDb {
                     )
                     SELECT system, rom_filename, rom_path, display_name, size_bytes,
                             is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                            is_clone, base_title, region, is_translation, is_hack, is_special
+                            is_clone, base_title, region, is_translation, is_hack, is_special,
+                            crc32, hash_mtime, hash_matched_name
                     FROM (
                         SELECT * FROM deduped WHERE rn = 1
                         ORDER BY rating DESC NULLS LAST
@@ -2001,7 +2063,8 @@ impl MetadataDb {
             .prepare(
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special
+                        is_clone, base_title, region, is_translation, is_hack, is_special,
+                        crc32, hash_mtime, hash_matched_name
                  FROM game_library
                  WHERE system = ?1
                    AND (genre = ?2 OR genre_group = ?3)
@@ -2049,6 +2112,9 @@ impl MetadataDb {
             is_translation: row.get(15)?,
             is_hack: row.get(16)?,
             is_special: row.get(17)?,
+            crc32: row.get::<_, Option<i64>>(18)?.map(|c| c as u32),
+            hash_mtime: row.get(19)?,
+            hash_matched_name: row.get(20)?,
         })
     }
 }
@@ -2115,6 +2181,9 @@ mod tests {
             is_translation: false,
             is_hack: false,
             is_special: false,
+            crc32: None,
+            hash_mtime: None,
+            hash_matched_name: None,
         }
     }
 
