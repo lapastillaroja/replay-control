@@ -72,6 +72,13 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("get_data_source_stats failed: {e}")))
     }
 
+    /// Count total rows in the thumbnail_index table.
+    pub fn thumbnail_index_count(&self) -> Result<i64> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM thumbnail_index", [], |row| row.get(0))
+            .map_err(|e| Error::Other(format!("thumbnail_index_count failed: {e}")))
+    }
+
     // ── Thumbnail Index ─────────────────────────────────────────────
 
     /// Query thumbnail_index entries for a given repo and kind.

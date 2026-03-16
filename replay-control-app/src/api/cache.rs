@@ -161,7 +161,7 @@ impl GameLibrary {
     {
         let mut guard = self.db.lock().ok()?;
         if guard.is_none() {
-            match MetadataDb::open(&storage.root) {
+            match MetadataDb::open(&storage.root, storage.kind.is_local()) {
                 Ok(db) => *guard = Some(db),
                 Err(e) => {
                     tracing::debug!("Could not open metadata DB for cache: {e}");
@@ -180,7 +180,7 @@ impl GameLibrary {
     {
         let mut guard = self.db.lock().ok()?;
         if guard.is_none() {
-            match MetadataDb::open(&storage.root) {
+            match MetadataDb::open(&storage.root, storage.kind.is_local()) {
                 Ok(db) => *guard = Some(db),
                 Err(e) => {
                     tracing::debug!("Could not open metadata DB for cache: {e}");

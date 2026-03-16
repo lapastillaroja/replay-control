@@ -20,7 +20,7 @@ fn check_game_loaded() -> bool {
     {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("[launch] health check: failed to run pgrep: {e}");
+            tracing::warn!("health check: failed to run pgrep: {e}");
             return false;
         }
     };
@@ -33,7 +33,7 @@ fn check_game_loaded() -> bool {
     {
         Some(pid) => pid,
         None => {
-            eprintln!("[launch] health check: replay process not found");
+            tracing::debug!("health check: replay process not found");
             return false;
         }
     };
@@ -43,7 +43,7 @@ fn check_game_loaded() -> bool {
     let maps = match std::fs::read_to_string(&maps_path) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[launch] health check: failed to read {maps_path}: {e}");
+            tracing::warn!("health check: failed to read {maps_path}: {e}");
             return false;
         }
     };
@@ -51,12 +51,12 @@ fn check_game_loaded() -> bool {
     // Look for a libretro core that is NOT the menu frontend (replay_libretro)
     for line in maps.lines() {
         if line.contains("libretro.so") && !line.contains("replay_libretro") {
-            eprintln!("[launch] health check: game core detected in {maps_path}");
+            tracing::info!("health check: game core detected in {maps_path}");
             return true;
         }
     }
 
-    eprintln!("[launch] health check: no game core found in {maps_path}");
+    tracing::warn!("health check: no game core found in {maps_path}");
     false
 }
 
@@ -118,26 +118,26 @@ pub fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()> {
         // Wait 5s for the replay binary to boot and read the autostart file
         std::thread::sleep(Duration::from_secs(5));
         let _ = std::fs::remove_file(&cleanup_path);
-        eprintln!("[launch] autostart file cleaned up");
+        tracing::debug!("autostart file cleaned up");
 
         // Wait 5 more seconds (10s total) for the game core to load
         std::thread::sleep(Duration::from_secs(5));
 
         if !check_game_loaded() {
-            eprintln!("[launch] game core not loaded — restarting service to recover to menu");
+            tracing::warn!("game core not loaded -- restarting service to recover to menu");
             let result = std::process::Command::new("systemctl")
                 .args(["restart", "replay.service"])
                 .output();
             match result {
                 Ok(o) if o.status.success() => {
-                    eprintln!("[launch] recovery restart successful");
+                    tracing::info!("recovery restart successful");
                 }
                 Ok(o) => {
                     let stderr = String::from_utf8_lossy(&o.stderr);
-                    eprintln!("[launch] recovery restart failed: {stderr}");
+                    tracing::error!("recovery restart failed: {stderr}");
                 }
                 Err(e) => {
-                    eprintln!("[launch] recovery restart error: {e}");
+                    tracing::error!("recovery restart error: {e}");
                 }
             }
         }

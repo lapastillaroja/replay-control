@@ -1,10 +1,10 @@
-//! Shared SQLite helpers for nolock-based databases.
+//! Shared SQLite helpers for database connections.
 //!
-//! Both `MetadataDb` and `UserDataDb` use the same open strategy:
-//! 1. Recover stale WAL/SHM files (left by crash or WAL-mode fallback)
-//! 2. Open with `nolock=1` + DELETE journal (fast, NFS-safe)
-//! 3. Fall back to standard WAL mode if nolock fails
-//! 4. Run table probes to detect corruption, auto-recreate if needed
+//! Open strategy depends on the filesystem:
+//! - **NFS**: `nolock=1` + DELETE journal (NFS can't do POSIX locking or shared memory)
+//! - **Local (USB/exFAT, SD/ext4, NVMe)**: WAL + NORMAL (proper locking, crash-safe)
+//!
+//! After opening, table probes detect corruption and auto-recreate if needed.
 
 use std::path::Path;
 
@@ -12,19 +12,34 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::error::{Error, Result};
 
-/// Open a SQLite connection using the nolock→WAL fallback strategy.
+/// Open a SQLite connection with strategy appropriate for the filesystem.
 ///
-/// - Recovers stale WAL/SHM files first
-/// - Tries `nolock=1` + DELETE journal mode (fast, NFS-safe)
-/// - Falls back to standard WAL mode if nolock fails
-pub fn open_connection(db_path: &Path, label: &str) -> Result<Connection> {
+/// - **NFS** (`is_local = false`): `nolock=1` + DELETE journal. NFS doesn't
+///   support POSIX file locks or shared memory, so WAL mode can't work.
+/// - **Local** (`is_local = true`): WAL + `synchronous=NORMAL`. Proper locking
+///   ensures crash safety even on exFAT (which lacks a filesystem journal).
+///
+/// Falls back to the other strategy if the primary one fails.
+pub fn open_connection(db_path: &Path, label: &str, is_local: bool) -> Result<Connection> {
     recover_stale_wal(db_path);
 
-    match open_nolock(db_path, label) {
-        Ok(conn) => Ok(conn),
-        Err(_) => {
-            tracing::info!("{label}: nolock open failed, trying standard WAL mode");
-            open_wal(db_path, label)
+    if is_local {
+        // Local filesystem: prefer WAL (crash-safe), fall back to nolock.
+        match open_wal(db_path, label) {
+            Ok(conn) => Ok(conn),
+            Err(_) => {
+                tracing::info!("{label}: WAL open failed, trying nolock mode");
+                open_nolock(db_path, label)
+            }
+        }
+    } else {
+        // NFS: prefer nolock (NFS-compatible), fall back to WAL.
+        match open_nolock(db_path, label) {
+            Ok(conn) => Ok(conn),
+            Err(_) => {
+                tracing::info!("{label}: nolock open failed, trying standard WAL mode");
+                open_wal(db_path, label)
+            }
         }
     }
 }

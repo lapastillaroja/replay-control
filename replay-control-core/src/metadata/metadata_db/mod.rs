@@ -182,14 +182,14 @@ impl MetadataDb {
 
     /// Open (or create) the metadata database at `<storage_root>/.replay-control/metadata.db`.
     ///
-    /// Uses the shared nolock→WAL open strategy (see `db_common`), runs table
-    /// init, then probes all tables for corruption — auto-recreates if corrupt.
-    pub fn open(storage_root: &Path) -> Result<Self> {
+    /// Opens the metadata DB with strategy appropriate for the filesystem.
+    /// Runs table init, probes for corruption, auto-recreates if corrupt.
+    pub fn open(storage_root: &Path, is_local: bool) -> Result<Self> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(METADATA_DB_FILE);
 
-        let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
+        let conn = crate::db_common::open_connection(&db_path, "metadata.db", is_local)?;
         let db = Self {
             conn,
             db_path: db_path.clone(),
@@ -200,7 +200,7 @@ impl MetadataDb {
             tracing::warn!("Metadata DB corrupt ({detail}), deleting and recreating");
             drop(db);
             crate::db_common::delete_db_files(&db_path);
-            let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
+            let conn = crate::db_common::open_connection(&db_path, "metadata.db", is_local)?;
             let db = Self { conn, db_path };
             db.init()?;
             return Ok(db);
@@ -380,7 +380,7 @@ mod tests {
     /// Open a MetadataDb backed by a temp directory.
     pub(crate) fn open_temp_db() -> (MetadataDb, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let db = MetadataDb::open(dir.path()).unwrap();
+        let db = MetadataDb::open(dir.path(), true).unwrap();
         (db, dir)
     }
 

@@ -52,12 +52,12 @@ impl UserDataDb {
     ///
     /// Uses the shared nolock→WAL open strategy (see `db_common`), runs table
     /// init, then probes all tables for corruption — auto-recreates if corrupt.
-    pub fn open(storage_root: &Path) -> Result<Self> {
+    pub fn open(storage_root: &Path, is_local: bool) -> Result<Self> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(USER_DATA_DB_FILE);
 
-        let conn = crate::db_common::open_connection(&db_path, "user_data.db")?;
+        let conn = crate::db_common::open_connection(&db_path, "user_data.db", is_local)?;
         let db = Self {
             conn,
             db_path: db_path.clone(),
@@ -68,7 +68,7 @@ impl UserDataDb {
             tracing::warn!("User data DB corrupt ({detail}), deleting and recreating");
             drop(db);
             crate::db_common::delete_db_files(&db_path);
-            let conn = crate::db_common::open_connection(&db_path, "user_data.db")?;
+            let conn = crate::db_common::open_connection(&db_path, "user_data.db", is_local)?;
             let db = Self { conn, db_path };
             db.init()?;
             return Ok(db);

@@ -88,12 +88,13 @@ impl AppState {
 
         // Open DBs eagerly at startup so they're ready for the first request.
         // Fail-fast: if DB creation/open fails here, the service can't function.
-        let metadata_db = replay_control_core::metadata_db::MetadataDb::open(&storage.root)
+        let is_local = storage.kind.is_local();
+        let metadata_db = replay_control_core::metadata_db::MetadataDb::open(&storage.root, is_local)
             .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
         tracing::info!("Metadata DB ready at {}", metadata_db.db_path().display());
         let metadata_db = Arc::new(std::sync::Mutex::new(Some(metadata_db)));
 
-        let user_data_db = replay_control_core::user_data_db::UserDataDb::open(&storage.root)
+        let user_data_db = replay_control_core::user_data_db::UserDataDb::open(&storage.root, is_local)
             .map_err(|e| format!("Failed to open user data DB: {e}"))?;
         tracing::info!("User data DB ready at {}", user_data_db.db_path().display());
         let user_data_db = Arc::new(std::sync::Mutex::new(Some(user_data_db)));
@@ -142,7 +143,7 @@ impl AppState {
         }
         if guard.is_none() {
             let storage = self.storage();
-            match replay_control_core::metadata_db::MetadataDb::open(&storage.root) {
+            match replay_control_core::metadata_db::MetadataDb::open(&storage.root, storage.kind.is_local()) {
                 Ok(db) => {
                     *guard = Some(db);
                 }
@@ -175,7 +176,7 @@ impl AppState {
         }
         if guard.is_none() {
             let storage = self.storage();
-            match replay_control_core::user_data_db::UserDataDb::open(&storage.root) {
+            match replay_control_core::user_data_db::UserDataDb::open(&storage.root, storage.kind.is_local()) {
                 Ok(db) => {
                     *guard = Some(db);
                 }

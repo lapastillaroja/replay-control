@@ -25,6 +25,7 @@ mod guard {
 /// Pipeline phases (sequential, blocking):
 ///   1. Auto-import — if a LaunchBox XML file exists and the DB is empty
 ///   2. Cache populate/verify — scan all systems, enrich box art + ratings
+///   3. Auto-rebuild thumbnail index — if data_sources exist but index is empty (data loss)
 ///
 /// Filesystem watchers (config file, ROM directory) run independently.
 pub struct BackgroundManager;
@@ -76,6 +77,9 @@ impl BackgroundManager {
 
         // Phase 2: Cache verification / populate (enrichment is inline).
         Self::phase_cache_verification(state);
+
+        // Phase 3: Auto-rebuild thumbnail index if images exist but index is empty.
+        Self::phase_auto_rebuild_thumbnail_index(state);
     }
 
     /// Phase 1: Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
@@ -180,6 +184,99 @@ impl BackgroundManager {
                 "Background cache verification: all {} system(s) fresh",
                 cached_meta.len()
             );
+        }
+    }
+
+    /// Phase 3: Rebuild thumbnail index if there's evidence of data loss.
+    ///
+    /// Triggers when `data_sources` has libretro-thumbnails entries (meaning the user
+    /// previously ran "Update Thumbnails") but `thumbnail_index` is empty (data lost,
+    /// e.g., due to DB corruption and auto-recreate). Does NOT download images — only
+    /// rebuilds the index so box art variant picker and on-demand downloads work.
+    ///
+    /// Skips when both tables are empty (first-time setup — user hasn't configured
+    /// thumbnails yet) to avoid wasting time on GitHub API calls when offline.
+    fn phase_auto_rebuild_thumbnail_index(state: &AppState) {
+        // Check data_sources for libretro-thumbnails entries and thumbnail_index emptiness.
+        let (has_sources, index_empty) = {
+            let guard = state.metadata_db();
+            match guard.and_then(|g| {
+                let db = g.as_ref()?;
+                let stats = db.get_data_source_stats("libretro-thumbnails").ok()?;
+                // Also check if thumbnail_index itself has any rows.
+                let index_count: i64 = db.thumbnail_index_count().unwrap_or(0);
+                Some((stats.repo_count > 0, index_count == 0))
+            }) {
+                Some(result) => result,
+                None => return, // DB unavailable
+            }
+        };
+
+        if !has_sources {
+            tracing::debug!(
+                "No libretro-thumbnails data sources found (first-time setup), skipping thumbnail index rebuild"
+            );
+            return;
+        }
+
+        if !index_empty {
+            tracing::debug!("Thumbnail index already populated, skipping rebuild");
+            return;
+        }
+
+        tracing::info!("Thumbnail data sources exist but index is empty (data loss?) — rebuilding index from GitHub API");
+
+        // Lock the DB for the duration of the index rebuild.
+        let db_ref = state.metadata_db.clone();
+        let mut db_guard = db_ref.lock().expect("metadata_db lock poisoned");
+        let db = match db_guard.as_mut() {
+            Some(db) => db,
+            None => {
+                tracing::warn!("Metadata DB unavailable, skipping thumbnail index rebuild");
+                return;
+            }
+        };
+
+        let storage = state.storage();
+        let api_key = replay_control_core::settings::read_github_api_key(&storage.root);
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+
+        let result = replay_control_core::thumbnail_manifest::import_all_manifests(
+            db,
+            &|repos_done, repos_total, current_repo| {
+                tracing::debug!(
+                    "Thumbnail index rebuild: {}/{} — {}",
+                    repos_done + 1,
+                    repos_total,
+                    current_repo,
+                );
+            },
+            &cancel,
+            api_key.as_deref(),
+        );
+
+        match result {
+            Ok(stats) => {
+                if stats.total_entries == 0 && !stats.errors.is_empty() {
+                    // All repos failed — likely offline or rate-limited. Not fatal.
+                    tracing::warn!(
+                        "Thumbnail index rebuild failed: all {} repos errored (offline or rate-limited?). First: {}",
+                        stats.errors.len(),
+                        stats.errors.first().map(|s| s.as_str()).unwrap_or("unknown"),
+                    );
+                } else {
+                    tracing::info!(
+                        "Thumbnail index rebuild complete: {} entries across {} repos ({} errors)",
+                        stats.total_entries,
+                        stats.repos_fetched,
+                        stats.errors.len(),
+                    );
+                }
+            }
+            Err(e) => {
+                // Network failure, etc. — fail gracefully.
+                tracing::warn!("Thumbnail index rebuild failed: {e}");
+            }
         }
     }
 
