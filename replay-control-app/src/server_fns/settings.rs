@@ -316,3 +316,29 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     state.cache.invalidate();
     Ok(())
 }
+
+/// Get the secondary (fallback) region preference from `.replay-control/settings.cfg`.
+/// Returns empty string if not set.
+#[server(prefix = "/sfn")]
+pub async fn get_region_preference_secondary() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let pref = state.region_preference_secondary();
+    Ok(pref.map(|p| p.as_str().to_string()).unwrap_or_default())
+}
+
+/// Set the secondary (fallback) region preference in `.replay-control/settings.cfg`.
+/// Pass empty string to clear. Invalidates the ROM cache.
+#[server(prefix = "/sfn")]
+pub async fn save_region_preference_secondary(value: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let pref = if value.is_empty() {
+        None
+    } else {
+        Some(replay_control_core::rom_tags::RegionPreference::from_str_value(&value))
+    };
+    replay_control_core::settings::write_region_preference_secondary(&storage.root, pref)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state.cache.invalidate();
+    Ok(())
+}

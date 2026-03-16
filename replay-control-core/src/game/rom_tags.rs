@@ -62,22 +62,22 @@ pub enum RegionPriority {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum RegionPreference {
-    #[default]
     Usa,
     Europe,
     Japan,
+    #[default]
     World,
 }
 
 impl RegionPreference {
     /// Parse a region preference from a string value (as stored in settings.cfg).
-    /// Returns `Usa` for unrecognized values.
+    /// Returns `World` for unrecognized values.
     pub fn from_str_value(s: &str) -> Self {
         match s {
+            "usa" => Self::Usa,
             "europe" => Self::Europe,
             "japan" => Self::Japan,
-            "world" => Self::World,
-            _ => Self::Usa,
+            _ => Self::World,
         }
     }
 
@@ -93,45 +93,94 @@ impl RegionPreference {
 }
 
 impl RegionPriority {
-    /// Return a sort key for this region given the user's preference.
-    /// Lower value = shown first. World always sorts first (or ties for first),
-    /// then the user's preferred region, then remaining major regions.
-    pub fn sort_key(self, pref: RegionPreference) -> u8 {
-        match pref {
-            RegionPreference::Usa => match self {
-                RegionPriority::World => 0,
-                RegionPriority::Usa => 1,
-                RegionPriority::Europe => 2,
-                RegionPriority::Japan => 3,
-                RegionPriority::Other => 4,
-                RegionPriority::Unknown => 5,
-            },
-            RegionPreference::Europe => match self {
-                RegionPriority::World => 0,
-                RegionPriority::Europe => 1,
-                RegionPriority::Usa => 2,
-                RegionPriority::Japan => 3,
-                RegionPriority::Other => 4,
-                RegionPriority::Unknown => 5,
-            },
-            RegionPreference::Japan => match self {
-                RegionPriority::World => 0,
-                RegionPriority::Japan => 1,
-                RegionPriority::Usa => 2,
-                RegionPriority::Europe => 3,
-                RegionPriority::Other => 4,
-                RegionPriority::Unknown => 5,
-            },
-            RegionPreference::World => match self {
-                RegionPriority::World => 0,
-                RegionPriority::Usa => 1,
-                RegionPriority::Europe => 2,
-                RegionPriority::Japan => 3,
-                RegionPriority::Other => 4,
-                RegionPriority::Unknown => 5,
-            },
+    /// Return a sort key for this region given the user's preferences.
+    ///
+    /// Strategy C (Primary > Secondary > World):
+    /// - sort_key 0 = Primary preference
+    /// - sort_key 1 = Secondary preference (or World when no secondary)
+    /// - sort_key 2 = World (when secondary is set)
+    /// - sort_key 3 = Remaining major region(s)
+    /// - sort_key 4 = Other
+    /// - sort_key 5 = Unknown
+    ///
+    /// When primary is `World` and no secondary: World > Usa > Europe > Japan > Other > Unknown.
+    /// When secondary equals primary or is `None`, behaves as if no secondary is set.
+    pub fn sort_key(self, pref: RegionPreference, secondary: Option<RegionPreference>) -> u8 {
+        // Normalize: if secondary equals primary, treat as None.
+        let secondary = secondary.filter(|s| *s != pref);
+
+        // Other and Unknown always occupy the bottom two slots.
+        if self == RegionPriority::Other {
+            return 4;
         }
+        if self == RegionPriority::Unknown {
+            return 5;
+        }
+
+        // Map RegionPreference to the corresponding RegionPriority.
+        let pref_priority = pref_to_priority(pref);
+
+        // Check primary.
+        if self == pref_priority {
+            return 0;
+        }
+
+        if let Some(sec) = secondary {
+            let sec_priority = pref_to_priority(sec);
+
+            // Check secondary.
+            if self == sec_priority {
+                return 1;
+            }
+
+            // Check World (when secondary is set, World goes to slot 2).
+            if self == RegionPriority::World {
+                return 2;
+            }
+
+            // Remaining major region(s) go to slot 3.
+            return 3;
+        }
+
+        // No secondary: World goes to slot 1.
+        if self == RegionPriority::World {
+            return 1;
+        }
+
+        // Remaining major regions fill slots 2-3 in a fixed order.
+        // Use a hardcoded fallback order for the remaining majors.
+        let remaining = remaining_order(pref);
+        for (i, r) in remaining.iter().enumerate() {
+            if self == *r {
+                return (2 + i) as u8;
+            }
+        }
+
+        // Should not reach here for valid RegionPriority values,
+        // but return 3 as a safe fallback.
+        3
     }
+}
+
+/// Map a `RegionPreference` to the corresponding `RegionPriority` variant.
+fn pref_to_priority(pref: RegionPreference) -> RegionPriority {
+    match pref {
+        RegionPreference::Usa => RegionPriority::Usa,
+        RegionPreference::Europe => RegionPriority::Europe,
+        RegionPreference::Japan => RegionPriority::Japan,
+        RegionPreference::World => RegionPriority::World,
+    }
+}
+
+/// Return the remaining major regions (excluding World and the preferred region)
+/// in a fixed fallback order: Usa, Europe, Japan (skipping the one that matches pref).
+fn remaining_order(pref: RegionPreference) -> Vec<RegionPriority> {
+    let all = [RegionPriority::Usa, RegionPriority::Europe, RegionPriority::Japan];
+    let pref_priority = pref_to_priority(pref);
+    all.iter()
+        .copied()
+        .filter(|r| *r != pref_priority && *r != RegionPriority::World)
+        .collect()
 }
 
 /// Classify a ROM filename into a tier, region priority, and special flag.
@@ -1449,73 +1498,61 @@ mod tests {
         assert!(RegionPriority::Other < RegionPriority::Unknown);
     }
 
-    // --- RegionPreference + sort_key tests ---
+    // --- RegionPreference + sort_key tests (Strategy C: Primary > Secondary > World) ---
 
     #[test]
-    fn sort_key_usa_preference_is_default_order() {
+    fn sort_key_usa_preference_no_secondary() {
         let pref = RegionPreference::Usa;
-        assert_eq!(RegionPriority::World.sort_key(pref), 0);
-        assert_eq!(RegionPriority::Usa.sort_key(pref), 1);
-        assert_eq!(RegionPriority::Europe.sort_key(pref), 2);
-        assert_eq!(RegionPriority::Japan.sort_key(pref), 3);
-        assert_eq!(RegionPriority::Other.sort_key(pref), 4);
-        assert_eq!(RegionPriority::Unknown.sort_key(pref), 5);
+        // Primary(Usa)=0, World=1, then remaining majors, Other=4, Unknown=5
+        assert_eq!(RegionPriority::Usa.sort_key(pref, None), 0);
+        assert_eq!(RegionPriority::World.sort_key(pref, None), 1);
+        assert_eq!(RegionPriority::Europe.sort_key(pref, None), 2);
+        assert_eq!(RegionPriority::Japan.sort_key(pref, None), 3);
+        assert_eq!(RegionPriority::Other.sort_key(pref, None), 4);
+        assert_eq!(RegionPriority::Unknown.sort_key(pref, None), 5);
     }
 
     #[test]
-    fn sort_key_europe_preference() {
+    fn sort_key_europe_preference_no_secondary() {
         let pref = RegionPreference::Europe;
-        assert_eq!(RegionPriority::World.sort_key(pref), 0);
-        assert_eq!(RegionPriority::Europe.sort_key(pref), 1);
-        assert_eq!(RegionPriority::Usa.sort_key(pref), 2);
-        assert_eq!(RegionPriority::Japan.sort_key(pref), 3);
-        assert_eq!(RegionPriority::Other.sort_key(pref), 4);
-        assert_eq!(RegionPriority::Unknown.sort_key(pref), 5);
+        assert_eq!(RegionPriority::Europe.sort_key(pref, None), 0);
+        assert_eq!(RegionPriority::World.sort_key(pref, None), 1);
+        assert_eq!(RegionPriority::Usa.sort_key(pref, None), 2);
+        assert_eq!(RegionPriority::Japan.sort_key(pref, None), 3);
+        assert_eq!(RegionPriority::Other.sort_key(pref, None), 4);
+        assert_eq!(RegionPriority::Unknown.sort_key(pref, None), 5);
     }
 
     #[test]
-    fn sort_key_japan_preference() {
+    fn sort_key_japan_preference_no_secondary() {
         let pref = RegionPreference::Japan;
-        assert_eq!(RegionPriority::World.sort_key(pref), 0);
-        assert_eq!(RegionPriority::Japan.sort_key(pref), 1);
-        assert_eq!(RegionPriority::Usa.sort_key(pref), 2);
-        assert_eq!(RegionPriority::Europe.sort_key(pref), 3);
-        assert_eq!(RegionPriority::Other.sort_key(pref), 4);
-        assert_eq!(RegionPriority::Unknown.sort_key(pref), 5);
+        assert_eq!(RegionPriority::Japan.sort_key(pref, None), 0);
+        assert_eq!(RegionPriority::World.sort_key(pref, None), 1);
+        assert_eq!(RegionPriority::Usa.sort_key(pref, None), 2);
+        assert_eq!(RegionPriority::Europe.sort_key(pref, None), 3);
+        assert_eq!(RegionPriority::Other.sort_key(pref, None), 4);
+        assert_eq!(RegionPriority::Unknown.sort_key(pref, None), 5);
     }
 
     #[test]
-    fn sort_key_world_preference_matches_usa_order() {
-        // World preference has same order as USA (World already first, then USA/Europe/Japan).
+    fn sort_key_world_preference_no_secondary() {
+        // World preference: World=0, then Usa > Europe > Japan (fallback order).
         let pref = RegionPreference::World;
-        assert_eq!(RegionPriority::World.sort_key(pref), 0);
-        assert_eq!(RegionPriority::Usa.sort_key(pref), 1);
-        assert_eq!(RegionPriority::Europe.sort_key(pref), 2);
-        assert_eq!(RegionPriority::Japan.sort_key(pref), 3);
+        assert_eq!(RegionPriority::World.sort_key(pref, None), 0);
+        // World is primary, so "remaining" = World=1(but World is primary=0), Usa=2, Europe=3
+        // Actually when pref=World: primary=World(0), no secondary, World slot=1 skipped
+        // because World IS the primary. Remaining = Usa, Europe, Japan.
+        assert_eq!(RegionPriority::Usa.sort_key(pref, None), 2);
+        assert_eq!(RegionPriority::Europe.sort_key(pref, None), 3);
     }
 
     #[test]
-    fn sort_key_world_always_first() {
-        // World should have sort_key 0 regardless of preference.
-        for pref in [
-            RegionPreference::Usa,
-            RegionPreference::Europe,
-            RegionPreference::Japan,
-            RegionPreference::World,
-        ] {
-            assert_eq!(
-                RegionPriority::World.sort_key(pref),
-                0,
-                "World should always be first with preference {pref:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn sort_key_preferred_region_always_second() {
-        assert_eq!(RegionPriority::Usa.sort_key(RegionPreference::Usa), 1);
-        assert_eq!(RegionPriority::Europe.sort_key(RegionPreference::Europe), 1);
-        assert_eq!(RegionPriority::Japan.sort_key(RegionPreference::Japan), 1);
+    fn sort_key_primary_always_first() {
+        // Primary should always get sort_key 0 regardless of preference.
+        assert_eq!(RegionPriority::Usa.sort_key(RegionPreference::Usa, None), 0);
+        assert_eq!(RegionPriority::Europe.sort_key(RegionPreference::Europe, None), 0);
+        assert_eq!(RegionPriority::Japan.sort_key(RegionPreference::Japan, None), 0);
+        assert_eq!(RegionPriority::World.sort_key(RegionPreference::World, None), 0);
     }
 
     #[test]
@@ -1526,9 +1563,69 @@ mod tests {
             RegionPreference::Japan,
             RegionPreference::World,
         ] {
-            assert_eq!(RegionPriority::Other.sort_key(pref), 4);
-            assert_eq!(RegionPriority::Unknown.sort_key(pref), 5);
+            assert_eq!(RegionPriority::Other.sort_key(pref, None), 4);
+            assert_eq!(RegionPriority::Unknown.sort_key(pref, None), 5);
+            assert_eq!(RegionPriority::Other.sort_key(pref, Some(RegionPreference::Usa)), 4);
+            assert_eq!(RegionPriority::Unknown.sort_key(pref, Some(RegionPreference::Usa)), 5);
         }
+    }
+
+    // --- Strategy C: Secondary region tests ---
+
+    #[test]
+    fn sort_key_japan_primary_usa_secondary() {
+        let pref = RegionPreference::Japan;
+        let sec = Some(RegionPreference::Usa);
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 0);   // Primary
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 1);     // Secondary
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2);   // World
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 3);  // Remaining
+        assert_eq!(RegionPriority::Other.sort_key(pref, sec), 4);
+        assert_eq!(RegionPriority::Unknown.sort_key(pref, sec), 5);
+    }
+
+    #[test]
+    fn sort_key_europe_primary_japan_secondary() {
+        let pref = RegionPreference::Europe;
+        let sec = Some(RegionPreference::Japan);
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 0);  // Primary
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 1);   // Secondary
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2);   // World
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 3);     // Remaining
+        assert_eq!(RegionPriority::Other.sort_key(pref, sec), 4);
+        assert_eq!(RegionPriority::Unknown.sort_key(pref, sec), 5);
+    }
+
+    #[test]
+    fn sort_key_usa_primary_europe_secondary() {
+        let pref = RegionPreference::Usa;
+        let sec = Some(RegionPreference::Europe);
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 0);     // Primary
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 1);  // Secondary
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2);   // World
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 3);   // Remaining
+    }
+
+    #[test]
+    fn sort_key_world_primary_japan_secondary() {
+        let pref = RegionPreference::World;
+        let sec = Some(RegionPreference::Japan);
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 0);   // Primary
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 1);   // Secondary
+        // World is already primary, so remaining slots go to Usa, Europe
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 3);     // Remaining
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 3);  // Remaining (same slot)
+    }
+
+    #[test]
+    fn sort_key_secondary_same_as_primary_ignored() {
+        // When secondary equals primary, it should behave as if no secondary.
+        let pref = RegionPreference::Japan;
+        let sec = Some(RegionPreference::Japan);
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 0);
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 1);
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 2);
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 3);
     }
 
     // --- RegionPreference parsing ---
@@ -1551,12 +1648,12 @@ mod tests {
             RegionPreference::from_str_value("world"),
             RegionPreference::World
         );
-        // Unknown values default to Usa.
+        // Unknown values default to World.
         assert_eq!(
             RegionPreference::from_str_value("brazil"),
-            RegionPreference::Usa
+            RegionPreference::World
         );
-        assert_eq!(RegionPreference::from_str_value(""), RegionPreference::Usa);
+        assert_eq!(RegionPreference::from_str_value(""), RegionPreference::World);
     }
 
     #[test]

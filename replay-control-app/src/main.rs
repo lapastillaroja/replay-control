@@ -127,6 +127,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRegionPreference>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveRegionPreference>(
         );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRegionPreferenceSecondary>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveRegionPreferenceSecondary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFontSize>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveFontSize>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecommendations>();

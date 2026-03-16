@@ -24,6 +24,7 @@ impl AppState {
                 let storage = state.storage();
                 let roms_dir = storage.roms_dir();
                 let region_pref = state.region_preference();
+                let region_secondary = state.region_preference_secondary();
 
                 // Skip if a metadata operation (e.g. auto-import) is already
                 // running — opening a second nolock connection to the same DB
@@ -50,7 +51,7 @@ impl AppState {
 
                 if cached_meta.is_empty() {
                     // Fresh DB — pre-populate L2 for all systems with games.
-                    Self::populate_all_systems(&state, &storage, region_pref);
+                    Self::populate_all_systems(&state, &storage, region_pref, region_secondary);
                     return;
                 }
 
@@ -72,7 +73,7 @@ impl AppState {
                     if is_stale {
                         tracing::info!("Background re-scan: {} (mtime changed)", meta.system);
                         // Trigger L3 scan by calling get_roms (which writes through to L1+L2).
-                        let _ = state.cache.get_roms(&storage, &meta.system, region_pref);
+                        let _ = state.cache.get_roms(&storage, &meta.system, region_pref, region_secondary);
                         state.cache.enrich_system_cache(&state, &meta.system);
                         stale_count += 1;
                     }
@@ -106,6 +107,7 @@ impl AppState {
         state: &AppState,
         storage: &replay_control_core::storage::StorageLocation,
         region_pref: replay_control_core::rom_tags::RegionPreference,
+        region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
     ) {
         let systems = state.cache.get_systems(storage);
         let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
@@ -117,7 +119,7 @@ impl AppState {
         let start = std::time::Instant::now();
         let mut total_roms = 0usize;
         for sys in &with_games {
-            match state.cache.get_roms(storage, &sys.folder_name, region_pref) {
+            match state.cache.get_roms(storage, &sys.folder_name, region_pref, region_secondary) {
                 Ok(roms) => total_roms += roms.len(),
                 Err(e) => tracing::warn!("L2 warmup: failed to scan {}: {e}", sys.folder_name),
             }
@@ -173,6 +175,7 @@ impl AppState {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let storage = state.storage();
                 let region_pref = state.region_preference();
+                let region_secondary = state.region_preference_secondary();
 
                 // Check if game library is empty — if so, populate before enriching.
                 let is_empty = state.cache.with_db_read(&storage, |db| {
@@ -181,7 +184,7 @@ impl AppState {
 
                 if is_empty {
                     tracing::info!("Post-import: game library is empty, running full populate");
-                    Self::populate_all_systems(&state, &storage, region_pref);
+                    Self::populate_all_systems(&state, &storage, region_pref, region_secondary);
                 } else {
                     let systems = state.cache.get_systems(&storage);
                     let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
@@ -578,6 +581,7 @@ impl AppState {
                 let _ = tokio::task::spawn_blocking(move || {
                     let storage = state_clone.storage();
                     let region_pref = state_clone.region_preference();
+                    let region_secondary = state_clone.region_preference_secondary();
 
                     // Invalidate L1+L2 for each affected system so get_roms
                     // does a fresh L3 filesystem scan.
@@ -593,7 +597,7 @@ impl AppState {
                             affected.iter().cloned().collect::<Vec<_>>().join(", ")
                         );
                         for system in &affected {
-                            let _ = state_clone.cache.get_roms(&storage, system, region_pref);
+                            let _ = state_clone.cache.get_roms(&storage, system, region_pref, region_secondary);
                             state_clone.cache.enrich_system_cache(&state_clone, system);
                         }
                     }
@@ -617,6 +621,7 @@ impl AppState {
                                     &storage,
                                     &sys.folder_name,
                                     region_pref,
+                                    region_secondary,
                                 );
                                 state_clone
                                     .cache

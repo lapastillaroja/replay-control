@@ -85,10 +85,12 @@ pub fn scan_systems(storage: &StorageLocation) -> Vec<SystemSummary> {
 ///
 /// The `region_pref` parameter controls the sort order of region variants:
 /// ROMs from the preferred region sort before others within the same title group.
+/// The optional `region_secondary` provides a fallback region preference.
 pub fn list_roms(
     storage: &StorageLocation,
     system_folder: &str,
     region_pref: RegionPreference,
+    region_secondary: Option<RegionPreference>,
 ) -> Result<Vec<RomEntry>> {
     let system = systems::find_system(system_folder)
         .ok_or_else(|| Error::SystemNotFound(system_folder.to_string()))?;
@@ -123,8 +125,8 @@ pub fn list_roms(
             .then(a_tier.cmp(&b_tier))
             .then(
                 a_region
-                    .sort_key(region_pref)
-                    .cmp(&b_region.sort_key(region_pref)),
+                    .sort_key(region_pref, region_secondary)
+                    .cmp(&b_region.sort_key(region_pref, region_secondary)),
             )
     });
 
@@ -775,7 +777,7 @@ mod tests {
         fs::write(x68k_dir.join("Other.dim"), &[0u8; 50]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None).unwrap();
 
         // Should have 2 entries: Game.m3u and Other.dim (disc files hidden)
         assert_eq!(roms.len(), 2);
@@ -832,7 +834,7 @@ mod tests {
         fs::write(x68k_dir.join("game.dim"), &[0u8; 100]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None).unwrap();
 
         // Only the M3U should remain; the .dim should be hidden
         assert_eq!(roms.len(), 1);
@@ -864,7 +866,7 @@ mod tests {
         fs::write(game_dir.join("GAME.DAT"), &[0u8; 1000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
 
         // Should only have the M3U entry; the .scummvm should be hidden
         assert_eq!(roms.len(), 1, "Expected 1 ROM (M3U only), got: {roms:?}");
@@ -914,7 +916,7 @@ mod tests {
         );
 
         // Check ROM list
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
         assert_eq!(roms.len(), 2, "Expected 2 ROMs (M3Us only), got: {roms:?}");
         assert!(roms.iter().all(|r| r.is_m3u));
     }
@@ -950,7 +952,7 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         // list_roms: only M3U should appear, .svm hidden
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
         assert_eq!(roms.len(), 1, "Expected 1 ROM (M3U only), got: {roms:?}");
         assert!(roms[0].is_m3u);
         assert_eq!(roms[0].game.rom_filename, "My Game (CD).m3u");
@@ -980,7 +982,7 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         // list_roms: orphan M3U should be hidden
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
         assert_eq!(
             roms.len(),
             0,
@@ -1012,7 +1014,7 @@ mod tests {
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
         assert_eq!(
             roms.len(),
             1,
@@ -1054,7 +1056,7 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         // list_roms: M3U + standalone game
-        let roms = list_roms(&storage, "sony_psx", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "sony_psx", RegionPreference::default(), None).unwrap();
         assert_eq!(roms.len(), 2, "Expected 2 ROMs, got: {roms:?}");
 
         let m3u = roms.iter().find(|r| r.is_m3u).unwrap();
@@ -1095,7 +1097,7 @@ mod tests {
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
-        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default()).unwrap();
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None).unwrap();
         assert_eq!(roms.len(), 2, "Expected 2 ROMs (M3U + standalone), got: {roms:?}");
         assert!(roms.iter().any(|r| r.is_m3u && r.game.rom_filename == "Game.m3u"));
         assert!(roms.iter().any(|r| r.game.rom_filename == "Other.dim"));

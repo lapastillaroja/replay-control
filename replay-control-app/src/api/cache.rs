@@ -296,6 +296,7 @@ impl GameLibrary {
         storage: &StorageLocation,
         system: &str,
         region_pref: RegionPreference,
+        region_secondary: Option<RegionPreference>,
     ) -> Result<Vec<RomEntry>, replay_control_core::error::Error> {
         let key = system.to_string();
         let system_dir = storage.roms_dir().join(system);
@@ -319,7 +320,7 @@ impl GameLibrary {
 
         // L3: Cache miss — full filesystem scan.
         tracing::debug!("L3 scan for {system}: starting filesystem scan");
-        let roms = replay_control_core::roms::list_roms(storage, system, region_pref)?;
+        let roms = replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)?;
         tracing::debug!("L3 scan for {system}: found {} ROMs", roms.len());
         if let Ok(mut guard) = self.roms.write() {
             guard.insert(key.clone(), CacheEntry::new(roms.clone(), &system_dir));

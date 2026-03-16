@@ -202,6 +202,15 @@ impl AppState {
         replay_control_core::settings::read_region_preference(&storage.root)
     }
 
+    /// Get the user's secondary (fallback) region preference from `.replay-control/settings.cfg`.
+    /// Returns `None` if not set.
+    pub fn region_preference_secondary(
+        &self,
+    ) -> Option<replay_control_core::rom_tags::RegionPreference> {
+        let storage = self.storage();
+        replay_control_core::settings::read_region_preference_secondary(&storage.root)
+    }
+
     /// Get the effective skin index: override if set, otherwise from replay.cfg.
     pub fn effective_skin(&self) -> u32 {
         if let Some(index) = *self.skin_override.read().expect("skin lock poisoned") {

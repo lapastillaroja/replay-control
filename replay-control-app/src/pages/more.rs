@@ -12,6 +12,7 @@ pub fn MorePage() -> impl IntoView {
     let i18n = use_i18n();
     let info = Resource::new(|| (), |_| server_fns::get_info());
     let region = Resource::new(|| (), |_| server_fns::get_region_preference());
+    let region_secondary = Resource::new(|| (), |_| server_fns::get_region_preference_secondary());
     let font_size = Resource::new(|| (), |_| server_fns::get_font_size());
 
     view! {
@@ -34,7 +35,8 @@ pub fn MorePage() -> impl IntoView {
                 <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let current = region.await?;
-                        Ok::<_, ServerFnError>(view! { <RegionSelector current /> })
+                        let current_secondary = region_secondary.await?;
+                        Ok::<_, ServerFnError>(view! { <RegionSelector current current_secondary /> })
                     })}
                 </Transition>
             </ErrorBoundary>
@@ -76,9 +78,10 @@ pub fn MorePage() -> impl IntoView {
 }
 
 #[component]
-fn RegionSelector(current: String) -> impl IntoView {
+fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
     let i18n = use_i18n();
     let active = RwSignal::new(current);
+    let active_secondary = RwSignal::new(current_secondary);
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
@@ -100,7 +103,35 @@ fn RegionSelector(current: String) -> impl IntoView {
         leptos::task::spawn_local(async move {
             match server_fns::save_region_preference(v.clone()).await {
                 Ok(()) => {
+                    // If secondary was set to the new primary value, reset secondary.
+                    if active_secondary.get_untracked() == v {
+                        active_secondary.set(String::new());
+                        let _ = server_fns::save_region_preference_secondary(String::new()).await;
+                    }
                     active.set(v);
+                    let locale = use_i18n().locale.get_untracked();
+                    status.set(Some((true, t(locale, "region.saved").to_string())));
+                }
+                Err(e) => {
+                    status.set(Some((false, e.to_string())));
+                }
+            }
+            saving.set(false);
+        });
+    };
+
+    let on_change_secondary = move |ev: leptos::ev::Event| {
+        let value = leptos::prelude::event_target_value(&ev);
+        if saving.get_untracked() || active_secondary.get_untracked() == value {
+            return;
+        }
+        saving.set(true);
+        status.set(None);
+        let v = value.clone();
+        leptos::task::spawn_local(async move {
+            match server_fns::save_region_preference_secondary(v.clone()).await {
+                Ok(()) => {
+                    active_secondary.set(v);
                     let locale = use_i18n().locale.get_untracked();
                     status.set(Some((true, t(locale, "region.saved").to_string())));
                 }
@@ -126,6 +157,22 @@ fn RegionSelector(current: String) -> impl IntoView {
         })
         .collect::<Vec<_>>();
 
+    // Secondary dropdown: "None" + all regions except the currently selected primary.
+    let secondary_option_views = options
+        .iter()
+        .map(|(value, label_key)| {
+            let value = *value;
+            let label_key = *label_key;
+            let is_selected = move || active_secondary.read().as_str() == value;
+            let is_hidden = move || active.read().as_str() == value;
+            view! {
+                <option value=value selected=is_selected hidden=is_hidden>
+                    {move || t(i18n.locale.get(), label_key)}
+                </option>
+            }
+        })
+        .collect::<Vec<_>>();
+
     view! {
         <div class="form-field">
             <select
@@ -134,6 +181,21 @@ fn RegionSelector(current: String) -> impl IntoView {
                 disabled=move || saving.get()
             >
                 {option_views}
+            </select>
+        </div>
+
+        <h3 class="section-title">{move || t(i18n.locale.get(), "region.secondary_title")}</h3>
+        <p class="form-hint">{move || t(i18n.locale.get(), "region.secondary_hint")}</p>
+        <div class="form-field">
+            <select
+                class="form-input"
+                on:change=on_change_secondary
+                disabled=move || saving.get()
+            >
+                <option value="" selected=move || active_secondary.read().is_empty()>
+                    {move || t(i18n.locale.get(), "region.none")}
+                </option>
+                {secondary_option_views}
             </select>
         </div>
         {move || status.get().map(|(ok, msg)| {

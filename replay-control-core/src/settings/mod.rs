@@ -55,6 +55,51 @@ pub fn write_region_preference(storage_root: &Path, pref: RegionPreference) -> R
     Ok(())
 }
 
+/// Read the secondary region preference from `.replay-control/settings.cfg`.
+/// Returns `None` if the file doesn't exist, the key is missing, or the value is empty.
+pub fn read_region_preference_secondary(storage_root: &Path) -> Option<RegionPreference> {
+    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+    let config = ReplayConfig::from_file(&path).ok()?;
+    let value = config.get("region_preference_secondary").unwrap_or("");
+    if value.is_empty() {
+        return None;
+    }
+    Some(RegionPreference::from_str_value(value))
+}
+
+/// Write the secondary region preference to `.replay-control/settings.cfg`.
+/// Pass `None` to clear the secondary preference (removes the key value).
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_region_preference_secondary(
+    storage_root: &Path,
+    pref: Option<RegionPreference>,
+) -> Result<()> {
+    let rc_dir = storage_root.join(RC_DIR);
+    if !rc_dir.exists() {
+        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
+    }
+
+    let path = rc_dir.join(SETTINGS_FILE);
+
+    let mut config = if path.exists() {
+        ReplayConfig::from_file(&path)?
+    } else {
+        ReplayConfig::parse("")?
+    };
+
+    let value = pref.map(|p| p.as_str()).unwrap_or("");
+    config.set("region_preference_secondary", value);
+
+    if path.exists() {
+        config.write_to_file(&path, &path)?;
+    } else {
+        let content = format!("region_preference_secondary = \"{value}\"\n");
+        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
+    }
+
+    Ok(())
+}
+
 /// Read the font size preference from `.replay-control/settings.cfg`.
 /// Returns `"normal"` or `"large"`, defaults to `"normal"`.
 pub fn read_font_size(storage_root: &Path) -> String {
@@ -156,7 +201,7 @@ mod tests {
     fn default_when_no_file() {
         let tmp = tempdir();
         let pref = read_region_preference(&tmp);
-        assert_eq!(pref, RegionPreference::Usa);
+        assert_eq!(pref, RegionPreference::World);
     }
 
     #[test]
@@ -199,5 +244,56 @@ mod tests {
         let content = std::fs::read_to_string(rc.join(SETTINGS_FILE)).unwrap();
         assert!(content.contains("other_key = \"value\""));
         assert!(content.contains("region_preference = \"japan\""));
+    }
+
+    // --- Secondary region preference tests ---
+
+    #[test]
+    fn secondary_default_when_no_file() {
+        let tmp = tempdir();
+        let pref = read_region_preference_secondary(&tmp);
+        assert_eq!(pref, None);
+    }
+
+    #[test]
+    fn write_and_read_secondary_usa() {
+        let tmp = tempdir();
+        write_region_preference_secondary(&tmp, Some(RegionPreference::Usa)).unwrap();
+        let pref = read_region_preference_secondary(&tmp);
+        assert_eq!(pref, Some(RegionPreference::Usa));
+    }
+
+    #[test]
+    fn write_and_read_secondary_japan() {
+        let tmp = tempdir();
+        write_region_preference_secondary(&tmp, Some(RegionPreference::Japan)).unwrap();
+        let pref = read_region_preference_secondary(&tmp);
+        assert_eq!(pref, Some(RegionPreference::Japan));
+    }
+
+    #[test]
+    fn write_secondary_none_clears() {
+        let tmp = tempdir();
+        // Write a value, then clear it.
+        write_region_preference_secondary(&tmp, Some(RegionPreference::Europe)).unwrap();
+        assert_eq!(
+            read_region_preference_secondary(&tmp),
+            Some(RegionPreference::Europe)
+        );
+        write_region_preference_secondary(&tmp, None).unwrap();
+        assert_eq!(read_region_preference_secondary(&tmp), None);
+    }
+
+    #[test]
+    fn secondary_preserves_primary() {
+        let tmp = tempdir();
+        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
+        write_region_preference_secondary(&tmp, Some(RegionPreference::Usa)).unwrap();
+
+        assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
+        assert_eq!(
+            read_region_preference_secondary(&tmp),
+            Some(RegionPreference::Usa)
+        );
     }
 }

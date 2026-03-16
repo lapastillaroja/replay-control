@@ -1550,10 +1550,12 @@ impl MetadataDb {
     /// Returns a diverse selection across different systems.
     /// Filters out arcade clones and deduplicates regional variants,
     /// preferring the user's region preference.
+    /// `region_secondary` is the fallback region (empty string = no secondary).
     pub fn random_cached_roms_diverse(
         &self,
         count: usize,
         region_pref: &str,
+        region_secondary: &str,
     ) -> Result<Vec<GameEntry>> {
         let mut stmt = self
             .conn
@@ -1563,8 +1565,9 @@ impl MetadataDb {
                         PARTITION BY system, base_title
                         ORDER BY CASE
                             WHEN region = ?2 THEN 0
-                            WHEN region = 'world' THEN 1
-                            ELSE 2
+                            WHEN region = ?3 THEN 1
+                            WHEN region = 'world' THEN 2
+                            ELSE 3
                         END
                     ) AS rn
                     FROM game_library
@@ -1579,7 +1582,10 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Prepare random_cached_roms_diverse: {e}")))?;
 
         let rows = stmt
-            .query_map(params![(count * 5) as i64, region_pref], Self::row_to_game_entry)
+            .query_map(
+                params![(count * 5) as i64, region_pref, region_secondary],
+                Self::row_to_game_entry,
+            )
             .map_err(|e| Error::Other(format!("Query random_cached_roms_diverse: {e}")))?;
 
         Ok(rows.flatten().collect())
@@ -1610,10 +1616,12 @@ impl MetadataDb {
     /// Filters out arcade clones and deduplicates regional variants,
     /// then selects from the top-rated pool and randomizes within it
     /// so each page load shows a different selection of highly-rated games.
+    /// `region_secondary` is the fallback region (empty string = no secondary).
     pub fn top_rated_cached_roms(
         &self,
         count: usize,
         region_pref: &str,
+        region_secondary: &str,
     ) -> Result<Vec<GameEntry>> {
         let pool_size = (count * 4).max(40) as i64;
         let mut stmt = self
@@ -1624,8 +1632,9 @@ impl MetadataDb {
                         PARTITION BY system, base_title
                         ORDER BY CASE
                             WHEN region = ?2 THEN 0
-                            WHEN region = 'world' THEN 1
-                            ELSE 2
+                            WHEN region = ?3 THEN 1
+                            WHEN region = 'world' THEN 2
+                            ELSE 3
                         END
                     ) AS rn
                     FROM game_library
@@ -1644,7 +1653,10 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Prepare top_rated_cached_roms: {e}")))?;
 
         let rows = stmt
-            .query_map(params![pool_size, region_pref], Self::row_to_game_entry)
+            .query_map(
+                params![pool_size, region_pref, region_secondary],
+                Self::row_to_game_entry,
+            )
             .map_err(|e| Error::Other(format!("Query top_rated_cached_roms: {e}")))?;
 
         Ok(rows.flatten().collect())
@@ -1723,6 +1735,7 @@ impl MetadataDb {
     /// Filters out arcade clones and deduplicates regional variants.
     /// Selects from top-rated games and randomizes via SQL so each load
     /// shows different recommendations. Used for "Because You Love" section.
+    /// `region_secondary` is the fallback region (empty string = no secondary).
     pub fn system_roms_excluding(
         &self,
         system: &str,
@@ -1730,6 +1743,7 @@ impl MetadataDb {
         genre_filter: Option<&str>,
         count: usize,
         region_pref: &str,
+        region_secondary: &str,
     ) -> Result<Vec<GameEntry>> {
         let exclude_set: std::collections::HashSet<&str> =
             exclude_filenames.iter().copied().collect();
@@ -1746,8 +1760,9 @@ impl MetadataDb {
                             PARTITION BY system, base_title
                             ORDER BY CASE
                                 WHEN region = ?4 THEN 0
-                                WHEN region = 'world' THEN 1
-                                ELSE 2
+                                WHEN region = ?5 THEN 1
+                                WHEN region = 'world' THEN 2
+                                ELSE 3
                             END
                         ) AS rn
                         FROM game_library
@@ -1767,7 +1782,7 @@ impl MetadataDb {
 
             let rows = stmt
                 .query_map(
-                    params![system, genre, limit, region_pref],
+                    params![system, genre, limit, region_pref, region_secondary],
                     Self::row_to_game_entry,
                 )
                 .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
@@ -1781,8 +1796,9 @@ impl MetadataDb {
                             PARTITION BY system, base_title
                             ORDER BY CASE
                                 WHEN region = ?3 THEN 0
-                                WHEN region = 'world' THEN 1
-                                ELSE 2
+                                WHEN region = ?4 THEN 1
+                                WHEN region = 'world' THEN 2
+                                ELSE 3
                             END
                         ) AS rn
                         FROM game_library
@@ -1801,7 +1817,10 @@ impl MetadataDb {
                 .map_err(|e| Error::Other(format!("Prepare system_roms_excluding: {e}")))?;
 
             let rows = stmt
-                .query_map(params![system, limit, region_pref], Self::row_to_game_entry)
+                .query_map(
+                    params![system, limit, region_pref, region_secondary],
+                    Self::row_to_game_entry,
+                )
                 .map_err(|e| Error::Other(format!("Query system_roms_excluding: {e}")))?;
             rows.flatten().collect::<Vec<_>>()
         };

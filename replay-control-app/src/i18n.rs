@@ -171,6 +171,11 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "region.japan" => "Japan",
         "region.world" => "World",
         "region.saved" => "Region preference saved",
+        "region.secondary_title" => "Fallback Region",
+        "region.secondary_hint" => {
+            "If your preferred region is unavailable, prefer this region next."
+        }
+        "region.none" => "None (use default order)",
 
         // Skin
         "more.skin" => "Skin",

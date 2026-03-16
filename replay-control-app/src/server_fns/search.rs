@@ -154,6 +154,7 @@ pub(crate) fn search_score(
     display_name: &str,
     filename: &str,
     region_pref: replay_control_core::rom_tags::RegionPreference,
+    region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
 ) -> u32 {
     let display_lower = display_name.to_lowercase();
     let filename_lower = filename.to_lowercase();
@@ -234,7 +235,7 @@ pub(crate) fn search_score(
                     replay_control_core::rom_tags::RomTier::PreRelease => 250,
                     replay_control_core::rom_tags::RomTier::Pirate => 300,
                 };
-                let region_bonus: u32 = match region.sort_key(region_pref) {
+                let region_bonus: u32 = match region.sort_key(region_pref, region_secondary) {
                     0 => 20,
                     1 => 15,
                     2 => 10,
@@ -266,7 +267,7 @@ pub(crate) fn search_score(
 
     // Region bonus: based on sort_key from user's preference.
     // Lower sort_key = higher bonus.
-    let region_bonus: u32 = match region.sort_key(region_pref) {
+    let region_bonus: u32 = match region.sort_key(region_pref, region_secondary) {
         0 => 20, // World (or preferred when World is the preference)
         1 => 15, // User's preferred region
         2 => 10, // Second-best major region
@@ -373,6 +374,7 @@ pub async fn global_search(
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     let region_pref = state.region_preference();
+    let region_secondary = state.region_preference_secondary();
     let systems = state.cache.get_systems(&storage);
     let q = query.to_lowercase();
     let per_system_limit = if per_system_limit == 0 {
@@ -394,7 +396,7 @@ pub async fn global_search(
 
         let all_roms = match state
             .cache
-            .get_roms(&storage, &sys.folder_name, region_pref)
+            .get_roms(&storage, &sys.folder_name, region_pref, region_secondary)
         {
             Ok(roms) => roms,
             Err(_) => continue,
@@ -508,7 +510,7 @@ pub async fn global_search(
                         .display_name
                         .as_deref()
                         .unwrap_or(&r.game.rom_filename);
-                    let score = search_score(&q, display, &r.game.rom_filename, region_pref);
+                    let score = search_score(&q, display, &r.game.rom_filename, region_pref, region_secondary);
                     if score > 0 { Some((score, r)) } else { None }
                 }
             })
@@ -640,12 +642,14 @@ mod tests {
 
     /// Default preference for tests (matches pre-preference behavior).
     const PREF: RegionPreference = RegionPreference::Usa;
+    /// No secondary preference for most tests.
+    const SEC: Option<RegionPreference> = None;
 
     // --- Exact match (10_000 base) ---
 
     #[test]
     fn exact_match_display_name() {
-        let score = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
+        let score = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF, SEC);
         assert!(
             score >= 10_000,
             "Exact match should score >= 10000, got {score}"
@@ -654,8 +658,8 @@ mod tests {
 
     #[test]
     fn exact_match_is_case_insensitive() {
-        let score = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
-        let score2 = search_score("tetris", "TETRIS", "TETRIS.nes", PREF);
+        let score = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF, SEC);
+        let score2 = search_score("tetris", "TETRIS", "TETRIS.nes", PREF, SEC);
         assert!(score >= 10_000);
         assert!(score2 >= 10_000);
     }
@@ -714,7 +718,7 @@ mod tests {
     #[test]
     fn filename_only_match() {
         // Query matches filename but not display name
-        let score = search_score("usa", "Tetris", "Tetris (USA).nes", PREF);
+        let score = search_score("usa", "Tetris", "Tetris (USA).nes", PREF, SEC);
         assert!(
             (500..1_000).contains(&score),
             "Filename-only match should score in 500..1000, got {score}"
@@ -725,13 +729,13 @@ mod tests {
 
     #[test]
     fn no_match_returns_zero() {
-        let score = search_score("zzzznotfound", "Tetris", "Tetris (USA).nes", PREF);
+        let score = search_score("zzzznotfound", "Tetris", "Tetris (USA).nes", PREF, SEC);
         assert_eq!(score, 0);
     }
 
     #[test]
     fn empty_query_no_match() {
-        let score = search_score("", "Tetris", "Tetris (USA).nes", PREF);
+        let score = search_score("", "Tetris", "Tetris (USA).nes", PREF, SEC);
         // Empty query matches everything via contains(""), so it should score > 0
         // (exact match since "tetris".contains("") is true, but actually "" == display_lower is false)
         // Let's verify the actual behavior
@@ -742,8 +746,8 @@ mod tests {
 
     #[test]
     fn exact_beats_prefix() {
-        let exact = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF);
-        let prefix = search_score("tetris", "Tetris Plus", "Tetris Plus (USA).nes", PREF);
+        let exact = search_score("tetris", "Tetris", "Tetris (USA).nes", PREF, SEC);
+        let prefix = search_score("tetris", "Tetris Plus", "Tetris Plus (USA).nes", PREF, SEC);
         assert!(
             exact > prefix,
             "Exact ({exact}) should beat prefix ({prefix})"
@@ -798,7 +802,7 @@ mod tests {
             "Super Mario World (USA).sfc",
             PREF,
         );
-        let filename = search_score("usa", "Tetris", "Tetris (USA).nes", PREF);
+        let filename = search_score("usa", "Tetris", "Tetris (USA).nes", PREF, SEC);
         assert!(
             substr > filename,
             "Substring ({substr}) should beat filename-only ({filename})"
@@ -905,14 +909,16 @@ mod tests {
             "Super Mario World",
             "Super Mario World (USA).sfc",
             RegionPreference::Usa,
+            SEC,
         );
         let japan_with_japan_pref = search_score(
             "mario",
             "Super Mario World",
             "Super Mario World (Japan).sfc",
             RegionPreference::Japan,
+            SEC,
         );
-        // Both should get sort_key=1 (preferred region), so equal region bonus.
+        // Both should get sort_key=0 (preferred region = primary), so equal region bonus.
         assert_eq!(usa_with_usa_pref, japan_with_japan_pref);
     }
 
@@ -924,12 +930,14 @@ mod tests {
             "Super Mario World",
             "Super Mario World (Japan).sfc",
             japan_pref,
+            SEC,
         );
         let usa_score = search_score(
             "mario",
             "Super Mario World",
             "Super Mario World (USA).sfc",
             japan_pref,
+            SEC,
         );
         assert!(
             japan_score > usa_score,
@@ -945,12 +953,14 @@ mod tests {
             "Super Mario World",
             "Super Mario World (Europe).sfc",
             pref,
+            SEC,
         );
         let usa_score = search_score(
             "mario",
             "Super Mario World",
             "Super Mario World (USA).sfc",
             pref,
+            SEC,
         );
         assert!(
             europe_score > usa_score,
@@ -1076,7 +1086,7 @@ mod tests {
     #[test]
     fn word_match_preserves_existing_substring_match() {
         // "mega man x" is a contiguous substring — should match at prefix tier, not word tier
-        let score = search_score("mega man x", "Mega Man X", "Mega Man X (USA).sfc", PREF);
+        let score = search_score("mega man x", "Mega Man X", "Mega Man X (USA).sfc", PREF, SEC);
         assert!(
             score >= 5000,
             "Contiguous match should hit prefix tier, got {score}"
@@ -1104,8 +1114,8 @@ mod tests {
     fn prefix_match_word_boundary() {
         // "sonic 3" should score "Sonic 3 (Europe)" higher than "Sonic 3D Blast"
         // because "sonic 3" in "sonic 3d blast" breaks mid-word ("3" → "3d").
-        let clean = search_score("sonic 3", "Sonic 3 (Europe)", "Sonic 3 (Europe).md", PREF);
-        let midword = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF);
+        let clean = search_score("sonic 3", "Sonic 3 (Europe)", "Sonic 3 (Europe).md", PREF, SEC);
+        let midword = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF, SEC);
         assert!(
             clean > midword,
             "Clean prefix 'Sonic 3 (Europe)' ({clean}) should beat mid-word 'Sonic 3D Blast' ({midword})"
@@ -1121,7 +1131,7 @@ mod tests {
             "Sonic The Hedgehog 3 (USA).md",
             PREF,
         );
-        let blast = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF);
+        let blast = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF, SEC);
         assert!(
             hedgehog > blast,
             "Hedgehog 3 ({hedgehog}) should beat 3D Blast ({blast})"
@@ -1167,7 +1177,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 
     let roms = state
         .cache
-        .get_roms(&storage, chosen_system, state.region_preference())
+        .get_roms(&storage, chosen_system, state.region_preference(), state.region_preference_secondary())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     if roms.is_empty() {

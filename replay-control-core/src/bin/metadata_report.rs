@@ -82,7 +82,7 @@ fn main() {
         let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
 
         let rom_list =
-            match roms::list_roms(&storage, system_name, rom_tags::RegionPreference::default()) {
+            match roms::list_roms(&storage, system_name, rom_tags::RegionPreference::default(), None) {
                 Ok(r) => r,
                 Err(e) => {
                     eprintln!("  Error listing ROMs for {system_name}: {e}");
