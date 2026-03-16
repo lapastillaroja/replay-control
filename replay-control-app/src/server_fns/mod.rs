@@ -379,20 +379,26 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
         }
     }
 
-    // Filesystem fallback: if no image URLs from DB, check if images exist on disk.
-    // This handles the case where images were downloaded but the DB was cleared/regenerated.
+    // Filesystem fallback: if no image URLs from DB, check filesystem.
+    // For box art, use the unified resolve_box_art() (same path as cards/recommendations)
+    // to ensure consistent box art between detail pages and series/recommendation cards.
+    // For screenshots, use find_image_on_disk() directly.
     if info.box_art_url.is_none() || info.screenshot_url.is_none() {
-        let media_base = state.storage().rc_dir().join("media").join(&info.system);
-
-        if info.box_art_url.is_none()
-            && let Some(path) = find_image_on_disk(&media_base, "boxart", &info.rom_filename)
-        {
-            info.box_art_url = Some(format!("/media/{}/{path}", info.system));
+        if info.box_art_url.is_none() {
+            let image_index = state.cache.get_image_index(&state, &info.system);
+            if let Some(url) =
+                state
+                    .cache
+                    .resolve_box_art(&state, &image_index, &info.system, &info.rom_filename)
+            {
+                info.box_art_url = Some(url);
+            }
         }
-        if info.screenshot_url.is_none()
-            && let Some(path) = find_image_on_disk(&media_base, "snap", &info.rom_filename)
-        {
-            info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+        if info.screenshot_url.is_none() {
+            let media_base = state.storage().rc_dir().join("media").join(&info.system);
+            if let Some(path) = find_image_on_disk(&media_base, "snap", &info.rom_filename) {
+                info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+            }
         }
     }
 }
