@@ -150,7 +150,7 @@ pub fn find_image_on_disk(
         .rfind('.')
         .map(|i| &rom_filename[..i])
         .unwrap_or(rom_filename);
-    let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
+    let stem = crate::title_utils::strip_n64dd_prefix(stem);
     let thumb_name = thumbnail_filename(stem);
 
     // 1. Exact match
@@ -800,7 +800,7 @@ mod tests {
             .rfind('.')
             .map(|i| &stem[..i])
             .unwrap_or(stem);
-        let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
+        let stem = crate::title_utils::strip_n64dd_prefix(stem);
         assert_eq!(stem, "Mario Artist Paint Studio (Japan)");
         let thumb = thumbnail_filename(stem);
         assert_eq!(thumb, "Mario Artist Paint Studio (Japan)");

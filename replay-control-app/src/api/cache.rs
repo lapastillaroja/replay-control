@@ -813,13 +813,13 @@ impl GameLibrary {
             }
             // Normalize the base_title the same way Wikidata titles are normalized:
             // lowercase, strip non-alphanumeric except spaces, collapse whitespace.
-            let normalized = normalize_for_wikidata_match(&rom.base_title);
+            let normalized = replay_control_core::title_utils::normalize_for_wikidata(&rom.base_title);
             if !normalized.is_empty() {
                 norm_to_base.entry(normalized).or_insert_with(|| rom.base_title.clone());
             }
             // Also try with display_name for better matching
             if let Some(ref dn) = rom.display_name {
-                let norm_dn = normalize_for_wikidata_match(
+                let norm_dn = replay_control_core::title_utils::normalize_for_wikidata(
                     &replay_control_core::title_utils::base_title(dn),
                 );
                 if !norm_dn.is_empty() {
@@ -1161,7 +1161,7 @@ impl GameLibrary {
             .rfind('.')
             .map(|i| &rom_filename[..i])
             .unwrap_or(rom_filename);
-        let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
+        let stem = replay_control_core::title_utils::strip_n64dd_prefix(stem);
 
         // For arcade ROMs, translate MAME codename to display name.
         let is_arcade = matches!(
@@ -1199,6 +1199,22 @@ impl GameLibrary {
         let rom_base = base_title(&thumb_name);
         if let Some(path) = index.fuzzy.get(&rom_base) {
             return Some(format!("/media/{system}/{path}"));
+        }
+
+        // 3b. Tilde dual-title match: "Name1 ~ Name2" -> try each half.
+        let source = display_name.unwrap_or(stem);
+        if source.contains(" ~ ") {
+            for half in source.split(" ~ ") {
+                let half_thumb = thumbnail_filename(half.trim());
+                let half_base = base_title(&half_thumb);
+                if let Some(path) = index.fuzzy.get(&half_base) {
+                    return Some(format!("/media/{system}/{path}"));
+                }
+                // Also try exact match for each half
+                if let Some(path) = index.exact.get(&half_thumb) {
+                    return Some(format!("/media/{system}/{path}"));
+                }
+            }
         }
 
         // 4. Version-stripped match.
@@ -1630,18 +1646,3 @@ impl GameLibrary {
     }
 }
 
-/// Normalize a title for matching against Wikidata entries.
-///
-/// Mirrors the `normalize_title_for_wikidata()` function used at build time:
-/// lowercase, strip non-alphanumeric except spaces, collapse whitespace.
-fn normalize_for_wikidata_match(title: &str) -> String {
-    let trimmed = title.trim();
-    let mut result = String::with_capacity(trimmed.len());
-    for ch in trimmed.chars() {
-        if ch.is_alphanumeric() || ch == ' ' {
-            result.push(ch.to_ascii_lowercase());
-        }
-    }
-    let parts: Vec<&str> = result.split_whitespace().collect();
-    parts.join(" ")
-}

@@ -342,7 +342,6 @@ impl AppState {
     /// then matches them to `game_library` entries via the LaunchBox `<Game>` entries.
     fn import_launchbox_aliases(&self, xml_path: &std::path::Path) {
         use replay_control_core::launchbox;
-        use replay_control_core::title_utils;
 
         // Parse alternate names from XML.
         let alt_names = match launchbox::parse_alternate_names(xml_path) {
@@ -955,7 +954,7 @@ impl AppState {
                 .rfind('.')
                 .map(|i| &rom_filename[..i])
                 .unwrap_or(rom_filename);
-            let stem = stem.strip_prefix("N64DD - ").unwrap_or(stem);
+            let stem = replay_control_core::title_utils::strip_n64dd_prefix(stem);
             let source = arcade_display.unwrap_or(stem);
             let thumb_name = thumbnail_filename(source);
 

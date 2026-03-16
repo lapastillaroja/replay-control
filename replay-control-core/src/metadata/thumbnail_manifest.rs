@@ -743,8 +743,20 @@ pub fn find_boxart_variants(
     } else {
         None
     };
-    let thumb_name = thumbnail_filename(display_name.as_deref().unwrap_or(stem));
+    let source = display_name.as_deref().unwrap_or(stem);
+    let thumb_name = thumbnail_filename(source);
     let base_title = strip_tags(&thumb_name).to_lowercase();
+
+    // For tilde dual-title ROMs (e.g., "Bare Knuckle ~ Streets of Rage"),
+    // also match either half individually.
+    let tilde_halves: Vec<String> = if source.contains(" ~ ") {
+        source
+            .split(" ~ ")
+            .map(|half| strip_tags(&thumbnail_filename(half.trim())).to_lowercase())
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let media_base = storage_root
         .join(crate::storage::RC_DIR)
@@ -772,7 +784,9 @@ pub fn find_boxart_variants(
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
-            if entry_base != base_title {
+            if entry_base != base_title
+                && !tilde_halves.iter().any(|half| *half == entry_base)
+            {
                 continue;
             }
 
@@ -862,8 +876,19 @@ pub fn count_boxart_variants(db: &MetadataDb, system: &str, rom_filename: &str) 
     } else {
         None
     };
-    let thumb_name = thumbnail_filename(display_name.as_deref().unwrap_or(stem));
+    let source = display_name.as_deref().unwrap_or(stem);
+    let thumb_name = thumbnail_filename(source);
     let base_title = strip_tags(&thumb_name).to_lowercase();
+
+    // For tilde dual-title ROMs, also match either half individually.
+    let tilde_halves: Vec<String> = if source.contains(" ~ ") {
+        source
+            .split(" ~ ")
+            .map(|half| strip_tags(&thumbnail_filename(half.trim())).to_lowercase())
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let mut seen_targets: HashSet<String> = HashSet::new();
 
@@ -877,7 +902,9 @@ pub fn count_boxart_variants(db: &MetadataDb, system: &str, rom_filename: &str) 
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
-            if entry_base != base_title {
+            if entry_base != base_title
+                && !tilde_halves.iter().any(|half| *half == entry_base)
+            {
                 continue;
             }
 

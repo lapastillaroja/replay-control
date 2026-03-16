@@ -212,6 +212,34 @@ pub fn resolve_to_library_title(
     normalized
 }
 
+/// Normalize a title for matching against Wikidata entries.
+///
+/// Mirrors the `normalize_title_for_wikidata()` function used at build time:
+/// lowercase, strip non-alphanumeric except spaces, collapse whitespace.
+///
+/// Unlike [`fuzzy_match_key`], this **drops** non-alphanumeric characters
+/// rather than replacing them with spaces (so `"Pac-Man"` -> `"pacman"`,
+/// not `"pac man"`). This must match the build-time normalization exactly.
+pub fn normalize_for_wikidata(title: &str) -> String {
+    let trimmed = title.trim();
+    let mut result = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        if ch.is_alphanumeric() || ch == ' ' {
+            result.push(ch.to_ascii_lowercase());
+        }
+    }
+    let parts: Vec<&str> = result.split_whitespace().collect();
+    parts.join(" ")
+}
+
+/// Strip the `"N64DD - "` prefix from a ROM filename stem.
+///
+/// N64DD ROMs use this prefix in their filenames, but the thumbnail repos
+/// and display name systems do not include it.
+pub fn strip_n64dd_prefix(stem: &str) -> &str {
+    stem.strip_prefix("N64DD - ").unwrap_or(stem)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +454,44 @@ mod tests {
             ),
             "bare knuckle - ikari no tekken"
         );
+    }
+
+    // --- normalize_for_wikidata ---
+
+    #[test]
+    fn wikidata_normalize_drops_punctuation() {
+        // Non-alphanumeric chars are dropped (not replaced with space)
+        assert_eq!(normalize_for_wikidata("Pac-Man"), "pacman");
+    }
+
+    #[test]
+    fn wikidata_normalize_preserves_spaces() {
+        assert_eq!(
+            normalize_for_wikidata("Super Mario World"),
+            "super mario world"
+        );
+    }
+
+    #[test]
+    fn wikidata_normalize_collapses_whitespace() {
+        assert_eq!(
+            normalize_for_wikidata("  hello   world  "),
+            "hello world"
+        );
+    }
+
+    // --- strip_n64dd_prefix ---
+
+    #[test]
+    fn strip_n64dd_prefix_removes_prefix() {
+        assert_eq!(
+            strip_n64dd_prefix("N64DD - Mario Artist Paint Studio"),
+            "Mario Artist Paint Studio"
+        );
+    }
+
+    #[test]
+    fn strip_n64dd_prefix_no_prefix_unchanged() {
+        assert_eq!(strip_n64dd_prefix("Super Mario 64"), "Super Mario 64");
     }
 }
