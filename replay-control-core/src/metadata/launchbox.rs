@@ -24,7 +24,6 @@ fn platform_map() -> HashMap<&'static str, Vec<&'static str>> {
 /// Parsed game entry from LaunchBox XML.
 struct LbGame {
     name: String,
-    database_id: String,
     overview: String,
     rating: Option<f64>,
     publisher: String,
@@ -226,7 +225,6 @@ fn parse_xml<R: BufRead>(
 
     // Current game fields being accumulated.
     let mut name = String::new();
-    let mut database_id = String::new();
     let mut platform = String::new();
     let mut overview = String::new();
     let mut rating: Option<f64> = None;
@@ -245,7 +243,6 @@ fn parse_xml<R: BufRead>(
                 if tag == "Game" {
                     in_game = true;
                     name.clear();
-                    database_id.clear();
                     platform.clear();
                     overview.clear();
                     rating = None;
@@ -264,7 +261,6 @@ fn parse_xml<R: BufRead>(
                     let text = e.unescape().unwrap_or_default();
                     match current_tag.as_str() {
                         "Name" => name.push_str(&text),
-                        "DatabaseID" => database_id.push_str(&text),
                         "Platform" => platform.push_str(&text),
                         "Overview" => overview.push_str(&text),
                         "CommunityRating" => {
@@ -274,10 +270,10 @@ fn parse_xml<R: BufRead>(
                         "Developer" => developer.push_str(&text),
                         "Genres" => genre.push_str(&text),
                         "MaxPlayers" => {
-                            if let Ok(n) = text.parse::<u8>() {
-                                if n >= 1 && n <= 8 {
-                                    max_players = Some(n);
-                                }
+                            if let Ok(n) = text.parse::<u8>()
+                                && (1..=8).contains(&n)
+                            {
+                                max_players = Some(n);
                             }
                         }
                         "ReleaseDate" => {
@@ -301,7 +297,6 @@ fn parse_xml<R: BufRead>(
                     if let Some(system_folders) = platforms.get(platform.as_str()) {
                         let game = LbGame {
                             name: std::mem::take(&mut name),
-                            database_id: std::mem::take(&mut database_id),
                             overview: std::mem::take(&mut overview),
                             rating,
                             publisher: std::mem::take(&mut publisher),
@@ -408,6 +403,70 @@ pub fn parse_alternate_names(xml_path: &Path) -> Result<Vec<LbAlternateName>> {
     }
 
     tracing::info!("LaunchBox alternate names: {} entries parsed", results.len());
+    Ok(results)
+}
+
+/// Parse `<Game>` entries from a LaunchBox metadata XML file, returning a
+/// mapping of DatabaseID → primary game name. Used to include the primary
+/// name in alias groups alongside `<GameAlternateName>` entries.
+pub fn parse_game_names(xml_path: &Path) -> Result<HashMap<String, String>> {
+    let file = std::fs::File::open(xml_path).map_err(|e| Error::io(xml_path, e))?;
+    let reader = std::io::BufReader::with_capacity(256 * 1024, file);
+    let mut xml = Reader::from_reader(reader);
+    xml.config_mut().trim_text(true);
+
+    let mut buf = Vec::with_capacity(4096);
+    let mut in_game = false;
+    let mut current_tag = String::new();
+    let mut name = String::new();
+    let mut database_id = String::new();
+
+    let mut results = HashMap::new();
+
+    loop {
+        match xml.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let qname = e.name();
+                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
+                if tag == "Game" {
+                    in_game = true;
+                    name.clear();
+                    database_id.clear();
+                } else if in_game {
+                    current_tag = tag.to_string();
+                }
+            }
+            Ok(Event::Text(ref e)) => {
+                if in_game {
+                    let text = e.unescape().unwrap_or_default();
+                    match current_tag.as_str() {
+                        "Name" => name.push_str(&text),
+                        "DatabaseID" => database_id.push_str(&text),
+                        _ => {}
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let qname = e.name();
+                let tag = std::str::from_utf8(qname.as_ref()).unwrap_or("");
+                if tag == "Game" && in_game {
+                    in_game = false;
+                    if !name.is_empty() && !database_id.is_empty() {
+                        results.insert(
+                            std::mem::take(&mut database_id),
+                            std::mem::take(&mut name),
+                        );
+                    }
+                }
+                current_tag.clear();
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => {}
+            _ => {}
+        }
+        buf.clear();
+    }
+
     Ok(results)
 }
 

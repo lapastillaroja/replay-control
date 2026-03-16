@@ -168,6 +168,50 @@ pub fn series_key(base_title: &str) -> String {
     normalized
 }
 
+/// Produce a fuzzy matching key by stripping all non-alphanumeric characters.
+///
+/// Used to bridge naming differences between data sources:
+/// `"Bare Knuckle: Ikari no Tekken"` (TGDB, colon) and
+/// `"Bare Knuckle - Ikari no Tekken"` (No-Intro, dash) both produce
+/// `"bare knuckle ikari no tekken"`.
+///
+/// This is NOT used as `base_title` — only for matching external names
+/// to library entries when exact `base_title` comparison fails.
+pub fn fuzzy_match_key(title: &str) -> String {
+    let mut result = String::with_capacity(title.len());
+    for ch in title.chars() {
+        if ch.is_alphanumeric() || ch == ' ' {
+            result.push(ch.to_ascii_lowercase());
+        } else {
+            result.push(' ');
+        }
+    }
+    result.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Resolve an external name (from TGDB, LaunchBox, etc.) to the library's
+/// actual `base_title`, handling colon/dash/punctuation differences.
+///
+/// Returns the library's `base_title` if found (exact or fuzzy), or the
+/// normalized external name if no library match exists.
+///
+/// `library_exact` should contain all `base_title` values in the library.
+/// `library_fuzzy` maps `fuzzy_match_key(base_title)` → `base_title`.
+pub fn resolve_to_library_title(
+    external_name: &str,
+    library_exact: &std::collections::HashSet<&str>,
+    library_fuzzy: &std::collections::HashMap<String, &str>,
+) -> String {
+    let normalized = base_title(external_name);
+    if library_exact.contains(normalized.as_str()) {
+        return normalized;
+    }
+    if let Some(&lib_bt) = library_fuzzy.get(&fuzzy_match_key(&normalized)) {
+        return lib_bt.to_string();
+    }
+    normalized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,5 +326,105 @@ mod tests {
     fn series_key_trailing_64() {
         // "super mario 64" -> "super mario"
         assert_eq!(series_key("super mario 64"), "super mario");
+    }
+
+    // --- fuzzy_match_key ---
+
+    #[test]
+    fn fuzzy_key_colon_vs_dash() {
+        assert_eq!(
+            fuzzy_match_key("bare knuckle: ikari no tekken"),
+            fuzzy_match_key("bare knuckle - ikari no tekken")
+        );
+    }
+
+    #[test]
+    fn fuzzy_key_preserves_hyphenated_words() {
+        // X-Men becomes "x men" — both colon and dash versions match
+        assert_eq!(fuzzy_match_key("x-men vs street fighter"), "x men vs street fighter");
+    }
+
+    #[test]
+    fn fuzzy_key_strips_punctuation() {
+        assert_eq!(
+            fuzzy_match_key("Teenage Mutant Ninja Turtles: The Hyperstone Heist"),
+            "teenage mutant ninja turtles the hyperstone heist"
+        );
+    }
+
+    #[test]
+    fn fuzzy_key_collapses_whitespace() {
+        assert_eq!(fuzzy_match_key("  hello   world  "), "hello world");
+    }
+
+    #[test]
+    fn fuzzy_key_empty() {
+        assert_eq!(fuzzy_match_key(""), "");
+    }
+
+    // --- resolve_to_library_title ---
+
+    #[test]
+    fn resolve_exact_match() {
+        let exact: std::collections::HashSet<&str> =
+            ["streets of rage", "sonic the hedgehog"].into_iter().collect();
+        let fuzzy = std::collections::HashMap::new();
+
+        assert_eq!(
+            resolve_to_library_title("Streets of Rage (USA)", &exact, &fuzzy),
+            "streets of rage"
+        );
+    }
+
+    #[test]
+    fn resolve_fuzzy_colon_to_dash() {
+        let exact: std::collections::HashSet<&str> =
+            ["teenage mutant ninja turtles - the hyperstone heist"].into_iter().collect();
+        let mut fuzzy = std::collections::HashMap::new();
+        fuzzy.insert(
+            fuzzy_match_key("teenage mutant ninja turtles - the hyperstone heist"),
+            "teenage mutant ninja turtles - the hyperstone heist",
+        );
+
+        // LaunchBox uses colon, library uses dash
+        assert_eq!(
+            resolve_to_library_title(
+                "Teenage Mutant Ninja Turtles: The Hyperstone Heist",
+                &exact,
+                &fuzzy
+            ),
+            "teenage mutant ninja turtles - the hyperstone heist"
+        );
+    }
+
+    #[test]
+    fn resolve_no_match_returns_normalized() {
+        let exact = std::collections::HashSet::new();
+        let fuzzy = std::collections::HashMap::new();
+
+        assert_eq!(
+            resolve_to_library_title("Unknown Game (Japan)", &exact, &fuzzy),
+            "unknown game"
+        );
+    }
+
+    #[test]
+    fn resolve_bare_knuckle_colon_dash() {
+        let exact: std::collections::HashSet<&str> =
+            ["bare knuckle - ikari no tekken"].into_iter().collect();
+        let mut fuzzy = std::collections::HashMap::new();
+        fuzzy.insert(
+            fuzzy_match_key("bare knuckle - ikari no tekken"),
+            "bare knuckle - ikari no tekken",
+        );
+
+        assert_eq!(
+            resolve_to_library_title(
+                "Bare Knuckle: Ikari no Tekken",
+                &exact,
+                &fuzzy
+            ),
+            "bare knuckle - ikari no tekken"
+        );
     }
 }
