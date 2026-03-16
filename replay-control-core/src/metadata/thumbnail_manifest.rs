@@ -562,14 +562,13 @@ pub fn find_in_manifest<'a>(
         };
         for part in search_key.split(separator) {
             let part = part.trim();
-            if part.len() >= 5 {
-                if let Some(m) = index
+            if part.len() >= 5
+                && let Some(m) = index
                     .by_tags
                     .get(part)
                     .or_else(|| index.by_version.get(part))
-                {
-                    return Some(m);
-                }
+            {
+                return Some(m);
             }
         }
     }

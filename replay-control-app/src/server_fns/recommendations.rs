@@ -9,6 +9,10 @@ pub struct RecommendedGame {
     pub display_name: String,
     pub box_art_url: Option<String>,
     pub href: String,
+    /// Optional short label (e.g., region tags). When set, UI can show this
+    /// instead of `display_name` for compact display.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// A genre with its game count across the library.
@@ -348,5 +352,6 @@ pub(super) fn to_recommended(
         display_name,
         box_art_url: rom.box_art_url.clone(),
         href,
+        label: None,
     })
 }

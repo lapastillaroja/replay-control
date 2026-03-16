@@ -719,6 +719,7 @@ fn RelatedGamesSection(
                                     <SimilarGamesRow
                                         games=data.series_siblings.clone()
                                         title_key="game_detail.more_in_series"
+                                        custom_title=data.series_name.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_similar>
@@ -771,18 +772,31 @@ fn GameChipRow(title_key: &'static str, chips: Vec<ChipItem>) -> impl IntoView {
 fn SimilarGamesRow(
     games: Vec<RecommendedGame>,
     #[prop(default = "game_detail.more_like_this")] title_key: &'static str,
+    /// Optional custom title (e.g., series name from Wikidata). When non-empty, displayed
+    /// instead of the i18n title_key.
+    #[prop(default = String::new())] custom_title: String,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let has_custom = !custom_title.is_empty();
 
     view! {
         <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), title_key)}</h2>
+            <h2 class="game-section-title">
+                {move || {
+                    if has_custom {
+                        custom_title.clone()
+                    } else {
+                        t(i18n.locale.get(), title_key).to_string()
+                    }
+                }}
+            </h2>
             <div class="recent-scroll">
                 {games.into_iter().map(|game| {
+                    let name = game.label.unwrap_or(game.display_name);
                     view! {
                         <GameScrollCard
                             href=game.href
-                            name=game.display_name
+                            name=name
                             system=game.system_display
                             box_art_url=game.box_art_url
                         />

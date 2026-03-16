@@ -452,17 +452,17 @@ fn m3u_has_target_on_disk(m3u_path: &Path, roms_root: &Path) -> bool {
         let normalized = trimmed.replace('\\', "/");
 
         // Try resolving via /roms/ prefix (absolute Pi-side paths).
-        if let Some(after_roms) = normalized.split("/roms/").nth(1) {
-            if roms_root.join(after_roms).exists() {
-                return true;
-            }
+        if let Some(after_roms) = normalized.split("/roms/").nth(1)
+            && roms_root.join(after_roms).exists()
+        {
+            return true;
         }
 
         // Try resolving relative to the M3U file's parent directory.
-        if let Some(parent) = m3u_path.parent() {
-            if parent.join(&normalized).exists() {
-                return true;
-            }
+        if let Some(parent) = m3u_path.parent()
+            && parent.join(&normalized).exists()
+        {
+            return true;
         }
     }
 
@@ -594,12 +594,12 @@ fn is_rom_file(path: &Path, system: &System) -> bool {
     // Filter supplementary GD-ROM disc images in arcade_dc.
     // Files like "gdl-0010.chd" and "gds-0009a.chd" are MAME GD-ROM data
     // required alongside the parent ZIP ROM — they are not standalone games.
-    if system.folder_name == "arcade_dc" && ext_lower == "chd" {
-        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-            let lower = stem.to_ascii_lowercase();
-            if lower.starts_with("gdl-") || lower.starts_with("gds-") {
-                return false;
-            }
+    if system.folder_name == "arcade_dc" && ext_lower == "chd"
+        && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+    {
+        let lower = stem.to_ascii_lowercase();
+        if lower.starts_with("gdl-") || lower.starts_with("gds-") {
+            return false;
         }
     }
 
