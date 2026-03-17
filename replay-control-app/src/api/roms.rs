@@ -19,7 +19,7 @@ async fn list_system_roms(
     state
         .cache
         .get_roms(&state.storage(), &system, state.region_preference(), state.region_preference_secondary())
-        .map(Json)
+        .map(|arc| Json(arc.to_vec()))
         .map_err(|_| StatusCode::NOT_FOUND)
 }
 

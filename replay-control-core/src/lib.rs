@@ -41,4 +41,6 @@ pub use metadata::thumbnail_manifest;
 #[cfg(feature = "metadata")]
 pub use metadata::thumbnails;
 #[cfg(feature = "metadata")]
+pub use metadata::image_matching;
+#[cfg(feature = "metadata")]
 pub use metadata::user_data_db;

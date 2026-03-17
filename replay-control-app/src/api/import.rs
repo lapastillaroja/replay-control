@@ -868,7 +868,7 @@ impl ThumbnailPipeline {
         storage_root: &std::path::Path,
         system: &str,
     ) {
-        use std::collections::HashMap;
+        use replay_control_core::image_matching::{build_dir_index, find_best_match};
 
         let rom_filenames = db.visible_filenames(system).unwrap_or_default();
         let media_base = storage_root
@@ -876,114 +876,11 @@ impl ThumbnailPipeline {
             .join("media")
             .join(system);
 
-        type DirIndex = (HashMap<String, String>, HashMap<String, String>, HashMap<String, String>, HashMap<String, String>);
-
-        /// Build a filename index for a media subdirectory (boxart or snap).
-        /// Returns (exact, exact_ci, fuzzy, version) maps from normalized keys to relative paths.
-        fn build_dir_index(
-            dir: &std::path::Path,
-            kind: &str,
-        ) -> DirIndex {
-            use replay_control_core::thumbnails::{base_title, strip_version};
-
-            let mut exact = HashMap::new();
-            let mut exact_ci = HashMap::new();
-            let mut fuzzy = HashMap::new();
-            let mut version = HashMap::new();
-
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if let Some(img_stem) = name_str.strip_suffix(".png") {
-                        // Skip tiny files (fake symlinks / stubs).
-                        let valid = entry
-                            .metadata()
-                            .map(|m| m.len() >= 200)
-                            .unwrap_or(false);
-                        if !valid {
-                            continue;
-                        }
-                        let path = format!("{kind}/{name_str}");
-                        exact.insert(img_stem.to_string(), path.clone());
-                        exact_ci.entry(img_stem.to_lowercase()).or_insert_with(|| path.clone());
-                        let bt = base_title(img_stem);
-                        let vs = strip_version(&bt).to_string();
-                        fuzzy.entry(bt.clone()).or_insert_with(|| path.clone());
-                        if vs.len() < bt.len() {
-                            version.entry(vs).or_insert(path);
-                        }
-                    }
-                }
-            }
-            (exact, exact_ci, fuzzy, version)
-        }
-
-        /// Look up a ROM in the directory index using the same fuzzy tiers
-        /// as resolve_box_art / find_image_on_disk.
-        /// For arcade systems, `arcade_display` provides the translated display name.
-        fn find_match(
-            rom_filename: &str,
-            arcade_display: Option<&str>,
-            exact: &HashMap<String, String>,
-            exact_ci: &HashMap<String, String>,
-            fuzzy: &HashMap<String, String>,
-            version: &HashMap<String, String>,
-        ) -> Option<String> {
-            use replay_control_core::thumbnails::{base_title, strip_version, thumbnail_filename};
-
-            let stem = rom_filename
-                .rfind('.')
-                .map(|i| &rom_filename[..i])
-                .unwrap_or(rom_filename);
-            let stem = replay_control_core::title_utils::strip_n64dd_prefix(stem);
-            let source = arcade_display.unwrap_or(stem);
-            let thumb_name = thumbnail_filename(source);
-
-            // Tier 1: exact
-            if let Some(path) = exact.get(&thumb_name) {
-                return Some(path.clone());
-            }
-
-            // Colon variants for arcade games.
-            if source.contains(':') {
-                let dash = thumbnail_filename(&source.replace(": ", " - ").replace(':', " -"));
-                if let Some(path) = exact.get(&dash) {
-                    return Some(path.clone());
-                }
-                let drop = thumbnail_filename(&source.replace(": ", " ").replace(':', ""));
-                if let Some(path) = exact.get(&drop) {
-                    return Some(path.clone());
-                }
-            }
-
-            // Tier 1b: case-insensitive exact (preserves region tags)
-            if let Some(path) = exact_ci.get(&thumb_name.to_lowercase()) {
-                return Some(path.clone());
-            }
-
-            // Tier 2: base title (strip tags)
-            let base = base_title(&thumb_name);
-            if let Some(path) = fuzzy.get(&base) {
-                return Some(path.clone());
-            }
-
-            // Tier 3: version-stripped
-            let vs = strip_version(&base);
-            if vs.len() < base.len()
-                && let Some(path) = fuzzy.get(vs).or_else(|| version.get(vs))
-            {
-                return Some(path.clone());
-            }
-
-            None
-        }
-
         let boxart_dir = media_base.join("boxart");
         let snap_dir = media_base.join("snap");
 
-        let (box_exact, box_exact_ci, box_fuzzy, box_version) = build_dir_index(&boxart_dir, "boxart");
-        let (snap_exact, snap_exact_ci, snap_fuzzy, snap_version) = build_dir_index(&snap_dir, "snap");
+        let box_index = build_dir_index(&boxart_dir, "boxart");
+        let snap_index = build_dir_index(&snap_dir, "snap");
 
         let is_arcade = replay_control_core::systems::is_arcade_system(system);
 
@@ -1000,8 +897,8 @@ impl ThumbnailPipeline {
             } else {
                 None
             };
-            let boxart_rel = find_match(rom_filename, arcade_display, &box_exact, &box_exact_ci, &box_fuzzy, &box_version);
-            let snap_rel = find_match(rom_filename, arcade_display, &snap_exact, &snap_exact_ci, &snap_fuzzy, &snap_version);
+            let boxart_rel = find_best_match(&box_index, rom_filename, arcade_display);
+            let snap_rel = find_best_match(&snap_index, rom_filename, arcade_display);
 
             if boxart_rel.is_some() || snap_rel.is_some() {
                 updates.push((

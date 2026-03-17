@@ -93,9 +93,9 @@ pub async fn get_roms_page(
     };
 
     // Apply tier-based, clone, and genre filters before search scoring.
-    let pre_filtered: Vec<RomEntry> = all_roms
-        .into_iter()
-        .filter(|r| {
+    let pre_filtered: Vec<&RomEntry> = all_roms
+        .iter()
+        .filter(|&r| {
             if hide_hacks || hide_translations || hide_betas {
                 let (tier, _, _) = rom_tags::classify(&r.game.rom_filename);
                 if hide_hacks && tier == rom_tags::RomTier::Hack {
@@ -142,7 +142,7 @@ pub async fn get_roms_page(
 
     // Apply minimum rating filter: batch-load all ratings for the system,
     // then exclude ROMs below the threshold (unrated games are excluded).
-    let pre_filtered: Vec<RomEntry> = if let Some(threshold) = min_rating {
+    let pre_filtered: Vec<&RomEntry> = if let Some(threshold) = min_rating {
         let ratings = if let Some(guard) = state.metadata_db() {
             if let Some(db) = guard.as_ref() {
                 db.system_ratings(&system).unwrap_or_default()
@@ -164,11 +164,11 @@ pub async fn get_roms_page(
         pre_filtered
     };
 
-    let filtered: Vec<RomEntry> = if search.is_empty() {
+    let filtered: Vec<&RomEntry> = if search.is_empty() {
         pre_filtered
     } else {
         let q = search.to_lowercase();
-        let mut scored: Vec<(u32, RomEntry)> = pre_filtered
+        let mut scored: Vec<(u32, &RomEntry)> = pre_filtered
             .into_iter()
             .filter_map(|r| {
                 let display = r
@@ -185,7 +185,8 @@ pub async fn get_roms_page(
     };
 
     let total = filtered.len();
-    let mut roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).collect();
+    // Clone only the page-sized subset we need to mutate.
+    let mut roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).cloned().collect();
     let has_more = offset + roms.len() < total;
 
     // Use cached favorites set instead of per-request filesystem scan.
@@ -288,7 +289,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let rom = all_roms
-        .into_iter()
+        .iter()
         .find(|r| r.game.rom_filename == filename)
         .ok_or_else(|| ServerFnError::new(format!("ROM not found: {filename}")))?;
 

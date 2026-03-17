@@ -467,8 +467,8 @@ pub async fn global_search(
             std::collections::HashMap::new()
         };
 
-        let mut scored: Vec<(u32, RomEntry)> = all_roms
-            .into_iter()
+        let mut scored: Vec<(u32, &RomEntry)> = all_roms
+            .iter()
             .filter(|r| {
                 // Apply tier-based filters (hacks, translations, betas/protos).
                 if hide_hacks || hide_translations || hide_betas {
@@ -576,7 +576,7 @@ pub async fn global_search(
         let mut top_roms: Vec<RomEntry> = scored
             .into_iter()
             .take(per_system_limit)
-            .map(|(_, r)| r)
+            .map(|(_, r)| r.clone())
             .collect();
 
         replay_control_core::roms::mark_favorites(&storage, &sys.folder_name, &mut top_roms);
