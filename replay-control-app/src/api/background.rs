@@ -227,8 +227,14 @@ impl BackgroundManager {
         tracing::info!("Thumbnail data sources exist but index is empty (data loss?) — rebuilding index from GitHub API");
 
         // Lock the DB for the duration of the index rebuild.
-        let db_ref = state.metadata_db.clone();
-        let mut db_guard = db_ref.lock().expect("metadata_db lock poisoned");
+        // Uses the accessor which handles re-open-if-deleted logic.
+        let mut db_guard = match state.metadata_db() {
+            Some(guard) => guard,
+            None => {
+                tracing::warn!("Metadata DB unavailable, skipping thumbnail index rebuild");
+                return;
+            }
+        };
         let db = match db_guard.as_mut() {
             Some(db) => db,
             None => {
@@ -360,7 +366,7 @@ impl AppState {
         done_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     ) {
         let state = self.clone();
-        std::thread::spawn(move || {
+        tokio::task::spawn_blocking(move || {
             // Use catch_unwind to guarantee the done_flag is cleared even if
             // anything in the enrichment pipeline panics. Without this, a panic
             // leaves the busy flag stuck forever.

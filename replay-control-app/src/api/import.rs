@@ -251,9 +251,16 @@ impl ImportPipeline {
             }
         }
 
-        // Hold DB lock for the duration of the import. This blocks other
-        // threads' with_db() calls but prevents concurrent connection issues.
-        // TODO: acquire/release per-batch for better concurrency.
+        // Hold DB lock for the duration of the import (~5-15s). This blocks
+        // other threads' with_db() calls but prevents concurrent connection
+        // issues. `import_launchbox` takes `&mut MetadataDb` and does internal
+        // batching, so the lock must span the full call. Restructuring to
+        // acquire/release per-batch would require changing the core API.
+        // TODO(perf): acquire/release per-batch for better concurrency.
+        //
+        // Bypasses state.metadata_db() accessor intentionally: we need to hold
+        // the MutexGuard across the entire import + alias phase, which is
+        // incompatible with the accessor's borrow-and-release pattern.
         let db_ref = state.metadata_db.clone();
         let mut db_guard = db_ref.lock().expect("metadata_db lock poisoned");
         let db = match db_guard.as_mut() {
@@ -554,7 +561,10 @@ impl ThumbnailPipeline {
 
         let storage_root = state.storage().root.clone();
 
-        // Lock DB for the duration of the thumbnail update.
+        // Lock DB for the duration of the thumbnail update. Bypasses
+        // state.metadata_db() accessor intentionally: we need to hold the
+        // MutexGuard across both index refresh and download phases, which is
+        // incompatible with the accessor's borrow-and-release pattern.
         let db_ref = state.metadata_db.clone();
         let mut db_guard = db_ref.lock().expect("metadata_db lock poisoned");
         let db = match db_guard.as_mut() {
@@ -975,10 +985,7 @@ impl ThumbnailPipeline {
         let (box_exact, box_exact_ci, box_fuzzy, box_version) = build_dir_index(&boxart_dir, "boxart");
         let (snap_exact, snap_exact_ci, snap_fuzzy, snap_version) = build_dir_index(&snap_dir, "snap");
 
-        let is_arcade = matches!(
-            system,
-            "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
-        );
+        let is_arcade = replay_control_core::systems::is_arcade_system(system);
 
         let mut updates: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
 

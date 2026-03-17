@@ -4,6 +4,35 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## 2026-03-17
+
+- refactor: sequenced startup pipeline replacing 4 independent racing tasks with ordered phases — auto-import → populate → enrich → watchers (`5a7abc8`)
+- refactor: extract ImportPipeline + ThumbnailPipeline from AppState with shared busy flag for mutual exclusion (`5a7abc8`)
+- feat: non-blocking startup — server responds immediately with empty data during warmup, "Scanning game library..." banner shown (`5a7abc8`)
+- fix: single DB connection policy — import holds Mutex directly, eliminated 3 rogue MetadataDb::open() calls causing SQLite corruption (`f38f77a`)
+- fix: filesystem-aware SQLite locking — WAL mode on local storage (USB/exFAT, SD/ext4), nolock+DELETE on NFS only (`257831f`)
+- feat: auto-rebuild thumbnail index at startup when data_sources exists but index is empty (data loss recovery) (`257831f`)
+- feat: single-pass LaunchBox XML parsing — was triple-parse taking 15min on Pi, now ~6s (`5a7abc8`)
+- fix: remove 10-second cleanup thread delays — busy flag clears immediately after operations (`5a7abc8`)
+
+## 2026-03-16
+
+- feat: add game series and cross-name variant system — algorithmic series_key, TGDB alternates, LaunchBox alternate names (`0ff81d2`)
+- feat: add Wikidata series data with arcade support — 3,935 entries across 194 series via SPARQL extraction (`63c07fa`)
+- fix: unify alias resolution with fuzzy matching for colon/dash variants — bidirectional TGDB aliases (`a18d9a6`)
+- feat: concise labels for "Other Versions" — region only for same-name, name+region for cross-name (`ed40b2c`)
+- feat: add CRC32 hash-based ROM identification for cartridge systems — 9 systems with No-Intro DAT matching (`07e9815`)
+- feat: add secondary region preference with Strategy C sort order — Primary > Secondary > World (`84879df`)
+- feat: add text size toggle (normal/large) with rem-based image scaling (`8951b19`)
+- feat: add pull-to-refresh for iOS PWA standalone mode — PullToRefresh.js lazy-loaded (`c53b6f9`)
+- feat: show arcade clone siblings as "Arcade Versions" on game detail page (`8ca1cf2`)
+- fix: unify box art resolution between cards and detail page — single resolve_box_art() path (`fa14928`)
+- refactor: split metadata_db.rs (2,895 lines) into 7 focused sub-modules (`84cf3d5`)
+- fix: tilde dual-title boxart matching — split on ~ and match either half (`84cf3d5`)
+- fix: non-blocking startup when game library is empty (`f55ed74`)
+- fix: eliminate rogue DB connections causing corruption (`f38f77a`)
+- docs: add secondary region analysis, Wikidata enrichment, sequel/franchise plan, pull-to-refresh research, app refactoring plan, SQLite filesystem analysis (`various`)
+
 ## 2026-03-14
 
 - fix: metadata page horizontal overflow on mobile — system names wrap instead of truncating (`61226ab`)

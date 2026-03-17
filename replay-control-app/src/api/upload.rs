@@ -23,6 +23,10 @@ async fn upload_rom(
             .map(String::from)
             .unwrap_or_else(|| "unknown".to_string());
 
+        // TODO(perf): This loads the entire file into memory. For large ROMs,
+        // stream to a temp file instead (e.g., via tokio::io::copy from the
+        // field stream to a tokio::fs::File). Acceptable for now since uploads
+        // are rare and typically single files.
         let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
 
         let dest = system_dir.join(&filename);

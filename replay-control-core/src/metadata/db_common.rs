@@ -27,8 +27,11 @@ pub fn open_connection(db_path: &Path, label: &str, is_local: bool) -> Result<Co
         // Local filesystem: prefer WAL (crash-safe), fall back to nolock.
         match open_wal(db_path, label) {
             Ok(conn) => Ok(conn),
-            Err(_) => {
-                tracing::info!("{label}: WAL open failed, trying nolock mode");
+            Err(e) => {
+                tracing::info!(
+                    "{label}: WAL open failed ({e}), falling back to nolock mode \
+                     (possible NFS mount misdetected as local)"
+                );
                 open_nolock(db_path, label)
             }
         }

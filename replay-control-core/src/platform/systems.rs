@@ -465,6 +465,12 @@ pub fn find_system(folder_name: &str) -> Option<&'static System> {
     SYSTEMS.iter().find(|s| s.folder_name == folder_name)
 }
 
+/// Check whether a system folder name refers to an arcade system.
+/// Uses the system registry rather than hardcoded folder name lists.
+pub fn is_arcade_system(folder_name: &str) -> bool {
+    find_system(folder_name).is_some_and(|s| s.category == SystemCategory::Arcade)
+}
+
 /// Extract the system folder name from a favorite/recent filename.
 /// E.g., "sega_smd@Sonic.md.fav" → "sega_smd"
 pub fn system_from_fav_filename(filename: &str) -> Option<&str> {

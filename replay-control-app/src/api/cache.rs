@@ -87,7 +87,9 @@ pub struct GameLibrary {
     favorites: std::sync::RwLock<Option<FavoritesCache>>,
     recents: std::sync::RwLock<Option<CacheEntry<Vec<RecentEntry>>>>,
     /// Per-system image index for batch box art resolution.
-    images: std::sync::RwLock<HashMap<String, ImageIndex>>,
+    /// Wrapped in `Arc` so cache hits return a cheap `Arc::clone()` instead of
+    /// deep-copying all 4 HashMaps.
+    images: std::sync::RwLock<HashMap<String, Arc<ImageIndex>>>,
     /// Shared reference to the metadata DB for L2 persistent cache.
     db: Arc<Mutex<Option<MetadataDb>>>,
     /// Shared flag: true while background startup scan is running.
@@ -557,7 +559,7 @@ impl GameLibrary {
         hash_results: &HashMap<String, replay_control_core::rom_hash::HashResult>,
     ) {
         use replay_control_core::metadata_db::GameEntry;
-        use replay_control_core::systems::{self, SystemCategory};
+        use replay_control_core::systems;
         use replay_control_core::{arcade_db, game_db};
 
         let mtime_secs = dir_mtime(system_dir).and_then(|t| {
@@ -566,8 +568,7 @@ impl GameLibrary {
                 .map(|d| d.as_secs() as i64)
         });
 
-        let is_arcade =
-            systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
+        let is_arcade = systems::is_arcade_system(system);
 
         let cached_roms: Vec<GameEntry> = roms
             .iter()
@@ -725,10 +726,9 @@ impl GameLibrary {
         roms: &[replay_control_core::metadata_db::GameEntry],
     ) {
         use replay_control_core::game_db;
-        use replay_control_core::systems::{self, SystemCategory};
+        use replay_control_core::systems;
 
-        let is_arcade =
-            systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
+        let is_arcade = systems::is_arcade_system(system);
 
         // TGDB alternates are only available for non-arcade systems with game_db coverage.
         if is_arcade || !game_db::has_system(system) {
@@ -830,12 +830,10 @@ impl GameLibrary {
         roms: &[replay_control_core::metadata_db::GameEntry],
     ) {
         use replay_control_core::series_db;
-        use replay_control_core::systems::{self, SystemCategory};
+        use replay_control_core::systems;
 
         // Wikidata series data is only available for non-arcade systems with game_db coverage.
-        let is_arcade =
-            systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
-        if is_arcade {
+        if systems::is_arcade_system(system) {
             return;
         }
 
@@ -901,9 +899,14 @@ impl GameLibrary {
         }
     }
 
-    /// Get the set of favorited filenames for a system.
-    /// Uses a cached favorites list to avoid per-request filesystem reads.
-    pub fn get_favorites_set(&self, storage: &StorageLocation, system: &str) -> HashSet<String> {
+    /// Ensure the favorites cache is fresh and apply `f` to its data.
+    /// On cache hit, reads under a read lock. On miss, rebuilds the cache,
+    /// stores it, and applies `f` to the fresh data.
+    fn with_favorites<R>(
+        &self,
+        storage: &StorageLocation,
+        f: impl Fn(&HashMap<String, HashSet<String>>) -> R,
+    ) -> R {
         let favs_dir = storage.favorites_dir();
 
         // Try read lock first.
@@ -911,16 +914,24 @@ impl GameLibrary {
             && let Some(ref cache) = *guard
             && cache.is_fresh(&favs_dir)
         {
-            return cache.data.get(system).cloned().unwrap_or_default();
+            return f(&cache.data);
         }
 
         // Cache miss — rebuild.
         let new_cache = FavoritesCache::new(storage);
-        let result = new_cache.data.get(system).cloned().unwrap_or_default();
+        let result = f(&new_cache.data);
         if let Ok(mut guard) = self.favorites.write() {
             *guard = Some(new_cache);
         }
         result
+    }
+
+    /// Get the set of favorited filenames for a system.
+    /// Uses a cached favorites list to avoid per-request filesystem reads.
+    pub fn get_favorites_set(&self, storage: &StorageLocation, system: &str) -> HashSet<String> {
+        self.with_favorites(storage, |data| {
+            data.get(system).cloned().unwrap_or_default()
+        })
     }
 
     /// Get the most-favorited system and its favorited filenames.
@@ -929,23 +940,7 @@ impl GameLibrary {
         &self,
         storage: &StorageLocation,
     ) -> Option<(String, Vec<String>)> {
-        let favs_dir = storage.favorites_dir();
-
-        // Ensure cache is fresh.
-        if let Ok(guard) = self.favorites.read()
-            && let Some(ref cache) = *guard
-            && cache.is_fresh(&favs_dir)
-        {
-            return Self::top_system_from_data(&cache.data);
-        }
-
-        // Rebuild cache.
-        let new_cache = FavoritesCache::new(storage);
-        let result = Self::top_system_from_data(&new_cache.data);
-        if let Ok(mut guard) = self.favorites.write() {
-            *guard = Some(new_cache);
-        }
-        result
+        self.with_favorites(storage, Self::top_system_from_data)
     }
 
     fn top_system_from_data(
@@ -962,49 +957,22 @@ impl GameLibrary {
         &self,
         storage: &StorageLocation,
     ) -> Option<HashMap<String, Vec<String>>> {
-        let favs_dir = storage.favorites_dir();
-
-        let extract = |data: &HashMap<String, HashSet<String>>| -> HashMap<String, Vec<String>> {
-            data.iter()
+        self.with_favorites(storage, |data| {
+            let result: HashMap<String, Vec<String>> = data
+                .iter()
                 .filter(|(_, files)| !files.is_empty())
                 .map(|(system, files)| (system.clone(), files.iter().cloned().collect()))
-                .collect()
-        };
-
-        if let Ok(guard) = self.favorites.read()
-            && let Some(ref cache) = *guard
-            && cache.is_fresh(&favs_dir)
-        {
-            let result = extract(&cache.data);
-            return if result.is_empty() { None } else { Some(result) };
-        }
-
-        let new_cache = FavoritesCache::new(storage);
-        let result = extract(&new_cache.data);
-        if let Ok(mut guard) = self.favorites.write() {
-            *guard = Some(new_cache);
-        }
-        if result.is_empty() { None } else { Some(result) }
+                .collect();
+            if result.is_empty() { None } else { Some(result) }
+        })
     }
 
     /// Get the total count of favorited games (all systems).
     /// Uses the cached favorites to avoid filesystem traversal.
     pub fn get_favorites_count(&self, storage: &StorageLocation) -> usize {
-        let favs_dir = storage.favorites_dir();
-
-        if let Ok(guard) = self.favorites.read()
-            && let Some(ref cache) = *guard
-            && cache.is_fresh(&favs_dir)
-        {
-            return cache.data.values().map(|s| s.len()).sum();
-        }
-
-        let new_cache = FavoritesCache::new(storage);
-        let count = new_cache.data.values().map(|s| s.len()).sum();
-        if let Ok(mut guard) = self.favorites.write() {
-            *guard = Some(new_cache);
-        }
-        count
+        self.with_favorites(storage, |data| {
+            data.values().map(|s| s.len()).sum()
+        })
     }
 
     /// Get cached recents or scan and cache.
@@ -1042,20 +1010,12 @@ impl GameLibrary {
         let media_base = state.storage().rc_dir().join("media").join(system);
         let boxart_dir = media_base.join("boxart");
 
-        // Check cache freshness.
+        // Check cache freshness — return a cheap Arc::clone() on hit.
         if let Ok(guard) = self.images.read()
             && let Some(idx) = guard.get(system)
             && idx.is_fresh(&boxart_dir)
         {
-            return std::sync::Arc::new(ImageIndex {
-                exact: idx.exact.clone(),
-                fuzzy: idx.fuzzy.clone(),
-                version: idx.version.clone(),
-                db_paths: idx.db_paths.clone(),
-                manifest: None, // Don't clone the manifest (large); rebuild if needed
-                dir_mtime: idx.dir_mtime,
-                expires: idx.expires,
-            });
+            return Arc::clone(idx);
         }
 
         // Build the index.
@@ -1148,28 +1108,18 @@ impl GameLibrary {
             (HashMap::new(), None)
         };
 
-        let index = ImageIndex {
+        let arc = Arc::new(ImageIndex {
             exact,
             fuzzy,
             version,
             db_paths,
-            manifest: None, // Stored in cache without manifest (rebuilt on arc)
+            manifest,
             dir_mtime: dir_mtime(&boxart_dir),
             expires: Instant::now() + CACHE_HARD_TTL,
-        };
-
-        let arc = std::sync::Arc::new(ImageIndex {
-            exact: index.exact.clone(),
-            fuzzy: index.fuzzy.clone(),
-            version: index.version.clone(),
-            db_paths: index.db_paths.clone(),
-            manifest,
-            dir_mtime: index.dir_mtime,
-            expires: index.expires,
         });
 
         if let Ok(mut guard) = self.images.write() {
-            guard.insert(system.to_string(), index);
+            guard.insert(system.to_string(), Arc::clone(&arc));
         }
 
         arc
@@ -1204,10 +1154,7 @@ impl GameLibrary {
         let stem = replay_control_core::title_utils::strip_n64dd_prefix(stem);
 
         // For arcade ROMs, translate MAME codename to display name.
-        let is_arcade = matches!(
-            system,
-            "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
-        );
+        let is_arcade = replay_control_core::systems::is_arcade_system(system);
         let display_name = if is_arcade {
             replay_control_core::arcade_db::lookup_arcade_game(stem)
                 .map(|info| info.display_name)
@@ -1521,24 +1468,25 @@ impl GameLibrary {
         });
 
         // Also update L1 cache entries.
+        // Build a HashMap for O(1) lookup instead of O(n*m) nested scan.
+        let enrichment_map: HashMap<&str, &(String, Option<String>, Option<String>, Option<u8>, Option<f32>)> =
+            enrichments.iter().map(|e| (e.0.as_str(), e)).collect();
+
         if let Ok(mut guard) = self.roms.write()
             && let Some(entry) = guard.get_mut(system)
         {
             for rom in &mut entry.data {
-                for (filename, art, _genre, players, rating) in &enrichments {
-                    if rom.game.rom_filename == *filename {
-                        if art.is_some() {
-                            rom.box_art_url = art.clone();
-                        }
-                        // RomEntry doesn't carry genre — L1 genre is
-                        // served via lookup_genre() which reads game_library.
-                        if let Some(r) = rating {
-                            rom.rating = Some(*r);
-                        }
-                        if rom.players.is_none() {
-                            rom.players = *players;
-                        }
-                        break;
+                if let Some((_, art, _genre, players, rating)) = enrichment_map.get(rom.game.rom_filename.as_str()) {
+                    if art.is_some() {
+                        rom.box_art_url = art.clone();
+                    }
+                    // RomEntry doesn't carry genre — L1 genre is
+                    // served via lookup_genre() which reads game_library.
+                    if let Some(r) = rating {
+                        rom.rating = Some(*r);
+                    }
+                    if rom.players.is_none() {
+                        rom.players = *players;
                     }
                 }
             }
@@ -1562,7 +1510,7 @@ impl GameLibrary {
     ) -> HashMap<String, f64> {
         use replay_control_core::launchbox::normalize_title;
         use replay_control_core::metadata_db::GameMetadata;
-        use replay_control_core::systems::{self, SystemCategory};
+        use replay_control_core::systems;
 
         let storage = state.storage();
         let mut matched_ratings: HashMap<String, f64> = HashMap::new();
@@ -1578,8 +1526,7 @@ impl GameLibrary {
             return matched_ratings;
         }
 
-        let is_arcade =
-            systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
+        let is_arcade = systems::is_arcade_system(system);
 
         // Build a normalized-title -> metadata map from existing entries.
         let mut title_index: HashMap<String, &GameMetadata> = HashMap::new();
