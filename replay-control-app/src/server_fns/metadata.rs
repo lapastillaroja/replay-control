@@ -85,12 +85,16 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         .map(|s| {
             let with_metadata = meta_map.remove(&s.folder_name).unwrap_or(0);
             let with_thumbnail = thumb_map.remove(&s.folder_name).unwrap_or(0);
+            // Cap at total_games to prevent >100% display. This can happen transiently
+            // when game_library hasn't been populated yet (before warmup completes) and
+            // entries_per_system falls back to counting all game_metadata rows, which
+            // may include disc files filtered out by M3U dedup in the filesystem scan.
             SystemCoverage {
                 system: s.folder_name,
                 display_name: s.display_name,
                 total_games: s.game_count,
-                with_metadata,
-                with_thumbnail,
+                with_metadata: with_metadata.min(s.game_count),
+                with_thumbnail: with_thumbnail.min(s.game_count),
             }
         })
         .collect();
@@ -149,12 +153,21 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
         .map_err(ServerFnError::new)
 }
 
-/// Check if a metadata operation is currently running (import or thumbnail update).
+/// Check if a metadata operation is currently running (import or thumbnail update)
+/// or if the background startup pipeline is still warming up.
 /// Used by the UI to show a degraded-mode banner.
 #[server(prefix = "/sfn")]
 pub async fn is_metadata_busy() -> Result<bool, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(state.import.is_busy())
+    Ok(state.is_busy())
+}
+
+/// Get a human-readable label for the current background operation.
+/// Empty string if idle.
+#[server(prefix = "/sfn")]
+pub async fn get_busy_label() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(state.get_busy_label())
 }
 
 /// Check if the background game library scan (warmup) is in progress.
@@ -162,7 +175,7 @@ pub async fn is_metadata_busy() -> Result<bool, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn is_scanning() -> Result<bool, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(state.is_warmup_in_progress())
+    Ok(state.is_scanning())
 }
 
 /// Download LaunchBox metadata from the internet, extract, and import.
@@ -191,7 +204,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
     // Atomically claim the shared busy flag (same one used by import + thumbnails).
-    if !state.import.claim_busy() {
+    if !state.claim_busy() {
         return Err(ServerFnError::new(
             "Another metadata operation is already running",
         ));
@@ -200,7 +213,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     // Clear L1+L2 cache.
     state.cache.invalidate();
 
-    // Rebuild in background; the shared busy flag is cleared when done (or on panic).
-    state.spawn_cache_enrichment_with_flag(state.import.busy_flag());
+    // Rebuild in background; the busy flag is cleared when done (or on panic).
+    state.spawn_cache_enrichment_with_flag(state.busy_flag());
     Ok(())
 }

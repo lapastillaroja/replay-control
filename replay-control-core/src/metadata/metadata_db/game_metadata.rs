@@ -492,7 +492,10 @@ impl MetadataDb {
         Ok(count == 0)
     }
 
-    /// Count metadata entries per system, ordered by count descending.
+    /// Count metadata entries *with descriptions* per system, ordered by count descending.
+    ///
+    /// Only counts rows where `description IS NOT NULL AND description != ''` so that
+    /// thumbnail-only metadata rows (created by `bulk_update_image_paths`) are excluded.
     ///
     /// Uses a LEFT JOIN with game_library for M3U dedup: when game_library is populated
     /// for a system, only entries matching game_library are counted (disc files
@@ -506,8 +509,9 @@ impl MetadataDb {
                 "SELECT gm.system, COUNT(*) as cnt
                  FROM game_metadata gm
                  LEFT JOIN game_library gl ON gm.system = gl.system AND gm.rom_filename = gl.rom_filename
-                 WHERE gl.rom_filename IS NOT NULL
-                    OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system)
+                 WHERE gm.description IS NOT NULL AND gm.description != ''
+                   AND (gl.rom_filename IS NOT NULL
+                        OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system))
                  GROUP BY gm.system ORDER BY cnt DESC",
             )
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
@@ -648,9 +652,21 @@ mod tests {
     fn entries_per_system_no_game_library_returns_all() {
         let (mut db, _dir) = open_temp_db();
         db.bulk_upsert(&[
-            ("sega_smd".into(), "Sonic.md".into(), make_metadata(None)),
-            ("sega_smd".into(), "Streets.md".into(), make_metadata(None)),
-            ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
+            (
+                "sega_smd".into(),
+                "Sonic.md".into(),
+                make_metadata_with_desc("Sonic game", None),
+            ),
+            (
+                "sega_smd".into(),
+                "Streets.md".into(),
+                make_metadata_with_desc("Streets game", None),
+            ),
+            (
+                "snes".into(),
+                "Mario.sfc".into(),
+                make_metadata_with_desc("Mario game", None),
+            ),
         ])
         .unwrap();
 
@@ -665,10 +681,26 @@ mod tests {
         let (mut db, _dir) = open_temp_db();
 
         db.bulk_upsert(&[
-            ("sega_cd".into(), "Game.m3u".into(), make_metadata(None)),
-            ("sega_cd".into(), "Game (Disc 1).cue".into(), make_metadata(None)),
-            ("sega_cd".into(), "Game (Disc 2).cue".into(), make_metadata(None)),
-            ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
+            (
+                "sega_cd".into(),
+                "Game.m3u".into(),
+                make_metadata_with_desc("Game desc", None),
+            ),
+            (
+                "sega_cd".into(),
+                "Game (Disc 1).cue".into(),
+                make_metadata_with_desc("Game disc 1", None),
+            ),
+            (
+                "sega_cd".into(),
+                "Game (Disc 2).cue".into(),
+                make_metadata_with_desc("Game disc 2", None),
+            ),
+            (
+                "snes".into(),
+                "Mario.sfc".into(),
+                make_metadata_with_desc("Mario desc", None),
+            ),
         ])
         .unwrap();
 
@@ -678,12 +710,8 @@ mod tests {
             None,
         )
         .unwrap();
-        db.save_system_entries(
-            "snes",
-            &[make_game_entry("snes", "Mario.sfc", false)],
-            None,
-        )
-        .unwrap();
+        db.save_system_entries("snes", &[make_game_entry("snes", "Mario.sfc", false)], None)
+            .unwrap();
 
         let counts = db.entries_per_system().unwrap();
         let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
@@ -698,10 +726,26 @@ mod tests {
         let (mut db, _dir) = open_temp_db();
 
         db.bulk_upsert(&[
-            ("sega_cd".into(), "Game.m3u".into(), make_metadata(None)),
-            ("sega_cd".into(), "Game (Disc 1).cue".into(), make_metadata(None)),
-            ("snes".into(), "Mario.sfc".into(), make_metadata(None)),
-            ("snes".into(), "Zelda.sfc".into(), make_metadata(None)),
+            (
+                "sega_cd".into(),
+                "Game.m3u".into(),
+                make_metadata_with_desc("Game desc", None),
+            ),
+            (
+                "sega_cd".into(),
+                "Game (Disc 1).cue".into(),
+                make_metadata_with_desc("Disc 1 desc", None),
+            ),
+            (
+                "snes".into(),
+                "Mario.sfc".into(),
+                make_metadata_with_desc("Mario desc", None),
+            ),
+            (
+                "snes".into(),
+                "Zelda.sfc".into(),
+                make_metadata_with_desc("Zelda desc", None),
+            ),
         ])
         .unwrap();
 
@@ -718,5 +762,101 @@ mod tests {
 
         assert_eq!(sega_cd.1, 1);
         assert_eq!(snes.1, 2);
+    }
+
+    /// Thumbnail-only metadata rows (no description) should not be counted.
+    /// This was the root cause of description coverage >100%.
+    #[test]
+    fn entries_per_system_excludes_thumbnail_only_rows() {
+        let (mut db, _dir) = open_temp_db();
+
+        // Insert metadata with descriptions for 2 games.
+        db.bulk_upsert(&[
+            (
+                "snes".into(),
+                "Mario.sfc".into(),
+                make_metadata_with_desc("Mario game", None),
+            ),
+            (
+                "snes".into(),
+                "Zelda.sfc".into(),
+                make_metadata_with_desc("Zelda game", None),
+            ),
+        ])
+        .unwrap();
+
+        // Insert a thumbnail-only row (no description) via bulk_update_image_paths.
+        // This simulates what happens when thumbnails are downloaded for a game
+        // that has no LaunchBox metadata entry.
+        db.bulk_update_image_paths(&[(
+            "snes".into(),
+            "Metroid.sfc".into(),
+            Some("boxart/Metroid.png".into()),
+            None,
+        )])
+        .unwrap();
+
+        // Populate game_library with 3 games.
+        db.save_system_entries(
+            "snes",
+            &[
+                make_game_entry("snes", "Mario.sfc", false),
+                make_game_entry("snes", "Zelda.sfc", false),
+                make_game_entry("snes", "Metroid.sfc", false),
+            ],
+            None,
+        )
+        .unwrap();
+
+        // entries_per_system should only count the 2 games with descriptions,
+        // not the thumbnail-only Metroid row.
+        let counts = db.entries_per_system().unwrap();
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0], ("snes".into(), 2));
+    }
+
+    /// Entries with no description should not be counted even without game_library.
+    #[test]
+    fn entries_per_system_no_description_not_counted() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.bulk_upsert(&[
+            (
+                "snes".into(),
+                "Mario.sfc".into(),
+                make_metadata_with_desc("Mario game", None),
+            ),
+            // This entry has rating but no description.
+            ("snes".into(), "Zelda.sfc".into(), make_metadata(None)),
+        ])
+        .unwrap();
+
+        let counts = db.entries_per_system().unwrap();
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0], ("snes".into(), 1));
+    }
+
+    /// Empty string description should not be counted.
+    #[test]
+    fn entries_per_system_empty_description_not_counted() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.bulk_upsert(&[
+            (
+                "snes".into(),
+                "Mario.sfc".into(),
+                make_metadata_with_desc("Mario game", None),
+            ),
+            (
+                "snes".into(),
+                "Zelda.sfc".into(),
+                make_metadata_with_desc("", None),
+            ),
+        ])
+        .unwrap();
+
+        let counts = db.entries_per_system().unwrap();
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts[0], ("snes".into(), 1));
     }
 }

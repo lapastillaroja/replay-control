@@ -41,6 +41,12 @@ pub struct AppState {
     pub thumbnails: Arc<ThumbnailPipeline>,
     /// Track in-flight on-demand thumbnail downloads to avoid duplicates.
     pub pending_downloads: Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
+    /// Unified busy flag: true when any background operation is running.
+    busy: Arc<std::sync::atomic::AtomicBool>,
+    /// Human-readable label for the current background operation (empty = idle).
+    pub(crate) busy_label: Arc<std::sync::RwLock<String>>,
+    /// Scanning indicator: true only during Phase 2 (game library populate).
+    scanning: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
@@ -89,27 +95,34 @@ impl AppState {
         // Open DBs eagerly at startup so they're ready for the first request.
         // Fail-fast: if DB creation/open fails here, the service can't function.
         let is_local = storage.kind.is_local();
-        let metadata_db = replay_control_core::metadata_db::MetadataDb::open(&storage.root, is_local)
-            .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
+        let metadata_db =
+            replay_control_core::metadata_db::MetadataDb::open(&storage.root, is_local)
+                .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
         tracing::info!("Metadata DB ready at {}", metadata_db.db_path().display());
         let metadata_db = Arc::new(std::sync::Mutex::new(Some(metadata_db)));
 
-        let user_data_db = replay_control_core::user_data_db::UserDataDb::open(&storage.root, is_local)
-            .map_err(|e| format!("Failed to open user data DB: {e}"))?;
+        let user_data_db =
+            replay_control_core::user_data_db::UserDataDb::open(&storage.root, is_local)
+                .map_err(|e| format!("Failed to open user data DB: {e}"))?;
         tracing::info!("User data DB ready at {}", user_data_db.db_path().display());
         let user_data_db = Arc::new(std::sync::Mutex::new(Some(user_data_db)));
 
-        // Shared busy flag for mutual exclusion between import and thumbnail operations.
-        let busy_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Unified busy flag shared across all background operations.
+        let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let scanning = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-        let import = Arc::new(ImportPipeline::new(busy_flag.clone()));
-        let thumbnails = Arc::new(ThumbnailPipeline::new(busy_flag.clone()));
+        let import = Arc::new(ImportPipeline::new(busy.clone()));
+        let thumbnails = Arc::new(ThumbnailPipeline::new(busy.clone()));
 
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
-            cache: Arc::new(GameLibrary::new(metadata_db.clone())),
+            cache: Arc::new(GameLibrary::new(
+                metadata_db.clone(),
+                busy.clone(),
+                scanning.clone(),
+            )),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(None)),
             metadata_db,
@@ -117,6 +130,9 @@ impl AppState {
             import,
             thumbnails,
             pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
+            busy,
+            busy_label: Arc::new(std::sync::RwLock::new(String::new())),
+            scanning,
         })
     }
 
@@ -143,7 +159,10 @@ impl AppState {
         }
         if guard.is_none() {
             let storage = self.storage();
-            match replay_control_core::metadata_db::MetadataDb::open(&storage.root, storage.kind.is_local()) {
+            match replay_control_core::metadata_db::MetadataDb::open(
+                &storage.root,
+                storage.kind.is_local(),
+            ) {
                 Ok(db) => {
                     *guard = Some(db);
                 }
@@ -176,7 +195,10 @@ impl AppState {
         }
         if guard.is_none() {
             let storage = self.storage();
-            match replay_control_core::user_data_db::UserDataDb::open(&storage.root, storage.kind.is_local()) {
+            match replay_control_core::user_data_db::UserDataDb::open(
+                &storage.root,
+                storage.kind.is_local(),
+            ) {
                 Ok(db) => {
                     *guard = Some(db);
                 }
@@ -301,12 +323,34 @@ impl AppState {
         }
     }
 
-    /// Check if the background warmup (L2 populate) is in progress.
-    /// Used by the UI to show a "Scanning games..." message.
-    pub fn is_warmup_in_progress(&self) -> bool {
-        self.cache
-            .warmup_in_progress
-            .load(std::sync::atomic::Ordering::Relaxed)
+    /// Check if any background operation is running.
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Atomically claim the busy slot. Returns true if successfully claimed.
+    pub fn claim_busy(&self) -> bool {
+        !self.busy.swap(true, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Get a clone of the busy flag Arc (for passing to background tasks).
+    pub fn busy_flag(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        self.busy.clone()
+    }
+
+    /// Check if the game library scan (Phase 2) is in progress.
+    pub fn is_scanning(&self) -> bool {
+        self.scanning.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Set the human-readable label for the current background operation.
+    pub fn set_busy_label(&self, label: &str) {
+        *self.busy_label.write().expect("busy_label lock") = label.to_string();
+    }
+
+    /// Get the current busy label (empty if idle).
+    pub fn get_busy_label(&self) -> String {
+        self.busy_label.read().expect("busy_label lock").clone()
     }
 }
 

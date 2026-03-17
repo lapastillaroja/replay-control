@@ -4,7 +4,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
-use super::{unix_now, GameEntry, MetadataDb, SystemMeta};
+use super::{GameEntry, MetadataDb, SystemMeta, unix_now};
 
 impl MetadataDb {
     /// Get all distinct `box_art_url` values from `game_library` for a given system.
@@ -76,8 +76,11 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
 
         // Delete existing entries for this system.
-        tx.execute("DELETE FROM game_library WHERE system = ?1", params![system])
-            .map_err(|e| Error::Other(format!("Delete game_library failed: {e}")))?;
+        tx.execute(
+            "DELETE FROM game_library WHERE system = ?1",
+            params![system],
+        )
+        .map_err(|e| Error::Other(format!("Delete game_library failed: {e}")))?;
 
         {
             let mut stmt = tx
@@ -285,7 +288,14 @@ impl MetadataDb {
     pub fn update_rom_enrichment(
         &mut self,
         system: &str,
-        enrichments: &[(String, Option<String>, Option<String>, Option<u8>, Option<f32>, Option<String>)],
+        enrichments: &[(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<u8>,
+            Option<f32>,
+            Option<String>,
+        )],
     ) -> Result<usize> {
         let tx = self
             .conn
@@ -334,7 +344,13 @@ impl MetadataDb {
     pub fn update_box_art_genre_rating(
         &mut self,
         system: &str,
-        enrichments: &[(String, Option<String>, Option<String>, Option<u8>, Option<f32>)],
+        enrichments: &[(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<u8>,
+            Option<f32>,
+        )],
     ) -> Result<()> {
         let tx = self
             .conn
@@ -405,7 +421,10 @@ impl MetadataDb {
     /// Clear the game_library and game_library_meta for a specific system.
     pub fn clear_system_game_library(&self, system: &str) -> Result<()> {
         self.conn
-            .execute("DELETE FROM game_library WHERE system = ?1", params![system])
+            .execute(
+                "DELETE FROM game_library WHERE system = ?1",
+                params![system],
+            )
             .map_err(|e| Error::Other(format!("Clear system game_library: {e}")))?;
         self.conn
             .execute(
@@ -472,10 +491,7 @@ impl MetadataDb {
     /// Fetch current player counts from `game_library` for a single system.
     /// Returns the set of `rom_filename` values that already have a players value.
     /// Used during enrichment to know which ROMs already have player data.
-    pub fn system_rom_players(
-        &self,
-        system: &str,
-    ) -> Result<std::collections::HashSet<String>> {
+    pub fn system_rom_players(&self, system: &str) -> Result<std::collections::HashSet<String>> {
         use std::collections::HashSet;
 
         let mut stmt = self
@@ -506,17 +522,25 @@ mod tests {
     fn genre_enrichment_fills_empty_genre_from_launchbox() {
         let (mut db, _dir) = open_temp_db();
 
-        db.bulk_upsert(&[
-            ("sega_smd".into(), "Sonic.md".into(), make_metadata_with_genre("Platform")),
-        ]).unwrap();
+        db.bulk_upsert(&[(
+            "sega_smd".into(),
+            "Sonic.md".into(),
+            make_metadata_with_genre("Platform"),
+        )])
+        .unwrap();
 
-        db.save_system_entries("sega_smd", &[
-            make_game_entry("sega_smd", "Sonic.md", false),
-        ], None).unwrap();
+        db.save_system_entries(
+            "sega_smd",
+            &[make_game_entry("sega_smd", "Sonic.md", false)],
+            None,
+        )
+        .unwrap();
 
-        db.update_box_art_genre_rating("sega_smd", &[
-            ("Sonic.md".into(), None, Some("Platform".into()), None, None),
-        ]).unwrap();
+        db.update_box_art_genre_rating(
+            "sega_smd",
+            &[("Sonic.md".into(), None, Some("Platform".into()), None, None)],
+        )
+        .unwrap();
 
         let roms = db.load_system_entries("sega_smd").unwrap();
         assert_eq!(roms[0].genre.as_deref(), Some("Platform"));
@@ -526,13 +550,20 @@ mod tests {
     fn genre_enrichment_does_not_overwrite_existing_genre() {
         let (mut db, _dir) = open_temp_db();
 
-        db.save_system_entries("sega_smd", &[
-            make_game_entry_with_genre("sega_smd", "Sonic.md", "Shooter"),
-        ], None).unwrap();
+        db.save_system_entries(
+            "sega_smd",
+            &[make_game_entry_with_genre(
+                "sega_smd", "Sonic.md", "Shooter",
+            )],
+            None,
+        )
+        .unwrap();
 
-        db.update_box_art_genre_rating("sega_smd", &[
-            ("Sonic.md".into(), None, Some("Platform".into()), None, None),
-        ]).unwrap();
+        db.update_box_art_genre_rating(
+            "sega_smd",
+            &[("Sonic.md".into(), None, Some("Platform".into()), None, None)],
+        )
+        .unwrap();
 
         let roms = db.load_system_entries("sega_smd").unwrap();
         assert_eq!(roms[0].genre.as_deref(), Some("Shooter"));
@@ -542,21 +573,42 @@ mod tests {
     fn genre_enrichment_mixed_empty_and_existing() {
         let (mut db, _dir) = open_temp_db();
 
-        db.save_system_entries("sega_smd", &[
-            make_game_entry_with_genre("sega_smd", "Sonic.md", "Shooter"),
-            make_game_entry("sega_smd", "Streets.md", false),
-            make_game_entry("sega_smd", "Columns.md", false),
-        ], None).unwrap();
+        db.save_system_entries(
+            "sega_smd",
+            &[
+                make_game_entry_with_genre("sega_smd", "Sonic.md", "Shooter"),
+                make_game_entry("sega_smd", "Streets.md", false),
+                make_game_entry("sega_smd", "Columns.md", false),
+            ],
+            None,
+        )
+        .unwrap();
 
-        db.update_box_art_genre_rating("sega_smd", &[
-            ("Sonic.md".into(), None, Some("Platform".into()), None, None),
-            ("Streets.md".into(), None, Some("Beat'em Up".into()), None, None),
-        ]).unwrap();
+        db.update_box_art_genre_rating(
+            "sega_smd",
+            &[
+                ("Sonic.md".into(), None, Some("Platform".into()), None, None),
+                (
+                    "Streets.md".into(),
+                    None,
+                    Some("Beat'em Up".into()),
+                    None,
+                    None,
+                ),
+            ],
+        )
+        .unwrap();
 
         let roms = db.load_system_entries("sega_smd").unwrap();
         let sonic = roms.iter().find(|r| r.rom_filename == "Sonic.md").unwrap();
-        let streets = roms.iter().find(|r| r.rom_filename == "Streets.md").unwrap();
-        let columns = roms.iter().find(|r| r.rom_filename == "Columns.md").unwrap();
+        let streets = roms
+            .iter()
+            .find(|r| r.rom_filename == "Streets.md")
+            .unwrap();
+        let columns = roms
+            .iter()
+            .find(|r| r.rom_filename == "Columns.md")
+            .unwrap();
 
         assert_eq!(sonic.genre.as_deref(), Some("Shooter"));
         assert_eq!(streets.genre.as_deref(), Some("Beat'em Up"));

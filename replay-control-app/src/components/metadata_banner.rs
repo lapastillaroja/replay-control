@@ -43,23 +43,24 @@ pub fn MetadataBusyBanner() -> impl IntoView {
         async move { server_fns::is_metadata_busy().await.unwrap_or(false) }
     });
 
-    let scanning = LocalResource::new(move || {
+    let label = LocalResource::new(move || {
         let _ = tick.get();
-        async move { server_fns::is_scanning().await.unwrap_or(false) }
+        async move { server_fns::get_busy_label().await.unwrap_or_default() }
     });
 
     let is_busy = move || busy.get().map(|v| *v).unwrap_or(false);
-    let is_scanning = move || scanning.get().map(|v| *v).unwrap_or(false);
+    let busy_label = move || label.get().map(|v| (*v).clone()).unwrap_or_default();
 
     view! {
-        <Show when=move || is_busy() || is_scanning() fallback=|| ()>
+        <Show when=move || is_busy() fallback=|| ()>
             <div class="metadata-busy-banner">
                 <span class="metadata-busy-spinner"></span>
                 {move || {
-                    if is_busy() {
-                        t(i18n.locale.get(), "metadata.busy_banner")
+                    let lbl = busy_label();
+                    if lbl.is_empty() {
+                        t(i18n.locale.get(), "metadata.busy_banner").to_string()
                     } else {
-                        t(i18n.locale.get(), "metadata.scanning_banner")
+                        lbl
                     }
                 }}
             </div>

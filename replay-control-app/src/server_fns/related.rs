@@ -1,6 +1,6 @@
-use super::*;
 #[cfg(feature = "ssr")]
 use super::recommendations::{resolve_box_art_for_picks, to_recommended};
+use super::*;
 
 /// Related games data: regional variants + translations + hacks + specials + series + similar games.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,8 +113,12 @@ pub async fn get_related_games(
         // Get the current game's base_title, series_key for relationship queries.
         let current_entry = all_entries.iter().find(|e| e.rom_filename == filename);
 
-        let base_title = current_entry.map(|e| e.base_title.clone()).unwrap_or_default();
-        let series_key = current_entry.map(|e| e.series_key.clone()).unwrap_or_default();
+        let base_title = current_entry
+            .map(|e| e.base_title.clone())
+            .unwrap_or_default();
+        let series_key = current_entry
+            .map(|e| e.series_key.clone())
+            .unwrap_or_default();
         let detail_genre = current_entry
             .and_then(|e| e.genre.clone().filter(|g| !g.is_empty()))
             .or_else(|| {
@@ -130,7 +134,9 @@ pub async fn get_related_games(
                 .unwrap_or_default();
             if !wikidata.is_empty() {
                 // Wikidata series found: use it (entries come with optional order).
-                let sname = db.lookup_series_name(&system, &base_title).unwrap_or_default();
+                let sname = db
+                    .lookup_series_name(&system, &base_title)
+                    .unwrap_or_default();
                 let entries: Vec<_> = wikidata.into_iter().map(|(entry, _order)| entry).collect();
                 (entries, sname)
             } else {
@@ -162,10 +168,32 @@ pub async fn get_related_games(
             Vec::new()
         };
 
-        (variants, translations_raw, hacks_raw, specials_raw, series_raw, series_name_raw, alias_raw, similar, base_title, all_system_roms)
+        (
+            variants,
+            translations_raw,
+            hacks_raw,
+            specials_raw,
+            series_raw,
+            series_name_raw,
+            alias_raw,
+            similar,
+            base_title,
+            all_system_roms,
+        )
     });
 
-    let Some((variants_raw, translations_raw, hacks_raw, specials_raw, series_raw, series_name, alias_raw, similar_pool, base_title, all_system_roms)) = db_data
+    let Some((
+        variants_raw,
+        translations_raw,
+        hacks_raw,
+        specials_raw,
+        series_raw,
+        series_name,
+        alias_raw,
+        similar_pool,
+        base_title,
+        all_system_roms,
+    )) = db_data
     else {
         return Ok(RelatedGamesData {
             regional_variants: Vec::new(),
@@ -188,11 +216,7 @@ pub async fn get_related_games(
             .into_iter()
             .map(|(rom_fn, region, display_name)| {
                 let is_current = rom_fn == filename;
-                let href = format!(
-                    "/games/{}/{}",
-                    system,
-                    urlencoding::encode(&rom_fn)
-                );
+                let href = format!("/games/{}/{}", system, urlencoding::encode(&rom_fn));
                 let tags = replay_control_core::rom_tags::extract_tags(&rom_fn);
                 let label = if !tags.is_empty() {
                     tags
@@ -218,11 +242,7 @@ pub async fn get_related_games(
         .into_iter()
         .map(|(rom_fn, display_name)| {
             let is_current = rom_fn == filename;
-            let href = format!(
-                "/games/{}/{}",
-                system,
-                urlencoding::encode(&rom_fn)
-            );
+            let href = format!("/games/{}/{}", system, urlencoding::encode(&rom_fn));
             // Extract the translation label from the filename tags (e.g., "ES Translation").
             let tags = replay_control_core::rom_tags::extract_tags(&rom_fn);
             let label = tags
@@ -249,11 +269,7 @@ pub async fn get_related_games(
         .into_iter()
         .map(|(rom_fn, display_name)| {
             let is_current = rom_fn == filename;
-            let href = format!(
-                "/games/{}/{}",
-                system,
-                urlencoding::encode(&rom_fn)
-            );
+            let href = format!("/games/{}/{}", system, urlencoding::encode(&rom_fn));
             // Extract hack-related labels from the filename tags.
             let tags = replay_control_core::rom_tags::extract_tags(&rom_fn);
             let label = tags
@@ -280,11 +296,7 @@ pub async fn get_related_games(
         .into_iter()
         .map(|(rom_fn, display_name)| {
             let is_current = rom_fn == filename;
-            let href = format!(
-                "/games/{}/{}",
-                system,
-                urlencoding::encode(&rom_fn)
-            );
+            let href = format!("/games/{}/{}", system, urlencoding::encode(&rom_fn));
             let tags = replay_control_core::rom_tags::extract_tags(&rom_fn);
             let label = if tags.is_empty() {
                 display_name.unwrap_or_else(|| rom_fn.clone())
@@ -522,10 +534,7 @@ mod tests {
             "Street Fighter II: The World Warrior (World 910522)",
             "Street Fighter II: Champion Edition (World 920513)",
         );
-        assert_eq!(
-            label,
-            "Street Fighter II: Champion Edition (World 920513)"
-        );
+        assert_eq!(label, "Street Fighter II: Champion Edition (World 920513)");
     }
 
     #[test]
@@ -537,29 +546,20 @@ mod tests {
     #[test]
     fn clone_without_tag_same_base() {
         // Unusual case: clone has no parenthesized tag but same base name.
-        let label = arcade_clone_label(
-            "Metal Slug 6 (World)",
-            "Metal Slug 6",
-        );
+        let label = arcade_clone_label("Metal Slug 6 (World)", "Metal Slug 6");
         assert_eq!(label, "Metal Slug 6");
     }
 
     #[test]
     fn completely_different_name() {
-        let label = arcade_clone_label(
-            "Pac-Man (Midway)",
-            "Puck Man (Japan set 1)",
-        );
+        let label = arcade_clone_label("Pac-Man (Midway)", "Puck Man (Japan set 1)");
         assert_eq!(label, "Puck Man (Japan set 1)");
     }
 
     #[test]
     fn nested_parentheses_uses_last() {
         // Some arcade names have nested parens; rfind should get the outermost last pair.
-        let label = arcade_clone_label(
-            "Donkey Kong (US set 1)",
-            "Donkey Kong (US set 2)",
-        );
+        let label = arcade_clone_label("Donkey Kong (US set 1)", "Donkey Kong (US set 2)");
         assert_eq!(label, "US set 2");
     }
 }

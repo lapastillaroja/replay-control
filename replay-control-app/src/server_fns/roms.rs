@@ -176,7 +176,13 @@ pub async fn get_roms_page(
                     .display_name
                     .as_deref()
                     .unwrap_or(&r.game.rom_filename);
-                let score = search_score(&q, display, &r.game.rom_filename, region_pref, region_secondary);
+                let score = search_score(
+                    &q,
+                    display,
+                    &r.game.rom_filename,
+                    region_pref,
+                    region_secondary,
+                );
                 if score > 0 { Some((score, r)) } else { None }
             })
             .collect();
@@ -186,7 +192,12 @@ pub async fn get_roms_page(
 
     let total = filtered.len();
     // Clone only the page-sized subset we need to mutate.
-    let mut roms: Vec<RomEntry> = filtered.into_iter().skip(offset).take(limit).cloned().collect();
+    let mut roms: Vec<RomEntry> = filtered
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .cloned()
+        .collect();
     let has_more = offset + roms.len() < total;
 
     // Use cached favorites set instead of per-request filesystem scan.
@@ -285,7 +296,12 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let storage = state.storage();
     let all_roms = state
         .cache
-        .get_roms(&storage, &system, state.region_preference(), state.region_preference_secondary())
+        .get_roms(
+            &storage,
+            &system,
+            state.region_preference(),
+            state.region_preference_secondary(),
+        )
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let rom = all_roms

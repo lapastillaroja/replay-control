@@ -18,7 +18,12 @@ async fn list_system_roms(
 ) -> Result<Json<Vec<replay_control_core::roms::RomEntry>>, StatusCode> {
     state
         .cache
-        .get_roms(&state.storage(), &system, state.region_preference(), state.region_preference_secondary())
+        .get_roms(
+            &state.storage(),
+            &system,
+            state.region_preference(),
+            state.region_preference_secondary(),
+        )
         .map(|arc| Json(arc.to_vec()))
         .map_err(|_| StatusCode::NOT_FOUND)
 }

@@ -43,7 +43,11 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     let theme_color = skins::theme_color(skin_index);
     let skin_css = skins::theme_css(skin_index).unwrap_or_default();
     let font_size = replay_control_core::settings::read_font_size(&state.storage().root);
-    let html_class = if font_size == "large" { "font-large" } else { "" };
+    let html_class = if font_size == "large" {
+        "font-large"
+    } else {
+        ""
+    };
 
     view! {
         <!DOCTYPE html>

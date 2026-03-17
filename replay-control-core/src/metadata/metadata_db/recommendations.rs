@@ -420,7 +420,8 @@ mod tests {
         normal.box_art_url = Some("/img/mario.png".into());
         normal.rating = Some(4.5);
 
-        let mut special = make_game_entry_with_genre("snes", "Mario (USA) (FastRom).sfc", "Platform");
+        let mut special =
+            make_game_entry_with_genre("snes", "Mario (USA) (FastRom).sfc", "Platform");
         special.base_title = "Mario FastRom".into();
         special.region = "usa".into();
         special.box_art_url = Some("/img/mario.png".into());

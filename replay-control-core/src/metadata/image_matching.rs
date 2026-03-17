@@ -42,10 +42,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
             let name_str = name.to_string_lossy();
             if let Some(img_stem) = name_str.strip_suffix(".png") {
                 // Skip tiny files (fake symlinks / stubs).
-                let valid = entry
-                    .metadata()
-                    .map(|m| m.len() >= 200)
-                    .unwrap_or(false);
+                let valid = entry.metadata().map(|m| m.len() >= 200).unwrap_or(false);
                 if !valid {
                     continue;
                 }

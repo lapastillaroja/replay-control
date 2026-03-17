@@ -423,10 +423,7 @@ fn RomItem(
     let rating = rom.rating;
     let is_fav = RwSignal::new(rom.is_favorite);
     let size = format_size_for_system(rom.size_bytes, &rom.system);
-    let ext = format!(
-        ".{}",
-        rom.rom_filename.rsplit('.').next().unwrap_or("")
-    );
+    let ext = format!(".{}", rom.rom_filename.rsplit('.').next().unwrap_or(""));
     let path_display = {
         // Strip the system prefix (e.g. "/roms/sega_smd/") and show the rest.
         // If there's no subfolder, this is just the filename.

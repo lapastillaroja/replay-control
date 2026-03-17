@@ -83,7 +83,13 @@ impl GameLibrary {
 
         // Build enrichment tuples: (filename, box_art_url, genre, players, rating).
         // Genre and players are only filled from LaunchBox when game_library has no value.
-        let enrichments: Vec<(String, Option<String>, Option<String>, Option<u8>, Option<f32>)> = rom_filenames
+        let enrichments: Vec<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<u8>,
+            Option<f32>,
+        )> = rom_filenames
             .iter()
             .filter_map(|filename| {
                 let art = self.resolve_box_art(state, &index, system, filename);
@@ -119,15 +125,25 @@ impl GameLibrary {
 
         // Also update L1 cache entries.
         // Build a HashMap for O(1) lookup instead of O(n*m) nested scan.
-        let enrichment_map: HashMap<&str, &(String, Option<String>, Option<String>, Option<u8>, Option<f32>)> =
-            enrichments.iter().map(|e| (e.0.as_str(), e)).collect();
+        let enrichment_map: HashMap<
+            &str,
+            &(
+                String,
+                Option<String>,
+                Option<String>,
+                Option<u8>,
+                Option<f32>,
+            ),
+        > = enrichments.iter().map(|e| (e.0.as_str(), e)).collect();
 
         if let Ok(mut guard) = self.roms.write()
             && let Some(entry) = guard.get_mut(system)
         {
             let roms = std::sync::Arc::make_mut(&mut entry.data);
             for rom in roms {
-                if let Some((_, art, _genre, players, rating)) = enrichment_map.get(rom.game.rom_filename.as_str()) {
+                if let Some((_, art, _genre, players, rating)) =
+                    enrichment_map.get(rom.game.rom_filename.as_str())
+                {
                     if art.is_some() {
                         rom.box_art_url = art.clone();
                     }
@@ -143,7 +159,9 @@ impl GameLibrary {
             }
         }
 
-        tracing::debug!("L2 enrichment: {system} — {count} ROMs updated with box art/genre/players/ratings");
+        tracing::debug!(
+            "L2 enrichment: {system} — {count} ROMs updated with box art/genre/players/ratings"
+        );
     }
 
     /// Auto-match new ROMs against existing LaunchBox metadata by normalized title.

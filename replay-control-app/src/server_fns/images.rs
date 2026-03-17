@@ -6,11 +6,9 @@ use super::*;
 pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let (with_boxart, with_snap) = match state.metadata_db() {
-        Some(guard) if guard.as_ref().is_some() => guard
-            .as_ref()
-            .unwrap()
-            .image_stats()
-            .unwrap_or((0, 0)),
+        Some(guard) if guard.as_ref().is_some() => {
+            guard.as_ref().unwrap().image_stats().unwrap_or((0, 0))
+        }
         _ => (0, 0),
     };
     let storage = state.storage();
@@ -36,7 +34,7 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
     let state = expect_context::<crate::api::AppState>();
 
     // Guard: refuse to run during rebuild/import/thumbnail update.
-    if state.import.is_busy() {
+    if state.is_busy() {
         return Err(ServerFnError::new(
             "Cannot cleanup while a metadata operation is running",
         ));

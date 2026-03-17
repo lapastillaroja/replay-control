@@ -71,14 +71,28 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             let exclude: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
             let top_genre = fi.top_genre.as_deref();
             let mut roms = db
-                .system_roms_excluding(&fi.system, &exclude, top_genre, count, region_str, region_secondary_str)
+                .system_roms_excluding(
+                    &fi.system,
+                    &exclude,
+                    top_genre,
+                    count,
+                    region_str,
+                    region_secondary_str,
+                )
                 .unwrap_or_default();
             // Fill with any genre if not enough genre-matching.
             if roms.len() < count && top_genre.is_some() {
                 let have: std::collections::HashSet<String> =
                     roms.iter().map(|r| r.rom_filename.clone()).collect();
                 let more = db
-                    .system_roms_excluding(&fi.system, &exclude, None, count, region_str, region_secondary_str)
+                    .system_roms_excluding(
+                        &fi.system,
+                        &exclude,
+                        None,
+                        count,
+                        region_str,
+                        region_secondary_str,
+                    )
                     .unwrap_or_default();
                 for r in more {
                     if roms.len() >= count {
@@ -304,7 +318,10 @@ fn diversify_picks(
 /// Resolve box art URLs from the filesystem for a batch of picks.
 /// Uses the same ImageIndex approach as recents/favorites/games pages.
 #[cfg(feature = "ssr")]
-pub(super) fn resolve_box_art_for_picks(state: &crate::api::AppState, picks: &mut [RecommendedGame]) {
+pub(super) fn resolve_box_art_for_picks(
+    state: &crate::api::AppState,
+    picks: &mut [RecommendedGame],
+) {
     let mut image_indexes: std::collections::HashMap<
         String,
         std::sync::Arc<crate::api::cache::ImageIndex>,

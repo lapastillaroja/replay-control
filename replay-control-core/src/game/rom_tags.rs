@@ -175,7 +175,11 @@ fn pref_to_priority(pref: RegionPreference) -> RegionPriority {
 /// Return the remaining major regions (excluding World and the preferred region)
 /// in a fixed fallback order: Usa, Europe, Japan (skipping the one that matches pref).
 fn remaining_order(pref: RegionPreference) -> Vec<RegionPriority> {
-    let all = [RegionPriority::Usa, RegionPriority::Europe, RegionPriority::Japan];
+    let all = [
+        RegionPriority::Usa,
+        RegionPriority::Europe,
+        RegionPriority::Japan,
+    ];
     let pref_priority = pref_to_priority(pref);
     all.iter()
         .copied()
@@ -1550,9 +1554,18 @@ mod tests {
     fn sort_key_primary_always_first() {
         // Primary should always get sort_key 0 regardless of preference.
         assert_eq!(RegionPriority::Usa.sort_key(RegionPreference::Usa, None), 0);
-        assert_eq!(RegionPriority::Europe.sort_key(RegionPreference::Europe, None), 0);
-        assert_eq!(RegionPriority::Japan.sort_key(RegionPreference::Japan, None), 0);
-        assert_eq!(RegionPriority::World.sort_key(RegionPreference::World, None), 0);
+        assert_eq!(
+            RegionPriority::Europe.sort_key(RegionPreference::Europe, None),
+            0
+        );
+        assert_eq!(
+            RegionPriority::Japan.sort_key(RegionPreference::Japan, None),
+            0
+        );
+        assert_eq!(
+            RegionPriority::World.sort_key(RegionPreference::World, None),
+            0
+        );
     }
 
     #[test]
@@ -1565,8 +1578,14 @@ mod tests {
         ] {
             assert_eq!(RegionPriority::Other.sort_key(pref, None), 4);
             assert_eq!(RegionPriority::Unknown.sort_key(pref, None), 5);
-            assert_eq!(RegionPriority::Other.sort_key(pref, Some(RegionPreference::Usa)), 4);
-            assert_eq!(RegionPriority::Unknown.sort_key(pref, Some(RegionPreference::Usa)), 5);
+            assert_eq!(
+                RegionPriority::Other.sort_key(pref, Some(RegionPreference::Usa)),
+                4
+            );
+            assert_eq!(
+                RegionPriority::Unknown.sort_key(pref, Some(RegionPreference::Usa)),
+                5
+            );
         }
     }
 
@@ -1576,10 +1595,10 @@ mod tests {
     fn sort_key_japan_primary_usa_secondary() {
         let pref = RegionPreference::Japan;
         let sec = Some(RegionPreference::Usa);
-        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 0);   // Primary
-        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 1);     // Secondary
-        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2);   // World
-        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 3);  // Remaining
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 0); // Primary
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 1); // Secondary
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2); // World
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 3); // Remaining
         assert_eq!(RegionPriority::Other.sort_key(pref, sec), 4);
         assert_eq!(RegionPriority::Unknown.sort_key(pref, sec), 5);
     }
@@ -1588,10 +1607,10 @@ mod tests {
     fn sort_key_europe_primary_japan_secondary() {
         let pref = RegionPreference::Europe;
         let sec = Some(RegionPreference::Japan);
-        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 0);  // Primary
-        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 1);   // Secondary
-        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2);   // World
-        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 3);     // Remaining
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 0); // Primary
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 1); // Secondary
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2); // World
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 3); // Remaining
         assert_eq!(RegionPriority::Other.sort_key(pref, sec), 4);
         assert_eq!(RegionPriority::Unknown.sort_key(pref, sec), 5);
     }
@@ -1600,21 +1619,21 @@ mod tests {
     fn sort_key_usa_primary_europe_secondary() {
         let pref = RegionPreference::Usa;
         let sec = Some(RegionPreference::Europe);
-        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 0);     // Primary
-        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 1);  // Secondary
-        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2);   // World
-        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 3);   // Remaining
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 0); // Primary
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 1); // Secondary
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 2); // World
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 3); // Remaining
     }
 
     #[test]
     fn sort_key_world_primary_japan_secondary() {
         let pref = RegionPreference::World;
         let sec = Some(RegionPreference::Japan);
-        assert_eq!(RegionPriority::World.sort_key(pref, sec), 0);   // Primary
-        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 1);   // Secondary
+        assert_eq!(RegionPriority::World.sort_key(pref, sec), 0); // Primary
+        assert_eq!(RegionPriority::Japan.sort_key(pref, sec), 1); // Secondary
         // World is already primary, so remaining slots go to Usa, Europe
-        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 3);     // Remaining
-        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 3);  // Remaining (same slot)
+        assert_eq!(RegionPriority::Usa.sort_key(pref, sec), 3); // Remaining
+        assert_eq!(RegionPriority::Europe.sort_key(pref, sec), 3); // Remaining (same slot)
     }
 
     #[test]
@@ -1653,7 +1672,10 @@ mod tests {
             RegionPreference::from_str_value("brazil"),
             RegionPreference::World
         );
-        assert_eq!(RegionPreference::from_str_value(""), RegionPreference::World);
+        assert_eq!(
+            RegionPreference::from_str_value(""),
+            RegionPreference::World
+        );
     }
 
     #[test]

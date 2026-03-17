@@ -77,7 +77,10 @@ impl GameLibrary {
                     }
                     let full = entry.path();
                     if let Some(resolved) =
-                        replay_control_core::thumbnails::try_resolve_fake_symlink(&full, &boxart_dir)
+                        replay_control_core::thumbnails::try_resolve_fake_symlink(
+                            &full,
+                            &boxart_dir,
+                        )
                     {
                         let resolved_path = format!("boxart/{resolved}");
                         exact.insert(img_stem.to_string(), resolved_path.clone());
@@ -187,8 +190,7 @@ impl GameLibrary {
         // For arcade ROMs, translate MAME codename to display name.
         let is_arcade = replay_control_core::systems::is_arcade_system(system);
         let display_name = if is_arcade {
-            replay_control_core::arcade_db::lookup_arcade_game(stem)
-                .map(|info| info.display_name)
+            replay_control_core::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name)
         } else {
             None
         };
@@ -238,7 +240,10 @@ impl GameLibrary {
         // 4. Version-stripped match.
         let rom_base_no_version = strip_version(&rom_base);
         if rom_base_no_version.len() < rom_base.len()
-            && let Some(path) = index.fuzzy.get(rom_base_no_version).or_else(|| index.version.get(rom_base_no_version))
+            && let Some(path) = index
+                .fuzzy
+                .get(rom_base_no_version)
+                .or_else(|| index.version.get(rom_base_no_version))
         {
             return Some(format!("/media/{system}/{path}"));
         }

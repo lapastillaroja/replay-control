@@ -419,13 +419,14 @@ pub async fn global_search(
         let is_arcade = sys_db::find_system(&sys.folder_name)
             .is_some_and(|s| s.category == SystemCategory::Arcade);
 
-        let all_roms = match state
-            .cache
-            .get_roms(&storage, &sys.folder_name, region_pref, region_secondary)
-        {
-            Ok(roms) => roms,
-            Err(_) => continue,
-        };
+        let all_roms =
+            match state
+                .cache
+                .get_roms(&storage, &sys.folder_name, region_pref, region_secondary)
+            {
+                Ok(roms) => roms,
+                Err(_) => continue,
+            };
 
         // Batch-load genre groups and base_titles for this system.
         let (system_genre_groups, system_base_titles): (
@@ -544,7 +545,13 @@ pub async fn global_search(
                         .display_name
                         .as_deref()
                         .unwrap_or(&r.game.rom_filename);
-                    let mut score = search_score(&q, display, &r.game.rom_filename, region_pref, region_secondary);
+                    let mut score = search_score(
+                        &q,
+                        display,
+                        &r.game.rom_filename,
+                        region_pref,
+                        region_secondary,
+                    );
 
                     // Alias expansion: if this ROM's base_title was found via alias search,
                     // give it a minimum score so it appears in results.
@@ -1159,7 +1166,13 @@ mod tests {
     #[test]
     fn word_match_preserves_existing_substring_match() {
         // "mega man x" is a contiguous substring — should match at prefix tier, not word tier
-        let score = search_score("mega man x", "Mega Man X", "Mega Man X (USA).sfc", PREF, SEC);
+        let score = search_score(
+            "mega man x",
+            "Mega Man X",
+            "Mega Man X (USA).sfc",
+            PREF,
+            SEC,
+        );
         assert!(
             score >= 5000,
             "Contiguous match should hit prefix tier, got {score}"
@@ -1188,8 +1201,20 @@ mod tests {
     fn prefix_match_word_boundary() {
         // "sonic 3" should score "Sonic 3 (Europe)" higher than "Sonic 3D Blast"
         // because "sonic 3" in "sonic 3d blast" breaks mid-word ("3" → "3d").
-        let clean = search_score("sonic 3", "Sonic 3 (Europe)", "Sonic 3 (Europe).md", PREF, SEC);
-        let midword = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF, SEC);
+        let clean = search_score(
+            "sonic 3",
+            "Sonic 3 (Europe)",
+            "Sonic 3 (Europe).md",
+            PREF,
+            SEC,
+        );
+        let midword = search_score(
+            "sonic 3",
+            "Sonic 3D Blast",
+            "Sonic 3D Blast (USA).md",
+            PREF,
+            SEC,
+        );
         assert!(
             clean > midword,
             "Clean prefix 'Sonic 3 (Europe)' ({clean}) should beat mid-word 'Sonic 3D Blast' ({midword})"
@@ -1206,7 +1231,13 @@ mod tests {
             PREF,
             SEC,
         );
-        let blast = search_score("sonic 3", "Sonic 3D Blast", "Sonic 3D Blast (USA).md", PREF, SEC);
+        let blast = search_score(
+            "sonic 3",
+            "Sonic 3D Blast",
+            "Sonic 3D Blast (USA).md",
+            PREF,
+            SEC,
+        );
         assert!(
             hedgehog > blast,
             "Hedgehog 3 ({hedgehog}) should beat 3D Blast ({blast})"
@@ -1252,7 +1283,12 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 
     let roms = state
         .cache
-        .get_roms(&storage, chosen_system, state.region_preference(), state.region_preference_secondary())
+        .get_roms(
+            &storage,
+            chosen_system,
+            state.region_preference(),
+            state.region_preference_secondary(),
+        )
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     if roms.is_empty() {

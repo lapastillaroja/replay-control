@@ -408,6 +408,14 @@ mod tests {
         }
     }
 
+    /// Create test metadata with a description (and optionally a box_art_path).
+    pub(crate) fn make_metadata_with_desc(desc: &str, box_art: Option<&str>) -> GameMetadata {
+        GameMetadata {
+            description: Some(desc.into()),
+            ..make_metadata(box_art)
+        }
+    }
+
     pub(crate) fn make_game_entry(system: &str, filename: &str, is_m3u: bool) -> GameEntry {
         GameEntry {
             system: system.into(),
@@ -435,7 +443,11 @@ mod tests {
         }
     }
 
-    pub(crate) fn make_game_entry_with_genre(system: &str, filename: &str, genre: &str) -> GameEntry {
+    pub(crate) fn make_game_entry_with_genre(
+        system: &str,
+        filename: &str,
+        genre: &str,
+    ) -> GameEntry {
         GameEntry {
             genre: Some(genre.into()),
             genre_group: crate::genre::normalize_genre(genre).to_string(),

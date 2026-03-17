@@ -84,7 +84,10 @@ impl GameLibrary {
         }
 
         if !result_map.is_empty() {
-            let matched = result_map.values().filter(|r| r.matched_name.is_some()).count();
+            let matched = result_map
+                .values()
+                .filter(|r| r.matched_name.is_some())
+                .count();
             tracing::debug!(
                 "Hash-and-identify for {system}: {} hashed, {} matched No-Intro",
                 result_map.len(),
@@ -142,9 +145,8 @@ impl GameLibrary {
                                 Some(info.category.to_string())
                             };
                             // genre_group = normalized (e.g., "Maze")
-                            let group = replay_control_core::genre::normalize_genre(
-                                info.category,
-                            ).to_string();
+                            let group = replay_control_core::genre::normalize_genre(info.category)
+                                .to_string();
                             (
                                 detail,
                                 group,
@@ -153,7 +155,13 @@ impl GameLibrary {
                                 replay_control_core::title_utils::base_title(info.display_name),
                             )
                         }
-                        None => (None, String::new(), None, false, replay_control_core::title_utils::base_title(stem)),
+                        None => (
+                            None,
+                            String::new(),
+                            None,
+                            false,
+                            replay_control_core::title_utils::base_title(stem),
+                        ),
                     }
                 } else {
                     // Try CRC-based lookup first (if we have a hash match),
@@ -167,7 +175,10 @@ impl GameLibrary {
                         let normalized = game_db::normalize_filename(stem);
                         game_db::lookup_by_normalized_title(system, &normalized)
                     });
-                    let bt = r.game.display_name.as_deref()
+                    let bt = r
+                        .game
+                        .display_name
+                        .as_deref()
                         .map(replay_control_core::title_utils::base_title)
                         .unwrap_or_else(|| replay_control_core::title_utils::base_title(stem));
                     match game {
@@ -179,9 +190,8 @@ impl GameLibrary {
                                 Some(g.genre.to_string())
                             };
                             // genre_group = normalized (e.g., "Shooter")
-                            let group = replay_control_core::genre::normalize_genre(
-                                g.genre,
-                            ).to_string();
+                            let group =
+                                replay_control_core::genre::normalize_genre(g.genre).to_string();
                             (
                                 detail,
                                 group,

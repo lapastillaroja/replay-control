@@ -1919,11 +1919,7 @@ fn write_empty_system(out: &mut impl Write, prefix: &str) {
         "static {prefix}_NORM_INDEX: phf::Map<&'static str, u16> = phf::Map {{ key: 0, disps: &[], entries: &[] }};"
     )
     .unwrap();
-    writeln!(
-        out,
-        "static {prefix}_ALTERNATES: &[(u16, &[&str])] = &[];"
-    )
-    .unwrap();
+    writeln!(out, "static {prefix}_ALTERNATES: &[(u16, &[&str])] = &[];").unwrap();
     writeln!(out).unwrap();
 }
 
@@ -2072,22 +2068,15 @@ fn write_system_code(
         .collect();
 
     if games_with_alts.is_empty() {
-        writeln!(
-            out,
-            "static {prefix}_ALTERNATES: &[(u16, &[&str])] = &[];"
-        )
-        .unwrap();
+        writeln!(out, "static {prefix}_ALTERNATES: &[(u16, &[&str])] = &[];").unwrap();
     } else {
         writeln!(out, "static {prefix}_ALTERNATES: &[(u16, &[&str])] = &[").unwrap();
         for (game_id, alts) in &games_with_alts {
-            let alt_strs: Vec<String> = alts.iter().map(|a| format!("\"{}\"", escape_str(a))).collect();
-            writeln!(
-                out,
-                "    ({}u16, &[{}]),",
-                game_id,
-                alt_strs.join(", ")
-            )
-            .unwrap();
+            let alt_strs: Vec<String> = alts
+                .iter()
+                .map(|a| format!("\"{}\"", escape_str(a)))
+                .collect();
+            writeln!(out, "    ({}u16, &[{}]),", game_id, alt_strs.join(", ")).unwrap();
         }
         writeln!(out, "];").unwrap();
     }
@@ -2233,24 +2222,22 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
     let mut out = BufWriter::new(File::create(&dest_path).unwrap());
 
     let series_path = sources_dir.join("wikidata").join("series.json");
-    println!(
-        "cargo::rerun-if-changed={}",
-        series_path.display()
-    );
+    println!("cargo::rerun-if-changed={}", series_path.display());
 
     if !series_path.exists() {
-        println!("cargo:warning=Series DB: Wikidata series.json not found, generating empty series DB");
+        println!(
+            "cargo:warning=Series DB: Wikidata series.json not found, generating empty series DB"
+        );
         write_empty_series_db(&mut out);
         return;
     }
 
     let file = File::open(&series_path).unwrap();
     let reader = BufReader::new(file);
-    let entries: Vec<WikidataSeriesEntry> =
-        serde_json::from_reader(reader).unwrap_or_else(|e| {
-            println!("cargo:warning=Series DB: Failed to parse series.json: {e}");
-            Vec::new()
-        });
+    let entries: Vec<WikidataSeriesEntry> = serde_json::from_reader(reader).unwrap_or_else(|e| {
+        println!("cargo:warning=Series DB: Failed to parse series.json: {e}");
+        Vec::new()
+    });
 
     if entries.is_empty() {
         println!("cargo:warning=Series DB: No entries in series.json, generating empty series DB");
@@ -2273,7 +2260,11 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
     writeln!(out).unwrap();
 
     // Emit the entries array.
-    writeln!(out, "static WIKIDATA_SERIES_ENTRIES: &[WikidataSeriesEntry] = &[").unwrap();
+    writeln!(
+        out,
+        "static WIKIDATA_SERIES_ENTRIES: &[WikidataSeriesEntry] = &["
+    )
+    .unwrap();
 
     let mut count = 0usize;
     let mut with_series = 0usize;

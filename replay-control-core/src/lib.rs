@@ -33,6 +33,8 @@ mod metadata;
 #[cfg(feature = "metadata")]
 pub use metadata::db_common;
 #[cfg(feature = "metadata")]
+pub use metadata::image_matching;
+#[cfg(feature = "metadata")]
 pub use metadata::launchbox;
 #[cfg(feature = "metadata")]
 pub use metadata::metadata_db;
@@ -40,7 +42,5 @@ pub use metadata::metadata_db;
 pub use metadata::thumbnail_manifest;
 #[cfg(feature = "metadata")]
 pub use metadata::thumbnails;
-#[cfg(feature = "metadata")]
-pub use metadata::image_matching;
 #[cfg(feature = "metadata")]
 pub use metadata::user_data_db;

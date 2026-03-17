@@ -50,8 +50,14 @@ impl MetadataDb {
                 .map_err(|e| Error::Other(format!("Prepare bulk_insert_aliases: {e}")))?;
 
             for (system, base_title, alias_name, alias_region, source) in aliases {
-                stmt.execute(params![system, base_title, alias_name, alias_region, source])
-                    .map_err(|e| Error::Other(format!("Insert alias failed: {e}")))?;
+                stmt.execute(params![
+                    system,
+                    base_title,
+                    alias_name,
+                    alias_region,
+                    source
+                ])
+                .map_err(|e| Error::Other(format!("Insert alias failed: {e}")))?;
                 count += 1;
             }
         }
@@ -95,8 +101,14 @@ impl MetadataDb {
                 .map_err(|e| Error::Other(format!("Prepare bulk_insert_series: {e}")))?;
 
             for (system, base_title, series_name, series_order, source) in entries {
-                stmt.execute(params![system, base_title, series_name, series_order, source])
-                    .map_err(|e| Error::Other(format!("Insert series failed: {e}")))?;
+                stmt.execute(params![
+                    system,
+                    base_title,
+                    series_name,
+                    series_order,
+                    source
+                ])
+                .map_err(|e| Error::Other(format!("Insert series failed: {e}")))?;
                 count += 1;
             }
         }

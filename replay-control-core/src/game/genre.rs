@@ -24,16 +24,8 @@ pub fn normalize_genre(raw: &str) -> &'static str {
     // Extract the first genre segment:
     // - LaunchBox uses "; " (e.g., "Action; Platform")
     // - catver.ini uses " / " (e.g., "Maze / Shooter")
-    let primary = raw
-        .split(';')
-        .next()
-        .unwrap_or(raw)
-        .trim();
-    let primary = primary
-        .split(" / ")
-        .next()
-        .unwrap_or(primary)
-        .trim();
+    let primary = raw.split(';').next().unwrap_or(raw).trim();
+    let primary = primary.split(" / ").next().unwrap_or(primary).trim();
 
     normalize_single(primary)
 }
@@ -117,7 +109,10 @@ fn normalize_single(genre: &str) -> &'static str {
         | "shoot 'em up" | "shmup" => "Shooter",
 
         // ── Simulation ──
-        "simulation" | "flight simulator" | "virtual life" | "flight"
+        "simulation"
+        | "flight simulator"
+        | "virtual life"
+        | "flight"
         | "construction and management simulation" => "Simulation",
 
         // ── Sports ──
@@ -299,7 +294,10 @@ mod tests {
             normalize_genre("Construction and Management Simulation; Strategy"),
             "Simulation"
         );
-        assert_eq!(normalize_genre("Role-Playing (RPG); Action"), "Role-Playing");
+        assert_eq!(
+            normalize_genre("Role-Playing (RPG); Action"),
+            "Role-Playing"
+        );
         assert_eq!(normalize_genre("Sports; Racing"), "Sports");
     }
 

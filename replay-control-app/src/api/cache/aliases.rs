@@ -52,9 +52,8 @@ impl GameLibrary {
 
         for &(game_id, alt_names) in alternates {
             if let Some(game) = games.get(game_id as usize) {
-                let resolved = resolve_to_library_title(
-                    game.display_name, &library_exact, &library_fuzzy,
-                );
+                let resolved =
+                    resolve_to_library_title(game.display_name, &library_exact, &library_fuzzy);
                 if !library_exact.contains(resolved.as_str())
                     && !library_fuzzy.contains_key(&fuzzy_match_key(&resolved))
                 {
@@ -63,9 +62,8 @@ impl GameLibrary {
                 let library_bt = resolved;
 
                 for alt in alt_names {
-                    let alt_resolved = resolve_to_library_title(
-                        alt, &library_exact, &library_fuzzy,
-                    );
+                    let alt_resolved =
+                        resolve_to_library_title(alt, &library_exact, &library_fuzzy);
                     if alt_resolved != library_bt && !alt_resolved.is_empty() {
                         // Forward: library game -> alternate name
                         aliases.push((
@@ -139,9 +137,12 @@ impl GameLibrary {
             }
             // Normalize the base_title the same way Wikidata titles are normalized:
             // lowercase, strip non-alphanumeric except spaces, collapse whitespace.
-            let normalized = replay_control_core::title_utils::normalize_for_wikidata(&rom.base_title);
+            let normalized =
+                replay_control_core::title_utils::normalize_for_wikidata(&rom.base_title);
             if !normalized.is_empty() {
-                norm_to_base.entry(normalized).or_insert_with(|| rom.base_title.clone());
+                norm_to_base
+                    .entry(normalized)
+                    .or_insert_with(|| rom.base_title.clone());
             }
             // Also try with display_name for better matching
             if let Some(ref dn) = rom.display_name {
@@ -149,7 +150,9 @@ impl GameLibrary {
                     &replay_control_core::title_utils::base_title(dn),
                 );
                 if !norm_dn.is_empty() {
-                    norm_to_base.entry(norm_dn).or_insert_with(|| rom.base_title.clone());
+                    norm_to_base
+                        .entry(norm_dn)
+                        .or_insert_with(|| rom.base_title.clone());
                 }
             }
         }

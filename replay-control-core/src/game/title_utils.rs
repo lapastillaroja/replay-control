@@ -316,10 +316,7 @@ mod tests {
     fn series_key_dash_subtitle() {
         // "mega man x - maverick hunter" -> strip dash -> "mega man x"
         // -> strip roman numeral "x" -> "mega man"
-        assert_eq!(
-            series_key("mega man x - maverick hunter"),
-            "mega man"
-        );
+        assert_eq!(series_key("mega man x - maverick hunter"), "mega man");
     }
 
     #[test]
@@ -369,7 +366,10 @@ mod tests {
     #[test]
     fn fuzzy_key_preserves_hyphenated_words() {
         // X-Men becomes "x men" — both colon and dash versions match
-        assert_eq!(fuzzy_match_key("x-men vs street fighter"), "x men vs street fighter");
+        assert_eq!(
+            fuzzy_match_key("x-men vs street fighter"),
+            "x men vs street fighter"
+        );
     }
 
     #[test]
@@ -394,8 +394,9 @@ mod tests {
 
     #[test]
     fn resolve_exact_match() {
-        let exact: std::collections::HashSet<&str> =
-            ["streets of rage", "sonic the hedgehog"].into_iter().collect();
+        let exact: std::collections::HashSet<&str> = ["streets of rage", "sonic the hedgehog"]
+            .into_iter()
+            .collect();
         let fuzzy = std::collections::HashMap::new();
 
         assert_eq!(
@@ -407,7 +408,9 @@ mod tests {
     #[test]
     fn resolve_fuzzy_colon_to_dash() {
         let exact: std::collections::HashSet<&str> =
-            ["teenage mutant ninja turtles - the hyperstone heist"].into_iter().collect();
+            ["teenage mutant ninja turtles - the hyperstone heist"]
+                .into_iter()
+                .collect();
         let mut fuzzy = std::collections::HashMap::new();
         fuzzy.insert(
             fuzzy_match_key("teenage mutant ninja turtles - the hyperstone heist"),
@@ -447,11 +450,7 @@ mod tests {
         );
 
         assert_eq!(
-            resolve_to_library_title(
-                "Bare Knuckle: Ikari no Tekken",
-                &exact,
-                &fuzzy
-            ),
+            resolve_to_library_title("Bare Knuckle: Ikari no Tekken", &exact, &fuzzy),
             "bare knuckle - ikari no tekken"
         );
     }
@@ -474,10 +473,7 @@ mod tests {
 
     #[test]
     fn wikidata_normalize_collapses_whitespace() {
-        assert_eq!(
-            normalize_for_wikidata("  hello   world  "),
-            "hello world"
-        );
+        assert_eq!(normalize_for_wikidata("  hello   world  "), "hello world");
     }
 
     // --- strip_n64dd_prefix ---

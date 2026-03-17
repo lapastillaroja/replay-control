@@ -107,15 +107,17 @@ impl GameLibrary {
                 .filter(|(_, files)| !files.is_empty())
                 .map(|(system, files)| (system.clone(), files.iter().cloned().collect()))
                 .collect();
-            if result.is_empty() { None } else { Some(result) }
+            if result.is_empty() {
+                None
+            } else {
+                Some(result)
+            }
         })
     }
 
     /// Get the total count of favorited games (all systems).
     /// Uses the cached favorites to avoid filesystem traversal.
     pub fn get_favorites_count(&self, storage: &StorageLocation) -> usize {
-        self.with_favorites(storage, |data| {
-            data.values().map(|s| s.len()).sum()
-        })
+        self.with_favorites(storage, |data| data.values().map(|s| s.len()).sum())
     }
 }

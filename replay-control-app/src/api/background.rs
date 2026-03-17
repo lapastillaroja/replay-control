@@ -11,11 +11,15 @@ const STORAGE_CHECK_INTERVAL: u64 = 60;
 mod guard {
     pub struct Guard<F: FnOnce()>(Option<F>);
     impl<F: FnOnce()> Guard<F> {
-        pub fn new(f: F) -> Self { Self(Some(f)) }
+        pub fn new(f: F) -> Self {
+            Self(Some(f))
+        }
     }
     impl<F: FnOnce()> Drop for Guard<F> {
         fn drop(&mut self) {
-            if let Some(f) = self.0.take() { f(); }
+            if let Some(f) = self.0.take() {
+                f();
+            }
         }
     }
 }
@@ -56,30 +60,32 @@ impl BackgroundManager {
         // Brief delay to let the server start accepting requests.
         std::thread::sleep(Duration::from_secs(2));
 
-        // Set warmup flag for the pipeline duration. Cleared on drop via guard,
-        // even if a phase panics.
-        state
-            .cache
-            .warmup_in_progress
-            .store(true, Ordering::SeqCst);
-        let warmup_flag = state.cache.warmup_in_progress.clone();
-        let _warmup_guard = guard::Guard::new(move || {
-            warmup_flag.store(false, Ordering::SeqCst);
-        });
-
         // Phase 1: Auto-import (if launchbox XML exists + DB empty).
+        // Import claims/releases the busy flag on its own.
         Self::phase_auto_import(state);
 
-        // Wait for auto-import to finish before proceeding.
-        while state.import.is_busy() {
+        // Wait for auto-import to finish (check progress state, not busy flag).
+        while state.import.has_active_progress() {
             std::thread::sleep(Duration::from_millis(500));
         }
 
-        // Phase 2: Cache verification / populate (enrichment is inline).
-        Self::phase_cache_verification(state);
+        // Phase 2+3: Set busy for populate + thumbnail rebuild.
+        // Cleared on drop via guard, even on panic.
+        {
+            state.busy.store(true, Ordering::SeqCst);
+            let busy_flag = state.busy.clone();
+            let busy_label = state.busy_label.clone();
+            let _busy_guard = guard::Guard::new(move || {
+                busy_flag.store(false, Ordering::SeqCst);
+                *busy_label.write().expect("busy_label lock") = String::new();
+            });
 
-        // Phase 3: Auto-rebuild thumbnail index if images exist but index is empty.
-        Self::phase_auto_rebuild_thumbnail_index(state);
+            state.set_busy_label("Scanning game library...");
+            Self::phase_cache_verification(state);
+
+            state.set_busy_label("Rebuilding thumbnail index...");
+            Self::phase_auto_rebuild_thumbnail_index(state);
+        }
     }
 
     /// Phase 1: Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
@@ -121,7 +127,7 @@ impl BackgroundManager {
 
         if should_import {
             tracing::info!("Auto-importing metadata from {}", xml_path.display());
-            state.import.start_import(xml_path, state.clone());
+            state.import.start_import_no_enrich(xml_path, state.clone());
         }
     }
 
@@ -142,8 +148,10 @@ impl BackgroundManager {
 
         if cached_meta.is_empty() {
             // Fresh DB -- pre-populate L2 for all systems with games.
-            // warmup_in_progress is already set by run_pipeline().
+            // Set scanning flag for UI banner.
+            state.cache.scanning.store(true, Ordering::SeqCst);
             Self::populate_all_systems(state, &storage, region_pref, region_secondary);
+            state.cache.scanning.store(false, Ordering::SeqCst);
             return;
         }
 
@@ -164,10 +172,12 @@ impl BackgroundManager {
 
             if is_stale {
                 tracing::info!("Background re-scan: {} (mtime changed)", meta.system);
-                let _ =
-                    state
-                        .cache
-                        .scan_and_cache_system(&storage, &meta.system, region_pref, region_secondary);
+                let _ = state.cache.scan_and_cache_system(
+                    &storage,
+                    &meta.system,
+                    region_pref,
+                    region_secondary,
+                );
                 state.cache.enrich_system_cache(state, &meta.system);
                 stale_count += 1;
             }
@@ -224,7 +234,12 @@ impl BackgroundManager {
             return;
         }
 
-        tracing::info!("Thumbnail data sources exist but index is empty (data loss?) — rebuilding index from GitHub API");
+        tracing::info!(
+            "Thumbnail data sources exist but index is empty (data loss?) — rebuilding index from GitHub API"
+        );
+
+        // The pipeline's busy flag is already set (from run_pipeline Phase 2+3 block).
+        // No need to claim separately.
 
         // Lock the DB for the duration of the index rebuild.
         // Uses the accessor which handles re-open-if-deleted logic.
@@ -268,7 +283,11 @@ impl BackgroundManager {
                     tracing::warn!(
                         "Thumbnail index rebuild failed: all {} repos errored (offline or rate-limited?). First: {}",
                         stats.errors.len(),
-                        stats.errors.first().map(|s| s.as_str()).unwrap_or("unknown"),
+                        stats
+                            .errors
+                            .first()
+                            .map(|s| s.as_str())
+                            .unwrap_or("unknown"),
                     );
                 } else {
                     tracing::info!(
@@ -305,10 +324,12 @@ impl BackgroundManager {
         let start = std::time::Instant::now();
         let mut total_roms = 0usize;
         for sys in &with_games {
-            match state
-                .cache
-                .scan_and_cache_system(storage, &sys.folder_name, region_pref, region_secondary)
-            {
+            match state.cache.scan_and_cache_system(
+                storage,
+                &sys.folder_name,
+                region_pref,
+                region_secondary,
+            ) {
                 Ok(roms) => {
                     tracing::debug!("L2 warmup: {} — {} ROMs", sys.folder_name, roms.len());
                     total_roms += roms.len();
@@ -395,8 +416,7 @@ impl AppState {
                     );
                 } else {
                     let systems = state.cache.get_systems(&storage);
-                    let with_games: Vec<_> =
-                        systems.iter().filter(|s| s.game_count > 0).collect();
+                    let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
                     tracing::info!(
                         "Post-import enrichment: updating {} system(s)",
                         with_games.len()
@@ -666,10 +686,7 @@ impl AppState {
             };
 
         if let Err(e) = watcher.watch(&roms_dir, RecursiveMode::Recursive) {
-            tracing::warn!(
-                "Failed to watch roms directory {}: {e}",
-                roms_dir.display()
-            );
+            tracing::warn!("Failed to watch roms directory {}: {e}", roms_dir.display());
             return false;
         }
 
@@ -704,10 +721,7 @@ impl AppState {
                     &mut roms_dir_changed,
                 );
 
-                tracing::debug!(
-                    "ROM change detected ({:?}), debouncing...",
-                    event.kind
-                );
+                tracing::debug!("ROM change detected ({:?}), debouncing...", event.kind);
 
                 // Drain further events within the debounce window.
                 let deadline = tokio::time::Instant::now() + DEBOUNCE;
@@ -729,9 +743,7 @@ impl AppState {
                 }
 
                 // Skip if startup warmup or a metadata operation is running.
-                if state.cache.warmup_in_progress.load(Ordering::Acquire)
-                    || state.import.is_busy()
-                {
+                if state.is_busy() {
                     tracing::debug!(
                         "Background operation in progress, skipping ROM watcher rescan"
                     );
@@ -775,9 +787,7 @@ impl AppState {
                     // created or removed), refresh the systems list to discover
                     // new systems and update game counts.
                     if roms_dir_changed {
-                        tracing::info!(
-                            "ROM watcher: roms/ directory changed, refreshing systems"
-                        );
+                        tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
                         let systems = state_clone.cache.get_systems(&storage);
                         for sys in &systems {
                             if sys.game_count > 0 && !affected.contains(&sys.folder_name) {

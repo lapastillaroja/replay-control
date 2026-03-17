@@ -341,9 +341,7 @@ pub fn import_all_manifests(
 /// Uses `GET /repos/libretro-thumbnails/{url_name}/commits/HEAD` with
 /// `Accept: application/vnd.github.sha` which returns just the SHA as plain text.
 fn check_repo_freshness(url_name: &str, stored_hash: &str, api_key: Option<&str>) -> Result<bool> {
-    let url = format!(
-        "https://api.github.com/repos/libretro-thumbnails/{url_name}/commits/HEAD"
-    );
+    let url = format!("https://api.github.com/repos/libretro-thumbnails/{url_name}/commits/HEAD");
 
     let auth_header;
     let mut args = vec![
@@ -784,9 +782,7 @@ pub fn find_boxart_variants(
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
-            if entry_base != base_title
-                && !tilde_halves.iter().any(|half| *half == entry_base)
-            {
+            if entry_base != base_title && !tilde_halves.iter().any(|half| *half == entry_base) {
                 continue;
             }
 
@@ -902,9 +898,7 @@ pub fn count_boxart_variants(db: &MetadataDb, system: &str, rom_filename: &str) 
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
-            if entry_base != base_title
-                && !tilde_halves.iter().any(|half| *half == entry_base)
-            {
+            if entry_base != base_title && !tilde_halves.iter().any(|half| *half == entry_base) {
                 continue;
             }
 
@@ -1134,18 +1128,12 @@ mod tests {
             "Sonic The Hedgehog 3 (Japan, Korea)".to_string(),
             match_jpn.clone(),
         );
-        exact.insert(
-            "Sonic The Hedgehog 3 (USA)".to_string(),
-            match_usa.clone(),
-        );
+        exact.insert("Sonic The Hedgehog 3 (USA)".to_string(), match_usa.clone());
         exact_ci.insert(
             "sonic the hedgehog 3 (japan, korea)".to_string(),
             match_jpn.clone(),
         );
-        exact_ci.insert(
-            "sonic the hedgehog 3 (usa)".to_string(),
-            match_usa.clone(),
-        );
+        exact_ci.insert("sonic the hedgehog 3 (usa)".to_string(), match_usa.clone());
         // Japan wins fuzzy tier (inserted first)
         by_tags.insert("sonic the hedgehog 3".to_string(), match_jpn.clone());
 
@@ -1208,10 +1196,7 @@ mod tests {
         let by_version = HashMap::new();
 
         exact.insert("Completely Different Name (USA)".to_string(), m.clone());
-        exact_ci.insert(
-            "completely different name (usa)".to_string(),
-            m.clone(),
-        );
+        exact_ci.insert("completely different name (usa)".to_string(), m.clone());
         by_tags.insert("completely different name".to_string(), m.clone());
 
         let index = ManifestFuzzyIndex {
@@ -1222,16 +1207,9 @@ mod tests {
         };
 
         // ROM stem after tag stripping matches
-        let result = find_in_manifest(
-            &index,
-            "Completely Different Name (Europe).md",
-            "sega_smd",
-        );
+        let result = find_in_manifest(&index, "Completely Different Name (Europe).md", "sega_smd");
         assert!(result.is_some());
-        assert_eq!(
-            result.unwrap().filename,
-            "Completely Different Name (USA)"
-        );
+        assert_eq!(result.unwrap().filename, "Completely Different Name (USA)");
     }
 
     #[test]
@@ -1316,7 +1294,10 @@ mod tests {
         // Tiers 1-3 fail. Tier 4 splits on " _ " and tries "animal basket" — match.
         let thumb = "Animal Basket _ Hustle Tamaire Kyousou (19 Jan 2005)";
         let result = find_in_manifest_with_thumb_name(&index, thumb);
-        assert!(result.is_some(), "Slash dual-name should match primary part");
+        assert!(
+            result.is_some(),
+            "Slash dual-name should match primary part"
+        );
         assert_eq!(result.unwrap().filename, "Animal Basket");
     }
 
@@ -1346,10 +1327,7 @@ mod tests {
         // "mushiking iv _ v _ vi" — parts "v" and "vi" are < 5 chars.
         let thumb = "Mushiking IV _ V _ VI (World)";
         let result = find_in_manifest_with_thumb_name(&index, thumb);
-        assert!(
-            result.is_none(),
-            "Should not match on short slash parts"
-        );
+        assert!(result.is_none(), "Should not match on short slash parts");
     }
 
     /// Helper for testing find_in_manifest with a pre-computed thumbnail name,

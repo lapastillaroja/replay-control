@@ -880,7 +880,8 @@ fn DataManagementSection(
                 Ok(()) => {
                     // The rebuild runs in the background. Poll is_metadata_busy()
                     // every 2 seconds until it completes.
-                    poll_rebuild_completion(rebuilding, rebuild_result, stats, coverage, i18n).await;
+                    poll_rebuild_completion(rebuilding, rebuild_result, stats, coverage, i18n)
+                        .await;
                 }
                 Err(e) => {
                     rebuild_result.set(Some(format!("Error: {e}")));

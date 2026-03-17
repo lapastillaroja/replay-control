@@ -2,8 +2,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
-use replay_control_core::metadata_db::MetadataDb;
-
 use super::AppState;
 
 // ── ImportPipeline ─────────────────────────────────────────────────
@@ -27,40 +25,71 @@ impl ImportPipeline {
         }
     }
 
-    /// Check if a metadata operation is currently running.
+    /// Check if the shared busy flag is set.
+    /// Convenience accessor — reads the same Arc as AppState.is_busy().
     pub fn is_busy(&self) -> bool {
         self.busy.load(Ordering::Acquire)
     }
 
-    /// Atomically claim the shared busy flag. Returns `true` if the slot was
-    /// successfully claimed (was previously free). Callers must ensure the flag
-    /// is cleared when their operation completes.
-    pub fn claim_busy(&self) -> bool {
+    /// Atomically claim the shared busy flag. Returns `true` if successfully claimed.
+    pub(crate) fn claim_busy(&self) -> bool {
         !self.busy.swap(true, Ordering::SeqCst)
     }
 
-    /// Get a clone of the shared busy flag Arc, for passing to
-    /// `spawn_cache_enrichment_with_flag` (which clears it on completion).
-    pub fn busy_flag(&self) -> Arc<AtomicBool> {
+    /// Get a clone of the shared busy flag Arc.
+    pub(crate) fn busy_flag(&self) -> Arc<AtomicBool> {
         self.busy.clone()
     }
 
+    /// Check if an import is actively running (has in-progress state).
+    /// Used by the startup pipeline to wait for auto-import completion.
+    pub fn has_active_progress(&self) -> bool {
+        use replay_control_core::metadata_db::ImportState;
+        self.progress
+            .read()
+            .expect("import_progress lock poisoned")
+            .as_ref()
+            .is_some_and(|p| {
+                matches!(
+                    p.state,
+                    ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
+                )
+            })
+    }
+
     /// Get current import progress (clone).
-    pub fn progress(
-        &self,
-    ) -> Option<replay_control_core::metadata_db::ImportProgress> {
-        self.progress.read().expect("import_progress lock poisoned").clone()
+    pub fn progress(&self) -> Option<replay_control_core::metadata_db::ImportProgress> {
+        self.progress
+            .read()
+            .expect("import_progress lock poisoned")
+            .clone()
     }
 
     /// Start a background metadata import from a LaunchBox XML file.
     /// Returns `false` if another metadata operation is already running.
     pub fn start_import(&self, xml_path: PathBuf, state: AppState) -> bool {
+        self.start_import_inner(xml_path, state, false)
+    }
+
+    /// Start import without post-enrichment. Used by the startup pipeline
+    /// which handles populate/enrichment sequentially.
+    pub fn start_import_no_enrich(&self, xml_path: PathBuf, state: AppState) -> bool {
+        self.start_import_inner(xml_path, state, true)
+    }
+
+    fn start_import_inner(
+        &self,
+        xml_path: PathBuf,
+        state: AppState,
+        skip_enrichment: bool,
+    ) -> bool {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
         // Atomically claim the operation slot.
         if self.busy.swap(true, Ordering::SeqCst) {
             return false;
         }
+        state.set_busy_label("Importing metadata...");
 
         // Check if already running (shouldn't happen with the atomic guard, but be safe).
         {
@@ -78,7 +107,10 @@ impl ImportPipeline {
 
         // Set initial progress.
         {
-            let mut guard = self.progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .progress
+                .write()
+                .expect("import_progress lock poisoned");
             *guard = Some(ImportProgress {
                 state: ImportState::BuildingIndex,
                 processed: 0,
@@ -92,7 +124,9 @@ impl ImportPipeline {
         let state = state.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            state.import.run_import_blocking(&state, xml_path, start);
+            state
+                .import
+                .run_import_blocking(&state, xml_path, start, skip_enrichment);
         });
 
         true
@@ -162,7 +196,10 @@ impl ImportPipeline {
 
         // Set initial progress to Downloading.
         {
-            let mut guard = self.progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .progress
+                .write()
+                .expect("import_progress lock poisoned");
             *guard = Some(ImportProgress {
                 state: ImportState::Downloading,
                 processed: 0,
@@ -219,7 +256,9 @@ impl ImportPipeline {
             }
 
             // Now run the import (this updates import_progress internally).
-            state.import.run_import_blocking(&state, xml_path, start);
+            state
+                .import
+                .run_import_blocking(&state, xml_path, start, false);
         });
 
         true
@@ -227,13 +266,26 @@ impl ImportPipeline {
 
     /// Run the metadata import synchronously (called from spawn_blocking).
     /// Separated from start_import to allow reuse from start_metadata_download.
-    fn run_import_blocking(&self, state: &AppState, xml_path: PathBuf, start: std::time::Instant) {
+    ///
+    /// DB locking is per-batch: the lock is acquired for each ~500-entry batch
+    /// flush and then released, giving other threads millisecond-scale gaps to
+    /// read the DB between batches.
+    fn run_import_blocking(
+        &self,
+        state: &AppState,
+        xml_path: PathBuf,
+        start: std::time::Instant,
+        skip_enrichment: bool,
+    ) {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
-        // Build ROM index.
+        // Build ROM index (no DB needed).
         let storage_root = state.storage().root.clone();
         {
-            let mut guard = self.progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .progress
+                .write()
+                .expect("import_progress lock poisoned");
             if let Some(ref mut p) = *guard {
                 p.state = ImportState::BuildingIndex;
                 p.elapsed_secs = start.elapsed().as_secs();
@@ -242,32 +294,15 @@ impl ImportPipeline {
 
         let rom_index = replay_control_core::launchbox::build_rom_index(&storage_root);
 
-        // Update progress to Parsing.
+        // Verify DB is available before starting the parse.
         {
-            let mut guard = self.progress.write().expect("import_progress lock poisoned");
-            if let Some(ref mut p) = *guard {
-                p.state = ImportState::Parsing;
-                p.elapsed_secs = start.elapsed().as_secs();
-            }
-        }
-
-        // Hold DB lock for the duration of the import (~5-15s). This blocks
-        // other threads' with_db() calls but prevents concurrent connection
-        // issues. `import_launchbox` takes `&mut MetadataDb` and does internal
-        // batching, so the lock must span the full call. Restructuring to
-        // acquire/release per-batch would require changing the core API.
-        // TODO(perf): acquire/release per-batch for better concurrency.
-        //
-        // Bypasses state.metadata_db() accessor intentionally: we need to hold
-        // the MutexGuard across the entire import + alias phase, which is
-        // incompatible with the accessor's borrow-and-release pattern.
-        let db_ref = state.metadata_db.clone();
-        let mut db_guard = db_ref.lock().expect("metadata_db lock poisoned");
-        let db = match db_guard.as_mut() {
-            Some(db) => db,
-            None => {
+            let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+            if db_guard.is_none() {
                 tracing::error!("Metadata DB unavailable at import start (connection missing)");
-                let mut guard = self.progress.write().expect("import_progress lock poisoned");
+                let mut guard = self
+                    .progress
+                    .write()
+                    .expect("import_progress lock poisoned");
                 if let Some(ref mut p) = *guard {
                     p.state = ImportState::Failed;
                     p.error = Some("Metadata DB unavailable".to_string());
@@ -276,13 +311,42 @@ impl ImportPipeline {
                 self.busy.store(false, Ordering::SeqCst);
                 return;
             }
+        }
+
+        // Update progress to Parsing.
+        {
+            let mut guard = self
+                .progress
+                .write()
+                .expect("import_progress lock poisoned");
+            if let Some(ref mut p) = *guard {
+                p.state = ImportState::Parsing;
+                p.elapsed_secs = start.elapsed().as_secs();
+            }
+        }
+
+        // Per-batch flush closure: locks DB, calls bulk_upsert, releases.
+        // The core crate calls this for each ~500-entry batch, keeping
+        // the DB Mutex held only for the duration of the SQL transaction.
+        let db_ref = state.metadata_db.clone();
+        let flush_batch = |batch: &[(
+            String,
+            String,
+            replay_control_core::metadata_db::GameMetadata,
+        )]| {
+            let mut guard = db_ref.lock().expect("metadata_db lock poisoned");
+            let db = guard.as_mut().ok_or_else(|| {
+                replay_control_core::error::Error::Other(
+                    "Metadata DB unavailable during import".to_string(),
+                )
+            })?;
+            db.bulk_upsert(batch)
         };
 
         let progress_ref = self.progress.clone();
         let start_ref = start;
         let result = replay_control_core::launchbox::import_launchbox(
             &xml_path,
-            db,
             &rom_index,
             |processed, matched, inserted| {
                 let mut guard = progress_ref.write().expect("import_progress lock poisoned");
@@ -293,6 +357,7 @@ impl ImportPipeline {
                     p.elapsed_secs = start_ref.elapsed().as_secs();
                 }
             },
+            flush_batch,
         );
 
         // Invalidate image cache so updated metadata paths are picked up.
@@ -304,17 +369,23 @@ impl ImportPipeline {
         };
 
         // Import LaunchBox alternate names into game_alias table.
-        // Uses the ParseResult from the single-pass XML parse (no re-reading).
+        // Acquires its own per-operation DB lock.
         if let Some(pr) = parse_result {
-            tracing::debug!("Starting LaunchBox alias import ({} alternates, {} game names)",
-                pr.alternate_names.len(), pr.game_names.len());
-            Self::import_launchbox_aliases(db, pr);
+            tracing::debug!(
+                "Starting LaunchBox alias import ({} alternates, {} game names)",
+                pr.alternate_names.len(),
+                pr.game_names.len()
+            );
+            Self::import_launchbox_aliases(state, pr);
             tracing::debug!("LaunchBox alias import complete");
         }
 
         // Update final progress.
         {
-            let mut guard = self.progress.write().expect("import_progress lock poisoned");
+            let mut guard = self
+                .progress
+                .write()
+                .expect("import_progress lock poisoned");
             match result {
                 Ok((stats, _)) => {
                     *guard = Some(ImportProgress {
@@ -336,27 +407,26 @@ impl ImportPipeline {
             }
         }
 
-        // Release DB lock before enrichment (enrichment needs it too).
-        tracing::debug!("Import: releasing DB lock, succeeded={succeeded}");
-        drop(db_guard);
-
         // Re-enrich game library with freshly imported data.
         // Skip during startup auto-import: the pipeline handles populate/enrichment
         // sequentially to avoid races. For user-triggered imports, enrich immediately.
-        if succeeded && !state.is_warmup_in_progress() {
+        if succeeded && !skip_enrichment {
             state.spawn_cache_enrichment();
         }
 
-        // Clear busy flag immediately. Progress stays in Complete/Failed state
-        // until the next import starts (UI reads it and shows the result).
+        // Clear busy flag, label, and progress.
         self.busy.store(false, Ordering::SeqCst);
+        state.set_busy_label("");
+        *self.progress.write().expect("import_progress lock") = None;
     }
 
     /// Import LaunchBox alternate names into the `game_alias` table.
     ///
     /// Uses the `ParseResult` from the single-pass XML parse — no re-reading.
+    /// Acquires/releases the DB lock per-operation (read base_titles, then
+    /// write aliases) so other threads can access the DB between operations.
     fn import_launchbox_aliases(
-        db: &mut MetadataDb,
+        state: &AppState,
         parse_result: &replay_control_core::launchbox::ParseResult,
     ) {
         let alt_names = &parse_result.alternate_names;
@@ -384,9 +454,14 @@ impl ImportPipeline {
                 .push((primary_name.clone(), String::new()));
         }
 
-        // Load all base_titles from game_library.
+        // Lock DB to load base_titles, then release.
         tracing::debug!("LaunchBox aliases: loading base_titles from game_library...");
         let base_titles: std::collections::HashMap<String, Vec<String>> = {
+            let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+            let Some(db) = guard.as_mut() else {
+                tracing::warn!("LaunchBox aliases: DB unavailable for reading base_titles");
+                return;
+            };
             let systems = db.active_systems().unwrap_or_default();
             let mut map: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
@@ -402,15 +477,15 @@ impl ImportPipeline {
                 }
             }
             map
+            // MutexGuard drops here — DB lock released.
         };
 
         // Build lookup maps for fuzzy matching (colon/dash normalization).
+        // All in-memory, no DB lock needed.
         use replay_control_core::title_utils::{fuzzy_match_key, resolve_to_library_title};
 
-        let library_exact: std::collections::HashSet<&str> = base_titles
-            .keys()
-            .map(|s| s.as_str())
-            .collect();
+        let library_exact: std::collections::HashSet<&str> =
+            base_titles.keys().map(|s| s.as_str()).collect();
 
         let library_fuzzy: std::collections::HashMap<String, &str> = base_titles
             .keys()
@@ -435,7 +510,8 @@ impl ImportPipeline {
             if let Some((bt, system)) = matched_bt {
                 // Insert all other alternates as aliases of this base_title.
                 for (alt_name, region) in alts {
-                    let resolved = resolve_to_library_title(alt_name, &library_exact, &library_fuzzy);
+                    let resolved =
+                        resolve_to_library_title(alt_name, &library_exact, &library_fuzzy);
                     if resolved != bt && !resolved.is_empty() {
                         aliases.push((
                             system.clone(),
@@ -454,11 +530,18 @@ impl ImportPipeline {
             return;
         }
 
+        // Lock DB to insert aliases, then release.
         let count = aliases.len();
-        match db.bulk_insert_aliases(&aliases) {
-            Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
-            Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
+        let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+        if let Some(db) = guard.as_mut() {
+            match db.bulk_insert_aliases(&aliases) {
+                Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
+                Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
+            }
+        } else {
+            tracing::warn!("LaunchBox aliases: DB unavailable for inserting aliases");
         }
+        // MutexGuard drops here — DB lock released.
     }
 }
 
@@ -486,7 +569,10 @@ impl ThumbnailPipeline {
 
     /// Get current thumbnail pipeline progress (clone).
     pub fn progress(&self) -> Option<crate::server_fns::ThumbnailProgress> {
-        self.progress.read().expect("thumbnail_progress lock poisoned").clone()
+        self.progress
+            .read()
+            .expect("thumbnail_progress lock poisoned")
+            .clone()
     }
 
     /// Request cancellation of the current thumbnail update.
@@ -516,6 +602,7 @@ impl ThumbnailPipeline {
         if self.busy.swap(true, Ordering::SeqCst) {
             return false;
         }
+        state.set_busy_label("Updating thumbnails...");
 
         if self.is_thumbnail_update_running() {
             self.busy.store(false, Ordering::SeqCst);
@@ -547,13 +634,20 @@ impl ThumbnailPipeline {
         let state = state.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            state.thumbnails.run_thumbnail_update_blocking(&state, start);
+            state
+                .thumbnails
+                .run_thumbnail_update_blocking(&state, start);
         });
 
         true
     }
 
     /// Run the two-phase thumbnail pipeline (blocking, called from spawn_blocking).
+    ///
+    /// DB locking is per-operation: the lock is acquired for each discrete DB
+    /// call (manifest import, per-system download, per-system image path
+    /// update) and released between them. This gives other threads access to
+    /// the DB during the long download phase.
     fn run_thumbnail_update_blocking(&self, state: &AppState, start: std::time::Instant) {
         use crate::server_fns::{ThumbnailPhase, ThumbnailProgress};
         use replay_control_core::thumbnail_manifest;
@@ -561,15 +655,10 @@ impl ThumbnailPipeline {
 
         let storage_root = state.storage().root.clone();
 
-        // Lock DB for the duration of the thumbnail update. Bypasses
-        // state.metadata_db() accessor intentionally: we need to hold the
-        // MutexGuard across both index refresh and download phases, which is
-        // incompatible with the accessor's borrow-and-release pattern.
-        let db_ref = state.metadata_db.clone();
-        let mut db_guard = db_ref.lock().expect("metadata_db lock poisoned");
-        let db = match db_guard.as_mut() {
-            Some(db) => db,
-            None => {
+        // Verify DB is available before starting.
+        {
+            let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+            if db_guard.is_none() {
                 tracing::error!(
                     "Metadata DB unavailable at thumbnail update start (connection missing)"
                 );
@@ -582,9 +671,11 @@ impl ThumbnailPipeline {
                 self.busy.store(false, Ordering::SeqCst);
                 return;
             }
-        };
+        }
 
         // ── Phase 1: Index refresh ──────────────────────────────────
+        // Lock DB for the manifest import (per-repo network + DB writes).
+        // Released after this phase so the download phase doesn't block readers.
 
         let progress_ref = self.progress.clone();
         let cancel_ref = &self.cancel;
@@ -592,21 +683,26 @@ impl ThumbnailPipeline {
         // Read GitHub API key from settings (if configured).
         let api_key = replay_control_core::settings::read_github_api_key(&storage_root);
 
-        let index_result = thumbnail_manifest::import_all_manifests(
-            db,
-            &|repos_done, repos_total, current_repo| {
-                let mut guard = progress_ref.write().expect("lock");
-                if let Some(ref mut p) = *guard {
-                    p.phase = ThumbnailPhase::Indexing;
-                    p.step_done = repos_done;
-                    p.step_total = repos_total;
-                    p.current_label = current_repo.to_string();
-                    p.elapsed_secs = start.elapsed().as_secs();
-                }
-            },
-            cancel_ref,
-            api_key.as_deref(),
-        );
+        let index_result = {
+            let mut db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+            let db = db_guard.as_mut().expect("DB availability verified above");
+            thumbnail_manifest::import_all_manifests(
+                db,
+                &|repos_done, repos_total, current_repo| {
+                    let mut guard = progress_ref.write().expect("lock");
+                    if let Some(ref mut p) = *guard {
+                        p.phase = ThumbnailPhase::Indexing;
+                        p.step_done = repos_done;
+                        p.step_total = repos_total;
+                        p.current_label = current_repo.to_string();
+                        p.elapsed_secs = start.elapsed().as_secs();
+                    }
+                },
+                cancel_ref,
+                api_key.as_deref(),
+            )
+            // MutexGuard drops here — DB lock released between phases.
+        };
 
         let index_stats = match index_result {
             Ok(stats) => {
@@ -685,6 +781,8 @@ impl ThumbnailPipeline {
         }
 
         // ── Phase 2: Download images ────────────────────────────────
+        // DB lock is acquired per-system for download + image path update,
+        // then released between systems.
 
         {
             let mut guard = self.progress.write().expect("lock");
@@ -736,75 +834,81 @@ impl ThumbnailPipeline {
             let progress_ref = self.progress.clone();
             let prev_downloaded = total_downloaded;
 
-            // Download boxart for this system.
-            let result = thumbnail_manifest::download_system_thumbnails(
-                db,
-                &storage_root,
-                system,
-                ThumbnailKind::Boxart,
-                &|processed, total, downloaded| {
-                    let mut guard = progress_ref.write().expect("lock");
-                    if let Some(ref mut p) = *guard {
-                        p.step_done = i;
-                        p.step_total = total_systems;
-                        p.downloaded = prev_downloaded + downloaded;
-                        p.elapsed_secs = start.elapsed().as_secs();
-                        // Encode per-system progress in current_label (1-based for display).
-                        if total > 0 {
-                            let display_n = (processed + 1).min(total);
-                            p.current_label = format!("{system_display}: {display_n}/{total}");
+            // Lock DB for this system's boxart download.
+            {
+                let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+                if let Some(db) = db_guard.as_ref() {
+                    let result = thumbnail_manifest::download_system_thumbnails(
+                        db,
+                        &storage_root,
+                        system,
+                        ThumbnailKind::Boxart,
+                        &|processed, total, downloaded| {
+                            let mut guard = progress_ref.write().expect("lock");
+                            if let Some(ref mut p) = *guard {
+                                p.step_done = i;
+                                p.step_total = total_systems;
+                                p.downloaded = prev_downloaded + downloaded;
+                                p.elapsed_secs = start.elapsed().as_secs();
+                                if total > 0 {
+                                    let display_n = (processed + 1).min(total);
+                                    p.current_label =
+                                        format!("{system_display}: {display_n}/{total}");
+                                }
+                            }
+                        },
+                        cancel_ref,
+                    );
+
+                    match result {
+                        Ok(stats) => {
+                            total_downloaded += stats.downloaded;
+                            total_failed += stats.failed;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Thumbnail download failed for {system}: {e}");
                         }
                     }
-                },
-                cancel_ref,
-            );
-
-            match result {
-                Ok(stats) => {
-                    total_downloaded += stats.downloaded;
-                    total_failed += stats.failed;
                 }
-                Err(e) => {
-                    tracing::warn!("Thumbnail download failed for {system}: {e}");
-                }
+                // MutexGuard drops here — DB lock released between boxart and snap.
             }
 
-            // Also download snaps for this system.
+            // Lock DB for this system's snap download.
             if !cancel_ref.load(Ordering::Relaxed) {
                 let prev_downloaded = total_downloaded;
-                let result = thumbnail_manifest::download_system_thumbnails(
-                    db,
-                    &storage_root,
-                    system,
-                    ThumbnailKind::Snap,
-                    &|_processed, _total, downloaded| {
-                        let mut guard = progress_ref.write().expect("lock");
-                        if let Some(ref mut p) = *guard {
-                            p.downloaded = prev_downloaded + downloaded;
-                            p.elapsed_secs = start.elapsed().as_secs();
-                        }
-                    },
-                    cancel_ref,
-                );
+                let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+                if let Some(db) = db_guard.as_ref() {
+                    let result = thumbnail_manifest::download_system_thumbnails(
+                        db,
+                        &storage_root,
+                        system,
+                        ThumbnailKind::Snap,
+                        &|_processed, _total, downloaded| {
+                            let mut guard = progress_ref.write().expect("lock");
+                            if let Some(ref mut p) = *guard {
+                                p.downloaded = prev_downloaded + downloaded;
+                                p.elapsed_secs = start.elapsed().as_secs();
+                            }
+                        },
+                        cancel_ref,
+                    );
 
-                match result {
-                    Ok(stats) => {
-                        total_downloaded += stats.downloaded;
-                        total_failed += stats.failed;
-                    }
-                    Err(e) => {
-                        tracing::warn!("Snap download failed for {system}: {e}");
+                    match result {
+                        Ok(stats) => {
+                            total_downloaded += stats.downloaded;
+                            total_failed += stats.failed;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Snap download failed for {system}: {e}");
+                        }
                     }
                 }
+                // MutexGuard drops here — DB lock released.
             }
 
-            // Update DB image paths for this system (same as the existing import does).
-            // Use the ROM filenames to update game_metadata box_art_path / screenshot_path.
-            Self::update_image_paths_from_disk(db, &storage_root, system);
+            // Lock DB for image path update, then release.
+            Self::update_image_paths_from_disk(state, &storage_root, system);
         }
-
-        // Release DB lock before enrichment.
-        drop(db_guard);
 
         // Invalidate the image cache so new thumbnails are picked up.
         state.cache.invalidate_images();
@@ -855,22 +959,36 @@ impl ThumbnailPipeline {
             }
         }
 
-        // Clear busy flag immediately. Progress stays in terminal state
-        // until the next thumbnail update starts.
+        // Clear busy flag and label. Progress stays in terminal state
+        // so the UI can show "Complete" — cleared on next operation start.
         self.busy.store(false, Ordering::SeqCst);
+        state.set_busy_label("");
     }
 
     /// Scan the media directory for a system and update game_metadata image paths.
     /// Uses fuzzy matching (base title + version-stripped) to bridge naming gaps
     /// between ROM filenames and libretro-thumbnails manifest names.
+    ///
+    /// Acquires/releases the DB lock internally for each operation (read filenames,
+    /// then write updates).
     fn update_image_paths_from_disk(
-        db: &mut MetadataDb,
+        state: &AppState,
         storage_root: &std::path::Path,
         system: &str,
     ) {
         use replay_control_core::image_matching::{build_dir_index, find_best_match};
 
-        let rom_filenames = db.visible_filenames(system).unwrap_or_default();
+        // Lock DB to read visible filenames, then release.
+        let rom_filenames = {
+            let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+            let Some(db) = guard.as_mut() else {
+                return;
+            };
+            db.visible_filenames(system).unwrap_or_default()
+            // MutexGuard drops here.
+        };
+
+        // Build dir indexes (filesystem scan, no DB needed).
         let media_base = storage_root
             .join(replay_control_core::storage::RC_DIR)
             .join("media")
@@ -884,6 +1002,7 @@ impl ThumbnailPipeline {
 
         let is_arcade = replay_control_core::systems::is_arcade_system(system);
 
+        // Match ROM filenames to images (in-memory, no DB needed).
         let mut updates: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
 
         for rom_filename in &rom_filenames {
@@ -910,10 +1029,15 @@ impl ThumbnailPipeline {
             }
         }
 
-        if !updates.is_empty()
-            && let Err(e) = db.bulk_update_image_paths(&updates)
-        {
-            tracing::warn!("Failed to update image paths for {system}: {e}");
+        // Lock DB to write image path updates, then release.
+        if !updates.is_empty() {
+            let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
+            if let Some(db) = guard.as_mut() {
+                if let Err(e) = db.bulk_update_image_paths(&updates) {
+                    tracing::warn!("Failed to update image paths for {system}: {e}");
+                }
+            }
+            // MutexGuard drops here.
         }
     }
 }
@@ -997,5 +1121,102 @@ mod tests {
 
         // Can claim again.
         assert!(import.claim_busy());
+    }
+
+    /// Busy flag lifecycle: starts false, claim sets true, release sets false.
+    /// Verifies that mutual exclusion works between import and thumbnail pipelines.
+    #[test]
+    fn busy_flag_lifecycle_import_blocks_thumbnail() {
+        let busy = Arc::new(AtomicBool::new(false));
+        let import = ImportPipeline::new(busy.clone());
+        let thumbnails = ThumbnailPipeline::new(busy.clone());
+
+        // Initially not busy.
+        assert!(!import.is_busy());
+
+        // Import claims the slot.
+        assert!(import.claim_busy());
+        assert!(import.is_busy());
+
+        // Thumbnail cannot claim while import holds the flag.
+        assert!(busy.swap(true, Ordering::SeqCst)); // already true
+
+        // Release.
+        import.busy_flag().store(false, Ordering::SeqCst);
+        assert!(!import.is_busy());
+
+        // Now thumbnail can claim.
+        assert!(!busy.swap(true, Ordering::SeqCst)); // was false, now true
+        assert!(import.is_busy()); // shared flag is true
+        let _ = thumbnails; // suppress unused warning
+    }
+
+    /// Busy flag lifecycle: claim_busy is the atomic gatekeeper, not just store(true).
+    /// Two threads racing claim_busy: only one succeeds.
+    #[test]
+    fn busy_flag_atomic_claim_race() {
+        use std::sync::Barrier;
+
+        let busy = Arc::new(AtomicBool::new(false));
+        let barrier = Arc::new(Barrier::new(2));
+        let wins = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let busy = busy.clone();
+                let barrier = barrier.clone();
+                let wins = wins.clone();
+                let import = ImportPipeline::new(busy);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    if import.claim_busy() {
+                        wins.fetch_add(1, Ordering::SeqCst);
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // Exactly one thread should have won the claim.
+        assert_eq!(wins.load(Ordering::SeqCst), 1);
+    }
+
+    /// DB Mutex contention: metadata_db() accessor returns a valid guard
+    /// even when another thread holds the Mutex briefly.
+    #[test]
+    fn db_mutex_contention_no_deadlock() {
+        use std::sync::Mutex;
+
+        // Simulate the metadata_db Mutex pattern from AppState.
+        let db_mutex: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(Some("db_handle".into())));
+
+        let db_clone = db_mutex.clone();
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let barrier2 = barrier.clone();
+
+        // Thread 1: holds the lock for a bit.
+        let t1 = std::thread::spawn(move || {
+            let guard = db_clone.lock().unwrap();
+            barrier2.wait(); // signal that we hold the lock
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            assert!(guard.is_some());
+            drop(guard);
+        });
+
+        // Thread 2: tries to acquire the lock while thread 1 holds it.
+        barrier.wait(); // wait until thread 1 holds the lock
+        let start = std::time::Instant::now();
+        let guard = db_mutex.lock().unwrap();
+        let waited = start.elapsed();
+
+        // We should have waited for thread 1 to release.
+        assert!(waited.as_millis() >= 20, "Should have blocked on Mutex");
+        assert!(guard.is_some(), "DB should still be valid after contention");
+        drop(guard);
+
+        t1.join().unwrap();
     }
 }

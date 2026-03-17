@@ -277,7 +277,14 @@ pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str
                 })
                 .unwrap_or_default(),
             genre: game_meta
-                .map(|g| if g.genre.is_empty() { g.normalized_genre } else { g.genre }.to_string())
+                .map(|g| {
+                    if g.genre.is_empty() {
+                        g.normalized_genre
+                    } else {
+                        g.genre
+                    }
+                    .to_string()
+                })
                 .unwrap_or_default(),
             developer: game_meta
                 .map(|g| g.developer.to_string())

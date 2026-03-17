@@ -221,8 +221,7 @@ fn TextSizeToggle(current: String) -> impl IntoView {
                 // Reload the page so the SSR body class updates.
                 #[cfg(feature = "hydrate")]
                 {
-                    let _ = web_sys::window()
-                        .and_then(|w| w.location().reload().ok());
+                    let _ = web_sys::window().and_then(|w| w.location().reload().ok());
                 }
             }
             saving.set(false);

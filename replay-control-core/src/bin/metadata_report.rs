@@ -34,11 +34,11 @@ fn main() {
         eprintln!("Importing LaunchBox XML from {}...", xml_path.display());
         let (stats, _parse_result) = launchbox::import_launchbox(
             &xml_path,
-            &mut db,
             &rom_index,
             |total, matched, inserted| {
                 eprint!("\r  Progress: {total} scanned, {matched} matched, {inserted} inserted");
             },
+            |batch| db.bulk_upsert(batch),
         )
         .expect("Import failed");
 
@@ -81,14 +81,18 @@ fn main() {
         let sys_info = systems::find_system(system_name);
         let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
 
-        let rom_list =
-            match roms::list_roms(&storage, system_name, rom_tags::RegionPreference::default(), None) {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("  Error listing ROMs for {system_name}: {e}");
-                    continue;
-                }
-            };
+        let rom_list = match roms::list_roms(
+            &storage,
+            system_name,
+            rom_tags::RegionPreference::default(),
+            None,
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("  Error listing ROMs for {system_name}: {e}");
+                continue;
+            }
+        };
 
         if rom_list.is_empty() {
             continue;

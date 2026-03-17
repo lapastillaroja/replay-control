@@ -87,11 +87,7 @@ impl MetadataDb {
 
     /// Find hacks of a game: other ROMs sharing the same base_title that are hacks.
     /// Returns (rom_filename, display_name) pairs sorted by display_name.
-    pub fn hacks(
-        &self,
-        system: &str,
-        rom_filename: &str,
-    ) -> Result<Vec<(String, Option<String>)>> {
+    pub fn hacks(&self, system: &str, rom_filename: &str) -> Result<Vec<(String, Option<String>)>> {
         let mut stmt = self
             .conn
             .prepare(
@@ -221,10 +217,7 @@ impl MetadataDb {
     ///
     /// Returns `(system, base_title)` pairs where an alias matches the query.
     /// Used by search to expand results (e.g., searching "Bare Knuckle" finds "Streets of Rage").
-    pub fn search_aliases(
-        &self,
-        query: &str,
-    ) -> Result<Vec<(String, String)>> {
+    pub fn search_aliases(&self, query: &str) -> Result<Vec<(String, String)>> {
         let like_pattern = format!("%{query}%");
         let mut stmt = self
             .conn

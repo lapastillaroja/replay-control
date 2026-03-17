@@ -330,8 +330,7 @@ fn criteria_folder_raw(
                     .map(|e| e.game.genre)
                     .or_else(|| {
                         let normalized = game_db::normalize_filename(stem);
-                        game_db::lookup_by_normalized_title(system, &normalized)
-                            .map(|g| g.genre)
+                        game_db::lookup_by_normalized_title(system, &normalized).map(|g| g.genre)
                     })
                     .unwrap_or("")
             };

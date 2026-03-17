@@ -12,7 +12,7 @@ use quick_xml::events::Event;
 
 use crate::arcade_db;
 use crate::error::{Error, Result};
-use crate::metadata_db::{GameMetadata, ImportStats, MetadataDb};
+use crate::metadata_db::{GameMetadata, ImportStats};
 
 /// Build the LaunchBox platform → system folder mapping from the centralized
 /// system definitions in `systems.rs`. Adding a new system with
@@ -95,15 +95,20 @@ pub fn normalize_title(name: &str) -> String {
         .collect()
 }
 
-/// Import metadata from a LaunchBox metadata XML file into the metadata DB.
+/// Import metadata from a LaunchBox metadata XML file.
 ///
 /// `rom_index` maps `(system_folder, normalized_title)` → `rom_filename` for all ROMs on disk.
 /// This is built by the caller by scanning the ROM directories.
+///
+/// `flush_batch` is called for each batch of ~500 matched entries. The caller
+/// is responsible for persisting them (e.g., locking a DB mutex, calling
+/// `bulk_upsert`, then releasing). This keeps the core crate unaware of any
+/// concurrency primitives — the app crate handles locking policy.
 pub fn import_launchbox(
     xml_path: &Path,
-    db: &mut MetadataDb,
     rom_index: &HashMap<(String, String), Vec<String>>,
     mut on_progress: impl FnMut(usize, usize, usize),
+    mut flush_batch: impl FnMut(&[(String, String, GameMetadata)]) -> Result<usize>,
 ) -> Result<(ImportStats, ParseResult)> {
     let file = std::fs::File::open(xml_path).map_err(|e| Error::io(xml_path, e))?;
     let reader = std::io::BufReader::with_capacity(256 * 1024, file);
@@ -128,8 +133,14 @@ pub fn import_launchbox(
         stats.total_source += 1;
 
         // Skip entries with no useful data.
-        if game.overview.is_empty() && game.rating.is_none() && game.genre.is_empty() && game.max_players.is_none()
-            && game.developer.is_empty() && game.release_year.is_none() && !game.cooperative {
+        if game.overview.is_empty()
+            && game.rating.is_none()
+            && game.genre.is_empty()
+            && game.max_players.is_none()
+            && game.developer.is_empty()
+            && game.release_year.is_none()
+            && !game.cooperative
+        {
             stats.skipped += 1;
             return;
         }
@@ -176,7 +187,7 @@ pub fn import_launchbox(
 
         // Flush batch periodically.
         if batch.len() >= 500 {
-            if let Ok(n) = db.bulk_upsert(&batch) {
+            if let Ok(n) = flush_batch(&batch) {
                 stats.inserted += n;
             }
             batch.clear();
@@ -190,7 +201,7 @@ pub fn import_launchbox(
 
     // Flush remaining.
     if !batch.is_empty()
-        && let Ok(n) = db.bulk_upsert(&batch)
+        && let Ok(n) = flush_batch(&batch)
     {
         stats.inserted += n;
     }
@@ -231,7 +242,11 @@ fn parse_xml<R: BufRead>(
 
     // State tracking for which element type we're inside.
     #[derive(PartialEq)]
-    enum Context { None, Game, AlternateName }
+    enum Context {
+        None,
+        Game,
+        AlternateName,
+    }
     let mut ctx = Context::None;
     let mut current_tag = String::new();
 
@@ -298,7 +313,9 @@ fn parse_xml<R: BufRead>(
                         "DatabaseID" => database_id.push_str(&text),
                         "Platform" => platform.push_str(&text),
                         "Overview" => overview.push_str(&text),
-                        "CommunityRating" => { rating = text.parse::<f64>().ok(); }
+                        "CommunityRating" => {
+                            rating = text.parse::<f64>().ok();
+                        }
                         "Publisher" => publisher.push_str(&text),
                         "Developer" => developer.push_str(&text),
                         "Genres" => genre.push_str(&text),
@@ -385,7 +402,10 @@ fn parse_xml<R: BufRead>(
         game_names.len()
     );
 
-    Ok(ParseResult { alternate_names, game_names })
+    Ok(ParseResult {
+        alternate_names,
+        game_names,
+    })
 }
 
 /// A parsed alternate name entry from LaunchBox XML.
@@ -593,18 +613,12 @@ mod tests {
             normalize_title("Sonic The Hedgehog (USA)"),
             "sonicthehedgehog"
         );
-        assert_eq!(
-            normalize_title("Game [!] (Europe)"),
-            "game"
-        );
+        assert_eq!(normalize_title("Game [!] (Europe)"), "game");
     }
 
     #[test]
     fn normalize_title_reorders_article() {
-        assert_eq!(
-            normalize_title("Legend of Zelda, The"),
-            "thelegendofzelda"
-        );
+        assert_eq!(normalize_title("Legend of Zelda, The"), "thelegendofzelda");
         assert_eq!(
             normalize_title("Legend of Zelda, The - A Link to the Past"),
             "thelegendofzeldaalinktothepast"
@@ -628,19 +642,13 @@ mod tests {
     #[test]
     fn normalize_title_preserves_v_in_words() {
         // "vs" and "v" in normal words should NOT be stripped
-        assert_eq!(
-            normalize_title("Alien vs Predator"),
-            "alienvspredator"
-        );
+        assert_eq!(normalize_title("Alien vs Predator"), "alienvspredator");
         assert_eq!(normalize_title("Marvel"), "marvel");
     }
 
     #[test]
     fn normalize_title_version_with_multiple_dots() {
-        assert_eq!(
-            normalize_title("Game v1.2.3"),
-            "game"
-        );
+        assert_eq!(normalize_title("Game v1.2.3"), "game");
     }
 
     #[test]

@@ -4,7 +4,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
-use super::{unix_now, DataSourceInfo, DataSourceStats, MetadataDb, ThumbnailIndexEntry};
+use super::{DataSourceInfo, DataSourceStats, MetadataDb, ThumbnailIndexEntry, unix_now};
 
 impl MetadataDb {
     /// Insert or update a data source entry.

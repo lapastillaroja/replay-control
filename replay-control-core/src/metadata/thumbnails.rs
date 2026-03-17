@@ -136,11 +136,7 @@ pub fn try_resolve_fake_symlink(path: &Path, parent_dir: &Path) -> Option<String
 /// `kind` is the subdirectory name (e.g., `"boxart"` or `"snap"`).
 ///
 /// Returns a relative path like `"boxart/Sonic The Hedgehog 3 (USA).png"` on match.
-pub fn find_image_on_disk(
-    media_base: &Path,
-    kind: &str,
-    rom_filename: &str,
-) -> Option<String> {
+pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> Option<String> {
     let kind_dir = media_base.join(kind);
     if !kind_dir.exists() {
         return None;
@@ -430,7 +426,10 @@ pub fn delete_orphaned_thumbnails(
                 bytes_freed += size;
             }
             Err(e) => {
-                tracing::debug!("Failed to delete orphaned thumbnail {}: {e}", path.display());
+                tracing::debug!(
+                    "Failed to delete orphaned thumbnail {}: {e}",
+                    path.display()
+                );
             }
         }
     }
@@ -768,8 +767,7 @@ mod tests {
     #[test]
     fn non_arcade_system_no_arcade_db_lookup() {
         // For non-arcade systems, the stem is used directly
-        let (thumb_name, base) =
-            resolve_pipeline("Super Mario World (USA).sfc", "nintendo_snes");
+        let (thumb_name, base) = resolve_pipeline("Super Mario World (USA).sfc", "nintendo_snes");
         assert_eq!(thumb_name, "Super Mario World (USA)");
         assert_eq!(base, "super mario world");
     }
@@ -796,10 +794,7 @@ mod tests {
     fn n64dd_prefix_stripped() {
         // N64DD ROMs have a "N64DD - " prefix that should be stripped
         let stem = "N64DD - Mario Artist Paint Studio (Japan).n64";
-        let stem = stem
-            .rfind('.')
-            .map(|i| &stem[..i])
-            .unwrap_or(stem);
+        let stem = stem.rfind('.').map(|i| &stem[..i]).unwrap_or(stem);
         let stem = crate::title_utils::strip_n64dd_prefix(stem);
         assert_eq!(stem, "Mario Artist Paint Studio (Japan)");
         let thumb = thumbnail_filename(stem);

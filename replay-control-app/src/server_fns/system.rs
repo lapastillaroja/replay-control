@@ -170,7 +170,9 @@ fn read_journalctl(source: &str, lines: usize) -> String {
 
     let text = String::from_utf8_lossy(&output.stdout).into_owned();
     // journalctl with Storage=none prints "No journal files were found" + "-- No entries --"
-    if text.contains("No journal files") || text.contains("-- No entries --") || text.trim().is_empty()
+    if text.contains("No journal files")
+        || text.contains("-- No entries --")
+        || text.trim().is_empty()
     {
         return String::new();
     }

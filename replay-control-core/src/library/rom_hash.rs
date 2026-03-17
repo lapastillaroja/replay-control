@@ -179,8 +179,8 @@ pub fn hash_and_identify(
         };
 
         // Look up the CRC32 in the No-Intro index.
-        let matched_name = game_db::lookup_by_crc(system, crc32)
-            .map(|entry| entry.canonical_name.to_string());
+        let matched_name =
+            game_db::lookup_by_crc(system, crc32).map(|entry| entry.canonical_name.to_string());
 
         results.push(HashResult {
             rom_filename: rom_filename.clone(),
@@ -299,7 +299,11 @@ mod tests {
     fn hash_and_identify_skips_ineligible_system() {
         let results = hash_and_identify(
             "sony_psx",
-            &[("game.chd".to_string(), "/roms/sony_psx/game.chd".to_string(), 700_000_000)],
+            &[(
+                "game.chd".to_string(),
+                "/roms/sony_psx/game.chd".to_string(),
+                700_000_000,
+            )],
             &std::collections::HashMap::new(),
             Path::new("/tmp"),
         );
@@ -336,10 +340,7 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].crc32, 0xDEADBEEF);
-        assert_eq!(
-            results[0].matched_name.as_deref(),
-            Some("Cached Game Name")
-        );
+        assert_eq!(results[0].matched_name.as_deref(), Some("Cached Game Name"));
     }
 
     #[test]

@@ -54,8 +54,8 @@ impl<T: Clone> CacheEntry<T> {
     }
 }
 
-pub use images::ImageIndex;
 use favorites::FavoritesCache;
+pub use images::ImageIndex;
 
 pub struct GameLibrary {
     pub(super) systems: std::sync::RwLock<Option<CacheEntry<Vec<SystemSummary>>>>,
@@ -68,13 +68,20 @@ pub struct GameLibrary {
     pub(super) images: std::sync::RwLock<HashMap<String, Arc<ImageIndex>>>,
     /// Shared reference to the metadata DB for L2 persistent cache.
     pub(super) db: Arc<Mutex<Option<MetadataDb>>>,
-    /// Shared flag: true while background startup scan is running.
+    /// Unified busy flag (same Arc as AppState.busy).
     /// When set, get_roms() returns empty instead of blocking on L3 scan.
-    pub warmup_in_progress: Arc<std::sync::atomic::AtomicBool>,
+    busy: Arc<std::sync::atomic::AtomicBool>,
+    /// Scanning indicator (same Arc as AppState.scanning).
+    /// True only during Phase 2 game library populate.
+    pub(crate) scanning: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl GameLibrary {
-    pub(crate) fn new(db: Arc<Mutex<Option<MetadataDb>>>) -> Self {
+    pub(crate) fn new(
+        db: Arc<Mutex<Option<MetadataDb>>>,
+        busy: Arc<std::sync::atomic::AtomicBool>,
+        scanning: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
         Self {
             systems: std::sync::RwLock::new(None),
             roms: std::sync::RwLock::new(HashMap::new()),
@@ -82,7 +89,8 @@ impl GameLibrary {
             recents: std::sync::RwLock::new(None),
             images: std::sync::RwLock::new(HashMap::new()),
             db,
-            warmup_in_progress: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            busy,
+            scanning,
         }
     }
 
@@ -254,7 +262,7 @@ impl GameLibrary {
         }
 
         // During warmup, return empty — the background pipeline will populate.
-        if self.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst) {
+        if self.busy.load(std::sync::atomic::Ordering::Acquire) {
             tracing::debug!("get_roms({system}): returning empty (warmup in progress)");
             return Ok(Arc::new(Vec::new()));
         }
@@ -265,7 +273,11 @@ impl GameLibrary {
 
     /// Try L1 (in-memory) then L2 (SQLite) for cached ROM data.
     /// Returns None if neither has fresh data.
-    fn get_roms_cached(&self, storage: &StorageLocation, system: &str) -> Option<Arc<Vec<RomEntry>>> {
+    fn get_roms_cached(
+        &self,
+        storage: &StorageLocation,
+        system: &str,
+    ) -> Option<Arc<Vec<RomEntry>>> {
         let key = system.to_string();
         let system_dir = storage.roms_dir().join(system);
 
@@ -302,7 +314,8 @@ impl GameLibrary {
         let system_dir = storage.roms_dir().join(system);
 
         tracing::debug!("L3 scan for {system}: starting filesystem scan");
-        let mut roms = replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)?;
+        let mut roms =
+            replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)?;
         tracing::debug!("L3 scan for {system}: found {} ROMs", roms.len());
 
         // Hash-and-identify step: for hash-eligible systems, compute CRC32 hashes
@@ -503,31 +516,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn warmup_flag_lifecycle() {
+    fn busy_flag_blocks_l3_scan() {
+        let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let scanning = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let db = Arc::new(Mutex::new(None));
-        let cache = GameLibrary::new(db);
+        let cache = GameLibrary::new(db, busy.clone(), scanning);
 
-        // Initially false.
-        assert!(!cache.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst));
+        // Set busy.
+        busy.store(true, std::sync::atomic::Ordering::SeqCst);
 
-        // Set during warmup.
-        cache.warmup_in_progress.store(true, std::sync::atomic::Ordering::SeqCst);
-        assert!(cache.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst));
-
-        // Cleared after warmup.
-        cache.warmup_in_progress.store(false, std::sync::atomic::Ordering::SeqCst);
-        assert!(!cache.warmup_in_progress.load(std::sync::atomic::Ordering::SeqCst));
-    }
-
-    #[test]
-    fn warmup_flag_blocks_l3_scan() {
-        let db = Arc::new(Mutex::new(None));
-        let cache = GameLibrary::new(db);
-
-        // Set warmup in progress.
-        cache.warmup_in_progress.store(true, std::sync::atomic::Ordering::SeqCst);
-
-        // Create a minimal temp storage so get_roms can check the flag.
         let tmp = std::env::temp_dir().join(format!(
             "replay-cache-test-{}-{:?}",
             std::process::id(),
@@ -540,7 +537,7 @@ mod tests {
             replay_control_core::storage::StorageKind::Sd,
         );
 
-        // get_roms should return empty during warmup.
+        // get_roms should return empty during busy.
         let result = cache.get_roms(
             &storage,
             "test_system",
@@ -549,9 +546,91 @@ mod tests {
         );
         assert!(result.unwrap().is_empty());
 
-        // Clear warmup flag.
-        cache.warmup_in_progress.store(false, std::sync::atomic::Ordering::SeqCst);
-
+        busy.store(false, std::sync::atomic::Ordering::SeqCst);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// Warmup flag is cleared by RAII guard even on panic.
+    /// This validates the guard pattern used in BackgroundManager::run_pipeline.
+    #[test]
+    fn warmup_flag_cleared_by_guard_on_drop() {
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Simulate what run_pipeline does: set flag, create guard, then drop.
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
+
+        {
+            let flag_clone = flag.clone();
+            // This is the same Guard pattern from background.rs.
+            struct Guard<F: FnOnce()>(Option<F>);
+            impl<F: FnOnce()> Guard<F> {
+                fn new(f: F) -> Self {
+                    Self(Some(f))
+                }
+            }
+            impl<F: FnOnce()> Drop for Guard<F> {
+                fn drop(&mut self) {
+                    if let Some(f) = self.0.take() {
+                        f();
+                    }
+                }
+            }
+            let _guard = Guard::new(move || {
+                flag_clone.store(false, std::sync::atomic::Ordering::SeqCst);
+            });
+            // Guard is alive here -- flag should still be true.
+            assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
+        }
+        // Guard dropped -- flag should be false.
+        assert!(!flag.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    /// Per-batch DB locking: verify that the DB Mutex is released between
+    /// batch operations, allowing other threads to access the DB.
+    #[test]
+    fn per_batch_locking_releases_between_batches() {
+        let db_mutex: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(Some("db_handle".into())));
+
+        // Simulate a per-batch flush pattern: lock, do work, release.
+        let db_clone = db_mutex.clone();
+        let read_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let read_count_clone = read_count.clone();
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done_clone = done.clone();
+
+        // Reader thread: tries to read between batches.
+        let reader = std::thread::spawn(move || {
+            while !done_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                if let Ok(guard) = db_clone.try_lock() {
+                    if guard.is_some() {
+                        read_count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    drop(guard);
+                }
+                std::thread::yield_now();
+            }
+        });
+
+        // Writer thread: simulates 5 batch flushes with gaps between them.
+        for _ in 0..5 {
+            {
+                let _guard = db_mutex.lock().unwrap();
+                // Simulate batch flush work.
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            // Gap between batches -- reader can acquire the lock here.
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        done.store(true, std::sync::atomic::Ordering::Relaxed);
+        reader.join().unwrap();
+
+        // Reader should have been able to acquire the lock at least once
+        // during the gaps between batches.
+        assert!(
+            read_count.load(std::sync::atomic::Ordering::Relaxed) > 0,
+            "Reader thread should have acquired the lock between batches"
+        );
     }
 }

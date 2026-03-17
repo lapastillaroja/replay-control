@@ -594,7 +594,8 @@ fn is_rom_file(path: &Path, system: &System) -> bool {
     // Filter supplementary GD-ROM disc images in arcade_dc.
     // Files like "gdl-0010.chd" and "gds-0009a.chd" are MAME GD-ROM data
     // required alongside the parent ZIP ROM — they are not standalone games.
-    if system.folder_name == "arcade_dc" && ext_lower == "chd"
+    if system.folder_name == "arcade_dc"
+        && ext_lower == "chd"
         && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
     {
         let lower = stem.to_ascii_lowercase();
@@ -983,11 +984,7 @@ mod tests {
 
         // list_roms: orphan M3U should be hidden
         let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
-        assert_eq!(
-            roms.len(),
-            0,
-            "Orphan M3U should be hidden, got: {roms:?}"
-        );
+        assert_eq!(roms.len(), 0, "Orphan M3U should be hidden, got: {roms:?}");
 
         // scan_systems: count should be 0
         let summaries = scan_systems(&storage);
@@ -995,10 +992,7 @@ mod tests {
             .iter()
             .find(|s| s.folder_name == "scummvm")
             .unwrap();
-        assert_eq!(
-            scummvm.game_count, 0,
-            "Orphan M3U should not be counted"
-        );
+        assert_eq!(scummvm.game_count, 0, "Orphan M3U should not be counted");
     }
 
     #[test]
@@ -1098,8 +1092,15 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None).unwrap();
-        assert_eq!(roms.len(), 2, "Expected 2 ROMs (M3U + standalone), got: {roms:?}");
-        assert!(roms.iter().any(|r| r.is_m3u && r.game.rom_filename == "Game.m3u"));
+        assert_eq!(
+            roms.len(),
+            2,
+            "Expected 2 ROMs (M3U + standalone), got: {roms:?}"
+        );
+        assert!(
+            roms.iter()
+                .any(|r| r.is_m3u && r.game.rom_filename == "Game.m3u")
+        );
         assert!(roms.iter().any(|r| r.game.rom_filename == "Other.dim"));
 
         let summaries = scan_systems(&storage);

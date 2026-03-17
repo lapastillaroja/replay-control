@@ -784,7 +784,8 @@ fn SimilarGamesRow(
     #[prop(default = "game_detail.more_like_this")] title_key: &'static str,
     /// Optional custom title (e.g., series name from Wikidata). When non-empty, displayed
     /// instead of the i18n title_key.
-    #[prop(default = String::new())] custom_title: String,
+    #[prop(default = String::new())]
+    custom_title: String,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let has_custom = !custom_title.is_empty();
