@@ -959,10 +959,10 @@ impl ThumbnailPipeline {
             }
         }
 
-        // Clear busy flag and label. Progress stays in terminal state
-        // so the UI can show "Complete" — cleared on next operation start.
+        // Clear busy flag, label, and progress.
         self.busy.store(false, Ordering::SeqCst);
         state.set_busy_label("");
+        *self.progress.write().expect("thumbnail_progress lock") = None;
     }
 
     /// Scan the media directory for a system and update game_metadata image paths.
