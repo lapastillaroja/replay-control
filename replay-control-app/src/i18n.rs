@@ -382,7 +382,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
 
         "metadata.attribution" => "Attribution",
         "metadata.attribution_text" => {
-            "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails. Data is cached locally for offline use and is not redistributed."
+            "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails. Game series data from Wikidata (CC0). Data is cached locally for offline use and is not redistributed."
         }
 
         // Logs
