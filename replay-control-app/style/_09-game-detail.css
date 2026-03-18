@@ -9,13 +9,14 @@
 .game-cover {
     aspect-ratio: 4 / 3;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 2px solid var(--accent-border);
     border-radius: var(--radius);
     display: flex;
     align-items: center;
     justify-content: center;
     max-height: 18.75rem;
     overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 .game-cover-text {
@@ -87,6 +88,8 @@
     font-size: 0.95rem;
     font-weight: 600;
     margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--accent-border);
 }
 
 .game-section-empty {

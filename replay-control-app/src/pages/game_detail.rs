@@ -346,29 +346,25 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             </div>
         </section>
 
-        // Description
-        <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.description")}</h2>
-            <Show when=move || has_description
-                fallback=move || view! { <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_description")}</p> }
-            >
+        // Description (hidden when no description available)
+        <Show when=move || has_description>
+            <section class="section game-section">
+                <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.description")}</h2>
                 <p class="game-description">{move || description.get_value()}</p>
-            </Show>
-        </section>
+            </section>
+        </Show>
 
-        // Screenshots Gallery
-        <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.screenshots")}</h2>
-            <Show when=move || has_screenshot
-                fallback=move || view! { <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_screenshots")}</p> }
-            >
+        // Screenshots Gallery (hidden when no screenshots)
+        <Show when=move || has_screenshot>
+            <section class="section game-section">
+                <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.screenshots")}</h2>
                 <div class="game-screenshots">
                     <img class="game-screenshot-img" src=screenshot_url.get_value() alt="Screenshot" />
                 </div>
-            </Show>
-        </section>
+            </section>
+        </Show>
 
-        // User Captures
+        // User Captures (hidden when none, with helpful prompt)
         <section class="section game-section">
             <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.user_captures")}</h2>
             <Show when=move || has_user_screenshots
@@ -424,12 +420,6 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             system=system_sv
             rom_filename=filename_sv
         />
-
-        // Manual
-        <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.manual")}</h2>
-            <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_manual")}</p>
-        </section>
 
         // Actions
         <section class="section">

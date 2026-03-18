@@ -18,7 +18,7 @@
     height: var(--top-bar-height);
     padding: 0 16px;
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 2px solid var(--accent);
     position: sticky;
     top: 0;
     z-index: 100;
@@ -92,10 +92,22 @@
     cursor: pointer;
     transition: color 0.2s;
     font-size: 0.7rem;
+    position: relative;
 }
 
 .nav-tab.active {
     color: var(--accent);
+}
+
+.nav-tab.active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 12px;
+    right: 12px;
+    height: 3px;
+    background: var(--accent);
+    border-radius: 0 0 2px 2px;
 }
 
 .nav-tab:hover {

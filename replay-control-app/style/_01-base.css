@@ -17,6 +17,9 @@
     --text-secondary: #8b8f96;
     --accent: #6366f1;
     --accent-hover: #818cf8;
+    --accent-dim: color-mix(in srgb, var(--accent) 10%, transparent);
+    --accent-glow: color-mix(in srgb, var(--accent) 20%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 30%, transparent);
     --star: #f59e0b;
     --error: #ef4444;
     --success: #22c55e;

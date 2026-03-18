@@ -19,11 +19,30 @@
     text-align: left;
     color: var(--text);
     width: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.system-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    opacity: 0;
+    border-radius: 0 2px 2px 0;
+    transition: opacity 0.2s;
 }
 
 .system-card:hover {
-    border-color: var(--accent);
-    background: var(--surface-hover);
+    border-color: var(--accent-border);
+    background: var(--accent-dim);
+}
+
+.system-card:hover::before {
+    opacity: 1;
 }
 
 .system-card.empty {

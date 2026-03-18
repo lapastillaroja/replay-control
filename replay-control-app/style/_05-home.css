@@ -10,7 +10,23 @@
     background: var(--surface);
     border-radius: var(--radius);
     padding: 20px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--accent-border);
+    border-left: 3px solid var(--accent);
+    position: relative;
+    overflow: hidden;
+}
+
+.hero-card::after {
+    content: '';
+    position: absolute;
+    right: -10px;
+    top: -10px;
+    width: 60px;
+    height: 60px;
+    background: var(--accent-glow);
+    border-radius: 50%;
+    filter: blur(24px);
+    pointer-events: none;
 }
 
 .hero-thumb {
@@ -116,12 +132,29 @@
     padding: 16px;
     text-align: center;
     border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 60px;
+    background: var(--accent-glow);
+    border-radius: 50%;
+    filter: blur(20px);
+    pointer-events: none;
 }
 
 .stat-value {
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--accent);
+    position: relative;
 }
 
 .stat-card.compact .stat-value {
@@ -134,6 +167,7 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-top: 4px;
+    position: relative;
 }
 
 .storage-bar {
@@ -234,7 +268,7 @@
 
 .discover-card:hover {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+    box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
 .discover-card-label {

@@ -139,6 +139,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
 
         // More page
         "more.title" => "More",
+        "more.section_preferences" => "Preferences",
+        "more.section_game_data" => "Game Data",
+        "more.section_system" => "System",
         "more.upload" => "Upload ROMs",
         "more.wifi" => "Wi-Fi Configuration",
         "more.nfs" => "NFS Share Settings",

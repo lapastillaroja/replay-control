@@ -64,6 +64,13 @@
     }
 }
 
+/* More page: limit form width on larger screens */
+@media (min-width: 768px) {
+    .more-inline-setting {
+        max-width: 480px;
+    }
+}
+
 /* Responsive: desktop */
 @media (min-width: 1024px) {
     .systems-grid {

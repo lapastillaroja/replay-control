@@ -1,7 +1,56 @@
 /* ================================================================
-   Menu — More page menu list, info grid
+   Menu — More page sections, menu list, info grid
    ================================================================ */
 
+/* More page sections */
+.more-section {
+    margin-bottom: 28px;
+}
+
+.more-section:last-child {
+    margin-bottom: 0;
+}
+
+.more-section-header {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+}
+
+.more-section-body {
+    padding-top: 4px;
+}
+
+.more-section-body > .menu-list {
+    margin-bottom: 16px;
+}
+
+.more-section-body > .menu-list:last-child {
+    margin-bottom: 0;
+}
+
+/* Inline settings within the More page (region, text size) */
+.more-inline-setting {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.more-inline-setting:last-child {
+    border-bottom: none;
+}
+
+.more-setting-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+/* Menu list */
 .menu-list {
     display: flex;
     flex-direction: column;
@@ -16,6 +65,10 @@
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     transition: background 0.15s;
+}
+
+.menu-item:last-child {
+    border-bottom: none;
 }
 
 .menu-item:hover {
@@ -47,11 +100,13 @@
     background: transparent;
 }
 
+/* Info grid (system info rows) */
 .info-grid {
     background: var(--surface);
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     overflow: hidden;
+    margin-bottom: 16px;
 }
 
 .info-row {
