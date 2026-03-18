@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::metadata_db::GameEntry;
+use crate::metadata_db::{AliasInsert, GameEntry, SeriesInsert};
 use crate::title_utils::{fuzzy_match_key, normalize_for_wikidata, resolve_to_library_title};
 
 /// Build TGDB alternate name alias tuples for a system.
@@ -23,7 +23,7 @@ pub fn build_tgdb_alias_tuples(
     system: &str,
     library_base_titles: &HashSet<&str>,
     library_fuzzy: &HashMap<String, &str>,
-) -> Vec<(String, String, String, String, String)> {
+) -> Vec<AliasInsert> {
     use crate::game_db;
     use crate::systems;
 
@@ -44,7 +44,7 @@ pub fn build_tgdb_alias_tuples(
         None => return Vec::new(),
     };
 
-    let mut aliases: Vec<(String, String, String, String, String)> = Vec::new();
+    let mut aliases: Vec<AliasInsert> = Vec::new();
 
     for &(game_id, alt_names) in alternates {
         if let Some(game) = games.get(game_id as usize) {
@@ -62,24 +62,24 @@ pub fn build_tgdb_alias_tuples(
                     resolve_to_library_title(alt, library_base_titles, library_fuzzy);
                 if alt_resolved != library_bt && !alt_resolved.is_empty() {
                     // Forward: library game -> alternate name
-                    aliases.push((
-                        system.to_string(),
-                        library_bt.clone(),
-                        alt_resolved.clone(),
-                        String::new(),
-                        "tgdb".to_string(),
-                    ));
+                    aliases.push(AliasInsert {
+                        system: system.to_string(),
+                        base_title: library_bt.clone(),
+                        alias_name: alt_resolved.clone(),
+                        alias_region: String::new(),
+                        source: "tgdb".to_string(),
+                    });
                     // Reverse: if the alternate is also in the library, link back
                     if library_base_titles.contains(alt_resolved.as_str())
                         || library_fuzzy.contains_key(&fuzzy_match_key(&alt_resolved))
                     {
-                        aliases.push((
-                            system.to_string(),
-                            alt_resolved,
-                            library_bt.clone(),
-                            String::new(),
-                            "tgdb".to_string(),
-                        ));
+                        aliases.push(AliasInsert {
+                            system: system.to_string(),
+                            base_title: alt_resolved,
+                            alias_name: library_bt.clone(),
+                            alias_region: String::new(),
+                            source: "tgdb".to_string(),
+                        });
                     }
                 }
             }
@@ -94,7 +94,9 @@ pub fn build_tgdb_alias_tuples(
 /// Matches embedded Wikidata entries to library games by normalized title,
 /// returning series membership tuples ready for DB insertion.
 ///
-/// Returns `(system, base_title, series_name, series_order, source)` tuples.
+/// Returns `(system, base_title, series_name, series_order, source, follows_base_title, followed_by_base_title)` tuples.
+/// The follows/followed_by values are resolved to library base_titles when possible,
+/// or stored as raw Wikidata titles when the linked game isn't in the library.
 ///
 /// # Arguments
 /// * `system` - The system folder name.
@@ -102,72 +104,133 @@ pub fn build_tgdb_alias_tuples(
 pub fn build_wikidata_series_tuples(
     system: &str,
     library_entries: &[GameEntry],
-) -> Vec<(String, String, String, Option<i32>, String)> {
+) -> Vec<SeriesInsert> {
     use crate::series_db;
-    use crate::systems;
     use crate::title_utils;
 
-    let wikidata_entries = series_db::system_series_entries(system);
+    // Match against ALL Wikidata entries regardless of system.
+    // A game's Wikidata entry may list a different platform than the ROM's actual system
+    // (e.g., Metal Slug X tagged as sony_psx but ROM is on arcade_fbneo).
+    // Series data is platform-independent, so cross-system matching is correct.
+    let wikidata_entries = series_db::all_entries();
     if wikidata_entries.is_empty() {
         return Vec::new();
     }
 
-    // Build a map of normalized_title -> base_title for games in the library.
+    // Build a map of normalized_title -> set of base_titles for games in the library.
     // Multiple normalized forms are added per ROM to maximize match chances:
     // 1. base_title as-is (e.g., "dodonpachi ii - bee storm")
     // 2. display_name derived base_title
     // 3. Subtitle-stripped form (e.g., "dodonpachi ii") — catches cases where
     //    Wikidata uses the short name and the ROM has a subtitle after " - " or " / "
-    let mut norm_to_base: HashMap<String, String> = HashMap::new();
+    //
+    // We collect ALL base_titles per normalized key (not just the first) because
+    // multiple ROMs can share the same normalized form but have different base_titles.
+    // E.g., ddp2j ("dodonpachi ii") and ddp2 ("dodonpachi ii - bee storm") both
+    // normalize to "dodonpachi ii" — we need game_series entries for BOTH.
+    let mut norm_to_bases: HashMap<String, Vec<String>> = HashMap::new();
+    let mut seen: HashSet<(String, String)> = HashSet::new(); // (norm_key, base_title) dedup
+
     for rom in library_entries {
         if rom.base_title.is_empty() {
             continue;
         }
         let normalized = normalize_for_wikidata(&rom.base_title);
-        if !normalized.is_empty() {
-            norm_to_base
+        if !normalized.is_empty() && seen.insert((normalized.clone(), rom.base_title.clone())) {
+            norm_to_bases
                 .entry(normalized.clone())
-                .or_insert_with(|| rom.base_title.clone());
+                .or_default()
+                .push(rom.base_title.clone());
         }
         // Subtitle-stripped: "dodonpachi ii - bee storm" -> "dodonpachi ii"
         for sep in [" - ", " / ", ": "] {
             if let Some(prefix) = rom.base_title.split(sep).next() {
                 let norm_prefix = normalize_for_wikidata(prefix);
-                if norm_prefix.len() >= 4 && norm_prefix != normalized {
-                    norm_to_base
+                if norm_prefix.len() >= 4
+                    && norm_prefix != normalized
+                    && seen.insert((norm_prefix.clone(), rom.base_title.clone()))
+                {
+                    norm_to_bases
                         .entry(norm_prefix)
-                        .or_insert_with(|| rom.base_title.clone());
+                        .or_default()
+                        .push(rom.base_title.clone());
                 }
             }
         }
         // Also try with display_name for better matching
         if let Some(ref dn) = rom.display_name {
             let norm_dn = normalize_for_wikidata(&title_utils::base_title(dn));
-            if !norm_dn.is_empty() {
-                norm_to_base
+            if !norm_dn.is_empty() && seen.insert((norm_dn.clone(), rom.base_title.clone())) {
+                norm_to_bases
                     .entry(norm_dn)
-                    .or_insert_with(|| rom.base_title.clone());
+                    .or_default()
+                    .push(rom.base_title.clone());
             }
         }
     }
 
-    let mut series_entries: Vec<(String, String, String, Option<i32>, String)> = Vec::new();
+    tracing::debug!(
+        "Wikidata series matching for {}: {} norm entries from {} library ROMs, {} wikidata entries",
+        system,
+        norm_to_bases.len(),
+        library_entries.len(),
+        wikidata_entries.len()
+    );
 
-    for entry in &wikidata_entries {
-        if let Some(base_title) = norm_to_base.get(entry.normalized_title)
+    let mut series_entries: Vec<SeriesInsert> = Vec::new();
+
+    for entry in wikidata_entries {
+        if let Some(base_titles) = norm_to_bases.get(entry.normalized_title)
             && !entry.series_name.is_empty()
         {
-            series_entries.push((
-                system.to_string(),
-                base_title.clone(),
-                entry.series_name.to_string(),
-                entry.series_order,
-                "wikidata".to_string(),
-            ));
+            // Resolve follows/followed_by Wikidata titles to library base_titles.
+            // If the linked game is in the library, store its base_title for direct join.
+            // If not, store the raw Wikidata title for display purposes.
+            // Filter out unresolved QID references (e.g., "Q88759").
+            let follows = resolve_sequel_link(entry.follows, &norm_to_bases);
+            let followed_by = resolve_sequel_link(entry.followed_by, &norm_to_bases);
+
+            for base_title in base_titles {
+                series_entries.push(SeriesInsert {
+                    system: system.to_string(),
+                    base_title: base_title.clone(),
+                    series_name: entry.series_name.to_string(),
+                    series_order: entry.series_order,
+                    source: "wikidata".to_string(),
+                    follows_base_title: follows.clone(),
+                    followed_by_base_title: followed_by.clone(),
+                });
+            }
         }
     }
 
     series_entries
+}
+
+/// Resolve a Wikidata sequel/prequel title to a library base_title.
+///
+/// Returns `Some(base_title)` if the title resolves to a library game,
+/// `Some(wikidata_title)` if it's a valid title but not in library,
+/// or `None` if the field is empty or an unresolved QID.
+fn resolve_sequel_link(
+    wikidata_title: &str,
+    norm_to_bases: &HashMap<String, Vec<String>>,
+) -> Option<String> {
+    if wikidata_title.is_empty() {
+        return None;
+    }
+    // Filter out unresolved Wikidata QID references (e.g., "Q88759").
+    if wikidata_title.starts_with('Q') && wikidata_title[1..].chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let normalized = normalize_for_wikidata(wikidata_title);
+    // Try to resolve to a library base_title.
+    if let Some(base_titles) = norm_to_bases.get(&normalized) {
+        Some(base_titles[0].clone())
+    } else {
+        // Not in library — store raw Wikidata title for display.
+        Some(wikidata_title.to_string())
+    }
 }
 
 /// Resolve LaunchBox alternate names into alias tuples.
@@ -186,7 +249,7 @@ pub fn resolve_launchbox_aliases(
     alt_names: &[crate::launchbox::LbAlternateName],
     game_names: &HashMap<String, String>,
     base_titles: &HashMap<String, Vec<String>>,
-) -> Vec<(String, String, String, String, String)> {
+) -> Vec<AliasInsert> {
     if alt_names.is_empty() {
         return Vec::new();
     }
@@ -218,7 +281,7 @@ pub fn resolve_launchbox_aliases(
 
     // For each DatabaseID group, check if any alternate name resolves to a known base_title.
     // If it does, create alias entries linking the other alternates to that base_title.
-    let mut aliases: Vec<(String, String, String, String, String)> = Vec::new();
+    let mut aliases: Vec<AliasInsert> = Vec::new();
 
     for alts in by_db_id.values() {
         // Find which alternate resolves to a library base_title.
@@ -234,16 +297,15 @@ pub fn resolve_launchbox_aliases(
         if let Some((bt, system)) = matched_bt {
             // Insert all other alternates as aliases of this base_title.
             for (alt_name, region) in alts {
-                let resolved =
-                    resolve_to_library_title(alt_name, &library_exact, &library_fuzzy);
+                let resolved = resolve_to_library_title(alt_name, &library_exact, &library_fuzzy);
                 if resolved != bt && !resolved.is_empty() {
-                    aliases.push((
-                        system.clone(),
-                        bt.clone(),
-                        resolved,
-                        region.clone(),
-                        "launchbox".to_string(),
-                    ));
+                    aliases.push(AliasInsert {
+                        system: system.clone(),
+                        base_title: bt.clone(),
+                        alias_name: resolved,
+                        alias_region: region.clone(),
+                        source: "launchbox".to_string(),
+                    });
                 }
             }
         }
@@ -319,19 +381,52 @@ mod tests {
     fn wikidata_series_subtitle_stripped_matching() {
         // ROM has "dodonpachi ii - bee storm" as base_title.
         // Wikidata has "DoDonPachi II" (no subtitle).
-        // The subtitle-stripped fallback should match.
+        // The subtitle-stripped fallback should match via "dodonpachi ii".
         let mut entry = make_entry("arcade_fbneo", "dodonpachi ii - bee storm");
         entry.display_name = Some("DoDonPachi II - Bee Storm (World, ver. 102)".to_string());
         let result = build_wikidata_series_tuples("arcade_fbneo", &[entry]);
-        // If Wikidata has "DoDonPachi II" in the DonPachi series, this should match.
-        // Note: depends on actual embedded Wikidata data having the entry.
-        // This test validates the subtitle-stripping mechanism works.
-        // With real data, "dodonpachi ii" (stripped) matches "DoDonPachi II" (Wikidata).
-        let has_donpachi = result.iter().any(|(_, _, series, _, _)| series == "DonPachi");
-        if !result.is_empty() {
-            assert!(has_donpachi, "Should match DonPachi series, got: {:?}", result);
-        }
-        // Even if Wikidata data isn't available in test, the function shouldn't panic.
+        let has_donpachi = result.iter().any(|s| s.series_name == "DonPachi");
+        assert!(
+            has_donpachi,
+            "Should match DonPachi series via subtitle stripping, got: {:?}",
+            result
+        );
+        // The series entry should use the ROM's actual base_title, not the stripped form.
+        let donpachi_entry = result.iter().find(|s| s.series_name == "DonPachi").unwrap();
+        assert_eq!(
+            donpachi_entry.base_title, "dodonpachi ii - bee storm",
+            "Series entry should use the full base_title"
+        );
+    }
+
+    #[test]
+    fn wikidata_series_multi_base_title_per_norm_key() {
+        // Bug fix: when multiple ROMs normalize to the same Wikidata key,
+        // ALL of them should get game_series entries (not just the first one).
+        //
+        // ddp2j has base_title "dodonpachi ii" (direct match to Wikidata "dodonpachi ii").
+        // ddp2 has base_title "dodonpachi ii - bee storm" (subtitle-stripped to "dodonpachi ii").
+        // Both should appear in the series.
+        let entries = vec![
+            make_entry("arcade_fbneo", "dodonpachi ii"),
+            make_entry("arcade_fbneo", "dodonpachi ii - bee storm"),
+        ];
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        let donpachi_bts: Vec<&str> = result
+            .iter()
+            .filter(|s| s.series_name == "DonPachi")
+            .map(|s| s.base_title.as_str())
+            .collect();
+        assert!(
+            donpachi_bts.contains(&"dodonpachi ii"),
+            "Should have series entry for 'dodonpachi ii', got: {:?}",
+            donpachi_bts
+        );
+        assert!(
+            donpachi_bts.contains(&"dodonpachi ii - bee storm"),
+            "Should have series entry for 'dodonpachi ii - bee storm', got: {:?}",
+            donpachi_bts
+        );
     }
 
     #[test]
@@ -346,16 +441,14 @@ mod tests {
     fn tgdb_aliases_source_is_tgdb() {
         // If we get any results, verify the source field
         let exact: HashSet<&str> = ["super mario world"].into_iter().collect();
-        let fuzzy: HashMap<String, &str> = [(
-            fuzzy_match_key("super mario world"),
-            "super mario world",
-        )]
-        .into_iter()
-        .collect();
+        let fuzzy: HashMap<String, &str> =
+            [(fuzzy_match_key("super mario world"), "super mario world")]
+                .into_iter()
+                .collect();
         let result = build_tgdb_alias_tuples("nintendo_snes", &exact, &fuzzy);
-        for tuple in &result {
-            assert_eq!(tuple.4, "tgdb");
-            assert_eq!(tuple.0, "nintendo_snes");
+        for a in &result {
+            assert_eq!(a.source, "tgdb");
+            assert_eq!(a.system, "nintendo_snes");
         }
     }
 
@@ -410,10 +503,10 @@ mod tests {
         let alt_names2 = vec![make_lb_alt("1", "Mario 1", "")];
         let result2 = resolve_launchbox_aliases(&alt_names2, &game_names, &base_titles);
         assert!(!result2.is_empty());
-        for tuple in &result2 {
-            assert_eq!(tuple.0, "nintendo_nes"); // system
-            assert_eq!(tuple.1, "super mario bros"); // base_title
-            assert_eq!(tuple.4, "launchbox"); // source
+        for a in &result2 {
+            assert_eq!(a.system, "nintendo_nes");
+            assert_eq!(a.base_title, "super mario bros");
+            assert_eq!(a.source, "launchbox");
         }
     }
 
@@ -427,8 +520,8 @@ mod tests {
         base_titles.insert("sonic the hedgehog".into(), vec!["sega_smd".into()]);
 
         let result = resolve_launchbox_aliases(&alt_names, &game_names, &base_titles);
-        for tuple in &result {
-            assert_eq!(tuple.4, "launchbox");
+        for a in &result {
+            assert_eq!(a.source, "launchbox");
         }
     }
 
@@ -440,9 +533,96 @@ mod tests {
             make_entry("nintendo_snes", "the legend of zelda"),
         ];
         let result = build_wikidata_series_tuples("nintendo_snes", &entries);
-        for tuple in &result {
-            assert_eq!(tuple.4, "wikidata");
-            assert_eq!(tuple.0, "nintendo_snes");
+        for s in &result {
+            assert_eq!(s.source, "wikidata");
+            assert_eq!(s.system, "nintendo_snes");
         }
+    }
+
+    #[test]
+    fn wikidata_series_donpachi_direct_match() {
+        // These base_titles should match Wikidata entries directly (no subtitle stripping needed).
+        let entries = vec![
+            make_entry("arcade_fbneo", "donpachi"),
+            make_entry("arcade_fbneo", "dodonpachi"),
+            make_entry("arcade_fbneo", "dodonpachi dai-ou-jou"),
+            make_entry("arcade_fbneo", "dodonpachi saidaioujou"),
+        ];
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        // All 4 should match the DonPachi series
+        let donpachi_count = result
+            .iter()
+            .filter(|s| s.series_name == "DonPachi")
+            .count();
+        assert!(
+            donpachi_count >= 4,
+            "Expected at least 4 DonPachi series matches, got {donpachi_count}. Full results: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn wikidata_series_donpachi_sequel_links() {
+        // Verify that sequel chain data is resolved for DonPachi entries.
+        let entries = vec![
+            make_entry("arcade_fbneo", "donpachi"),
+            make_entry("arcade_fbneo", "dodonpachi"),
+            make_entry("arcade_fbneo", "dodonpachi ii - bee storm"),
+        ];
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+
+        // DonPachi should have followed_by pointing to "dodonpachi" (resolved library base_title).
+        let donpachi = result
+            .iter()
+            .find(|s| s.base_title == "donpachi")
+            .expect("Should have donpachi entry");
+        assert_eq!(
+            donpachi.followed_by_base_title.as_deref(),
+            Some("dodonpachi"),
+            "DonPachi's followed_by should resolve to library base_title 'dodonpachi'"
+        );
+
+        // DoDonPachi should have follows = "donpachi" and followed_by = "dodonpachi ii - bee storm"
+        // (or "DoDonPachi II" if not resolved to library).
+        let dodonpachi = result
+            .iter()
+            .find(|s| s.base_title == "dodonpachi")
+            .expect("Should have dodonpachi entry");
+        assert_eq!(
+            dodonpachi.follows_base_title.as_deref(),
+            Some("donpachi"),
+            "DoDonPachi's follows should resolve to 'donpachi'"
+        );
+        // followed_by should be either the library base_title or the raw Wikidata title
+        assert!(
+            dodonpachi.followed_by_base_title.is_some(),
+            "DoDonPachi should have a followed_by link"
+        );
+    }
+
+    #[test]
+    fn wikidata_series_cross_system_matching() {
+        // Metal Slug 6 is on Atomiswave (arcade_dc) but Wikidata maps it to arcade_fbneo.
+        let entries = vec![make_entry("arcade_dc", "metal slug 6")];
+        let result = build_wikidata_series_tuples("arcade_dc", &entries);
+        let ms6 = result.iter().find(|s| s.base_title == "metal slug 6");
+        assert!(
+            ms6.is_some(),
+            "Metal Slug 6 on arcade_dc should match Wikidata entry from another system. Got: {:?}",
+            result
+        );
+        assert_eq!(ms6.unwrap().series_name, "Metal Slug");
+        assert_eq!(ms6.unwrap().system, "arcade_dc");
+
+        // Metal Slug X is on arcade but Wikidata only maps it to sony_psx.
+        let entries = vec![make_entry("arcade_fbneo", "metal slug x - super vehicle-001")];
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        let msx = result.iter().find(|s| s.base_title == "metal slug x - super vehicle-001");
+        assert!(
+            msx.is_some(),
+            "Metal Slug X on arcade should match sony_psx Wikidata entry via subtitle stripping. Got: {:?}",
+            result
+        );
+        assert_eq!(msx.unwrap().series_name, "Metal Slug");
     }
 }

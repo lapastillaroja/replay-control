@@ -9,6 +9,8 @@ mod game_metadata;
 mod recommendations;
 mod relationships;
 
+pub use aliases_series::SequelChainInfo;
+
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
@@ -151,6 +153,28 @@ pub struct GameEntry {
     /// Computed by stripping trailing numbers/roman numerals from `base_title`.
     /// Empty string means no series could be extracted.
     pub series_key: String,
+}
+
+/// A game alias entry for bulk insertion into the `game_alias` table.
+#[derive(Debug, Clone)]
+pub struct AliasInsert {
+    pub system: String,
+    pub base_title: String,
+    pub alias_name: String,
+    pub alias_region: String,
+    pub source: String,
+}
+
+/// A game series entry for bulk insertion into the `game_series` table.
+#[derive(Debug, Clone)]
+pub struct SeriesInsert {
+    pub system: String,
+    pub base_title: String,
+    pub series_name: String,
+    pub series_order: Option<i32>,
+    pub source: String,
+    pub follows_base_title: Option<String>,
+    pub followed_by_base_title: Option<String>,
 }
 
 /// Per-system metadata from the `game_library_meta` table.
@@ -313,6 +337,8 @@ impl MetadataDb {
                     series_name TEXT NOT NULL,
                     series_order INTEGER,
                     source TEXT NOT NULL,
+                    follows_base_title TEXT,
+                    followed_by_base_title TEXT,
                     PRIMARY KEY (system, base_title, series_name)
                 );
                 CREATE INDEX IF NOT EXISTS idx_game_series_name

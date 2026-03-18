@@ -43,6 +43,14 @@ pub fn all_series_names() -> Vec<&'static str> {
     names
 }
 
+/// Return all entries from the embedded series database.
+///
+/// Useful when matching should not be restricted to a single system (e.g.,
+/// a game's Wikidata entry may list a different platform than the ROM's system).
+pub fn all_entries() -> &'static [WikidataSeriesEntry] {
+    wikidata_series()
+}
+
 /// Total number of entries in the embedded series database.
 pub fn entry_count() -> usize {
     wikidata_series().len()
@@ -103,5 +111,22 @@ mod tests {
             !entries.is_empty(),
             "Should find Mega Man 2 by normalized title"
         );
+    }
+
+    #[test]
+    fn system_entries_arcade_fbneo() {
+        let entries = system_series_entries("arcade_fbneo");
+        assert!(
+            entries.len() > 400,
+            "arcade_fbneo should have 400+ series entries, got {}",
+            entries.len()
+        );
+    }
+
+    #[test]
+    fn donpachi_entries_exist() {
+        let entries = lookup_series("arcade_fbneo", "donpachi");
+        assert!(!entries.is_empty(), "Should find DonPachi on arcade_fbneo");
+        assert_eq!(entries[0].series_name, "DonPachi");
     }
 }
