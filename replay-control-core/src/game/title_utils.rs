@@ -239,6 +239,23 @@ pub fn normalize_for_wikidata(title: &str) -> String {
     parts.join(" ")
 }
 
+/// Convert a trailing roman numeral to arabic in a normalized title.
+///
+/// Returns `Some(converted)` if the last word is a roman numeral, `None` otherwise.
+/// Input should already be lowercase (e.g., from `normalize_for_wikidata`).
+///
+/// Example: `"streets of rage ii"` → `Some("streets of rage 2")`
+pub fn roman_to_arabic_suffix(normalized: &str) -> Option<String> {
+    let last_space = normalized.rfind(' ')?;
+    let last_word = &normalized[last_space + 1..];
+    for &(numeral, value) in ROMAN_NUMERALS {
+        if last_word == numeral {
+            return Some(format!("{} {value}", &normalized[..last_space]));
+        }
+    }
+    None
+}
+
 /// Strip the `"N64DD - "` prefix from a ROM filename stem.
 ///
 /// N64DD ROMs use this prefix in their filenames, but the thumbnail repos

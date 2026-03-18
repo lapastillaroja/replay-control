@@ -6,7 +6,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::metadata_db::{AliasInsert, GameEntry, SeriesInsert};
-use crate::title_utils::{fuzzy_match_key, normalize_for_wikidata, resolve_to_library_title};
+use crate::title_utils::{
+    fuzzy_match_key, normalize_for_wikidata, resolve_to_library_title, roman_to_arabic_suffix,
+};
 
 /// Build TGDB alternate name alias tuples for a system.
 ///
@@ -141,6 +143,15 @@ pub fn build_wikidata_series_tuples(
                 .entry(normalized.clone())
                 .or_default()
                 .push(rom.base_title.clone());
+        }
+        // Roman numeral variant: "streets of rage ii" -> "streets of rage 2"
+        if let Some(arabic) = roman_to_arabic_suffix(&normalized) {
+            if seen.insert((arabic.clone(), rom.base_title.clone())) {
+                norm_to_bases
+                    .entry(arabic)
+                    .or_default()
+                    .push(rom.base_title.clone());
+            }
         }
         // Subtitle-stripped: "dodonpachi ii - bee storm" -> "dodonpachi ii"
         for sep in [" - ", " / ", ": "] {
@@ -624,5 +635,19 @@ mod tests {
             result
         );
         assert_eq!(msx.unwrap().series_name, "Metal Slug");
+    }
+
+    #[test]
+    fn wikidata_series_roman_numeral_matching() {
+        // "Streets of Rage II" (roman) should match Wikidata "Streets of Rage 2" (arabic)
+        let entries = vec![make_entry("sega_smd", "streets of rage ii")];
+        let result = build_wikidata_series_tuples("sega_smd", &entries);
+        let sor = result.iter().find(|s| s.base_title == "streets of rage ii");
+        assert!(
+            sor.is_some(),
+            "Roman numeral 'ii' should match Wikidata '2'. Got: {:?}",
+            result
+        );
+        assert_eq!(sor.unwrap().series_name, "Streets of Rage");
     }
 }
