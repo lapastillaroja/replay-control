@@ -33,14 +33,14 @@ pub fn GameDetailPage() -> impl IntoView {
     view! {
         <div class="page game-detail">
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let data = detail.await?;
                         Ok::<_, ServerFnError>(view! {
                             <GameDetailContent detail=data system=system() />
                         })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }
@@ -838,9 +838,9 @@ fn PlayOrderNav(
                         let href = link.href.clone().unwrap_or_default();
                         let title = link.title.clone();
                         view! {
-                            <a href=href class="play-order-link prev">
+                            <A href=href attr:class="play-order-link prev">
                                 {"\u{2190} "}{title}
-                            </a>
+                            </A>
                         }.into_any()
                     }
                     Some(link) => {
@@ -864,9 +864,9 @@ fn PlayOrderNav(
                         let href = link.href.clone().unwrap_or_default();
                         let title = link.title.clone();
                         view! {
-                            <a href=href class="play-order-link next">
+                            <A href=href attr:class="play-order-link next">
                                 {title}{" \u{2192}"}
-                            </a>
+                            </A>
                         }.into_any()
                     }
                     Some(link) => {
