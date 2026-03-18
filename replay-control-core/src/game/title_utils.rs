@@ -47,12 +47,16 @@ pub fn strip_version(name: &str) -> &str {
 
 /// Compute a lowercased base title for fuzzy image matching and dedup.
 ///
-/// Handles tilde dual-names (`"Name1 ~ Name2"` -> `"Name2"`), strips
-/// parenthesized/bracketed tags, lowercases the result, and normalizes
-/// trailing articles (`", The"` / `", A"` / `", An"`) to the front.
+/// Strips parenthesized/bracketed tags first, then handles tilde dual-names
+/// (`"Name1 ~ Name2"` -> `"Name2"`), lowercases, and normalizes trailing
+/// articles (`", The"` / `", A"` / `", An"`) to the front.
+///
+/// Tags are stripped before tilde splitting because ` ~ ` can appear inside
+/// parenthesized content (e.g., Neo Geo `(NGM-055 ~ NGH-055)`).
 pub fn base_title(name: &str) -> String {
-    let s = name.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(name);
-    let lower = strip_tags(s).to_lowercase();
+    let stripped = strip_tags(name);
+    let s = stripped.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(stripped);
+    let lower = s.to_lowercase();
     for article in &[", the", ", an", ", a"] {
         if let Some(title) = lower.strip_suffix(article) {
             let art = &article[2..]; // skip ", "
@@ -254,6 +258,25 @@ mod tests {
     #[test]
     fn base_title_no_article_unchanged() {
         assert_eq!(base_title("Super Mario World"), "super mario world");
+    }
+
+    #[test]
+    fn base_title_tilde_inside_parens() {
+        // Neo Geo games have ` ~ ` inside parens: (NGM-055 ~ NGH-055)
+        // Tags should be stripped BEFORE tilde splitting.
+        assert_eq!(
+            base_title("The King of Fighters '94 (NGM-055 ~ NGH-055)"),
+            "the king of fighters '94"
+        );
+    }
+
+    #[test]
+    fn base_title_tilde_dual_name() {
+        // Tilde between two game names: takes the right half.
+        assert_eq!(
+            base_title("Bare Knuckle ~ Streets of Rage"),
+            "streets of rage"
+        );
     }
 
     #[test]

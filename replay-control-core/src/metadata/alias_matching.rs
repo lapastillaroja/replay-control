@@ -107,11 +107,6 @@ pub fn build_wikidata_series_tuples(
     use crate::systems;
     use crate::title_utils;
 
-    // Wikidata series data is only available for non-arcade systems.
-    if systems::is_arcade_system(system) {
-        return Vec::new();
-    }
-
     let wikidata_entries = series_db::system_series_entries(system);
     if wikidata_entries.is_empty() {
         return Vec::new();
@@ -289,9 +284,12 @@ mod tests {
     }
 
     #[test]
-    fn wikidata_series_empty_for_arcade() {
+    fn wikidata_series_works_for_arcade() {
+        // Arcade systems now have Wikidata series data (546 entries).
+        // "some game" won't match anything, but it shouldn't panic.
         let entries = vec![make_entry("arcade_fbneo", "some game")];
         let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        // No match expected for a fake game, but the function runs without skipping.
         assert!(result.is_empty());
     }
 
