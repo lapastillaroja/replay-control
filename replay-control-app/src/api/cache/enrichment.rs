@@ -166,61 +166,28 @@ impl GameLibrary {
 
     /// Auto-match new ROMs against existing LaunchBox metadata by normalized title.
     ///
-    /// For ROMs that have no `game_metadata` entry (not in `existing_ratings`),
-    /// normalizes the ROM filename and looks for existing entries with the same
-    /// normalized title. When a match is found, a new `game_metadata` row is
-    /// created for the new ROM so future lookups hit directly.
-    ///
-    /// Returns a map of `rom_filename -> rating` for newly matched ROMs.
+    /// Delegates the pure matching logic to `replay_control_core::metadata_matching`,
+    /// then persists results and returns a map of `rom_filename -> rating`.
     fn auto_match_metadata(
         &self,
         state: &crate::api::AppState,
         system: &str,
     ) -> HashMap<String, f64> {
-        use replay_control_core::launchbox::normalize_title;
-        use replay_control_core::metadata_db::GameMetadata;
-        use replay_control_core::systems;
+        use replay_control_core::metadata_matching;
 
         let storage = state.storage();
-        let mut matched_ratings: HashMap<String, f64> = HashMap::new();
 
-        // Load all existing metadata entries for this system.
-        let all_metadata: Vec<(String, GameMetadata)> = state
+        // Gather inputs: existing metadata from DB.
+        let all_metadata = state
             .metadata_db()
             .and_then(|guard| guard.as_ref()?.system_metadata_all(system).ok())
             .unwrap_or_default();
 
-        // Nothing to match against if there's no imported metadata.
         if all_metadata.is_empty() {
-            return matched_ratings;
+            return HashMap::new();
         }
 
-        let is_arcade = systems::is_arcade_system(system);
-
-        // Build a normalized-title -> metadata map from existing entries.
-        let mut title_index: HashMap<String, &GameMetadata> = HashMap::new();
-        for (rom_filename, meta) in &all_metadata {
-            let stem = rom_filename
-                .rfind('.')
-                .map(|i| &rom_filename[..i])
-                .unwrap_or(rom_filename);
-            let normalized = if is_arcade {
-                replay_control_core::arcade_db::lookup_arcade_game(stem)
-                    .map(|info| normalize_title(info.display_name))
-                    .unwrap_or_else(|| normalize_title(stem))
-            } else {
-                normalize_title(stem)
-            };
-            title_index.entry(normalized).or_insert(meta);
-        }
-
-        // Collect filenames of ROMs that already have metadata (by exact match).
-        let has_metadata: HashSet<&str> = all_metadata
-            .iter()
-            .map(|(filename, _)| filename.as_str())
-            .collect();
-
-        // Read current ROMs from L1 cache.
+        // Gather inputs: ROM filenames from L1 cache.
         let rom_filenames: Vec<String> = if let Ok(guard) = self.roms.read() {
             guard
                 .get(system)
@@ -233,70 +200,40 @@ impl GameLibrary {
                 })
                 .unwrap_or_default()
         } else {
-            return matched_ratings;
+            return HashMap::new();
         };
 
-        // Find unmatched ROMs and try normalized-title lookup.
-        let mut new_entries: Vec<(String, String, GameMetadata)> = Vec::new();
-        for rom_filename in &rom_filenames {
-            // Skip ROMs that already have a game_metadata entry.
-            if has_metadata.contains(rom_filename.as_str()) {
-                continue;
-            }
+        // Call pure core matching function.
+        let matches = metadata_matching::match_roms_to_metadata(
+            system,
+            &rom_filenames,
+            &all_metadata,
+        );
 
-            let stem = rom_filename
-                .rfind('.')
-                .map(|i| &rom_filename[..i])
-                .unwrap_or(rom_filename);
-
-            let normalized = if is_arcade {
-                replay_control_core::arcade_db::lookup_arcade_game(stem)
-                    .map(|info| normalize_title(info.display_name))
-                    .unwrap_or_else(|| normalize_title(stem))
-            } else {
-                normalize_title(stem)
-            };
-
-            if let Some(donor_meta) = title_index.get(&normalized) {
-                if let Some(rating) = donor_meta.rating {
-                    matched_ratings.insert(rom_filename.clone(), rating);
-                }
-                // Persist the match so future lookups are direct.
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
-                new_entries.push((
-                    system.to_string(),
-                    rom_filename.clone(),
-                    GameMetadata {
-                        description: donor_meta.description.clone(),
-                        rating: donor_meta.rating,
-                        publisher: donor_meta.publisher.clone(),
-                        developer: donor_meta.developer.clone(),
-                        genre: donor_meta.genre.clone(),
-                        players: donor_meta.players,
-                        release_year: donor_meta.release_year,
-                        cooperative: donor_meta.cooperative,
-                        source: "launchbox-auto".to_string(),
-                        fetched_at: now,
-                        box_art_path: None,
-                        screenshot_path: None,
-                    },
-                ));
-            }
+        if matches.is_empty() {
+            return HashMap::new();
         }
+
+        // Build ratings map and persistence entries from results.
+        let mut matched_ratings: HashMap<String, f64> = HashMap::new();
+        let new_entries: Vec<(String, String, _)> = matches
+            .into_iter()
+            .map(|m| {
+                if let Some(rating) = m.metadata.rating {
+                    matched_ratings.insert(m.rom_filename.clone(), rating);
+                }
+                (system.to_string(), m.rom_filename, m.metadata)
+            })
+            .collect();
 
         // Persist new matches to game_metadata.
-        if !new_entries.is_empty() {
-            let count = new_entries.len();
-            self.with_db_mut(&storage, |db| {
-                if let Err(e) = db.bulk_upsert(&new_entries) {
-                    tracing::warn!("Auto-match metadata persist failed for {system}: {e}");
-                }
-            });
-            tracing::info!("Auto-matched {count} new ROM(s) to existing metadata for {system}");
-        }
+        let count = new_entries.len();
+        self.with_db_mut(&storage, |db| {
+            if let Err(e) = db.bulk_upsert(&new_entries) {
+                tracing::warn!("Auto-match metadata persist failed for {system}: {e}");
+            }
+        });
+        tracing::info!("Auto-matched {count} new ROM(s) to existing metadata for {system}");
 
         matched_ratings
     }

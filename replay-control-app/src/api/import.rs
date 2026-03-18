@@ -429,29 +429,8 @@ impl ImportPipeline {
         state: &AppState,
         parse_result: &replay_control_core::launchbox::ParseResult,
     ) {
-        let alt_names = &parse_result.alternate_names;
-        let game_names = &parse_result.game_names;
-
-        if alt_names.is_empty() {
+        if parse_result.alternate_names.is_empty() {
             return;
-        }
-
-        // Group alternates by DatabaseID -> Vec<(name, region)>.
-        // Include the primary game name so that alias groups contain ALL names for a game.
-        let mut by_db_id: std::collections::HashMap<String, Vec<(String, String)>> =
-            std::collections::HashMap::new();
-        for alt in alt_names {
-            by_db_id
-                .entry(alt.database_id.clone())
-                .or_default()
-                .push((alt.alternate_name.clone(), alt.region.clone()));
-        }
-        // Add primary game name to each group (with empty region).
-        for (db_id, primary_name) in game_names {
-            by_db_id
-                .entry(db_id.clone())
-                .or_default()
-                .push((primary_name.clone(), String::new()));
         }
 
         // Lock DB to load base_titles, then release.
@@ -480,50 +459,12 @@ impl ImportPipeline {
             // MutexGuard drops here — DB lock released.
         };
 
-        // Build lookup maps for fuzzy matching (colon/dash normalization).
-        // All in-memory, no DB lock needed.
-        use replay_control_core::title_utils::{fuzzy_match_key, resolve_to_library_title};
-
-        let library_exact: std::collections::HashSet<&str> =
-            base_titles.keys().map(|s| s.as_str()).collect();
-
-        let library_fuzzy: std::collections::HashMap<String, &str> = base_titles
-            .keys()
-            .map(|bt| (fuzzy_match_key(bt), bt.as_str()))
-            .collect();
-
-        // For each DatabaseID group, check if any alternate name resolves to a known base_title.
-        // If it does, create alias entries linking the other alternates to that base_title.
-        let mut aliases: Vec<(String, String, String, String, String)> = Vec::new();
-
-        for alts in by_db_id.values() {
-            // Find which alternate resolves to a library base_title.
-            let mut matched_bt: Option<(String, String)> = None; // (base_title, system)
-            for (alt_name, _) in alts {
-                let resolved = resolve_to_library_title(alt_name, &library_exact, &library_fuzzy);
-                if let Some(systems) = base_titles.get(&resolved) {
-                    matched_bt = Some((resolved, systems[0].clone()));
-                    break;
-                }
-            }
-
-            if let Some((bt, system)) = matched_bt {
-                // Insert all other alternates as aliases of this base_title.
-                for (alt_name, region) in alts {
-                    let resolved =
-                        resolve_to_library_title(alt_name, &library_exact, &library_fuzzy);
-                    if resolved != bt && !resolved.is_empty() {
-                        aliases.push((
-                            system.clone(),
-                            bt.clone(),
-                            resolved,
-                            region.clone(),
-                            "launchbox".to_string(),
-                        ));
-                    }
-                }
-            }
-        }
+        // Call pure core matching function.
+        let aliases = replay_control_core::alias_matching::resolve_launchbox_aliases(
+            &parse_result.alternate_names,
+            &parse_result.game_names,
+            &base_titles,
+        );
 
         if aliases.is_empty() {
             tracing::debug!("LaunchBox aliases: no matches found");

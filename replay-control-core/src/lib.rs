@@ -31,6 +31,8 @@ pub use capture::video_url;
 #[cfg(feature = "metadata")]
 mod metadata;
 #[cfg(feature = "metadata")]
+pub use metadata::alias_matching;
+#[cfg(feature = "metadata")]
 pub use metadata::db_common;
 #[cfg(feature = "metadata")]
 pub use metadata::image_matching;
@@ -38,6 +40,8 @@ pub use metadata::image_matching;
 pub use metadata::launchbox;
 #[cfg(feature = "metadata")]
 pub use metadata::metadata_db;
+#[cfg(feature = "metadata")]
+pub use metadata::metadata_matching;
 #[cfg(feature = "metadata")]
 pub use metadata::thumbnail_manifest;
 #[cfg(feature = "metadata")]
