@@ -4,6 +4,31 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## 2026-03-19
+
+- feat: sequel/prequel play order navigation — breadcrumb `← Prev | N/M | Next →` using Wikidata P155/P156 chains with ordinal fallback (`8fbba16`)
+- feat: cross-system Wikidata series matching — match library ROMs against all Wikidata entries regardless of platform, fixing games like Metal Slug X (Wikidata: sony_psx, ROM: arcade_fbneo) (`964c601`)
+- feat: roman numeral normalization for Wikidata matching — "streets of rage ii" now matches "streets of rage 2" (`a04f9f3`)
+- fix: correct 4 bogus Wikidata platform QIDs and add 17 missing platforms — DS, PCE, Sega CD, 32X, Atari, 3DO, CD-i, MSX, CPS-3, NAOMI 2, Model 3, ST-V, Neo Geo variants; series data 3,935 → 5,345 entries (+36%) (`e8767b3`)
+- fix: exclude only current game from series siblings, not cross-system ports — same game on other systems shows in series, current ROM does not (`ae40730`)
+- fix: use Suspense for game detail to fix sequel link navigation — Transition showed stale content making sequel links appear broken (`94e0188`)
+- refactor: replace tuple types with AliasInsert/SeriesInsert structs, removing clippy type_complexity warnings (`964c601`)
+- chore: cleanup dead code — gate test-only methods behind #[cfg(test)], remove debug eprintln (`a327837`)
+
+## 2026-03-18
+
+- refactor: extract matching logic to core crate — alias_matching, metadata_matching, image_matching modules (`2d9bb6d`)
+- refactor: unify image matching into single core find_best_match path (`7f34fc4`)
+- refactor: eliminate hardcoded thumbnail strings across codebase (`daedc01`)
+- refactor: consolidate thumbnail logic into core crate (`968e051`)
+- feat: restructure More page into Preferences / Game Data / System sections + declutter game detail (`e648264`)
+- feat: unify region preferences into single settings section (`db0f673`)
+- fix: subtitle-stripped fallback for Wikidata series matching — catches DonPachi II and 10+ additional series (`8de96fb`)
+- fix: base_title tilde inside parens + enable arcade Wikidata series — 546 arcade entries now populate (`4866c18`)
+- docs: add arcade thumbnail gaps + clone series analyses (`1d49dc4`)
+- docs: update UI design proposals with new features (`35c99b4`)
+- docs: add Wikidata attribution to metadata page (`670c886`)
+
 ## 2026-03-17
 
 - refactor: sequenced startup pipeline replacing 4 independent racing tasks with ordered phases — auto-import → populate → enrich → watchers (`5a7abc8`)
