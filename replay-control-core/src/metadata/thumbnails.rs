@@ -71,11 +71,7 @@ pub fn any_images_on_disk(rc_dir: &std::path::Path) -> bool {
         let boxart_dir = entry.path().join(ThumbnailKind::Boxart.media_dir());
         if boxart_dir.is_dir()
             && let Ok(mut files) = std::fs::read_dir(&boxart_dir)
-            && files.any(|f| {
-                f.ok()
-                    .map(|f| f.path())
-                    .is_some_and(|p| is_valid_image(&p))
-            })
+            && files.any(|f| f.ok().map(|f| f.path()).is_some_and(|p| is_valid_image(&p)))
         {
             return true;
         }

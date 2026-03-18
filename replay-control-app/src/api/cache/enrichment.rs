@@ -204,11 +204,8 @@ impl GameLibrary {
         };
 
         // Call pure core matching function.
-        let matches = metadata_matching::match_roms_to_metadata(
-            system,
-            &rom_filenames,
-            &all_metadata,
-        );
+        let matches =
+            metadata_matching::match_roms_to_metadata(system, &rom_filenames, &all_metadata);
 
         if matches.is_empty() {
             return HashMap::new();

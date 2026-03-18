@@ -285,10 +285,8 @@ impl BackgroundManager {
 
             // Register data_source with actual entry count, then insert index entries.
             let repo_display = repo_names[0];
-            let source_name =
-                replay_control_core::thumbnails::libretro_source_name(repo_display);
-            let branch =
-                replay_control_core::thumbnail_manifest::default_branch(repo_display);
+            let source_name = replay_control_core::thumbnails::libretro_source_name(repo_display);
+            let branch = replay_control_core::thumbnail_manifest::default_branch(repo_display);
             let entry_count = all_entries.len();
 
             let _ = db.upsert_data_source(
@@ -327,7 +325,6 @@ impl BackgroundManager {
             );
         }
     }
-
 
     /// Pre-populate L2 cache for all systems that have games.
     /// Called on startup when the game library is empty (fresh DB or after clear).

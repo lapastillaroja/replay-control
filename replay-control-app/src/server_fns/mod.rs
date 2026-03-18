@@ -466,7 +466,7 @@ pub(crate) fn resolve_box_art_url(
         replay_control_core::thumbnails::ThumbnailKind::Boxart.media_dir(),
         rom_filename,
     )
-        .map(|path| format!("/media/{system}/{path}"))
+    .map(|path| format!("/media/{system}/{path}"))
 }
 
 // Re-export image utilities from core for use in this crate.

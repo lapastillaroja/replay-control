@@ -207,9 +207,7 @@ mod tests {
                 .or_insert_with(|| path.to_string());
             let bt = base_title(stem);
             let vs = strip_version(&bt).to_string();
-            fuzzy
-                .entry(bt.clone())
-                .or_insert_with(|| path.to_string());
+            fuzzy.entry(bt.clone()).or_insert_with(|| path.to_string());
             if vs.len() < bt.len() {
                 version.entry(vs).or_insert_with(|| path.to_string());
             }
@@ -227,42 +225,28 @@ mod tests {
     fn exact_match() {
         let index = index_from(&[("Sonic the Hedgehog", "boxart/Sonic the Hedgehog.png")]);
         let result = find_best_match(&index, "Sonic the Hedgehog.md", None, None);
-        assert_eq!(
-            result.as_deref(),
-            Some("boxart/Sonic the Hedgehog.png")
-        );
+        assert_eq!(result.as_deref(), Some("boxart/Sonic the Hedgehog.png"));
     }
 
     #[test]
     fn case_insensitive_match() {
         let index = index_from(&[("Sonic The Hedgehog", "boxart/Sonic The Hedgehog.png")]);
         let result = find_best_match(&index, "sonic the hedgehog.md", None, None);
-        assert_eq!(
-            result.as_deref(),
-            Some("boxart/Sonic The Hedgehog.png")
-        );
+        assert_eq!(result.as_deref(), Some("boxart/Sonic The Hedgehog.png"));
     }
 
     #[test]
     fn fuzzy_base_title_match() {
         let index = index_from(&[("Sonic the Hedgehog", "boxart/Sonic the Hedgehog.png")]);
         let result = find_best_match(&index, "Sonic the Hedgehog (USA).md", None, None);
-        assert_eq!(
-            result.as_deref(),
-            Some("boxart/Sonic the Hedgehog.png")
-        );
+        assert_eq!(result.as_deref(), Some("boxart/Sonic the Hedgehog.png"));
     }
 
     #[test]
     fn tilde_left_half_exact() {
         // Image named after left half of tilde title.
         let index = index_from(&[("Bare Knuckle", "boxart/Bare Knuckle.png")]);
-        let result = find_best_match(
-            &index,
-            "Bare Knuckle ~ Streets of Rage.md",
-            None,
-            None,
-        );
+        let result = find_best_match(&index, "Bare Knuckle ~ Streets of Rage.md", None, None);
         assert_eq!(result.as_deref(), Some("boxart/Bare Knuckle.png"));
     }
 
@@ -270,43 +254,22 @@ mod tests {
     fn tilde_right_half_exact() {
         // Image named after right half of tilde title.
         let index = index_from(&[("Streets of Rage", "boxart/Streets of Rage.png")]);
-        let result = find_best_match(
-            &index,
-            "Bare Knuckle ~ Streets of Rage.md",
-            None,
-            None,
-        );
+        let result = find_best_match(&index, "Bare Knuckle ~ Streets of Rage.md", None, None);
         assert_eq!(result.as_deref(), Some("boxart/Streets of Rage.png"));
     }
 
     #[test]
     fn tilde_right_half_fuzzy() {
         // Image has tags, matching via fuzzy against right half.
-        let index = index_from(&[(
-            "Streets of Rage (USA)",
-            "boxart/Streets of Rage (USA).png",
-        )]);
-        let result = find_best_match(
-            &index,
-            "Bare Knuckle ~ Streets of Rage.md",
-            None,
-            None,
-        );
-        assert_eq!(
-            result.as_deref(),
-            Some("boxart/Streets of Rage (USA).png")
-        );
+        let index = index_from(&[("Streets of Rage (USA)", "boxart/Streets of Rage (USA).png")]);
+        let result = find_best_match(&index, "Bare Knuckle ~ Streets of Rage.md", None, None);
+        assert_eq!(result.as_deref(), Some("boxart/Streets of Rage (USA).png"));
     }
 
     #[test]
     fn tilde_no_match_returns_none() {
         let index = index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
-        let result = find_best_match(
-            &index,
-            "Bare Knuckle ~ Streets of Rage.md",
-            None,
-            None,
-        );
+        let result = find_best_match(&index, "Bare Knuckle ~ Streets of Rage.md", None, None);
         assert!(result.is_none());
     }
 
@@ -314,10 +277,7 @@ mod tests {
     fn db_path_used_when_file_exists() {
         let index = index_from(&[("Custom Art", "boxart/Custom Art.png")]);
         let mut db_paths = HashMap::new();
-        db_paths.insert(
-            "game.rom".to_string(),
-            "boxart/Custom Art.png".to_string(),
-        );
+        db_paths.insert("game.rom".to_string(), "boxart/Custom Art.png".to_string());
         let result = find_best_match(&index, "game.rom", None, Some(&db_paths));
         assert_eq!(result.as_deref(), Some("boxart/Custom Art.png"));
     }
@@ -337,10 +297,7 @@ mod tests {
     fn version_stripped_match() {
         let index = index_from(&[("Sonic Adventure 2", "boxart/Sonic Adventure 2.png")]);
         let result = find_best_match(&index, "Sonic Adventure 2 v1.008.md", None, None);
-        assert_eq!(
-            result.as_deref(),
-            Some("boxart/Sonic Adventure 2.png")
-        );
+        assert_eq!(result.as_deref(), Some("boxart/Sonic Adventure 2.png"));
     }
 
     #[test]

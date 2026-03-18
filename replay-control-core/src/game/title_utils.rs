@@ -55,7 +55,10 @@ pub fn strip_version(name: &str) -> &str {
 /// parenthesized content (e.g., Neo Geo `(NGM-055 ~ NGH-055)`).
 pub fn base_title(name: &str) -> String {
     let stripped = strip_tags(name);
-    let s = stripped.rsplit_once(" ~ ").map(|(_, r)| r).unwrap_or(stripped);
+    let s = stripped
+        .rsplit_once(" ~ ")
+        .map(|(_, r)| r)
+        .unwrap_or(stripped);
     let lower = s.to_lowercase();
     for article in &[", the", ", an", ", a"] {
         if let Some(title) = lower.strip_suffix(article) {

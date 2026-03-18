@@ -32,11 +32,13 @@ impl ImportPipeline {
     }
 
     /// Atomically claim the shared busy flag. Returns `true` if successfully claimed.
+    #[cfg(test)]
     pub(crate) fn claim_busy(&self) -> bool {
         !self.busy.swap(true, Ordering::SeqCst)
     }
 
     /// Get a clone of the shared busy flag Arc.
+    #[cfg(test)]
     pub(crate) fn busy_flag(&self) -> Arc<AtomicBool> {
         self.busy.clone()
     }
@@ -810,9 +812,7 @@ impl ThumbnailPipeline {
                         }
                         Err(e) => {
                             let kind_name = kind.media_dir();
-                            tracing::warn!(
-                                "{kind_name} download failed for {system}: {e}"
-                            );
+                            tracing::warn!("{kind_name} download failed for {system}: {e}");
                         }
                     }
                 }

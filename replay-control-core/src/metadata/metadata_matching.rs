@@ -206,7 +206,15 @@ mod tests {
         ];
         let result = match_roms_to_metadata("sega_smd", &roms, &existing);
         assert_eq!(result.len(), 2);
-        assert!(result.iter().any(|m| m.rom_filename == "Sonic The Hedgehog (Europe).md"));
-        assert!(result.iter().any(|m| m.rom_filename == "Sonic The Hedgehog (Japan).md"));
+        assert!(
+            result
+                .iter()
+                .any(|m| m.rom_filename == "Sonic The Hedgehog (Europe).md")
+        );
+        assert!(
+            result
+                .iter()
+                .any(|m| m.rom_filename == "Sonic The Hedgehog (Japan).md")
+        );
     }
 }

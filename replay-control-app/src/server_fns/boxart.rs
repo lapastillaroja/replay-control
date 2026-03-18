@@ -83,8 +83,7 @@ pub async fn set_boxart_override(
         let mut found = None;
         for display_name in repo_names {
             let url_name = replay_control_core::thumbnails::repo_url_name(display_name);
-            let source_name =
-                replay_control_core::thumbnails::libretro_source_name(display_name);
+            let source_name = replay_control_core::thumbnails::libretro_source_name(display_name);
 
             let branch = db
                 .get_data_source(&source_name)
@@ -138,7 +137,8 @@ pub async fn set_boxart_override(
 
         // Run the blocking download in a spawn_blocking context.
         let result = tokio::task::spawn_blocking(move || {
-            let bytes = thumbnail_manifest::download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir())?;
+            let bytes =
+                thumbnail_manifest::download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir())?;
             thumbnail_manifest::save_thumbnail(
                 &storage_root,
                 &sys,

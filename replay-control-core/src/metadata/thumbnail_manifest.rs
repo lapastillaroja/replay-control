@@ -160,10 +160,11 @@ pub fn fetch_repo_tree(
         let size = item.get("size").and_then(|v| v.as_u64());
 
         // Filter to Named_Boxarts/ and Named_Snaps/ only.
-        let (kind, rest) = match thumbnails::ALL_THUMBNAIL_KINDS
-            .iter()
-            .find_map(|k| path.strip_prefix(k.repo_dir())?.strip_prefix('/').map(|r| (k.repo_dir(), r)))
-        {
+        let (kind, rest) = match thumbnails::ALL_THUMBNAIL_KINDS.iter().find_map(|k| {
+            path.strip_prefix(k.repo_dir())?
+                .strip_prefix('/')
+                .map(|r| (k.repo_dir(), r))
+        }) {
             Some(pair) => pair,
             None => continue,
         };
