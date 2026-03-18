@@ -23,6 +23,23 @@ pub struct RelatedGamesData {
     pub series_name: String,
     /// Games from the same system + genre. Empty if no genre or no matches.
     pub similar_games: Vec<RecommendedGame>,
+    /// Predecessor game in the sequel chain. `None` if no predecessor data.
+    pub sequel_prev: Option<SequelLink>,
+    /// Successor game in the sequel chain. `None` if no successor data.
+    pub sequel_next: Option<SequelLink>,
+    /// Position in the series for "N of M" display, e.g., `(2, 3)` for "2 of 3".
+    pub series_position: Option<(i32, i32)>,
+}
+
+/// A link to a predecessor or successor game in a sequel chain.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SequelLink {
+    /// Display name for this game. Always present.
+    pub title: String,
+    /// Link to the game's detail page, if the game is in the user's library.
+    pub href: Option<String>,
+    /// Whether the game exists in the user's library.
+    pub in_library: bool,
 }
 
 /// A regional variant chip linking to another version of the same game.
@@ -168,6 +185,11 @@ pub async fn get_related_games(
             Vec::new()
         };
 
+        // Sequel/prequel chain info (Wikidata P155/P156).
+        let sequel_chain = db
+            .sequel_info(&system, &base_title, &region_pref_str)
+            .unwrap_or_default();
+
         (
             variants,
             translations_raw,
@@ -179,6 +201,7 @@ pub async fn get_related_games(
             similar,
             base_title,
             all_system_roms,
+            sequel_chain,
         )
     });
 
@@ -193,6 +216,7 @@ pub async fn get_related_games(
         similar_pool,
         base_title,
         all_system_roms,
+        sequel_chain,
     )) = db_data
     else {
         return Ok(RelatedGamesData {
@@ -205,6 +229,9 @@ pub async fn get_related_games(
             series_siblings: Vec::new(),
             series_name: String::new(),
             similar_games: Vec::new(),
+            sequel_prev: None,
+            sequel_next: None,
+            series_position: None,
         });
     };
 
@@ -366,6 +393,57 @@ pub async fn get_related_games(
     // Resolve box art from filesystem.
     resolve_box_art_for_picks(&state, &mut similar_games);
 
+    // Build sequel/prequel links.
+    let sequel_prev = sequel_chain.follows_title.map(|title| {
+        let (href, in_library) = match &sequel_chain.follows_entry {
+            Some(entry) => {
+                let href = format!(
+                    "/games/{}/{}",
+                    entry.system,
+                    urlencoding::encode(&entry.rom_filename)
+                );
+                (Some(href), true)
+            }
+            None => (None, false),
+        };
+        let display = sequel_chain
+            .follows_entry
+            .as_ref()
+            .and_then(|e| e.display_name.clone())
+            .unwrap_or(title);
+        SequelLink {
+            title: display,
+            href,
+            in_library,
+        }
+    });
+
+    let sequel_next = sequel_chain.followed_by_title.map(|title| {
+        let (href, in_library) = match &sequel_chain.followed_by_entry {
+            Some(entry) => {
+                let href = format!(
+                    "/games/{}/{}",
+                    entry.system,
+                    urlencoding::encode(&entry.rom_filename)
+                );
+                (Some(href), true)
+            }
+            None => (None, false),
+        };
+        let display = sequel_chain
+            .followed_by_entry
+            .as_ref()
+            .and_then(|e| e.display_name.clone())
+            .unwrap_or(title);
+        SequelLink {
+            title: display,
+            href,
+            in_library,
+        }
+    });
+
+    let series_position = sequel_chain.series_order.zip(sequel_chain.series_max_order);
+
     Ok(RelatedGamesData {
         regional_variants,
         translations,
@@ -376,6 +454,9 @@ pub async fn get_related_games(
         series_siblings,
         series_name,
         similar_games,
+        sequel_prev,
+        sequel_next,
+        series_position,
     })
 }
 

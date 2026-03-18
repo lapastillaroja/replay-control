@@ -660,7 +660,8 @@ fn RelatedGamesSection(
                         let has_aliases = !data.alias_variants.is_empty();
                         let has_series = !data.series_siblings.is_empty();
                         let has_similar = !data.similar_games.is_empty();
-                        if !has_variants && !has_translations && !has_hacks && !has_specials && !has_arcade_versions && !has_aliases && !has_series && !has_similar {
+                        let has_sequel_nav = data.sequel_prev.is_some() || data.sequel_next.is_some();
+                        if !has_variants && !has_translations && !has_hacks && !has_specials && !has_arcade_versions && !has_aliases && !has_series && !has_similar && !has_sequel_nav {
                             view! { <div /> }.into_any()
                         } else {
                             let variant_chips: Vec<ChipItem> = data.regional_variants.iter().map(|v| {
@@ -713,6 +714,13 @@ fn RelatedGamesSection(
                                     <SimilarGamesRow
                                         games=data.alias_variants.clone()
                                         title_key="game_detail.other_versions"
+                                    />
+                                </Show>
+                                <Show when=move || has_sequel_nav>
+                                    <PlayOrderNav
+                                        prev=data.sequel_prev.clone()
+                                        next=data.sequel_next.clone()
+                                        position=data.series_position
                                     />
                                 </Show>
                                 <Show when=move || has_series>
@@ -803,6 +811,75 @@ fn SimilarGamesRow(
                         />
                     }
                 }).collect::<Vec<_>>()}
+            </div>
+        </section>
+    }
+}
+
+/// Breadcrumb-style play order navigation showing prev/next sequel links.
+///
+/// Layout: `[< Prev Game] [N of M] [Next Game >]`
+/// Games not in library shown dimmed with "not in library" subtitle.
+#[component]
+fn PlayOrderNav(
+    prev: Option<server_fns::SequelLink>,
+    next: Option<server_fns::SequelLink>,
+    position: Option<(i32, i32)>,
+) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <section class="section game-section">
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.play_order")}</h2>
+            <div class="play-order-nav">
+                // Previous game (left side)
+                {match &prev {
+                    Some(link) if link.in_library => {
+                        let href = link.href.clone().unwrap_or_default();
+                        let title = link.title.clone();
+                        view! {
+                            <a href=href class="play-order-link prev">
+                                {"\u{2190} "}{title}
+                            </a>
+                        }.into_any()
+                    }
+                    Some(link) => {
+                        let title = link.title.clone();
+                        view! {
+                            <div class="play-order-dimmed prev">
+                                <span>{"\u{2190} "}{title}</span>
+                                <span class="play-order-subtitle">{move || t(i18n.locale.get(), "game_detail.not_in_library")}</span>
+                            </div>
+                        }.into_any()
+                    }
+                    None => view! { <div class="play-order-spacer" /> }.into_any(),
+                }}
+                // Position indicator (center)
+                {position.map(|(n, m)| view! {
+                    <span class="play-order-position">{format!("{n} / {m}")}</span>
+                })}
+                // Next game (right side)
+                {match &next {
+                    Some(link) if link.in_library => {
+                        let href = link.href.clone().unwrap_or_default();
+                        let title = link.title.clone();
+                        view! {
+                            <a href=href class="play-order-link next">
+                                {title}{" \u{2192}"}
+                            </a>
+                        }.into_any()
+                    }
+                    Some(link) => {
+                        let title = link.title.clone();
+                        view! {
+                            <div class="play-order-dimmed next">
+                                <span>{title}{" \u{2192}"}</span>
+                                <span class="play-order-subtitle">{move || t(i18n.locale.get(), "game_detail.not_in_library")}</span>
+                            </div>
+                        }.into_any()
+                    }
+                    None => view! { <div class="play-order-spacer" /> }.into_any(),
+                }}
             </div>
         </section>
     }
