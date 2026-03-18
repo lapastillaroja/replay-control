@@ -223,87 +223,111 @@ impl BackgroundManager {
         };
 
         if !has_sources {
-            tracing::debug!(
-                "No libretro-thumbnails data sources found (first-time setup), skipping thumbnail index rebuild"
-            );
-            return;
-        }
-
-        if !index_empty {
-            tracing::debug!("Thumbnail index already populated, skipping rebuild");
-            return;
-        }
-
-        tracing::info!(
-            "Thumbnail data sources exist but index is empty (data loss?) — rebuilding index from GitHub API"
-        );
-
-        // The pipeline's busy flag is already set (from run_pipeline Phase 2+3 block).
-        // No need to claim separately.
-
-        // Lock the DB for the duration of the index rebuild.
-        // Uses the accessor which handles re-open-if-deleted logic.
-        let mut db_guard = match state.metadata_db() {
-            Some(guard) => guard,
-            None => {
-                tracing::warn!("Metadata DB unavailable, skipping thumbnail index rebuild");
+            // No data_sources entries. Check if images exist on disk — if so,
+            // someone previously downloaded thumbnails but the DB was deleted.
+            let has_images_on_disk =
+                replay_control_core::thumbnails::any_images_on_disk(&state.storage().rc_dir());
+            if !has_images_on_disk {
+                tracing::debug!(
+                    "No libretro-thumbnails data sources and no images on disk, skipping thumbnail index rebuild"
+                );
                 return;
             }
+            tracing::info!(
+                "Fresh DB but images exist on disk — rebuilding thumbnail index from GitHub API"
+            );
+        } else if !index_empty {
+            tracing::debug!("Thumbnail index already populated, skipping rebuild");
+            return;
+        } else {
+            tracing::info!(
+                "Thumbnail data sources exist but index is empty (data loss?) — rebuilding index from GitHub API"
+            );
+        }
+
+        // Rebuild index from images on disk — no GitHub API needed.
+        // Scan media/<system>/boxart/ directories and insert filenames into thumbnail_index.
+        let storage = state.storage();
+        let media_dir = storage.rc_dir().join("media");
+
+        let mut total_entries = 0usize;
+        let mut total_repos = 0usize;
+
+        let Ok(systems) = std::fs::read_dir(&media_dir) else {
+            return;
+        };
+
+        let mut db_guard = match state.metadata_db() {
+            Some(guard) => guard,
+            None => return,
         };
         let db = match db_guard.as_mut() {
             Some(db) => db,
-            None => {
-                tracing::warn!("Metadata DB unavailable, skipping thumbnail index rebuild");
-                return;
-            }
+            None => return,
         };
 
-        let storage = state.storage();
-        let api_key = replay_control_core::settings::read_github_api_key(&storage.root);
-        let cancel = std::sync::atomic::AtomicBool::new(false);
+        for system_entry in systems.flatten() {
+            let system_name = system_entry.file_name();
+            let system_str = system_name.to_string_lossy();
 
-        let result = replay_control_core::thumbnail_manifest::import_all_manifests(
-            db,
-            &|repos_done, repos_total, current_repo| {
-                tracing::debug!(
-                    "Thumbnail index rebuild: {}/{} — {}",
-                    repos_done + 1,
-                    repos_total,
-                    current_repo,
+            let Some(repo_names) =
+                replay_control_core::thumbnails::thumbnail_repo_names(&system_str)
+            else {
+                continue;
+            };
+
+            let all_entries =
+                replay_control_core::thumbnails::scan_system_images(&system_entry.path());
+
+            if all_entries.is_empty() {
+                continue;
+            }
+
+            // Register data_source with actual entry count, then insert index entries.
+            let repo_display = repo_names[0];
+            let repo_url = repo_display.replace(' ', "_");
+            let source_name = format!("libretro:{repo_url}");
+            let branch =
+                replay_control_core::thumbnail_manifest::default_branch(repo_display);
+            let entry_count = all_entries.len();
+
+            let _ = db.upsert_data_source(
+                &source_name,
+                "libretro-thumbnails",
+                "disk-rebuild",
+                branch,
+                entry_count,
+            );
+
+            match db.bulk_insert_thumbnail_index(&source_name, &all_entries) {
+                Ok(_) => total_entries += entry_count,
+                Err(e) => tracing::warn!("Failed to insert disk-based index for {system_str}: {e}"),
+            }
+
+            // Register additional repos for multi-repo systems (e.g., arcade_dc → Naomi + Naomi 2).
+            for extra_repo in &repo_names[1..] {
+                let extra_url = extra_repo.replace(' ', "_");
+                let extra_source = format!("libretro:{extra_url}");
+                let extra_branch =
+                    replay_control_core::thumbnail_manifest::default_branch(extra_repo);
+                let _ = db.upsert_data_source(
+                    &extra_source,
+                    "libretro-thumbnails",
+                    "disk-rebuild",
+                    extra_branch,
+                    0,
                 );
-            },
-            &cancel,
-            api_key.as_deref(),
-        );
+            }
+            total_repos += repo_names.len();
+        }
 
-        match result {
-            Ok(stats) => {
-                if stats.total_entries == 0 && !stats.errors.is_empty() {
-                    // All repos failed — likely offline or rate-limited. Not fatal.
-                    tracing::warn!(
-                        "Thumbnail index rebuild failed: all {} repos errored (offline or rate-limited?). First: {}",
-                        stats.errors.len(),
-                        stats
-                            .errors
-                            .first()
-                            .map(|s| s.as_str())
-                            .unwrap_or("unknown"),
-                    );
-                } else {
-                    tracing::info!(
-                        "Thumbnail index rebuild complete: {} entries across {} repos ({} errors)",
-                        stats.total_entries,
-                        stats.repos_fetched,
-                        stats.errors.len(),
-                    );
-                }
-            }
-            Err(e) => {
-                // Network failure, etc. — fail gracefully.
-                tracing::warn!("Thumbnail index rebuild failed: {e}");
-            }
+        if total_entries > 0 {
+            tracing::info!(
+                "Thumbnail index rebuilt from disk: {total_entries} entries across {total_repos} repos"
+            );
         }
     }
+
 
     /// Pre-populate L2 cache for all systems that have games.
     /// Called on startup when the game library is empty (fresh DB or after clear).

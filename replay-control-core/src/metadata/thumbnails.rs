@@ -15,6 +15,9 @@ pub enum ThumbnailKind {
     Snap,
 }
 
+/// All thumbnail kinds, for iteration.
+pub const ALL_THUMBNAIL_KINDS: &[ThumbnailKind] = &[ThumbnailKind::Boxart, ThumbnailKind::Snap];
+
 impl ThumbnailKind {
     /// Subdirectory name in the libretro-thumbnails repo.
     pub fn repo_dir(&self) -> &'static str {
@@ -31,6 +34,54 @@ impl ThumbnailKind {
             ThumbnailKind::Snap => "snap",
         }
     }
+}
+
+/// Check if any system has downloaded thumbnail images on disk.
+/// Scans `<rc_dir>/media/*/boxart/` for valid PNG files (>= 200 bytes).
+pub fn any_images_on_disk(rc_dir: &std::path::Path) -> bool {
+    let media_dir = rc_dir.join("media");
+    let Ok(entries) = std::fs::read_dir(&media_dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let boxart_dir = entry.path().join("boxart");
+        if boxart_dir.is_dir() {
+            if let Ok(mut files) = std::fs::read_dir(&boxart_dir) {
+                if files.any(|f| {
+                    f.ok()
+                        .and_then(|f| f.metadata().ok())
+                        .is_some_and(|m| m.len() >= 200)
+                }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Scan a system's media directories and collect all valid image filenames
+/// as thumbnail index entries (kind, filename_stem, None).
+pub fn scan_system_images(
+    media_system_dir: &std::path::Path,
+) -> Vec<(String, String, Option<String>)> {
+    let mut entries = Vec::new();
+    for kind in ALL_THUMBNAIL_KINDS {
+        let dir = media_system_dir.join(kind.media_dir());
+        let Ok(files) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for file in files.flatten() {
+            let name = file.file_name();
+            let name_str = name.to_string_lossy();
+            if let Some(stem) = name_str.strip_suffix(".png") {
+                if file.metadata().is_ok_and(|m| m.len() >= 200) {
+                    entries.push((kind.repo_dir().to_string(), stem.to_string(), None));
+                }
+            }
+        }
+    }
+    entries
 }
 
 /// Map RePlayOS system folder names to libretro-thumbnails repo names.
