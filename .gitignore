@@ -109,9 +109,10 @@ $RECYCLE.BIN/
 server_debug.log
 /reference/
 
+# End of https://www.toptal.com/developers/gitignore/api/rust,linux,macos,windows,visualstudiocode
+
 # Downloaded arcade source data (large files, not checked in)
 # Populate with: ./scripts/download-arcade-data.sh
 data/*
 !data/README.md
 
-# End of https://www.toptal.com/developers/gitignore/api/rust,linux,macos,windows,visualstudiocode
