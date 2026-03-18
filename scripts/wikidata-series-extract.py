@@ -35,28 +35,59 @@ USER_AGENT = "ReplayControl-SeriesExtract/1.0"
 
 # Wikidata QID -> RePlayOS system folder name
 PLATFORM_MAP = {
+    # Nintendo
     "Q172742": "nintendo_nes",      # NES
-    "Q183259": "nintendo_snes",     # SNES
+    "Q491640": "nintendo_nes",      # Family Computer (Famicom)
+    "Q135321": "nintendo_nes",      # Famicom Disk System
+    "Q183259": "nintendo_snes",     # SNES / Super Famicom
     "Q186437": "nintendo_gb",       # Game Boy
     "Q203992": "nintendo_gbc",      # Game Boy Color
     "Q188642": "nintendo_gba",      # Game Boy Advance
     "Q184839": "nintendo_n64",      # Nintendo 64
+    "Q170323": "nintendo_ds",       # Nintendo DS
+    # Sega
     "Q10676": "sega_smd",           # Mega Drive / Genesis
     "Q209868": "sega_sms",          # Master System
     "Q751719": "sega_gg",           # Game Gear
     "Q200912": "sega_saturn",       # Saturn
-    "Q10677": "sony_psx",           # PlayStation
     "Q184198": "sega_dc",           # Dreamcast
+    "Q1047516": "sega_cd",          # Sega CD / Mega-CD
+    "Q1063978": "sega_32x",         # Sega 32X
+    # Sony
+    "Q10677": "sony_psx",           # PlayStation
+    # NEC
+    "Q1057377": "nec_pce",          # TurboGrafx-16 / PC Engine
+    "Q10854461": "nec_pcecd",       # TurboGrafx-CD / PC Engine CD
+    # Atari
+    "Q206261": "atari_2600",        # Atari 2600
+    "Q743222": "atari_5200",        # Atari 5200
+    "Q753600": "atari_7800",        # Atari 7800
+    "Q650601": "atari_jaguar",      # Atari Jaguar
+    "Q753657": "atari_lynx",        # Atari Lynx
+    # Other consoles
+    "Q229429": "panasonic_3do",     # 3DO Interactive Multiplayer
+    "Q1023103": "philips_cdi",      # Philips CD-i
+    "Q853547": "microsoft_msx",     # MSX
+    "Q11232203": "microsoft_msx",   # MSX2
     # Arcade platforms — all map to arcade_fbneo (primary arcade emulator;
     # series data is shared across all arcade system variants)
-    "Q631229": "arcade_fbneo",      # Arcade game (generic arcade)
+    "Q631229": "arcade_fbneo",      # Arcade game (generic)
     "Q210167": "arcade_fbneo",      # Arcade video game
+    "Q192851": "arcade_fbneo",      # Arcade video game machine (coin-operated)
     "Q1136498": "arcade_fbneo",     # Arcade system board (generic)
-    "Q337535": "arcade_fbneo",      # CPS-1
-    "Q1047301": "arcade_fbneo",     # CPS-2
-    "Q76098": "arcade_fbneo",       # Neo Geo (MVS)
-    "Q1478269": "arcade_fbneo",     # Sega Naomi
-    "Q221525": "arcade_fbneo",      # Sega Model 2
+    "Q1034233": "arcade_fbneo",     # CP System (CPS-1)
+    "Q2981666": "arcade_fbneo",     # CP System II (CPS-2)
+    "Q2634041": "arcade_fbneo",     # CP System III (CPS-3)
+    "Q76098": "arcade_fbneo",       # Neo Geo AES (home)
+    "Q1054350": "arcade_fbneo",     # Neo Geo (general)
+    "Q3338058": "arcade_fbneo",     # Neo Geo MVS (arcade)
+    "Q64428080": "arcade_fbneo",    # Neo Geo AES (alternate QID)
+    "Q2703883": "arcade_fbneo",     # Neo Geo CD
+    "Q1369174": "arcade_fbneo",     # Sega NAOMI
+    "Q843916": "arcade_fbneo",      # Sega NAOMI 2
+    "Q4386178": "arcade_fbneo",     # Sega Model 2
+    "Q3142301": "arcade_fbneo",     # Sega Model 3
+    "Q1067380": "arcade_fbneo",     # Sega Titan Video (ST-V)
 }
 
 
