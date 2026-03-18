@@ -993,8 +993,8 @@ impl ThumbnailPipeline {
             } else {
                 None
             };
-            let boxart_rel = find_best_match(box_index, rom_filename, arcade_display);
-            let snap_rel = find_best_match(snap_index, rom_filename, arcade_display);
+            let boxart_rel = find_best_match(box_index, rom_filename, arcade_display, None);
+            let snap_rel = find_best_match(snap_index, rom_filename, arcade_display, None);
 
             if boxart_rel.is_some() || snap_rel.is_some() {
                 updates.push((

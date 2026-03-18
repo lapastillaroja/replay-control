@@ -2,19 +2,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
+use replay_control_core::image_matching::DirIndex;
 use replay_control_core::thumbnail_manifest::ManifestFuzzyIndex;
 
 use super::{CACHE_HARD_TTL, GameLibrary, dir_mtime};
 
 /// Cached per-system image directory index for batch box art resolution.
-/// Maps normalized base title → actual filename (without directory prefix).
+/// Wraps a core `DirIndex` for filesystem-based matching, plus app-specific
+/// fields for DB path lookups and on-demand manifest downloads.
 pub struct ImageIndex {
-    /// exact thumbnail_filename stem → "boxart/{filename}.png"
-    pub exact: HashMap<String, String>,
-    /// fuzzy base_title (lowercase, tags stripped) → "boxart/{filename}.png"
-    pub fuzzy: HashMap<String, String>,
-    /// version-stripped base_title → "boxart/{filename}.png"
-    pub version: HashMap<String, String>,
+    /// Core directory index: exact, case-insensitive, fuzzy, version-stripped.
+    pub dir_index: DirIndex,
     /// DB paths: rom_filename → "boxart/{path}"
     pub db_paths: HashMap<String, String>,
     /// Manifest-backed fallback for images not yet downloaded.
@@ -60,10 +58,8 @@ impl GameLibrary {
 
         // Build the base index using the shared image matching module.
         // This indexes all valid .png files (skips stubs via is_valid_image).
-        let dir_index = replay_control_core::image_matching::build_dir_index(&boxart_dir, boxart_media);
-        let mut exact = dir_index.exact;
-        let mut fuzzy = dir_index.fuzzy;
-        let mut version = dir_index.version;
+        let mut dir_index =
+            replay_control_core::image_matching::build_dir_index(&boxart_dir, boxart_media);
 
         // Second pass: resolve fake symlinks (small text files pointing to real images).
         // These are skipped by build_dir_index since they're < 200 bytes.
@@ -73,7 +69,7 @@ impl GameLibrary {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
                 if let Some(img_stem) = name_str.strip_suffix(".png") {
-                    if exact.contains_key(img_stem) {
+                    if dir_index.exact.contains_key(img_stem) {
                         continue; // Already indexed by build_dir_index.
                     }
                     let full = entry.path();
@@ -84,14 +80,21 @@ impl GameLibrary {
                         )
                     {
                         let resolved_path = format!("boxart/{resolved}");
-                        exact.insert(img_stem.to_string(), resolved_path.clone());
+                        dir_index
+                            .exact
+                            .insert(img_stem.to_string(), resolved_path.clone());
+                        dir_index
+                            .exact_ci
+                            .entry(img_stem.to_lowercase())
+                            .or_insert_with(|| resolved_path.clone());
                         let bt = base_title(img_stem);
                         let vs = strip_version(&bt).to_string();
-                        fuzzy
+                        dir_index
+                            .fuzzy
                             .entry(bt.clone())
                             .or_insert_with(|| resolved_path.clone());
                         if vs.len() < bt.len() {
-                            version.entry(vs).or_insert(resolved_path);
+                            dir_index.version.entry(vs).or_insert(resolved_path);
                         }
                     }
                 }
@@ -144,9 +147,7 @@ impl GameLibrary {
         };
 
         let arc = Arc::new(ImageIndex {
-            exact,
-            fuzzy,
-            version,
+            dir_index,
             db_paths,
             manifest,
             dir_mtime: dir_mtime(&boxart_dir),
@@ -170,86 +171,35 @@ impl GameLibrary {
         system: &str,
         rom_filename: &str,
     ) -> Option<String> {
-        use replay_control_core::thumbnails::{strip_version, thumbnail_filename};
-
-        // 1. Try DB path first (already validated during index build).
-        if let Some(db_path) = index.db_paths.get(rom_filename) {
-            let stem = db_path.strip_prefix("boxart/").unwrap_or(db_path);
-            let stem = stem.strip_suffix(".png").unwrap_or(stem);
-            if index.exact.contains_key(stem) {
-                return Some(format!("/media/{system}/{db_path}"));
-            }
-        }
-
-        // 2. Exact thumbnail name match.
+        // For arcade ROMs, translate MAME codename to display name.
         let stem = rom_filename
             .rfind('.')
             .map(|i| &rom_filename[..i])
             .unwrap_or(rom_filename);
         let stem = replay_control_core::title_utils::strip_n64dd_prefix(stem);
-
-        // For arcade ROMs, translate MAME codename to display name.
         let is_arcade = replay_control_core::systems::is_arcade_system(system);
-        let display_name = if is_arcade {
+        let arcade_display = if is_arcade {
             replay_control_core::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name)
         } else {
             None
         };
-        let thumb_name = thumbnail_filename(display_name.unwrap_or(stem));
 
-        if let Some(path) = index.exact.get(&thumb_name) {
+        // Delegate all filesystem-based matching tiers to core.
+        let db_paths = if index.db_paths.is_empty() {
+            None
+        } else {
+            Some(&index.db_paths)
+        };
+        if let Some(path) = replay_control_core::image_matching::find_best_match(
+            &index.dir_index,
+            rom_filename,
+            arcade_display,
+            db_paths,
+        ) {
             return Some(format!("/media/{system}/{path}"));
         }
 
-        // Colon variants for arcade games (e.g., "Marvel vs. Capcom: Clash of Super Heroes").
-        let source = display_name.unwrap_or(stem);
-        if source.contains(':') {
-            let dash_variant = thumbnail_filename(&source.replace(": ", " - ").replace(':', " -"));
-            if let Some(path) = index.exact.get(&dash_variant) {
-                return Some(format!("/media/{system}/{path}"));
-            }
-            let drop_variant = thumbnail_filename(&source.replace(": ", " ").replace(':', ""));
-            if let Some(path) = index.exact.get(&drop_variant) {
-                return Some(format!("/media/{system}/{path}"));
-            }
-        }
-
-        // 3. Fuzzy match (strip tags).
-        let base_title = replay_control_core::thumbnails::base_title;
-
-        let rom_base = base_title(&thumb_name);
-        if let Some(path) = index.fuzzy.get(&rom_base) {
-            return Some(format!("/media/{system}/{path}"));
-        }
-
-        // 3b. Tilde dual-title match: "Name1 ~ Name2" -> try each half.
-        let source = display_name.unwrap_or(stem);
-        if source.contains(" ~ ") {
-            for half in source.split(" ~ ") {
-                let half_thumb = thumbnail_filename(half.trim());
-                let half_base = base_title(&half_thumb);
-                if let Some(path) = index.fuzzy.get(&half_base) {
-                    return Some(format!("/media/{system}/{path}"));
-                }
-                // Also try exact match for each half
-                if let Some(path) = index.exact.get(&half_thumb) {
-                    return Some(format!("/media/{system}/{path}"));
-                }
-            }
-        }
-
-        // 4. Version-stripped match.
-        let rom_base_no_version = strip_version(&rom_base);
-        if rom_base_no_version.len() < rom_base.len()
-            && let Some(path) = index
-                .fuzzy
-                .get(rom_base_no_version)
-                .or_else(|| index.version.get(rom_base_no_version))
-        {
-            return Some(format!("/media/{system}/{path}"));
-        }
-
-        // 5. On-demand: check manifest for a remote thumbnail to download.
+        // On-demand: check manifest for a remote thumbnail to download.
         if let Some(ref manifest) = index.manifest
             && let Some(m) = replay_control_core::thumbnail_manifest::find_in_manifest(
                 manifest,
