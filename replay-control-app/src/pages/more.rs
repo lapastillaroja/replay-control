@@ -175,6 +175,8 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
 
     view! {
         <div class="form-field">
+            <label class="form-label">{move || t(i18n.locale.get(), "region.primary_label")}</label>
+            <p class="form-hint">{move || t(i18n.locale.get(), "region.primary_hint")}</p>
             <select
                 class="form-input"
                 on:change=on_change
@@ -184,9 +186,9 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
             </select>
         </div>
 
-        <h3 class="section-title">{move || t(i18n.locale.get(), "region.secondary_title")}</h3>
-        <p class="form-hint">{move || t(i18n.locale.get(), "region.secondary_hint")}</p>
         <div class="form-field">
+            <label class="form-label">{move || t(i18n.locale.get(), "region.secondary_label")}</label>
+            <p class="form-hint">{move || t(i18n.locale.get(), "region.secondary_hint")}</p>
             <select
                 class="form-input"
                 on:change=on_change_secondary

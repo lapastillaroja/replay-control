@@ -162,19 +162,19 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
 
         // Region preference
         "more.region" => "Region",
-        "region.title" => "Region Preference",
+        "region.title" => "Region Preferences",
         "region.hint" => {
-            "ROMs from your preferred region appear first in game lists and search results."
+            "Control which regional variants of games appear first."
         }
+        "region.primary_label" => "Primary region",
+        "region.primary_hint" => "Games from this region are shown first",
+        "region.secondary_label" => "Secondary region",
+        "region.secondary_hint" => "Fallback when primary isn't available",
         "region.usa" => "USA",
         "region.europe" => "Europe",
         "region.japan" => "Japan",
         "region.world" => "World",
         "region.saved" => "Region preference saved",
-        "region.secondary_title" => "Fallback Region",
-        "region.secondary_hint" => {
-            "If your preferred region is unavailable, prefer this region next."
-        }
         "region.none" => "None (use default order)",
 
         // Skin
