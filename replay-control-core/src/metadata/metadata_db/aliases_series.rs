@@ -139,7 +139,6 @@ impl MetadataDb {
                     SELECT gs.system, gs.base_title, gs.series_order, gs.series_name
                     FROM game_series gs
                     JOIN current_series cs ON gs.series_name = cs.series_name
-                    WHERE NOT (gs.system = ?1 AND gs.base_title = ?2)
                 ),
                 deduped AS (
                     SELECT gl.*, sg.series_order,
@@ -157,6 +156,7 @@ impl MetadataDb {
                       AND gl.is_translation = 0
                       AND gl.is_hack = 0
                       AND gl.is_special = 0
+                      AND NOT (gl.system = ?1 AND gl.base_title = ?2 COLLATE NOCASE)
                 )
                 SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
@@ -397,4 +397,97 @@ pub struct SequelChainInfo {
     pub series_order: Option<i32>,
     /// Max position in the series (for "N of M" display).
     pub series_max_order: Option<i32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::*;
+    use super::super::SeriesInsert;
+
+    #[test]
+    fn series_siblings_excludes_current_game() {
+        let (mut db, _dir) = open_temp_db();
+
+        // Create game_library entries for Final Fight on two systems.
+        let mut ff_arcade = make_game_entry("arcade_fbneo", "ffight.zip", false);
+        ff_arcade.base_title = "final fight".into();
+        let mut ff_snes = make_game_entry("nintendo_snes", "Final Fight (USA).sfc", false);
+        ff_snes.base_title = "final fight".into();
+        let mut ff2 = make_game_entry("nintendo_snes", "Final Fight 2 (USA).sfc", false);
+        ff2.base_title = "final fight 2".into();
+
+        db.save_system_entries("arcade_fbneo", &[ff_arcade], None)
+            .unwrap();
+        db.save_system_entries("nintendo_snes", &[ff_snes, ff2], None)
+            .unwrap();
+
+        // Populate game_series for all three games.
+        db.bulk_insert_series(&[
+            SeriesInsert {
+                system: "arcade_fbneo".into(),
+                base_title: "final fight".into(),
+                series_name: "Final Fight".into(),
+                series_order: Some(1),
+                source: "wikidata".into(),
+                follows_base_title: None,
+                followed_by_base_title: None,
+            },
+            SeriesInsert {
+                system: "nintendo_snes".into(),
+                base_title: "final fight".into(),
+                series_name: "Final Fight".into(),
+                series_order: Some(1),
+                source: "wikidata".into(),
+                follows_base_title: None,
+                followed_by_base_title: None,
+            },
+            SeriesInsert {
+                system: "nintendo_snes".into(),
+                base_title: "final fight 2".into(),
+                series_name: "Final Fight".into(),
+                series_order: Some(2),
+                source: "wikidata".into(),
+                follows_base_title: None,
+                followed_by_base_title: None,
+            },
+        ])
+        .unwrap();
+
+        // Query siblings for arcade Final Fight.
+        let siblings = db
+            .wikidata_series_siblings("arcade_fbneo", "final fight", "usa", 20)
+            .unwrap();
+
+        let sibling_titles: Vec<&str> = siblings
+            .iter()
+            .map(|(e, _)| e.base_title.as_str())
+            .collect();
+
+        // "final fight 2" should appear as a sibling.
+        assert!(
+            sibling_titles.contains(&"final fight 2"),
+            "Final Fight 2 should be a series sibling. Got: {:?}",
+            sibling_titles
+        );
+
+        // "final fight" on SNES should appear (same game, different system).
+        let snes_ff = siblings
+            .iter()
+            .find(|(e, _)| e.base_title == "final fight" && e.system == "nintendo_snes");
+        assert!(
+            snes_ff.is_some(),
+            "Final Fight on SNES should appear in arcade FF's series. Got: {:?}",
+            sibling_titles
+        );
+
+        // "final fight" on arcade (the current game itself) must NOT appear.
+        let arcade_ff = siblings
+            .iter()
+            .find(|(e, _)| e.base_title == "final fight" && e.system == "arcade_fbneo");
+        assert!(
+            arcade_ff.is_none(),
+            "Current game (arcade final fight) must not appear in its own series. Got: {:?}",
+            sibling_titles
+        );
+    }
 }
