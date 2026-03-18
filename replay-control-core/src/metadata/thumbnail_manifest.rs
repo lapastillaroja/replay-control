@@ -61,7 +61,7 @@ pub fn collect_all_repos() -> Vec<RepoInfo> {
     for system in systems::visible_systems() {
         if let Some(repo_names) = thumbnails::thumbnail_repo_names(system.folder_name) {
             for display_name in repo_names {
-                let url_name = display_name.replace(' ', "_");
+                let url_name = thumbnails::repo_url_name(display_name);
                 if seen.insert(url_name.clone()) {
                     repos.push(RepoInfo {
                         display_name: display_name.to_string(),
@@ -160,12 +160,12 @@ pub fn fetch_repo_tree(
         let size = item.get("size").and_then(|v| v.as_u64());
 
         // Filter to Named_Boxarts/ and Named_Snaps/ only.
-        let (kind, rest) = if let Some(rest) = path.strip_prefix("Named_Boxarts/") {
-            ("Named_Boxarts", rest)
-        } else if let Some(rest) = path.strip_prefix("Named_Snaps/") {
-            ("Named_Snaps", rest)
-        } else {
-            continue;
+        let (kind, rest) = match thumbnails::ALL_THUMBNAIL_KINDS
+            .iter()
+            .find_map(|k| path.strip_prefix(k.repo_dir())?.strip_prefix('/').map(|r| (k.repo_dir(), r)))
+        {
+            Some(pair) => pair,
+            None => continue,
         };
 
         // Extract the filename stem (strip .png extension).
@@ -246,7 +246,7 @@ pub fn import_all_manifests(
 
         on_progress(i, total, &repo.display_name);
 
-        let source_name = format!("libretro:{}", repo.url_name);
+        let source_name = thumbnails::libretro_source_name(&repo.display_name);
 
         // Check if repo has changed since last import.
         if let Ok(Some(status)) = db.get_data_source(&source_name) {
@@ -420,8 +420,8 @@ pub fn build_manifest_fuzzy_index(
     let mut by_version = HashMap::new();
 
     for display_name in repo_display_names {
-        let url_name = display_name.replace(' ', "_");
-        let source_name = format!("libretro:{url_name}");
+        let url_name = thumbnails::repo_url_name(display_name);
+        let source_name = thumbnails::libretro_source_name(display_name);
 
         // Look up branch from data_sources.
         let branch = db
@@ -760,14 +760,14 @@ pub fn find_boxart_variants(
         .join(crate::storage::RC_DIR)
         .join("media")
         .join(system)
-        .join("boxart");
+        .join(ThumbnailKind::Boxart.media_dir());
 
     let mut variants = Vec::new();
     let mut seen_targets: HashSet<String> = HashSet::new();
 
     for display_name in repo_names {
-        let url_name = display_name.replace(' ', "_");
-        let source_name = format!("libretro:{url_name}");
+        let url_name = thumbnails::repo_url_name(display_name);
+        let source_name = thumbnails::libretro_source_name(display_name);
 
         let branch = db
             .get_data_source(&source_name)
@@ -777,7 +777,7 @@ pub fn find_boxart_variants(
             .unwrap_or_else(|| "master".to_string());
 
         let entries = db
-            .query_thumbnail_index(&source_name, "Named_Boxarts")
+            .query_thumbnail_index(&source_name, ThumbnailKind::Boxart.repo_dir())
             .unwrap_or_default();
 
         for entry in &entries {
@@ -798,11 +798,7 @@ pub fn find_boxart_variants(
 
             let is_symlink = entry.symlink_target.is_some();
             let local_path = media_base.join(format!("{}.png", entry.filename));
-            let is_downloaded = local_path.exists()
-                && local_path
-                    .metadata()
-                    .map(|m| m.len() >= 200)
-                    .unwrap_or(false);
+            let is_downloaded = thumbnails::is_valid_image(&local_path);
 
             // Skip undownloaded symlinks — GitHub raw serves the symlink text
             // content (a filename) instead of the actual PNG, producing a
@@ -889,11 +885,10 @@ pub fn count_boxart_variants(db: &MetadataDb, system: &str, rom_filename: &str) 
     let mut seen_targets: HashSet<String> = HashSet::new();
 
     for display_name in repo_names {
-        let url_name = display_name.replace(' ', "_");
-        let source_name = format!("libretro:{url_name}");
+        let source_name = thumbnails::libretro_source_name(display_name);
 
         let entries = db
-            .query_thumbnail_index(&source_name, "Named_Boxarts")
+            .query_thumbnail_index(&source_name, ThumbnailKind::Boxart.repo_dir())
             .unwrap_or_default();
 
         for entry in &entries {

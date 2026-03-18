@@ -34,6 +34,30 @@ impl ThumbnailKind {
             ThumbnailKind::Snap => "snap",
         }
     }
+
+    /// Parse a repo directory name back to a `ThumbnailKind`.
+    pub fn from_repo_dir(s: &str) -> Option<Self> {
+        match s {
+            "Named_Boxarts" => Some(ThumbnailKind::Boxart),
+            "Named_Snaps" => Some(ThumbnailKind::Snap),
+            _ => None,
+        }
+    }
+}
+
+/// Convert a libretro-thumbnails repo display name to its URL-safe form.
+///
+/// Replaces spaces with underscores, e.g.,
+/// `"Nintendo - Super Nintendo Entertainment System"` → `"Nintendo_-_Super_Nintendo_Entertainment_System"`.
+pub fn repo_url_name(display_name: &str) -> String {
+    display_name.replace(' ', "_")
+}
+
+/// Build a `data_sources` key from a repo display name.
+///
+/// Returns `"libretro:{url_name}"`, e.g., `"libretro:Nintendo_-_Super_Nintendo_Entertainment_System"`.
+pub fn libretro_source_name(display_name: &str) -> String {
+    format!("libretro:{}", repo_url_name(display_name))
 }
 
 /// Check if any system has downloaded thumbnail images on disk.
@@ -44,17 +68,16 @@ pub fn any_images_on_disk(rc_dir: &std::path::Path) -> bool {
         return false;
     };
     for entry in entries.flatten() {
-        let boxart_dir = entry.path().join("boxart");
-        if boxart_dir.is_dir() {
-            if let Ok(mut files) = std::fs::read_dir(&boxart_dir) {
-                if files.any(|f| {
-                    f.ok()
-                        .and_then(|f| f.metadata().ok())
-                        .is_some_and(|m| m.len() >= 200)
-                }) {
-                    return true;
-                }
-            }
+        let boxart_dir = entry.path().join(ThumbnailKind::Boxart.media_dir());
+        if boxart_dir.is_dir()
+            && let Ok(mut files) = std::fs::read_dir(&boxart_dir)
+            && files.any(|f| {
+                f.ok()
+                    .map(|f| f.path())
+                    .is_some_and(|p| is_valid_image(&p))
+            })
+        {
+            return true;
         }
     }
     false
@@ -74,10 +97,10 @@ pub fn scan_system_images(
         for file in files.flatten() {
             let name = file.file_name();
             let name_str = name.to_string_lossy();
-            if let Some(stem) = name_str.strip_suffix(".png") {
-                if file.metadata().is_ok_and(|m| m.len() >= 200) {
-                    entries.push((kind.repo_dir().to_string(), stem.to_string(), None));
-                }
+            if let Some(stem) = name_str.strip_suffix(".png")
+                && is_valid_image(&file.path())
+            {
+                entries.push((kind.repo_dir().to_string(), stem.to_string(), None));
             }
         }
     }
@@ -417,7 +440,7 @@ pub fn find_orphaned_thumbnails(
 
         // Only scan boxart/ — snap images have no corresponding URL column in
         // game_library, so we can't determine which are orphaned.
-        let kind = "boxart";
+        let kind = ThumbnailKind::Boxart.media_dir();
         let kind_dir = system_media.join(kind);
         if kind_dir.exists() {
             let entries = match std::fs::read_dir(&kind_dir) {

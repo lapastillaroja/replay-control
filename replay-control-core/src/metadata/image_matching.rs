@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::thumbnails::{base_title, strip_version, thumbnail_filename};
+use crate::thumbnails::{base_title, is_valid_image, strip_version, thumbnail_filename};
 use crate::title_utils::strip_n64dd_prefix;
 
 /// Directory index for matching ROM filenames to image files.
@@ -42,8 +42,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
             let name_str = name.to_string_lossy();
             if let Some(img_stem) = name_str.strip_suffix(".png") {
                 // Skip tiny files (fake symlinks / stubs).
-                let valid = entry.metadata().map(|m| m.len() >= 200).unwrap_or(false);
-                if !valid {
+                if !is_valid_image(&entry.path()) {
                     continue;
                 }
                 let path = format!("{kind}/{name_str}");

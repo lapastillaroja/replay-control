@@ -164,12 +164,10 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.region" => "Region",
         "region.title" => "Region Preferences",
         "region.hint" => {
-            "Control which regional variants of games appear first."
+            "Games from your primary region appear first. The secondary region is used as a fallback when your primary isn't available."
         }
-        "region.primary_label" => "Primary region",
-        "region.primary_hint" => "Games from this region are shown first",
-        "region.secondary_label" => "Secondary region",
-        "region.secondary_hint" => "Fallback when primary isn't available",
+        "region.primary_label" => "Primary",
+        "region.secondary_label" => "Secondary",
         "region.usa" => "USA",
         "region.europe" => "Europe",
         "region.japan" => "Japan",

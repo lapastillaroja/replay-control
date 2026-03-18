@@ -285,8 +285,8 @@ impl BackgroundManager {
 
             // Register data_source with actual entry count, then insert index entries.
             let repo_display = repo_names[0];
-            let repo_url = repo_display.replace(' ', "_");
-            let source_name = format!("libretro:{repo_url}");
+            let source_name =
+                replay_control_core::thumbnails::libretro_source_name(repo_display);
             let branch =
                 replay_control_core::thumbnail_manifest::default_branch(repo_display);
             let entry_count = all_entries.len();
@@ -306,8 +306,8 @@ impl BackgroundManager {
 
             // Register additional repos for multi-repo systems (e.g., arcade_dc → Naomi + Naomi 2).
             for extra_repo in &repo_names[1..] {
-                let extra_url = extra_repo.replace(' ', "_");
-                let extra_source = format!("libretro:{extra_url}");
+                let extra_source =
+                    replay_control_core::thumbnails::libretro_source_name(extra_repo);
                 let extra_branch =
                     replay_control_core::thumbnail_manifest::default_branch(extra_repo);
                 let _ = db.upsert_data_source(

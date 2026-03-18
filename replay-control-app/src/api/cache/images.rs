@@ -46,8 +46,9 @@ impl GameLibrary {
     ) -> std::sync::Arc<ImageIndex> {
         use replay_control_core::thumbnails::strip_version;
 
+        let boxart_media = replay_control_core::thumbnails::ThumbnailKind::Boxart.media_dir();
         let media_base = state.storage().rc_dir().join("media").join(system);
-        let boxart_dir = media_base.join("boxart");
+        let boxart_dir = media_base.join(boxart_media);
 
         // Check cache freshness — return a cheap Arc::clone() on hit.
         if let Ok(guard) = self.images.read()
@@ -58,8 +59,8 @@ impl GameLibrary {
         }
 
         // Build the base index using the shared image matching module.
-        // This indexes all valid (>= 200 byte) .png files.
-        let dir_index = replay_control_core::image_matching::build_dir_index(&boxart_dir, "boxart");
+        // This indexes all valid .png files (skips stubs via is_valid_image).
+        let dir_index = replay_control_core::image_matching::build_dir_index(&boxart_dir, boxart_media);
         let mut exact = dir_index.exact;
         let mut fuzzy = dir_index.fuzzy;
         let mut version = dir_index.version;
@@ -124,7 +125,7 @@ impl GameLibrary {
                     let idx = replay_control_core::thumbnail_manifest::build_manifest_fuzzy_index(
                         db,
                         repo_names,
-                        "Named_Boxarts",
+                        replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
                     );
                     if idx.exact.is_empty() {
                         None
@@ -290,7 +291,7 @@ impl GameLibrary {
         let cache = state.cache.clone();
 
         std::thread::spawn(move || {
-            match download_thumbnail(&m, "Named_Boxarts") {
+            match download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir()) {
                 Ok(bytes) => {
                     if let Err(e) = save_thumbnail(
                         &storage_root,

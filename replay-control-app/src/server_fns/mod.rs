@@ -403,7 +403,11 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
         }
         if info.screenshot_url.is_none() {
             let media_base = state.storage().rc_dir().join("media").join(&info.system);
-            if let Some(path) = find_image_on_disk(&media_base, "snap", &info.rom_filename) {
+            if let Some(path) = find_image_on_disk(
+                &media_base,
+                replay_control_core::thumbnails::ThumbnailKind::Snap.media_dir(),
+                &info.rom_filename,
+            ) {
                 info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
             }
         }
@@ -452,12 +456,16 @@ pub(crate) fn resolve_box_art_url(
             let kind = std::path::Path::new(path)
                 .parent()
                 .and_then(|p| p.to_str())
-                .unwrap_or("boxart");
+                .unwrap_or(replay_control_core::thumbnails::ThumbnailKind::Boxart.media_dir());
             return Some(format!("/media/{system}/{kind}/{resolved}"));
         }
     }
     // 2. Filesystem fallback (find_image_on_disk already validates)
-    find_image_on_disk(&media_base, "boxart", rom_filename)
+    find_image_on_disk(
+        &media_base,
+        replay_control_core::thumbnails::ThumbnailKind::Boxart.media_dir(),
+        rom_filename,
+    )
         .map(|path| format!("/media/{system}/{path}"))
 }
 

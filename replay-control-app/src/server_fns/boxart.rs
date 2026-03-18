@@ -82,8 +82,9 @@ pub async fn set_boxart_override(
 
         let mut found = None;
         for display_name in repo_names {
-            let url_name = display_name.replace(' ', "_");
-            let source_name = format!("libretro:{url_name}");
+            let url_name = replay_control_core::thumbnails::repo_url_name(display_name);
+            let source_name =
+                replay_control_core::thumbnails::libretro_source_name(display_name);
 
             let branch = db
                 .get_data_source(&source_name)
@@ -93,7 +94,10 @@ pub async fn set_boxart_override(
                 .unwrap_or_else(|| "master".to_string());
 
             let entries = db
-                .query_thumbnail_index(&source_name, "Named_Boxarts")
+                .query_thumbnail_index(
+                    &source_name,
+                    replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
+                )
                 .unwrap_or_default();
 
             if entries.iter().any(|e| e.filename == variant_filename) {
@@ -119,12 +123,13 @@ pub async fn set_boxart_override(
     };
 
     // Check if already downloaded; if not, download it.
-    let media_dir = storage.rc_dir().join("media").join(&system).join("boxart");
+    let media_dir = storage
+        .rc_dir()
+        .join("media")
+        .join(&system)
+        .join(ThumbnailKind::Boxart.media_dir());
     let local_path = media_dir.join(format!("{variant_filename}.png"));
-    let is_valid = local_path
-        .metadata()
-        .map(|m| m.len() >= 200)
-        .unwrap_or(false);
+    let is_valid = replay_control_core::thumbnails::is_valid_image(&local_path);
 
     if !is_valid {
         let m = manifest_match.clone();
@@ -133,7 +138,7 @@ pub async fn set_boxart_override(
 
         // Run the blocking download in a spawn_blocking context.
         let result = tokio::task::spawn_blocking(move || {
-            let bytes = thumbnail_manifest::download_thumbnail(&m, "Named_Boxarts")?;
+            let bytes = thumbnail_manifest::download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir())?;
             thumbnail_manifest::save_thumbnail(
                 &storage_root,
                 &sys,
@@ -150,7 +155,8 @@ pub async fn set_boxart_override(
     }
 
     // Persist the override in user_data.db.
-    let override_path = format!("boxart/{variant_filename}.png");
+    let boxart_dir = ThumbnailKind::Boxart.media_dir();
+    let override_path = format!("{boxart_dir}/{variant_filename}.png");
     {
         let ud_guard = state
             .user_data_db()
@@ -166,7 +172,7 @@ pub async fn set_boxart_override(
     // Invalidate the image cache for this system.
     state.cache.invalidate_system_images(&system);
 
-    let image_url = format!("/media/{system}/boxart/{variant_filename}.png");
+    let image_url = format!("/media/{system}/{boxart_dir}/{variant_filename}.png");
     Ok(image_url)
 }
 

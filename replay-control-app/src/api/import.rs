@@ -651,7 +651,7 @@ impl ThumbnailPipeline {
     fn run_thumbnail_update_blocking(&self, state: &AppState, start: std::time::Instant) {
         use crate::server_fns::{ThumbnailPhase, ThumbnailProgress};
         use replay_control_core::thumbnail_manifest;
-        use replay_control_core::thumbnails::ThumbnailKind;
+        use replay_control_core::thumbnails::ALL_THUMBNAIL_KINDS;
 
         let storage_root = state.storage().root.clone();
 
@@ -832,17 +832,19 @@ impl ThumbnailPipeline {
             }
 
             let progress_ref = self.progress.clone();
-            let prev_downloaded = total_downloaded;
 
-            // Lock DB for this system's boxart download.
-            {
+            for kind in ALL_THUMBNAIL_KINDS {
+                if cancel_ref.load(Ordering::Relaxed) {
+                    break;
+                }
+                let prev_downloaded = total_downloaded;
                 let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
                 if let Some(db) = db_guard.as_ref() {
                     let result = thumbnail_manifest::download_system_thumbnails(
                         db,
                         &storage_root,
                         system,
-                        ThumbnailKind::Boxart,
+                        *kind,
                         &|processed, total, downloaded| {
                             let mut guard = progress_ref.write().expect("lock");
                             if let Some(ref mut p) = *guard {
@@ -866,44 +868,14 @@ impl ThumbnailPipeline {
                             total_failed += stats.failed;
                         }
                         Err(e) => {
-                            tracing::warn!("Thumbnail download failed for {system}: {e}");
+                            let kind_name = kind.media_dir();
+                            tracing::warn!(
+                                "{kind_name} download failed for {system}: {e}"
+                            );
                         }
                     }
                 }
-                // MutexGuard drops here — DB lock released between boxart and snap.
-            }
-
-            // Lock DB for this system's snap download.
-            if !cancel_ref.load(Ordering::Relaxed) {
-                let prev_downloaded = total_downloaded;
-                let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-                if let Some(db) = db_guard.as_ref() {
-                    let result = thumbnail_manifest::download_system_thumbnails(
-                        db,
-                        &storage_root,
-                        system,
-                        ThumbnailKind::Snap,
-                        &|_processed, _total, downloaded| {
-                            let mut guard = progress_ref.write().expect("lock");
-                            if let Some(ref mut p) = *guard {
-                                p.downloaded = prev_downloaded + downloaded;
-                                p.elapsed_secs = start.elapsed().as_secs();
-                            }
-                        },
-                        cancel_ref,
-                    );
-
-                    match result {
-                        Ok(stats) => {
-                            total_downloaded += stats.downloaded;
-                            total_failed += stats.failed;
-                        }
-                        Err(e) => {
-                            tracing::warn!("Snap download failed for {system}: {e}");
-                        }
-                    }
-                }
-                // MutexGuard drops here — DB lock released.
+                // MutexGuard drops here — DB lock released between kinds.
             }
 
             // Lock DB for image path update, then release.
@@ -989,16 +961,21 @@ impl ThumbnailPipeline {
         };
 
         // Build dir indexes (filesystem scan, no DB needed).
+        use replay_control_core::thumbnails::ALL_THUMBNAIL_KINDS;
         let media_base = storage_root
             .join(replay_control_core::storage::RC_DIR)
             .join("media")
             .join(system);
 
-        let boxart_dir = media_base.join("boxart");
-        let snap_dir = media_base.join("snap");
-
-        let box_index = build_dir_index(&boxart_dir, "boxart");
-        let snap_index = build_dir_index(&snap_dir, "snap");
+        let indexes: Vec<_> = ALL_THUMBNAIL_KINDS
+            .iter()
+            .map(|kind| {
+                let dir = media_base.join(kind.media_dir());
+                build_dir_index(&dir, kind.media_dir())
+            })
+            .collect();
+        let box_index = &indexes[0];
+        let snap_index = &indexes[1];
 
         let is_arcade = replay_control_core::systems::is_arcade_system(system);
 
@@ -1016,8 +993,8 @@ impl ThumbnailPipeline {
             } else {
                 None
             };
-            let boxart_rel = find_best_match(&box_index, rom_filename, arcade_display);
-            let snap_rel = find_best_match(&snap_index, rom_filename, arcade_display);
+            let boxart_rel = find_best_match(box_index, rom_filename, arcade_display);
+            let snap_rel = find_best_match(snap_index, rom_filename, arcade_display);
 
             if boxart_rel.is_some() || snap_rel.is_some() {
                 updates.push((
