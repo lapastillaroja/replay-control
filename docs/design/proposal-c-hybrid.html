@@ -125,6 +125,18 @@
     box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.06);
   }
 
+  /* ── Tablet frame ── */
+  .tablet {
+    width: 1024px;
+    height: 768px;
+    border-radius: 24px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+
   /* ── Skin variables (matches current app _01-base.css) ── */
   .skin-replay {
     --bg: #0f1115;
@@ -168,6 +180,7 @@
   }
 
   .phone { background: var(--bg); }
+  .tablet { background: var(--bg); }
 
   /* ── Top bar: matches current app (app title + accent color) ── */
   .top-bar {
@@ -1014,6 +1027,135 @@
     flex-shrink: 0;
     cursor: pointer;
   }
+
+  /* ══════════════════════════════════════════════════════════ */
+  /* ── Tablet layout overrides                              ── */
+  /* ══════════════════════════════════════════════════════════ */
+
+  /* Two-column home layout for tablet */
+  .tablet .content.tablet-home {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    align-content: start;
+  }
+  .tablet .content.tablet-home .tablet-search-full {
+    grid-column: 1 / -1;
+  }
+  .tablet .content.tablet-home .tablet-col-left {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding-bottom: 16px;
+  }
+  .tablet .content.tablet-home .tablet-col-right {
+    overflow-y: auto;
+    padding-bottom: 16px;
+  }
+
+  /* Two-column game detail layout for tablet */
+  .tablet .content.tablet-detail {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    align-content: start;
+  }
+  .tablet .content.tablet-detail .tablet-detail-header {
+    grid-column: 1 / -1;
+  }
+  .tablet .content.tablet-detail .tablet-col-left {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding-bottom: 16px;
+  }
+  .tablet .content.tablet-detail .tablet-col-right {
+    overflow-y: auto;
+    padding-bottom: 16px;
+  }
+
+  /* Two-column settings layout for tablet */
+  .tablet .content.tablet-settings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    align-content: start;
+  }
+  .tablet .content.tablet-settings .tablet-settings-title {
+    grid-column: 1 / -1;
+  }
+  .tablet .content.tablet-settings .tablet-col-left {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding-bottom: 16px;
+  }
+  .tablet .content.tablet-settings .tablet-col-right {
+    overflow-y: auto;
+    padding-bottom: 16px;
+  }
+
+  /* Tablet recommendation grids: 4+ cards per row */
+  .tablet .recent-scroll {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 0 16px 8px;
+    overflow-x: visible;
+  }
+  .tablet .recent-card {
+    flex-shrink: 0;
+    width: calc(25% - 12px);
+    min-width: 7rem;
+  }
+  .tablet .series-scroll {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 4px 16px 12px;
+    overflow-x: visible;
+  }
+  .tablet .series-card {
+    flex-shrink: 0;
+    width: calc(25% - 12px);
+    min-width: 7rem;
+  }
+
+  /* Tablet systems grid: 3 columns */
+  .tablet .systems-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Tablet stats grid: 4 columns */
+  .tablet .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  /* Tablet meta grid: 3 columns */
+  .tablet .meta-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Tablet game cover sizing */
+  .tablet .game-cover {
+    max-height: 16rem;
+  }
+
+  /* Tablet discover links: more room */
+  .tablet .discover-links {
+    gap: 10px;
+  }
+
+  /* Tablet game actions: horizontal row */
+  .tablet .game-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .tablet .game-action {
+    width: auto;
+    flex: 1;
+    min-width: 140px;
+  }
 </style>
 </head>
 <body>
@@ -1279,6 +1421,211 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Tablet Landscape -->
+  <div class="screen-pair" style="margin-top: 32px;">
+    <div>
+      <div class="skin-label" style="color:#6366f1">Tablet Landscape</div>
+      <div class="tablet skin-replay">
+        <div class="top-bar">
+          <span class="top-bar-title">Replay Control</span>
+        </div>
+        <div class="content tablet-home">
+          <!-- Search spans full width -->
+          <div class="tablet-search-full">
+            <div class="home-search">Search games...</div>
+          </div>
+
+          <!-- Left column: hero + recently played + library stats -->
+          <div class="tablet-col-left">
+            <div class="section-title">Last Played</div>
+            <div class="hero-card">
+              <div class="hero-thumb">
+                <span style="font-size:1.4rem;color:var(--accent)">&#x1F3AE;</span>
+              </div>
+              <div class="hero-text">
+                <div class="hero-name">Super Street Fighter II Turbo</div>
+                <div class="hero-sub">Arcade &middot; 2 hours ago</div>
+              </div>
+            </div>
+
+            <div class="section-title">Recently Played</div>
+            <div class="recent-scroll">
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Metal Slug 3</div>
+                <div class="recent-sys">Neo Geo</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Sonic 2</div>
+                <div class="recent-sys">Mega Drive</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Mario Kart</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Castlevania</div>
+                <div class="recent-sys">NES</div>
+              </div>
+            </div>
+
+            <div class="section-title">Library</div>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-value">3,842</div>
+                <div class="stat-label">Games</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">24</div>
+                <div class="stat-label">Systems</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">47</div>
+                <div class="stat-label">Favorites</div>
+              </div>
+              <div class="stat-card">
+                <div class="storage-bar"><div class="storage-bar-fill" style="width:62%"></div></div>
+                <div class="stat-value">62%</div>
+                <div class="stat-label">38.4 / 64 GB USB</div>
+              </div>
+            </div>
+
+            <div class="section-title">Systems</div>
+            <div class="systems-grid">
+              <div class="system-card">
+                <div class="system-card-name">Arcade</div>
+                <div class="system-card-mfr">MAME</div>
+                <div class="system-card-count">1,247 games</div>
+              </div>
+              <div class="system-card">
+                <div class="system-card-name">SNES</div>
+                <div class="system-card-mfr">Nintendo</div>
+                <div class="system-card-count">328 games</div>
+              </div>
+              <div class="system-card">
+                <div class="system-card-name">Mega Drive</div>
+                <div class="system-card-mfr">Sega</div>
+                <div class="system-card-count">214 games</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right column: recommendations with 4+ cards per row -->
+          <div class="tablet-col-right">
+            <div class="section-title">Try Something New</div>
+            <div class="recent-scroll">
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Castlevania: SotN</div>
+                <div class="recent-sys">PlayStation</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Gradius III</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">R-Type</div>
+                <div class="recent-sys">PC Engine</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Contra III</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+            </div>
+
+            <div class="section-header">
+              <span class="section-title" style="padding:0">Because you love SNES</span>
+              <span class="section-link">See all</span>
+            </div>
+            <div class="recent-scroll">
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Chrono Trigger</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Final Fantasy VI</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">EarthBound</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Secret of Mana</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+            </div>
+
+            <div class="section-header">
+              <span class="section-title" style="padding:0">Top Rated</span>
+              <span class="section-link">See all</span>
+            </div>
+            <div class="recent-scroll">
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Zelda: ALttP</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Super Metroid</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Sonic 3</div>
+                <div class="recent-sys">Mega Drive</div>
+              </div>
+              <div class="recent-card">
+                <div class="recent-thumb"></div>
+                <div class="recent-name">Mario World</div>
+                <div class="recent-sys">SNES</div>
+              </div>
+            </div>
+
+            <div class="section-title">Discover</div>
+            <div class="discover-links">
+              <span class="discover-link">Action (847)</span>
+              <span class="discover-link">RPG (312)</span>
+              <span class="discover-link">Multiplayer (156)</span>
+              <span class="discover-link">Platformer (523)</span>
+              <span class="discover-link">Puzzle (198)</span>
+              <span class="discover-link">Sports (245)</span>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-nav">
+          <div class="nav-tab active">
+            <svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+            <span class="nav-label">Home</span>
+          </div>
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span class="nav-label">Favorites</span>
+          </div>
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span class="nav-label">Search</span>
+          </div>
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            <span class="nav-label">More</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1550,6 +1897,172 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Tablet Landscape -->
+  <div class="screen-pair" style="margin-top: 32px;">
+    <div>
+      <div class="skin-label" style="color:#6366f1">Tablet Landscape</div>
+      <div class="tablet skin-replay">
+        <div class="top-bar">
+          <span class="top-bar-title">Replay Control</span>
+        </div>
+        <div class="content tablet-detail">
+          <!-- Header spans full width -->
+          <div class="tablet-detail-header">
+            <div class="detail-header">
+              <span class="back-btn">&#x2190; Back</span>
+              <span class="detail-title">Super Street Fighter II</span>
+            </div>
+          </div>
+
+          <!-- Left column: cover + launch + info grid -->
+          <div class="tablet-col-left">
+            <div class="game-cover">
+              <span class="game-cover-placeholder">Box Art<br>Super Street Fighter II<br>(USA)</span>
+            </div>
+            <div class="change-cover-link">Change cover &#x203A;</div>
+
+            <div class="launch-btn">&#x25B6; Launch on TV</div>
+
+            <div class="section-title">Info</div>
+            <div class="meta-grid">
+              <div class="meta-item">
+                <span class="meta-label">System</span>
+                <span class="meta-value">SNES</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Year</span>
+                <span class="meta-value">1994</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Developer</span>
+                <span class="meta-value">Capcom</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Genre</span>
+                <span class="meta-value">Fighting</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Players</span>
+                <span class="meta-value">2</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Rating</span>
+                <span class="meta-value">4.2 / 5.0</span>
+              </div>
+            </div>
+
+            <div class="section-title">Actions</div>
+            <div class="game-actions">
+              <div class="game-action"><span class="icon">&#x2606;</span> Add to Favorites</div>
+              <div class="game-action"><span class="icon">&#x270F;</span> Rename</div>
+              <div class="game-action danger"><span class="icon">&#x2715;</span> Delete ROM</div>
+            </div>
+          </div>
+
+          <!-- Right column: description + chips + series + similar -->
+          <div class="tablet-col-right">
+            <div class="section-title">Description</div>
+            <div class="desc-block">
+              <div class="desc-text">The definitive version of the world's most popular fighting game arrives on SNES with all-new moves, characters, and game modes. Featuring 16 playable characters, enhanced graphics, and improved controls, this is the ultimate fighting experience for the 16-bit era.</div>
+            </div>
+
+            <!-- Regional variants -->
+            <div class="chip-section">
+              <div class="chip-section-title">Regional Variants</div>
+              <div class="chip-row">
+                <span class="chip active">USA</span>
+                <span class="chip">Europe</span>
+                <span class="chip">Japan</span>
+              </div>
+            </div>
+
+            <!-- Arcade versions -->
+            <div class="chip-section">
+              <div class="chip-section-title">Arcade Versions</div>
+              <div class="chip-row">
+                <span class="chip">ssf2</span>
+                <span class="chip">ssf2t</span>
+                <span class="chip">ssf2xj</span>
+              </div>
+            </div>
+
+            <!-- Series -->
+            <div class="series-section">
+              <div class="series-section-title">Street Fighter Series</div>
+              <div class="series-scroll">
+                <div class="series-card">
+                  <div class="series-thumb"></div>
+                  <div class="series-name">Street Fighter II</div>
+                  <div class="series-system">SNES</div>
+                </div>
+                <div class="series-card">
+                  <div class="series-thumb"></div>
+                  <div class="series-name">SF Alpha 3</div>
+                  <div class="series-system">GBA</div>
+                </div>
+                <div class="series-card">
+                  <div class="series-thumb"></div>
+                  <div class="series-name">SF III: 3rd Strike</div>
+                  <div class="series-system">Arcade</div>
+                </div>
+                <div class="series-card">
+                  <div class="series-thumb"></div>
+                  <div class="series-name">SF Alpha 2</div>
+                  <div class="series-system">SNES</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- More Like This -->
+            <div class="series-section">
+              <div class="series-section-title">More Like This</div>
+              <div class="series-scroll">
+                <div class="series-card">
+                  <div class="series-thumb"></div>
+                  <div class="series-name">Mortal Kombat II</div>
+                  <div class="series-system">SNES</div>
+                </div>
+                <div class="series-card">
+                  <div class="series-thumb"></div>
+                  <div class="series-name">Killer Instinct</div>
+                  <div class="series-system">SNES</div>
+                </div>
+                <div class="series-card">
+                  <div class="series-thumb"></div>
+                  <div class="series-name">Tekken 3</div>
+                  <div class="series-system">PlayStation</div>
+                </div>
+                <div class="series-card">
+                  <div class="series-thumb"></div>
+                  <div class="series-name">King of Fighters</div>
+                  <div class="series-system">Neo Geo</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-nav">
+          <div class="nav-tab active">
+            <svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+            <span class="nav-label">Home</span>
+          </div>
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span class="nav-label">Favorites</span>
+          </div>
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span class="nav-label">Search</span>
+          </div>
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            <span class="nav-label">More</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1835,6 +2348,166 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Tablet Landscape -->
+  <div class="screen-pair" style="margin-top: 32px;">
+    <div>
+      <div class="skin-label" style="color:#6366f1">Tablet Landscape</div>
+      <div class="tablet skin-replay">
+        <div class="top-bar">
+          <span class="top-bar-title">Replay Control</span>
+        </div>
+        <div class="content tablet-settings">
+          <!-- Page title spans full width -->
+          <div class="tablet-settings-title">
+            <div class="page-title">More</div>
+          </div>
+
+          <!-- Left column: Preferences + Game Data -->
+          <div class="tablet-col-left">
+            <!-- PREFERENCES section -->
+            <div class="more-section">
+              <div class="more-section-header">Preferences</div>
+
+              <div class="menu-list">
+                <div class="menu-item">
+                  <span class="menu-icon">&#x1F3A8;</span>
+                  <span class="menu-label">Skin</span>
+                  <span class="menu-chevron">&#x203A;</span>
+                </div>
+              </div>
+
+              <!-- Region preference (inline) -->
+              <div class="setting-inline">
+                <div class="setting-title">Region Preference</div>
+                <div class="setting-hint">Choose preferred region for game names and box art</div>
+                <div class="form-label">Primary</div>
+                <select class="form-input">
+                  <option selected>USA</option>
+                  <option>Europe</option>
+                  <option>Japan</option>
+                  <option>World</option>
+                </select>
+                <div class="form-label">Secondary</div>
+                <select class="form-input">
+                  <option selected>None</option>
+                  <option>Europe</option>
+                  <option>Japan</option>
+                </select>
+              </div>
+
+              <!-- Text size toggle (inline) -->
+              <div class="setting-inline">
+                <div class="setting-title">Text Size</div>
+                <div class="setting-hint">Adjust text size for readability</div>
+                <div class="text-size-toggle">
+                  <div class="text-size-btn text-size-btn-sm active">A</div>
+                  <div class="text-size-btn text-size-btn-lg">A</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- GAME DATA section -->
+            <div class="more-section">
+              <div class="more-section-header">Game Data</div>
+              <div class="menu-list">
+                <div class="menu-item">
+                  <span class="menu-icon">&#x1F4DA;</span>
+                  <span class="menu-label">Metadata</span>
+                  <span class="menu-chevron">&#x203A;</span>
+                </div>
+                <div class="menu-item">
+                  <span class="menu-icon">&#x1F511;</span>
+                  <span class="menu-label">GitHub Token</span>
+                  <span class="menu-chevron">&#x203A;</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right column: System -->
+          <div class="tablet-col-right">
+            <div class="more-section">
+              <div class="more-section-header">System</div>
+              <div class="menu-list">
+                <div class="menu-item">
+                  <span class="menu-icon">&#x1F4F6;</span>
+                  <span class="menu-label">Wi-Fi</span>
+                  <span class="menu-chevron">&#x203A;</span>
+                </div>
+                <div class="menu-item">
+                  <span class="menu-icon">&#x1F4C1;</span>
+                  <span class="menu-label">NFS Share</span>
+                  <span class="menu-chevron">&#x203A;</span>
+                </div>
+                <div class="menu-item">
+                  <span class="menu-icon">&#x1F4BB;</span>
+                  <span class="menu-label">Hostname</span>
+                  <span class="menu-chevron">&#x203A;</span>
+                </div>
+                <div class="menu-item">
+                  <span class="menu-icon">&#x1F4DC;</span>
+                  <span class="menu-label">Logs</span>
+                  <span class="menu-chevron">&#x203A;</span>
+                </div>
+              </div>
+
+              <div class="info-grid">
+                <div class="info-row">
+                  <span class="info-label">Storage</span>
+                  <span class="info-value">USB</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Path</span>
+                  <span class="info-value">/media/usb</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Disk Total</span>
+                  <span class="info-value">64.0 GB</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Disk Used</span>
+                  <span class="info-value">38.4 GB</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Disk Available</span>
+                  <span class="info-value">25.6 GB</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Ethernet</span>
+                  <span class="info-value"><PI_IP></span>
+                </div>
+                <div class="info-row">
+                  <span class="info-label">Wi-Fi</span>
+                  <span class="info-value" style="color:var(--text-secondary)">Not connected</span>
+                </div>
+              </div>
+
+              <div class="reboot-btn">&#x1F504; Reboot System</div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-nav">
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+            <span class="nav-label">Home</span>
+          </div>
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span class="nav-label">Favorites</span>
+          </div>
+          <div class="nav-tab">
+            <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span class="nav-label">Search</span>
+          </div>
+          <div class="nav-tab active">
+            <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            <span class="nav-label">More</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
