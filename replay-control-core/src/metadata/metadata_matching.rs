@@ -106,6 +106,7 @@ pub fn match_roms_to_metadata(
                     fetched_at: now,
                     box_art_path: None,
                     screenshot_path: None,
+                    title_path: None,
                 },
             });
         }
@@ -132,6 +133,7 @@ mod tests {
             fetched_at: 0,
             box_art_path: None,
             screenshot_path: None,
+            title_path: None,
         }
     }
 

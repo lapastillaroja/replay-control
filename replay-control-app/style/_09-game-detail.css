@@ -42,12 +42,24 @@
     padding: 4px 0;
 }
 
+.game-screenshot-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
 .game-screenshot-img {
     max-width: 100%;
     max-height: 15rem;
     object-fit: contain;
     border-radius: var(--radius);
     border: 1px solid var(--border);
+}
+
+.game-screenshot-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
 }
 
 .game-meta-grid {

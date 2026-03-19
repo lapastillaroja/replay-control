@@ -4,7 +4,7 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
-use super::{GameMetadata, MetadataDb, MetadataStats};
+use super::{GameMetadata, ImagePathUpdate, MetadataDb, MetadataStats};
 
 impl MetadataDb {
     /// Look up cached metadata for a specific game.
@@ -13,7 +13,7 @@ impl MetadataDb {
             .conn
             .query_row(
                 "SELECT description, rating, publisher, developer, genre, players, release_year,
-                        cooperative, source, fetched_at, box_art_path, screenshot_path
+                        cooperative, source, fetched_at, box_art_path, screenshot_path, title_path
                  FROM game_metadata WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
                 |row| {
@@ -30,6 +30,7 @@ impl MetadataDb {
                         fetched_at: row.get(9)?,
                         box_art_path: row.get(10)?,
                         screenshot_path: row.get(11)?,
+                        title_path: row.get(12)?,
                     })
                 },
             )
@@ -260,7 +261,8 @@ impl MetadataDb {
             .conn
             .prepare(
                 "SELECT rom_filename, description, rating, publisher, developer, genre, players,
-                        release_year, cooperative, source, fetched_at, box_art_path, screenshot_path
+                        release_year, cooperative, source, fetched_at, box_art_path, screenshot_path,
+                        title_path
                  FROM game_metadata WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare system_metadata_all: {e}")))?;
@@ -282,6 +284,7 @@ impl MetadataDb {
                         fetched_at: row.get(10)?,
                         box_art_path: row.get(11)?,
                         screenshot_path: row.get(12)?,
+                        title_path: row.get(13)?,
                     },
                 ))
             })
@@ -530,10 +533,9 @@ impl MetadataDb {
     }
 
     /// Bulk update image paths for games within a single transaction.
-    /// Each entry is `(system, rom_filename, box_art_path, screenshot_path)`.
     pub fn bulk_update_image_paths(
         &mut self,
-        entries: &[(String, String, Option<String>, Option<String>)],
+        entries: &[ImagePathUpdate],
     ) -> Result<usize> {
         let tx = self
             .conn
@@ -544,15 +546,15 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "UPDATE game_metadata SET box_art_path = ?3, screenshot_path = ?4
+                    "UPDATE game_metadata SET box_art_path = ?3, screenshot_path = ?4, title_path = ?5
                      WHERE system = ?1 AND rom_filename = ?2",
                 )
                 .map_err(|e| Error::Other(format!("Prepare failed: {e}")))?;
 
             let mut insert_stmt = tx
                 .prepare(
-                    "INSERT OR IGNORE INTO game_metadata (system, rom_filename, source, fetched_at, box_art_path, screenshot_path)
-                     VALUES (?1, ?2, 'thumbnails', ?3, ?4, ?5)",
+                    "INSERT OR IGNORE INTO game_metadata (system, rom_filename, source, fetched_at, box_art_path, screenshot_path, title_path)
+                     VALUES (?1, ?2, 'thumbnails', ?3, ?4, ?5, ?6)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare insert failed: {e}")))?;
 
@@ -561,13 +563,26 @@ impl MetadataDb {
                 .unwrap_or_default()
                 .as_secs() as i64;
 
-            for (system, rom_filename, box_art, screenshot) in entries {
+            for entry in entries {
                 let updated = stmt
-                    .execute(params![system, rom_filename, box_art, screenshot])
+                    .execute(params![
+                        entry.system,
+                        entry.rom_filename,
+                        entry.box_art_path,
+                        entry.screenshot_path,
+                        entry.title_path,
+                    ])
                     .map_err(|e| Error::Other(format!("Image path update failed: {e}")))?;
                 if updated == 0 {
                     insert_stmt
-                        .execute(params![system, rom_filename, now, box_art, screenshot])
+                        .execute(params![
+                            entry.system,
+                            entry.rom_filename,
+                            now,
+                            entry.box_art_path,
+                            entry.screenshot_path,
+                            entry.title_path,
+                        ])
                         .map_err(|e| Error::Other(format!("Image path insert failed: {e}")))?;
                 }
                 count += 1;
@@ -584,7 +599,7 @@ impl MetadataDb {
         let count = self
             .conn
             .execute(
-                "UPDATE game_metadata SET box_art_path = NULL, screenshot_path = NULL WHERE system = ?1",
+                "UPDATE game_metadata SET box_art_path = NULL, screenshot_path = NULL, title_path = NULL WHERE system = ?1",
                 params![system],
             )
             .map_err(|e| Error::Other(format!("Clear image paths failed: {e}")))?;
@@ -788,12 +803,13 @@ mod tests {
         // Insert a thumbnail-only row (no description) via bulk_update_image_paths.
         // This simulates what happens when thumbnails are downloaded for a game
         // that has no LaunchBox metadata entry.
-        db.bulk_update_image_paths(&[(
-            "snes".into(),
-            "Metroid.sfc".into(),
-            Some("boxart/Metroid.png".into()),
-            None,
-        )])
+        db.bulk_update_image_paths(&[super::super::ImagePathUpdate {
+            system: "snes".into(),
+            rom_filename: "Metroid.sfc".into(),
+            box_art_path: Some("boxart/Metroid.png".into()),
+            screenshot_path: None,
+            title_path: None,
+        }])
         .unwrap();
 
         // Populate game_library with 3 games.

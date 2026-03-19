@@ -101,6 +101,7 @@ pub struct GameInfo {
     // --- Image URLs (relative paths under /media/) ---
     pub box_art_url: Option<String>,
     pub screenshot_url: Option<String>,
+    pub title_url: Option<String>,
 }
 
 /// System info returned by get_info server function.
@@ -197,6 +198,7 @@ pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str
                     publisher: None,
                     box_art_url: None,
                     screenshot_url: None,
+                    title_url: None,
                 }
             }
             None => GameInfo {
@@ -220,6 +222,7 @@ pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str
                 publisher: None,
                 box_art_url: None,
                 screenshot_url: None,
+                title_url: None,
             },
         }
     } else {
@@ -305,6 +308,7 @@ pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str
             publisher: None,
             box_art_url: None,
             screenshot_url: None,
+            title_url: None,
         }
     };
 
@@ -377,6 +381,17 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
                         info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
                     }
                 }
+                if let Some(ref path) = meta.title_path {
+                    let full = state
+                        .storage()
+                        .rc_dir()
+                        .join("media")
+                        .join(&info.system)
+                        .join(path);
+                    if is_valid_image(&full) {
+                        info.title_url = Some(format!("/media/{}/{path}", info.system));
+                    }
+                }
             }
             Ok(None) => {}
             Err(e) => {
@@ -392,8 +407,8 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     // Filesystem fallback: if no image URLs from DB, check filesystem.
     // For box art, use the unified resolve_box_art() (same path as cards/recommendations)
     // to ensure consistent box art between detail pages and series/recommendation cards.
-    // For screenshots, use find_image_on_disk() directly.
-    if info.box_art_url.is_none() || info.screenshot_url.is_none() {
+    // For screenshots and title screens, use find_image_on_disk() directly.
+    if info.box_art_url.is_none() || info.screenshot_url.is_none() || info.title_url.is_none() {
         if info.box_art_url.is_none() {
             let image_index = state.cache.get_image_index(&state, &info.system);
             if let Some(url) =
@@ -404,15 +419,24 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
                 info.box_art_url = Some(url);
             }
         }
-        if info.screenshot_url.is_none() {
-            let media_base = state.storage().rc_dir().join("media").join(&info.system);
-            if let Some(path) = find_image_on_disk(
+        let media_base = state.storage().rc_dir().join("media").join(&info.system);
+        if info.screenshot_url.is_none()
+            && let Some(path) = find_image_on_disk(
                 &media_base,
                 replay_control_core::thumbnails::ThumbnailKind::Snap.media_dir(),
                 &info.rom_filename,
-            ) {
-                info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
-            }
+            )
+        {
+            info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
+        }
+        if info.title_url.is_none()
+            && let Some(path) = find_image_on_disk(
+                &media_base,
+                replay_control_core::thumbnails::ThumbnailKind::Title.media_dir(),
+                &info.rom_filename,
+            )
+        {
+            info.title_url = Some(format!("/media/{}/{path}", info.system));
         }
     }
 }

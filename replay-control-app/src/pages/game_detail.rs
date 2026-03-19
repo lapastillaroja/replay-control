@@ -130,6 +130,8 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let box_art_url = RwSignal::new(game.box_art_url.clone());
     let screenshot_url = StoredValue::new(game.screenshot_url.clone());
     let has_screenshot = game.screenshot_url.is_some();
+    let title_url = StoredValue::new(game.title_url.clone());
+    let has_title = game.title_url.is_some();
 
     // Box art variant picker state.
     // Suppress "Change cover" for hack and special ROMs — they should inherit the base ROM's cover.
@@ -355,11 +357,22 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         </Show>
 
         // Screenshots Gallery (hidden when no screenshots)
-        <Show when=move || has_screenshot>
+        <Show when=move || has_screenshot || has_title>
             <section class="section game-section">
                 <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.screenshots")}</h2>
                 <div class="game-screenshots">
-                    <img class="game-screenshot-img" src=screenshot_url.get_value() alt="Screenshot" />
+                    {title_url.get_value().map(|url| view! {
+                        <div class="game-screenshot-item">
+                            <img class="game-screenshot-img" src=url alt="Title screen" />
+                            <span class="game-screenshot-label">{move || t(i18n.locale.get(), "game_detail.title_screen")}</span>
+                        </div>
+                    })}
+                    {screenshot_url.get_value().map(|url| view! {
+                        <div class="game-screenshot-item">
+                            <img class="game-screenshot-img" src=url alt="In-game screenshot" />
+                            <span class="game-screenshot-label">{move || t(i18n.locale.get(), "game_detail.in_game")}</span>
+                        </div>
+                    })}
                 </div>
             </section>
         </Show>

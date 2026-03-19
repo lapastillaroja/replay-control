@@ -180,6 +180,7 @@ pub fn import_launchbox(
                     fetched_at: now,
                     box_art_path: None,
                     screenshot_path: None,
+                    title_path: None,
                 };
                 batch.push((system_folder.to_string(), filename.clone(), meta));
             }

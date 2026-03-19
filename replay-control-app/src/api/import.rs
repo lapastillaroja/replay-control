@@ -917,11 +917,12 @@ impl ThumbnailPipeline {
             .collect();
         let box_index = &indexes[0];
         let snap_index = &indexes[1];
+        let title_index = &indexes[2];
 
         let is_arcade = replay_control_core::systems::is_arcade_system(system);
 
         // Match ROM filenames to images (in-memory, no DB needed).
-        let mut updates: Vec<(String, String, Option<String>, Option<String>)> = Vec::new();
+        let mut updates: Vec<replay_control_core::metadata_db::ImagePathUpdate> = Vec::new();
 
         for rom_filename in &rom_filenames {
             let arcade_display = if is_arcade {
@@ -936,24 +937,26 @@ impl ThumbnailPipeline {
             };
             let boxart_rel = find_best_match(box_index, rom_filename, arcade_display, None);
             let snap_rel = find_best_match(snap_index, rom_filename, arcade_display, None);
+            let title_rel = find_best_match(title_index, rom_filename, arcade_display, None);
 
-            if boxart_rel.is_some() || snap_rel.is_some() {
-                updates.push((
-                    system.to_string(),
-                    rom_filename.clone(),
-                    boxart_rel,
-                    snap_rel,
-                ));
+            if boxart_rel.is_some() || snap_rel.is_some() || title_rel.is_some() {
+                updates.push(replay_control_core::metadata_db::ImagePathUpdate {
+                    system: system.to_string(),
+                    rom_filename: rom_filename.clone(),
+                    box_art_path: boxart_rel,
+                    screenshot_path: snap_rel,
+                    title_path: title_rel,
+                });
             }
         }
 
         // Lock DB to write image path updates, then release.
         if !updates.is_empty() {
             let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-            if let Some(db) = guard.as_mut() {
-                if let Err(e) = db.bulk_update_image_paths(&updates) {
-                    tracing::warn!("Failed to update image paths for {system}: {e}");
-                }
+            if let Some(db) = guard.as_mut()
+                && let Err(e) = db.bulk_update_image_paths(&updates)
+            {
+                tracing::warn!("Failed to update image paths for {system}: {e}");
             }
             // MutexGuard drops here.
         }

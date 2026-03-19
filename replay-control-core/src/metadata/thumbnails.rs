@@ -13,10 +13,12 @@ use crate::error::{Error, Result};
 pub enum ThumbnailKind {
     Boxart,
     Snap,
+    Title,
 }
 
 /// All thumbnail kinds, for iteration.
-pub const ALL_THUMBNAIL_KINDS: &[ThumbnailKind] = &[ThumbnailKind::Boxart, ThumbnailKind::Snap];
+pub const ALL_THUMBNAIL_KINDS: &[ThumbnailKind] =
+    &[ThumbnailKind::Boxart, ThumbnailKind::Snap, ThumbnailKind::Title];
 
 impl ThumbnailKind {
     /// Subdirectory name in the libretro-thumbnails repo.
@@ -24,6 +26,7 @@ impl ThumbnailKind {
         match self {
             ThumbnailKind::Boxart => "Named_Boxarts",
             ThumbnailKind::Snap => "Named_Snaps",
+            ThumbnailKind::Title => "Named_Titles",
         }
     }
 
@@ -32,6 +35,7 @@ impl ThumbnailKind {
         match self {
             ThumbnailKind::Boxart => "boxart",
             ThumbnailKind::Snap => "snap",
+            ThumbnailKind::Title => "title",
         }
     }
 
@@ -40,6 +44,7 @@ impl ThumbnailKind {
         match s {
             "Named_Boxarts" => Some(ThumbnailKind::Boxart),
             "Named_Snaps" => Some(ThumbnailKind::Snap),
+            "Named_Titles" => Some(ThumbnailKind::Title),
             _ => None,
         }
     }
@@ -725,12 +730,14 @@ mod tests {
     fn thumbnail_kind_repo_dir() {
         assert_eq!(ThumbnailKind::Boxart.repo_dir(), "Named_Boxarts");
         assert_eq!(ThumbnailKind::Snap.repo_dir(), "Named_Snaps");
+        assert_eq!(ThumbnailKind::Title.repo_dir(), "Named_Titles");
     }
 
     #[test]
     fn thumbnail_kind_media_dir() {
         assert_eq!(ThumbnailKind::Boxart.media_dir(), "boxart");
         assert_eq!(ThumbnailKind::Snap.media_dir(), "snap");
+        assert_eq!(ThumbnailKind::Title.media_dir(), "title");
     }
 
     // --- Arcade image matching pipeline ---

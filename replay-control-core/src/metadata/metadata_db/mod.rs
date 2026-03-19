@@ -97,6 +97,7 @@ pub struct GameMetadata {
     pub fetched_at: i64,
     pub box_art_path: Option<String>,
     pub screenshot_path: Option<String>,
+    pub title_path: Option<String>,
 }
 
 /// Import statistics.
@@ -155,6 +156,27 @@ pub struct GameEntry {
     pub series_key: String,
 }
 
+/// Full enrichment update for a ROM in game_library (including driver_status).
+#[derive(Debug, Clone)]
+pub struct RomEnrichment {
+    pub rom_filename: String,
+    pub box_art_url: Option<String>,
+    pub genre: Option<String>,
+    pub players: Option<u8>,
+    pub rating: Option<f32>,
+    pub driver_status: Option<String>,
+}
+
+/// Lightweight enrichment update for a ROM in game_library (no driver_status).
+#[derive(Debug, Clone)]
+pub struct BoxArtGenreRating {
+    pub rom_filename: String,
+    pub box_art_url: Option<String>,
+    pub genre: Option<String>,
+    pub players: Option<u8>,
+    pub rating: Option<f32>,
+}
+
 /// A game alias entry for bulk insertion into the `game_alias` table.
 #[derive(Debug, Clone)]
 pub struct AliasInsert {
@@ -163,6 +185,16 @@ pub struct AliasInsert {
     pub alias_name: String,
     pub alias_region: String,
     pub source: String,
+}
+
+/// An image path update for bulk insertion via `bulk_update_image_paths`.
+#[derive(Debug, Clone)]
+pub struct ImagePathUpdate {
+    pub system: String,
+    pub rom_filename: String,
+    pub box_art_path: Option<String>,
+    pub screenshot_path: Option<String>,
+    pub title_path: Option<String>,
 }
 
 /// A game series entry for bulk insertion into the `game_series` table.
@@ -252,6 +284,7 @@ impl MetadataDb {
                     fetched_at INTEGER NOT NULL,
                     box_art_path TEXT,
                     screenshot_path TEXT,
+                    title_path TEXT,
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -424,6 +457,7 @@ mod tests {
             fetched_at: 0,
             box_art_path: box_art.map(String::from),
             screenshot_path: None,
+            title_path: None,
         }
     }
 

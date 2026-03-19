@@ -236,6 +236,8 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.description" => "Description",
         "game_detail.no_description" => "No description available",
         "game_detail.screenshots" => "Screenshots",
+        "game_detail.title_screen" => "Title Screen",
+        "game_detail.in_game" => "In-Game",
         "game_detail.no_screenshots" => "No screenshots available",
         "game_detail.videos" => "Videos",
         "game_detail.no_videos" => "No videos available",
