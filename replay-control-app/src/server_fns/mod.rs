@@ -345,6 +345,9 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
                 if meta.publisher.is_some() {
                     info.publisher = meta.publisher;
                 }
+                if info.developer.is_empty() && meta.developer.is_some() {
+                    info.developer = meta.developer.unwrap_or_default();
+                }
                 // Use LaunchBox genre as fallback when baked-in DB has none.
                 if info.genre.is_empty() && meta.genre.is_some() {
                     info.genre = meta.genre.unwrap_or_default();
