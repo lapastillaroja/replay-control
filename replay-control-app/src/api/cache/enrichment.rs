@@ -81,15 +81,9 @@ impl GameLibrary {
             return;
         }
 
-        // Build enrichment tuples: (filename, box_art_url, genre, players, rating).
+        // Build enrichment entries: box_art_url, genre, players, rating per ROM.
         // Genre and players are only filled from LaunchBox when game_library has no value.
-        let enrichments: Vec<(
-            String,
-            Option<String>,
-            Option<String>,
-            Option<u8>,
-            Option<f32>,
-        )> = rom_filenames
+        let enrichments: Vec<replay_control_core::metadata_db::BoxArtGenreRating> = rom_filenames
             .iter()
             .filter_map(|filename| {
                 let art = self.resolve_box_art(state, &index, system, filename);
@@ -107,7 +101,13 @@ impl GameLibrary {
                 if art.is_none() && rating.is_none() && genre.is_none() && players.is_none() {
                     return None;
                 }
-                Some((filename.clone(), art, genre, players, rating))
+                Some(replay_control_core::metadata_db::BoxArtGenreRating {
+                    rom_filename: filename.clone(),
+                    box_art_url: art,
+                    genre,
+                    players,
+                    rating,
+                })
             })
             .collect();
 
@@ -125,35 +125,28 @@ impl GameLibrary {
 
         // Also update L1 cache entries.
         // Build a HashMap for O(1) lookup instead of O(n*m) nested scan.
-        let enrichment_map: HashMap<
-            &str,
-            &(
-                String,
-                Option<String>,
-                Option<String>,
-                Option<u8>,
-                Option<f32>,
-            ),
-        > = enrichments.iter().map(|e| (e.0.as_str(), e)).collect();
+        let enrichment_map: HashMap<&str, &replay_control_core::metadata_db::BoxArtGenreRating> =
+            enrichments
+                .iter()
+                .map(|e| (e.rom_filename.as_str(), e))
+                .collect();
 
         if let Ok(mut guard) = self.roms.write()
             && let Some(entry) = guard.get_mut(system)
         {
             let roms = std::sync::Arc::make_mut(&mut entry.data);
             for rom in roms {
-                if let Some((_, art, _genre, players, rating)) =
-                    enrichment_map.get(rom.game.rom_filename.as_str())
-                {
-                    if art.is_some() {
-                        rom.box_art_url = art.clone();
+                if let Some(e) = enrichment_map.get(rom.game.rom_filename.as_str()) {
+                    if e.box_art_url.is_some() {
+                        rom.box_art_url = e.box_art_url.clone();
                     }
                     // RomEntry doesn't carry genre — L1 genre is
                     // served via lookup_genre() which reads game_library.
-                    if let Some(r) = rating {
-                        rom.rating = Some(*r);
+                    if let Some(r) = e.rating {
+                        rom.rating = Some(r);
                     }
                     if rom.players.is_none() {
-                        rom.players = *players;
+                        rom.players = e.players;
                     }
                 }
             }

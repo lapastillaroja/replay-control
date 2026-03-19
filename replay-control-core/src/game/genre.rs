@@ -1,15 +1,15 @@
-/// Runtime genre normalizer.
-///
-/// Maps raw genre strings from any source (baked-in databases, LaunchBox,
-/// catver.ini) to a small set of ~18 canonical genre groups. This is the
-/// single source of truth for genre normalization at runtime, superseding
-/// the build-time `normalize_arcade_genre()` and `normalize_console_genre()`
-/// functions (which remain in build.rs for code-gen but use the same mapping).
-///
-/// Handles:
-/// - LaunchBox semicolon separators ("Action; Platform" -> normalize first part)
-/// - catver.ini slash separators ("Maze / Shooter" -> normalize first part)
-/// - Direct genre strings ("Fighting", "Shoot'em Up", etc.)
+//! Runtime genre normalizer.
+//!
+//! Maps raw genre strings from any source (baked-in databases, LaunchBox,
+//! catver.ini) to a small set of ~18 canonical genre groups. This is the
+//! single source of truth for genre normalization at runtime, superseding
+//! the build-time `normalize_arcade_genre()` and `normalize_console_genre()`
+//! functions (which remain in build.rs for code-gen but use the same mapping).
+//!
+//! Handles:
+//!  - LaunchBox semicolon separators ("Action; Platform" -> normalize first part)
+//!  - catver.ini slash separators ("Maze / Shooter" -> normalize first part)
+//!  - Direct genre strings ("Fighting", "Shoot'em Up", etc.)
 
 /// Normalize a raw genre string to one of the canonical genre groups.
 ///

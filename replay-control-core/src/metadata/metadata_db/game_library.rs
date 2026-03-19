@@ -288,14 +288,7 @@ impl MetadataDb {
     pub fn update_rom_enrichment(
         &mut self,
         system: &str,
-        enrichments: &[(
-            String,
-            Option<String>,
-            Option<String>,
-            Option<u8>,
-            Option<f32>,
-            Option<String>,
-        )],
+        enrichments: &[super::RomEnrichment],
     ) -> Result<usize> {
         let tx = self
             .conn
@@ -312,20 +305,21 @@ impl MetadataDb {
                 )
                 .map_err(|e| Error::Other(format!("Prepare update_rom_enrichment: {e}")))?;
 
-            for (filename, box_art_url, genre, players, rating, driver_status) in enrichments {
-                let genre_group = genre
+            for e in enrichments {
+                let genre_group = e
+                    .genre
                     .as_deref()
                     .map(crate::genre::normalize_genre)
                     .unwrap_or("");
                 let updated = stmt
                     .execute(params![
-                        filename,
-                        box_art_url,
-                        genre,
+                        e.rom_filename,
+                        e.box_art_url,
+                        e.genre,
                         genre_group,
-                        players.map(|p| p as i32),
-                        rating,
-                        driver_status,
+                        e.players.map(|p| p as i32),
+                        e.rating,
+                        e.driver_status,
                         system,
                     ])
                     .map_err(|e| Error::Other(format!("Update rom enrichment: {e}")))?;
@@ -344,13 +338,7 @@ impl MetadataDb {
     pub fn update_box_art_genre_rating(
         &mut self,
         system: &str,
-        enrichments: &[(
-            String,
-            Option<String>,
-            Option<String>,
-            Option<u8>,
-            Option<f32>,
-        )],
+        enrichments: &[super::BoxArtGenreRating],
     ) -> Result<()> {
         let tx = self
             .conn
@@ -388,26 +376,26 @@ impl MetadataDb {
                 )
                 .map_err(|e| Error::Other(format!("Prepare rating update: {e}")))?;
 
-            for (filename, box_art_url, genre, players, rating) in enrichments {
-                if let Some(url) = box_art_url {
+            for e in enrichments {
+                if let Some(ref url) = e.box_art_url {
                     art_stmt
-                        .execute(params![filename, url, system])
+                        .execute(params![e.rom_filename, url, system])
                         .map_err(|e| Error::Other(format!("Update box_art_url: {e}")))?;
                 }
-                if let Some(g) = genre {
+                if let Some(ref g) = e.genre {
                     let gg = crate::genre::normalize_genre(g);
                     genre_stmt
-                        .execute(params![filename, g, gg, system])
+                        .execute(params![e.rom_filename, g, gg, system])
                         .map_err(|e| Error::Other(format!("Update genre: {e}")))?;
                 }
-                if let Some(p) = players {
+                if let Some(p) = e.players {
                     players_stmt
-                        .execute(params![filename, *p as i32, system])
+                        .execute(params![e.rom_filename, p as i32, system])
                         .map_err(|e| Error::Other(format!("Update players: {e}")))?;
                 }
-                if let Some(r) = rating {
+                if let Some(r) = e.rating {
                     rating_stmt
-                        .execute(params![filename, r, system])
+                        .execute(params![e.rom_filename, r, system])
                         .map_err(|e| Error::Other(format!("Update rating: {e}")))?;
                 }
             }
@@ -538,7 +526,13 @@ mod tests {
 
         db.update_box_art_genre_rating(
             "sega_smd",
-            &[("Sonic.md".into(), None, Some("Platform".into()), None, None)],
+            &[super::super::BoxArtGenreRating {
+                rom_filename: "Sonic.md".into(),
+                box_art_url: None,
+                genre: Some("Platform".into()),
+                players: None,
+                rating: None,
+            }],
         )
         .unwrap();
 
@@ -561,7 +555,13 @@ mod tests {
 
         db.update_box_art_genre_rating(
             "sega_smd",
-            &[("Sonic.md".into(), None, Some("Platform".into()), None, None)],
+            &[super::super::BoxArtGenreRating {
+                rom_filename: "Sonic.md".into(),
+                box_art_url: None,
+                genre: Some("Platform".into()),
+                players: None,
+                rating: None,
+            }],
         )
         .unwrap();
 
@@ -587,14 +587,20 @@ mod tests {
         db.update_box_art_genre_rating(
             "sega_smd",
             &[
-                ("Sonic.md".into(), None, Some("Platform".into()), None, None),
-                (
-                    "Streets.md".into(),
-                    None,
-                    Some("Beat'em Up".into()),
-                    None,
-                    None,
-                ),
+                super::super::BoxArtGenreRating {
+                    rom_filename: "Sonic.md".into(),
+                    box_art_url: None,
+                    genre: Some("Platform".into()),
+                    players: None,
+                    rating: None,
+                },
+                super::super::BoxArtGenreRating {
+                    rom_filename: "Streets.md".into(),
+                    box_art_url: None,
+                    genre: Some("Beat'em Up".into()),
+                    players: None,
+                    rating: None,
+                },
             ],
         )
         .unwrap();

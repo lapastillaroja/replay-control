@@ -157,16 +157,16 @@ pub fn hash_and_identify(
         };
 
         // Check cache: if mtime matches, use cached hash.
-        if let Some(cached) = cached_hashes.get(rom_filename) {
-            if cached.hash_mtime == current_mtime {
-                results.push(HashResult {
-                    rom_filename: rom_filename.clone(),
-                    crc32: cached.crc32,
-                    mtime_secs: current_mtime,
-                    matched_name: cached.matched_name.clone(),
-                });
-                continue;
-            }
+        if let Some(cached) = cached_hashes.get(rom_filename)
+            && cached.hash_mtime == current_mtime
+        {
+            results.push(HashResult {
+                rom_filename: rom_filename.clone(),
+                crc32: cached.crc32,
+                mtime_secs: current_mtime,
+                matched_name: cached.matched_name.clone(),
+            });
+            continue;
         }
 
         // Cache miss or stale — compute CRC32.

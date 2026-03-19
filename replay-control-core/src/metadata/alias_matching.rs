@@ -145,13 +145,13 @@ pub fn build_wikidata_series_tuples(
                 .push(rom.base_title.clone());
         }
         // Roman numeral variant: "streets of rage ii" -> "streets of rage 2"
-        if let Some(arabic) = roman_to_arabic_suffix(&normalized) {
-            if seen.insert((arabic.clone(), rom.base_title.clone())) {
-                norm_to_bases
-                    .entry(arabic)
-                    .or_default()
-                    .push(rom.base_title.clone());
-            }
+        if let Some(arabic) = roman_to_arabic_suffix(&normalized)
+            && seen.insert((arabic.clone(), rom.base_title.clone()))
+        {
+            norm_to_bases
+                .entry(arabic)
+                .or_default()
+                .push(rom.base_title.clone());
         }
         // Subtitle-stripped: "dodonpachi ii - bee storm" -> "dodonpachi ii"
         for sep in [" - ", " / ", ": "] {

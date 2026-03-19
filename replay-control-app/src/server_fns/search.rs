@@ -555,15 +555,13 @@ pub async fn global_search(
 
                     // Alias expansion: if this ROM's base_title was found via alias search,
                     // give it a minimum score so it appears in results.
-                    if score == 0 {
-                        if let Some(system_aliases) = alias_base_titles.get(&sys.folder_name) {
-                            if let Some(bt) = system_base_titles.get(&r.game.rom_filename) {
-                                if system_aliases.contains(bt) {
-                                    // Score it like a word-level match (below substring tier).
-                                    score = 350;
-                                }
-                            }
-                        }
+                    if score == 0
+                        && let Some(system_aliases) = alias_base_titles.get(&sys.folder_name)
+                        && let Some(bt) = system_base_titles.get(&r.game.rom_filename)
+                        && system_aliases.contains(bt)
+                    {
+                        // Score it like a word-level match (below substring tier).
+                        score = 350;
                     }
 
                     if score > 0 { Some((score, r)) } else { None }
