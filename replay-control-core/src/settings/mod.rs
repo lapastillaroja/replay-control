@@ -144,6 +144,53 @@ pub fn write_font_size(storage_root: &Path, size: &str) -> Result<()> {
     Ok(())
 }
 
+/// Read the skin preference from `.replay-control/settings.cfg`.
+/// Returns `Some(index)` if the user has explicitly chosen a skin (sync off),
+/// or `None` if the key is absent (sync on — read from `replay.cfg` instead).
+pub fn read_skin(storage_root: &Path) -> Option<u32> {
+    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+    let config = ReplayConfig::from_file(&path).ok()?;
+    let value = config.get("skin")?;
+    if value.is_empty() {
+        return None;
+    }
+    value.parse().ok()
+}
+
+/// Write the skin preference to `.replay-control/settings.cfg`.
+/// Pass `Some(index)` to store a specific skin (sync off).
+/// Pass `None` to clear the key (sync on — defer to `replay.cfg`).
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_skin(storage_root: &Path, skin: Option<u32>) -> Result<()> {
+    let rc_dir = storage_root.join(RC_DIR);
+    if !rc_dir.exists() {
+        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
+    }
+
+    let path = rc_dir.join(SETTINGS_FILE);
+
+    let mut config = if path.exists() {
+        ReplayConfig::from_file(&path)?
+    } else {
+        ReplayConfig::parse("")?
+    };
+
+    match skin {
+        Some(index) => config.set("skin", &index.to_string()),
+        None => config.set("skin", ""),
+    }
+
+    if path.exists() {
+        config.write_to_file(&path, &path)?;
+    } else {
+        let value = skin.map(|i| i.to_string()).unwrap_or_default();
+        let content = format!("skin = \"{value}\"\n");
+        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
+    }
+
+    Ok(())
+}
+
 /// Read the GitHub API key from `.replay-control/settings.cfg`.
 /// Returns `None` if the file doesn't exist or the key is empty.
 pub fn read_github_api_key(storage_root: &Path) -> Option<String> {
@@ -295,5 +342,39 @@ mod tests {
             read_region_preference_secondary(&tmp),
             Some(RegionPreference::Usa)
         );
+    }
+
+    // --- Skin preference tests ---
+
+    #[test]
+    fn skin_none_when_no_file() {
+        let tmp = tempdir();
+        assert_eq!(read_skin(&tmp), None);
+    }
+
+    #[test]
+    fn write_and_read_skin() {
+        let tmp = tempdir();
+        write_skin(&tmp, Some(5)).unwrap();
+        assert_eq!(read_skin(&tmp), Some(5));
+    }
+
+    #[test]
+    fn write_skin_none_clears() {
+        let tmp = tempdir();
+        write_skin(&tmp, Some(3)).unwrap();
+        assert_eq!(read_skin(&tmp), Some(3));
+        write_skin(&tmp, None).unwrap();
+        assert_eq!(read_skin(&tmp), None);
+    }
+
+    #[test]
+    fn skin_preserves_other_keys() {
+        let tmp = tempdir();
+        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
+        write_skin(&tmp, Some(7)).unwrap();
+
+        assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
+        assert_eq!(read_skin(&tmp), Some(7));
     }
 }

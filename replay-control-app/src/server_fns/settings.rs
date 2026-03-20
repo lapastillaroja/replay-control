@@ -240,6 +240,10 @@ pub async fn get_skins() -> Result<(u32, bool, Vec<SkinInfo>), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    // Persist to `.replay-control/settings.cfg` (not replay.cfg).
+    let storage = state.storage();
+    replay_control_core::settings::write_skin(&storage.root, Some(index))
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     // When setting a skin manually, disable sync and store the override.
     let mut guard = state.skin_override.write().expect("skin lock poisoned");
     *guard = Some(index);
@@ -249,12 +253,19 @@ pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
     if enabled {
+        // Clear the skin from settings.cfg so we defer to replay.cfg.
+        replay_control_core::settings::write_skin(&storage.root, None)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         let mut guard = state.skin_override.write().expect("skin lock poisoned");
         *guard = None;
     } else {
         // Read the current effective skin before acquiring the write lock.
         let current = state.effective_skin();
+        // Persist the current skin to settings.cfg.
+        replay_control_core::settings::write_skin(&storage.root, Some(current))
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         let mut guard = state.skin_override.write().expect("skin lock poisoned");
         *guard = Some(current);
     }

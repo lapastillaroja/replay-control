@@ -27,8 +27,8 @@ pub struct AppState {
     pub cache: Arc<GameLibrary>,
     /// When set, --storage-path was given on the CLI and auto-detection is skipped.
     pub storage_path_override: Option<PathBuf>,
-    /// When Some, the app uses this skin index instead of reading from replay.cfg.
-    /// Set via the skin page when "Sync with ReplayOS" is disabled.
+    /// When Some, the app uses this skin index (persisted in `settings.cfg`).
+    /// When None, defers to `replay.cfg`'s `system_skin` (sync mode).
     pub skin_override: Arc<std::sync::RwLock<Option<u32>>>,
     /// Metadata DB handle (lazily opened on first access).
     pub(crate) metadata_db:
@@ -115,6 +115,10 @@ impl AppState {
         let import = Arc::new(ImportPipeline::new(busy.clone()));
         let thumbnails = Arc::new(ThumbnailPipeline::new(busy.clone()));
 
+        // Read skin preference from `.replay-control/settings.cfg` before
+        // `storage` is moved into the Arc below.
+        let initial_skin = replay_control_core::settings::read_skin(&storage.root);
+
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
@@ -125,7 +129,7 @@ impl AppState {
                 scanning.clone(),
             )),
             storage_path_override,
-            skin_override: Arc::new(std::sync::RwLock::new(None)),
+            skin_override: Arc::new(std::sync::RwLock::new(initial_skin)),
             metadata_db,
             user_data_db,
             import,
@@ -227,7 +231,8 @@ impl AppState {
         replay_control_core::settings::read_region_preference_secondary(&storage.root)
     }
 
-    /// Get the effective skin index: override if set, otherwise from replay.cfg.
+    /// Get the effective skin index: app preference from `settings.cfg` if set,
+    /// otherwise fall back to `replay.cfg`'s `system_skin` (sync mode).
     pub fn effective_skin(&self) -> u32 {
         if let Some(index) = *self.skin_override.read().expect("skin lock poisoned") {
             index
@@ -254,8 +259,8 @@ impl AppState {
     /// Re-detect storage from config (unless a CLI override was given).
     /// Returns `true` if the storage location actually changed.
     pub fn refresh_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
-        // Re-read config from disk so non-storage settings (system_skin,
-        // wifi, etc.) are picked up on next SSR render.
+        // Re-read config from disk so system-level settings (wifi, NFS,
+        // system_skin for sync mode, etc.) are picked up on next SSR render.
         let config_path = self.config_file_path();
         let config = if config_path.exists() {
             ReplayConfig::from_file(&config_path)?

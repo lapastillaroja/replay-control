@@ -126,8 +126,9 @@ impl ReplayConfig {
         self.get("video_connector")
     }
 
-    /// Active skin index (0-10 for built-in skins, 11+ for custom slots).
-    /// Defaults to 0 (the REPLAY skin) when unset or not a valid number.
+    /// Active skin index from `replay.cfg` (0-10 for built-in skins).
+    /// Used as fallback when the app has no skin preference in `settings.cfg`
+    /// (i.e., sync mode is on). Defaults to 0 (the REPLAY skin).
     pub fn system_skin(&self) -> u32 {
         self.get("system_skin")
             .and_then(|v| v.parse().ok())
