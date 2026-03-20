@@ -75,10 +75,48 @@ pub fn split_json_array(json: &str) -> Vec<&str> {
     objects
 }
 
+/// Find the byte offset of a JSON key that appears at the top level of an object
+/// (i.e., not inside a string value). Returns the index of the opening `"` of the key.
+fn find_json_key(json: &str, key: &str) -> Option<usize> {
+    let search = format!("\"{}\"", key);
+    let bytes = json.as_bytes();
+    let mut pos = 0;
+    while pos < bytes.len() {
+        let idx = json[pos..].find(&search)?;
+        let abs = pos + idx;
+        // Check we are not inside a string value by counting unescaped quotes before this position
+        let in_string = is_inside_string(json, abs);
+        if !in_string {
+            return Some(abs);
+        }
+        pos = abs + 1;
+    }
+    None
+}
+
+/// Check whether a given byte offset falls inside a JSON string value.
+/// Counts unescaped double-quotes from the start of `json` up to `pos`.
+fn is_inside_string(json: &str, pos: usize) -> bool {
+    let bytes = &json.as_bytes()[..pos];
+    let mut in_str = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && in_str {
+            i += 2; // skip escaped character
+            continue;
+        }
+        if bytes[i] == b'"' {
+            in_str = !in_str;
+        }
+        i += 1;
+    }
+    in_str
+}
+
 /// Extract a string value for a given key from a JSON object.
 pub fn extract_json_string(json: &str, key: &str) -> Option<String> {
     let search = format!("\"{}\"", key);
-    let idx = json.find(&search)?;
+    let idx = find_json_key(json, key)?;
     let rest = &json[idx + search.len()..];
     // Skip whitespace and colon
     let rest = rest.trim_start();
@@ -139,7 +177,7 @@ pub fn extract_json_string(json: &str, key: &str) -> Option<String> {
 /// Extract a numeric value for a given key.
 pub fn extract_json_number(json: &str, key: &str) -> Option<i64> {
     let search = format!("\"{}\"", key);
-    let idx = json.find(&search)?;
+    let idx = find_json_key(json, key)?;
     let rest = &json[idx + search.len()..];
     let rest = rest.trim_start();
     let rest = rest.strip_prefix(':')?;
@@ -149,7 +187,9 @@ pub fn extract_json_number(json: &str, key: &str) -> Option<i64> {
         return None;
     }
 
-    let end = rest.find(|c: char| !c.is_ascii_digit() && c != '-' && c != '+')?;
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit() && c != '-' && c != '+')
+        .unwrap_or(rest.len());
     let num_str = &rest[..end];
     num_str.parse().ok()
 }
@@ -157,7 +197,7 @@ pub fn extract_json_number(json: &str, key: &str) -> Option<i64> {
 /// Extract a float value for a given key.
 pub fn extract_json_float(json: &str, key: &str) -> Option<f32> {
     let search = format!("\"{}\"", key);
-    let idx = json.find(&search)?;
+    let idx = find_json_key(json, key)?;
     let rest = &json[idx + search.len()..];
     let rest = rest.trim_start();
     let rest = rest.strip_prefix(':')?;

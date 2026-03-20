@@ -155,6 +155,14 @@ pub fn parse_cfg_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     for line in text.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix(key) {
+            // Ensure the key is an exact match, not just a prefix of a longer
+            // key name (e.g., "video_mode" when searching for "video").
+            // The character immediately after the key must be '=' or whitespace.
+            match rest.as_bytes().first() {
+                Some(b'=') | Some(b' ') | Some(b'\t') => {}
+                Some(_) => continue, // longer key name, skip
+                None => continue,    // key with no value, skip
+            }
             let rest = rest.trim_start();
             if let Some(value) = rest.strip_prefix('=') {
                 let value = value.trim();

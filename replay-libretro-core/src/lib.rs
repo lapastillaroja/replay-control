@@ -710,9 +710,7 @@ fn render_home(s: &mut CoreState) {
     let fb = &mut s.display.framebuffer;
 
     // Clear background
-    for px in fb.iter_mut() {
-        *px = pal.bg;
-    }
+    fb.fill(pal.bg);
 
     // -- Header bar: "REPLAY" left, version right --
     let header_h = (label_scale * 16 + 8) as i32;
@@ -740,13 +738,23 @@ fn render_home(s: &mut CoreState) {
     let menu_start_y = title_y + (title_scale * 18) as i32 + my + 8;
     let item_h = (font_scale * 18 + 8) as i32;
 
+    // Copy count text into stack buffers to avoid overlapping borrow of `s`
+    let mut recents_buf = [0u8; 16];
+    let mut favorites_buf = [0u8; 16];
+    let recents_len = s.scratch.recents_count_text.len().min(16);
+    let favorites_len = s.scratch.favorites_count_text.len().min(16);
+    recents_buf[..recents_len].copy_from_slice(&s.scratch.recents_count_text.as_bytes()[..recents_len]);
+    favorites_buf[..favorites_len].copy_from_slice(&s.scratch.favorites_count_text.as_bytes()[..favorites_len]);
+    let recents_count = core::str::from_utf8(&recents_buf[..recents_len]).unwrap_or("");
+    let favorites_count = core::str::from_utf8(&favorites_buf[..favorites_len]).unwrap_or("");
+
     // Menu item 0: Recently Played
     let y0 = menu_start_y;
-    render_home_menu_item(s, 0, "Recently Played", &s.scratch.recents_count_text.clone(), y0);
+    render_home_menu_item(s, 0, "Recently Played", recents_count, y0);
 
     // Menu item 1: Favorites
     let y1 = y0 + item_h + 4;
-    render_home_menu_item(s, 1, "Favorites", &s.scratch.favorites_count_text.clone(), y1);
+    render_home_menu_item(s, 1, "Favorites", favorites_count, y1);
 
     // -- Controls reference at bottom --
     let fb = &mut s.display.framebuffer;
@@ -820,9 +828,7 @@ fn render_detail(s: &mut CoreState) {
     let fb = &mut s.display.framebuffer;
 
     // Clear background
-    for px in fb.iter_mut() {
-        *px = pal.bg;
-    }
+    fb.fill(pal.bg);
 
     // Get the current list and detail cache
     let (entries, _detail_cache) = match s.game.list_mode {
@@ -1072,6 +1078,7 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
     let h = s.display.layout.height;
     let font_scale = s.display.layout.font_scale;
     let title_scale = s.display.layout.title_scale;
+    let label_scale = s.display.layout.label_scale;
     let mx = s.display.layout.margin_x as i32;
     let my = s.display.layout.margin_y as i32;
     let max_desc_lines = s.display.layout.max_desc_lines_full as usize;
@@ -1137,10 +1144,11 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
 
             // Scroll indicator -- from pre-computed scratch buffer
             if !s.scratch.scroll_indicator.is_empty() {
-                let ix = (w as i32) - mx - (s.scratch.scroll_indicator.len() as i32 * 9);
+                let indicator_char_w = (label_scale * 9) as i32;
+                let ix = (w as i32) - mx - (s.scratch.scroll_indicator.len() as i32 * indicator_char_w);
                 // Position at the end of visible text area
                 let indicator_y = y.min(footer_top - line_h) + 2;
-                draw_string(fb, w, h, &s.scratch.scroll_indicator, ix, indicator_y, pal.nav, 1);
+                draw_string(fb, w, h, &s.scratch.scroll_indicator, ix, indicator_y, pal.nav, label_scale);
             }
         }
     } else {
@@ -1769,12 +1777,8 @@ pub unsafe extern "C" fn retro_unload_game() {
     // Zero-fill present buffers so the host never reads stale frame data
     // after the game is unloaded. Don't deallocate -- the host's DRM thread
     // may still be reading the pointer we handed out.
-    for px in s.display.present_buffer.iter_mut() {
-        *px = 0;
-    }
-    for px in s.display.present_buffer_16.iter_mut() {
-        *px = 0;
-    }
+    s.display.present_buffer.fill(0);
+    s.display.present_buffer_16.fill(0);
 }
 
 // ---- Save state serialization ----

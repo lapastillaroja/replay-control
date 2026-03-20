@@ -59,10 +59,15 @@ pub fn draw_string_truncated(
     scale: u32,
     max_chars: usize,
 ) {
-    if text.len() <= max_chars {
+    if text.chars().count() <= max_chars {
         draw_string(fb, w, h, text, x, y, color, scale);
     } else {
-        let truncated = &text[..max_chars.saturating_sub(2)];
+        let byte_end = text
+            .char_indices()
+            .nth(max_chars.saturating_sub(2))
+            .map(|(i, _)| i)
+            .unwrap_or(text.len());
+        let truncated = &text[..byte_end];
         let end_x = draw_string(fb, w, h, truncated, x, y, color, scale);
         draw_string(fb, w, h, "..", end_x, y, color, scale);
     }
