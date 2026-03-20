@@ -10,6 +10,7 @@ mod recommendations;
 mod relationships;
 
 pub use aliases_series::SequelChainInfo;
+pub use game_library::DeveloperGamesFilter;
 
 use std::path::{Path, PathBuf};
 
@@ -154,6 +155,10 @@ pub struct GameEntry {
     /// Computed by stripping trailing numbers/roman numerals from `base_title`.
     /// Empty string means no series could be extracted.
     pub series_key: String,
+    /// Developer/manufacturer name.
+    /// For arcade: populated from arcade_db manufacturer at scan time.
+    /// For console: populated from game_metadata.developer via enrichment.
+    pub developer: String,
 }
 
 /// Full enrichment update for a ROM in game_library (including driver_status).
@@ -330,6 +335,7 @@ impl MetadataDb {
                     hash_mtime INTEGER,
                     hash_matched_name TEXT,
                     series_key TEXT NOT NULL DEFAULT '',
+                    developer TEXT NOT NULL DEFAULT '',
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -352,6 +358,10 @@ impl MetadataDb {
                 CREATE INDEX IF NOT EXISTS idx_game_library_series_key
                   ON game_library (series_key)
                   WHERE series_key != '';
+
+                CREATE INDEX IF NOT EXISTS idx_game_library_developer
+                  ON game_library (developer)
+                  WHERE developer != '';
 
                 CREATE TABLE IF NOT EXISTS game_alias (
                     system TEXT NOT NULL,
@@ -421,6 +431,7 @@ impl MetadataDb {
             hash_mtime: row.get(19)?,
             hash_matched_name: row.get(20)?,
             series_key: row.get::<_, String>(21).unwrap_or_default(),
+            developer: row.get::<_, String>(22).unwrap_or_default(),
         })
     }
 }
@@ -500,6 +511,7 @@ mod tests {
             hash_mtime: None,
             hash_matched_name: None,
             series_key: String::new(),
+            developer: String::new(),
         }
     }
 

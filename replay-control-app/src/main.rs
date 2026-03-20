@@ -117,6 +117,9 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetAllGenres>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemGenres>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RandomGame>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchByDeveloper>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetDeveloperGames>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetDeveloperGenres>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRegionPreference>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveRegionPreference>(
         );

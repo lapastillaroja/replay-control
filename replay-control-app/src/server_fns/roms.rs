@@ -278,6 +278,7 @@ pub async fn get_roms_page(
             driver_status: rom.driver_status,
             rating: rom.rating,
             players: rom.players,
+            genre: String::new(),
         })
         .collect();
 

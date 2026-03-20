@@ -63,6 +63,9 @@ pub struct RomListEntry {
     /// Maximum number of players, from game_db or arcade_db.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub players: Option<u8>,
+    /// Genre string for display (e.g., "Platform", "Beat 'em Up").
+    #[serde(default)]
+    pub genre: String,
 }
 
 /// Unified game metadata returned by server functions.

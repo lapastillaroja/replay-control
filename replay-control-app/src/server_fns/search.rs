@@ -1,5 +1,21 @@
 use super::*;
 
+/// Developer search result: a matched developer with their games.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeveloperSearchResult {
+    pub developer_name: String,
+    pub total_count: usize,
+    pub games: Vec<RecommendedGame>,
+    pub other_developers: Vec<DeveloperMatch>,
+}
+
+/// An additional developer that matched the search query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeveloperMatch {
+    pub name: String,
+    pub game_count: usize,
+}
+
 /// A single result in global search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalSearchResult {
@@ -428,8 +444,9 @@ pub async fn global_search(
                 Err(_) => continue,
             };
 
-        // Batch-load genre groups and base_titles for this system.
-        let (system_genre_groups, system_base_titles): (
+        // Batch-load genre groups, base_titles, and developers for this system.
+        let (system_genre_groups, system_base_titles, system_developers): (
+            std::collections::HashMap<String, String>,
             std::collections::HashMap<String, String>,
             std::collections::HashMap<String, String>,
         ) = state
@@ -447,7 +464,12 @@ pub async fn global_search(
                             .filter(|e| !e.base_title.is_empty())
                             .map(|e| (e.rom_filename.clone(), e.base_title.clone()))
                             .collect();
-                        (genres, base_titles)
+                        let developers: std::collections::HashMap<String, String> = entries
+                            .iter()
+                            .filter(|e| !e.developer.is_empty())
+                            .map(|e| (e.rom_filename.clone(), e.developer.clone()))
+                            .collect();
+                        (genres, base_titles, developers)
                     })
                     .unwrap_or_default()
             })
@@ -562,6 +584,15 @@ pub async fn global_search(
                     {
                         // Score it like a word-level match (below substring tier).
                         score = 350;
+                    }
+
+                    // Developer matching: if query matches the developer name,
+                    // give a score so searching "Capcom" returns all Capcom games.
+                    if score == 0
+                        && let Some(dev) = system_developers.get(&r.game.rom_filename)
+                        && dev.to_lowercase().contains(&q)
+                    {
+                        score = 250;
                     }
 
                     if score > 0 { Some((score, r)) } else { None }
@@ -686,6 +717,253 @@ pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnEr
         .unwrap_or_default();
 
     Ok(genres)
+}
+
+/// Search for a developer matching the query. If found, returns the developer name,
+/// total game count, and up to `limit` games with box art resolved.
+#[server(prefix = "/sfn")]
+pub async fn search_by_developer(
+    query: String,
+    limit: usize,
+) -> Result<Option<DeveloperSearchResult>, ServerFnError> {
+    use super::recommendations::{resolve_box_art_for_picks, to_recommended};
+
+    let q = query.trim().to_lowercase();
+    if q.len() < 2 {
+        return Ok(None);
+    }
+
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let region_pref = state.region_preference();
+    let region_secondary = state.region_preference_secondary();
+    let region_str = region_pref.as_str();
+    let region_secondary_str = region_secondary.map(|r| r.as_str()).unwrap_or("");
+    let limit = limit.clamp(1, 30);
+
+    // Single DB access: find matching developers, then fetch games for the top match.
+    let db_result = state.cache.with_db_read(&storage, |db| {
+        let matches = db.find_developer_matches(&q).unwrap_or_default();
+        if matches.is_empty() {
+            return None;
+        }
+
+        let (top_dev, top_count) = &matches[0];
+        let games = db
+            .games_by_developer(top_dev, limit, region_str, region_secondary_str)
+            .unwrap_or_default();
+
+        let other_developers: Vec<DeveloperMatch> = matches[1..]
+            .iter()
+            .map(|(name, count)| DeveloperMatch {
+                name: name.clone(),
+                game_count: *count,
+            })
+            .collect();
+
+        Some((top_dev.clone(), *top_count, games, other_developers))
+    });
+
+    let Some(Some((developer_name, total_count, game_entries, other_developers))) = db_result
+    else {
+        return Ok(None);
+    };
+
+    if game_entries.is_empty() {
+        return Ok(None);
+    }
+
+    let systems = state.cache.get_systems(&storage);
+    let mut games: Vec<RecommendedGame> = game_entries
+        .iter()
+        .filter_map(|entry| to_recommended(&entry.system, entry, &systems))
+        .collect();
+
+    resolve_box_art_for_picks(&state, &mut games);
+
+    Ok(Some(DeveloperSearchResult {
+        developer_name,
+        total_count,
+        games,
+        other_developers,
+    }))
+}
+
+/// A system that a developer has games on, with game count and display name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeveloperSystem {
+    pub system: String,
+    pub system_display: String,
+    pub game_count: usize,
+}
+
+/// Response for the developer game list page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeveloperPageData {
+    pub roms: Vec<RomListEntry>,
+    pub total: usize,
+    pub has_more: bool,
+    pub developer: String,
+    pub systems: Vec<DeveloperSystem>,
+}
+
+/// Get genres available for a developer's games, optionally filtered by system.
+#[server(prefix = "/sfn")]
+pub async fn get_developer_genres(
+    developer: String,
+    #[server(default)] system: String,
+) -> Result<Vec<String>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+
+    let system_filter = if system.is_empty() {
+        None
+    } else {
+        Some(system.as_str())
+    };
+
+    let genres = state
+        .cache
+        .with_db_read(&storage, |db| {
+            db.developer_genre_groups(&developer, system_filter)
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+
+    Ok(genres)
+}
+
+/// Get paginated game list for a developer, with optional system and content filters.
+#[allow(clippy::too_many_arguments)]
+#[server(prefix = "/sfn")]
+pub async fn get_developer_games(
+    developer: String,
+    #[server(default)] system: String,
+    offset: usize,
+    limit: usize,
+    #[server(default)] hide_hacks: bool,
+    #[server(default)] hide_translations: bool,
+    #[server(default)] hide_clones: bool,
+    #[server(default)] multiplayer_only: bool,
+    #[server(default)] genre: String,
+    #[server(default)] min_rating: Option<f32>,
+) -> Result<DeveloperPageData, ServerFnError> {
+    use replay_control_core::metadata_db::DeveloperGamesFilter;
+    use replay_control_core::systems as sys_db;
+
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let region_pref = state.region_preference();
+    let region_secondary = state.region_preference_secondary();
+    let region_str = region_pref.as_str();
+    let region_secondary_str = region_secondary.map(|r| r.as_str()).unwrap_or("");
+    let limit = limit.clamp(1, 200);
+
+    let system_filter = if system.is_empty() {
+        None
+    } else {
+        Some(system.as_str())
+    };
+
+    let filters = DeveloperGamesFilter {
+        hide_hacks,
+        hide_translations,
+        hide_clones,
+        multiplayer_only,
+        genre: &genre,
+        min_rating: min_rating.map(|r| r as f64),
+    };
+
+    // Fetch systems and paginated games in one DB session.
+    let db_result = state.cache.with_db_read(&storage, |db| {
+        let systems_raw = db.developer_systems(&developer).unwrap_or_default();
+        let (entries, total) = db
+            .developer_games_paginated(
+                &developer,
+                system_filter,
+                offset,
+                limit,
+                region_str,
+                region_secondary_str,
+                &filters,
+            )
+            .unwrap_or_default();
+        (systems_raw, entries, total)
+    });
+
+    let Some((systems_raw, entries, total)) = db_result else {
+        return Ok(DeveloperPageData {
+            roms: Vec::new(),
+            total: 0,
+            has_more: false,
+            developer,
+            systems: Vec::new(),
+        });
+    };
+
+    // Convert system folder names to display names.
+    let systems: Vec<DeveloperSystem> = systems_raw
+        .into_iter()
+        .map(|(sys, count)| {
+            let display = sys_db::find_system(&sys)
+                .map(|s| s.display_name.to_string())
+                .unwrap_or_else(|| sys.clone());
+            DeveloperSystem {
+                system: sys,
+                system_display: display,
+                game_count: count,
+            }
+        })
+        .collect();
+
+    let has_more = offset + entries.len() < total;
+
+    // Collect the set of distinct systems in this page to batch-load favorites.
+    let page_systems: std::collections::HashSet<&str> =
+        entries.iter().map(|e| e.system.as_str()).collect();
+    let fav_sets: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        page_systems
+            .into_iter()
+            .map(|sys| {
+                let set = state.cache.get_favorites_set(&storage, sys);
+                (sys.to_string(), set)
+            })
+            .collect();
+
+    // Convert GameEntry -> RomListEntry with box art resolution and favorites.
+    let list_entries: Vec<RomListEntry> = entries
+        .into_iter()
+        .map(|entry| {
+            let box_art_url = resolve_box_art_url(&state, &entry.system, &entry.rom_filename);
+            let is_favorite = fav_sets
+                .get(&entry.system)
+                .is_some_and(|set| set.contains(&entry.rom_filename));
+            RomListEntry {
+                display_name: entry
+                    .display_name
+                    .unwrap_or_else(|| entry.rom_filename.clone()),
+                system: entry.system,
+                rom_filename: entry.rom_filename,
+                rom_path: entry.rom_path,
+                size_bytes: entry.size_bytes,
+                is_m3u: entry.is_m3u,
+                is_favorite,
+                box_art_url,
+                driver_status: entry.driver_status,
+                rating: entry.rating,
+                players: entry.players,
+                genre: entry.genre.unwrap_or_default(),
+            }
+        })
+        .collect();
+
+    Ok(DeveloperPageData {
+        roms: list_entries,
+        total,
+        has_more,
+        developer,
+        systems,
+    })
 }
 
 #[cfg(all(test, feature = "ssr"))]

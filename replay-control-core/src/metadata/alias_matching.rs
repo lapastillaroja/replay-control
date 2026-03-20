@@ -353,6 +353,7 @@ mod tests {
             hash_mtime: None,
             hash_matched_name: None,
             series_key: String::new(),
+            developer: String::new(),
         }
     }
 

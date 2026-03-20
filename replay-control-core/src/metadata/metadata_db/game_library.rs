@@ -6,6 +6,17 @@ use crate::error::{Error, Result};
 
 use super::{GameEntry, MetadataDb, SystemMeta, unix_now};
 
+/// Filter options for the developer games paginated query.
+#[derive(Debug, Default)]
+pub struct DeveloperGamesFilter<'a> {
+    pub hide_hacks: bool,
+    pub hide_translations: bool,
+    pub hide_clones: bool,
+    pub multiplayer_only: bool,
+    pub genre: &'a str,
+    pub min_rating: Option<f64>,
+}
+
 impl MetadataDb {
     /// Get all distinct `box_art_url` values from `game_library` for a given system.
     ///
@@ -88,9 +99,9 @@ impl MetadataDb {
                     "INSERT OR IGNORE INTO game_library (system, rom_filename, rom_path, display_name,
                      size_bytes, is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                      is_clone, base_title, region, is_translation, is_hack, is_special,
-                     crc32, hash_mtime, hash_matched_name, series_key)
+                     crc32, hash_mtime, hash_matched_name, series_key, developer)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-                             ?19, ?20, ?21, ?22)",
+                             ?19, ?20, ?21, ?22, ?23)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -118,6 +129,7 @@ impl MetadataDb {
                     rom.hash_mtime,
                     &rom.hash_matched_name,
                     &rom.series_key,
+                    &rom.developer,
                 ])
                 .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
             }
@@ -152,7 +164,7 @@ impl MetadataDb {
                 "SELECT system, rom_filename, rom_path, display_name, size_bytes,
                         is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
                         is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name, series_key
+                        crc32, hash_mtime, hash_matched_name, series_key, developer
                  FROM game_library WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_entries: {e}")))?;
@@ -476,6 +488,63 @@ impl MetadataDb {
         Ok(map)
     }
 
+    /// Fetch current developers from `game_library` for a single system.
+    /// Returns a set of `rom_filename` values that already have a non-empty developer.
+    /// Used during enrichment to know which ROMs already have developer data.
+    pub fn system_rom_developers(&self, system: &str) -> Result<std::collections::HashSet<String>> {
+        use std::collections::HashSet;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename FROM game_library
+                 WHERE system = ?1 AND developer != ''",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_rom_developers: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("System rom developers query: {e}")))?;
+
+        let mut set = HashSet::new();
+        for row in rows.flatten() {
+            set.insert(row);
+        }
+        Ok(set)
+    }
+
+    /// Batch update `developer` for entries in game_library.
+    /// Only updates entries where the existing developer is empty.
+    pub fn update_developers(
+        &mut self,
+        system: &str,
+        developers: &[(String, String)],
+    ) -> Result<()> {
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE game_library SET developer = ?2
+                     WHERE system = ?3 AND rom_filename = ?1
+                       AND developer = ''",
+                )
+                .map_err(|e| Error::Other(format!("Prepare developer update: {e}")))?;
+
+            for (filename, developer) in developers {
+                stmt.execute(params![filename, developer, system])
+                    .map_err(|e| Error::Other(format!("Update developer: {e}")))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(())
+    }
+
     /// Fetch current player counts from `game_library` for a single system.
     /// Returns the set of `rom_filename` values that already have a players value.
     /// Used during enrichment to know which ROMs already have player data.
@@ -499,6 +568,332 @@ impl MetadataDb {
             set.insert(row);
         }
         Ok(set)
+    }
+
+    /// Find developer names that match the given query (case-insensitive).
+    /// Returns up to 3 matches as `(developer_name, game_count)` tuples,
+    /// ranked by match quality (exact > word-boundary > substring) then by
+    /// game count descending.
+    pub fn find_developer_matches(&self, query: &str) -> Result<Vec<(String, usize)>> {
+        let q = query.to_lowercase();
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT developer, COUNT(DISTINCT base_title) as game_count
+                 FROM game_library
+                 WHERE developer != '' AND LOWER(developer) LIKE '%' || LOWER(?1) || '%'
+                 GROUP BY developer
+                 ORDER BY
+                     CASE WHEN LOWER(developer) = LOWER(?1) THEN 0
+                          WHEN LOWER(developer) LIKE LOWER(?1) || ' %'
+                            OR LOWER(developer) LIKE '% ' || LOWER(?1) THEN 1
+                          ELSE 2
+                     END,
+                     COUNT(DISTINCT base_title) DESC
+                 LIMIT 3",
+            )
+            .map_err(|e| Error::Other(format!("Prepare find_developer_matches: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![q], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query find_developer_matches: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get games by a specific developer, preferring those with box art.
+    /// Deduplicates by base_title across all systems (one ROM per game title)
+    /// and filters out clones, translations, hacks, and specials.
+    /// `region_pref` / `region_secondary` control which regional variant is kept.
+    /// Within each base_title, prefers entries with box art and the user's region.
+    pub fn games_by_developer(
+        &self,
+        developer: &str,
+        limit: usize,
+        region_pref: &str,
+        region_secondary: &str,
+    ) -> Result<Vec<GameEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "WITH deduped AS (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY base_title
+                        ORDER BY
+                            box_art_url IS NULL,
+                            CASE
+                                WHEN region = ?2 THEN 0
+                                WHEN region = ?3 THEN 1
+                                WHEN region = 'world' THEN 2
+                                ELSE 3
+                            END
+                    ) AS rn
+                    FROM game_library
+                    WHERE developer = ?1
+                      AND is_clone = 0
+                      AND is_translation = 0
+                      AND is_hack = 0
+                      AND is_special = 0
+                      AND base_title != ''
+                )
+                SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
+                        is_clone, base_title, region, is_translation, is_hack, is_special,
+                        crc32, hash_mtime, hash_matched_name, series_key, developer
+                FROM deduped WHERE rn = 1
+                ORDER BY box_art_url IS NULL, RANDOM()
+                LIMIT ?4",
+            )
+            .map_err(|e| Error::Other(format!("Prepare games_by_developer: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![developer, region_pref, region_secondary, limit as i64],
+                Self::row_to_game_entry,
+            )
+            .map_err(|e| Error::Other(format!("Query games_by_developer: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Count total games by a specific developer (deduplicated by base_title across systems).
+    pub fn count_games_by_developer(&self, developer: &str) -> Result<usize> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(DISTINCT base_title)
+                 FROM game_library
+                 WHERE developer = ?1
+                   AND is_clone = 0
+                   AND is_translation = 0
+                   AND is_hack = 0
+                   AND is_special = 0
+                   AND base_title != ''",
+                params![developer],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Query count_games_by_developer: {e}")))
+    }
+
+    /// Paginated game list for a developer, optionally filtered by system and content filters.
+    /// Deduplicates by base_title per system, with configurable filtering.
+    /// Region preference controls which variant is kept.
+    /// Returns `(entries, total_count)`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn developer_games_paginated(
+        &self,
+        developer: &str,
+        system_filter: Option<&str>,
+        offset: usize,
+        limit: usize,
+        region_pref: &str,
+        region_secondary: &str,
+        filters: &DeveloperGamesFilter,
+    ) -> Result<(Vec<GameEntry>, usize)> {
+        let has_system_filter = system_filter.is_some_and(|s| !s.is_empty());
+
+        // Build WHERE clauses with sequential parameter indices.
+        // Count query: ?1 = developer, then optional filter params from ?2.
+        // Fetch query: ?1 = developer, ?2 = region_pref, ?3 = region_secondary,
+        //              ?4 = limit, ?5 = offset, then optional filter params from ?6.
+        let mut count_parts = Vec::new();
+        let mut fetch_parts = Vec::new();
+        count_parts.push("developer = ?1".to_string());
+        fetch_parts.push("developer = ?1".to_string());
+        count_parts.push("is_special = 0".to_string());
+        fetch_parts.push("is_special = 0".to_string());
+
+        if filters.hide_hacks {
+            count_parts.push("is_hack = 0".to_string());
+            fetch_parts.push("is_hack = 0".to_string());
+        }
+        if filters.hide_translations {
+            count_parts.push("is_translation = 0".to_string());
+            fetch_parts.push("is_translation = 0".to_string());
+        }
+        if filters.hide_clones {
+            count_parts.push("is_clone = 0".to_string());
+            fetch_parts.push("is_clone = 0".to_string());
+        }
+        if filters.multiplayer_only {
+            count_parts.push("players >= 2".to_string());
+            fetch_parts.push("players >= 2".to_string());
+        }
+
+        // For the count query, param indices start at ?2 for optional params.
+        let mut count_param_idx = 2usize;
+        // For the fetch query, ?2=region_pref, ?3=region_secondary, ?4=limit, ?5=offset,
+        // so optional params start at ?6.
+        let mut fetch_param_idx = 6usize;
+
+        if !filters.genre.is_empty() {
+            count_parts.push(format!("genre_group = ?{count_param_idx}"));
+            fetch_parts.push(format!("genre_group = ?{fetch_param_idx}"));
+            count_param_idx += 1;
+            fetch_param_idx += 1;
+        }
+        if filters.min_rating.is_some() {
+            count_parts.push(format!("rating >= ?{count_param_idx}"));
+            fetch_parts.push(format!("rating >= ?{fetch_param_idx}"));
+            count_param_idx += 1;
+            fetch_param_idx += 1;
+        }
+        if has_system_filter {
+            count_parts.push(format!("system = ?{count_param_idx}"));
+            fetch_parts.push(format!("system = ?{fetch_param_idx}"));
+            // count_param_idx += 1;
+            // fetch_param_idx += 1;
+        }
+
+        let count_where = count_parts.join(" AND ");
+        let fetch_where = fetch_parts.join(" AND ");
+
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM (
+                SELECT DISTINCT system || '/' || base_title
+                FROM game_library
+                WHERE {count_where}
+            )"
+        );
+
+        // Build count params.
+        let mut count_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        count_params.push(Box::new(developer.to_string()));
+        if !filters.genre.is_empty() {
+            count_params.push(Box::new(filters.genre.to_string()));
+        }
+        if let Some(mr) = filters.min_rating {
+            count_params.push(Box::new(mr));
+        }
+        if has_system_filter {
+            count_params.push(Box::new(system_filter.unwrap().to_string()));
+        }
+
+        let count_refs: Vec<&dyn rusqlite::types::ToSql> = count_params.iter().map(|b| b.as_ref()).collect();
+        let total: usize = self
+            .conn
+            .query_row(&count_sql, count_refs.as_slice(), |row| row.get(0))
+            .map_err(|e| Error::Other(format!("Count developer_games_paginated: {e}")))?;
+
+        // Build fetch SQL.
+        let fetch_sql = format!(
+            "WITH deduped AS (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY system, base_title
+                    ORDER BY CASE
+                        WHEN region = ?2 THEN 0
+                        WHEN region = ?3 THEN 1
+                        WHEN region = 'world' THEN 2
+                        ELSE 3
+                    END
+                ) AS rn
+                FROM game_library
+                WHERE {fetch_where}
+            )
+            SELECT system, rom_filename, rom_path, display_name, size_bytes,
+                    is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
+                    is_clone, base_title, region, is_translation, is_hack, is_special,
+                    crc32, hash_mtime, hash_matched_name, series_key, developer
+            FROM deduped WHERE rn = 1
+            ORDER BY display_name COLLATE NOCASE
+            LIMIT ?4 OFFSET ?5"
+        );
+
+        // Build fetch params.
+        let mut fetch_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        fetch_params.push(Box::new(developer.to_string()));
+        fetch_params.push(Box::new(region_pref.to_string()));
+        fetch_params.push(Box::new(region_secondary.to_string()));
+        fetch_params.push(Box::new(limit as i64));
+        fetch_params.push(Box::new(offset as i64));
+        if !filters.genre.is_empty() {
+            fetch_params.push(Box::new(filters.genre.to_string()));
+        }
+        if let Some(mr) = filters.min_rating {
+            fetch_params.push(Box::new(mr));
+        }
+        if has_system_filter {
+            fetch_params.push(Box::new(system_filter.unwrap().to_string()));
+        }
+
+        let fetch_refs: Vec<&dyn rusqlite::types::ToSql> = fetch_params.iter().map(|b| b.as_ref()).collect();
+        let mut stmt = self
+            .conn
+            .prepare(&fetch_sql)
+            .map_err(|e| Error::Other(format!("Prepare developer_games_paginated: {e}")))?;
+        let rows = stmt
+            .query_map(fetch_refs.as_slice(), Self::row_to_game_entry)
+            .map_err(|e| Error::Other(format!("Query developer_games_paginated: {e}")))?;
+        let entries: Vec<GameEntry> = rows.flatten().collect();
+
+        Ok((entries, total))
+    }
+
+    /// Get distinct genre groups for a developer's games, optionally filtered by system.
+    pub fn developer_genre_groups(
+        &self,
+        developer: &str,
+        system_filter: Option<&str>,
+    ) -> Result<Vec<String>> {
+        let has_system = system_filter.is_some_and(|s| !s.is_empty());
+
+        if has_system {
+            let mut stmt = self
+                .conn
+                .prepare(
+                    "SELECT DISTINCT genre_group FROM game_library
+                     WHERE developer = ?1 AND genre_group != '' AND system = ?2
+                     ORDER BY genre_group",
+                )
+                .map_err(|e| Error::Other(format!("Prepare developer_genre_groups: {e}")))?;
+            let rows = stmt
+                .query_map(params![developer, system_filter.unwrap()], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|e| Error::Other(format!("Query developer_genre_groups: {e}")))?;
+            Ok(rows.flatten().collect())
+        } else {
+            let mut stmt = self
+                .conn
+                .prepare(
+                    "SELECT DISTINCT genre_group FROM game_library
+                     WHERE developer = ?1 AND genre_group != ''
+                     ORDER BY genre_group",
+                )
+                .map_err(|e| Error::Other(format!("Prepare developer_genre_groups: {e}")))?;
+            let rows = stmt
+                .query_map(params![developer], |row| row.get::<_, String>(0))
+                .map_err(|e| Error::Other(format!("Query developer_genre_groups: {e}")))?;
+            Ok(rows.flatten().collect())
+        }
+    }
+
+    /// Get systems where a developer has games, with display names and game counts.
+    /// Returns `(system_folder, game_count)` sorted by count descending.
+    pub fn developer_systems(&self, developer: &str) -> Result<Vec<(String, usize)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT system, COUNT(DISTINCT base_title) as cnt
+                 FROM game_library
+                 WHERE developer = ?1
+                   AND is_clone = 0
+                   AND is_translation = 0
+                   AND is_hack = 0
+                   AND is_special = 0
+                 GROUP BY system
+                 ORDER BY cnt DESC",
+            )
+            .map_err(|e| Error::Other(format!("Prepare developer_systems: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![developer], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query developer_systems: {e}")))?;
+
+        Ok(rows.flatten().collect())
     }
 }
 
@@ -671,5 +1066,89 @@ mod tests {
 
         assert_eq!(snes.1, 1);
         assert_eq!(gba.1, 2);
+    }
+
+    /// Helper to create a game entry with a specific developer and base_title.
+    fn make_game_entry_with_developer(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+    ) -> super::super::GameEntry {
+        super::super::GameEntry {
+            developer: developer.into(),
+            base_title: base_title.into(),
+            ..make_game_entry(system, filename, false)
+        }
+    }
+
+    #[test]
+    fn find_developer_matches_exact_match_first() {
+        let (mut db, _dir) = open_temp_db();
+
+        // Insert games: "SNK" (3 games), "SNK Playmore" (2 games), "Capcom / SNK" (1 game)
+        db.save_system_entries(
+            "arcade_fbneo",
+            &[
+                make_game_entry_with_developer("arcade_fbneo", "kof97.zip", "SNK", "KOF 97"),
+                make_game_entry_with_developer("arcade_fbneo", "kof98.zip", "SNK", "KOF 98"),
+                make_game_entry_with_developer("arcade_fbneo", "fatfury2.zip", "SNK", "Fatal Fury 2"),
+                make_game_entry_with_developer("arcade_fbneo", "samsho5.zip", "SNK Playmore", "Samurai Shodown V"),
+                make_game_entry_with_developer("arcade_fbneo", "samsho6.zip", "SNK Playmore", "Samurai Shodown VI"),
+                make_game_entry_with_developer("arcade_fbneo", "svc.zip", "Capcom / SNK", "SVC Chaos"),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let matches = db.find_developer_matches("snk").unwrap();
+        assert_eq!(matches.len(), 3, "Should find 3 matching developers");
+
+        // Exact match "SNK" should be first.
+        assert_eq!(matches[0].0, "SNK");
+        assert_eq!(matches[0].1, 3);
+
+        // "SNK Playmore" is a word-boundary match, should be second.
+        assert_eq!(matches[1].0, "SNK Playmore");
+        assert_eq!(matches[1].1, 2);
+
+        // "Capcom / SNK" is a substring match, should be last.
+        assert_eq!(matches[2].0, "Capcom / SNK");
+        assert_eq!(matches[2].1, 1);
+    }
+
+    #[test]
+    fn find_developer_matches_no_match_returns_empty() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[make_game_entry_with_developer("snes", "Mario.sfc", "Nintendo", "Mario")],
+            None,
+        )
+        .unwrap();
+
+        let matches = db.find_developer_matches("capcom").unwrap();
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn find_developer_matches_single_match() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_game_entry_with_developer("snes", "MegaManX.sfc", "Capcom", "Mega Man X"),
+                make_game_entry_with_developer("snes", "BoF.sfc", "Capcom", "Breath of Fire"),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let matches = db.find_developer_matches("capcom").unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, "Capcom");
+        assert_eq!(matches[0].1, 2);
     }
 }

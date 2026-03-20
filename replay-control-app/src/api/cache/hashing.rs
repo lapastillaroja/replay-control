@@ -130,79 +130,92 @@ impl GameLibrary {
                     .unwrap_or(rom_filename);
 
                 // Two-tier genre: `genre` = detail/original, `genre_group` = normalized.
-                let (genre, genre_group, players_lookup, is_clone, base_title) = if is_arcade {
-                    let arcade_stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
-                    match arcade_db::lookup_arcade_game(arcade_stem) {
-                        Some(info) => {
-                            // Skip BIOS entries — they're not playable games
-                            if info.is_bios {
-                                return None;
+                // Also extract developer (manufacturer for arcade, empty for console — enriched later).
+                let (genre, genre_group, players_lookup, is_clone, base_title, developer) =
+                    if is_arcade {
+                        let arcade_stem =
+                            rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+                        match arcade_db::lookup_arcade_game(arcade_stem) {
+                            Some(info) => {
+                                // Skip BIOS entries — they're not playable games
+                                if info.is_bios {
+                                    return None;
+                                }
+                                // genre = raw category (e.g., "Maze / Shooter")
+                                let detail = if info.category.is_empty() {
+                                    None
+                                } else {
+                                    Some(info.category.to_string())
+                                };
+                                // genre_group = normalized (e.g., "Maze")
+                                let group =
+                                    replay_control_core::genre::normalize_genre(info.category)
+                                        .to_string();
+                                let dev = info.manufacturer.to_string();
+                                (
+                                    detail,
+                                    group,
+                                    Some(info.players),
+                                    info.is_clone,
+                                    replay_control_core::title_utils::base_title(
+                                        info.display_name,
+                                    ),
+                                    dev,
+                                )
                             }
-                            // genre = raw category (e.g., "Maze / Shooter")
-                            let detail = if info.category.is_empty() {
-                                None
-                            } else {
-                                Some(info.category.to_string())
-                            };
-                            // genre_group = normalized (e.g., "Maze")
-                            let group = replay_control_core::genre::normalize_genre(info.category)
-                                .to_string();
-                            (
-                                detail,
-                                group,
-                                Some(info.players),
-                                info.is_clone,
-                                replay_control_core::title_utils::base_title(info.display_name),
-                            )
-                        }
-                        None => (
-                            None,
-                            String::new(),
-                            None,
-                            false,
-                            replay_control_core::title_utils::base_title(stem),
-                        ),
-                    }
-                } else {
-                    // Try CRC-based lookup first (if we have a hash match),
-                    // then fall back to filename-based lookup.
-                    let hash_entry = hash_results
-                        .get(rom_filename)
-                        .and_then(|hr| hr.matched_name.as_ref())
-                        .and_then(|name| game_db::lookup_game(system, name));
-                    let entry = hash_entry.or_else(|| game_db::lookup_game(system, stem));
-                    let game = entry.map(|e| e.game).or_else(|| {
-                        let normalized = game_db::normalize_filename(stem);
-                        game_db::lookup_by_normalized_title(system, &normalized)
-                    });
-                    let bt = r
-                        .game
-                        .display_name
-                        .as_deref()
-                        .map(replay_control_core::title_utils::base_title)
-                        .unwrap_or_else(|| replay_control_core::title_utils::base_title(stem));
-                    match game {
-                        Some(g) => {
-                            // genre = raw genre from game_db (e.g., "Shoot'em Up")
-                            let detail = if g.genre.is_empty() {
-                                None
-                            } else {
-                                Some(g.genre.to_string())
-                            };
-                            // genre_group = normalized (e.g., "Shooter")
-                            let group =
-                                replay_control_core::genre::normalize_genre(g.genre).to_string();
-                            (
-                                detail,
-                                group,
-                                if g.players > 0 { Some(g.players) } else { None },
+                            None => (
+                                None,
+                                String::new(),
+                                None,
                                 false,
-                                bt,
-                            )
+                                replay_control_core::title_utils::base_title(stem),
+                                String::new(),
+                            ),
                         }
-                        None => (None, String::new(), None, false, bt),
-                    }
-                };
+                    } else {
+                        // Try CRC-based lookup first (if we have a hash match),
+                        // then fall back to filename-based lookup.
+                        let hash_entry = hash_results
+                            .get(rom_filename)
+                            .and_then(|hr| hr.matched_name.as_ref())
+                            .and_then(|name| game_db::lookup_game(system, name));
+                        let entry = hash_entry.or_else(|| game_db::lookup_game(system, stem));
+                        let game = entry.map(|e| e.game).or_else(|| {
+                            let normalized = game_db::normalize_filename(stem);
+                            game_db::lookup_by_normalized_title(system, &normalized)
+                        });
+                        let bt = r
+                            .game
+                            .display_name
+                            .as_deref()
+                            .map(replay_control_core::title_utils::base_title)
+                            .unwrap_or_else(|| {
+                                replay_control_core::title_utils::base_title(stem)
+                            });
+                        match game {
+                            Some(g) => {
+                                // genre = raw genre from game_db (e.g., "Shoot'em Up")
+                                let detail = if g.genre.is_empty() {
+                                    None
+                                } else {
+                                    Some(g.genre.to_string())
+                                };
+                                // genre_group = normalized (e.g., "Shooter")
+                                let group =
+                                    replay_control_core::genre::normalize_genre(g.genre)
+                                        .to_string();
+                                (
+                                    detail,
+                                    group,
+                                    if g.players > 0 { Some(g.players) } else { None },
+                                    false,
+                                    bt,
+                                    String::new(),
+                                )
+                            }
+                            None => (None, String::new(), None, false, bt, String::new()),
+                        }
+                    };
 
                 let (tier, region_priority, is_special) =
                     replay_control_core::rom_tags::classify(rom_filename);
@@ -246,6 +259,7 @@ impl GameLibrary {
                     hash_mtime: hash.map(|h| h.mtime_secs),
                     hash_matched_name: hash.and_then(|h| h.matched_name.clone()),
                     series_key,
+                    developer,
                 })
             })
             .collect();

@@ -34,6 +34,13 @@ impl GameLibrary {
             .and_then(|guard| guard.as_ref()?.system_metadata_players(system).ok())
             .unwrap_or_default();
 
+        // Load developers from game_metadata table (from LaunchBox import).
+        // Used to fill empty game_library.developer entries as a fallback.
+        let lb_developers: HashMap<String, String> = state
+            .metadata_db()
+            .and_then(|guard| guard.as_ref()?.system_metadata_developers(system).ok())
+            .unwrap_or_default();
+
         // Load current game_library genres from L2 to know which are already set.
         let existing_genres: HashSet<String> = self
             .with_db_read(&storage, |db| {
@@ -47,6 +54,13 @@ impl GameLibrary {
         let existing_players: HashSet<String> = self
             .with_db_read(&storage, |db| {
                 db.system_rom_players(system).unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        // Load current game_library developers from L2 to know which already have developer data.
+        let existing_developers: HashSet<String> = self
+            .with_db_read(&storage, |db| {
+                db.system_rom_developers(system).unwrap_or_default()
             })
             .unwrap_or_default();
 
@@ -110,6 +124,31 @@ impl GameLibrary {
                 })
             })
             .collect();
+
+        // Enrich developer from LaunchBox metadata for ROMs that don't already have one.
+        // This runs as a separate update because developer uses a different SQL method
+        // and doesn't need to be bundled with the box_art/genre/rating enrichment.
+        let developer_updates: Vec<(String, String)> = rom_filenames
+            .iter()
+            .filter(|f| !existing_developers.contains(*f))
+            .filter_map(|f| {
+                lb_developers
+                    .get(f)
+                    .map(|dev| (f.clone(), dev.clone()))
+            })
+            .collect();
+
+        if !developer_updates.is_empty() {
+            let dev_count = developer_updates.len();
+            self.with_db_mut(&storage, |db| {
+                if let Err(e) = db.update_developers(system, &developer_updates) {
+                    tracing::warn!("Developer enrichment failed for {system}: {e}");
+                }
+            });
+            tracing::debug!(
+                "L2 enrichment: {system} — {dev_count} ROMs updated with developer"
+            );
+        }
 
         if enrichments.is_empty() {
             return;
