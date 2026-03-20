@@ -3,12 +3,19 @@
 //! Fetches recently played games from the Replay Control REST API (localhost:8080)
 //! and displays rich game metadata on the TV screen, navigable with a gamepad.
 //!
-//! Controls:
-//!   - D-pad Left/Right: navigate between recently played games
+//! Navigation flow:
+//!   Boot -> Home Screen -> A: enter selected list -> Game Detail -> B: back to Home -> B: exit
+//!
+//! Home screen controls:
+//!   - D-pad Up/Down: select menu item (Recently Played / Favorites)
+//!   - A button: open selected list
+//!   - B button: exit core (RETRO_ENVIRONMENT_SHUTDOWN)
+//!
+//! Game detail controls:
+//!   - D-pad Left/Right: navigate between games
 //!   - D-pad Up/Down: scroll description text (Page 2 only)
 //!   - L1/R1: cycle between pages (Game Info / Description)
-//!   - B button: exit core (RETRO_ENVIRONMENT_SHUTDOWN)
-//!   - Start: toggle between recently played and favorites
+//!   - B button: back to Home screen
 //!
 //! Display: adapts layout based on CRT (320x240) vs HDMI (720p) via replay.cfg.
 //!
@@ -58,12 +65,12 @@ const RETRO_DEVICE_ID_JOYPAD_B: c_uint = 0;
 const RETRO_DEVICE_ID_JOYPAD_Y: c_uint = 1;
 #[allow(dead_code)]
 const RETRO_DEVICE_ID_JOYPAD_SELECT: c_uint = 2;
+#[allow(dead_code)]
 const RETRO_DEVICE_ID_JOYPAD_START: c_uint = 3;
 const RETRO_DEVICE_ID_JOYPAD_UP: c_uint = 4;
 const RETRO_DEVICE_ID_JOYPAD_DOWN: c_uint = 5;
 const RETRO_DEVICE_ID_JOYPAD_LEFT: c_uint = 6;
 const RETRO_DEVICE_ID_JOYPAD_RIGHT: c_uint = 7;
-#[allow(dead_code)]
 const RETRO_DEVICE_ID_JOYPAD_A: c_uint = 8;
 #[allow(dead_code)]
 const RETRO_DEVICE_ID_JOYPAD_X: c_uint = 9;
@@ -128,6 +135,13 @@ type RetroInputStateFn =
     unsafe extern "C" fn(port: c_uint, device: c_uint, index: c_uint, id: c_uint) -> i16;
 
 // ---- Game data structures ----
+
+/// Top-level view in the core's state machine.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CoreView {
+    Home,       // Home screen with menu options
+    GameDetail, // Game detail view (recents or favorites)
+}
 
 /// Which list we're currently viewing.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -254,6 +268,10 @@ struct DisplayState {
 
 /// Game data and navigation state.
 struct GameData {
+    /// Current top-level view (Home or GameDetail)
+    view: CoreView,
+    /// Home screen menu cursor (0 = Recently Played, 1 = Favorites)
+    home_cursor: usize,
     list_mode: ListMode,
     entries: Vec<GameEntry>,
     favorites: Vec<GameEntry>,
@@ -281,9 +299,13 @@ struct InputState {
     prev_left: bool,
     prev_right: bool,
     prev_b: bool,
+    #[allow(dead_code)]
     prev_start: bool,
     prev_l1: bool,
     prev_r1: bool,
+    prev_a: bool,
+    prev_up: bool,
+    prev_down: bool,
     /// Up/down are held (continuous scroll), but with frame delay
     scroll_cooldown: u32,
 }
@@ -295,6 +317,10 @@ struct ScratchBuffers {
     header_text: String,
     /// "[1/5]" scroll position indicator
     scroll_indicator: String,
+    /// Pre-computed count text for recents menu item (e.g., "93")
+    recents_count_text: String,
+    /// Pre-computed count text for favorites menu item (e.g., "57")
+    favorites_count_text: String,
 }
 
 struct CoreState {
@@ -342,6 +368,8 @@ static STATE: CoreStateWrapper = CoreStateWrapper(UnsafeCell::new(CoreState {
         palette: palette::load_palette(0),
     },
     game: GameData {
+        view: CoreView::Home,
+        home_cursor: 0,
         list_mode: ListMode::Recents,
         entries: Vec::new(),
         favorites: Vec::new(),
@@ -365,11 +393,16 @@ static STATE: CoreStateWrapper = CoreStateWrapper(UnsafeCell::new(CoreState {
         prev_start: false,
         prev_l1: false,
         prev_r1: false,
+        prev_a: false,
+        prev_up: false,
+        prev_down: false,
         scroll_cooldown: 0,
     },
     scratch: ScratchBuffers {
         header_text: String::new(),
         scroll_indicator: String::new(),
+        recents_count_text: String::new(),
+        favorites_count_text: String::new(),
     },
 }));
 
@@ -427,7 +460,7 @@ fn precompute_display(
 }
 
 /// Rewrite the header_text scratch buffer in-place.
-/// Called when the user navigates (left/right/start), not every frame.
+/// Called when the user navigates (left/right/enter list), not every frame.
 fn update_header_text(s: &mut CoreState) {
     let (entries, _) = active_list(&s.game);
     let total = entries.len();
@@ -483,6 +516,16 @@ fn update_scroll_indicator(s: &mut CoreState) {
             );
         }
     }
+}
+
+/// Rewrite the home screen count text scratch buffers in-place.
+/// Called once after data loading (retro_load_game) and on reset.
+fn update_home_counts(s: &mut CoreState) {
+    use std::fmt::Write;
+    s.scratch.recents_count_text.clear();
+    let _ = write!(s.scratch.recents_count_text, "{}", s.game.entries.len());
+    s.scratch.favorites_count_text.clear();
+    let _ = write!(s.scratch.favorites_count_text, "{}", s.game.favorites.len());
 }
 
 /// Get the active entries list and detail cache based on current list mode.
@@ -646,8 +689,121 @@ fn prefetch_detail(s: &mut CoreState, mode: ListMode, index: usize) {
 // All display strings are pre-computed during prefetch; scratch buffers
 // (header_text, scroll_indicator) are updated on navigation events only.
 
-/// Main rendering entry point. Dispatches to the active page's renderer.
+/// Main rendering entry point. Dispatches by top-level view.
 fn render_frame(s: &mut CoreState) {
+    match s.game.view {
+        CoreView::Home => render_home(s),
+        CoreView::GameDetail => render_detail(s),
+    }
+}
+
+/// Home screen: header bar, app title, menu items, controls reference.
+fn render_home(s: &mut CoreState) {
+    let w = s.display.layout.width;
+    let h = s.display.layout.height;
+    let label_scale = s.display.layout.label_scale;
+    let title_scale = s.display.layout.title_scale;
+    let font_scale = s.display.layout.font_scale;
+    let mx = s.display.layout.margin_x as i32;
+    let my = s.display.layout.margin_y as i32;
+    let pal = s.display.palette;
+    let fb = &mut s.display.framebuffer;
+
+    // Clear background
+    for px in fb.iter_mut() {
+        *px = pal.bg;
+    }
+
+    // -- Header bar: "REPLAY" left, version right --
+    let header_h = (label_scale * 16 + 8) as i32;
+    draw_rect(fb, w, h, 0, 0, w, header_h as u32, pal.header_bg);
+    draw_hline(fb, w, h, 0, header_h, w, pal.accent);
+
+    let header_text_y = my / 2 + 2;
+    draw_string(fb, w, h, "REPLAY", mx, header_text_y, pal.accent, label_scale);
+
+    // Version right-aligned
+    let version = "v0.6.0";
+    let version_w = (version.len() as i32) * (label_scale * 9) as i32;
+    let version_x = (w as i32) - mx - version_w;
+    draw_string(fb, w, h, version, version_x, header_text_y, pal.nav, label_scale);
+
+    // -- App title "RePlayOS" centered --
+    let title_text = "RePlayOS";
+    let title_char_w = (title_scale * 9) as i32;
+    let title_w = (title_text.len() as i32) * title_char_w;
+    let title_x = ((w as i32) - title_w) / 2;
+    let title_y = header_h + my + 12;
+    draw_string(fb, w, h, title_text, title_x, title_y, pal.title, title_scale);
+
+    // -- Menu items --
+    let menu_start_y = title_y + (title_scale * 18) as i32 + my + 8;
+    let item_h = (font_scale * 18 + 8) as i32;
+
+    // Menu item 0: Recently Played
+    let y0 = menu_start_y;
+    render_home_menu_item(s, 0, "Recently Played", &s.scratch.recents_count_text.clone(), y0);
+
+    // Menu item 1: Favorites
+    let y1 = y0 + item_h + 4;
+    render_home_menu_item(s, 1, "Favorites", &s.scratch.favorites_count_text.clone(), y1);
+
+    // -- Controls reference at bottom --
+    let fb = &mut s.display.framebuffer;
+    let label_h = (label_scale * 16) as i32;
+
+    // Two lines of hints
+    let (line1, line2) = if w <= 640 {
+        ("^v:select  A:open  B:exit", "In game: <->:browse L1/R1:page")
+    } else {
+        (
+            "Up/Down: select  |  A: open  |  B: exit",
+            "In game:  Left/Right: browse  |  L1/R1: page  |  Up/Down: scroll",
+        )
+    };
+
+    let footer_line2_y = (h as i32) - my - label_h;
+    let footer_line1_y = footer_line2_y - label_h - 2;
+
+    // Accent line above controls
+    draw_hline(fb, w, h, mx, footer_line1_y - 4, (w as i32 - 2 * mx) as u32, pal.accent);
+
+    draw_string(fb, w, h, line1, mx, footer_line1_y, pal.nav, label_scale);
+    draw_string(fb, w, h, line2, mx, footer_line2_y, pal.nav, label_scale);
+}
+
+/// Render a single home screen menu item.
+fn render_home_menu_item(s: &mut CoreState, index: usize, label: &str, count: &str, y: i32) {
+    let w = s.display.layout.width;
+    let h = s.display.layout.height;
+    let font_scale = s.display.layout.font_scale;
+    let label_scale = s.display.layout.label_scale;
+    let mx = s.display.layout.margin_x as i32;
+    let pal = s.display.palette;
+    let fb = &mut s.display.framebuffer;
+    let is_selected = s.game.home_cursor == index;
+
+    let marker = if is_selected { "[>]" } else { "[ ]" };
+    let marker_color = if is_selected { pal.accent } else { pal.nav };
+    let text_color = if is_selected { pal.title } else { pal.label };
+    let count_color = pal.nav;
+
+    // Draw marker
+    let marker_x = mx + (font_scale * 4) as i32;
+    let end_x = draw_string(fb, w, h, marker, marker_x, y, marker_color, label_scale);
+
+    // Draw label
+    let label_x = end_x + (font_scale * 6) as i32;
+    draw_string(fb, w, h, label, label_x, y, text_color, font_scale);
+
+    // Draw count right-aligned
+    let count_w = (count.len() as i32) * (font_scale * 9) as i32;
+    let count_x = (w as i32) - mx - count_w;
+    draw_string(fb, w, h, count, count_x, y, count_color, font_scale);
+}
+
+/// Game detail rendering (the current full render_frame logic).
+fn render_detail(s: &mut CoreState) {
     let w = s.display.layout.width;
     let h = s.display.layout.height;
     let label_scale = s.display.layout.label_scale;
@@ -729,12 +885,12 @@ fn render_frame(s: &mut CoreState) {
         let msg_y = (h as i32) / 2 - 8;
         let fb = &mut s.display.framebuffer;
         draw_string(fb, w, h, &s.net.status_message, mx, msg_y, color, font_scale);
-        render_footer(s, PageKind::GameInfo);
+        render_back_hint(s);
         return;
     }
 
     if total == 0 {
-        render_footer(s, PageKind::GameInfo);
+        render_back_hint(s);
         return;
     }
 
@@ -745,8 +901,8 @@ fn render_frame(s: &mut CoreState) {
         PageKind::Description => render_page_description(s, header_h),
     }
 
-    // Footer hints (vary per page)
-    render_footer(s, current_page);
+    // Minimal back hint in bottom-right corner
+    render_back_hint(s);
 }
 
 /// Draw page indicator dots in the top-right corner of the header.
@@ -916,7 +1072,6 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
     let h = s.display.layout.height;
     let font_scale = s.display.layout.font_scale;
     let title_scale = s.display.layout.title_scale;
-    let label_scale = s.display.layout.label_scale;
     let mx = s.display.layout.margin_x as i32;
     let my = s.display.layout.margin_y as i32;
     let max_desc_lines = s.display.layout.max_desc_lines_full as usize;
@@ -969,9 +1124,8 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
             let scroll = s.game.desc_scroll.min(total_lines.saturating_sub(max_desc_lines));
 
             let end = d.display.desc_lines_full.len().min(scroll + max_desc_lines);
-            // Compute the footer area height to know where to stop rendering
-            let label_h = (label_scale * 16) as i32;
-            let footer_top = (h as i32) - my - label_h - 4; // single-line footer
+            // Compute the bottom boundary -- just leave room for the minimal "B:back" hint
+            let footer_top = (h as i32) - my - 16 - 2; // scale=1 hint height + margin
 
             for line in &d.display.desc_lines_full[scroll..end] {
                 if y + line_h >= footer_top {
@@ -996,33 +1150,21 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
     }
 }
 
-/// Render footer hints that vary per page. Always a single line.
-fn render_footer(s: &mut CoreState, page: PageKind) {
+/// Render a minimal "B:back" hint in the bottom-right corner of the game detail view.
+fn render_back_hint(s: &mut CoreState) {
     let w = s.display.layout.width;
     let h = s.display.layout.height;
-    let label_scale = s.display.layout.label_scale;
     let mx = s.display.layout.margin_x as i32;
     let my = s.display.layout.margin_y as i32;
-
     let pal = s.display.palette;
     let fb = &mut s.display.framebuffer;
-    let label_h = (label_scale * 16) as i32;
 
-    let footer_y = (h as i32) - my - label_h;
-    draw_hline(fb, w, h, mx, footer_y - 4, (w as i32 - 2 * mx) as u32, pal.accent);
-
-    let hints = if w <= 640 {
-        match page {
-            PageKind::GameInfo => "<->:game L1/R1:page Start:list B:exit",
-            PageKind::Description => "^v:scroll L1/R1:page <->:game B:exit",
-        }
-    } else {
-        match page {
-            PageKind::GameInfo => "L/R: game  |  L1/R1: page  |  Start: recents/favs  |  B: exit",
-            PageKind::Description => "Up/Down: scroll  |  L1/R1: page  |  L/R: game  |  B: exit",
-        }
-    };
-    draw_string(fb, w, h, hints, mx, footer_y, pal.nav, label_scale);
+    // Use the smallest scale (1) for the back hint regardless of layout
+    let hint = "B:back";
+    let hint_w = (hint.len() as i32) * 9; // scale=1: 9px per char
+    let hint_x = (w as i32) - mx - hint_w;
+    let hint_y = (h as i32) - my - 16;
+    draw_string(fb, w, h, hint, hint_x, hint_y, pal.nav, 1);
 }
 
 // ---- Input handling ----
@@ -1042,10 +1184,107 @@ fn handle_input(s: &mut CoreState) {
     let up = btn(RETRO_DEVICE_ID_JOYPAD_UP);
     let down = btn(RETRO_DEVICE_ID_JOYPAD_DOWN);
     let b_pressed = btn(RETRO_DEVICE_ID_JOYPAD_B);
-    let start = btn(RETRO_DEVICE_ID_JOYPAD_START);
+    let a_pressed = btn(RETRO_DEVICE_ID_JOYPAD_A);
     let l1 = btn(RETRO_DEVICE_ID_JOYPAD_L);
     let r1 = btn(RETRO_DEVICE_ID_JOYPAD_R);
 
+    match s.game.view {
+        CoreView::Home => handle_input_home(s, up, down, a_pressed, b_pressed),
+        CoreView::GameDetail => handle_input_detail(s, left, right, up, down, b_pressed, l1, r1),
+    }
+
+    // Update debounce state
+    s.input.prev_left = left;
+    s.input.prev_right = right;
+    s.input.prev_b = b_pressed;
+    s.input.prev_a = a_pressed;
+    s.input.prev_up = up;
+    s.input.prev_down = down;
+    s.input.prev_l1 = l1;
+    s.input.prev_r1 = r1;
+}
+
+/// Input handling for the Home screen view.
+fn handle_input_home(s: &mut CoreState, up: bool, down: bool, a_pressed: bool, b_pressed: bool) {
+    const HOME_MENU_COUNT: usize = 2;
+
+    // Up: move cursor up (edge-triggered, wraps)
+    if up && !s.input.prev_up {
+        if s.game.home_cursor > 0 {
+            s.game.home_cursor -= 1;
+        } else {
+            s.game.home_cursor = HOME_MENU_COUNT - 1;
+        }
+    }
+
+    // Down: move cursor down (edge-triggered, wraps)
+    if down && !s.input.prev_down {
+        if s.game.home_cursor < HOME_MENU_COUNT - 1 {
+            s.game.home_cursor += 1;
+        } else {
+            s.game.home_cursor = 0;
+        }
+    }
+
+    // A: select current menu item -> enter GameDetail (edge-triggered)
+    if a_pressed && !s.input.prev_a {
+        // Set list_mode based on cursor
+        match s.game.home_cursor {
+            0 => {
+                s.game.list_mode = ListMode::Recents;
+                let rec_len = s.game.entries.len();
+                s.game.current_index = if rec_len > 0 {
+                    s.game.recents_index.min(rec_len - 1)
+                } else {
+                    0
+                };
+                s.net.status_message.clear();
+                if s.game.entries.is_empty() {
+                    s.net.status_message.push_str("No recently played games found.");
+                }
+            }
+            _ => {
+                s.game.list_mode = ListMode::Favorites;
+                let fav_len = s.game.favorites.len();
+                s.game.current_index = if fav_len > 0 {
+                    s.game.favorites_index.min(fav_len - 1)
+                } else {
+                    0
+                };
+                s.net.status_message.clear();
+                if s.game.favorites.is_empty() {
+                    s.net.status_message.push_str("No favorites found.");
+                }
+            }
+        }
+        s.game.desc_scroll = 0;
+        s.game.current_page = 0;
+        s.game.view = CoreView::GameDetail;
+        update_header_text(s);
+        update_scroll_indicator(s);
+    }
+
+    // B: exit core (edge-triggered)
+    if b_pressed && !s.input.prev_b {
+        if let Some(env_cb) = s.cb.environment_cb {
+            unsafe {
+                env_cb(RETRO_ENVIRONMENT_SHUTDOWN, std::ptr::null_mut());
+            }
+        }
+    }
+}
+
+/// Input handling for the GameDetail view.
+fn handle_input_detail(
+    s: &mut CoreState,
+    left: bool,
+    right: bool,
+    up: bool,
+    down: bool,
+    b_pressed: bool,
+    l1: bool,
+    r1: bool,
+) {
     // Read list length without holding a borrow on s
     let entries_len = match s.game.list_mode {
         ListMode::Recents => s.game.entries.len(),
@@ -1057,13 +1296,15 @@ fn handle_input(s: &mut CoreState) {
         s.game.current_index = 0;
     }
 
-    // B: exit (edge-triggered)
+    // B: back to Home (edge-triggered) -- NOT exit
     if b_pressed && !s.input.prev_b {
-        if let Some(env_cb) = s.cb.environment_cb {
-            unsafe {
-                env_cb(RETRO_ENVIRONMENT_SHUTDOWN, std::ptr::null_mut());
-            }
+        // Save current position for the active list
+        match s.game.list_mode {
+            ListMode::Recents => s.game.recents_index = s.game.current_index,
+            ListMode::Favorites => s.game.favorites_index = s.game.current_index,
         }
+        s.game.view = CoreView::Home;
+        return;
     }
 
     // Track whether navigation happened (need to update scratch buffers)
@@ -1088,54 +1329,6 @@ fn handle_input(s: &mut CoreState) {
             s.game.current_page = 0;
         }
         s.game.desc_scroll = 0;
-        navigated = true;
-    }
-
-    // Start: toggle list mode (edge-triggered)
-    // All data was pre-fetched in retro_load_game -- just switch views, no HTTP.
-    // Saves the current position before switching and restores the saved position
-    // in the target list, so each list remembers where the user was.
-    if start && !s.input.prev_start {
-        // Save current position to the outgoing list's saved index
-        match s.game.list_mode {
-            ListMode::Recents => {
-                s.game.recents_index = s.game.current_index;
-                s.game.list_mode = ListMode::Favorites;
-                // Restore saved position, clamped to list bounds
-                let fav_len = s.game.favorites.len();
-                s.game.current_index = if fav_len > 0 {
-                    s.game.favorites_index.min(fav_len - 1)
-                } else {
-                    0
-                };
-                s.game.desc_scroll = 0;
-                s.game.current_page = 0; // reset to Game Info on list switch
-                // Rewrite status_message in-place (no new allocation if capacity suffices)
-                s.net.status_message.clear();
-                if s.game.favorites.is_empty() {
-                    s.net.status_message.push_str("No favorites found.");
-                }
-            }
-            ListMode::Favorites => {
-                s.game.favorites_index = s.game.current_index;
-                s.game.list_mode = ListMode::Recents;
-                // Restore saved position, clamped to list bounds
-                let rec_len = s.game.entries.len();
-                s.game.current_index = if rec_len > 0 {
-                    s.game.recents_index.min(rec_len - 1)
-                } else {
-                    0
-                };
-                s.game.desc_scroll = 0;
-                s.game.current_page = 0; // reset to Game Info on list switch
-                s.net.status_message.clear();
-                if s.game.entries.is_empty() {
-                    s.net
-                        .status_message
-                        .push_str("No recently played games found.");
-                }
-            }
-        }
         navigated = true;
     }
 
@@ -1228,14 +1421,6 @@ fn handle_input(s: &mut CoreState) {
     } else if scrolled {
         update_scroll_indicator(s);
     }
-
-    // Update debounce state
-    s.input.prev_left = left;
-    s.input.prev_right = right;
-    s.input.prev_b = b_pressed;
-    s.input.prev_start = start;
-    s.input.prev_l1 = l1;
-    s.input.prev_r1 = r1;
 }
 
 // ---- Libretro API implementation ----
@@ -1328,6 +1513,8 @@ pub unsafe extern "C" fn retro_deinit() {
     s.display.present_buffer_16.clear();
     s.scratch.header_text.clear();
     s.scratch.scroll_indicator.clear();
+    s.scratch.recents_count_text.clear();
+    s.scratch.favorites_count_text.clear();
 }
 
 static LIBRARY_NAME: &[u8] = b"A/V Test\0";
@@ -1365,6 +1552,8 @@ pub extern "C" fn retro_set_controller_port_device(_port: c_uint, _device: c_uin
 pub unsafe extern "C" fn retro_reset() {
     let s = state();
     s.display.frame_count = 0;
+    s.game.view = CoreView::Home;
+    s.game.home_cursor = 0;
     s.game.current_index = 0;
     s.game.desc_scroll = 0;
     s.game.current_page = 0;
@@ -1384,6 +1573,7 @@ pub unsafe extern "C" fn retro_reset() {
     }
     update_header_text(s);
     update_scroll_indicator(s);
+    update_home_counts(s);
 }
 
 // ALLOCATION-FREE: retro_run must not allocate on the heap.
@@ -1424,8 +1614,12 @@ pub unsafe extern "C" fn retro_run() {
     // Uses format! which allocates, but only once every ~100s -- negligible.
     if s.display.frame_count % 6000 == 0 {
         debug_log(&format!(
-            "[frame {}] alive, idx={}, mode={}",
+            "[frame {}] alive, view={}, idx={}, mode={}",
             s.display.frame_count,
+            match s.game.view {
+                CoreView::Home => "Home",
+                CoreView::GameDetail => "Detail",
+            },
             s.game.current_index,
             match s.game.list_mode {
                 ListMode::Recents => "R",
@@ -1511,7 +1705,9 @@ pub unsafe extern "C" fn retro_load_game(_game: *const RetroGameInfo) -> bool {
     load_list(s, ListMode::Recents);
     load_list(s, ListMode::Favorites);
 
-    // Switch back to recents as the default view
+    // Start on the Home screen
+    s.game.view = CoreView::Home;
+    s.game.home_cursor = 0;
     s.game.list_mode = ListMode::Recents;
     s.game.current_index = 0;
     s.game.desc_scroll = 0;
@@ -1534,14 +1730,19 @@ pub unsafe extern "C" fn retro_load_game(_game: *const RetroGameInfo) -> bool {
     s.scratch.header_text.reserve(64);
     s.scratch.scroll_indicator.clear();
     s.scratch.scroll_indicator.reserve(64);
+    s.scratch.recents_count_text.clear();
+    s.scratch.recents_count_text.reserve(16);
+    s.scratch.favorites_count_text.clear();
+    s.scratch.favorites_count_text.reserve(16);
     // status_message may contain a valid message (e.g., error or empty-list text).
     // Ensure it has enough capacity for the longest message retro_run might write.
     let status_len = s.net.status_message.len();
     s.net.status_message.reserve(64_usize.saturating_sub(status_len));
 
-    // Pre-compute header and scroll indicator so retro_run is allocation-free
+    // Pre-compute header, scroll indicator, and home screen counts
     update_header_text(s);
     update_scroll_indicator(s);
+    update_home_counts(s);
 
     debug_log("[replay-game-info] load_game: all pre-fetching complete");
 
@@ -1583,7 +1784,8 @@ pub unsafe extern "C" fn retro_unload_game() {
 //   [4..8)   desc_scroll: u32
 //   [8..9)   list_mode: u8 (0=Recents, 1=Favorites)
 //   [9..10)  current_page: u8 (0=GameInfo, 1=Description)
-//   [10..12) reserved (zeroed)
+//   [10..11) view: u8 (0=Home, 1=GameDetail)
+//   [11..12) home_cursor: u8 (0=RecentlyPlayed, 1=Favorites)
 //   [12..16) recents_index: u32
 //   [16..20) favorites_index: u32
 //   [20..24) reserved (zeroed)
@@ -1610,6 +1812,11 @@ pub unsafe extern "C" fn retro_serialize(data: *mut c_void, size: usize) -> bool
         ListMode::Favorites => 1,
     };
     buf[9] = s.game.current_page as u8;
+    buf[10] = match s.game.view {
+        CoreView::Home => 0,
+        CoreView::GameDetail => 1,
+    };
+    buf[11] = s.game.home_cursor as u8;
     buf[12..16].copy_from_slice(&(s.game.recents_index as u32).to_le_bytes());
     buf[16..20].copy_from_slice(&(s.game.favorites_index as u32).to_le_bytes());
     true
@@ -1622,6 +1829,12 @@ pub unsafe extern "C" fn retro_unserialize(data: *const c_void, size: usize) -> 
     }
     let s = state();
     let buf = std::slice::from_raw_parts(data as *const u8, SAVE_STATE_SIZE);
+    // Restore view and home_cursor (backward compatible: 0 = Home, which is the correct default)
+    s.game.view = match buf[10] {
+        1 => CoreView::GameDetail,
+        _ => CoreView::Home,
+    };
+    s.game.home_cursor = (buf[11] as usize).min(1); // clamp to valid range
     s.game.list_mode = match buf[8] {
         1 => ListMode::Favorites,
         _ => ListMode::Recents,
