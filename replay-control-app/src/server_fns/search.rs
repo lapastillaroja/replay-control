@@ -444,9 +444,9 @@ pub async fn global_search(
                 Err(_) => continue,
             };
 
-        // Batch-load genre groups, base_titles, and developers for this system.
-        let (system_genre_groups, system_base_titles, system_developers): (
-            std::collections::HashMap<String, String>,
+        // Batch-load genre groups and base_titles for this system.
+        // Developer matching is handled separately by `search_by_developer`.
+        let (system_genre_groups, system_base_titles): (
             std::collections::HashMap<String, String>,
             std::collections::HashMap<String, String>,
         ) = state
@@ -464,12 +464,7 @@ pub async fn global_search(
                             .filter(|e| !e.base_title.is_empty())
                             .map(|e| (e.rom_filename.clone(), e.base_title.clone()))
                             .collect();
-                        let developers: std::collections::HashMap<String, String> = entries
-                            .iter()
-                            .filter(|e| !e.developer.is_empty())
-                            .map(|e| (e.rom_filename.clone(), e.developer.clone()))
-                            .collect();
-                        (genres, base_titles, developers)
+                        (genres, base_titles)
                     })
                     .unwrap_or_default()
             })
@@ -584,15 +579,6 @@ pub async fn global_search(
                     {
                         // Score it like a word-level match (below substring tier).
                         score = 350;
-                    }
-
-                    // Developer matching: if query matches the developer name,
-                    // give a score so searching "Capcom" returns all Capcom games.
-                    if score == 0
-                        && let Some(dev) = system_developers.get(&r.game.rom_filename)
-                        && dev.to_lowercase().contains(&q)
-                    {
-                        score = 250;
                     }
 
                     if score > 0 { Some((score, r)) } else { None }
