@@ -40,7 +40,9 @@ When launched via a favorite, RePlayOS creates `.fav.rec` extension files. The a
 
 ## Region Preference
 
-Stored in `.replay-control/settings.cfg` as `region_preference = "usa"` (default). Options: `usa`, `europe`, `japan`, `world`.
+Stored in `.replay-control/settings.cfg` as `region_preference = "usa"` (default). A secondary region preference is also supported, providing a two-tier sort: Primary > Secondary > World > others.
+
+Options: `usa`, `europe`, `japan`, `world`.
 
 ### Effects
 - **ROM sort order**: Preferred region sorts first in game lists

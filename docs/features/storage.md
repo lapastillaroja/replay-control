@@ -19,8 +19,8 @@ The `--storage-path` CLI flag bypasses detection entirely (used for local develo
 
 `StorageKind` enum (`Sd`, `Usb`, `Nvme`, `Nfs`) affects behavior:
 
-- **`is_local()` = true** (Sd, Usb, Nvme): inotify filesystem watcher enabled, SQLite WAL mode attempted
-- **`is_local()` = false** (Nfs): No filesystem watcher, SQLite uses `nolock` VFS fallback
+- **`is_local()` = true** (Sd, Usb, Nvme): inotify filesystem watcher enabled, SQLite WAL mode for concurrent reads
+- **`is_local()` = false** (Nfs): No filesystem watcher, SQLite uses `nolock` VFS with DELETE journal mode (NFS does not support file locking)
 
 ## Config File Watcher
 
@@ -58,11 +58,12 @@ Two config files serve different purposes:
 The app's data directory on ROM storage. Full structure documented in `docs/reference/replay-control-folder.md`.
 
 Key files:
-- `metadata.db` -- Rebuildable cache (game metadata, game library, thumbnail index)
+- `metadata.db` -- Rebuildable cache (game metadata, game library, thumbnail index, aliases, series)
 - `user_data.db` -- User customizations that survive cache clears (box art overrides, saved videos)
-- `settings.cfg` -- App-specific settings
-- `media/` -- Downloaded box art and screenshot images
-- `tmp/` -- Legacy git clone cache (auto-cleaned)
+- `settings.cfg` -- App-specific settings (region preference, secondary region, text size)
+- `media/` -- Downloaded box art, screenshot, and title screen images
+
+Database access uses a single-connection policy with a `Mutex` to prevent concurrent writes. Import operations hold the mutex directly, and a `metadata_operation_in_progress` guard prevents race conditions between operations.
 
 ## Key Source Files
 

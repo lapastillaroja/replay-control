@@ -4,7 +4,11 @@ How box art and screenshot images are matched, downloaded, and served.
 
 ## Image Sources
 
-All images come from [libretro-thumbnails](https://github.com/libretro-thumbnails) GitHub repos. There are ~40 repos relevant to RePlayOS systems, each containing `Named_Boxarts/`, `Named_Snaps/`, and `Named_Titles/` directories.
+All images come from [libretro-thumbnails](https://github.com/libretro-thumbnails) GitHub repos. There are ~40 repos relevant to RePlayOS systems, each containing three image directories:
+
+- `Named_Boxarts/` -- cover art / box art
+- `Named_Snaps/` -- in-game screenshots
+- `Named_Titles/` -- title screen screenshots
 
 Image filenames use the game's display name (not ROM hash), with special characters `&*/:\`<>?\\|"` replaced by `_`.
 
@@ -38,9 +42,18 @@ Check `game_metadata.box_art_path` (set during image import). If present, the im
 ### Tier 5: On-Demand Download
 If no local match is found but the `thumbnail_index` has a manifest entry, `queue_on_demand_download()` fetches the single PNG from `raw.githubusercontent.com` in a background thread. The image appears on the next page load.
 
+## Screenshot Gallery
+
+The game detail page displays a screenshot gallery with labeled images when available:
+
+- **Title Screen** (`Named_Titles/`) -- shown with a "Title Screen" label
+- **In-Game** (`Named_Snaps/`) -- shown with an "In-Game" label
+
+Images are resolved via `resolve_image_on_disk()`, which handles arcade MAME codename-to-display-name translation automatically. The `title_url` and `screenshot_url` fields on `GameInfo` are populated during game info resolution with a filesystem fallback.
+
 ## Arcade Image Matching
 
-Arcade ROMs use MAME codenames (`sf2.zip`), not human-readable names. The matching pipeline translates codenames to display names via `arcade_db` before matching against thumbnail filenames.
+Arcade ROMs use MAME codenames (`sf2.zip`), not human-readable names. The `resolve_image_on_disk()` function translates codenames to display names via `arcade_db` before matching against thumbnail filenames. This unified function should be used instead of calling `find_image_on_disk` directly, to avoid forgetting the arcade name translation step.
 
 Multi-repo support: `arcade_dc` maps to both Sega Naomi and Sega Naomi 2 repos. The `thumbnail_repo_names()` function handles this mapping.
 

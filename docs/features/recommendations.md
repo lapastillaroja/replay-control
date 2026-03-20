@@ -12,7 +12,14 @@ The home page shows several recommendation blocks, all powered by SQL queries ag
 `random_cached_roms_diverse()` selects random games with genre diversity. Uses a dedup CTE that partitions by `(system, base_title)` and picks one ROM per game (preferring the user's region). Results are shuffled and genre-balanced.
 
 ### Top Rated
-`top_rated_cached_roms()` returns the highest-rated games by LaunchBox community rating. Same dedup CTE to avoid showing multiple variants of the same game. Results are randomized within top-N to avoid a static list.
+`top_rated_cached_roms()` returns the highest-rated games by LaunchBox community rating, weighted by vote count. Same dedup CTE to avoid showing multiple variants of the same game. Results are randomized within top-N to avoid a static list.
+
+Weighted scoring penalizes games with few votes to prevent obscure games rated 5.0 by a single voter from appearing above well-known classics:
+- 10+ votes: full rating
+- 3-9 votes: 90% of rating
+- 0-2 votes: 70% of rating
+
+The `rating_count` field (from LaunchBox `<CommunityRatingCount>`) is stored per ROM and used in the SQL `ORDER BY` clause.
 
 ### Multiplayer
 Filters for games with `players >= 2`. Random selection with dedup.

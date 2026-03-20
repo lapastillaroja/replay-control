@@ -36,7 +36,7 @@ Covers 20+ non-arcade systems. Two-level model: `CanonicalGame` (shared per game
 
 Fields: `canonical_name`, `year`, `genre`, `developer`, `players`, `region`, `crc32`, `normalized_genre`.
 
-Lookup chain: exact filename stem (O(1) PHF) -> CRC32 fallback -> normalized title fallback.
+Lookup chain: exact filename stem (O(1) PHF) -> CRC32 hash-based fallback (for 9 cartridge systems with No-Intro DATs) -> normalized title fallback.
 
 Sources: No-Intro DATs (ROM identification), TheGamesDB JSON (metadata enrichment), libretro-database DATs (genre/players).
 
@@ -56,7 +56,7 @@ The user downloads a ~460 MB XML file from LaunchBox containing ~108K game entri
 
 Matching uses `normalize_title()`: strip parenthetical/bracket tags, reorder articles ("Title, The" -> "The Title"), keep only lowercase alphanumeric.
 
-Data stored: description, rating, publisher, genre, max players (from `<MaxPlayers>` XML field).
+Data stored: description, rating, rating count (from `<CommunityRatingCount>`), publisher, developer (from `<Developer>`), genre, max players (from `<MaxPlayers>`), release date (from `<ReleaseDate>`), cooperative flag (from `<Cooperative>`).
 
 ### Genre Fallback
 
@@ -75,12 +75,18 @@ The metadata page provides a "Cleanup Orphaned Images" button that removes downl
 - Skips systems where no box art URLs have been enriched yet
 - Protected by `metadata_operation_in_progress` guard to prevent races with other operations
 
+### Wikidata Series Data
+
+Embedded at build time from Wikidata SPARQL extracts. Provides game series/franchise relationships using P179 (part of the series), P155/P156 (follows/followed by) for sequel chains, and P1545 ordinals for series ordering. ~5,345 entries across 194+ series covering both console and arcade systems.
+
+At scan time, entries are matched to library games by normalized title (with roman numeral normalization, e.g., "II" matches "2") and cross-system matching (a game's Wikidata entry may list a different platform than the ROM's system folder). See [Game Series](game-series.md) for details.
+
 ## Unified GameInfo API
 
 Server functions return a single `GameInfo` struct regardless of data source. `resolve_game_info()` is the only place that branches on arcade vs. non-arcade:
 
 - Always available (from embedded DB): display_name, year, genre, developer, players
-- Available after import (from metadata_db): description, rating, publisher, box_art_url, screenshot_url
+- Available after import (from metadata_db): description, rating, rating_count, publisher, developer, box_art_url, screenshot_url, title_url
 - Arcade-specific: rotation, driver_status, is_clone, parent_rom, arcade_category
 - Console-specific: region
 
@@ -103,7 +109,8 @@ Server functions return a single `GameInfo` struct regardless of data source. `r
 | `replay-control-core/src/arcade_db.rs` | Arcade PHF map + lookup |
 | `replay-control-core/src/game_db.rs` | Console PHF maps + lookup chain |
 | `replay-control-core/src/metadata/launchbox.rs` | LaunchBox XML import, ROM index, title normalization |
-| `replay-control-core/src/metadata/metadata_db.rs` | SQLite schema, game_metadata table |
+| `replay-control-core/src/metadata/metadata_db/` | SQLite schema, game_metadata, game_library, aliases/series tables |
+| `replay-control-core/src/game/series_db.rs` | Embedded Wikidata series database |
 | `replay-control-core/src/rom_tags.rs` | ROM filename classification and tag extraction |
 | `replay-control-core/build.rs` | Build-time database generation |
 | `replay-control-app/src/server_fns/mod.rs` | `resolve_game_info()` |

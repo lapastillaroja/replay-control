@@ -42,6 +42,26 @@ Genre resolution uses `lookup_genre()` which falls back to LaunchBox data when t
 
 The last N search queries are stored client-side and displayed as quick-access chips on the search page.
 
+## Developer Search
+
+When the search query matches a developer/manufacturer name, a "Games by Developer" block appears above the regular search results. This is powered by `search_by_developer()`, which:
+
+1. Queries the `developer` column in `game_library` for matching developer names (case-insensitive substring match)
+2. Returns the top-matched developer's games in a horizontal scroll block with box art
+3. Shows up to 2 additional matching developers as tappable links with game counts ("Other developers matching...")
+4. Each developer link navigates to `/developer/:name`
+
+### Developer Game List Page
+
+`/developer/:name` shows the full game list for a specific developer with:
+- **System filter chips** across the top (all systems the developer has games on, with counts)
+- **Content filter chips** (hide hacks, hide translations, hide clones, multiplayer only, genre, min rating)
+- **Infinite scroll** with pagination
+- **Cross-system game list** using the unified `GameListItem` component with system badges
+- Empty state for non-existent developers
+
+The developer column is populated from `arcade_db` manufacturer (for arcade systems) and LaunchBox `<Developer>` enrichment (for all systems).
+
 ## Random Game
 
 A "Random Game" button picks a random ROM from the library and navigates to its game detail page.
@@ -50,6 +70,7 @@ A "Random Game" button picks a random ROM from the library and navigates to its 
 
 | File | Role |
 |------|------|
-| `replay-control-app/src/server_fns/search.rs` | `global_search()`, scoring, `lookup_genre()` |
+| `replay-control-app/src/server_fns/search.rs` | `global_search()`, `search_by_developer()`, scoring, `lookup_genre()` |
 | `replay-control-app/src/pages/search.rs` | Search page UI, URL param persistence |
+| `replay-control-app/src/pages/developer.rs` | Developer game list page |
 | `replay-control-app/src/components/search_bar.rs` | Top bar search icon, input handling |
