@@ -425,3 +425,50 @@
     border-bottom: none;
     margin-bottom: 8px;
 }
+
+/* Compact developer game list (replaces horizontal scroll) */
+.developer-game-list {
+    display: flex;
+    flex-direction: column;
+}
+.developer-game-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    text-decoration: none;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+}
+.developer-game-row:last-child {
+    border-bottom: none;
+}
+.developer-game-row:hover {
+    background: var(--surface-hover);
+}
+.developer-game-thumb {
+    width: 40px;
+    height: 30px;
+    object-fit: contain;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+.developer-game-thumb-placeholder {
+    width: 40px;
+    height: 30px;
+    background: var(--surface);
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+.developer-game-name {
+    flex: 1;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.developer-game-system {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}

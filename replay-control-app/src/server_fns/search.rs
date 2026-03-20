@@ -5,7 +5,7 @@ use super::*;
 pub struct DeveloperSearchResult {
     pub developer_name: String,
     pub total_count: usize,
-    pub games: Vec<RecommendedGame>,
+    pub games: Vec<GlobalSearchResult>,
     pub other_developers: Vec<DeveloperMatch>,
 }
 
@@ -633,11 +633,16 @@ pub async fn global_search(
             std::collections::HashMap::new()
         };
 
+        let image_index = state.cache.get_image_index(&state, &sys.folder_name);
         let top_results: Vec<GlobalSearchResult> = top_roms
             .into_iter()
-            .map(|mut rom| {
-                rom.box_art_url =
-                    resolve_box_art_url(&state, &sys.folder_name, &rom.game.rom_filename);
+            .map(|rom| {
+                let box_art_url = state.cache.resolve_box_art(
+                    &state,
+                    &image_index,
+                    &sys.folder_name,
+                    &rom.game.rom_filename,
+                );
                 // Use genre_group from batch-loaded map; fall back to lookup_genre.
                 let genre_str = system_genre_groups
                     .get(&rom.game.rom_filename)
@@ -658,7 +663,7 @@ pub async fn global_search(
                     rom_path: rom.game.rom_path,
                     genre: genre_str,
                     is_favorite: rom.is_favorite,
-                    box_art_url: rom.box_art_url,
+                    box_art_url,
                     rating,
                     players: if players_val > 0 {
                         Some(players_val)
@@ -726,8 +731,6 @@ pub async fn search_by_developer(
     query: String,
     limit: usize,
 ) -> Result<Option<DeveloperSearchResult>, ServerFnError> {
-    use super::recommendations::{resolve_box_art_for_picks, to_recommended};
-
     let q = query.trim().to_lowercase();
     if q.len() < 2 {
         return Ok(None);
@@ -773,13 +776,33 @@ pub async fn search_by_developer(
         return Ok(None);
     }
 
-    let systems = state.cache.get_systems(&storage);
-    let mut games: Vec<RecommendedGame> = game_entries
-        .iter()
-        .filter_map(|entry| to_recommended(&entry.system, entry, &systems))
+    let mut image_indexes: std::collections::HashMap<
+        String,
+        std::sync::Arc<crate::api::cache::ImageIndex>,
+    > = std::collections::HashMap::new();
+    let games: Vec<GlobalSearchResult> = game_entries
+        .into_iter()
+        .map(|entry| {
+            let index = image_indexes
+                .entry(entry.system.clone())
+                .or_insert_with(|| state.cache.get_image_index(&state, &entry.system));
+            let box_art_url =
+                state
+                    .cache
+                    .resolve_box_art(&state, index, &entry.system, &entry.rom_filename);
+            GlobalSearchResult {
+                display_name: entry.display_name.unwrap_or_else(|| entry.rom_filename.clone()),
+                system: entry.system,
+                rom_filename: entry.rom_filename,
+                rom_path: entry.rom_path,
+                genre: entry.genre.unwrap_or_default(),
+                is_favorite: false,
+                box_art_url,
+                rating: entry.rating,
+                players: entry.players,
+            }
+        })
         .collect();
-
-    resolve_box_art_for_picks(&state, &mut games);
 
     Ok(Some(DeveloperSearchResult {
         developer_name,
@@ -931,10 +954,20 @@ pub async fn get_developer_games(
             .collect();
 
     // Convert GameEntry -> RomListEntry with box art resolution and favorites.
+    let mut image_indexes: std::collections::HashMap<
+        String,
+        std::sync::Arc<crate::api::cache::ImageIndex>,
+    > = std::collections::HashMap::new();
     let list_entries: Vec<RomListEntry> = entries
         .into_iter()
         .map(|entry| {
-            let box_art_url = resolve_box_art_url(&state, &entry.system, &entry.rom_filename);
+            let index = image_indexes
+                .entry(entry.system.clone())
+                .or_insert_with(|| state.cache.get_image_index(&state, &entry.system));
+            let box_art_url =
+                state
+                    .cache
+                    .resolve_box_art(&state, index, &entry.system, &entry.rom_filename);
             let is_favorite = fav_sets
                 .get(&entry.system)
                 .is_some_and(|set| set.contains(&entry.rom_filename));

@@ -3,7 +3,6 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_query_map;
 
 use crate::components::filter_chips::{FilterChips, FilterState};
-use crate::components::hero_card::GameScrollCard;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{
     self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResult, GlobalSearchResults,
@@ -582,7 +581,7 @@ fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
     }
 }
 
-/// "Games by [Developer]" horizontal scroll block.
+/// "Games by [Developer]" compact list block.
 #[component]
 fn DeveloperBlock(
     data: DeveloperSearchResult,
@@ -604,26 +603,19 @@ fn DeveloperBlock(
     let has_other_developers = !data.other_developers.is_empty();
 
     view! {
-        <section class="section search-developer-section">
+        <div class="search-group">
             <div class="search-group-header">
-                <h2 class="section-title">{title}</h2>
+                <h3 class="search-group-title">{title}</h3>
                 <A href=see_all_href attr:class="search-see-all">
                     {t(locale, "developer.see_all")} " \u{2192}"
                 </A>
             </div>
-            <div class="recent-scroll">
-                {data.games.into_iter().map(|game| {
-                    view! {
-                        <GameScrollCard
-                            href=game.href
-                            name=game.display_name
-                            system=game.system_display
-                            box_art_url=game.box_art_url
-                        />
-                    }
+            <div class="search-group-results">
+                {data.games.into_iter().take(3).map(|result| {
+                    view! { <SearchResultItem result /> }
                 }).collect::<Vec<_>>()}
             </div>
-        </section>
+        </div>
         <Show when=move || has_other_developers>
             <OtherDevelopersList
                 developers=data.other_developers.clone()
