@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 
 use crate::components::filter_chips::{FilterChips, FilterState};
+use crate::components::game_list_item::GameListItem;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, DeveloperSystem, RomListEntry, PAGE_SIZE};
 
@@ -250,12 +251,38 @@ pub fn DeveloperPage() -> impl IntoView {
                                     <SystemFilterChips systems system_filter locale />
                                     <div class="rom-list">
                                         {page.roms.into_iter().map(|rom| {
-                                            view! { <DeveloperRomItem rom /> }
+                                            {
+                                                let genre = (!rom.genre.is_empty()).then(|| rom.genre.clone());
+                                                view! { <GameListItem
+                                                    system=rom.system.clone()
+                                                    rom_filename=rom.rom_filename.clone()
+                                                    display_name=rom.display_name.clone()
+                                                    rom_path=rom.rom_path.clone()
+                                                    box_art_url=rom.box_art_url.clone()
+                                                    show_system=true
+                                                    is_favorite=rom.is_favorite
+                                                    genre=genre
+                                                    rating=rom.rating
+                                                    driver_status=rom.driver_status.clone()
+                                                /> }
+                                            }
                                         }).collect::<Vec<_>>()}
 
                                         {move || {
                                             extra_roms.get().into_iter().map(|rom| {
-                                                view! { <DeveloperRomItem rom /> }
+                                                let genre = (!rom.genre.is_empty()).then(|| rom.genre.clone());
+                                                view! { <GameListItem
+                                                    system=rom.system.clone()
+                                                    rom_filename=rom.rom_filename.clone()
+                                                    display_name=rom.display_name.clone()
+                                                    rom_path=rom.rom_path.clone()
+                                                    box_art_url=rom.box_art_url.clone()
+                                                    show_system=true
+                                                    is_favorite=rom.is_favorite
+                                                    genre=genre
+                                                    rating=rom.rating
+                                                    driver_status=rom.driver_status.clone()
+                                                /> }
                                             }).collect::<Vec<_>>()
                                         }}
 
@@ -336,93 +363,3 @@ fn SystemFilterChips(
     }.into_any()
 }
 
-/// A single ROM row for the developer page.
-/// Simplified version of the system page RomItem -- no rename/delete actions,
-/// since this is a cross-system view.
-#[component]
-fn DeveloperRomItem(rom: RomListEntry) -> impl IntoView {
-    let filename = StoredValue::new(rom.rom_filename.clone());
-    let display_name = StoredValue::new(rom.display_name.clone());
-    let system = StoredValue::new(rom.system.clone());
-    let box_art_url = StoredValue::new(rom.box_art_url.clone());
-    let has_box_art = rom.box_art_url.is_some();
-    let genre = StoredValue::new(rom.genre.clone());
-    let has_genre = !rom.genre.is_empty();
-    let rating = rom.rating;
-
-    let game_href = format!(
-        "/games/{}/{}",
-        rom.system,
-        urlencoding::encode(&rom.rom_filename)
-    );
-    let game_href = StoredValue::new(game_href);
-
-    // Resolve system display name.
-    let system_display = StoredValue::new({
-        #[cfg(feature = "ssr")]
-        {
-            replay_control_core::systems::find_system(&rom.system)
-                .map(|s| s.display_name.to_string())
-                .unwrap_or_else(|| rom.system.clone())
-        }
-        #[cfg(not(feature = "ssr"))]
-        {
-            rom.system.clone()
-        }
-    });
-
-    // Quick-favorite toggle.
-    let is_fav = RwSignal::new(rom.is_favorite);
-    let rom_path = StoredValue::new(rom.rom_path.clone());
-    let on_toggle_fav = move |_| {
-        let fav = is_fav.get();
-        is_fav.set(!fav);
-        let fname = filename.get_value();
-        let sys = system.get_value();
-        let rp = rom_path.get_value();
-        if fav {
-            let fav_filename = format!("{sys}@{fname}.fav");
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::remove_favorite(fav_filename, None).await;
-            });
-        } else {
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::add_favorite(sys, rp, false).await;
-            });
-        }
-    };
-
-    let star = move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" };
-
-    view! {
-        <div class="rom-item">
-            <button class="rom-fav-btn" on:click=on_toggle_fav>{star}</button>
-
-            <A href=game_href.get_value() attr:class="rom-thumb-link">
-                {if has_box_art {
-                    view! { <img class="rom-thumb" src=box_art_url.get_value() loading="lazy" width="56" height="40" /> }.into_any()
-                } else {
-                    view! { <div class="rom-thumb-placeholder"></div> }.into_any()
-                }}
-            </A>
-
-            <div class="rom-info">
-                <div class="rom-name-row">
-                    <A href=game_href.get_value() attr:class="rom-name rom-name-link">
-                        {display_name.get_value()}
-                    </A>
-                </div>
-                <div class="rom-badges">
-                    <span class="rom-path">{system_display.get_value()}</span>
-                    <Show when=move || has_genre>
-                        <span class="search-badge search-badge-genre">{genre.get_value()}</span>
-                    </Show>
-                    {rating.filter(|&r| r > 0.0).map(|r| {
-                        let label = format!("\u{2605} {:.1}", r);
-                        view! { <span class="search-badge search-badge-rating">{label}</span> }
-                    })}
-                </div>
-            </div>
-        </div>
-    }
-}

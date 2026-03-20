@@ -1,6 +1,7 @@
 pub mod boxart_picker;
 pub mod captures;
 pub mod filter_chips;
+pub mod game_list_item;
 pub mod genre_dropdown;
 pub mod hero_card;
 pub mod metadata_banner;

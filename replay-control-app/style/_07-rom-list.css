@@ -84,25 +84,6 @@
     flex-direction: column;
 }
 
-.rom-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.15s;
-    content-visibility: auto;
-    contain-intrinsic-size: auto 61px;
-}
-
-.rom-item:hover {
-    background: var(--surface-hover);
-}
-
-.rom-item.hidden {
-    display: none;
-}
-
 /* ROM thumbnail in list — fixed height, aspect ratio adapts to image */
 .rom-thumb-link {
     flex-shrink: 0;
@@ -123,11 +104,6 @@
     height: 2.5rem;
     background: var(--border);
     border-radius: 3px;
-}
-
-.rom-info {
-    flex: 1;
-    min-width: 0;
 }
 
 .rom-name {
@@ -183,32 +159,19 @@
     text-overflow: ellipsis;
 }
 
-.rom-meta {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin-left: 12px;
-    flex-shrink: 0;
-}
-
 .rom-size {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-secondary);
+    margin-left: auto;
 }
 
 .rom-ext {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: var(--text-secondary);
     background: var(--surface);
-    padding: 2px 6px;
+    padding: 1px 5px;
     border-radius: 4px;
     border: 1px solid var(--border);
-}
-
-.rom-rating {
-    font-size: 0.7rem;
-    color: var(--star);
-    white-space: nowrap;
 }
 
 /* ROM favorite button */
@@ -242,7 +205,7 @@
         transition: opacity 0.15s;
     }
 
-    .rom-item:hover .rom-actions {
+    .game-list-item:hover .rom-actions {
         opacity: 1;
     }
 }
@@ -336,4 +299,50 @@
 
 .rom-name-link:hover {
     color: var(--accent);
+}
+
+/* ── Shared GameListItem component ──────────────────────────────── */
+
+.game-list-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 61px;
+}
+
+.game-list-item:last-child {
+    border-bottom: none;
+}
+
+.game-list-item:hover {
+    background: var(--surface-hover);
+}
+
+.game-list-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.game-list-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    flex-wrap: wrap;
+}
+
+.game-list-system {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.game-list-driver-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
 }

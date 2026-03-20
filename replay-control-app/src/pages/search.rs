@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_query_map;
 
 use crate::components::filter_chips::{FilterChips, FilterState};
+use crate::components::game_list_item::GameListItem;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{
     self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResult, GlobalSearchResults,
@@ -511,73 +512,21 @@ fn SystemGroup(
     }
 }
 
-/// A single search result row with optional thumbnail and quick-favorite toggle.
+/// A single search result row — delegates to the shared `GameListItem`.
 #[component]
 fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
-    let href = format!(
-        "/games/{}/{}",
-        result.system,
-        urlencoding::encode(&result.rom_filename)
-    );
-    let href = StoredValue::new(href);
-    let has_box_art = result.box_art_url.is_some();
-    let box_art = StoredValue::new(result.box_art_url.clone());
-    let genre = StoredValue::new(result.genre.clone());
-    let has_genre = !result.genre.is_empty();
-    let rating = result.rating;
-    let display_name = result.display_name.clone();
-
-    // Quick-favorite toggle state.
-    let is_fav = RwSignal::new(result.is_favorite);
-    let system = StoredValue::new(result.system.clone());
-    let rom_filename = StoredValue::new(result.rom_filename.clone());
-    let rom_path = StoredValue::new(result.rom_path.clone());
-
-    let on_toggle_fav = move |_| {
-        let fav = is_fav.get();
-        is_fav.set(!fav);
-        let fname = rom_filename.get_value();
-        let sys = system.get_value();
-        let rp = rom_path.get_value();
-        if fav {
-            let fav_filename = format!("{sys}@{fname}.fav");
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::remove_favorite(fav_filename, None).await;
-            });
-        } else {
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::add_favorite(sys, rp, false).await;
-            });
-        }
-    };
-
-    let star = move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" };
-
+    let genre = (!result.genre.is_empty()).then(|| result.genre.clone());
     view! {
-        <div class="search-result-item">
-            <button class="rom-fav-btn" on:click=on_toggle_fav>{star}</button>
-            <A href=href.get_value() attr:class="search-result-thumb-link">
-                {if has_box_art {
-                    view! { <img class="search-result-thumb" src=box_art.get_value() loading="lazy" /> }.into_any()
-                } else {
-                    view! { <div class="search-result-thumb-placeholder"></div> }.into_any()
-                }}
-            </A>
-            <div class="search-result-info">
-                <A href=href.get_value() attr:class="search-result-name rom-name-link">
-                    {display_name}
-                </A>
-                <div class="search-result-badges">
-                    <Show when=move || has_genre>
-                        <span class="search-badge search-badge-genre">{genre.get_value()}</span>
-                    </Show>
-                    {rating.filter(|&r| r > 0.0).map(|r| {
-                        let label = format!("\u{2605} {:.1}", r);
-                        view! { <span class="search-badge search-badge-rating">{label}</span> }
-                    })}
-                </div>
-            </div>
-        </div>
+        <GameListItem
+            system=result.system.clone()
+            rom_filename=result.rom_filename.clone()
+            display_name=result.display_name.clone()
+            rom_path=result.rom_path.clone()
+            box_art_url=result.box_art_url.clone()
+            is_favorite=result.is_favorite
+            genre=genre
+            rating=result.rating
+        />
     }
 }
 

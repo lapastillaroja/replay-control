@@ -4,9 +4,9 @@ use leptos_router::components::A;
 use leptos_router::hooks::{query_signal_with_options, use_query_map};
 
 use crate::components::filter_chips::{FilterChips, FilterState};
+use crate::components::game_list_item::GameListItem;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, PAGE_SIZE, RomListEntry};
-use crate::util::format_size_for_system;
 
 /// ROM list with built-in search, pagination, and infinite scroll.
 #[component]
@@ -172,9 +172,6 @@ pub fn RomList(system: String) -> impl IntoView {
     let (loading_more, set_loading_more) = signal(false);
     let (offset, set_offset) = signal(PAGE_SIZE);
 
-    // Version bump to trigger re-fetch after delete/rename.
-    let (version, set_version) = signal(0u32);
-
     // First page -- resolves during SSR.
     let first_page = Resource::new(
         move || {
@@ -188,10 +185,9 @@ pub fn RomList(system: String) -> impl IntoView {
                 debounced_genre.get(),
                 filters.multiplayer_only.get(),
                 filters.min_rating.get(),
-                version.get(),
             )
         },
-        move |(system, query, hh, ht, hb, hc, gf, mp, mr, _)| {
+        move |(system, query, hh, ht, hb, hc, gf, mp, mr)| {
             server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr)
         },
     );
@@ -245,11 +241,6 @@ pub fn RomList(system: String) -> impl IntoView {
             set_loading_more.set(false);
         });
     };
-
-    // Action states.
-    let (confirm_delete, set_confirm_delete) = signal(Option::<String>::None);
-    let (renaming, set_renaming) = signal(Option::<String>::None);
-    let (rename_value, set_rename_value) = signal(String::new());
 
     // Sentinel ref for infinite scroll.
     let sentinel_ref = NodeRef::<leptos::html::Div>::new();
@@ -349,12 +340,20 @@ pub fn RomList(system: String) -> impl IntoView {
                             <div class="rom-list">
                                 // First page ROMs (from SSR).
                                 {page.roms.into_iter().map(|rom| {
+                                    let genre = if rom.genre.is_empty() { None } else { Some(rom.genre.clone()) };
                                     view! {
-                                        <RomItem rom
-                                            confirm_delete set_confirm_delete
-                                            renaming set_renaming
-                                            rename_value set_rename_value
-                                            set_version
+                                        <GameListItem
+                                            system=rom.system
+                                            rom_filename=rom.rom_filename
+                                            display_name=rom.display_name
+                                            rom_path=rom.rom_path
+                                            box_art_url=rom.box_art_url
+                                            is_favorite=rom.is_favorite
+                                            genre
+                                            rating=rom.rating
+                                            driver_status=rom.driver_status
+                                            show_system=false
+                                            show_favorite=true
                                         />
                                     }
                                 }).collect::<Vec<_>>()}
@@ -362,12 +361,20 @@ pub fn RomList(system: String) -> impl IntoView {
                                 // Extra ROMs from subsequent pages.
                                 {move || {
                                     extra_roms.get().into_iter().map(|rom| {
+                                        let genre = if rom.genre.is_empty() { None } else { Some(rom.genre.clone()) };
                                         view! {
-                                            <RomItem rom
-                                                confirm_delete set_confirm_delete
-                                                renaming set_renaming
-                                                rename_value set_rename_value
-                                                set_version
+                                            <GameListItem
+                                                system=rom.system
+                                                rom_filename=rom.rom_filename
+                                                display_name=rom.display_name
+                                                rom_path=rom.rom_path
+                                                box_art_url=rom.box_art_url
+                                                is_favorite=rom.is_favorite
+                                                genre
+                                                rating=rom.rating
+                                                driver_status=rom.driver_status
+                                                show_system=false
+                                                show_favorite=true
                                             />
                                         }
                                     }).collect::<Vec<_>>()
@@ -398,210 +405,6 @@ pub fn RomList(system: String) -> impl IntoView {
                 }
             })}
         </Transition>
-    }
-}
-
-/// A single ROM row with favorite toggle, rename, and delete actions.
-#[component]
-fn RomItem(
-    rom: RomListEntry,
-    confirm_delete: ReadSignal<Option<String>>,
-    set_confirm_delete: WriteSignal<Option<String>>,
-    renaming: ReadSignal<Option<String>>,
-    set_renaming: WriteSignal<Option<String>>,
-    rename_value: ReadSignal<String>,
-    set_rename_value: WriteSignal<String>,
-    set_version: WriteSignal<u32>,
-) -> impl IntoView {
-    let filename = StoredValue::new(rom.rom_filename.clone());
-    let display_name = StoredValue::new(rom.display_name.clone());
-    let relative_path = StoredValue::new(rom.rom_path.clone());
-    let system = StoredValue::new(rom.system.clone());
-    let box_art_url = StoredValue::new(rom.box_art_url.clone());
-    let has_box_art = rom.box_art_url.is_some();
-    let driver_status = rom.driver_status.clone();
-    let rating = rom.rating;
-    let is_fav = RwSignal::new(rom.is_favorite);
-    let size = format_size_for_system(rom.size_bytes, &rom.system);
-    let ext = format!(".{}", rom.rom_filename.rsplit('.').next().unwrap_or(""));
-    let path_display = {
-        // Strip the system prefix (e.g. "/roms/sega_smd/") and show the rest.
-        // If there's no subfolder, this is just the filename.
-        let p = rom.rom_path.as_str();
-        let mut slashes = 0;
-        let stripped = p
-            .char_indices()
-            .find_map(|(i, c)| {
-                if c == '/' {
-                    slashes += 1;
-                    // Skip leading slash + "roms" + system folder = 3 slashes
-                    if slashes == 3 {
-                        return Some(&p[i + 1..]);
-                    }
-                }
-                None
-            })
-            .unwrap_or(&rom.rom_filename);
-        stripped.to_string()
-    };
-
-    let game_href = {
-        let sys = rom.system.clone();
-        let fname = rom.rom_filename.clone();
-        format!("/games/{}/{}", sys, urlencoding::encode(&fname))
-    };
-    let game_href = StoredValue::new(game_href);
-
-    let shown_name = move || display_name.get_value();
-
-    let is_deleting = move || confirm_delete.get().as_deref() == Some(&*relative_path.get_value());
-    let is_renaming = move || renaming.get().as_deref() == Some(&*relative_path.get_value());
-
-    let on_toggle_fav = move |_| {
-        let fav = is_fav.get();
-        is_fav.set(!fav);
-        let fname = filename.get_value();
-        let sys = system.get_value();
-        let rp = relative_path.get_value();
-        if fav {
-            let fav_filename = format!("{sys}@{fname}.fav");
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::remove_favorite(fav_filename, None).await;
-            });
-        } else {
-            leptos::task::spawn_local(async move {
-                let _ = server_fns::add_favorite(sys, rp, false).await;
-            });
-        }
-    };
-
-    let star = move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" };
-
-    view! {
-        <div class="rom-item">
-            <button class="rom-fav-btn" on:click=on_toggle_fav>{star}</button>
-
-            <A href=game_href.get_value() attr:class="rom-thumb-link">
-                {if has_box_art {
-                    view! { <img class="rom-thumb" src=box_art_url.get_value() loading="lazy" width="56" height="40" /> }.into_any()
-                } else {
-                    view! { <div class="rom-thumb-placeholder"></div> }.into_any()
-                }}
-            </A>
-
-            <div class="rom-info">
-                <Show when=is_renaming fallback=move || {
-                    let ds = driver_status.clone();
-                    view! {
-                        <div class="rom-name-row">
-                            <A href=game_href.get_value() attr:class="rom-name rom-name-link">{shown_name()}</A>
-                            {ds.as_ref().map(|status| {
-                                let class = match status.as_str() {
-                                    "Working" => "driver-dot driver-dot-working",
-                                    "Imperfect" => "driver-dot driver-dot-imperfect",
-                                    "Preliminary" => "driver-dot driver-dot-preliminary",
-                                    _ => "driver-dot driver-dot-unknown",
-                                };
-                                let title = format!("Driver: {status}");
-                                view! { <span class=class title=title></span> }
-                            })}
-                        </div>
-                        <span class="rom-path">{path_display.clone()}</span>
-                    }
-                }>
-                    <RenameInput rename_value set_rename_value set_renaming
-                        relative_path set_version
-                    />
-                </Show>
-            </div>
-
-            <div class="rom-meta">
-                {rating.filter(|&r| r > 0.0).map(|r| {
-                    let label = format!("\u{2605} {:.1}", r);
-                    view! { <span class="rom-rating">{label}</span> }
-                })}
-                <span class="rom-size">{size}</span>
-                <span class="rom-ext">{ext}</span>
-            </div>
-
-            <div class="rom-actions">
-                <Show when=is_deleting fallback=move || view! {
-                    <button class="rom-action-btn" title="Rename"
-                        on:click=move |_| {
-                            set_rename_value.set(filename.get_value());
-                            set_renaming.set(Some(relative_path.get_value()));
-                        }
-                    >{"\u{270F}"}</button>
-                    <button class="rom-action-btn rom-action-delete" title="Delete"
-                        on:click=move |_| set_confirm_delete.set(Some(relative_path.get_value()))
-                    >{"\u{2715}"}</button>
-                }>
-                    <DeleteConfirm relative_path set_confirm_delete set_version />
-                </Show>
-            </div>
-        </div>
-    }
-}
-
-#[component]
-fn RenameInput(
-    rename_value: ReadSignal<String>,
-    set_rename_value: WriteSignal<String>,
-    set_renaming: WriteSignal<Option<String>>,
-    relative_path: StoredValue<String>,
-    set_version: WriteSignal<u32>,
-) -> impl IntoView {
-    let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
-        if ev.key() == "Enter" {
-            let rp = relative_path.get_value();
-            let new_name = rename_value.get_untracked();
-            set_renaming.set(None);
-            leptos::task::spawn_local(async move {
-                if server_fns::rename_rom(rp, new_name).await.is_ok() {
-                    set_version.update(|v| *v += 1);
-                }
-            });
-        } else if ev.key() == "Escape" {
-            set_renaming.set(None);
-        }
-    };
-
-    view! {
-        <div class="rename-inline">
-            <input
-                type="text"
-                class="rename-input"
-                prop:value=move || rename_value.get()
-                on:input=move |ev| set_rename_value.set(event_target_value(&ev))
-                on:keydown=on_keydown
-            />
-        </div>
-    }
-}
-
-#[component]
-fn DeleteConfirm(
-    relative_path: StoredValue<String>,
-    set_confirm_delete: WriteSignal<Option<String>>,
-    set_version: WriteSignal<u32>,
-) -> impl IntoView {
-    let on_confirm = move |_| {
-        let rp = relative_path.get_value();
-        set_confirm_delete.set(None);
-        leptos::task::spawn_local(async move {
-            if server_fns::delete_rom(rp).await.is_ok() {
-                set_version.update(|v| *v += 1);
-            }
-        });
-    };
-
-    view! {
-        <button class="rom-action-btn rom-action-confirm-delete" on:click=on_confirm>
-            {"\u{2713} Del"}
-        </button>
-        <button class="rom-action-btn" on:click=move |_| set_confirm_delete.set(None)>
-            {"\u{2715}"}
-        </button>
     }
 }
 
