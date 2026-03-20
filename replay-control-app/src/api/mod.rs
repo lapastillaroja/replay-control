@@ -1,5 +1,6 @@
 pub(crate) mod background;
 pub(crate) mod cache;
+pub(crate) mod core_api;
 pub mod favorites;
 pub mod import;
 pub mod recents;
@@ -369,7 +370,8 @@ pub fn build_router(
         .merge(roms::routes())
         .merge(favorites::routes())
         .merge(upload::routes())
-        .merge(recents::routes());
+        .merge(recents::routes())
+        .nest("/core", core_api::routes());
 
     let state_for_ssr = app_state.clone();
     let opts_for_ssr = leptos_options.clone();

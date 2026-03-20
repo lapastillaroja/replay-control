@@ -15,7 +15,7 @@ pub struct OrganizeResult {
     pub skipped: usize,
 }
 
-#[server(prefix = "/sfn")]
+#[server(prefix = "/sfn", endpoint = "/get_favorites")]
 pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites(&state.storage())

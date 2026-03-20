@@ -291,7 +291,7 @@ pub async fn get_roms_page(
     })
 }
 
-#[server(prefix = "/sfn")]
+#[server(prefix = "/sfn", endpoint = "/get_rom_detail")]
 pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();

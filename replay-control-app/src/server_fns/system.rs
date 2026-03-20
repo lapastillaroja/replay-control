@@ -79,7 +79,7 @@ pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     Ok(state.cache.get_systems(&state.storage()))
 }
 
-#[server(prefix = "/sfn")]
+#[server(prefix = "/sfn", endpoint = "/get_recents")]
 pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
