@@ -886,7 +886,7 @@ pub async fn get_developer_games(
     // Fetch systems and paginated games in one DB session.
     let db_result = state.cache.with_db_read(&storage, |db| {
         let systems_raw = db.developer_systems(&developer).unwrap_or_default();
-        let (entries, total) = db
+        let (entries, has_more, total) = db
             .developer_games_paginated(
                 &developer,
                 system_filter,
@@ -896,11 +896,11 @@ pub async fn get_developer_games(
                 region_secondary_str,
                 &filters,
             )
-            .unwrap_or_default();
-        (systems_raw, entries, total)
+            .unwrap_or((Vec::new(), false, 0));
+        (systems_raw, entries, has_more, total)
     });
 
-    let Some((systems_raw, entries, total)) = db_result else {
+    let Some((systems_raw, entries, has_more, total)) = db_result else {
         return Ok(DeveloperPageData {
             roms: Vec::new(),
             total: 0,
@@ -924,8 +924,6 @@ pub async fn get_developer_games(
             }
         })
         .collect();
-
-    let has_more = offset + entries.len() < total;
 
     // Collect the set of distinct systems in this page to batch-load favorites.
     let page_systems: std::collections::HashSet<&str> =

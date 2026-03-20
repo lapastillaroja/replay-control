@@ -733,7 +733,7 @@ impl MetadataDb {
     /// Paginated game list for a developer, optionally filtered by system and content filters.
     /// Deduplicates by base_title per system, with configurable filtering.
     /// Region preference controls which variant is kept.
-    /// Returns `(entries, total_count)`.
+    /// Returns `(entries, has_more, total_count)`.
     #[allow(clippy::too_many_arguments)]
     pub fn developer_games_paginated(
         &self,
@@ -744,10 +744,8 @@ impl MetadataDb {
         region_pref: &str,
         region_secondary: &str,
         filters: &DeveloperGamesFilter,
-    ) -> Result<(Vec<GameEntry>, usize)> {
+    ) -> Result<(Vec<GameEntry>, bool, usize)> {
         // Build shared WHERE clause from filters using WhereBuilder.
-        // Both the count and fetch queries share the same filter conditions,
-        // just with different base parameter indices.
         let mut wb = WhereBuilder::new();
         wb.add("developer = {}", developer.to_string());
         wb.add_static("is_special = 0");
@@ -773,8 +771,7 @@ impl MetadataDb {
             wb.add("system = {}", sys.to_string());
         }
 
-        // ── Count query ──
-        // Params: ?1..?N = WhereBuilder params (developer + optional filters).
+        // ── Count query (lightweight, for "X / Y games" UI display) ──
         let (count_where, count_refs) = wb.build(1);
         let count_sql = format!(
             "SELECT COUNT(*) FROM (
@@ -789,15 +786,10 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Count developer_games_paginated: {e}")))?;
 
         // ── Fetch query ──
-        // Fixed params: ?1 = developer (from WhereBuilder), but we also need
-        // region_pref (?N+1), region_secondary (?N+2), limit (?N+3), offset (?N+4)
-        // where N = number of WhereBuilder params.
-        // However, the WHERE clause and the ORDER BY / LIMIT use separate param slots,
-        // so we build the WHERE starting at ?5 (after the 4 fixed fetch params)
-        // and put the fixed params at ?1..?4.
-        //
-        // Layout: ?1=region_pref, ?2=region_secondary, ?3=limit, ?4=offset,
+        // Fetch limit+1 rows to determine has_more without a separate query.
+        // Layout: ?1=region_pref, ?2=region_secondary, ?3=fetch_limit, ?4=offset,
         //         ?5..?N = WhereBuilder params (developer + optional filters).
+        let fetch_limit = limit + 1;
         let (fetch_where, filter_refs) = wb.build(5);
         let fetch_sql = format!(
             "WITH deduped AS (
@@ -825,7 +817,7 @@ impl MetadataDb {
         // Assemble fetch params: fixed params first, then WhereBuilder params.
         let region_pref_box: Box<dyn rusqlite::types::ToSql> = Box::new(region_pref.to_string());
         let region_secondary_box: Box<dyn rusqlite::types::ToSql> = Box::new(region_secondary.to_string());
-        let limit_box: Box<dyn rusqlite::types::ToSql> = Box::new(limit as i64);
+        let limit_box: Box<dyn rusqlite::types::ToSql> = Box::new(fetch_limit as i64);
         let offset_box: Box<dyn rusqlite::types::ToSql> = Box::new(offset as i64);
 
         let mut fetch_refs: Vec<&dyn rusqlite::types::ToSql> = vec![
@@ -843,9 +835,13 @@ impl MetadataDb {
         let rows = stmt
             .query_map(fetch_refs.as_slice(), Self::row_to_game_entry)
             .map_err(|e| Error::Other(format!("Query developer_games_paginated: {e}")))?;
-        let entries: Vec<GameEntry> = rows.flatten().collect();
+        let mut entries: Vec<GameEntry> = rows.flatten().collect();
 
-        Ok((entries, total))
+        // If we got the extra row, there are more results.
+        let has_more = entries.len() > limit;
+        entries.truncate(limit);
+
+        Ok((entries, has_more, total))
     }
 
     /// Get distinct genre groups for a developer's games, optionally filtered by system.
@@ -1172,5 +1168,390 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, "Capcom");
         assert_eq!(matches[0].1, 2);
+    }
+
+    // ── Helper to create game entries with full control over fields ──
+
+    fn make_dev_entry(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+        region: &str,
+        genre: Option<&str>,
+        box_art: Option<&str>,
+    ) -> super::super::GameEntry {
+        let genre_group = genre
+            .map(|g| crate::genre::normalize_genre(g).to_string())
+            .unwrap_or_default();
+        super::super::GameEntry {
+            developer: developer.into(),
+            base_title: base_title.into(),
+            region: region.into(),
+            genre: genre.map(String::from),
+            genre_group,
+            box_art_url: box_art.map(String::from),
+            ..make_game_entry(system, filename, false)
+        }
+    }
+
+    fn make_dev_entry_clone(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+    ) -> super::super::GameEntry {
+        super::super::GameEntry {
+            is_clone: true,
+            ..make_dev_entry(system, filename, developer, base_title, "", None, None)
+        }
+    }
+
+    fn make_dev_entry_hack(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+    ) -> super::super::GameEntry {
+        super::super::GameEntry {
+            is_hack: true,
+            ..make_dev_entry(system, filename, developer, base_title, "", None, None)
+        }
+    }
+
+    fn make_dev_entry_multiplayer(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+        players: u8,
+    ) -> super::super::GameEntry {
+        super::super::GameEntry {
+            players: Some(players),
+            ..make_dev_entry(system, filename, developer, base_title, "", None, None)
+        }
+    }
+
+    // ── Tests for developer_games_paginated ──
+
+    #[test]
+    fn developer_games_paginated_empty_genre_returns_all() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", Some("Action"), None),
+                make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", Some("RPG"), None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let filters = super::DeveloperGamesFilter::default();
+        let (entries, has_more, total) = db
+            .developer_games_paginated("Capcom", None, 0, 50, "us", "", &filters)
+            .unwrap();
+
+        assert_eq!(total, 2);
+        assert_eq!(entries.len(), 2);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn developer_games_paginated_specific_genre() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", Some("Action"), None),
+                make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", Some("RPG"), None),
+                make_dev_entry("snes", "SF2.sfc", "Capcom", "Street Fighter II", "us", Some("Fighting"), None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let filters = super::DeveloperGamesFilter {
+            genre: "Action",
+            ..Default::default()
+        };
+        let (entries, _, total) = db
+            .developer_games_paginated("Capcom", None, 0, 50, "us", "", &filters)
+            .unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].base_title, "Mega Man X");
+    }
+
+    #[test]
+    fn developer_games_paginated_system_and_genre_combined() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", Some("Action"), None),
+                make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", Some("RPG"), None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        db.save_system_entries(
+            "gba",
+            &[
+                make_dev_entry("gba", "MegaManZero.gba", "Capcom", "Mega Man Zero", "us", Some("Action"), None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        // Filter: system=snes + genre=Action -> only Mega Man X.
+        let filters = super::DeveloperGamesFilter {
+            genre: "Action",
+            ..Default::default()
+        };
+        let (entries, _, total) = db
+            .developer_games_paginated("Capcom", Some("snes"), 0, 50, "us", "", &filters)
+            .unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].base_title, "Mega Man X");
+    }
+
+    #[test]
+    fn developer_games_paginated_region_dedup_prefers_user_region() {
+        let (mut db, _dir) = open_temp_db();
+
+        // Same base_title, same system, different regions.
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "SF2-us.sfc", "Capcom", "Street Fighter II", "us", None, None),
+                make_dev_entry("snes", "SF2-jp.sfc", "Capcom", "Street Fighter II", "japan", None, None),
+                make_dev_entry("snes", "SF2-eu.sfc", "Capcom", "Street Fighter II", "europe", None, None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let filters = super::DeveloperGamesFilter::default();
+        let (entries, _, total) = db
+            .developer_games_paginated("Capcom", None, 0, 50, "us", "europe", &filters)
+            .unwrap();
+
+        // Should be deduped to 1 entry.
+        assert_eq!(total, 1);
+        assert_eq!(entries.len(), 1);
+        // Preferred region should win.
+        assert_eq!(entries[0].region, "us");
+    }
+
+    #[test]
+    fn developer_games_paginated_offset_beyond_total() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", None, None),
+                make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", None, None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let filters = super::DeveloperGamesFilter::default();
+        let (entries, has_more, total) = db
+            .developer_games_paginated("Capcom", None, 100, 50, "us", "", &filters)
+            .unwrap();
+
+        // Total still reflects the real count, but no entries returned.
+        assert_eq!(total, 2);
+        assert!(entries.is_empty());
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn developer_games_paginated_has_more_with_limit_plus_one() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "A.sfc", "Capcom", "Game A", "us", None, None),
+                make_dev_entry("snes", "B.sfc", "Capcom", "Game B", "us", None, None),
+                make_dev_entry("snes", "C.sfc", "Capcom", "Game C", "us", None, None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let filters = super::DeveloperGamesFilter::default();
+
+        // Limit 2 -> should get 2 entries, has_more=true.
+        let (entries, has_more, total) = db
+            .developer_games_paginated("Capcom", None, 0, 2, "us", "", &filters)
+            .unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(has_more);
+        assert_eq!(total, 3);
+
+        // Offset 2, limit 2 -> should get 1 entry, has_more=false.
+        let (entries, has_more, _) = db
+            .developer_games_paginated("Capcom", None, 2, 2, "us", "", &filters)
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(!has_more);
+    }
+
+    #[test]
+    fn developer_games_paginated_hide_hacks_and_clones() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "SF2.sfc", "Capcom", "Street Fighter II", "us", None, None),
+                make_dev_entry_hack("snes", "SF2-hack.sfc", "Capcom", "Street Fighter II Hack"),
+                make_dev_entry_clone("snes", "SF2-clone.sfc", "Capcom", "Street Fighter II Clone"),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let filters = super::DeveloperGamesFilter {
+            hide_hacks: true,
+            hide_clones: true,
+            ..Default::default()
+        };
+        let (entries, _, total) = db
+            .developer_games_paginated("Capcom", None, 0, 50, "us", "", &filters)
+            .unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].base_title, "Street Fighter II");
+    }
+
+    #[test]
+    fn developer_games_paginated_multiplayer_only() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry_multiplayer("snes", "SF2.sfc", "Capcom", "Street Fighter II", 2),
+                make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", None, None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let filters = super::DeveloperGamesFilter {
+            multiplayer_only: true,
+            ..Default::default()
+        };
+        let (entries, _, total) = db
+            .developer_games_paginated("Capcom", None, 0, 50, "us", "", &filters)
+            .unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].base_title, "Street Fighter II");
+    }
+
+    // ── Tests for games_by_developer dedup ──
+
+    #[test]
+    fn games_by_developer_deduplicates_across_systems() {
+        let (mut db, _dir) = open_temp_db();
+
+        // Same game on two systems.
+        db.save_system_entries(
+            "snes",
+            &[make_dev_entry("snes", "SF2-snes.sfc", "Capcom", "Street Fighter II", "us", None, None)],
+            None,
+        )
+        .unwrap();
+
+        db.save_system_entries(
+            "sega_smd",
+            &[make_dev_entry("sega_smd", "SF2-md.md", "Capcom", "Street Fighter II", "us", None, None)],
+            None,
+        )
+        .unwrap();
+
+        let results = db.games_by_developer("Capcom", 50, "us", "").unwrap();
+
+        // Should be deduped to 1 entry (same base_title).
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn games_by_developer_prefers_entry_with_box_art() {
+        let (mut db, _dir) = open_temp_db();
+
+        // Same game, one with box art and one without.
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "SF2-noart.sfc", "Capcom", "Street Fighter II", "us", None, None),
+                make_dev_entry("snes", "SF2-art.sfc", "Capcom", "Street Fighter II", "us", None, Some("/img/sf2.png")),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let results = db.games_by_developer("Capcom", 50, "us", "").unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].box_art_url.as_deref(), Some("/img/sf2.png"));
+    }
+
+    #[test]
+    fn games_by_developer_excludes_clones_and_hacks() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "SF2.sfc", "Capcom", "Street Fighter II", "us", None, None),
+                make_dev_entry_hack("snes", "SF2-hack.sfc", "Capcom", "SF2 Hack"),
+                make_dev_entry_clone("snes", "SF2-clone.sfc", "Capcom", "SF2 Clone"),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let results = db.games_by_developer("Capcom", 50, "us", "").unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].base_title, "Street Fighter II");
+    }
+
+    #[test]
+    fn games_by_developer_prefers_user_region() {
+        let (mut db, _dir) = open_temp_db();
+
+        db.save_system_entries(
+            "snes",
+            &[
+                make_dev_entry("snes", "SF2-jp.sfc", "Capcom", "Street Fighter II", "japan", None, None),
+                make_dev_entry("snes", "SF2-eu.sfc", "Capcom", "Street Fighter II", "europe", None, None),
+            ],
+            None,
+        )
+        .unwrap();
+
+        // Prefer europe, secondary japan.
+        let results = db.games_by_developer("Capcom", 50, "europe", "japan").unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].region, "europe");
     }
 }
