@@ -204,6 +204,11 @@ pub fn draw_star_empty(fb: &mut [u32], w: u32, h: u32, cx: i32, cy: i32, size: i
 }
 
 /// Draw rating stars. Returns the width used.
+///
+/// Colors are passed from the active skin palette:
+///   - `star_color`: filled star color (typically gold)
+///   - `star_dim_color`: empty star outline color
+///   - `rating_text_color`: numeric rating text color
 pub fn draw_rating(
     fb: &mut [u32],
     w: u32,
@@ -213,29 +218,30 @@ pub fn draw_rating(
     y: i32,
     star_size: i32,
     rating_text: &str,
+    star_color: u32,
+    star_dim_color: u32,
+    rating_text_color: u32,
 ) -> i32 {
     let full_stars = rating.floor() as i32;
     let half = (rating - rating.floor()) >= 0.25;
     let spacing = star_size * 3;
-    let gold = 0x00FFD700;
-    let dim = 0x00555555;
 
     for i in 0..5 {
         let sx = x + i * spacing + star_size;
         let sy = y + star_size;
         if i < full_stars {
-            draw_star_filled(fb, w, h, sx, sy, star_size, gold);
+            draw_star_filled(fb, w, h, sx, sy, star_size, star_color);
         } else if i == full_stars && half {
             // Half star: filled left, empty right (approximate with filled)
-            draw_star_filled(fb, w, h, sx, sy, star_size, gold);
+            draw_star_filled(fb, w, h, sx, sy, star_size, star_color);
         } else {
-            draw_star_empty(fb, w, h, sx, sy, star_size, dim);
+            draw_star_empty(fb, w, h, sx, sy, star_size, star_dim_color);
         }
     }
 
     // Also draw numeric rating next to stars (pre-computed text, no allocation)
     let text_x = x + 5 * spacing + star_size * 2;
-    draw_string(fb, w, h, rating_text, text_x, y, 0x00CCCCCC, 1);
+    draw_string(fb, w, h, rating_text, text_x, y, rating_text_color, 1);
 
     text_x + (rating_text.len() as i32) * 9
 }

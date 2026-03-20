@@ -29,6 +29,7 @@ mod font;
 mod http;
 mod json;
 mod layout;
+mod palette;
 mod util;
 
 use std::cell::UnsafeCell;
@@ -42,6 +43,7 @@ use http::{
     MAX_BOX_ART_PREFETCH,
 };
 use layout::LayoutConfig;
+use palette::CorePalette;
 use util::debug_log;
 
 // ---- Libretro constants ----
@@ -246,6 +248,8 @@ struct DisplayState {
     pixel_format: PixelFormat,
     frame_count: u64,
     layout: LayoutConfig,
+    /// Active skin color palette, loaded once in retro_load_game.
+    palette: CorePalette,
 }
 
 /// Game data and navigation state.
@@ -335,6 +339,7 @@ static STATE: CoreStateWrapper = CoreStateWrapper(UnsafeCell::new(CoreState {
             max_desc_lines_full: 8,
             show_extra_metadata: false,
         },
+        palette: palette::load_palette(0),
     },
     game: GameData {
         list_mode: ListMode::Recents,
@@ -373,20 +378,8 @@ unsafe fn state() -> &'static mut CoreState {
     &mut *STATE.0.get()
 }
 
-// ---- Colors ----
-
-const COLOR_BG: u32 = 0x001A1A2E; // Dark navy background
-const COLOR_HEADER_BG: u32 = 0x0016213E; // Slightly different header
-const COLOR_TITLE: u32 = 0x00FFFFFF; // White title
-const COLOR_SYSTEM: u32 = 0x00E0A030; // Gold/amber system name
-const COLOR_LABEL: u32 = 0x00888899; // Dim label color
-const COLOR_VALUE: u32 = 0x00DDDDEE; // Light value color
-const COLOR_DESC: u32 = 0x00BBBBCC; // Description text
-const COLOR_NAV: u32 = 0x00667788; // Navigation hints
-const COLOR_ARROW: u32 = 0x00AABBCC; // Navigation arrows
-const COLOR_ACCENT: u32 = 0x004488CC; // Accent/separator lines
-const COLOR_ERROR: u32 = 0x00FF6644; // Error messages
-const COLOR_LOADING: u32 = 0x0088AACC; // Loading indicator
+// Colors are now loaded from the active skin palette at retro_load_game time.
+// See palette.rs for the CorePalette struct and the 11 built-in skin palettes.
 
 // ---- Pre-computation helpers ----
 
@@ -667,11 +660,12 @@ fn render_frame(s: &mut CoreState) {
         s.game.current_page = 0;
     }
 
+    let pal = s.display.palette;
     let fb = &mut s.display.framebuffer;
 
     // Clear background
     for px in fb.iter_mut() {
-        *px = COLOR_BG;
+        *px = pal.bg;
     }
 
     // Get the current list and detail cache
@@ -690,19 +684,19 @@ fn render_frame(s: &mut CoreState) {
 
     // -- Header: mode label + position indicator + page dots --
     let header_h = (label_scale * 16 + 8) as i32;
-    draw_rect(fb, w, h, 0, 0, w, header_h as u32, COLOR_HEADER_BG);
-    draw_hline(fb, w, h, 0, header_h, w, COLOR_ACCENT);
+    draw_rect(fb, w, h, 0, 0, w, header_h as u32, pal.header_bg);
+    draw_hline(fb, w, h, 0, header_h, w, pal.accent);
 
     if total == 0 {
         let mode_label = match s.game.list_mode {
             ListMode::Recents => "RECENTLY PLAYED",
             ListMode::Favorites => "FAVORITES",
         };
-        draw_string(fb, w, h, mode_label, mx, my / 2 + 2, COLOR_NAV, label_scale);
+        draw_string(fb, w, h, mode_label, mx, my / 2 + 2, pal.nav, label_scale);
     } else {
         // Left arrow
         let arrow_x = mx;
-        draw_string(fb, w, h, "<", arrow_x, my / 2 + 2, COLOR_ARROW, label_scale);
+        draw_string(fb, w, h, "<", arrow_x, my / 2 + 2, pal.arrow, label_scale);
 
         // Mode + position -- read from pre-computed scratch buffer
         let text_x = arrow_x + (label_scale * 9 + 4) as i32;
@@ -713,13 +707,13 @@ fn render_frame(s: &mut CoreState) {
             &s.scratch.header_text,
             text_x,
             my / 2 + 2,
-            COLOR_NAV,
+            pal.nav,
             label_scale,
         );
 
         // Right arrow on the far right
         let arrow_r = (w as i32) - mx - (label_scale * 9) as i32;
-        draw_string(fb, w, h, ">", arrow_r, my / 2 + 2, COLOR_ARROW, label_scale);
+        draw_string(fb, w, h, ">", arrow_r, my / 2 + 2, pal.arrow, label_scale);
     }
 
     // Page indicator dots (top-right, inside header)
@@ -728,9 +722,9 @@ fn render_frame(s: &mut CoreState) {
     // -- Handle empty list / loading / error --
     if !s.net.status_message.is_empty() {
         let color = if s.net.api_available {
-            COLOR_LOADING
+            pal.loading
         } else {
-            COLOR_ERROR
+            pal.error
         };
         let msg_y = (h as i32) / 2 - 8;
         let fb = &mut s.display.framebuffer;
@@ -772,12 +766,13 @@ fn render_page_indicator(s: &mut CoreState, _header_h: i32) {
     let start_x = (w as i32) - mx - (label_scale * 9) as i32 - 6 - total_width;
     let cy = my / 2 + (label_scale * 8) as i32; // vertically center in header
 
+    let pal = s.display.palette;
     for i in 0..PAGE_COUNT {
         let cx = start_x + (i as i32) * dot_spacing;
         let color = if i == s.game.current_page {
-            COLOR_TITLE // filled: white
+            pal.title // filled: bright
         } else {
-            COLOR_NAV // dim gray
+            pal.nav // dim
         };
         draw_rect(fb, w, h, cx, cy - (dot_size as i32 / 2), dot_size, dot_size, color);
     }
@@ -793,6 +788,7 @@ fn render_page_game_info(s: &mut CoreState, header_h: i32) {
     let mx = s.display.layout.margin_x as i32;
     let my = s.display.layout.margin_y as i32;
     let show_extra_metadata = s.display.layout.show_extra_metadata;
+    let pal = s.display.palette;
 
     let fb = &mut s.display.framebuffer;
 
@@ -819,16 +815,16 @@ fn render_page_game_info(s: &mut CoreState, header_h: i32) {
     // Title (large) -- always full width, above the two-column area
     let title = detail.map(|d| d.display_name.as_str()).unwrap_or(&entry.display_name);
     let title_max = ((w as i32 - 2 * mx) / (title_scale * 9) as i32) as usize;
-    draw_string_truncated(fb, w, h, title, mx, y, COLOR_TITLE, title_scale, title_max);
+    draw_string_truncated(fb, w, h, title, mx, y, pal.title, title_scale, title_max);
     y += title_h + 4;
 
     // System + Year
     let sys_year = detail.map(|d| d.display.sys_year_line.as_str()).unwrap_or(&entry.system_display);
-    draw_string(fb, w, h, sys_year, mx, y, COLOR_SYSTEM, font_scale);
+    draw_string(fb, w, h, sys_year, mx, y, pal.system, font_scale);
     y += line_h;
 
     // Separator line
-    draw_hline(fb, w, h, mx, y, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
+    draw_hline(fb, w, h, mx, y, (w as i32 - 2 * mx) as u32, pal.accent);
     y += 6;
 
     // Two-column layout
@@ -859,8 +855,8 @@ fn render_page_game_info(s: &mut CoreState, header_h: i32) {
     // Developer
     if let Some(d) = detail {
         if !d.developer.is_empty() {
-            let end_x = draw_string(fb, w, h, "Dev: ", text_x, y, COLOR_LABEL, label_scale);
-            draw_string_truncated(fb, w, h, &d.developer, end_x, y, COLOR_VALUE, font_scale, meta_chars_per_line.saturating_sub(5));
+            let end_x = draw_string(fb, w, h, "Dev: ", text_x, y, pal.label, label_scale);
+            draw_string_truncated(fb, w, h, &d.developer, end_x, y, pal.value, font_scale, meta_chars_per_line.saturating_sub(5));
             y += line_h;
         }
     }
@@ -868,9 +864,9 @@ fn render_page_game_info(s: &mut CoreState, header_h: i32) {
     // Rating stars
     if let Some(detail) = detail {
         if let Some(rating) = detail.rating {
-            let end_x = draw_string(fb, w, h, "Rating: ", text_x, y, COLOR_LABEL, label_scale);
+            let end_x = draw_string(fb, w, h, "Rating: ", text_x, y, pal.label, label_scale);
             let star_size = (font_scale * 4).max(3) as i32;
-            draw_rating(fb, w, h, rating, end_x, y, star_size, &detail.display.rating_text);
+            draw_rating(fb, w, h, rating, end_x, y, star_size, &detail.display.rating_text, pal.star, pal.star_dim, pal.rating_text);
             y += line_h;
         }
     }
@@ -878,8 +874,8 @@ fn render_page_game_info(s: &mut CoreState, header_h: i32) {
     // Genre
     if let Some(d) = detail {
         if !d.genre.is_empty() {
-            let end_x = draw_string(fb, w, h, "Genre: ", text_x, y, COLOR_LABEL, label_scale);
-            draw_string_truncated(fb, w, h, &d.genre, end_x, y, COLOR_VALUE, font_scale, meta_chars_per_line.saturating_sub(7));
+            let end_x = draw_string(fb, w, h, "Genre: ", text_x, y, pal.label, label_scale);
+            draw_string_truncated(fb, w, h, &d.genre, end_x, y, pal.value, font_scale, meta_chars_per_line.saturating_sub(7));
             y += line_h;
         }
     }
@@ -887,8 +883,8 @@ fn render_page_game_info(s: &mut CoreState, header_h: i32) {
     // Players
     if let Some(d) = detail {
         if !d.display.players_text.is_empty() {
-            let end_x = draw_string(fb, w, h, "Players: ", text_x, y, COLOR_LABEL, label_scale);
-            draw_string(fb, w, h, &d.display.players_text, end_x, y, COLOR_VALUE, font_scale);
+            let end_x = draw_string(fb, w, h, "Players: ", text_x, y, pal.label, label_scale);
+            draw_string(fb, w, h, &d.display.players_text, end_x, y, pal.value, font_scale);
             y += line_h;
         }
     }
@@ -898,15 +894,15 @@ fn render_page_game_info(s: &mut CoreState, header_h: i32) {
         if let Some(d) = detail {
             if let Some(ref publisher) = d.publisher {
                 if !publisher.is_empty() {
-                    let end_x = draw_string(fb, w, h, "Publisher: ", text_x, y, COLOR_LABEL, label_scale);
-                    draw_string(fb, w, h, publisher, end_x, y, COLOR_VALUE, font_scale);
+                    let end_x = draw_string(fb, w, h, "Publisher: ", text_x, y, pal.label, label_scale);
+                    draw_string(fb, w, h, publisher, end_x, y, pal.value, font_scale);
                     y += line_h;
                 }
             }
             if let Some(ref region) = d.region {
                 if !region.is_empty() {
-                    let end_x = draw_string(fb, w, h, "Region: ", text_x, y, COLOR_LABEL, label_scale);
-                    draw_string(fb, w, h, region, end_x, y, COLOR_VALUE, font_scale);
+                    let end_x = draw_string(fb, w, h, "Region: ", text_x, y, pal.label, label_scale);
+                    draw_string(fb, w, h, region, end_x, y, pal.value, font_scale);
                     // y += line_h; // last field, no need to advance
                 }
             }
@@ -924,6 +920,7 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
     let mx = s.display.layout.margin_x as i32;
     let my = s.display.layout.margin_y as i32;
     let max_desc_lines = s.display.layout.max_desc_lines_full as usize;
+    let pal = s.display.palette;
 
     let fb = &mut s.display.framebuffer;
 
@@ -950,15 +947,15 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
     // Compact title header: title + system/year
     let title = detail.map(|d| d.display_name.as_str()).unwrap_or(&entry.display_name);
     let title_max = ((w as i32 - 2 * mx) / (title_scale * 9) as i32) as usize;
-    draw_string_truncated(fb, w, h, title, mx, y, COLOR_TITLE, title_scale, title_max);
+    draw_string_truncated(fb, w, h, title, mx, y, pal.title, title_scale, title_max);
     y += title_h + 2;
 
     let sys_year = detail.map(|d| d.display.sys_year_line.as_str()).unwrap_or(&entry.system_display);
-    draw_string(fb, w, h, sys_year, mx, y, COLOR_SYSTEM, font_scale);
+    draw_string(fb, w, h, sys_year, mx, y, pal.system, font_scale);
     y += line_h;
 
     // Separator
-    draw_hline(fb, w, h, mx, y, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
+    draw_hline(fb, w, h, mx, y, (w as i32 - 2 * mx) as u32, pal.accent);
     y += 8;
 
     // Description text (full-width, scrollable)
@@ -966,7 +963,7 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
         if d.display.desc_lines_full.is_empty() {
             // No description available
             let center_y = (h as i32) / 2 + 10;
-            draw_string(fb, w, h, "No description available.", mx, center_y, COLOR_NAV, font_scale);
+            draw_string(fb, w, h, "No description available.", mx, center_y, pal.nav, font_scale);
         } else {
             let total_lines = d.display.desc_lines_full.len();
             let scroll = s.game.desc_scroll.min(total_lines.saturating_sub(max_desc_lines));
@@ -980,7 +977,7 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
                 if y + line_h >= footer_top {
                     break;
                 }
-                draw_string(fb, w, h, line, mx, y, COLOR_DESC, font_scale);
+                draw_string(fb, w, h, line, mx, y, pal.desc, font_scale);
                 y += line_h;
             }
 
@@ -989,13 +986,13 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
                 let ix = (w as i32) - mx - (s.scratch.scroll_indicator.len() as i32 * 9);
                 // Position at the end of visible text area
                 let indicator_y = y.min(footer_top - line_h) + 2;
-                draw_string(fb, w, h, &s.scratch.scroll_indicator, ix, indicator_y, COLOR_NAV, 1);
+                draw_string(fb, w, h, &s.scratch.scroll_indicator, ix, indicator_y, pal.nav, 1);
             }
         }
     } else {
         // No detail loaded yet
         let center_y = (h as i32) / 2 + 10;
-        draw_string(fb, w, h, "No description available.", mx, center_y, COLOR_NAV, font_scale);
+        draw_string(fb, w, h, "No description available.", mx, center_y, pal.nav, font_scale);
     }
 }
 
@@ -1007,11 +1004,12 @@ fn render_footer(s: &mut CoreState, page: PageKind) {
     let mx = s.display.layout.margin_x as i32;
     let my = s.display.layout.margin_y as i32;
 
+    let pal = s.display.palette;
     let fb = &mut s.display.framebuffer;
     let label_h = (label_scale * 16) as i32;
 
     let footer_y = (h as i32) - my - label_h;
-    draw_hline(fb, w, h, mx, footer_y - 4, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
+    draw_hline(fb, w, h, mx, footer_y - 4, (w as i32 - 2 * mx) as u32, pal.accent);
 
     let hints = if w <= 640 {
         match page {
@@ -1024,7 +1022,7 @@ fn render_footer(s: &mut CoreState, page: PageKind) {
             PageKind::Description => "Up/Down: scroll  |  L1/R1: page  |  L/R: game  |  B: exit",
         }
     };
-    draw_string(fb, w, h, hints, mx, footer_y, COLOR_NAV, label_scale);
+    draw_string(fb, w, h, hints, mx, footer_y, pal.nav, label_scale);
 }
 
 // ---- Input handling ----
@@ -1489,6 +1487,11 @@ pub unsafe extern "C" fn retro_load_game(_game: *const RetroGameInfo) -> bool {
 
     // Detect display mode from replay.cfg
     s.display.layout = LayoutConfig::detect();
+
+    // Detect and load skin palette
+    let skin_index = palette::detect_skin_index();
+    s.display.palette = palette::load_palette(skin_index);
+    debug_log(&format!("[replay-game-info] using skin palette {}", skin_index));
 
     let w = s.display.layout.width;
     let h = s.display.layout.height;
