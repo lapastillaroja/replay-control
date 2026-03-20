@@ -1,0 +1,23 @@
+[package]
+name = "replay-libretro-core"
+version = "0.6.0"
+edition = "2021"
+description = "Recently Played Game Detail Viewer — a libretro core for RePlayOS"
+
+[workspace]
+# Standalone project — not part of the parent workspace
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Lightweight HTTP client for fetching game data from the companion app API.
+# minreq is chosen over ureq for smaller binary size (~80KB vs ~200KB).
+# HTTP only (no TLS needed — we only talk to localhost:8091).
+minreq = "2"
+
+# PNG decoder for box art images fetched from the companion app.
+png = "0.17"
+
+[profile.release]
+panic = "abort"

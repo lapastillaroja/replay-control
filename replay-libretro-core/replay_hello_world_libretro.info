@@ -1,0 +1,16 @@
+# Core info file for RetroArch / RePlayOS frontend
+# Place alongside the .so in the cores/ or info/ directory.
+
+display_name = "RePlay Game Info"
+authors = "RePlay Project"
+supported_extensions = ""
+corename = "RePlay Game Info"
+manufacturer = "N/A"
+categories = "Utility"
+systemname = "Utility"
+license = "MIT"
+permissions = ""
+display_version = "0.3.0"
+supports_no_game = "true"
+database = ""
+notes = "(!) Recently Played Game Detail Viewer for RePlayOS.|(!)|Fetches game data from the companion app (localhost:8091).|Displays game metadata on the TV screen, navigable with a gamepad.|(!)|Controls:|  D-pad Left/Right: browse recently played games|  D-pad Up/Down: scroll description text|  B: exit core|  Start: toggle between recently played and favorites"
