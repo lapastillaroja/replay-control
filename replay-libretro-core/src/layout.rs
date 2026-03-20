@@ -134,7 +134,7 @@ impl LayoutConfig {
     /// Calculate box art display dimensions based on layout.
     pub fn box_art_dimensions(&self) -> (u32, u32) {
         match self.width {
-            0..=320 => (100, 140),    // CRT 320x240: prominent box art
+            0..=320 => (85, 120),     // CRT 320x240: compact box art
             321..=640 => (120, 165),   // CRT 640x480
             641..=1280 => (200, 275),  // 720p
             _ => (280, 385),           // 1080p+

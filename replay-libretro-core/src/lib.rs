@@ -227,10 +227,22 @@ struct CallbackState {
 }
 
 /// Display / video state.
+///
+/// Uses double-buffering to prevent the host frontend from reading a
+/// partially-rendered frame. The core renders into `framebuffer` (back),
+/// then copies the completed frame into `present_buffer` (front) before
+/// handing the pointer to the video callback. The host's DRM/display
+/// thread can safely read `present_buffer` at any time.
 struct DisplayState {
     framebuffer: Vec<u32>,
+    /// Front buffer: completed frame handed to the host video callback.
+    /// The host (and its DRM thread) may read this at any time, so it
+    /// must never be resized or reallocated after retro_load_game.
+    present_buffer: Vec<u32>,
     /// Conversion buffer for 16-bit pixel formats (0RGB1555 / RGB565)
     framebuffer_16: Vec<u16>,
+    /// Conversion front buffer for 16-bit output
+    present_buffer_16: Vec<u16>,
     pixel_format: PixelFormat,
     frame_count: u64,
     layout: LayoutConfig,
@@ -304,7 +316,9 @@ static STATE: CoreStateWrapper = CoreStateWrapper(UnsafeCell::new(CoreState {
     },
     display: DisplayState {
         framebuffer: Vec::new(),
+        present_buffer: Vec::new(),
         framebuffer_16: Vec::new(),
+        present_buffer_16: Vec::new(),
         pixel_format: PixelFormat::Xrgb8888,
         frame_count: 0,
         layout: LayoutConfig {
@@ -769,8 +783,7 @@ fn render_page_indicator(s: &mut CoreState, _header_h: i32) {
     }
 }
 
-/// Page 1: Game Info -- box art + metadata, NO description.
-/// Supports portrait (two-column) and landscape (stacked) art layouts.
+/// Page 1: Game Info -- two-column layout (box art left, metadata right).
 fn render_page_game_info(s: &mut CoreState, header_h: i32) {
     let w = s.display.layout.width;
     let h = s.display.layout.height;
@@ -801,165 +814,100 @@ fn render_page_game_info(s: &mut CoreState, header_h: i32) {
     let line_h = (font_scale * 18) as i32;
     let title_h = (title_scale * 18) as i32;
 
-    // Detect art orientation for layout choice
-    let art_info = detail.and_then(|d| d.box_art.as_ref()).map(|art| {
-        let is_landscape = art.width as f32 > art.height as f32 * 1.2;
-        (art.width, art.height, is_landscape)
-    });
-    let is_landscape = art_info.map(|(_, _, l)| l).unwrap_or(false);
+    let mut y = header_h + (my / 2) + 4;
 
-    if is_landscape {
-        // Layout B: stacked -- art top-center, metadata below
-        let mut y = header_h + (my / 2) + 4;
+    // Title (large) -- always full width, above the two-column area
+    let title = detail.map(|d| d.display_name.as_str()).unwrap_or(&entry.display_name);
+    let title_max = ((w as i32 - 2 * mx) / (title_scale * 9) as i32) as usize;
+    draw_string_truncated(fb, w, h, title, mx, y, COLOR_TITLE, title_scale, title_max);
+    y += title_h + 4;
 
-        // Box art centered at top
-        if let Some(d) = detail {
-            if let Some(ref art) = d.box_art {
-                let art_x = ((w as i32) - art.width as i32) / 2;
-                blit_image(fb, w, h, &art.pixels, art.width, art.height, art_x.max(0) as u32, y as u32);
-                y += art.height as i32 + 6;
-            }
-        }
+    // System + Year
+    let sys_year = detail.map(|d| d.display.sys_year_line.as_str()).unwrap_or(&entry.system_display);
+    draw_string(fb, w, h, sys_year, mx, y, COLOR_SYSTEM, font_scale);
+    y += line_h;
 
-        // Title
-        let title = detail.map(|d| d.display_name.as_str()).unwrap_or(&entry.display_name);
-        let title_max = ((w as i32 - 2 * mx) / (title_scale * 9) as i32) as usize;
-        draw_string_truncated(fb, w, h, title, mx, y, COLOR_TITLE, title_scale, title_max);
-        y += title_h + 2;
+    // Separator line
+    draw_hline(fb, w, h, mx, y, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
+    y += 6;
 
-        // System + Year
-        let sys_year = detail.map(|d| d.display.sys_year_line.as_str()).unwrap_or(&entry.system_display);
-        draw_string(fb, w, h, sys_year, mx, y, COLOR_SYSTEM, font_scale);
-        y += line_h;
+    // Two-column layout
+    let has_box_art = detail.and_then(|d| d.box_art.as_ref()).is_some();
+    let art_x = mx;
+    let art_y = y;
 
-        // Compact metadata grid: two columns for landscape layout
-        if let Some(d) = detail {
-            let half_w = (w as i32 - 2 * mx) / 2;
-            let col1_x = mx;
-            let col2_x = mx + half_w;
-
-            // Row 1: Developer + Rating
-            if !d.developer.is_empty() {
-                let end_x = draw_string(fb, w, h, "Dev: ", col1_x, y, COLOR_LABEL, label_scale);
-                let max_c = (half_w / (font_scale * 9) as i32) as usize;
-                draw_string_truncated(fb, w, h, &d.developer, end_x, y, COLOR_VALUE, font_scale, max_c.saturating_sub(5));
-            }
-            if let Some(rating) = d.rating {
-                let end_x = draw_string(fb, w, h, "Rating: ", col2_x, y, COLOR_LABEL, label_scale);
-                let star_size = (font_scale * 4).max(3) as i32;
-                draw_rating(fb, w, h, rating, end_x, y, star_size, &d.display.rating_text);
-            }
-            y += line_h;
-
-            // Row 2: Genre + Players
-            if !d.genre.is_empty() {
-                let end_x = draw_string(fb, w, h, "Genre: ", col1_x, y, COLOR_LABEL, label_scale);
-                let max_c = (half_w / (font_scale * 9) as i32) as usize;
-                draw_string_truncated(fb, w, h, &d.genre, end_x, y, COLOR_VALUE, font_scale, max_c.saturating_sub(7));
-            }
-            if !d.display.players_text.is_empty() {
-                let end_x = draw_string(fb, w, h, "Players: ", col2_x, y, COLOR_LABEL, label_scale);
-                draw_string(fb, w, h, &d.display.players_text, end_x, y, COLOR_VALUE, font_scale);
-            }
-            // y += line_h; // not needed, no more rows in compact grid
-        }
+    let (text_x, text_w) = if has_box_art {
+        let art = detail.unwrap().box_art.as_ref().unwrap();
+        let gap = if w <= 320 { 6 } else { 12 };
+        let tx = art_x + art.width as i32 + gap;
+        let tw = (w as i32 - tx - mx).max(40) as u32;
+        (tx, tw)
     } else {
-        // Layout A: portrait -- two-column, art left + metadata right
-        let mut y = header_h + (my / 2) + 4;
+        (mx, (w as i32 - 2 * mx) as u32)
+    };
 
-        // Title (large) -- always full width, above the two-column area
-        let title = detail.map(|d| d.display_name.as_str()).unwrap_or(&entry.display_name);
-        let title_max = ((w as i32 - 2 * mx) / (title_scale * 9) as i32) as usize;
-        draw_string_truncated(fb, w, h, title, mx, y, COLOR_TITLE, title_scale, title_max);
-        y += title_h + 4;
+    // Blit box art
+    if let Some(d) = detail {
+        if let Some(ref art) = d.box_art {
+            blit_image(fb, w, h, &art.pixels, art.width, art.height, art_x as u32, art_y as u32);
+        }
+    }
 
-        // System + Year
-        let sys_year = detail.map(|d| d.display.sys_year_line.as_str()).unwrap_or(&entry.system_display);
-        draw_string(fb, w, h, sys_year, mx, y, COLOR_SYSTEM, font_scale);
-        y += line_h;
+    // Metadata column
+    let meta_chars_per_line = (text_w as i32 / (font_scale * 9) as i32) as usize;
 
-        // Separator line
-        draw_hline(fb, w, h, mx, y, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
-        y += 6;
+    // Developer
+    if let Some(d) = detail {
+        if !d.developer.is_empty() {
+            let end_x = draw_string(fb, w, h, "Dev: ", text_x, y, COLOR_LABEL, label_scale);
+            draw_string_truncated(fb, w, h, &d.developer, end_x, y, COLOR_VALUE, font_scale, meta_chars_per_line.saturating_sub(5));
+            y += line_h;
+        }
+    }
 
-        // Two-column layout
-        let has_box_art = detail.and_then(|d| d.box_art.as_ref()).is_some();
-        let art_x = mx;
-        let art_y = y;
+    // Rating stars
+    if let Some(detail) = detail {
+        if let Some(rating) = detail.rating {
+            let end_x = draw_string(fb, w, h, "Rating: ", text_x, y, COLOR_LABEL, label_scale);
+            let star_size = (font_scale * 4).max(3) as i32;
+            draw_rating(fb, w, h, rating, end_x, y, star_size, &detail.display.rating_text);
+            y += line_h;
+        }
+    }
 
-        let (text_x, text_w) = if has_box_art {
-            let art = detail.unwrap().box_art.as_ref().unwrap();
-            let gap = if w <= 320 { 6 } else { 12 };
-            let tx = art_x + art.width as i32 + gap;
-            let tw = (w as i32 - tx - mx).max(40) as u32;
-            (tx, tw)
-        } else {
-            (mx, (w as i32 - 2 * mx) as u32)
-        };
+    // Genre
+    if let Some(d) = detail {
+        if !d.genre.is_empty() {
+            let end_x = draw_string(fb, w, h, "Genre: ", text_x, y, COLOR_LABEL, label_scale);
+            draw_string_truncated(fb, w, h, &d.genre, end_x, y, COLOR_VALUE, font_scale, meta_chars_per_line.saturating_sub(7));
+            y += line_h;
+        }
+    }
 
-        // Blit box art
+    // Players
+    if let Some(d) = detail {
+        if !d.display.players_text.is_empty() {
+            let end_x = draw_string(fb, w, h, "Players: ", text_x, y, COLOR_LABEL, label_scale);
+            draw_string(fb, w, h, &d.display.players_text, end_x, y, COLOR_VALUE, font_scale);
+            y += line_h;
+        }
+    }
+
+    // Extra metadata (publisher, region) for HD layouts
+    if show_extra_metadata {
         if let Some(d) = detail {
-            if let Some(ref art) = d.box_art {
-                blit_image(fb, w, h, &art.pixels, art.width, art.height, art_x as u32, art_y as u32);
-            }
-        }
-
-        // Metadata column
-        let meta_chars_per_line = (text_w as i32 / (font_scale * 9) as i32) as usize;
-
-        // Developer
-        if let Some(d) = detail {
-            if !d.developer.is_empty() {
-                let end_x = draw_string(fb, w, h, "Dev: ", text_x, y, COLOR_LABEL, label_scale);
-                draw_string_truncated(fb, w, h, &d.developer, end_x, y, COLOR_VALUE, font_scale, meta_chars_per_line.saturating_sub(5));
-                y += line_h;
-            }
-        }
-
-        // Rating stars
-        if let Some(detail) = detail {
-            if let Some(rating) = detail.rating {
-                let end_x = draw_string(fb, w, h, "Rating: ", text_x, y, COLOR_LABEL, label_scale);
-                let star_size = (font_scale * 4).max(3) as i32;
-                draw_rating(fb, w, h, rating, end_x, y, star_size, &detail.display.rating_text);
-                y += line_h;
-            }
-        }
-
-        // Genre
-        if let Some(d) = detail {
-            if !d.genre.is_empty() {
-                let end_x = draw_string(fb, w, h, "Genre: ", text_x, y, COLOR_LABEL, label_scale);
-                draw_string_truncated(fb, w, h, &d.genre, end_x, y, COLOR_VALUE, font_scale, meta_chars_per_line.saturating_sub(7));
-                y += line_h;
-            }
-        }
-
-        // Players
-        if let Some(d) = detail {
-            if !d.display.players_text.is_empty() {
-                let end_x = draw_string(fb, w, h, "Players: ", text_x, y, COLOR_LABEL, label_scale);
-                draw_string(fb, w, h, &d.display.players_text, end_x, y, COLOR_VALUE, font_scale);
-                y += line_h;
-            }
-        }
-
-        // Extra metadata (publisher, region) for HD layouts
-        if show_extra_metadata {
-            if let Some(d) = detail {
-                if let Some(ref publisher) = d.publisher {
-                    if !publisher.is_empty() {
-                        let end_x = draw_string(fb, w, h, "Publisher: ", text_x, y, COLOR_LABEL, label_scale);
-                        draw_string(fb, w, h, publisher, end_x, y, COLOR_VALUE, font_scale);
-                        y += line_h;
-                    }
+            if let Some(ref publisher) = d.publisher {
+                if !publisher.is_empty() {
+                    let end_x = draw_string(fb, w, h, "Publisher: ", text_x, y, COLOR_LABEL, label_scale);
+                    draw_string(fb, w, h, publisher, end_x, y, COLOR_VALUE, font_scale);
+                    y += line_h;
                 }
-                if let Some(ref region) = d.region {
-                    if !region.is_empty() {
-                        let end_x = draw_string(fb, w, h, "Region: ", text_x, y, COLOR_LABEL, label_scale);
-                        draw_string(fb, w, h, region, end_x, y, COLOR_VALUE, font_scale);
-                        // y += line_h; // last field, no need to advance
-                    }
+            }
+            if let Some(ref region) = d.region {
+                if !region.is_empty() {
+                    let end_x = draw_string(fb, w, h, "Region: ", text_x, y, COLOR_LABEL, label_scale);
+                    draw_string(fb, w, h, region, end_x, y, COLOR_VALUE, font_scale);
+                    // y += line_h; // last field, no need to advance
                 }
             }
         }
@@ -1026,11 +974,7 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
             let end = d.display.desc_lines_full.len().min(scroll + max_desc_lines);
             // Compute the footer area height to know where to stop rendering
             let label_h = (label_scale * 16) as i32;
-            let footer_top = if w <= 640 {
-                (h as i32) - my - label_h - label_h - 2 - 4 // two-line footer
-            } else {
-                (h as i32) - my - label_h - 4 // single-line footer
-            };
+            let footer_top = (h as i32) - my - label_h - 4; // single-line footer
 
             for line in &d.display.desc_lines_full[scroll..end] {
                 if y + line_h >= footer_top {
@@ -1055,7 +999,7 @@ fn render_page_description(s: &mut CoreState, header_h: i32) {
     }
 }
 
-/// Render footer hints that vary per page.
+/// Render footer hints that vary per page. Always a single line.
 fn render_footer(s: &mut CoreState, page: PageKind) {
     let w = s.display.layout.width;
     let h = s.display.layout.height;
@@ -1066,33 +1010,21 @@ fn render_footer(s: &mut CoreState, page: PageKind) {
     let fb = &mut s.display.framebuffer;
     let label_h = (label_scale * 16) as i32;
 
-    if w <= 640 {
-        // CRT: two lines of hints at the bottom
-        let line2_y = (h as i32) - my - label_h;
-        let line1_y = line2_y - label_h - 2;
-        draw_hline(fb, w, h, mx, line1_y - 4, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
+    let footer_y = (h as i32) - my - label_h;
+    draw_hline(fb, w, h, mx, footer_y - 4, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
 
+    let hints = if w <= 640 {
         match page {
-            PageKind::GameInfo => {
-                draw_string(fb, w, h, "<->: game  L1/R1: page", mx, line1_y, COLOR_NAV, label_scale);
-                draw_string(fb, w, h, "Start: recents/favs  B: exit", mx, line2_y, COLOR_NAV, label_scale);
-            }
-            PageKind::Description => {
-                draw_string(fb, w, h, "^v: scroll  L1/R1: page", mx, line1_y, COLOR_NAV, label_scale);
-                draw_string(fb, w, h, "<->: game  B: exit", mx, line2_y, COLOR_NAV, label_scale);
-            }
+            PageKind::GameInfo => "<->:game L1/R1:page Start:list B:exit",
+            PageKind::Description => "^v:scroll L1/R1:page <->:game B:exit",
         }
     } else {
-        // HD: single line
-        let footer_y = (h as i32) - my - label_h;
-        draw_hline(fb, w, h, mx, footer_y - 4, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
-
-        let hints = match page {
+        match page {
             PageKind::GameInfo => "L/R: game  |  L1/R1: page  |  Start: recents/favs  |  B: exit",
             PageKind::Description => "Up/Down: scroll  |  L1/R1: page  |  L/R: game  |  B: exit",
-        };
-        draw_string(fb, w, h, hints, mx, footer_y, COLOR_NAV, label_scale);
-    }
+        }
+    };
+    draw_string(fb, w, h, hints, mx, footer_y, COLOR_NAV, label_scale);
 }
 
 // ---- Input handling ----
@@ -1374,19 +1306,28 @@ pub unsafe extern "C" fn retro_init() {
 
 #[no_mangle]
 pub unsafe extern "C" fn retro_deinit() {
+    debug_log(&format!(
+        "[deinit] shutting down after {} frames",
+        state().display.frame_count
+    ));
     let s = state();
+    // Clear callbacks first so no stale pointers remain
     s.cb.environment_cb = None;
     s.cb.video_cb = None;
     s.cb.audio_sample_cb = None;
     s.cb.audio_batch_cb = None;
     s.cb.input_poll_cb = None;
     s.cb.input_state_cb = None;
+    // Drop game data
     s.game.entries.clear();
     s.game.favorites.clear();
     s.game.detail_cache.clear();
     s.game.fav_detail_cache.clear();
+    // Drop all framebuffers (both back and front)
     s.display.framebuffer.clear();
+    s.display.present_buffer.clear();
     s.display.framebuffer_16.clear();
+    s.display.present_buffer_16.clear();
     s.scratch.header_text.clear();
     s.scratch.scroll_indicator.clear();
 }
@@ -1451,6 +1392,17 @@ pub unsafe extern "C" fn retro_reset() {
 // All rendering uses pre-computed strings; framebuffers are pre-allocated.
 // The only writes to scratch buffers happen in handle_input on edge-triggered
 // navigation events (clear + push_str into existing capacity).
+//
+// DOUBLE-BUFFERED: We render into `framebuffer` (back buffer), then copy
+// the completed frame into `present_buffer` (front buffer) before handing
+// the pointer to the video callback. This prevents the host's DRM/display
+// thread from reading a partially-rendered frame and corrupting its own
+// buffer management state.
+
+/// Static audio silence buffer -- lives for the entire process lifetime,
+/// so the host frontend can safely hold onto the pointer indefinitely.
+static AUDIO_SILENCE: [i16; 735 * 2] = [0i16; 735 * 2];
+
 #[no_mangle]
 pub unsafe extern "C" fn retro_run() {
     let s = state();
@@ -1470,24 +1422,40 @@ pub unsafe extern "C" fn retro_run() {
 
     s.display.frame_count += 1;
 
-    // Send frame to frontend
+    // Periodic diagnostic logging (every 6000 frames = ~100 seconds at 60fps).
+    // Uses format! which allocates, but only once every ~100s -- negligible.
+    if s.display.frame_count % 6000 == 0 {
+        debug_log(&format!(
+            "[frame {}] alive, idx={}, mode={}",
+            s.display.frame_count,
+            s.game.current_index,
+            match s.game.list_mode {
+                ListMode::Recents => "R",
+                ListMode::Favorites => "F",
+            }
+        ));
+    }
+
+    // Send frame to frontend via double-buffering:
+    // Copy completed back-buffer into the stable present-buffer, then
+    // hand the present-buffer pointer to the host.
     if let Some(video) = s.cb.video_cb {
         let w = s.display.layout.width;
         let h = s.display.layout.height;
 
         match s.display.pixel_format {
             PixelFormat::Xrgb8888 => {
-                // Direct output -- internal u32 0x00RRGGBB is already XRGB8888
+                // Copy back -> front
+                s.display.present_buffer.copy_from_slice(&s.display.framebuffer);
                 video(
-                    s.display.framebuffer.as_ptr() as *const c_void,
+                    s.display.present_buffer.as_ptr() as *const c_void,
                     w as c_uint,
                     h as c_uint,
                     (w as usize) * std::mem::size_of::<u32>(),
                 );
             }
             PixelFormat::Bgr565 => {
-                // Fallback: convert u32 0x00RRGGBB -> u16 BBBBBGGGGGGRRRRR
-                // framebuffer_16 is pre-allocated in retro_load_game -- no resize needed
+                // Convert u32 0x00RRGGBB -> u16 BBBBBGGGGGGRRRRR into back 16-bit buffer
                 let pixel_count = (w * h) as usize;
                 for i in 0..pixel_count {
                     let c = s.display.framebuffer[i];
@@ -1496,8 +1464,10 @@ pub unsafe extern "C" fn retro_run() {
                     let b = (c & 0xFF) as u16;
                     s.display.framebuffer_16[i] = ((b >> 3) << 11) | ((g >> 2) << 5) | (r >> 3);
                 }
+                // Copy back -> front
+                s.display.present_buffer_16.copy_from_slice(&s.display.framebuffer_16);
                 video(
-                    s.display.framebuffer_16.as_ptr() as *const c_void,
+                    s.display.present_buffer_16.as_ptr() as *const c_void,
                     w as c_uint,
                     h as c_uint,
                     (w as usize) * std::mem::size_of::<u16>(),
@@ -1506,10 +1476,10 @@ pub unsafe extern "C" fn retro_run() {
         }
     }
 
-    // Send silence for audio
+    // Send silence for audio -- uses a static buffer so the pointer
+    // is always valid even if the host holds onto it across frames.
     if let Some(audio_batch) = s.cb.audio_batch_cb {
-        let silence = [0i16; 735 * 2];
-        audio_batch(silence.as_ptr(), 735);
+        audio_batch(AUDIO_SILENCE.as_ptr(), 735);
     }
 }
 
@@ -1522,8 +1492,11 @@ pub unsafe extern "C" fn retro_load_game(_game: *const RetroGameInfo) -> bool {
 
     let w = s.display.layout.width;
     let h = s.display.layout.height;
-    s.display.framebuffer = vec![0u32; (w * h) as usize];
-    s.display.framebuffer_16 = vec![0u16; (w * h) as usize];
+    let pixel_count = (w * h) as usize;
+    s.display.framebuffer = vec![0u32; pixel_count];
+    s.display.present_buffer = vec![0u32; pixel_count];
+    s.display.framebuffer_16 = vec![0u16; pixel_count];
+    s.display.present_buffer_16 = vec![0u16; pixel_count];
 
     debug_log(&format!(
         "[replay-game-info] load_game: detected {}x{} layout",
@@ -1583,11 +1556,21 @@ pub extern "C" fn retro_load_game_special(
 
 #[no_mangle]
 pub unsafe extern "C" fn retro_unload_game() {
+    debug_log("[unload_game] clearing game data");
     let s = state();
     s.game.entries.clear();
     s.game.favorites.clear();
     s.game.detail_cache.clear();
     s.game.fav_detail_cache.clear();
+    // Zero-fill present buffers so the host never reads stale frame data
+    // after the game is unloaded. Don't deallocate -- the host's DRM thread
+    // may still be reading the pointer we handed out.
+    for px in s.display.present_buffer.iter_mut() {
+        *px = 0;
+    }
+    for px in s.display.present_buffer_16.iter_mut() {
+        *px = 0;
+    }
 }
 
 // ---- Save state serialization ----
