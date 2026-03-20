@@ -422,10 +422,17 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "filter.active_search" => "Search",
         "filter.filtered_results" => "Filtered results",
 
+        // Developer page
+        "developer.see_all" => "See all",
+        "developer.no_games" => "No games found for this developer",
+        "developer.all_systems" => "All",
+
         // Search extras (Phase 2)
+        "search.games_by" => "Games by",
         "search.random_game" => "Random Game",
         "search.recent_searches" => "Recent Searches",
         "search.clear_recent" => "Clear",
+        "search.other_developers" => "Other developers matching",
 
         // Recommendations
         "home.discover" => "Discover",

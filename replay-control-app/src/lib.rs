@@ -17,6 +17,7 @@ use leptos_router::path;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
 use i18n::{provide_i18n, t, use_i18n};
+use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
 use pages::games::SystemRomView;
@@ -106,6 +107,7 @@ pub fn App() -> impl IntoView {
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
                         <Route path=path!("/") view=HomePage />
+                        <Route path=path!("/developer/:name") view=DeveloperPage />
                         <Route path=path!("/games/:system") view=SystemRomView />
                         <Route path=path!("/games/:system/:filename") view=GameDetailPage />
                         <Route path=path!("/favorites") view=FavoritesPage />

@@ -3,8 +3,12 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_query_map;
 
 use crate::components::filter_chips::{FilterChips, FilterState};
+use crate::components::hero_card::GameScrollCard;
 use crate::i18n::{t, use_i18n};
-use crate::server_fns::{self, GlobalSearchResult, GlobalSearchResults, SystemSearchGroup};
+use crate::server_fns::{
+    self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResult, GlobalSearchResults,
+    SystemSearchGroup,
+};
 
 #[cfg(feature = "hydrate")]
 const RECENT_SEARCHES_KEY: &str = "replay_recent_searches";
@@ -181,6 +185,12 @@ pub fn SearchPage() -> impl IntoView {
         |(q, hh, ht, hb, hc, mp, g, mr)| server_fns::global_search(q, hh, ht, hb, hc, mp, mr, g, 3),
     );
 
+    // Developer match resource — only fires when query is non-empty.
+    let developer_results = Resource::new(
+        move || debounced_query.get(),
+        |q| server_fns::search_by_developer(q, 20),
+    );
+
     // Derived: show the "empty state" panel (recent searches + random game).
     // Show whenever the search field is empty — don't gate on focus state because
     // autofocus fires before hydration so the on:focus handler never triggers,
@@ -301,6 +311,18 @@ pub fn SearchPage() -> impl IntoView {
                     })}
                 </Suspense>
             </div>
+
+            // Developer match block (horizontal scroll, shown above regular results).
+            <Transition fallback=|| ()>
+                {move || Suspend::new(async move {
+                    let locale = i18n.locale.get();
+                    let query = debounced_query.get();
+                    let dev = developer_results.await?;
+                    Ok::<_, server_fn::ServerFnError>(dev.map(|data| {
+                        view! { <DeveloperBlock data locale query /> }
+                    }))
+                })}
+            </Transition>
 
             <Transition fallback=move || view! {
                 <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div>
@@ -557,6 +579,88 @@ fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
                 </div>
             </div>
         </div>
+    }
+}
+
+/// "Games by [Developer]" horizontal scroll block.
+#[component]
+fn DeveloperBlock(
+    data: DeveloperSearchResult,
+    locale: crate::i18n::Locale,
+    query: String,
+) -> impl IntoView {
+    let title = format!(
+        "{} {} ({})",
+        t(locale, "search.games_by"),
+        data.developer_name,
+        data.total_count
+    );
+
+    let see_all_href = format!(
+        "/developer/{}",
+        urlencoding::encode(&data.developer_name)
+    );
+
+    let has_other_developers = !data.other_developers.is_empty();
+
+    view! {
+        <section class="section search-developer-section">
+            <div class="search-group-header">
+                <h2 class="section-title">{title}</h2>
+                <A href=see_all_href attr:class="search-see-all">
+                    {t(locale, "developer.see_all")} " \u{2192}"
+                </A>
+            </div>
+            <div class="recent-scroll">
+                {data.games.into_iter().map(|game| {
+                    view! {
+                        <GameScrollCard
+                            href=game.href
+                            name=game.display_name
+                            system=game.system_display
+                            box_art_url=game.box_art_url
+                        />
+                    }
+                }).collect::<Vec<_>>()}
+            </div>
+        </section>
+        <Show when=move || has_other_developers>
+            <OtherDevelopersList
+                developers=data.other_developers.clone()
+                query=query.clone()
+                locale
+            />
+        </Show>
+    }
+}
+
+/// List of additional developer matches below the main developer block.
+#[component]
+fn OtherDevelopersList(
+    developers: Vec<DeveloperMatch>,
+    query: String,
+    locale: crate::i18n::Locale,
+) -> impl IntoView {
+    let heading = format!(
+        "{} \"{}\"",
+        t(locale, "search.other_developers"),
+        query,
+    );
+
+    view! {
+        <section class="developer-match-list">
+            <h3 class="developer-match-heading">{heading}</h3>
+            {developers.into_iter().map(|dev| {
+                let href = format!("/developer/{}", urlencoding::encode(&dev.name));
+                let count_label = format!("{}", dev.game_count);
+                view! {
+                    <A href=href attr:class="developer-match-item">
+                        <span class="developer-match-name">{dev.name}</span>
+                        <span class="developer-match-count">{count_label}</span>
+                    </A>
+                }
+            }).collect::<Vec<_>>()}
+        </section>
     }
 }
 

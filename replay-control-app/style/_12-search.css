@@ -323,3 +323,105 @@
 .random-game-icon {
     font-size: 1.1rem;
 }
+
+/* Other developers matching list */
+.developer-match-list {
+    margin-bottom: 16px;
+}
+
+.developer-match-heading {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.developer-match-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    color: var(--text);
+    transition: background 0.15s;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.developer-match-item:first-of-type {
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.developer-match-item:last-of-type {
+    border-bottom: 1px solid var(--border);
+    border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.developer-match-item:only-of-type {
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.developer-match-item:hover {
+    background: var(--surface-hover);
+}
+
+.developer-match-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.developer-match-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* Developer page: system filter chips */
+.system-filter-chips {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.system-filter-chips::-webkit-scrollbar {
+    display: none;
+}
+
+.system-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.system-chip:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.system-chip-active {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Developer section header: reuse search-group-header layout
+   but ensure proper margin within the developer section context */
+.search-developer-section .search-group-header {
+    padding: 0;
+    border-bottom: none;
+    margin-bottom: 8px;
+}
