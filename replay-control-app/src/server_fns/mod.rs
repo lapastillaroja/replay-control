@@ -410,7 +410,8 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     // Filesystem fallback: if no image URLs from DB, check filesystem.
     // For box art, use the unified resolve_box_art() (same path as cards/recommendations)
     // to ensure consistent box art between detail pages and series/recommendation cards.
-    // For screenshots and title screens, use find_image_on_disk() directly.
+    // For screenshots and title screens, use resolve_image_on_disk() which handles
+    // arcade MAME codename → display name translation automatically.
     if info.box_art_url.is_none() || info.screenshot_url.is_none() || info.title_url.is_none() {
         if info.box_art_url.is_none() {
             let image_index = state.cache.get_image_index(&state, &info.system);
@@ -424,7 +425,8 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
         }
         let media_base = state.storage().rc_dir().join("media").join(&info.system);
         if info.screenshot_url.is_none()
-            && let Some(path) = find_image_on_disk(
+            && let Some(path) = resolve_image_on_disk(
+                &info.system,
                 &media_base,
                 replay_control_core::thumbnails::ThumbnailKind::Snap.media_dir(),
                 &info.rom_filename,
@@ -433,7 +435,8 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
             info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
         }
         if info.title_url.is_none()
-            && let Some(path) = find_image_on_disk(
+            && let Some(path) = resolve_image_on_disk(
+                &info.system,
                 &media_base,
                 replay_control_core::thumbnails::ThumbnailKind::Title.media_dir(),
                 &info.rom_filename,
@@ -490,8 +493,9 @@ pub(crate) fn resolve_box_art_url(
             return Some(format!("/media/{system}/{kind}/{resolved}"));
         }
     }
-    // 2. Filesystem fallback (find_image_on_disk already validates)
-    find_image_on_disk(
+    // 2. Filesystem fallback — resolve_image_on_disk handles arcade name translation.
+    resolve_image_on_disk(
+        system,
         &media_base,
         replay_control_core::thumbnails::ThumbnailKind::Boxart.media_dir(),
         rom_filename,
@@ -502,5 +506,5 @@ pub(crate) fn resolve_box_art_url(
 // Re-export image utilities from core for use in this crate.
 #[cfg(feature = "ssr")]
 pub(crate) use replay_control_core::thumbnails::{
-    find_image_on_disk, is_valid_image, try_resolve_fake_symlink,
+    is_valid_image, resolve_image_on_disk, try_resolve_fake_symlink,
 };

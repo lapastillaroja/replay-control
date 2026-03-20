@@ -326,6 +326,37 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
     None
 }
 
+/// Resolve an image file on disk for a ROM, with arcade name translation.
+///
+/// This is the main entry point for per-file image resolution. For arcade systems,
+/// it translates the MAME codename to the display name (e.g., `ga2` → `Golden Axe:
+/// The Revenge of Death Adder`) and tries that first, then falls back to the ROM
+/// filename. For non-arcade systems, it delegates directly to `find_image_on_disk`.
+///
+/// Use this instead of calling `find_image_on_disk` directly to avoid forgetting
+/// arcade name translation when adding new image types.
+pub fn resolve_image_on_disk(
+    system: &str,
+    media_base: &Path,
+    kind: &str,
+    rom_filename: &str,
+) -> Option<String> {
+    if crate::systems::is_arcade_system(system) {
+        let stem = rom_filename
+            .rfind('.')
+            .map(|i| &rom_filename[..i])
+            .unwrap_or(rom_filename);
+        if let Some(game) = crate::arcade_db::lookup_arcade_game(stem) {
+            let thumb = thumbnail_filename(game.display_name);
+            let arcade_filename = format!("{thumb}.zip");
+            if let Some(path) = find_image_on_disk(media_base, kind, &arcade_filename) {
+                return Some(path);
+            }
+        }
+    }
+    find_image_on_disk(media_base, kind, rom_filename)
+}
+
 /// Build a list of ROM filenames for a system from the filesystem.
 pub fn list_rom_filenames(storage_root: &Path, system: &str) -> Vec<String> {
     let roms_dir = storage_root.join("roms").join(system);
