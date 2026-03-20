@@ -4,6 +4,7 @@ use leptos_router::hooks::use_query_map;
 
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
+use crate::hooks::use_debounced;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{
     self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResult, GlobalSearchResults,
@@ -21,57 +22,15 @@ pub fn SearchPage() -> impl IntoView {
     let query_map = use_query_map();
 
     // Read initial values from URL query params.
-    let initial_query = query_map
-        .read_untracked()
-        .get("q")
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    let initial_hide_hacks = query_map
-        .read_untracked()
-        .get("hide_hacks")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let initial_hide_translations = query_map
-        .read_untracked()
-        .get("hide_translations")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let initial_hide_betas = query_map
-        .read_untracked()
-        .get("hide_betas")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let initial_hide_clones = query_map
-        .read_untracked()
-        .get("hide_clones")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let initial_genre = query_map
-        .read_untracked()
-        .get("genre")
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    let initial_multiplayer = query_map
-        .read_untracked()
-        .get("multiplayer")
-        .map(|v| v == "true")
-        .unwrap_or(false);
+    let qm = query_map.read_untracked();
+    let initial_query = qm.get("q").unwrap_or_default();
+    let filters = FilterState::from_query_map(&qm);
+    drop(qm);
 
     // Signals for user input.
-    let search_input = RwSignal::new(initial_query.clone());
-    let filters = FilterState {
-        hide_hacks: RwSignal::new(initial_hide_hacks),
-        hide_translations: RwSignal::new(initial_hide_translations),
-        hide_betas: RwSignal::new(initial_hide_betas),
-        hide_clones: RwSignal::new(initial_hide_clones),
-        multiplayer_only: RwSignal::new(initial_multiplayer),
-        genre: RwSignal::new(initial_genre.clone()),
-        min_rating: RwSignal::new(None),
-    };
+    let search_input = RwSignal::new(initial_query);
 
-    // Debounced search query that drives the resource.
-    let debounced_query = RwSignal::new(initial_query.clone());
-    let debounced_genre = RwSignal::new(initial_genre);
+    let debounced_genre = RwSignal::new(filters.genre_untracked());
 
     // Recent searches (client-side, loaded from localStorage).
     // Start empty on both SSR and hydrate so the DOM matches during hydration.
@@ -92,11 +51,12 @@ pub fn SearchPage() -> impl IntoView {
         recent_searches.set(load_recent_searches());
     });
 
-    // Debounce the search input (400ms) + save to recent searches.
+    // Debounce the search input (400ms).
+    let debounced_query = use_debounced(search_input, 400);
+
+    // Sync debounced query to URL + save to recent searches.
     #[cfg(feature = "hydrate")]
     {
-        use wasm_bindgen::prelude::*;
-
         // Skip the very first update_url_params call from the filter Effect.
         // On mount, the Leptos Router's pushState hasn't fired yet (it's deferred
         // via an async channel). If we call replaceState before pushState, we
@@ -104,41 +64,22 @@ pub fn SearchPage() -> impl IntoView {
         // browser back button go from /search to /search (i.e., "nothing happens").
         let filters_initialized = StoredValue::new(false);
 
-        let timer_handle: StoredValue<Option<i32>> = StoredValue::new(None);
+        // When the debounced query changes, sync to URL and save recent search.
         Effect::new(move || {
-            let val = search_input.get();
-            if let Some(handle) = timer_handle.get_value()
-                && let Some(w) = web_sys::window()
-            {
-                w.clear_timeout_with_handle(handle);
+            let val = debounced_query.get();
+            update_url_params(
+                &val,
+                filters.hide_hacks.get_untracked(),
+                filters.hide_translations.get_untracked(),
+                filters.hide_betas.get_untracked(),
+                filters.hide_clones.get_untracked(),
+                filters.multiplayer_only.get_untracked(),
+                &filters.genre.get_untracked(),
+            );
+            if !val.trim().is_empty() {
+                save_recent_search(&val);
+                recent_searches.set(load_recent_searches());
             }
-            let cb = Closure::<dyn Fn()>::new(move || {
-                debounced_query.set(val.clone());
-                update_url_params(
-                    &val,
-                    filters.hide_hacks.get_untracked(),
-                    filters.hide_translations.get_untracked(),
-                    filters.hide_betas.get_untracked(),
-                    filters.hide_clones.get_untracked(),
-                    filters.multiplayer_only.get_untracked(),
-                    &filters.genre.get_untracked(),
-                );
-                // Save to recent searches if non-empty.
-                if !val.trim().is_empty() {
-                    save_recent_search(&val);
-                    // Refresh the signal so UI stays in sync.
-                    recent_searches.set(load_recent_searches());
-                }
-            });
-            if let Some(window) = web_sys::window()
-                && let Ok(handle) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    cb.as_ref().unchecked_ref(),
-                    400,
-                )
-            {
-                timer_handle.set_value(Some(handle));
-            }
-            cb.forget();
         });
 
         // Immediate update for filter changes (no debounce needed).
@@ -157,14 +98,6 @@ pub fn SearchPage() -> impl IntoView {
                 return;
             }
             update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, mp, &g);
-        });
-
-        on_cleanup(move || {
-            if let Some(handle) = timer_handle.get_value()
-                && let Some(w) = web_sys::window()
-            {
-                w.clear_timeout_with_handle(handle);
-            }
         });
     }
 

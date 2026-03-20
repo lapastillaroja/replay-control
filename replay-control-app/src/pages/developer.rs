@@ -4,6 +4,7 @@ use leptos_router::hooks::use_params_map;
 
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
+use crate::hooks::{use_debounced, use_infinite_scroll};
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, DeveloperSystem, RomListEntry, PAGE_SIZE};
 
@@ -32,49 +33,13 @@ pub fn DeveloperPage() -> impl IntoView {
         genre: RwSignal::new(String::new()),
         min_rating: RwSignal::new(None),
     };
-    let debounced_genre = RwSignal::new(String::new());
+    let debounced_genre = use_debounced(filters.genre, 300);
 
     // Genre list resource — depends on developer and system filter.
     let genres_resource = Resource::new(
         move || (dev.get_value(), system_filter.get()),
         move |(developer, system)| server_fns::get_developer_genres(developer, system),
     );
-
-    // Debounce genre changes on hydrate.
-    #[cfg(feature = "hydrate")]
-    {
-        use wasm_bindgen::prelude::*;
-
-        let genre_timer: StoredValue<Option<i32>> = StoredValue::new(None);
-        Effect::new(move || {
-            let val = filters.genre.get();
-            if let Some(handle) = genre_timer.get_value()
-                && let Some(w) = web_sys::window()
-            {
-                w.clear_timeout_with_handle(handle);
-            }
-            let cb = Closure::<dyn Fn()>::new(move || {
-                debounced_genre.set(val.clone());
-            });
-            if let Some(window) = web_sys::window()
-                && let Ok(handle) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    cb.as_ref().unchecked_ref(),
-                    300,
-                )
-            {
-                genre_timer.set_value(Some(handle));
-            }
-            cb.forget();
-        });
-
-        on_cleanup(move || {
-            if let Some(handle) = genre_timer.get_value()
-                && let Some(w) = web_sys::window()
-            {
-                w.clear_timeout_with_handle(handle);
-            }
-        });
-    }
 
     // Extra ROMs loaded after the first page.
     let (extra_roms, set_extra_roms) = signal(Vec::<RomListEntry>::new());
@@ -152,42 +117,7 @@ pub fn DeveloperPage() -> impl IntoView {
 
     // Sentinel ref for infinite scroll.
     let sentinel_ref = NodeRef::<leptos::html::Div>::new();
-
-    #[cfg(feature = "hydrate")]
-    {
-        use wasm_bindgen::prelude::*;
-        use web_sys::js_sys;
-
-        let load_more_for_observer = load_more;
-        Effect::new(move || {
-            let Some(el) = sentinel_ref.get() else { return };
-
-            let cb = Closure::<dyn Fn(js_sys::Array)>::new(move |entries: js_sys::Array| {
-                for entry in entries.iter() {
-                    if let Ok(entry) = entry.dyn_into::<web_sys::IntersectionObserverEntry>()
-                        && entry.is_intersecting()
-                    {
-                        load_more_for_observer();
-                    }
-                }
-            });
-
-            let opts = web_sys::IntersectionObserverInit::new();
-            opts.set_root_margin("200px");
-
-            if let Ok(observer) =
-                web_sys::IntersectionObserver::new_with_options(cb.as_ref().unchecked_ref(), &opts)
-            {
-                let obs_for_cleanup = observer.clone();
-                observer.observe(&el);
-                on_cleanup(move || {
-                    obs_for_cleanup.disconnect();
-                });
-            }
-
-            cb.forget();
-        });
-    }
+    use_infinite_scroll(sentinel_ref, load_more);
 
     view! {
         <div class="page games-page developer-page">

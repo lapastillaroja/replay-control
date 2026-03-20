@@ -5,6 +5,7 @@ use leptos_router::hooks::{query_signal_with_options, use_query_map};
 
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
+use crate::hooks::{use_debounced, use_infinite_scroll};
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, PAGE_SIZE, RomListEntry};
 
@@ -16,47 +17,8 @@ pub fn RomList(system: String) -> impl IntoView {
 
     // Read filter params from URL query (passed from global search "See all" links).
     let query_map = use_query_map();
-    let initial_hide_hacks = query_map
-        .read_untracked()
-        .get("hide_hacks")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let initial_hide_translations = query_map
-        .read_untracked()
-        .get("hide_translations")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let initial_hide_betas = query_map
-        .read_untracked()
-        .get("hide_betas")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let initial_hide_clones = query_map
-        .read_untracked()
-        .get("hide_clones")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let initial_genre = query_map
-        .read_untracked()
-        .get("genre")
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    let initial_multiplayer = query_map
-        .read_untracked()
-        .get("multiplayer")
-        .map(|v| v == "true")
-        .unwrap_or(false);
-
-    let filters = FilterState {
-        hide_hacks: RwSignal::new(initial_hide_hacks),
-        hide_translations: RwSignal::new(initial_hide_translations),
-        hide_betas: RwSignal::new(initial_hide_betas),
-        hide_clones: RwSignal::new(initial_hide_clones),
-        multiplayer_only: RwSignal::new(initial_multiplayer),
-        genre: RwSignal::new(initial_genre.clone()),
-        min_rating: RwSignal::new(None),
-    };
-    let debounced_genre = RwSignal::new(initial_genre);
+    let filters = FilterState::from_query_map(&query_map.read_untracked());
+    let debounced_genre = RwSignal::new(filters.genre_untracked());
 
     // Track whether the system is arcade (set from first page response).
     let is_arcade = RwSignal::new(false);
@@ -84,38 +46,18 @@ pub fn RomList(system: String) -> impl IntoView {
     // Local input signal tracks what the user is typing (immediate), while
     // debounced_search drives the Resource (delayed).
     let search_input = RwSignal::new(search_query.get_untracked().unwrap_or_default());
-    let debounced_search = RwSignal::new(search_query.get_untracked().unwrap_or_default());
+    let debounced_search = use_debounced(search_input, 300);
 
     #[cfg(feature = "hydrate")]
     {
-        use wasm_bindgen::prelude::*;
-
-        let timer_handle: StoredValue<Option<i32>> = StoredValue::new(None);
+        // Sync debounced search value to URL query param.
         Effect::new(move || {
-            let val = search_input.get();
-            if let Some(handle) = timer_handle.get_value()
-                && let Some(w) = web_sys::window()
-            {
-                w.clear_timeout_with_handle(handle);
+            let val = debounced_search.get();
+            if val.is_empty() {
+                set_search_query.set(None);
+            } else {
+                set_search_query.set(Some(val));
             }
-            let cb = Closure::<dyn Fn()>::new(move || {
-                debounced_search.set(val.clone());
-                // Sync to URL query param.
-                if val.is_empty() {
-                    set_search_query.set(None);
-                } else {
-                    set_search_query.set(Some(val.clone()));
-                }
-            });
-            if let Some(window) = web_sys::window()
-                && let Ok(handle) = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    cb.as_ref().unchecked_ref(),
-                    300,
-                )
-            {
-                timer_handle.set_value(Some(handle));
-            }
-            cb.forget();
         });
 
         // Sync from URL -> input when query param changes externally (e.g., back button).
@@ -154,15 +96,6 @@ pub fn RomList(system: String) -> impl IntoView {
                 &g,
                 &debounced_search.get_untracked(),
             );
-        });
-
-        // Clean up pending timer on unmount.
-        on_cleanup(move || {
-            if let Some(handle) = timer_handle.get_value()
-                && let Some(w) = web_sys::window()
-            {
-                w.clear_timeout_with_handle(handle);
-            }
         });
     }
 
@@ -244,42 +177,7 @@ pub fn RomList(system: String) -> impl IntoView {
 
     // Sentinel ref for infinite scroll.
     let sentinel_ref = NodeRef::<leptos::html::Div>::new();
-
-    #[cfg(feature = "hydrate")]
-    {
-        use wasm_bindgen::prelude::*;
-        use web_sys::js_sys;
-
-        let load_more_for_observer = load_more;
-        Effect::new(move || {
-            let Some(el) = sentinel_ref.get() else { return };
-
-            let cb = Closure::<dyn Fn(js_sys::Array)>::new(move |entries: js_sys::Array| {
-                for entry in entries.iter() {
-                    if let Ok(entry) = entry.dyn_into::<web_sys::IntersectionObserverEntry>()
-                        && entry.is_intersecting()
-                    {
-                        load_more_for_observer();
-                    }
-                }
-            });
-
-            let opts = web_sys::IntersectionObserverInit::new();
-            opts.set_root_margin("200px");
-
-            if let Ok(observer) =
-                web_sys::IntersectionObserver::new_with_options(cb.as_ref().unchecked_ref(), &opts)
-            {
-                let obs_for_cleanup = observer.clone();
-                observer.observe(&el);
-                on_cleanup(move || {
-                    obs_for_cleanup.disconnect();
-                });
-            }
-
-            cb.forget();
-        });
-    }
+    use_infinite_scroll(sentinel_ref, load_more);
 
     // The search bar and filter bar are rendered outside the Suspense/Transition block
     // so that the input element is never recreated when search results update, which

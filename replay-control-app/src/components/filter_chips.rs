@@ -44,6 +44,32 @@ pub struct FilterState {
     pub min_rating: RwSignal<Option<f32>>,
 }
 
+impl FilterState {
+    /// Build a `FilterState` from URL query parameters.
+    ///
+    /// Reads `hide_hacks`, `hide_translations`, `hide_betas`, `hide_clones`,
+    /// `genre`, and `multiplayer` from the provided `ParamsMap`.
+    pub fn from_query_map(qm: &leptos_router::params::ParamsMap) -> Self {
+        let bool_param = |key: &str| qm.get(key).is_some_and(|v| v == "true");
+        let genre = qm.get("genre").unwrap_or_default();
+
+        Self {
+            hide_hacks: RwSignal::new(bool_param("hide_hacks")),
+            hide_translations: RwSignal::new(bool_param("hide_translations")),
+            hide_betas: RwSignal::new(bool_param("hide_betas")),
+            hide_clones: RwSignal::new(bool_param("hide_clones")),
+            multiplayer_only: RwSignal::new(bool_param("multiplayer")),
+            genre: RwSignal::new(genre.clone()),
+            min_rating: RwSignal::new(None),
+        }
+    }
+
+    /// Return the initial genre value (convenience for creating a debounced_genre signal).
+    pub fn genre_untracked(&self) -> String {
+        self.genre.get_untracked()
+    }
+}
+
 /// A single toggle filter chip.
 #[component]
 fn FilterChip(signal: RwSignal<bool>, label_key: &'static str) -> impl IntoView {
