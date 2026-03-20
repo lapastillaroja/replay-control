@@ -343,6 +343,7 @@ mod tests {
             genre_group: String::new(),
             players: None,
             rating: None,
+            rating_count: None,
             is_clone: false,
             base_title: base_title.into(),
             region: String::new(),

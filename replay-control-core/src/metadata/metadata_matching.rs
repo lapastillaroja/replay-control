@@ -96,6 +96,7 @@ pub fn match_roms_to_metadata(
                 metadata: GameMetadata {
                     description: donor_meta.description.clone(),
                     rating: donor_meta.rating,
+                    rating_count: donor_meta.rating_count,
                     publisher: donor_meta.publisher.clone(),
                     developer: donor_meta.developer.clone(),
                     genre: donor_meta.genre.clone(),
@@ -123,6 +124,7 @@ mod tests {
         GameMetadata {
             description: desc.map(String::from),
             rating,
+            rating_count: None,
             publisher: None,
             developer: None,
             genre: None,

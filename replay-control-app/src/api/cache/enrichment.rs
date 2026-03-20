@@ -34,6 +34,18 @@ impl GameLibrary {
             .and_then(|guard| guard.as_ref()?.system_metadata_players(system).ok())
             .unwrap_or_default();
 
+        // Load rating counts from game_metadata table (from LaunchBox import).
+        // Used to propagate vote counts to game_library for weighted scoring.
+        let lb_rating_counts: HashMap<String, u32> = state
+            .metadata_db()
+            .and_then(|guard| {
+                guard
+                    .as_ref()?
+                    .system_metadata_rating_counts(system)
+                    .ok()
+            })
+            .unwrap_or_default();
+
         // Load developers from game_metadata table (from LaunchBox import).
         // Used to fill empty game_library.developer entries as a fallback.
         let lb_developers: HashMap<String, String> = state
@@ -95,13 +107,14 @@ impl GameLibrary {
             return;
         }
 
-        // Build enrichment entries: box_art_url, genre, players, rating per ROM.
+        // Build enrichment entries: box_art_url, genre, players, rating, rating_count per ROM.
         // Genre and players are only filled from LaunchBox when game_library has no value.
         let enrichments: Vec<replay_control_core::metadata_db::BoxArtGenreRating> = rom_filenames
             .iter()
             .filter_map(|filename| {
                 let art = self.resolve_box_art(state, &index, system, filename);
                 let rating = all_ratings.get(filename).map(|&r| r as f32);
+                let rating_count = lb_rating_counts.get(filename).copied();
                 let genre = if !existing_genres.contains(filename) {
                     lb_genres.get(filename).cloned()
                 } else {
@@ -112,7 +125,12 @@ impl GameLibrary {
                 } else {
                     None
                 };
-                if art.is_none() && rating.is_none() && genre.is_none() && players.is_none() {
+                if art.is_none()
+                    && rating.is_none()
+                    && rating_count.is_none()
+                    && genre.is_none()
+                    && players.is_none()
+                {
                     return None;
                 }
                 Some(replay_control_core::metadata_db::BoxArtGenreRating {
@@ -121,6 +139,7 @@ impl GameLibrary {
                     genre,
                     players,
                     rating,
+                    rating_count,
                 })
             })
             .collect();

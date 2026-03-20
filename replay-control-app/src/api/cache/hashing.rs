@@ -249,6 +249,7 @@ impl GameLibrary {
                     genre_group,
                     players: players_lookup.or(r.players),
                     rating: r.rating,
+                    rating_count: None,
                     is_clone,
                     base_title,
                     region: region.to_string(),

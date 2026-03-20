@@ -26,6 +26,7 @@ struct LbGame {
     name: String,
     overview: String,
     rating: Option<f64>,
+    rating_count: Option<u32>,
     publisher: String,
     developer: String,
     genre: String,
@@ -158,6 +159,7 @@ pub fn import_launchbox(
                         Some(game.overview.clone())
                     },
                     rating: game.rating,
+                    rating_count: game.rating_count,
                     publisher: if game.publisher.is_empty() {
                         None
                     } else {
@@ -257,6 +259,7 @@ fn parse_xml<R: BufRead>(
     let mut platform = String::new();
     let mut overview = String::new();
     let mut rating: Option<f64> = None;
+    let mut rating_count: Option<u32> = None;
     let mut publisher = String::new();
     let mut developer = String::new();
     let mut genre = String::new();
@@ -286,6 +289,7 @@ fn parse_xml<R: BufRead>(
                         platform.clear();
                         overview.clear();
                         rating = None;
+                        rating_count = None;
                         publisher.clear();
                         developer.clear();
                         genre.clear();
@@ -316,6 +320,9 @@ fn parse_xml<R: BufRead>(
                         "Overview" => overview.push_str(&text),
                         "CommunityRating" => {
                             rating = text.parse::<f64>().ok();
+                        }
+                        "CommunityRatingCount" => {
+                            rating_count = text.parse::<u32>().ok();
                         }
                         "Publisher" => publisher.push_str(&text),
                         "Developer" => developer.push_str(&text),
@@ -362,6 +369,7 @@ fn parse_xml<R: BufRead>(
                                 name: std::mem::take(&mut name),
                                 overview: std::mem::take(&mut overview),
                                 rating,
+                                rating_count,
                                 publisher: std::mem::take(&mut publisher),
                                 developer: std::mem::take(&mut developer),
                                 genre: std::mem::take(&mut genre),

@@ -12,7 +12,7 @@ impl MetadataDb {
         let result = self
             .conn
             .query_row(
-                "SELECT description, rating, publisher, developer, genre, players, release_year,
+                "SELECT description, rating, rating_count, publisher, developer, genre, players, release_year,
                         cooperative, source, fetched_at, box_art_path, screenshot_path, title_path
                  FROM game_metadata WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
@@ -20,17 +20,18 @@ impl MetadataDb {
                     Ok(GameMetadata {
                         description: row.get(0)?,
                         rating: row.get(1)?,
-                        publisher: row.get(2)?,
-                        developer: row.get(3)?,
-                        genre: row.get(4)?,
-                        players: row.get::<_, Option<i32>>(5)?.map(|p| p as u8),
-                        release_year: row.get::<_, Option<i32>>(6)?.map(|y| y as u16),
-                        cooperative: row.get::<_, i32>(7)? != 0,
-                        source: row.get(8)?,
-                        fetched_at: row.get(9)?,
-                        box_art_path: row.get(10)?,
-                        screenshot_path: row.get(11)?,
-                        title_path: row.get(12)?,
+                        rating_count: row.get::<_, Option<i64>>(2)?.map(|c| c as u32),
+                        publisher: row.get(3)?,
+                        developer: row.get(4)?,
+                        genre: row.get(5)?,
+                        players: row.get::<_, Option<i32>>(6)?.map(|p| p as u8),
+                        release_year: row.get::<_, Option<i32>>(7)?.map(|y| y as u16),
+                        cooperative: row.get::<_, i32>(8)? != 0,
+                        source: row.get(9)?,
+                        fetched_at: row.get(10)?,
+                        box_art_path: row.get(11)?,
+                        screenshot_path: row.get(12)?,
+                        title_path: row.get(13)?,
                     })
                 },
             )
@@ -125,6 +126,39 @@ impl MetadataDb {
                 Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
             })
             .map_err(|e| Error::Other(format!("System ratings query: {e}")))?;
+
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    }
+
+    /// Fetch all non-null rating counts from `game_metadata` for a single system.
+    /// Returns a map of `rom_filename -> rating_count`.
+    /// Used to propagate vote counts to `game_library` during enrichment.
+    pub fn system_metadata_rating_counts(
+        &self,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, u32>> {
+        use std::collections::HashMap;
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT rom_filename, rating_count FROM game_metadata
+                 WHERE system = ?1 AND rating_count IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_metadata_rating_counts: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)? as u32,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("System metadata rating_counts query: {e}")))?;
 
         let mut map = HashMap::new();
         for row in rows.flatten() {
@@ -260,7 +294,7 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT rom_filename, description, rating, publisher, developer, genre, players,
+                "SELECT rom_filename, description, rating, rating_count, publisher, developer, genre, players,
                         release_year, cooperative, source, fetched_at, box_art_path, screenshot_path,
                         title_path
                  FROM game_metadata WHERE system = ?1",
@@ -274,17 +308,18 @@ impl MetadataDb {
                     GameMetadata {
                         description: row.get(1)?,
                         rating: row.get(2)?,
-                        publisher: row.get(3)?,
-                        developer: row.get(4)?,
-                        genre: row.get(5)?,
-                        players: row.get::<_, Option<i32>>(6)?.map(|p| p as u8),
-                        release_year: row.get::<_, Option<i32>>(7)?.map(|y| y as u16),
-                        cooperative: row.get::<_, i32>(8)? != 0,
-                        source: row.get(9)?,
-                        fetched_at: row.get(10)?,
-                        box_art_path: row.get(11)?,
-                        screenshot_path: row.get(12)?,
-                        title_path: row.get(13)?,
+                        rating_count: row.get::<_, Option<i64>>(3)?.map(|c| c as u32),
+                        publisher: row.get(4)?,
+                        developer: row.get(5)?,
+                        genre: row.get(6)?,
+                        players: row.get::<_, Option<i32>>(7)?.map(|p| p as u8),
+                        release_year: row.get::<_, Option<i32>>(8)?.map(|y| y as u16),
+                        cooperative: row.get::<_, i32>(9)? != 0,
+                        source: row.get(10)?,
+                        fetched_at: row.get(11)?,
+                        box_art_path: row.get(12)?,
+                        screenshot_path: row.get(13)?,
+                        title_path: row.get(14)?,
                     },
                 ))
             })
@@ -301,12 +336,13 @@ impl MetadataDb {
     pub fn upsert(&self, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
         self.conn
             .execute(
-                "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, developer,
+                "INSERT INTO game_metadata (system, rom_filename, description, rating, rating_count, publisher, developer,
                     genre, players, release_year, cooperative, source, fetched_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                  ON CONFLICT(system, rom_filename) DO UPDATE SET
                     description = excluded.description,
                     rating = excluded.rating,
+                    rating_count = excluded.rating_count,
                     publisher = excluded.publisher,
                     developer = excluded.developer,
                     genre = excluded.genre,
@@ -320,6 +356,7 @@ impl MetadataDb {
                     rom_filename,
                     meta.description,
                     meta.rating,
+                    meta.rating_count.map(|c| c as i64),
                     meta.publisher,
                     meta.developer,
                     meta.genre,
@@ -345,12 +382,13 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO game_metadata (system, rom_filename, description, rating, publisher, developer,
+                    "INSERT INTO game_metadata (system, rom_filename, description, rating, rating_count, publisher, developer,
                         genre, players, release_year, cooperative, source, fetched_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                      ON CONFLICT(system, rom_filename) DO UPDATE SET
                         description = excluded.description,
                         rating = excluded.rating,
+                        rating_count = excluded.rating_count,
                         publisher = excluded.publisher,
                         developer = excluded.developer,
                         genre = excluded.genre,
@@ -368,6 +406,7 @@ impl MetadataDb {
                     rom_filename,
                     meta.description,
                     meta.rating,
+                    meta.rating_count.map(|c| c as i64),
                     meta.publisher,
                     meta.developer,
                     meta.genre,

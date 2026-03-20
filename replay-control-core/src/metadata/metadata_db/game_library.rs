@@ -97,11 +97,11 @@ impl MetadataDb {
             let mut stmt = tx
                 .prepare(
                     "INSERT OR IGNORE INTO game_library (system, rom_filename, rom_path, display_name,
-                     size_bytes, is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                     is_clone, base_title, region, is_translation, is_hack, is_special,
-                     crc32, hash_mtime, hash_matched_name, series_key, developer)
+                     base_title, series_key, region, developer, genre, genre_group, rating, rating_count, players,
+                     is_clone, is_m3u, is_translation, is_hack, is_special,
+                     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-                             ?19, ?20, ?21, ?22, ?23)",
+                             ?19, ?20, ?21, ?22, ?23, ?24)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -111,25 +111,26 @@ impl MetadataDb {
                     &rom.rom_filename,
                     &rom.rom_path,
                     &rom.display_name,
-                    rom.size_bytes as i64,
-                    rom.is_m3u,
-                    &rom.box_art_url,
-                    &rom.driver_status,
+                    &rom.base_title,
+                    &rom.series_key,
+                    &rom.region,
+                    &rom.developer,
                     &rom.genre,
                     &rom.genre_group,
-                    rom.players.map(|p| p as i32),
                     rom.rating,
+                    rom.rating_count.map(|c| c as i64),
+                    rom.players.map(|p| p as i32),
                     rom.is_clone,
-                    &rom.base_title,
-                    &rom.region,
+                    rom.is_m3u,
                     rom.is_translation,
                     rom.is_hack,
                     rom.is_special,
+                    &rom.box_art_url,
+                    &rom.driver_status,
+                    rom.size_bytes as i64,
                     rom.crc32.map(|c| c as i64),
                     rom.hash_mtime,
                     &rom.hash_matched_name,
-                    &rom.series_key,
-                    &rom.developer,
                 ])
                 .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
             }
@@ -161,10 +162,10 @@ impl MetadataDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name, series_key, developer
+                "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                        region, developer, genre, genre_group, rating, rating_count, players,
+                        is_clone, is_m3u, is_translation, is_hack, is_special,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
                  FROM game_library WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_entries: {e}")))?;
@@ -388,6 +389,13 @@ impl MetadataDb {
                 )
                 .map_err(|e| Error::Other(format!("Prepare rating update: {e}")))?;
 
+            let mut rating_count_stmt = tx
+                .prepare(
+                    "UPDATE game_library SET rating_count = ?2
+                     WHERE system = ?3 AND rom_filename = ?1",
+                )
+                .map_err(|e| Error::Other(format!("Prepare rating_count update: {e}")))?;
+
             for e in enrichments {
                 if let Some(ref url) = e.box_art_url {
                     art_stmt
@@ -409,6 +417,11 @@ impl MetadataDb {
                     rating_stmt
                         .execute(params![e.rom_filename, r, system])
                         .map_err(|e| Error::Other(format!("Update rating: {e}")))?;
+                }
+                if let Some(c) = e.rating_count {
+                    rating_count_stmt
+                        .execute(params![e.rom_filename, c as i64, system])
+                        .map_err(|e| Error::Other(format!("Update rating_count: {e}")))?;
                 }
             }
         }
@@ -638,10 +651,10 @@ impl MetadataDb {
                       AND is_special = 0
                       AND base_title != ''
                 )
-                SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name, series_key, developer
+                SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                        region, developer, genre, genre_group, rating, rating_count, players,
+                        is_clone, is_m3u, is_translation, is_hack, is_special,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
                 FROM deduped WHERE rn = 1
                 ORDER BY box_art_url IS NULL, RANDOM()
                 LIMIT ?4",
@@ -791,10 +804,10 @@ impl MetadataDb {
                 FROM game_library
                 WHERE {fetch_where}
             )
-            SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                    is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                    is_clone, base_title, region, is_translation, is_hack, is_special,
-                    crc32, hash_mtime, hash_matched_name, series_key, developer
+            SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                    region, developer, genre, genre_group, rating, rating_count, players,
+                    is_clone, is_m3u, is_translation, is_hack, is_special,
+                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
             FROM deduped WHERE rn = 1
             ORDER BY display_name COLLATE NOCASE
             LIMIT ?4 OFFSET ?5"
@@ -927,6 +940,7 @@ mod tests {
                 genre: Some("Platform".into()),
                 players: None,
                 rating: None,
+                rating_count: None,
             }],
         )
         .unwrap();
@@ -956,6 +970,7 @@ mod tests {
                 genre: Some("Platform".into()),
                 players: None,
                 rating: None,
+                rating_count: None,
             }],
         )
         .unwrap();
@@ -988,6 +1003,7 @@ mod tests {
                     genre: Some("Platform".into()),
                     players: None,
                     rating: None,
+                    rating_count: None,
                 },
                 super::super::BoxArtGenreRating {
                     rom_filename: "Streets.md".into(),
@@ -995,6 +1011,7 @@ mod tests {
                     genre: Some("Beat'em Up".into()),
                     players: None,
                     rating: None,
+                    rating_count: None,
                 },
             ],
         )
