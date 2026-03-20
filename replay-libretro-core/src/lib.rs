@@ -5,7 +5,8 @@
 //!
 //! Controls:
 //!   - D-pad Left/Right: navigate between recently played games
-//!   - D-pad Up/Down: scroll description text
+//!   - D-pad Up/Down: scroll description text (Page 2 only)
+//!   - L1/R1: cycle between pages (Game Info / Description)
 //!   - B button: exit core (RETRO_ENVIRONMENT_SHUTDOWN)
 //!   - Start: toggle between recently played and favorites
 //!
@@ -64,9 +65,7 @@ const RETRO_DEVICE_ID_JOYPAD_RIGHT: c_uint = 7;
 const RETRO_DEVICE_ID_JOYPAD_A: c_uint = 8;
 #[allow(dead_code)]
 const RETRO_DEVICE_ID_JOYPAD_X: c_uint = 9;
-#[allow(dead_code)]
 const RETRO_DEVICE_ID_JOYPAD_L: c_uint = 10;
-#[allow(dead_code)]
 const RETRO_DEVICE_ID_JOYPAD_R: c_uint = 11;
 
 const RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: c_uint = 10;
@@ -135,6 +134,16 @@ enum ListMode {
     Favorites,
 }
 
+/// Which page of the game detail view is active.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PageKind {
+    GameInfo,    // Page 1: box art + metadata, no description
+    Description, // Page 2: full-width scrollable description
+}
+
+const PAGE_COUNT: usize = 2;
+const PAGES: [PageKind; PAGE_COUNT] = [PageKind::GameInfo, PageKind::Description];
+
 /// A game entry in our list (from recents or favorites).
 #[derive(Clone)]
 struct GameEntry {
@@ -163,8 +172,10 @@ struct PrecomputedDisplay {
     players_text: String,
     /// Pre-formatted rating text (e.g., "3.5") or empty if no rating
     rating_text: String,
-    /// Word-wrapped description lines (empty vec if no description)
+    /// Word-wrapped description lines for the narrow column (next to box art)
     desc_lines: Vec<String>,
+    /// Word-wrapped description lines for full-width Page 2 (wider wrap)
+    desc_lines_full: Vec<String>,
 }
 
 /// Detailed metadata for the currently focused game.
@@ -234,6 +245,12 @@ struct GameData {
     detail_cache: Vec<Option<GameDetail>>,
     fav_detail_cache: Vec<Option<GameDetail>>,
     desc_scroll: usize,
+    /// Current page index into PAGES array (0 = GameInfo)
+    current_page: usize,
+    /// Saved cursor position in the recents list (remembered across list switches)
+    recents_index: usize,
+    /// Saved cursor position in the favorites list (remembered across list switches)
+    favorites_index: usize,
 }
 
 /// Network / API state.
@@ -249,6 +266,8 @@ struct InputState {
     prev_right: bool,
     prev_b: bool,
     prev_start: bool,
+    prev_l1: bool,
+    prev_r1: bool,
     /// Up/down are held (continuous scroll), but with frame delay
     scroll_cooldown: u32,
 }
@@ -298,6 +317,8 @@ static STATE: CoreStateWrapper = CoreStateWrapper(UnsafeCell::new(CoreState {
             margin_y: 8,
             max_desc_lines: 6,
             chars_per_line: 33,
+            full_chars_per_line: 33,
+            max_desc_lines_full: 8,
             show_extra_metadata: false,
         },
     },
@@ -309,6 +330,9 @@ static STATE: CoreStateWrapper = CoreStateWrapper(UnsafeCell::new(CoreState {
         detail_cache: Vec::new(),
         fav_detail_cache: Vec::new(),
         desc_scroll: 0,
+        current_page: 0,
+        recents_index: 0,
+        favorites_index: 0,
     },
     net: NetworkState {
         api_available: false,
@@ -320,6 +344,8 @@ static STATE: CoreStateWrapper = CoreStateWrapper(UnsafeCell::new(CoreState {
         prev_right: false,
         prev_b: false,
         prev_start: false,
+        prev_l1: false,
+        prev_r1: false,
         scroll_cooldown: 0,
     },
     scratch: ScratchBuffers {
@@ -352,7 +378,11 @@ const COLOR_LOADING: u32 = 0x0088AACC; // Loading indicator
 
 /// Build the pre-computed display strings for a GameDetail.
 /// Called once during prefetch so rendering never allocates.
-fn precompute_display(detail: &GameDetail, chars_per_line: usize) -> PrecomputedDisplay {
+fn precompute_display(
+    detail: &GameDetail,
+    chars_per_line: usize,
+    full_chars_per_line: usize,
+) -> PrecomputedDisplay {
     let sys_year_line = if !detail.year.is_empty() {
         format!("{}  -  {}", detail.system_display, detail.year)
     } else {
@@ -375,11 +405,17 @@ fn precompute_display(detail: &GameDetail, chars_per_line: usize) -> Precomputed
         None => Vec::new(),
     };
 
+    let desc_lines_full = match detail.description.as_ref() {
+        Some(desc) => word_wrap(desc, full_chars_per_line),
+        None => Vec::new(),
+    };
+
     PrecomputedDisplay {
         sys_year_line,
         players_text,
         rating_text,
         desc_lines,
+        desc_lines_full,
     }
 }
 
@@ -407,6 +443,7 @@ fn update_header_text(s: &mut CoreState) {
 
 /// Rewrite the scroll_indicator scratch buffer in-place.
 /// Called when the user scrolls or navigates to a new game.
+/// Uses full-width lines on Page 2, narrow lines otherwise.
 fn update_scroll_indicator(s: &mut CoreState) {
     s.scratch.scroll_indicator.clear();
 
@@ -416,8 +453,18 @@ fn update_scroll_indicator(s: &mut CoreState) {
     };
 
     if let Some(Some(detail)) = detail_cache.get(s.game.current_index) {
-        let total_lines = detail.display.desc_lines.len();
-        let max_lines = s.display.layout.max_desc_lines as usize;
+        // On Page 2 (Description), use full-width lines and max_desc_lines_full
+        let (total_lines, max_lines) = if PAGES.get(s.game.current_page) == Some(&PageKind::Description) {
+            (
+                detail.display.desc_lines_full.len(),
+                s.display.layout.max_desc_lines_full as usize,
+            )
+        } else {
+            (
+                detail.display.desc_lines.len(),
+                s.display.layout.max_desc_lines as usize,
+            )
+        };
         if total_lines > max_lines {
             let scroll = s.game.desc_scroll.min(total_lines.saturating_sub(max_lines));
             use std::fmt::Write;
@@ -482,6 +529,11 @@ fn load_list(
 
             s.game.current_index = 0;
             s.game.desc_scroll = 0;
+            // Reset saved index for the reloaded list
+            match mode {
+                ListMode::Recents => s.game.recents_index = 0,
+                ListMode::Favorites => s.game.favorites_index = 0,
+            }
             s.net.api_available = true;
             s.net.loading = false;
 
@@ -529,6 +581,7 @@ fn prefetch_detail(s: &mut CoreState, mode: ListMode, index: usize) {
     }
 
     let chars_per_line = s.display.layout.chars_per_line as usize;
+    let full_chars_per_line = s.display.layout.full_chars_per_line as usize;
     let entry = &entries[index];
     let box_art_url = entry.box_art_url.clone();
 
@@ -541,7 +594,7 @@ fn prefetch_detail(s: &mut CoreState, mode: ListMode, index: usize) {
                 }
             }
             // Pre-compute display strings so rendering is allocation-free
-            detail.display = precompute_display(&detail, chars_per_line);
+            detail.display = precompute_display(&detail, chars_per_line, full_chars_per_line);
             if index < cache.len() {
                 cache[index] = Some(detail);
             }
@@ -569,9 +622,10 @@ fn prefetch_detail(s: &mut CoreState, mode: ListMode, index: usize) {
                     players_text: String::new(),
                     rating_text: String::new(),
                     desc_lines: Vec::new(),
+                    desc_lines_full: Vec::new(),
                 },
             };
-            fallback.display = precompute_display(&fallback, chars_per_line);
+            fallback.display = precompute_display(&fallback, chars_per_line, full_chars_per_line);
             if index < cache.len() {
                 cache[index] = Some(fallback);
             }
@@ -581,19 +635,23 @@ fn prefetch_detail(s: &mut CoreState, mode: ListMode, index: usize) {
 
 // ---- Rendering ----
 
-// ALLOCATION-FREE: this function must not allocate.
+// ALLOCATION-FREE: rendering functions must not allocate on the heap.
 // All display strings are pre-computed during prefetch; scratch buffers
 // (header_text, scroll_indicator) are updated on navigation events only.
-fn render_game_detail(s: &mut CoreState) {
+
+/// Main rendering entry point. Dispatches to the active page's renderer.
+fn render_frame(s: &mut CoreState) {
     let w = s.display.layout.width;
     let h = s.display.layout.height;
-    let font_scale = s.display.layout.font_scale;
-    let title_scale = s.display.layout.title_scale;
     let label_scale = s.display.layout.label_scale;
     let mx = s.display.layout.margin_x as i32;
     let my = s.display.layout.margin_y as i32;
-    let max_desc_lines = s.display.layout.max_desc_lines as usize;
-    let show_extra_metadata = s.display.layout.show_extra_metadata;
+    let font_scale = s.display.layout.font_scale;
+
+    // Safety clamp: ensure current_page is within bounds
+    if s.game.current_page >= PAGE_COUNT {
+        s.game.current_page = 0;
+    }
 
     let fb = &mut s.display.framebuffer;
 
@@ -603,24 +661,29 @@ fn render_game_detail(s: &mut CoreState) {
     }
 
     // Get the current list and detail cache
-    let (entries, detail_cache) = match s.game.list_mode {
+    let (entries, _detail_cache) = match s.game.list_mode {
         ListMode::Recents => (&s.game.entries, &s.game.detail_cache),
         ListMode::Favorites => (&s.game.favorites, &s.game.fav_detail_cache),
     };
 
     let total = entries.len();
 
-    // -- Header: mode label + position indicator --
+    // Safety clamp: ensure current_index is within bounds for the active list.
+    // This guards against stale indices after list switches or re-loads.
+    if total > 0 && s.game.current_index >= total {
+        s.game.current_index = 0;
+    }
+
+    // -- Header: mode label + position indicator + page dots --
     let header_h = (label_scale * 16 + 8) as i32;
     draw_rect(fb, w, h, 0, 0, w, header_h as u32, COLOR_HEADER_BG);
     draw_hline(fb, w, h, 0, header_h, w, COLOR_ACCENT);
 
-    let mode_label = match s.game.list_mode {
-        ListMode::Recents => "RECENTLY PLAYED",
-        ListMode::Favorites => "FAVORITES",
-    };
-
     if total == 0 {
+        let mode_label = match s.game.list_mode {
+            ListMode::Recents => "RECENTLY PLAYED",
+            ListMode::Favorites => "FAVORITES",
+        };
         draw_string(fb, w, h, mode_label, mx, my / 2 + 2, COLOR_NAV, label_scale);
     } else {
         // Left arrow
@@ -645,10 +708,10 @@ fn render_game_detail(s: &mut CoreState) {
         draw_string(fb, w, h, ">", arrow_r, my / 2 + 2, COLOR_ARROW, label_scale);
     }
 
+    // Page indicator dots (top-right, inside header)
+    render_page_indicator(s, header_h);
+
     // -- Handle empty list / loading / error --
-    // Status messages are short and only shown in error/loading states, so
-    // we render them character-by-character without word_wrap. The message
-    // is pre-set and rarely changes, so this is fine for display.
     if !s.net.status_message.is_empty() {
         let color = if s.net.api_available {
             COLOR_LOADING
@@ -656,230 +719,321 @@ fn render_game_detail(s: &mut CoreState) {
             COLOR_ERROR
         };
         let msg_y = (h as i32) / 2 - 8;
-
-        // Status messages are short enough to render without word-wrapping.
-        // They fit within a single line on all layouts (max ~40 chars).
+        let fb = &mut s.display.framebuffer;
         draw_string(fb, w, h, &s.net.status_message, mx, msg_y, color, font_scale);
-
-        render_footer_hints(fb, w, h, mx, my, label_scale, w);
+        render_footer(s, PageKind::GameInfo);
         return;
     }
 
     if total == 0 {
-        render_footer_hints(fb, w, h, mx, my, label_scale, w);
+        render_footer(s, PageKind::GameInfo);
         return;
     }
 
-    // -- Game detail content --
+    // Dispatch to page-specific renderer
+    let current_page = PAGES.get(s.game.current_page).copied().unwrap_or(PageKind::GameInfo);
+    match current_page {
+        PageKind::GameInfo => render_page_game_info(s, header_h),
+        PageKind::Description => render_page_description(s, header_h),
+    }
+
+    // Footer hints (vary per page)
+    render_footer(s, current_page);
+}
+
+/// Draw page indicator dots in the top-right corner of the header.
+fn render_page_indicator(s: &mut CoreState, _header_h: i32) {
+    let w = s.display.layout.width;
+    let mx = s.display.layout.margin_x as i32;
+    let my = s.display.layout.margin_y as i32;
+    let label_scale = s.display.layout.label_scale;
+
+    let fb = &mut s.display.framebuffer;
+    let h = s.display.layout.height;
+
+    let dot_size = if w <= 640 { 3u32 } else { 5 };
+    let dot_spacing = if w <= 640 { 8i32 } else { 12 };
+    let total_width = (PAGE_COUNT as i32) * dot_spacing;
+    // Position: to the left of the right arrow, with some margin
+    let start_x = (w as i32) - mx - (label_scale * 9) as i32 - 6 - total_width;
+    let cy = my / 2 + (label_scale * 8) as i32; // vertically center in header
+
+    for i in 0..PAGE_COUNT {
+        let cx = start_x + (i as i32) * dot_spacing;
+        let color = if i == s.game.current_page {
+            COLOR_TITLE // filled: white
+        } else {
+            COLOR_NAV // dim gray
+        };
+        draw_rect(fb, w, h, cx, cy - (dot_size as i32 / 2), dot_size, dot_size, color);
+    }
+}
+
+/// Page 1: Game Info -- box art + metadata, NO description.
+/// Supports portrait (two-column) and landscape (stacked) art layouts.
+fn render_page_game_info(s: &mut CoreState, header_h: i32) {
+    let w = s.display.layout.width;
+    let h = s.display.layout.height;
+    let font_scale = s.display.layout.font_scale;
+    let title_scale = s.display.layout.title_scale;
+    let label_scale = s.display.layout.label_scale;
+    let mx = s.display.layout.margin_x as i32;
+    let my = s.display.layout.margin_y as i32;
+    let show_extra_metadata = s.display.layout.show_extra_metadata;
+
+    let fb = &mut s.display.framebuffer;
+
+    let (entries, detail_cache) = match s.game.list_mode {
+        ListMode::Recents => (&s.game.entries, &s.game.detail_cache),
+        ListMode::Favorites => (&s.game.favorites, &s.game.fav_detail_cache),
+    };
+
+    // Bounds guard: current_index must be valid for the active list
+    if s.game.current_index >= entries.len() {
+        return;
+    }
+
     let detail = detail_cache
         .get(s.game.current_index)
         .and_then(|d| d.as_ref());
     let entry = &entries[s.game.current_index];
 
-    let mut y = header_h + (my / 2) + 4;
     let line_h = (font_scale * 18) as i32;
     let title_h = (title_scale * 18) as i32;
 
-    // Title (large) -- always full width
-    let title = detail
-        .map(|d| d.display_name.as_str())
-        .unwrap_or(&entry.display_name);
+    // Detect art orientation for layout choice
+    let art_info = detail.and_then(|d| d.box_art.as_ref()).map(|art| {
+        let is_landscape = art.width as f32 > art.height as f32 * 1.2;
+        (art.width, art.height, is_landscape)
+    });
+    let is_landscape = art_info.map(|(_, _, l)| l).unwrap_or(false);
+
+    if is_landscape {
+        // Layout B: stacked -- art top-center, metadata below
+        let mut y = header_h + (my / 2) + 4;
+
+        // Box art centered at top
+        if let Some(d) = detail {
+            if let Some(ref art) = d.box_art {
+                let art_x = ((w as i32) - art.width as i32) / 2;
+                blit_image(fb, w, h, &art.pixels, art.width, art.height, art_x.max(0) as u32, y as u32);
+                y += art.height as i32 + 6;
+            }
+        }
+
+        // Title
+        let title = detail.map(|d| d.display_name.as_str()).unwrap_or(&entry.display_name);
+        let title_max = ((w as i32 - 2 * mx) / (title_scale * 9) as i32) as usize;
+        draw_string_truncated(fb, w, h, title, mx, y, COLOR_TITLE, title_scale, title_max);
+        y += title_h + 2;
+
+        // System + Year
+        let sys_year = detail.map(|d| d.display.sys_year_line.as_str()).unwrap_or(&entry.system_display);
+        draw_string(fb, w, h, sys_year, mx, y, COLOR_SYSTEM, font_scale);
+        y += line_h;
+
+        // Compact metadata grid: two columns for landscape layout
+        if let Some(d) = detail {
+            let half_w = (w as i32 - 2 * mx) / 2;
+            let col1_x = mx;
+            let col2_x = mx + half_w;
+
+            // Row 1: Developer + Rating
+            if !d.developer.is_empty() {
+                let end_x = draw_string(fb, w, h, "Dev: ", col1_x, y, COLOR_LABEL, label_scale);
+                let max_c = (half_w / (font_scale * 9) as i32) as usize;
+                draw_string_truncated(fb, w, h, &d.developer, end_x, y, COLOR_VALUE, font_scale, max_c.saturating_sub(5));
+            }
+            if let Some(rating) = d.rating {
+                let end_x = draw_string(fb, w, h, "Rating: ", col2_x, y, COLOR_LABEL, label_scale);
+                let star_size = (font_scale * 4).max(3) as i32;
+                draw_rating(fb, w, h, rating, end_x, y, star_size, &d.display.rating_text);
+            }
+            y += line_h;
+
+            // Row 2: Genre + Players
+            if !d.genre.is_empty() {
+                let end_x = draw_string(fb, w, h, "Genre: ", col1_x, y, COLOR_LABEL, label_scale);
+                let max_c = (half_w / (font_scale * 9) as i32) as usize;
+                draw_string_truncated(fb, w, h, &d.genre, end_x, y, COLOR_VALUE, font_scale, max_c.saturating_sub(7));
+            }
+            if !d.display.players_text.is_empty() {
+                let end_x = draw_string(fb, w, h, "Players: ", col2_x, y, COLOR_LABEL, label_scale);
+                draw_string(fb, w, h, &d.display.players_text, end_x, y, COLOR_VALUE, font_scale);
+            }
+            // y += line_h; // not needed, no more rows in compact grid
+        }
+    } else {
+        // Layout A: portrait -- two-column, art left + metadata right
+        let mut y = header_h + (my / 2) + 4;
+
+        // Title (large) -- always full width, above the two-column area
+        let title = detail.map(|d| d.display_name.as_str()).unwrap_or(&entry.display_name);
+        let title_max = ((w as i32 - 2 * mx) / (title_scale * 9) as i32) as usize;
+        draw_string_truncated(fb, w, h, title, mx, y, COLOR_TITLE, title_scale, title_max);
+        y += title_h + 4;
+
+        // System + Year
+        let sys_year = detail.map(|d| d.display.sys_year_line.as_str()).unwrap_or(&entry.system_display);
+        draw_string(fb, w, h, sys_year, mx, y, COLOR_SYSTEM, font_scale);
+        y += line_h;
+
+        // Separator line
+        draw_hline(fb, w, h, mx, y, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
+        y += 6;
+
+        // Two-column layout
+        let has_box_art = detail.and_then(|d| d.box_art.as_ref()).is_some();
+        let art_x = mx;
+        let art_y = y;
+
+        let (text_x, text_w) = if has_box_art {
+            let art = detail.unwrap().box_art.as_ref().unwrap();
+            let gap = if w <= 320 { 6 } else { 12 };
+            let tx = art_x + art.width as i32 + gap;
+            let tw = (w as i32 - tx - mx).max(40) as u32;
+            (tx, tw)
+        } else {
+            (mx, (w as i32 - 2 * mx) as u32)
+        };
+
+        // Blit box art
+        if let Some(d) = detail {
+            if let Some(ref art) = d.box_art {
+                blit_image(fb, w, h, &art.pixels, art.width, art.height, art_x as u32, art_y as u32);
+            }
+        }
+
+        // Metadata column
+        let meta_chars_per_line = (text_w as i32 / (font_scale * 9) as i32) as usize;
+
+        // Developer
+        if let Some(d) = detail {
+            if !d.developer.is_empty() {
+                let end_x = draw_string(fb, w, h, "Dev: ", text_x, y, COLOR_LABEL, label_scale);
+                draw_string_truncated(fb, w, h, &d.developer, end_x, y, COLOR_VALUE, font_scale, meta_chars_per_line.saturating_sub(5));
+                y += line_h;
+            }
+        }
+
+        // Rating stars
+        if let Some(detail) = detail {
+            if let Some(rating) = detail.rating {
+                let end_x = draw_string(fb, w, h, "Rating: ", text_x, y, COLOR_LABEL, label_scale);
+                let star_size = (font_scale * 4).max(3) as i32;
+                draw_rating(fb, w, h, rating, end_x, y, star_size, &detail.display.rating_text);
+                y += line_h;
+            }
+        }
+
+        // Genre
+        if let Some(d) = detail {
+            if !d.genre.is_empty() {
+                let end_x = draw_string(fb, w, h, "Genre: ", text_x, y, COLOR_LABEL, label_scale);
+                draw_string_truncated(fb, w, h, &d.genre, end_x, y, COLOR_VALUE, font_scale, meta_chars_per_line.saturating_sub(7));
+                y += line_h;
+            }
+        }
+
+        // Players
+        if let Some(d) = detail {
+            if !d.display.players_text.is_empty() {
+                let end_x = draw_string(fb, w, h, "Players: ", text_x, y, COLOR_LABEL, label_scale);
+                draw_string(fb, w, h, &d.display.players_text, end_x, y, COLOR_VALUE, font_scale);
+                y += line_h;
+            }
+        }
+
+        // Extra metadata (publisher, region) for HD layouts
+        if show_extra_metadata {
+            if let Some(d) = detail {
+                if let Some(ref publisher) = d.publisher {
+                    if !publisher.is_empty() {
+                        let end_x = draw_string(fb, w, h, "Publisher: ", text_x, y, COLOR_LABEL, label_scale);
+                        draw_string(fb, w, h, publisher, end_x, y, COLOR_VALUE, font_scale);
+                        y += line_h;
+                    }
+                }
+                if let Some(ref region) = d.region {
+                    if !region.is_empty() {
+                        let end_x = draw_string(fb, w, h, "Region: ", text_x, y, COLOR_LABEL, label_scale);
+                        draw_string(fb, w, h, region, end_x, y, COLOR_VALUE, font_scale);
+                        // y += line_h; // last field, no need to advance
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Page 2: Description -- title header + full-width scrollable description text.
+fn render_page_description(s: &mut CoreState, header_h: i32) {
+    let w = s.display.layout.width;
+    let h = s.display.layout.height;
+    let font_scale = s.display.layout.font_scale;
+    let title_scale = s.display.layout.title_scale;
+    let label_scale = s.display.layout.label_scale;
+    let mx = s.display.layout.margin_x as i32;
+    let my = s.display.layout.margin_y as i32;
+    let max_desc_lines = s.display.layout.max_desc_lines_full as usize;
+
+    let fb = &mut s.display.framebuffer;
+
+    let (entries, detail_cache) = match s.game.list_mode {
+        ListMode::Recents => (&s.game.entries, &s.game.detail_cache),
+        ListMode::Favorites => (&s.game.favorites, &s.game.fav_detail_cache),
+    };
+
+    // Bounds guard: current_index must be valid for the active list
+    if s.game.current_index >= entries.len() {
+        return;
+    }
+
+    let detail = detail_cache
+        .get(s.game.current_index)
+        .and_then(|d| d.as_ref());
+    let entry = &entries[s.game.current_index];
+
+    let line_h = (font_scale * 18) as i32;
+    let title_h = (title_scale * 18) as i32;
+
+    let mut y = header_h + (my / 2) + 4;
+
+    // Compact title header: title + system/year
+    let title = detail.map(|d| d.display_name.as_str()).unwrap_or(&entry.display_name);
     let title_max = ((w as i32 - 2 * mx) / (title_scale * 9) as i32) as usize;
     draw_string_truncated(fb, w, h, title, mx, y, COLOR_TITLE, title_scale, title_max);
-    y += title_h + 4;
+    y += title_h + 2;
 
-    // System + Year -- from pre-computed display string
-    let sys_year = detail
-        .map(|d| d.display.sys_year_line.as_str())
-        .unwrap_or(&entry.system_display);
+    let sys_year = detail.map(|d| d.display.sys_year_line.as_str()).unwrap_or(&entry.system_display);
     draw_string(fb, w, h, sys_year, mx, y, COLOR_SYSTEM, font_scale);
     y += line_h;
 
-    // Separator line
-    draw_hline(
-        fb,
-        w,
-        h,
-        mx,
-        y,
-        (w as i32 - 2 * mx) as u32,
-        COLOR_ACCENT,
-    );
-    y += 6;
+    // Separator
+    draw_hline(fb, w, h, mx, y, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
+    y += 8;
 
-    // -- Two-column layout: box art (left) + metadata (right) --
-    let has_box_art = detail.and_then(|d| d.box_art.as_ref()).is_some();
-    let art_x = mx;
-    let art_y = y;
-
-    // Calculate text column start: if box art exists, shift text right of it
-    let (text_x, text_w) = if has_box_art {
-        let art = detail.unwrap().box_art.as_ref().unwrap();
-        let gap = if w <= 320 { 6 } else { 12 }; // gap between art and text
-        let tx = art_x + art.width as i32 + gap;
-        let tw = (w as i32 - tx - mx).max(40) as u32; // ensure at least 40px for text
-        (tx, tw)
-    } else {
-        (mx, (w as i32 - 2 * mx) as u32)
-    };
-
-    // Blit box art (or placeholder) on the left
-    let mut art_bottom = y; // track where box art ends vertically
+    // Description text (full-width, scrollable)
     if let Some(d) = detail {
-        if let Some(ref art) = d.box_art {
-            blit_image(
-                fb,
-                w,
-                h,
-                &art.pixels,
-                art.width,
-                art.height,
-                art_x as u32,
-                art_y as u32,
-            );
-            art_bottom = art_y + art.height as i32 + 4;
-        }
-    }
+        if d.display.desc_lines_full.is_empty() {
+            // No description available
+            let center_y = (h as i32) / 2 + 10;
+            draw_string(fb, w, h, "No description available.", mx, center_y, COLOR_NAV, font_scale);
+        } else {
+            let total_lines = d.display.desc_lines_full.len();
+            let scroll = s.game.desc_scroll.min(total_lines.saturating_sub(max_desc_lines));
 
-    // -- Metadata column (to the right of box art, or full width if no art) --
-    let meta_chars_per_line = (text_w as i32 / (font_scale * 9) as i32) as usize;
+            let end = d.display.desc_lines_full.len().min(scroll + max_desc_lines);
+            // Compute the footer area height to know where to stop rendering
+            let label_h = (label_scale * 16) as i32;
+            let footer_top = if w <= 640 {
+                (h as i32) - my - label_h - label_h - 2 - 4 // two-line footer
+            } else {
+                (h as i32) - my - label_h - 4 // single-line footer
+            };
 
-    // Developer
-    if let Some(d) = detail {
-        if !d.developer.is_empty() {
-            let end_x = draw_string(fb, w, h, "Dev: ", text_x, y, COLOR_LABEL, label_scale);
-            draw_string_truncated(
-                fb,
-                w,
-                h,
-                &d.developer,
-                end_x,
-                y,
-                COLOR_VALUE,
-                font_scale,
-                meta_chars_per_line.saturating_sub(5),
-            );
-            y += line_h;
-        }
-    }
-
-    // Rating stars (using pre-computed rating_text)
-    if let Some(detail) = detail {
-        if let Some(rating) = detail.rating {
-            let end_x = draw_string(fb, w, h, "Rating: ", text_x, y, COLOR_LABEL, label_scale);
-            let star_size = (font_scale * 4).max(3) as i32;
-            draw_rating(
-                fb,
-                w,
-                h,
-                rating,
-                end_x,
-                y,
-                star_size,
-                &detail.display.rating_text,
-            );
-            y += line_h;
-        }
-    }
-
-    // Genre
-    if let Some(d) = detail {
-        if !d.genre.is_empty() {
-            let end_x = draw_string(fb, w, h, "Genre: ", text_x, y, COLOR_LABEL, label_scale);
-            draw_string_truncated(
-                fb,
-                w,
-                h,
-                &d.genre,
-                end_x,
-                y,
-                COLOR_VALUE,
-                font_scale,
-                meta_chars_per_line.saturating_sub(7),
-            );
-            y += line_h;
-        }
-    }
-
-    // Players -- from pre-computed display string
-    if let Some(d) = detail {
-        if !d.display.players_text.is_empty() {
-            let end_x =
-                draw_string(fb, w, h, "Players: ", text_x, y, COLOR_LABEL, label_scale);
-            draw_string(
-                fb,
-                w,
-                h,
-                &d.display.players_text,
-                end_x,
-                y,
-                COLOR_VALUE,
-                font_scale,
-            );
-            y += line_h;
-        }
-    }
-
-    // Extra metadata (publisher, region) for HD layouts
-    if show_extra_metadata {
-        if let Some(d) = detail {
-            if let Some(ref publisher) = d.publisher {
-                if !publisher.is_empty() {
-                    let end_x = draw_string(
-                        fb,
-                        w,
-                        h,
-                        "Publisher: ",
-                        text_x,
-                        y,
-                        COLOR_LABEL,
-                        label_scale,
-                    );
-                    draw_string(fb, w, h, publisher, end_x, y, COLOR_VALUE, font_scale);
-                    y += line_h;
-                }
-            }
-            if let Some(ref region) = d.region {
-                if !region.is_empty() {
-                    let end_x = draw_string(
-                        fb, w, h, "Region: ", text_x, y, COLOR_LABEL, label_scale,
-                    );
-                    draw_string(fb, w, h, region, end_x, y, COLOR_VALUE, font_scale);
-                    y += line_h;
-                }
-            }
-        }
-    }
-
-    // Ensure description starts below box art if it extends further down
-    if has_box_art && y < art_bottom {
-        y = art_bottom;
-    }
-
-    // Description (with scroll support) -- from pre-computed wrapped lines
-    if let Some(d) = detail {
-        if !d.display.desc_lines.is_empty() {
-            y += 4;
-            draw_hline(
-                fb,
-                w,
-                h,
-                mx,
-                y,
-                (w as i32 - 2 * mx) as u32,
-                COLOR_ACCENT,
-            );
-            y += 8;
-
-            let total_lines = d.display.desc_lines.len();
-            let scroll = s
-                .game
-                .desc_scroll
-                .min(total_lines.saturating_sub(max_desc_lines));
-
-            let end = d.display.desc_lines.len().min(scroll + max_desc_lines);
-            for line in &d.display.desc_lines[scroll..end] {
-                if y + line_h >= (h as i32 - my - line_h) {
+            for line in &d.display.desc_lines_full[scroll..end] {
+                if y + line_h >= footer_top {
                     break;
                 }
                 draw_string(fb, w, h, line, mx, y, COLOR_DESC, font_scale);
@@ -888,63 +1042,55 @@ fn render_game_detail(s: &mut CoreState) {
 
             // Scroll indicator -- from pre-computed scratch buffer
             if !s.scratch.scroll_indicator.is_empty() {
-                let ix =
-                    (w as i32) - mx - (s.scratch.scroll_indicator.len() as i32 * 9);
-                draw_string(fb, w, h, &s.scratch.scroll_indicator, ix, y + 2, COLOR_NAV, 1);
+                let ix = (w as i32) - mx - (s.scratch.scroll_indicator.len() as i32 * 9);
+                // Position at the end of visible text area
+                let indicator_y = y.min(footer_top - line_h) + 2;
+                draw_string(fb, w, h, &s.scratch.scroll_indicator, ix, indicator_y, COLOR_NAV, 1);
             }
         }
+    } else {
+        // No detail loaded yet
+        let center_y = (h as i32) / 2 + 10;
+        draw_string(fb, w, h, "No description available.", mx, center_y, COLOR_NAV, font_scale);
     }
-
-    // Footer hints
-    render_footer_hints(fb, w, h, mx, my, label_scale, w);
 }
 
-fn render_footer_hints(
-    fb: &mut [u32],
-    w: u32,
-    h: u32,
-    mx: i32,
-    my: i32,
-    label_scale: u32,
-    layout_width: u32,
-) {
+/// Render footer hints that vary per page.
+fn render_footer(s: &mut CoreState, page: PageKind) {
+    let w = s.display.layout.width;
+    let h = s.display.layout.height;
+    let label_scale = s.display.layout.label_scale;
+    let mx = s.display.layout.margin_x as i32;
+    let my = s.display.layout.margin_y as i32;
+
+    let fb = &mut s.display.framebuffer;
     let label_h = (label_scale * 16) as i32;
 
-    if layout_width <= 640 {
+    if w <= 640 {
         // CRT: two lines of hints at the bottom
         let line2_y = (h as i32) - my - label_h;
         let line1_y = line2_y - label_h - 2;
-        draw_hline(
-            fb,
-            w,
-            h,
-            mx,
-            line1_y - 4,
-            (w as i32 - 2 * mx) as u32,
-            COLOR_ACCENT,
-        );
+        draw_hline(fb, w, h, mx, line1_y - 4, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
 
-        // Line 1: browsing and scrolling
-        let line1 = "<->: browse  ^v: scroll desc";
-        draw_string(fb, w, h, line1, mx, line1_y, COLOR_NAV, label_scale);
-        // Line 2: mode toggle and exit
-        let line2 = "Start: recents/favs  B: exit";
-        draw_string(fb, w, h, line2, mx, line2_y, COLOR_NAV, label_scale);
+        match page {
+            PageKind::GameInfo => {
+                draw_string(fb, w, h, "<->: game  L1/R1: page", mx, line1_y, COLOR_NAV, label_scale);
+                draw_string(fb, w, h, "Start: recents/favs  B: exit", mx, line2_y, COLOR_NAV, label_scale);
+            }
+            PageKind::Description => {
+                draw_string(fb, w, h, "^v: scroll  L1/R1: page", mx, line1_y, COLOR_NAV, label_scale);
+                draw_string(fb, w, h, "<->: game  B: exit", mx, line2_y, COLOR_NAV, label_scale);
+            }
+        }
     } else {
         // HD: single line
         let footer_y = (h as i32) - my - label_h;
-        draw_hline(
-            fb,
-            w,
-            h,
-            mx,
-            footer_y - 4,
-            (w as i32 - 2 * mx) as u32,
-            COLOR_ACCENT,
-        );
+        draw_hline(fb, w, h, mx, footer_y - 4, (w as i32 - 2 * mx) as u32, COLOR_ACCENT);
 
-        let hints =
-            "Left/Right: browse games  |  Up/Down: scroll desc  |  Start: recents/favorites  |  B: exit";
+        let hints = match page {
+            PageKind::GameInfo => "L/R: game  |  L1/R1: page  |  Start: recents/favs  |  B: exit",
+            PageKind::Description => "Up/Down: scroll  |  L1/R1: page  |  L/R: game  |  B: exit",
+        };
         draw_string(fb, w, h, hints, mx, footer_y, COLOR_NAV, label_scale);
     }
 }
@@ -967,12 +1113,19 @@ fn handle_input(s: &mut CoreState) {
     let down = btn(RETRO_DEVICE_ID_JOYPAD_DOWN);
     let b_pressed = btn(RETRO_DEVICE_ID_JOYPAD_B);
     let start = btn(RETRO_DEVICE_ID_JOYPAD_START);
+    let l1 = btn(RETRO_DEVICE_ID_JOYPAD_L);
+    let r1 = btn(RETRO_DEVICE_ID_JOYPAD_R);
 
     // Read list length without holding a borrow on s
     let entries_len = match s.game.list_mode {
         ListMode::Recents => s.game.entries.len(),
         ListMode::Favorites => s.game.favorites.len(),
     };
+
+    // Safety clamp: current_index must be valid for the active list
+    if entries_len > 0 && s.game.current_index >= entries_len {
+        s.game.current_index = 0;
+    }
 
     // B: exit (edge-triggered)
     if b_pressed && !s.input.prev_b {
@@ -986,14 +1139,47 @@ fn handle_input(s: &mut CoreState) {
     // Track whether navigation happened (need to update scratch buffers)
     let mut navigated = false;
 
+    // L1: previous page (edge-triggered, wraps around)
+    if l1 && !s.input.prev_l1 {
+        if s.game.current_page > 0 {
+            s.game.current_page -= 1;
+        } else {
+            s.game.current_page = PAGE_COUNT - 1;
+        }
+        s.game.desc_scroll = 0;
+        navigated = true;
+    }
+
+    // R1: next page (edge-triggered, wraps around)
+    if r1 && !s.input.prev_r1 {
+        if s.game.current_page < PAGE_COUNT - 1 {
+            s.game.current_page += 1;
+        } else {
+            s.game.current_page = 0;
+        }
+        s.game.desc_scroll = 0;
+        navigated = true;
+    }
+
     // Start: toggle list mode (edge-triggered)
     // All data was pre-fetched in retro_load_game -- just switch views, no HTTP.
+    // Saves the current position before switching and restores the saved position
+    // in the target list, so each list remembers where the user was.
     if start && !s.input.prev_start {
+        // Save current position to the outgoing list's saved index
         match s.game.list_mode {
             ListMode::Recents => {
+                s.game.recents_index = s.game.current_index;
                 s.game.list_mode = ListMode::Favorites;
-                s.game.current_index = 0;
+                // Restore saved position, clamped to list bounds
+                let fav_len = s.game.favorites.len();
+                s.game.current_index = if fav_len > 0 {
+                    s.game.favorites_index.min(fav_len - 1)
+                } else {
+                    0
+                };
                 s.game.desc_scroll = 0;
+                s.game.current_page = 0; // reset to Game Info on list switch
                 // Rewrite status_message in-place (no new allocation if capacity suffices)
                 s.net.status_message.clear();
                 if s.game.favorites.is_empty() {
@@ -1001,9 +1187,17 @@ fn handle_input(s: &mut CoreState) {
                 }
             }
             ListMode::Favorites => {
+                s.game.favorites_index = s.game.current_index;
                 s.game.list_mode = ListMode::Recents;
-                s.game.current_index = 0;
+                // Restore saved position, clamped to list bounds
+                let rec_len = s.game.entries.len();
+                s.game.current_index = if rec_len > 0 {
+                    s.game.recents_index.min(rec_len - 1)
+                } else {
+                    0
+                };
                 s.game.desc_scroll = 0;
+                s.game.current_page = 0; // reset to Game Info on list switch
                 s.net.status_message.clear();
                 if s.game.entries.is_empty() {
                     s.net
@@ -1023,7 +1217,13 @@ fn handle_input(s: &mut CoreState) {
         } else {
             s.game.current_index = entries_len - 1; // wrap around
         }
+        // Keep saved index in sync with navigation
+        match s.game.list_mode {
+            ListMode::Recents => s.game.recents_index = s.game.current_index,
+            ListMode::Favorites => s.game.favorites_index = s.game.current_index,
+        }
         s.game.desc_scroll = 0;
+        s.game.current_page = 0; // reset to Game Info on game change
         navigated = true;
     }
 
@@ -1033,19 +1233,31 @@ fn handle_input(s: &mut CoreState) {
         } else {
             s.game.current_index = 0; // wrap around
         }
+        // Keep saved index in sync with navigation
+        match s.game.list_mode {
+            ListMode::Recents => s.game.recents_index = s.game.current_index,
+            ListMode::Favorites => s.game.favorites_index = s.game.current_index,
+        }
         s.game.desc_scroll = 0;
+        s.game.current_page = 0; // reset to Game Info on game change
         navigated = true;
     }
 
-    // Up/Down: scroll description (with cooldown for held buttons)
+    // Up/Down: scroll (with cooldown for held buttons)
+    // Only scroll on pages that support it (Description)
     if s.input.scroll_cooldown > 0 {
         s.input.scroll_cooldown -= 1;
     }
 
     let mut scrolled = false;
 
-    if (up || down) && s.input.scroll_cooldown == 0 {
-        // Use pre-computed desc_lines instead of calling word_wrap every frame
+    let page_scrollable = matches!(
+        PAGES.get(s.game.current_page),
+        Some(PageKind::Description)
+    );
+
+    if (up || down) && s.input.scroll_cooldown == 0 && page_scrollable {
+        // Use full-width desc_lines on Page 2
         let scroll_info = {
             let detail_cache = match s.game.list_mode {
                 ListMode::Recents => &s.game.detail_cache,
@@ -1055,8 +1267,8 @@ fn handle_input(s: &mut CoreState) {
                 .get(s.game.current_index)
                 .and_then(|d| d.as_ref())
                 .map(|detail| {
-                    let total_lines = detail.display.desc_lines.len();
-                    let max_lines = s.display.layout.max_desc_lines as usize;
+                    let total_lines = detail.display.desc_lines_full.len();
+                    let max_lines = s.display.layout.max_desc_lines_full as usize;
                     total_lines.saturating_sub(max_lines)
                 })
         };
@@ -1092,6 +1304,8 @@ fn handle_input(s: &mut CoreState) {
     s.input.prev_right = right;
     s.input.prev_b = b_pressed;
     s.input.prev_start = start;
+    s.input.prev_l1 = l1;
+    s.input.prev_r1 = r1;
 }
 
 // ---- Libretro API implementation ----
@@ -1214,6 +1428,9 @@ pub unsafe extern "C" fn retro_reset() {
     s.display.frame_count = 0;
     s.game.current_index = 0;
     s.game.desc_scroll = 0;
+    s.game.current_page = 0;
+    s.game.recents_index = 0;
+    s.game.favorites_index = 0;
     s.game.list_mode = ListMode::Recents;
     debug_log("[reset] re-fetching all data");
     load_list(s, ListMode::Recents);
@@ -1221,6 +1438,8 @@ pub unsafe extern "C" fn retro_reset() {
     s.game.list_mode = ListMode::Recents;
     s.game.current_index = 0;
     s.game.desc_scroll = 0;
+    s.game.recents_index = 0;
+    s.game.favorites_index = 0;
     if !s.game.entries.is_empty() {
         s.net.status_message.clear();
     }
@@ -1247,7 +1466,7 @@ pub unsafe extern "C" fn retro_run() {
     }
 
     handle_input(s);
-    render_game_detail(s);
+    render_frame(s);
 
     s.display.frame_count += 1;
 
@@ -1320,6 +1539,9 @@ pub unsafe extern "C" fn retro_load_game(_game: *const RetroGameInfo) -> bool {
     s.game.list_mode = ListMode::Recents;
     s.game.current_index = 0;
     s.game.desc_scroll = 0;
+    s.game.current_page = 0;
+    s.game.recents_index = 0;
+    s.game.favorites_index = 0;
     if !s.game.entries.is_empty() {
         s.net.status_message.clear();
     }
@@ -1327,10 +1549,19 @@ pub unsafe extern "C" fn retro_load_game(_game: *const RetroGameInfo) -> bool {
     // Pre-allocate scratch buffers with enough capacity so retro_run never
     // needs to grow them. This ensures the allocation-free invariant holds.
     // "RECENTLY PLAYED  (999/999)" = 27 chars; "[999/999]" = 9 chars;
-    // longest status = ~40 chars. Reserve 64 for each to be safe.
-    s.scratch.header_text.reserve(64_usize.saturating_sub(s.scratch.header_text.capacity()));
-    s.scratch.scroll_indicator.reserve(64_usize.saturating_sub(s.scratch.scroll_indicator.capacity()));
-    s.net.status_message.reserve(64_usize.saturating_sub(s.net.status_message.capacity()));
+    // longest status message = 31 chars ("No recently played games found.").
+    //
+    // We ensure capacity >= 64 by clearing then reserving. For status_message,
+    // we preserve any existing content (e.g., "No recently played games found.")
+    // and just ensure sufficient capacity for future in-place writes.
+    s.scratch.header_text.clear();
+    s.scratch.header_text.reserve(64);
+    s.scratch.scroll_indicator.clear();
+    s.scratch.scroll_indicator.reserve(64);
+    // status_message may contain a valid message (e.g., error or empty-list text).
+    // Ensure it has enough capacity for the longest message retro_run might write.
+    let status_len = s.net.status_message.len();
+    s.net.status_message.reserve(64_usize.saturating_sub(status_len));
 
     // Pre-compute header and scroll indicator so retro_run is allocation-free
     update_header_text(s);
@@ -1361,13 +1592,17 @@ pub unsafe extern "C" fn retro_unload_game() {
 
 // ---- Save state serialization ----
 //
-// Layout (16 bytes):
-//   [0..4)  current_index: u32
-//   [4..8)  desc_scroll: u32
-//   [8..9)  list_mode: u8 (0=Recents, 1=Favorites)
-//   [9..16) reserved (zeroed)
+// Layout (24 bytes):
+//   [0..4)   current_index: u32
+//   [4..8)   desc_scroll: u32
+//   [8..9)   list_mode: u8 (0=Recents, 1=Favorites)
+//   [9..10)  current_page: u8 (0=GameInfo, 1=Description)
+//   [10..12) reserved (zeroed)
+//   [12..16) recents_index: u32
+//   [16..20) favorites_index: u32
+//   [20..24) reserved (zeroed)
 
-const SAVE_STATE_SIZE: usize = 16;
+const SAVE_STATE_SIZE: usize = 24;
 
 #[no_mangle]
 pub unsafe extern "C" fn retro_serialize_size() -> usize {
@@ -1388,6 +1623,9 @@ pub unsafe extern "C" fn retro_serialize(data: *mut c_void, size: usize) -> bool
         ListMode::Recents => 0,
         ListMode::Favorites => 1,
     };
+    buf[9] = s.game.current_page as u8;
+    buf[12..16].copy_from_slice(&(s.game.recents_index as u32).to_le_bytes());
+    buf[16..20].copy_from_slice(&(s.game.favorites_index as u32).to_le_bytes());
     true
 }
 
@@ -1398,12 +1636,30 @@ pub unsafe extern "C" fn retro_unserialize(data: *const c_void, size: usize) -> 
     }
     let s = state();
     let buf = std::slice::from_raw_parts(data as *const u8, SAVE_STATE_SIZE);
-    s.game.current_index = u32::from_le_bytes(buf[0..4].try_into().unwrap()) as usize;
-    s.game.desc_scroll = u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize;
     s.game.list_mode = match buf[8] {
         1 => ListMode::Favorites,
         _ => ListMode::Recents,
     };
+    // Restore and clamp current_index to the active list's bounds
+    let restored_index = u32::from_le_bytes(buf[0..4].try_into().unwrap()) as usize;
+    let list_len = match s.game.list_mode {
+        ListMode::Recents => s.game.entries.len(),
+        ListMode::Favorites => s.game.favorites.len(),
+    };
+    s.game.current_index = if list_len > 0 { restored_index.min(list_len - 1) } else { 0 };
+    s.game.desc_scroll = u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize;
+    let page = buf[9] as usize;
+    s.game.current_page = if page < PAGE_COUNT { page } else { 0 };
+    // Restore saved list indexes, clamped to list bounds
+    let rec_idx = u32::from_le_bytes(buf[12..16].try_into().unwrap()) as usize;
+    let fav_idx = u32::from_le_bytes(buf[16..20].try_into().unwrap()) as usize;
+    let rec_len = s.game.entries.len();
+    let fav_len = s.game.favorites.len();
+    s.game.recents_index = if rec_len > 0 { rec_idx.min(rec_len - 1) } else { 0 };
+    s.game.favorites_index = if fav_len > 0 { fav_idx.min(fav_len - 1) } else { 0 };
+    // Update scratch buffers to reflect restored state
+    update_header_text(s);
+    update_scroll_indicator(s);
     true
 }
 

@@ -280,6 +280,7 @@ fn parse_rom_detail_json(json: &str) -> Result<GameDetail, String> {
             players_text: String::new(),
             rating_text: String::new(),
             desc_lines: Vec::new(),
+            desc_lines_full: Vec::new(),
         }, // populated by precompute_display() during pre-fetch
     })
 }

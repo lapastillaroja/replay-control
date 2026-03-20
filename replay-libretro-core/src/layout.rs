@@ -15,8 +15,12 @@ pub struct LayoutConfig {
     pub margin_y: u32,
     /// Maximum description lines visible at once
     pub max_desc_lines: u32,
-    /// Characters per line for word wrapping description
+    /// Characters per line for word wrapping description (narrow column, next to box art)
     pub chars_per_line: u32,
+    /// Characters per line for full-width description (Page 2, no box art column)
+    pub full_chars_per_line: u32,
+    /// Maximum description lines for full-width Page 2 (more vertical space)
+    pub max_desc_lines_full: u32,
     /// Show extra metadata (publisher, region)
     pub show_extra_metadata: bool,
 }
@@ -24,6 +28,7 @@ pub struct LayoutConfig {
 impl LayoutConfig {
     pub fn crt_320x240() -> Self {
         // ~3% margins: 10px horizontal, 8px vertical -- tighter for more content
+        // full_chars_per_line: (320 - 2*10) / (1*9) = 33
         Self {
             width: 320,
             height: 240,
@@ -34,12 +39,15 @@ impl LayoutConfig {
             margin_y: 8,
             max_desc_lines: 6,
             chars_per_line: 33,
+            full_chars_per_line: 33,
+            max_desc_lines_full: 8,
             show_extra_metadata: false,
         }
     }
 
     pub fn hdmi_720p() -> Self {
         // 3% margins: ~38px horizontal, ~22px vertical
+        // full_chars_per_line: (1280 - 2*38) / (2*9) = 66
         Self {
             width: 1280,
             height: 720,
@@ -50,11 +58,14 @@ impl LayoutConfig {
             margin_y: 22,
             max_desc_lines: 8,
             chars_per_line: 60,
+            full_chars_per_line: 66,
+            max_desc_lines_full: 12,
             show_extra_metadata: true,
         }
     }
 
     pub fn hdmi_1080p() -> Self {
+        // full_chars_per_line: (1920 - 2*58) / (3*9) = 66
         Self {
             width: 1920,
             height: 1080,
@@ -65,11 +76,14 @@ impl LayoutConfig {
             margin_y: 32,
             max_desc_lines: 10,
             chars_per_line: 70,
+            full_chars_per_line: 66,
+            max_desc_lines_full: 14,
             show_extra_metadata: true,
         }
     }
 
     pub fn crt_640x480() -> Self {
+        // full_chars_per_line: (640 - 2*22) / (1*9) = 66
         Self {
             width: 640,
             height: 480,
@@ -80,6 +94,8 @@ impl LayoutConfig {
             margin_y: 16,
             max_desc_lines: 6,
             chars_per_line: 50,
+            full_chars_per_line: 66,
+            max_desc_lines_full: 10,
             show_extra_metadata: false,
         }
     }
