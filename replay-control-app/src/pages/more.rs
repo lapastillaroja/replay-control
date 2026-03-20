@@ -14,6 +14,7 @@ pub fn MorePage() -> impl IntoView {
     let info = Resource::new(|| (), |_| server_fns::get_info());
     let region = Resource::new(|| (), |_| server_fns::get_region_preference());
     let region_secondary = Resource::new(|| (), |_| server_fns::get_region_preference_secondary());
+    let language = Resource::new(|| (), |_| server_fns::get_language_preference());
     let font_size = Resource::new(|| (), |_| server_fns::get_font_size());
 
     view! {
@@ -38,6 +39,19 @@ pub fn MorePage() -> impl IntoView {
                                     let current = region.await?;
                                     let current_secondary = region_secondary.await?;
                                     Ok::<_, ServerFnError>(view! { <RegionSelector current current_secondary /> })
+                                })}
+                            </Transition>
+                        </ErrorBoundary>
+                    </div>
+
+                    <div class="more-inline-setting">
+                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), "language.title")}</h4>
+                        <p class="form-hint">{move || t(i18n.locale.get(), "language.hint")}</p>
+                        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
+                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                                {move || Suspend::new(async move {
+                                    let (primary, secondary) = language.await?;
+                                    Ok::<_, ServerFnError>(view! { <LanguageSelector current_primary=primary current_secondary=secondary /> })
                                 })}
                             </Transition>
                         </ErrorBoundary>
@@ -325,6 +339,142 @@ fn MenuItem(
             </div>
         }
         .into_any()
+    }
+}
+
+#[component]
+fn LanguageSelector(current_primary: String, current_secondary: String) -> impl IntoView {
+    let i18n = use_i18n();
+    let active_primary = RwSignal::new(current_primary);
+    let active_secondary = RwSignal::new(current_secondary);
+    let saving = RwSignal::new(false);
+    let status = RwSignal::new(Option::<(bool, String)>::None);
+
+    // Language options: (value, i18n_key)
+    let options: &[(&str, &str)] = &[
+        ("", "language.auto"),
+        ("en", "language.en"),
+        ("es", "language.es"),
+        ("fr", "language.fr"),
+        ("de", "language.de"),
+        ("it", "language.it"),
+        ("ja", "language.ja"),
+        ("pt", "language.pt"),
+    ];
+
+    let secondary_options: &[(&str, &str)] = &[
+        ("", "region.none"),
+        ("en", "language.en"),
+        ("es", "language.es"),
+        ("fr", "language.fr"),
+        ("de", "language.de"),
+        ("it", "language.it"),
+        ("ja", "language.ja"),
+        ("pt", "language.pt"),
+    ];
+
+    let on_change_primary = move |ev: leptos::ev::Event| {
+        let value = leptos::prelude::event_target_value(&ev);
+        if saving.get_untracked() {
+            return;
+        }
+        saving.set(true);
+        status.set(None);
+        let secondary = active_secondary.get_untracked();
+        let v = value.clone();
+        leptos::task::spawn_local(async move {
+            match server_fns::save_language_preference(v.clone(), secondary).await {
+                Ok(()) => {
+                    active_primary.set(v);
+                    let locale = use_i18n().locale.get_untracked();
+                    status.set(Some((true, t(locale, "language.saved").to_string())));
+                }
+                Err(e) => {
+                    status.set(Some((false, e.to_string())));
+                }
+            }
+            saving.set(false);
+        });
+    };
+
+    let on_change_secondary = move |ev: leptos::ev::Event| {
+        let value = leptos::prelude::event_target_value(&ev);
+        if saving.get_untracked() {
+            return;
+        }
+        saving.set(true);
+        status.set(None);
+        let primary = active_primary.get_untracked();
+        let v = value.clone();
+        leptos::task::spawn_local(async move {
+            match server_fns::save_language_preference(primary, v.clone()).await {
+                Ok(()) => {
+                    active_secondary.set(v);
+                    let locale = use_i18n().locale.get_untracked();
+                    status.set(Some((true, t(locale, "language.saved").to_string())));
+                }
+                Err(e) => {
+                    status.set(Some((false, e.to_string())));
+                }
+            }
+            saving.set(false);
+        });
+    };
+
+    let primary_option_views = options
+        .iter()
+        .map(|(value, label_key)| {
+            let value = *value;
+            let label_key = *label_key;
+            let is_selected = move || active_primary.read().as_str() == value;
+            view! {
+                <option value=value selected=is_selected>
+                    {move || t(i18n.locale.get(), label_key)}
+                </option>
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let secondary_option_views = secondary_options
+        .iter()
+        .map(|(value, label_key)| {
+            let value = *value;
+            let label_key = *label_key;
+            let is_selected = move || active_secondary.read().as_str() == value;
+            view! {
+                <option value=value selected=is_selected>
+                    {move || t(i18n.locale.get(), label_key)}
+                </option>
+            }
+        })
+        .collect::<Vec<_>>();
+
+    view! {
+        <div class="form-field">
+            <label class="form-label">{move || t(i18n.locale.get(), "language.primary_label")}</label>
+            <select
+                class="form-input"
+                on:change=on_change_primary
+                disabled=move || saving.get()
+            >
+                {primary_option_views}
+            </select>
+        </div>
+
+        <div class="form-field">
+            <label class="form-label">{move || t(i18n.locale.get(), "language.secondary_label")}</label>
+            <select
+                class="form-input"
+                on:change=on_change_secondary
+                disabled=move || saving.get()
+            >
+                {secondary_option_views}
+            </select>
+        </div>
+        {move || status.get().map(|(ok, msg)| {
+            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
+            view! { <div class=class>{msg}</div> }
+        })}
     }
 }
 

@@ -1,9 +1,13 @@
 use leptos::prelude::*;
+use leptos_router::hooks::use_params_map;
 
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, GameDocument, LocalManual, ManualRecommendation};
 
 /// Full manual section: in-folder documents, saved manuals, search, and results.
+///
+/// Resources use URL params as their reactive key so they refetch automatically
+/// when the user navigates between games via client-side navigation.
 #[component]
 pub fn ManualSection(
     system: StoredValue<String>,
@@ -13,10 +17,25 @@ pub fn ManualSection(
 ) -> impl IntoView {
     let i18n = use_i18n();
 
+    // Use URL params as the reactive key for Resources. This ensures they
+    // refetch when the user navigates between games (StoredValue::get_value()
+    // is not reactive, so it can't drive Resource refetches on its own).
+    let params = use_params_map();
+    let param_key = Memo::new(move |_| {
+        let p = params.read();
+        let sys = p.get("system").unwrap_or_default();
+        let fname = p.get("filename").unwrap_or_default();
+        (sys, fname)
+    });
+
     // In-folder documents (Phase 1)
     let docs_resource = Resource::new(
-        move || (system.get_value(), rom_filename.get_value()),
-        |(sys, fname)| server_fns::get_game_documents(sys, fname),
+        move || param_key.get(),
+        move |_| {
+            let sys = system.get_value();
+            let fname = rom_filename.get_value();
+            server_fns::get_game_documents(sys, fname)
+        },
     );
 
     let game_docs = RwSignal::new(Vec::<GameDocument>::new());
@@ -27,10 +46,14 @@ pub fn ManualSection(
         }
     });
 
-    // Local manuals (Phase 2 — previously downloaded)
+    // Local manuals (Phase 2 -- previously downloaded)
     let local_resource = Resource::new(
-        move || (system.get_value(), base_title.get_value()),
-        |(sys, bt)| server_fns::get_local_manuals(sys, bt),
+        move || param_key.get(),
+        move |_| {
+            let sys = system.get_value();
+            let bt = base_title.get_value();
+            server_fns::get_local_manuals(sys, bt)
+        },
     );
 
     let local_manuals = RwSignal::new(Vec::<LocalManual>::new());
@@ -50,6 +73,17 @@ pub fn ManualSection(
     // Download state
     let downloading_url = RwSignal::new(Option::<String>::None);
     let download_error = RwSignal::new(Option::<String>::None);
+
+    // Reset search state when the game changes (driven by URL params)
+    let _reset_search = Effect::new(move || {
+        let _ = param_key.get(); // track the reactive key
+        searched.set(false);
+        search_results.set(vec![]);
+        search_error.set(None);
+        searching.set(false);
+        downloading_url.set(None);
+        download_error.set(None);
+    });
 
     let on_search = move |_| {
         searching.set(true);
@@ -78,13 +112,20 @@ pub fn ManualSection(
         downloading_url.set(Some(url.clone()));
         download_error.set(None);
 
+        // Clone values needed after the download await. We must NOT access
+        // StoredValue after an await — if the user navigates away while the
+        // download is in progress, the component's reactive owner is disposed
+        // and StoredValue::get_value() would panic, freezing the page.
+        let sys_for_refresh = sys.clone();
+        let bt_for_refresh = bt.clone();
+
         leptos::task::spawn_local(async move {
             match server_fns::download_manual(sys, bt, url.clone(), lang).await {
                 Ok(_serve_url) => {
                     // Refresh local manuals list
-                    let sys2 = system.get_value();
-                    let bt2 = base_title.get_value();
-                    if let Ok(manuals) = server_fns::get_local_manuals(sys2, bt2).await {
+                    if let Ok(manuals) =
+                        server_fns::get_local_manuals(sys_for_refresh, bt_for_refresh).await
+                    {
                         local_manuals.set(manuals);
                     }
                 }

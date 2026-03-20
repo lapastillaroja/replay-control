@@ -431,7 +431,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             base_title=base_title_sv
         />
 
-        // Manual / Documents — base_title enables cross-variant manual sharing
+        // Manual / Documents — base_title enables cross-variant manual sharing.
         <ManualSection
             system=system_sv
             rom_filename=filename_sv

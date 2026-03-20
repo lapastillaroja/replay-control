@@ -36,36 +36,35 @@ pub async fn get_game_documents(
 
     // Resolve the ROM's directory path
     let roms_dir = storage.roms_dir().join(&system);
-
-    // For directory-based ROMs (ScummVM .svm files, etc.), the ROM path points
-    // to a directory. For single-file ROMs, there are no in-folder docs.
     let rom_path = roms_dir.join(&rom_filename);
 
-    // Resolve the game directory based on the ROM type:
-    // - .svm: read file contents to find the game directory
-    // - .m3u: playlist referencing a .svm, resolve the game directory from that
-    // - directory: use directly
-    // - single file: no in-folder documents
-    let game_dir = if rom_filename.ends_with(".svm") {
-        resolve_svm_game_dir(&rom_path, &roms_dir)
-    } else if rom_filename.ends_with(".m3u") {
-        // M3U playlist — read lines to find the .svm reference, then resolve
-        // the game directory from that. Also check if a sibling directory with
-        // the same base name exists (common ScummVM layout).
-        resolve_m3u_game_dir(&rom_path, &roms_dir)
-    } else if rom_path.is_dir() {
-        Some(rom_path)
-    } else {
-        // Single-file ROM — no in-folder documents
-        None
-    };
+    // Run all blocking filesystem I/O off the async runtime to avoid stalling
+    // the tokio worker pool on slow USB or NFS storage.
+    let docs = tokio::task::spawn_blocking(move || {
+        // Resolve the game directory based on the ROM type:
+        // - .svm: read file contents to find the game directory
+        // - .m3u: playlist referencing a .svm, resolve the game directory from that
+        // - directory: use directly
+        // - single file: no in-folder documents
+        let game_dir = if rom_filename.ends_with(".svm") {
+            resolve_svm_game_dir(&rom_path, &roms_dir)
+        } else if rom_filename.ends_with(".m3u") {
+            resolve_m3u_game_dir(&rom_path, &roms_dir)
+        } else if rom_path.is_dir() {
+            Some(rom_path)
+        } else {
+            None
+        };
 
-    let game_dir = match game_dir {
-        Some(d) => d,
-        None => return Ok(Vec::new()),
-    };
+        match game_dir {
+            Some(d) => replay_control_core::game_docs::scan_game_documents(&d),
+            None => Vec::new(),
+        }
+    })
+    .await
+    .map_err(|e| ServerFnError::new(format!("Task failed: {e}")))?;
 
-    Ok(replay_control_core::game_docs::scan_game_documents(&game_dir))
+    Ok(docs)
 }
 
 /// Get locally saved manuals for a game (from `<storage>/manuals/<system>/`).
@@ -85,54 +84,66 @@ pub async fn get_local_manuals(
         all_titles.extend(aliases);
     }
 
-    let folder = replay_control_core::retrokit_manuals::manual_folder_name(&system);
-    let manuals_dir = state.storage().manuals_dir().join(folder);
+    let folder = replay_control_core::retrokit_manuals::manual_folder_name(&system).to_string();
+    let manuals_dir = state.storage().manuals_dir().join(&folder);
 
-    if !manuals_dir.is_dir() {
-        return Ok(Vec::new());
-    }
-
-    let entries = std::fs::read_dir(&manuals_dir).map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    let mut manuals = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
+    // Run all blocking filesystem I/O off the async runtime to avoid stalling
+    // the tokio worker pool on slow USB or NFS storage.
+    let manuals = tokio::task::spawn_blocking(move || {
+        if !manuals_dir.is_dir() {
+            return Vec::new();
         }
-        let filename = match entry.file_name().to_str() {
-            Some(f) => f.to_string(),
-            None => continue,
+
+        let entries = match std::fs::read_dir(&manuals_dir) {
+            Ok(e) => e,
+            Err(_) => return Vec::new(),
         };
-        if !filename.to_lowercase().ends_with(".pdf") {
-            continue;
+
+        let mut manuals = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let filename = match entry.file_name().to_str() {
+                Some(f) => f.to_string(),
+                None => continue,
+            };
+            if !filename.to_lowercase().ends_with(".pdf") {
+                continue;
+            }
+
+            // Check if this manual matches any of the base_titles
+            let stem = filename
+                .strip_suffix(".pdf")
+                .or_else(|| filename.strip_suffix(".PDF"))
+                .unwrap_or(&filename);
+            let file_base = extract_manual_base_title(stem);
+
+            let matches = all_titles.iter().any(|bt| bt.eq_ignore_ascii_case(&file_base));
+
+            if !matches {
+                continue;
+            }
+
+            let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let language = extract_language_from_filename(stem);
+            let label = stem.to_string();
+            let url = format!("/manuals/{folder}/{}", urlencoding::encode(&filename));
+
+            manuals.push(LocalManual {
+                filename,
+                label,
+                size_bytes,
+                language,
+                url,
+            });
         }
 
-        // Check if this manual matches any of the base_titles
-        let stem = filename.strip_suffix(".pdf").or_else(|| filename.strip_suffix(".PDF")).unwrap_or(&filename);
-        let file_base = extract_manual_base_title(stem);
-
-        let matches = all_titles.iter().any(|bt| {
-            bt.eq_ignore_ascii_case(&file_base)
-        });
-
-        if !matches {
-            continue;
-        }
-
-        let size_bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        let language = extract_language_from_filename(stem);
-        let label = stem.to_string();
-        let url = format!("/manuals/{folder}/{}", urlencoding::encode(&filename));
-
-        manuals.push(LocalManual {
-            filename,
-            label,
-            size_bytes,
-            language,
-            url,
-        });
-    }
+        manuals
+    })
+    .await
+    .map_err(|e| ServerFnError::new(format!("Task failed: {e}")))?;
 
     Ok(manuals)
 }
@@ -151,12 +162,26 @@ pub async fn search_game_manuals(
     // Normalize the title for matching
     let normalized = retrokit_manuals::normalize_retrokit_title(&base_title);
 
+    // Load user's language preferences for sorting results
+    let preferred_langs = {
+        let state = expect_context::<crate::api::AppState>();
+        let storage = state.storage();
+        let primary = replay_control_core::settings::read_language_primary(&storage.root);
+        let secondary = replay_control_core::settings::read_language_secondary(&storage.root);
+        let region = state.region_preference();
+        replay_control_core::settings::preferred_languages(
+            primary.as_deref(),
+            secondary.as_deref(),
+            region,
+        )
+    };
+
     // Tier 1: Retrokit TSV lookup
     if let Some(folder) = retrokit_manuals::retrokit_folder_name(&system) {
         match load_retrokit_index(folder).await {
             Ok(index) => {
                 if let Some(sources) = index.get(&normalized) {
-                    let results: Vec<ManualRecommendation> = sources
+                    let mut results: Vec<ManualRecommendation> = sources
                         .iter()
                         .map(|s| ManualRecommendation {
                             source: "retrokit".to_string(),
@@ -168,6 +193,11 @@ pub async fn search_game_manuals(
                         })
                         .collect();
                     if !results.is_empty() {
+                        // Sort by language preference
+                        results.sort_by_key(|r| {
+                            let lang = r.language.as_deref().unwrap_or("");
+                            replay_control_core::settings::language_match_score(lang, &preferred_langs)
+                        });
                         tracing::info!(
                             "Manual search: retrokit hit for \"{normalized}\" ({} results)",
                             results.len()
@@ -280,10 +310,6 @@ pub async fn download_manual(
     let folder = replay_control_core::retrokit_manuals::manual_folder_name(&system);
     let manuals_dir = state.storage().manuals_dir().join(folder);
 
-    // Create directory if needed
-    std::fs::create_dir_all(&manuals_dir)
-        .map_err(|e| ServerFnError::new(format!("Failed to create manuals directory: {e}")))?;
-
     // Build filename: "<base_title> (<lang>).pdf" or "<base_title>.pdf"
     let filename = if let Some(ref lang) = language {
         if lang.is_empty() {
@@ -306,6 +332,13 @@ pub async fn download_manual(
     // spaces, parentheses, and apostrophes that curl rejects as malformed.
     let encoded_url = encode_url_path(&url);
 
+    // Create directory if needed (blocking I/O — run off the async runtime)
+    let dir = manuals_dir.clone();
+    tokio::task::spawn_blocking(move || std::fs::create_dir_all(&dir))
+        .await
+        .map_err(|e| ServerFnError::new(format!("Task failed: {e}")))?
+        .map_err(|e| ServerFnError::new(format!("Failed to create manuals directory: {e}")))?;
+
     // Download with curl
     tracing::info!("Downloading manual: {encoded_url} -> {}", target_path.display());
 
@@ -325,16 +358,22 @@ pub async fn download_manual(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         // Clean up partial download
-        let _ = std::fs::remove_file(&target_path);
+        let tp = target_path.clone();
+        let _ = tokio::task::spawn_blocking(move || std::fs::remove_file(&tp)).await;
         return Err(ServerFnError::new(format!("Download failed: {stderr}")));
     }
 
-    // Verify the downloaded file exists and is not empty
-    let size = std::fs::metadata(&target_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    // Verify the downloaded file exists and is not empty (blocking I/O)
+    let tp = target_path.clone();
+    let size = tokio::task::spawn_blocking(move || {
+        std::fs::metadata(&tp).map(|m| m.len()).unwrap_or(0)
+    })
+    .await
+    .unwrap_or(0);
+
     if size == 0 {
-        let _ = std::fs::remove_file(&target_path);
+        let tp = target_path.clone();
+        let _ = tokio::task::spawn_blocking(move || std::fs::remove_file(&tp)).await;
         return Err(ServerFnError::new("Downloaded file is empty"));
     }
 

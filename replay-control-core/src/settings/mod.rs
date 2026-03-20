@@ -191,6 +191,167 @@ pub fn write_skin(storage_root: &Path, skin: Option<u32>) -> Result<()> {
     Ok(())
 }
 
+/// Read the primary language preference from `.replay-control/settings.cfg`.
+/// Returns `None` if not explicitly set (caller should derive from region).
+pub fn read_language_primary(storage_root: &Path) -> Option<String> {
+    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+    let config = ReplayConfig::from_file(&path).ok()?;
+    let value = config.get("language_primary").unwrap_or("").to_string();
+    if value.is_empty() { None } else { Some(value) }
+}
+
+/// Write the primary language preference to `.replay-control/settings.cfg`.
+/// Pass empty string to clear (revert to auto-detection from region).
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_language_primary(storage_root: &Path, lang: &str) -> Result<()> {
+    write_setting(storage_root, "language_primary", lang)
+}
+
+/// Read the secondary (fallback) language preference from `.replay-control/settings.cfg`.
+/// Returns `None` if not set. Defaults to `"en"` in the UI when not explicitly configured.
+pub fn read_language_secondary(storage_root: &Path) -> Option<String> {
+    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+    let config = ReplayConfig::from_file(&path).ok()?;
+    let value = config.get("language_secondary").unwrap_or("").to_string();
+    if value.is_empty() { None } else { Some(value) }
+}
+
+/// Write the secondary (fallback) language preference to `.replay-control/settings.cfg`.
+/// Pass empty string to clear.
+pub fn write_language_secondary(storage_root: &Path, lang: &str) -> Result<()> {
+    write_setting(storage_root, "language_secondary", lang)
+}
+
+/// Derive the default primary language from a region preference.
+pub fn default_language_for_region(region: RegionPreference) -> &'static str {
+    match region {
+        RegionPreference::Japan => "ja",
+        _ => "en",
+    }
+}
+
+/// Build the preferred language list, resolving defaults from region if needed.
+///
+/// Returns a list of language codes in priority order. Used for sorting
+/// manual search results, in-folder documents, etc.
+pub fn preferred_languages(
+    primary: Option<&str>,
+    secondary: Option<&str>,
+    region: RegionPreference,
+) -> Vec<String> {
+    let mut langs = Vec::new();
+
+    if let Some(p) = primary.filter(|s| !s.is_empty()) {
+        langs.push(p.to_string());
+    } else {
+        // Derive from region
+        langs.push(default_language_for_region(region).to_string());
+    }
+
+    if let Some(s) = secondary.filter(|s| !s.is_empty()) {
+        if !langs.contains(&s.to_string()) {
+            langs.push(s.to_string());
+        }
+    }
+
+    // Always include English as a fallback
+    let en = "en".to_string();
+    if !langs.contains(&en) {
+        langs.push(en);
+    }
+
+    langs
+}
+
+/// Compute a language match score for sorting.
+///
+/// Lower score = better match. Used to sort manual search results.
+/// - 0: exact match on primary language
+/// - 1: exact match on secondary language
+/// - 2: English fallback (if not already primary/secondary)
+/// - 3: other language
+pub fn language_match_score(
+    manual_languages: &str,
+    preferred: &[String],
+) -> u8 {
+    // Parse comma-separated language codes (e.g., "en-gb,de,es,fr,it")
+    let manual_langs: Vec<&str> = manual_languages
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if manual_langs.is_empty() {
+        return 3;
+    }
+
+    for (priority, pref_lang) in preferred.iter().enumerate() {
+        for manual_lang in &manual_langs {
+            // Exact match or base-code match (e.g., "es" matches "es-mx")
+            if lang_matches(manual_lang, pref_lang) {
+                return priority as u8;
+            }
+        }
+    }
+
+    3
+}
+
+/// Check if a manual language code matches a preferred language code.
+///
+/// Supports base-code matching: "en-gb" matches "en", "es-mx" matches "es".
+fn lang_matches(manual_lang: &str, pref_lang: &str) -> bool {
+    let m = manual_lang.to_lowercase();
+    let p = pref_lang.to_lowercase();
+
+    if m == p {
+        return true;
+    }
+
+    // Base code match: "en-gb" starts with "en"
+    if let Some(base) = m.split('-').next()
+        && base == p
+    {
+        return true;
+    }
+
+    // Reverse: preference "en-gb" should match manual "en"
+    if let Some(base) = p.split('-').next()
+        && base == m
+    {
+        return true;
+    }
+
+    false
+}
+
+/// Generic helper: write a single key to settings.cfg, creating directory if needed.
+fn write_setting(storage_root: &Path, key: &str, value: &str) -> Result<()> {
+    let rc_dir = storage_root.join(RC_DIR);
+    if !rc_dir.exists() {
+        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
+    }
+
+    let path = rc_dir.join(SETTINGS_FILE);
+
+    let mut config = if path.exists() {
+        ReplayConfig::from_file(&path)?
+    } else {
+        ReplayConfig::parse("")?
+    };
+
+    config.set(key, value);
+
+    if path.exists() {
+        config.write_to_file(&path, &path)?;
+    } else {
+        let content = format!("{key} = \"{value}\"\n");
+        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
+    }
+
+    Ok(())
+}
+
 /// Read the GitHub API key from `.replay-control/settings.cfg`.
 /// Returns `None` if the file doesn't exist or the key is empty.
 pub fn read_github_api_key(storage_root: &Path) -> Option<String> {
@@ -376,5 +537,103 @@ mod tests {
 
         assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
         assert_eq!(read_skin(&tmp), Some(7));
+    }
+
+    // --- Language preference tests ---
+
+    #[test]
+    fn language_default_when_no_file() {
+        let tmp = tempdir();
+        assert_eq!(read_language_primary(&tmp), None);
+        assert_eq!(read_language_secondary(&tmp), None);
+    }
+
+    #[test]
+    fn write_and_read_language_primary() {
+        let tmp = tempdir();
+        write_language_primary(&tmp, "es").unwrap();
+        assert_eq!(read_language_primary(&tmp), Some("es".to_string()));
+    }
+
+    #[test]
+    fn write_and_read_language_secondary() {
+        let tmp = tempdir();
+        write_language_secondary(&tmp, "fr").unwrap();
+        assert_eq!(read_language_secondary(&tmp), Some("fr".to_string()));
+    }
+
+    #[test]
+    fn language_clear_by_empty_string() {
+        let tmp = tempdir();
+        write_language_primary(&tmp, "ja").unwrap();
+        assert_eq!(read_language_primary(&tmp), Some("ja".to_string()));
+        write_language_primary(&tmp, "").unwrap();
+        assert_eq!(read_language_primary(&tmp), None);
+    }
+
+    #[test]
+    fn language_preserves_other_keys() {
+        let tmp = tempdir();
+        write_region_preference(&tmp, RegionPreference::Europe).unwrap();
+        write_language_primary(&tmp, "es").unwrap();
+        write_language_secondary(&tmp, "en").unwrap();
+
+        assert_eq!(read_region_preference(&tmp), RegionPreference::Europe);
+        assert_eq!(read_language_primary(&tmp), Some("es".to_string()));
+        assert_eq!(read_language_secondary(&tmp), Some("en".to_string()));
+    }
+
+    #[test]
+    fn preferred_languages_explicit() {
+        let langs = preferred_languages(Some("es"), Some("fr"), RegionPreference::Europe);
+        assert_eq!(langs, vec!["es", "fr", "en"]);
+    }
+
+    #[test]
+    fn preferred_languages_derived_from_japan() {
+        let langs = preferred_languages(None, None, RegionPreference::Japan);
+        assert_eq!(langs, vec!["ja", "en"]);
+    }
+
+    #[test]
+    fn preferred_languages_derived_from_usa() {
+        let langs = preferred_languages(None, None, RegionPreference::Usa);
+        assert_eq!(langs, vec!["en"]);
+    }
+
+    #[test]
+    fn preferred_languages_no_duplicate_en() {
+        let langs = preferred_languages(Some("en"), Some("en"), RegionPreference::Usa);
+        assert_eq!(langs, vec!["en"]);
+    }
+
+    #[test]
+    fn language_match_score_primary() {
+        let prefs = vec!["es".to_string(), "en".to_string()];
+        assert_eq!(language_match_score("es", &prefs), 0);
+    }
+
+    #[test]
+    fn language_match_score_secondary() {
+        let prefs = vec!["es".to_string(), "en".to_string()];
+        assert_eq!(language_match_score("en", &prefs), 1);
+    }
+
+    #[test]
+    fn language_match_score_base_code() {
+        let prefs = vec!["en".to_string()];
+        assert_eq!(language_match_score("en-gb,de,es,fr,it", &prefs), 0);
+    }
+
+    #[test]
+    fn language_match_score_no_match() {
+        let prefs = vec!["es".to_string(), "en".to_string()];
+        assert_eq!(language_match_score("ja", &prefs), 3);
+    }
+
+    #[test]
+    fn language_match_score_multi_lang() {
+        let prefs = vec!["fr".to_string(), "en".to_string()];
+        assert_eq!(language_match_score("en-gb,de,es,fi,fr,it,nl,sv", &prefs), 0);
     }
 }

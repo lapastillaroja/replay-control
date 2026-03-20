@@ -353,3 +353,48 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
     state.cache.invalidate();
     Ok(())
 }
+
+/// Get the language preference from `.replay-control/settings.cfg`.
+/// Returns (primary, secondary) where each is empty string if not set.
+#[server(prefix = "/sfn")]
+pub async fn get_language_preference() -> Result<(String, String), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let primary = replay_control_core::settings::read_language_primary(&storage.root)
+        .unwrap_or_default();
+    let secondary = replay_control_core::settings::read_language_secondary(&storage.root)
+        .unwrap_or_default();
+    Ok((primary, secondary))
+}
+
+/// Save the language preference to `.replay-control/settings.cfg`.
+/// Empty strings clear the respective fields (revert to auto-detection).
+#[server(prefix = "/sfn")]
+pub async fn save_language_preference(
+    primary: String,
+    secondary: String,
+) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    replay_control_core::settings::write_language_primary(&storage.root, primary.trim())
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    replay_control_core::settings::write_language_secondary(&storage.root, secondary.trim())
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
+}
+
+/// Get the user's preferred languages as a priority-ordered list.
+/// Used by manual search to sort results by language relevance.
+#[server(prefix = "/sfn")]
+pub async fn get_preferred_languages() -> Result<Vec<String>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let primary = replay_control_core::settings::read_language_primary(&storage.root);
+    let secondary = replay_control_core::settings::read_language_secondary(&storage.root);
+    let region = state.region_preference();
+    Ok(replay_control_core::settings::preferred_languages(
+        primary.as_deref(),
+        secondary.as_deref(),
+        region,
+    ))
+}

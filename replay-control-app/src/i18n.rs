@@ -178,6 +178,23 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "region.saved" => "Region preference saved",
         "region.none" => "None (use default order)",
 
+        // Language preference
+        "language.title" => "Language",
+        "language.hint" => {
+            "Preferred language for game manuals and documents. Auto derives from your region preference."
+        }
+        "language.primary_label" => "Primary",
+        "language.secondary_label" => "Secondary",
+        "language.auto" => "Auto (from region)",
+        "language.en" => "English",
+        "language.es" => "Spanish",
+        "language.fr" => "French",
+        "language.de" => "German",
+        "language.it" => "Italian",
+        "language.ja" => "Japanese",
+        "language.pt" => "Portuguese",
+        "language.saved" => "Language preference saved",
+
         // Skin
         "more.skin" => "Skin",
         "skin.title" => "Skin",

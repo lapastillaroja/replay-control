@@ -153,6 +153,12 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLocalManuals>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameManuals>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadManual>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLanguagePreference>(
+        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveLanguagePreference>(
+        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetPreferredLanguages>(
+        );
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
