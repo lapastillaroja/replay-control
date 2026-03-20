@@ -2,6 +2,8 @@
    Responsive — Breakpoint overrides (tablet, desktop)
    ================================================================ */
 
+/* ── Small tablet (600px) ─────────────────────────────────────── */
+
 @media (min-width: 600px) {
     .manage-actions {
         flex-direction: row;
@@ -30,16 +32,58 @@
     }
 }
 
-/* Responsive: tablet+ */
+/* ── Tablet landscape / wide (768px) ──────────────────────────── */
+
 @media (min-width: 768px) {
+    /* Content area — wider centered column */
+    .page {
+        max-width: 800px;
+        padding: 20px 24px;
+    }
+
+    /* Top bar — let it scroll naturally (not fixed) */
+    .top-bar {
+        position: relative;
+    }
+
+    /* Systems grid: 3 columns */
     .systems-grid {
         grid-template-columns: repeat(3, 1fr);
     }
 
+    /* Stats: 4 columns */
     .stats-grid {
         grid-template-columns: repeat(4, 1fr);
     }
 
+    /* Hero card: more breathing room */
+    .hero-card {
+        padding: 24px;
+        gap: 20px;
+    }
+
+    .hero-thumb {
+        height: 4.5rem;
+        max-width: 6rem;
+    }
+
+    .hero-title {
+        font-size: 1.25rem;
+    }
+
+    /* Recent games: grid instead of horizontal scroll */
+    .recent-scroll {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        overflow-x: visible;
+    }
+
+    .recent-item {
+        width: auto;
+        flex-shrink: unset;
+    }
+
+    /* Game detail: 3-column meta grid */
     .game-meta-grid {
         grid-template-columns: repeat(3, 1fr);
     }
@@ -56,32 +100,129 @@
     .game-launch-cta .game-action-launch {
         width: auto;
     }
-}
 
-@media (min-width: 900px) {
-    .skin-grid {
-        grid-template-columns: repeat(4, 1fr);
+    /* Game detail screenshots: side by side */
+    .game-screenshots {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        overflow-x: visible;
     }
-}
 
-/* More page: limit form width on larger screens */
-@media (min-width: 768px) {
+    .game-screenshot-img {
+        max-height: none;
+        width: 100%;
+    }
+
+    /* Game cover: slightly larger */
+    .game-cover {
+        max-height: 22rem;
+    }
+
+    .game-cover-img {
+        max-height: 22rem;
+    }
+
+    /* ROM list / game list items: wider padding */
+    .game-list-item {
+        padding: 10px 16px;
+    }
+
+    /* Game list item: show system/genre badges on wider screens */
+    .game-list-badges {
+        display: flex;
+    }
+
+    /* Search result items: more padding */
+    .search-result-item {
+        padding: 12px 20px;
+    }
+
+    .search-result-thumb {
+        height: 3rem;
+        max-width: 4.5rem;
+    }
+
+    /* Discover grid: 3 columns */
+    .discover-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* Search page input: wider */
+    .search-page-input {
+        font-size: 1.1rem;
+        padding: 14px 20px;
+    }
+
+    /* More page: limit form width */
     .more-inline-setting {
         max-width: 480px;
     }
 }
 
-/* Responsive: desktop */
+/* ── Medium tablet / small desktop (900px) ────────────────────── */
+
+@media (min-width: 900px) {
+    .skin-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    /* Recent games: 5 columns */
+    .recent-scroll {
+        grid-template-columns: repeat(5, 1fr);
+    }
+}
+
+/* ── Desktop / landscape (1024px) ─────────────────────────────── */
+
 @media (min-width: 1024px) {
+    .page {
+        max-width: 960px;
+        padding: 24px 32px;
+    }
+
+    /* Systems: 4 columns */
     .systems-grid {
         grid-template-columns: repeat(4, 1fr);
     }
 
+    /* Game detail: 4-column meta grid */
     .game-meta-grid {
         grid-template-columns: repeat(4, 1fr);
     }
 
+    /* Discover: 4 columns */
     .discover-grid {
         grid-template-columns: repeat(4, 1fr);
+    }
+
+    /* Recent games: 6 columns */
+    .recent-scroll {
+        grid-template-columns: repeat(6, 1fr);
+    }
+
+    /* Game detail screenshots: up to 3 columns */
+    .game-screenshots {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* Stats row: all 4 in one row with bigger text */
+    .stat-value {
+        font-size: 1.75rem;
+    }
+
+    /* Bottom nav: larger touch targets */
+    .nav-tab {
+        font-size: 0.75rem;
+    }
+
+    .nav-icon {
+        font-size: 1.4rem;
+    }
+
+    /* Search groups: two-column layout */
+    .search-groups {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
     }
 }
