@@ -149,6 +149,10 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::IsScanning>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameDocuments>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLocalManuals>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameManuals>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadManual>();
 
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
@@ -226,6 +230,179 @@ mod ssr {
                             data,
                         )
                             .into_response(),
+                        Err(_) => StatusCode::NOT_FOUND.into_response(),
+                    }
+                }
+            },
+        );
+
+        // Manuals handler: serves downloaded PDFs from <storage>/manuals/<system>/<file>
+        let manuals_state = app_state.clone();
+        let manuals_handler = axum::routing::get(
+            move |axum::extract::Path(path): axum::extract::Path<String>| {
+                let state = manuals_state.clone();
+                async move {
+                    use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
+
+                    if path.split('/').any(|s| s == "..") {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+
+                    let file_path = state.storage().manuals_dir().join(&path);
+
+                    match tokio::fs::read(&file_path).await {
+                        Ok(data) => {
+                            let content_type = if path.ends_with(".pdf") {
+                                "application/pdf"
+                            } else if path.ends_with(".txt") {
+                                "text/plain; charset=utf-8"
+                            } else {
+                                "application/octet-stream"
+                            };
+                            (
+                                StatusCode::OK,
+                                [
+                                    ("content-type", content_type),
+                                    ("cache-control", "public, max-age=86400"),
+                                ],
+                                data,
+                            )
+                                .into_response()
+                        }
+                        Err(_) => StatusCode::NOT_FOUND.into_response(),
+                    }
+                }
+            },
+        );
+
+        // ROM docs handler: serves in-folder documents from game directories.
+        // URL format: /rom-docs/<system>/<base64_rom_filename>/<relative_doc_path>
+        let rom_docs_state = app_state.clone();
+        let rom_docs_handler = axum::routing::get(
+            move |axum::extract::Path(path): axum::extract::Path<String>| {
+                let state = rom_docs_state.clone();
+                async move {
+                    use axum::http::StatusCode;
+                    use axum::response::IntoResponse;
+
+                    // Parse: system/base64_rom/relative_path
+                    let parts: Vec<&str> = path.splitn(3, '/').collect();
+                    if parts.len() < 3 {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+
+                    let system = parts[0];
+                    let rom_b64 = parts[1];
+                    let doc_relative = urlencoding::decode(parts[2])
+                        .map(|s| s.into_owned())
+                        .unwrap_or_else(|_| parts[2].to_string());
+
+                    // Path traversal protection
+                    if doc_relative.split('/').any(|s| s == "..") || doc_relative.contains('\\') {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+
+                    // Decode ROM filename
+                    let rom_filename = match replay_control_app::util::base64_decode(rom_b64) {
+                        Ok(bytes) => match String::from_utf8(bytes) {
+                            Ok(s) => s,
+                            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+                        },
+                        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+                    };
+
+                    // Resolve game directory
+                    let roms_dir = state.storage().roms_dir().join(system);
+                    let rom_path = roms_dir.join(&rom_filename);
+
+                    let game_dir = if rom_filename.ends_with(".svm") {
+                        // ScummVM: read .svm to find game directory
+                        match tokio::fs::read_to_string(&rom_path).await {
+                            Ok(content) => {
+                                let svm_path = content.trim().to_string();
+                                let candidate = std::path::PathBuf::from(&svm_path);
+                                if candidate.is_dir() {
+                                    candidate
+                                } else {
+                                    let rel = roms_dir.join(&svm_path);
+                                    if rel.is_dir() { rel } else { return StatusCode::NOT_FOUND.into_response(); }
+                                }
+                            }
+                            Err(_) => return StatusCode::NOT_FOUND.into_response(),
+                        }
+                    } else if rom_filename.ends_with(".m3u") {
+                        // M3U playlist: check for sibling directory with same name
+                        let stem = rom_path.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let sibling = rom_path.parent().unwrap_or(&roms_dir).join(&stem);
+                        if sibling.is_dir() {
+                            sibling
+                        } else if let Ok(content) = tokio::fs::read_to_string(&rom_path).await {
+                            // Follow .svm reference from .m3u
+                            let mut resolved = None;
+                            for line in content.lines() {
+                                let line = line.trim();
+                                if line.is_empty() || line.starts_with('#') { continue; }
+                                if line.to_lowercase().ends_with(".svm") {
+                                    let svm = std::path::PathBuf::from(line);
+                                    if let Some(p) = svm.parent() {
+                                        let dir = if p.is_absolute() { p.to_path_buf() } else { roms_dir.join(p) };
+                                        if dir.is_dir() { resolved = Some(dir); break; }
+                                    }
+                                }
+                            }
+                            match resolved {
+                                Some(d) => d,
+                                None => return StatusCode::NOT_FOUND.into_response(),
+                            }
+                        } else {
+                            return StatusCode::NOT_FOUND.into_response();
+                        }
+                    } else if rom_path.is_dir() {
+                        rom_path
+                    } else {
+                        return StatusCode::NOT_FOUND.into_response();
+                    };
+
+                    let file_path = game_dir.join(&doc_relative);
+
+                    // Verify the resolved path is within the game directory
+                    match file_path.canonicalize() {
+                        Ok(canonical) => {
+                            if let Ok(game_canonical) = game_dir.canonicalize() {
+                                if !canonical.starts_with(&game_canonical) {
+                                    return StatusCode::BAD_REQUEST.into_response();
+                                }
+                            }
+                        }
+                        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+                    }
+
+                    match tokio::fs::read(&file_path).await {
+                        Ok(data) => {
+                            let content_type = match doc_relative.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
+                                "pdf" => "application/pdf",
+                                "txt" => "text/plain; charset=utf-8",
+                                "html" | "htm" => "text/html; charset=utf-8",
+                                "jpg" | "jpeg" => "image/jpeg",
+                                "png" => "image/png",
+                                "gif" => "image/gif",
+                                "doc" => "application/msword",
+                                _ => "application/octet-stream",
+                            };
+                            (
+                                StatusCode::OK,
+                                [
+                                    ("content-type", content_type),
+                                    ("cache-control", "public, max-age=86400"),
+                                ],
+                                data,
+                            )
+                                .into_response()
+                        }
                         Err(_) => StatusCode::NOT_FOUND.into_response(),
                     }
                 }
@@ -342,6 +519,8 @@ mod ssr {
             .route("/sse/metadata-progress", metadata_sse_handler)
             .route("/sse/thumbnail-progress", thumbnail_sse_handler)
             .route("/captures/*path", captures_handler)
+            .route("/manuals/*path", manuals_handler)
+            .route("/rom-docs/*path", rom_docs_handler)
             .route("/media/*path", media_handler)
             .nest_service(
                 "/pkg",

@@ -116,6 +116,36 @@ pub struct SystemCoverage {
     pub with_thumbnail: usize,
 }
 
+/// Mirror of `replay_control_core::game_docs::GameDocument` for WASM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameDocument {
+    pub relative_path: String,
+    pub label: String,
+    pub extension: String,
+    pub size_bytes: u64,
+    pub category: DocumentCategory,
+}
+
+/// Mirror of `replay_control_core::game_docs::DocumentCategory` for WASM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum DocumentCategory {
+    Manual,
+    Walkthrough,
+    Reference,
+    Extra,
+}
+
+/// Mirror of `replay_control_core::retrokit_manuals::ManualRecommendation` for WASM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManualRecommendation {
+    pub source: String,
+    pub title: String,
+    pub url: String,
+    pub size_bytes: Option<u64>,
+    pub language: Option<String>,
+    pub source_id: String,
+}
+
 /// Mirror of `replay_control_core::user_data_db::VideoEntry` for WASM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoEntry {

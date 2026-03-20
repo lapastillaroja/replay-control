@@ -41,6 +41,7 @@ const SAVES_DIR: &str = "saves";
 const CONFIG_DIR: &str = "config";
 const BIOS_DIR: &str = "bios";
 const CAPTURES_DIR: &str = "captures";
+const MANUALS_DIR: &str = "manuals";
 
 impl StorageLocation {
     /// Detect the active storage location based on the RePlayOS config.
@@ -110,6 +111,10 @@ impl StorageLocation {
 
     pub fn captures_dir(&self) -> PathBuf {
         self.root.join(CAPTURES_DIR)
+    }
+
+    pub fn manuals_dir(&self) -> PathBuf {
+        self.root.join(MANUALS_DIR)
     }
 
     pub fn favorites_dir(&self) -> PathBuf {

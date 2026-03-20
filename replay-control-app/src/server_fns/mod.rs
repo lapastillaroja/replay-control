@@ -1,6 +1,7 @@
 mod boxart;
 mod favorites;
 mod images;
+mod manuals;
 mod metadata;
 mod recommendations;
 mod related;
@@ -14,6 +15,7 @@ mod videos;
 pub use boxart::*;
 pub use favorites::*;
 pub use images::*;
+pub use manuals::*;
 pub use metadata::*;
 pub use recommendations::*;
 pub use related::*;

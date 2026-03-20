@@ -48,3 +48,9 @@ pub use metadata::thumbnail_manifest;
 pub use metadata::thumbnails;
 #[cfg(feature = "metadata")]
 pub use metadata::user_data_db;
+
+// Game documents and retrokit manuals are always available (no DB dependency).
+#[cfg(feature = "metadata")]
+pub use metadata::game_docs;
+#[cfg(feature = "metadata")]
+pub use metadata::retrokit_manuals;

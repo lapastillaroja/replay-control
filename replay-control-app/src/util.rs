@@ -94,6 +94,67 @@ pub fn format_size_megabit(bytes: u64) -> String {
     }
 }
 
+/// URL-safe base64 encoding (no padding, uses `-` and `_` instead of `+` and `/`).
+///
+/// Used for encoding ROM paths in URLs where the path may contain special characters.
+pub fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+
+        result.push(CHARS[((n >> 18) & 63) as usize] as char);
+        result.push(CHARS[((n >> 12) & 63) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARS[((n >> 6) & 63) as usize] as char);
+        }
+        if chunk.len() > 2 {
+            result.push(CHARS[(n & 63) as usize] as char);
+        }
+    }
+
+    result
+}
+
+/// URL-safe base64 decoding (no padding, uses `-` and `_`).
+pub fn base64_decode(s: &str) -> Result<Vec<u8>, &'static str> {
+    fn decode_char(c: u8) -> Result<u8, &'static str> {
+        match c {
+            b'A'..=b'Z' => Ok(c - b'A'),
+            b'a'..=b'z' => Ok(c - b'a' + 26),
+            b'0'..=b'9' => Ok(c - b'0' + 52),
+            b'-' => Ok(62),
+            b'_' => Ok(63),
+            _ => Err("invalid base64 character"),
+        }
+    }
+
+    let bytes = s.as_bytes();
+    let mut result = Vec::with_capacity(bytes.len() * 3 / 4);
+
+    for chunk in bytes.chunks(4) {
+        let a = decode_char(chunk[0])? as u32;
+        let b = if chunk.len() > 1 { decode_char(chunk[1])? as u32 } else { 0 };
+        let c = if chunk.len() > 2 { decode_char(chunk[2])? as u32 } else { 0 };
+        let d = if chunk.len() > 3 { decode_char(chunk[3])? as u32 } else { 0 };
+        let n = (a << 18) | (b << 12) | (c << 6) | d;
+
+        result.push((n >> 16) as u8);
+        if chunk.len() > 2 {
+            result.push((n >> 8) as u8);
+        }
+        if chunk.len() > 3 {
+            result.push(n as u8);
+        }
+    }
+
+    Ok(result)
+}
+
 /// Like [`format_size`], but rounds GB values to whole numbers.
 ///
 /// Returns `(number_string, unit)` — e.g. `("12", "GB")` or `("5.5", "MB")`.

@@ -6,6 +6,7 @@ use server_fn::ServerFnError;
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::captures::{CapturesLightbox, INITIAL_CAPTURE_COUNT};
 use crate::components::hero_card::GameScrollCard;
+use crate::components::manual_section::ManualSection;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
@@ -424,6 +425,14 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
 
         // Videos — base_title enables cross-variant video sharing
         <GameVideoSection
+            system=system_sv
+            rom_filename=filename_sv
+            display_name=game_name_sv
+            base_title=base_title_sv
+        />
+
+        // Manual / Documents — base_title enables cross-variant manual sharing
+        <ManualSection
             system=system_sv
             rom_filename=filename_sv
             display_name=game_name_sv
