@@ -15,21 +15,32 @@ pub struct VideoRecommendation {
     pub channel: Option<String>,
 }
 
-/// Get saved videos for a game.
+/// Get saved videos for a game, shared across regional variants via base_title.
 #[server(prefix = "/sfn")]
 pub async fn get_game_videos(
     system: String,
-    rom_filename: String,
+    base_title: String,
 ) -> Result<Vec<VideoEntry>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+
+    // Resolve alias base_titles for cross-name sharing (best-effort).
+    let mut all_titles = vec![base_title.clone()];
+    if let Some(guard) = state.metadata_db()
+        && let Some(db) = guard.as_ref()
+    {
+        let aliases = db.alias_base_titles(&system, &base_title);
+        all_titles.extend(aliases);
+    }
+
     let ud_guard = state
         .user_data_db()
         .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
     let ud_db = ud_guard
         .as_ref()
         .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
+    let title_refs: Vec<&str> = all_titles.iter().map(|s| s.as_str()).collect();
     ud_db
-        .get_game_videos(&system, &rom_filename)
+        .get_game_videos(&system, &title_refs)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -38,6 +49,7 @@ pub async fn get_game_videos(
 pub async fn add_game_video(
     system: String,
     rom_filename: String,
+    base_title: String,
     url: String,
     title: Option<String>,
     from_recommendation: bool,
@@ -62,6 +74,7 @@ pub async fn add_game_video(
         added_at: now,
         from_recommendation,
         tag,
+        rom_filename: rom_filename.clone(),
     };
 
     {
@@ -72,7 +85,7 @@ pub async fn add_game_video(
             .as_ref()
             .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
         ud_db
-            .add_game_video(&system, &rom_filename, &entry)
+            .add_game_video(&system, &rom_filename, &base_title, &entry)
             .map_err(|e| ServerFnError::new(e.to_string()))?;
     }
 

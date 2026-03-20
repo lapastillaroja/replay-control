@@ -56,6 +56,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let filename_sv = StoredValue::new(game.rom_filename.clone());
     let relative_path_sv = StoredValue::new(game.rom_path.clone());
     let system_sv = StoredValue::new(system.clone());
+    let base_title_sv = StoredValue::new(detail.base_title.clone());
     let system_display = game.system_display.clone();
     let size_display = format_size_for_system(detail.size_bytes, &system);
     let has_arcade = game.rotation.is_some();
@@ -421,11 +422,12 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             </Show>
         </section>
 
-        // Videos
+        // Videos — base_title enables cross-variant video sharing
         <GameVideoSection
             system=system_sv
             rom_filename=filename_sv
             display_name=game_name_sv
+            base_title=base_title_sv
         />
 
         // Related Games (lazy-loaded)

@@ -127,4 +127,5 @@ pub struct VideoEntry {
     pub added_at: u64,
     pub from_recommendation: bool,
     pub tag: Option<String>,
+    pub rom_filename: String,
 }

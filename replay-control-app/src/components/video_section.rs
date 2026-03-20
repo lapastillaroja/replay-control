@@ -12,6 +12,7 @@ pub fn GameVideoSection(
     system: StoredValue<String>,
     rom_filename: StoredValue<String>,
     display_name: StoredValue<String>,
+    base_title: StoredValue<String>,
 ) -> impl IntoView {
     let i18n = use_i18n();
 
@@ -19,10 +20,10 @@ pub fn GameVideoSection(
     let saved_videos = RwSignal::new(Vec::<VideoEntry>::new());
     let show_all = RwSignal::new(false);
 
-    // Load saved videos on mount.
+    // Load saved videos on mount — queries by base_title for cross-variant sharing.
     let videos_resource = Resource::new(
-        move || (system.get_value(), rom_filename.get_value()),
-        |(sys, fname)| server_fns::get_game_videos(sys, fname),
+        move || (system.get_value(), base_title.get_value()),
+        |(sys, bt)| server_fns::get_game_videos(sys, bt),
     );
 
     // Sync resource into signal when it resolves.
@@ -49,8 +50,9 @@ pub fn GameVideoSection(
 
         let sys = system.get_value();
         let fname = rom_filename.get_value();
+        let bt = base_title.get_value();
         leptos::task::spawn_local(async move {
-            match server_fns::add_game_video(sys, fname, url, None, false, None).await {
+            match server_fns::add_game_video(sys, fname, bt, url, None, false, None).await {
                 Ok(entry) => {
                     saved_videos.update(|vids| vids.insert(0, entry));
                     add_url.set(String::new());
@@ -72,14 +74,13 @@ pub fn GameVideoSection(
         });
     };
 
-    // Remove video handler
-    let on_remove = move |video_id: String| {
+    // Remove video handler — uses the video's own rom_filename (from the DB row).
+    let on_remove = move |video_id: String, video_rom_filename: String| {
         let sys = system.get_value();
-        let fname = rom_filename.get_value();
         let vid = video_id.clone();
         saved_videos.update(|vids| vids.retain(|v| v.id != vid));
         leptos::task::spawn_local(async move {
-            let _ = server_fns::remove_game_video(sys, fname, video_id).await;
+            let _ = server_fns::remove_game_video(sys, video_rom_filename, video_id).await;
         });
     };
 
@@ -149,11 +150,12 @@ pub fn GameVideoSection(
     let pin_video = move |rec: VideoRecommendation, tag: String| {
         let sys = system.get_value();
         let fname = rom_filename.get_value();
+        let bt = base_title.get_value();
         let url = rec.url.clone();
         let title = Some(rec.title.clone());
         leptos::task::spawn_local(async move {
             if let Ok(entry) =
-                server_fns::add_game_video(sys, fname, url, title, true, Some(tag)).await
+                server_fns::add_game_video(sys, fname, bt, url, title, true, Some(tag)).await
             {
                 saved_videos.update(|vids| vids.insert(0, entry));
             }
@@ -319,10 +321,11 @@ pub fn GameVideoSection(
 #[component]
 fn VideoEmbed<F>(video: VideoEntry, on_remove: F) -> impl IntoView
 where
-    F: Fn(String) + Clone + Send + 'static,
+    F: Fn(String, String) + Clone + Send + 'static,
 {
     let i18n = use_i18n();
     let video_id = video.id.clone();
+    let video_rom_filename = video.rom_filename.clone();
     let on_remove = on_remove.clone();
 
     // Compute embed URL from platform and video_id
@@ -348,7 +351,7 @@ where
                 <span class="video-item-title">{title_display}</span>
                 <button
                     class="video-remove-btn"
-                    on:click=move |_| on_remove(video_id.clone())
+                    on:click=move |_| on_remove(video_id.clone(), video_rom_filename.clone())
                 >
                     {move || t(i18n.locale.get(), "game_detail.remove_video")}
                 </button>

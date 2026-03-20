@@ -64,6 +64,49 @@ impl MetadataDb {
         Ok(count)
     }
 
+    /// Get all alias base_titles for a game, for cross-name video sharing.
+    ///
+    /// Given `(system, base_title)`, returns all equivalent base_titles from
+    /// `game_alias`: both aliases OF this game and canonical titles this game
+    /// is an alias OF. Does not include the input `base_title` itself.
+    pub fn alias_base_titles(&self, system: &str, base_title: &str) -> Vec<String> {
+        let mut titles = Vec::new();
+
+        // 1. Aliases of this game: game_alias.alias_name WHERE base_title = ?
+        if let Ok(mut stmt) = self.conn.prepare(
+            "SELECT DISTINCT alias_name FROM game_alias
+             WHERE system = ?1 AND base_title = ?2 COLLATE NOCASE",
+        )
+            && let Ok(rows) = stmt.query_map(params![system, base_title], |row| row.get(0))
+        {
+            for name in rows.flatten() {
+                let name: String = name;
+                if name.to_lowercase() != base_title.to_lowercase() {
+                    titles.push(name);
+                }
+            }
+        }
+
+        // 2. Canonical base_title that this game is an alias of
+        if let Ok(mut stmt) = self.conn.prepare(
+            "SELECT DISTINCT base_title FROM game_alias
+             WHERE system = ?1 AND alias_name = ?2 COLLATE NOCASE",
+        )
+            && let Ok(rows) = stmt.query_map(params![system, base_title], |row| row.get(0))
+        {
+            for bt in rows.flatten() {
+                let bt: String = bt;
+                if bt.to_lowercase() != base_title.to_lowercase()
+                    && !titles.iter().any(|t| t.to_lowercase() == bt.to_lowercase())
+                {
+                    titles.push(bt);
+                }
+            }
+        }
+
+        titles
+    }
+
     /// Clear all game aliases.
     pub fn clear_aliases(&self) -> Result<()> {
         self.conn

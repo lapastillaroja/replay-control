@@ -35,6 +35,8 @@ pub struct VideoEntry {
     pub from_recommendation: bool,
     /// Tag: "trailer", "gameplay", "1cc", or None for manual
     pub tag: Option<String>,
+    /// The ROM filename this video was originally saved from (for delete path).
+    pub rom_filename: String,
 }
 
 /// Handle to the user data SQLite database.
@@ -89,21 +91,25 @@ impl UserDataDb {
                 );
 
                 CREATE TABLE IF NOT EXISTS game_videos (
+                    -- Identity
                     system TEXT NOT NULL,
+                    base_title TEXT NOT NULL DEFAULT '',
                     rom_filename TEXT NOT NULL,
+                    -- Content
                     video_id TEXT NOT NULL,
                     url TEXT NOT NULL,
                     platform TEXT NOT NULL,
                     platform_video_id TEXT NOT NULL,
                     title TEXT,
+                    -- Metadata
                     added_at INTEGER NOT NULL,
                     from_recommendation INTEGER NOT NULL DEFAULT 0,
                     tag TEXT,
                     PRIMARY KEY (system, rom_filename, video_id)
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_game_videos_game
-                    ON game_videos (system, rom_filename);",
+                CREATE INDEX IF NOT EXISTS idx_game_videos_base_title
+                    ON game_videos (system, base_title);",
             )
             .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
         Ok(())
@@ -177,21 +183,49 @@ impl UserDataDb {
 
     // --- Game Videos ---
 
-    /// Get all saved videos for a game, ordered newest first.
-    pub fn get_game_videos(&self, system: &str, rom_filename: &str) -> Result<Vec<VideoEntry>> {
+    /// Get all saved videos for a game by base_title, ordered newest first.
+    ///
+    /// Queries by `(system, base_title)` so regional variants share videos.
+    /// `base_titles` should include the primary base_title plus any alias
+    /// base_titles resolved from `game_alias` in `metadata.db`.
+    pub fn get_game_videos(
+        &self,
+        system: &str,
+        base_titles: &[&str],
+    ) -> Result<Vec<VideoEntry>> {
+        if base_titles.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build a WHERE clause with placeholders for IN (...)
+        let placeholders: Vec<String> = (0..base_titles.len())
+            .map(|i| format!("?{}", i + 2))
+            .collect();
+        let sql = format!(
+            "SELECT video_id, url, platform, platform_video_id, title,
+                    added_at, from_recommendation, tag, rom_filename
+             FROM game_videos
+             WHERE system = ?1 AND base_title IN ({})
+             ORDER BY added_at DESC",
+            placeholders.join(", ")
+        );
+
         let mut stmt = self
             .conn
-            .prepare(
-                "SELECT video_id, url, platform, platform_video_id, title,
-                        added_at, from_recommendation, tag
-                 FROM game_videos
-                 WHERE system = ?1 AND rom_filename = ?2
-                 ORDER BY added_at DESC",
-            )
+            .prepare(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare get_game_videos: {e}")))?;
 
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+            Vec::with_capacity(1 + base_titles.len());
+        param_values.push(Box::new(system.to_string()));
+        for bt in base_titles {
+            param_values.push(Box::new(bt.to_string()));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+
         let rows = stmt
-            .query_map(params![system, rom_filename], |row| {
+            .query_map(param_refs.as_slice(), |row| {
                 let platform: String = row.get(2)?;
                 let platform_video_id: String = row.get(3)?;
                 Ok(VideoEntry {
@@ -203,13 +237,18 @@ impl UserDataDb {
                     added_at: row.get::<_, i64>(5)? as u64,
                     from_recommendation: row.get::<_, i64>(6)? != 0,
                     tag: row.get(7)?,
+                    rom_filename: row.get(8)?,
                 })
             })
             .map_err(|e| Error::Other(format!("Failed to query game_videos: {e}")))?;
 
+        // Deduplicate by video_id (same video saved from different ROMs).
+        let mut seen = std::collections::HashSet::new();
         let mut videos = Vec::new();
         for row in rows.flatten() {
-            videos.push(row);
+            if seen.insert(row.id.clone()) {
+                videos.push(row);
+            }
         }
         Ok(videos)
     }
@@ -219,17 +258,19 @@ impl UserDataDb {
         &self,
         system: &str,
         rom_filename: &str,
+        base_title: &str,
         entry: &VideoEntry,
     ) -> Result<()> {
         let affected = self
             .conn
             .execute(
                 "INSERT OR IGNORE INTO game_videos
-                    (system, rom_filename, video_id, url, platform, platform_video_id,
-                     title, added_at, from_recommendation, tag)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    (system, base_title, rom_filename, video_id, url, platform,
+                     platform_video_id, title, added_at, from_recommendation, tag)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     system,
+                    base_title,
                     rom_filename,
                     &entry.id,
                     &entry.url,

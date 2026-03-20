@@ -38,6 +38,9 @@ pub struct RomDetail {
     /// Whether this ROM is a special version (FastROM, 60Hz, unlicensed, etc.).
     #[serde(default)]
     pub is_special: bool,
+    /// Normalized base_title for cross-variant video sharing.
+    #[serde(default)]
+    pub base_title: String,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -338,6 +341,9 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let (tier, _, is_special) = replay_control_core::rom_tags::classify(&filename);
     let is_hack = tier == replay_control_core::rom_tags::RomTier::Hack;
 
+    let base_title =
+        replay_control_core::title_utils::base_title(&game.display_name);
+
     Ok(RomDetail {
         game,
         size_bytes: rom.size_bytes,
@@ -347,6 +353,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         variant_count,
         is_hack,
         is_special,
+        base_title,
     })
 }
 
