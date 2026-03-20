@@ -4,6 +4,20 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## 2026-03-20
+
+- feat: add Named_Titles support and screenshot gallery — title screen + in-game screenshot displayed as labeled gallery on game detail page (`4c10d4e`)
+- feat: add developer column to game_library — populated from arcade_db manufacturer + LaunchBox enrichment (uncommitted)
+- feat: developer search in global search — searching "Capcom" returns all Capcom games (score 250) (uncommitted)
+- feat: "Games by Developer" search block — horizontal scroll of games by matched developer above regular results, with multi-match ranking (uncommitted)
+- feat: "Other developers matching" list — up to 2 additional developer matches shown as tappable links with game counts (uncommitted)
+- feat: developer game list page at `/developer/:name` — full game list with system filter chips, infinite scroll, empty state for non-existent developers (uncommitted)
+- fix: merge developer from LaunchBox metadata into game detail — enrichment was skipping developer field (`a55119c`)
+- fix: "Other developers matching" heading shows original query instead of matched developer name (uncommitted)
+- refactor: replace remaining tuples with BoxArtGenreRating, ImagePathUpdate, RomEnrichment structs + fix clippy warnings (`0575040`)
+- docs: add tablet landscape layouts to proposal C design (`c2855fb`)
+- docs: add title screenshots analysis, developer coverage, expand libretro core feasibility with CRT/HDMI support (`46d0e89`)
+
 ## 2026-03-19
 
 - feat: sequel/prequel play order navigation — breadcrumb `← Prev | N/M | Next →` using Wikidata P155/P156 chains with ordinal fallback (`8fbba16`)
