@@ -475,6 +475,61 @@ pub fn build_manifest_fuzzy_index(
     }
 }
 
+/// Build a manifest fuzzy index from pre-fetched raw data.
+///
+/// Each element in `repo_data` is `(repo_url_name, branch, entries)` where
+/// entries were queried from `thumbnail_index` under the DB lock. This allows
+/// the caller to release the DB lock before the expensive index construction.
+pub fn build_manifest_fuzzy_index_from_raw(
+    repo_data: &[(String, String, Vec<crate::metadata_db::ThumbnailIndexEntry>)],
+) -> ManifestFuzzyIndex {
+    use thumbnails::{strip_tags, strip_version};
+
+    let mut exact = HashMap::new();
+    let mut exact_ci = HashMap::new();
+    let mut by_tags = HashMap::new();
+    let mut by_version = HashMap::new();
+
+    for (url_name, branch, entries) in repo_data {
+        for entry in entries {
+            let m = ManifestMatch {
+                filename: entry.filename.clone(),
+                is_symlink: entry.symlink_target.is_some(),
+                repo_url_name: url_name.clone(),
+                branch: branch.clone(),
+            };
+
+            // Tier 1: exact
+            exact
+                .entry(entry.filename.clone())
+                .or_insert_with(|| m.clone());
+
+            // Tier 1b: case-insensitive exact (preserves region tags)
+            exact_ci
+                .entry(entry.filename.to_lowercase())
+                .or_insert_with(|| m.clone());
+
+            // Tier 2: strip tags
+            let stripped = strip_tags(&entry.filename);
+            let key = stripped.to_lowercase();
+            by_tags.entry(key.clone()).or_insert_with(|| m.clone());
+
+            // Tier 3: version-stripped
+            let version_key = strip_version(&key);
+            if version_key.len() < key.len() {
+                by_version.entry(version_key.to_string()).or_insert(m);
+            }
+        }
+    }
+
+    ManifestFuzzyIndex {
+        exact,
+        exact_ci,
+        by_tags,
+        by_version,
+    }
+}
+
 /// Look up a ROM in the manifest fuzzy index.
 /// Returns the matching manifest entry, or None.
 pub fn find_in_manifest<'a>(

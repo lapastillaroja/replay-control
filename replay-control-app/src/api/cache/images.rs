@@ -111,40 +111,67 @@ impl GameLibrary {
             })
             .unwrap_or_default();
 
-        // Load DB paths for this system.
-        let (db_paths, manifest) = if let Some(guard) = state.metadata_db() {
+        // Load DB paths and raw manifest data under a brief lock, then build
+        // the manifest fuzzy index outside the lock to avoid blocking other
+        // threads that need metadata_db (tokio worker starvation).
+        let (mut db_paths, raw_manifest_data) = if let Some(guard) = state.metadata_db() {
             if let Some(db) = guard.as_ref() {
-                let mut paths = db.system_box_art_paths(system).unwrap_or_default();
+                let paths = db.system_box_art_paths(system).unwrap_or_default();
 
-                // Inject user box art overrides (highest priority — overwrites auto-matched paths).
-                for (rom_filename, override_path) in user_overrides {
-                    paths.insert(rom_filename, override_path);
-                }
-
-                // Build manifest fuzzy index for on-demand downloads.
-                let mfi = if let Some(repo_names) =
+                // Pre-fetch raw manifest data while we have the DB lock.
+                let raw = if let Some(repo_names) =
                     replay_control_core::thumbnails::thumbnail_repo_names(system)
                 {
-                    let idx = replay_control_core::thumbnail_manifest::build_manifest_fuzzy_index(
-                        db,
-                        repo_names,
-                        replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
-                    );
-                    if idx.exact.is_empty() {
-                        None
-                    } else {
-                        Some(idx)
+                    let mut repo_data = Vec::new();
+                    for display_name in repo_names {
+                        let url_name =
+                            replay_control_core::thumbnails::repo_url_name(display_name);
+                        let source_name =
+                            replay_control_core::thumbnails::libretro_source_name(display_name);
+                        let branch = db
+                            .get_data_source(&source_name)
+                            .ok()
+                            .flatten()
+                            .and_then(|s| s.branch)
+                            .unwrap_or_else(|| "master".to_string());
+                        let entries = db
+                            .query_thumbnail_index(
+                                &source_name,
+                                replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
+                            )
+                            .unwrap_or_default();
+                        repo_data.push((url_name, branch, entries));
                     }
+                    Some(repo_data)
                 } else {
                     None
                 };
-                (paths, mfi)
+                (paths, raw)
             } else {
                 (HashMap::new(), None)
             }
         } else {
             (HashMap::new(), None)
         };
+        // metadata_db lock released here.
+
+        // Inject user box art overrides (highest priority — overwrites auto-matched paths).
+        for (rom_filename, override_path) in user_overrides {
+            db_paths.insert(rom_filename, override_path);
+        }
+
+        // Build manifest fuzzy index from pre-fetched data (no DB lock held).
+        let manifest = raw_manifest_data.and_then(|repo_data| {
+            let idx =
+                replay_control_core::thumbnail_manifest::build_manifest_fuzzy_index_from_raw(
+                    &repo_data,
+                );
+            if idx.exact.is_empty() {
+                None
+            } else {
+                Some(idx)
+            }
+        });
 
         let arc = Arc::new(ImageIndex {
             dir_index,
