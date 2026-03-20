@@ -219,6 +219,12 @@ pub fn DeveloperPage() -> impl IntoView {
                             let first_page_len = page.roms.len();
                             let developer_name = page.developer.clone();
                             let systems = page.systems.clone();
+                            // Build a lookup map from system folder -> display name
+                            // so GameListItem can show the correct system name on
+                            // client-side navigation (where SSR lookup is unavailable).
+                            let system_display_map: std::collections::HashMap<String, String> =
+                                systems.iter().map(|s| (s.system.clone(), s.system_display.clone())).collect();
+                            let system_display_map = StoredValue::new(system_display_map);
                             let count_text = move || {
                                 let loaded = first_page_len + extra_roms.read().len();
                                 if loaded < total {
@@ -253,6 +259,7 @@ pub fn DeveloperPage() -> impl IntoView {
                                         {page.roms.into_iter().map(|rom| {
                                             {
                                                 let genre = (!rom.genre.is_empty()).then(|| rom.genre.clone());
+                                                let sys_display = system_display_map.get_value().get(&rom.system).cloned();
                                                 view! { <GameListItem
                                                     system=rom.system.clone()
                                                     rom_filename=rom.rom_filename.clone()
@@ -264,6 +271,7 @@ pub fn DeveloperPage() -> impl IntoView {
                                                     genre=genre
                                                     rating=rom.rating
                                                     driver_status=rom.driver_status.clone()
+                                                    system_display=sys_display
                                                 /> }
                                             }
                                         }).collect::<Vec<_>>()}
@@ -271,6 +279,7 @@ pub fn DeveloperPage() -> impl IntoView {
                                         {move || {
                                             extra_roms.get().into_iter().map(|rom| {
                                                 let genre = (!rom.genre.is_empty()).then(|| rom.genre.clone());
+                                                let sys_display = system_display_map.get_value().get(&rom.system).cloned();
                                                 view! { <GameListItem
                                                     system=rom.system.clone()
                                                     rom_filename=rom.rom_filename.clone()
@@ -282,6 +291,7 @@ pub fn DeveloperPage() -> impl IntoView {
                                                     genre=genre
                                                     rating=rom.rating
                                                     driver_status=rom.driver_status.clone()
+                                                    system_display=sys_display
                                                 /> }
                                             }).collect::<Vec<_>>()
                                         }}

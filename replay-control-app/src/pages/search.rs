@@ -593,7 +593,7 @@ fn OtherDevelopersList(
             <h3 class="developer-match-heading">{heading}</h3>
             {developers.into_iter().map(|dev| {
                 let href = format!("/developer/{}", urlencoding::encode(&dev.name));
-                let count_label = format!("{}", dev.game_count);
+                let count_label = dev.game_count.to_string();
                 view! {
                     <A href=href attr:class="developer-match-item">
                         <span class="developer-match-name">{dev.name}</span>

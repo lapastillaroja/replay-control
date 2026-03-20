@@ -6,6 +6,65 @@ use crate::error::{Error, Result};
 
 use super::{GameEntry, MetadataDb, SystemMeta, unix_now};
 
+/// Helper for building dynamic SQL WHERE clauses with parameterized values.
+///
+/// Collects clause fragments and their associated parameter values together,
+/// so you never have to manually track parameter indices across multiple queries.
+struct WhereBuilder {
+    clauses: Vec<String>,
+    params: Vec<Box<dyn rusqlite::types::ToSql>>,
+}
+
+impl WhereBuilder {
+    fn new() -> Self {
+        Self {
+            clauses: Vec::new(),
+            params: Vec::new(),
+        }
+    }
+
+    /// Add a WHERE clause fragment with a parameterized value.
+    /// Use `{}` as the placeholder -- it will be replaced with the correct `?N` index
+    /// at build time.
+    fn add(&mut self, clause_template: &str, param: impl rusqlite::types::ToSql + 'static) {
+        self.clauses.push(clause_template.to_string());
+        self.params.push(Box::new(param));
+    }
+
+    /// Add a clause without a parameter (e.g., `is_clone = 0`).
+    fn add_static(&mut self, clause: &str) {
+        self.clauses.push(clause.to_string());
+    }
+
+    /// Build the WHERE string (joined with AND) and a reference slice for binding.
+    ///
+    /// Parameter indices start at `base_index` (e.g., if base_index=3, the first
+    /// parameterized clause gets `?3`, the next `?4`, etc.).
+    ///
+    /// Each parameterized clause template must contain exactly one `{}` placeholder,
+    /// which is replaced with `?N`. Static clauses (added via `add_static`) are
+    /// included as-is.
+    fn build(&self, base_index: usize) -> (String, Vec<&dyn rusqlite::types::ToSql>) {
+        let mut idx = base_index;
+        let mut parts = Vec::with_capacity(self.clauses.len());
+        let mut param_refs: Vec<&dyn rusqlite::types::ToSql> = Vec::new();
+        let mut param_pos = 0;
+
+        for clause in &self.clauses {
+            if clause.contains("{}") {
+                parts.push(clause.replacen("{}", &format!("?{idx}"), 1));
+                param_refs.push(self.params[param_pos].as_ref());
+                param_pos += 1;
+                idx += 1;
+            } else {
+                parts.push(clause.clone());
+            }
+        }
+
+        (parts.join(" AND "), param_refs)
+    }
+}
+
 /// Filter options for the developer games paginated query.
 #[derive(Debug, Default)]
 pub struct DeveloperGamesFilter<'a> {
@@ -671,24 +730,6 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Count total games by a specific developer (deduplicated by base_title across systems).
-    pub fn count_games_by_developer(&self, developer: &str) -> Result<usize> {
-        self.conn
-            .query_row(
-                "SELECT COUNT(DISTINCT base_title)
-                 FROM game_library
-                 WHERE developer = ?1
-                   AND is_clone = 0
-                   AND is_translation = 0
-                   AND is_hack = 0
-                   AND is_special = 0
-                   AND base_title != ''",
-                params![developer],
-                |row| row.get(0),
-            )
-            .map_err(|e| Error::Other(format!("Query count_games_by_developer: {e}")))
-    }
-
     /// Paginated game list for a developer, optionally filtered by system and content filters.
     /// Deduplicates by base_title per system, with configurable filtering.
     /// Region preference controls which variant is kept.
@@ -704,64 +745,37 @@ impl MetadataDb {
         region_secondary: &str,
         filters: &DeveloperGamesFilter,
     ) -> Result<(Vec<GameEntry>, usize)> {
-        let has_system_filter = system_filter.is_some_and(|s| !s.is_empty());
-
-        // Build WHERE clauses with sequential parameter indices.
-        // Count query: ?1 = developer, then optional filter params from ?2.
-        // Fetch query: ?1 = developer, ?2 = region_pref, ?3 = region_secondary,
-        //              ?4 = limit, ?5 = offset, then optional filter params from ?6.
-        let mut count_parts = Vec::new();
-        let mut fetch_parts = Vec::new();
-        count_parts.push("developer = ?1".to_string());
-        fetch_parts.push("developer = ?1".to_string());
-        count_parts.push("is_special = 0".to_string());
-        fetch_parts.push("is_special = 0".to_string());
-
+        // Build shared WHERE clause from filters using WhereBuilder.
+        // Both the count and fetch queries share the same filter conditions,
+        // just with different base parameter indices.
+        let mut wb = WhereBuilder::new();
+        wb.add("developer = {}", developer.to_string());
+        wb.add_static("is_special = 0");
         if filters.hide_hacks {
-            count_parts.push("is_hack = 0".to_string());
-            fetch_parts.push("is_hack = 0".to_string());
+            wb.add_static("is_hack = 0");
         }
         if filters.hide_translations {
-            count_parts.push("is_translation = 0".to_string());
-            fetch_parts.push("is_translation = 0".to_string());
+            wb.add_static("is_translation = 0");
         }
         if filters.hide_clones {
-            count_parts.push("is_clone = 0".to_string());
-            fetch_parts.push("is_clone = 0".to_string());
+            wb.add_static("is_clone = 0");
         }
         if filters.multiplayer_only {
-            count_parts.push("players >= 2".to_string());
-            fetch_parts.push("players >= 2".to_string());
+            wb.add_static("players >= 2");
         }
-
-        // For the count query, param indices start at ?2 for optional params.
-        let mut count_param_idx = 2usize;
-        // For the fetch query, ?2=region_pref, ?3=region_secondary, ?4=limit, ?5=offset,
-        // so optional params start at ?6.
-        let mut fetch_param_idx = 6usize;
-
         if !filters.genre.is_empty() {
-            count_parts.push(format!("genre_group = ?{count_param_idx}"));
-            fetch_parts.push(format!("genre_group = ?{fetch_param_idx}"));
-            count_param_idx += 1;
-            fetch_param_idx += 1;
+            wb.add("genre_group = {}", filters.genre.to_string());
         }
-        if filters.min_rating.is_some() {
-            count_parts.push(format!("rating >= ?{count_param_idx}"));
-            fetch_parts.push(format!("rating >= ?{fetch_param_idx}"));
-            count_param_idx += 1;
-            fetch_param_idx += 1;
+        if let Some(mr) = filters.min_rating {
+            wb.add("rating >= {}", mr);
         }
-        if has_system_filter {
-            count_parts.push(format!("system = ?{count_param_idx}"));
-            fetch_parts.push(format!("system = ?{fetch_param_idx}"));
-            // count_param_idx += 1;
-            // fetch_param_idx += 1;
+        if let Some(sys) = system_filter.filter(|s| !s.is_empty()) {
+            wb.add("system = {}", sys.to_string());
         }
 
-        let count_where = count_parts.join(" AND ");
-        let fetch_where = fetch_parts.join(" AND ");
-
+        // ── Count query ──
+        // Params: ?1..?N = WhereBuilder params (developer + optional filters).
+        let (count_where, count_refs) = wb.build(1);
         let count_sql = format!(
             "SELECT COUNT(*) FROM (
                 SELECT DISTINCT system || '/' || base_title
@@ -769,34 +783,29 @@ impl MetadataDb {
                 WHERE {count_where}
             )"
         );
-
-        // Build count params.
-        let mut count_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        count_params.push(Box::new(developer.to_string()));
-        if !filters.genre.is_empty() {
-            count_params.push(Box::new(filters.genre.to_string()));
-        }
-        if let Some(mr) = filters.min_rating {
-            count_params.push(Box::new(mr));
-        }
-        if has_system_filter {
-            count_params.push(Box::new(system_filter.unwrap().to_string()));
-        }
-
-        let count_refs: Vec<&dyn rusqlite::types::ToSql> = count_params.iter().map(|b| b.as_ref()).collect();
         let total: usize = self
             .conn
             .query_row(&count_sql, count_refs.as_slice(), |row| row.get(0))
             .map_err(|e| Error::Other(format!("Count developer_games_paginated: {e}")))?;
 
-        // Build fetch SQL.
+        // ── Fetch query ──
+        // Fixed params: ?1 = developer (from WhereBuilder), but we also need
+        // region_pref (?N+1), region_secondary (?N+2), limit (?N+3), offset (?N+4)
+        // where N = number of WhereBuilder params.
+        // However, the WHERE clause and the ORDER BY / LIMIT use separate param slots,
+        // so we build the WHERE starting at ?5 (after the 4 fixed fetch params)
+        // and put the fixed params at ?1..?4.
+        //
+        // Layout: ?1=region_pref, ?2=region_secondary, ?3=limit, ?4=offset,
+        //         ?5..?N = WhereBuilder params (developer + optional filters).
+        let (fetch_where, filter_refs) = wb.build(5);
         let fetch_sql = format!(
             "WITH deduped AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY system, base_title
                     ORDER BY CASE
-                        WHEN region = ?2 THEN 0
-                        WHEN region = ?3 THEN 1
+                        WHEN region = ?1 THEN 0
+                        WHEN region = ?2 THEN 1
                         WHEN region = 'world' THEN 2
                         ELSE 3
                     END
@@ -810,27 +819,23 @@ impl MetadataDb {
                     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
             FROM deduped WHERE rn = 1
             ORDER BY display_name COLLATE NOCASE
-            LIMIT ?4 OFFSET ?5"
+            LIMIT ?3 OFFSET ?4"
         );
 
-        // Build fetch params.
-        let mut fetch_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        fetch_params.push(Box::new(developer.to_string()));
-        fetch_params.push(Box::new(region_pref.to_string()));
-        fetch_params.push(Box::new(region_secondary.to_string()));
-        fetch_params.push(Box::new(limit as i64));
-        fetch_params.push(Box::new(offset as i64));
-        if !filters.genre.is_empty() {
-            fetch_params.push(Box::new(filters.genre.to_string()));
-        }
-        if let Some(mr) = filters.min_rating {
-            fetch_params.push(Box::new(mr));
-        }
-        if has_system_filter {
-            fetch_params.push(Box::new(system_filter.unwrap().to_string()));
-        }
+        // Assemble fetch params: fixed params first, then WhereBuilder params.
+        let region_pref_box: Box<dyn rusqlite::types::ToSql> = Box::new(region_pref.to_string());
+        let region_secondary_box: Box<dyn rusqlite::types::ToSql> = Box::new(region_secondary.to_string());
+        let limit_box: Box<dyn rusqlite::types::ToSql> = Box::new(limit as i64);
+        let offset_box: Box<dyn rusqlite::types::ToSql> = Box::new(offset as i64);
 
-        let fetch_refs: Vec<&dyn rusqlite::types::ToSql> = fetch_params.iter().map(|b| b.as_ref()).collect();
+        let mut fetch_refs: Vec<&dyn rusqlite::types::ToSql> = vec![
+            region_pref_box.as_ref(),
+            region_secondary_box.as_ref(),
+            limit_box.as_ref(),
+            offset_box.as_ref(),
+        ];
+        fetch_refs.extend(filter_refs);
+
         let mut stmt = self
             .conn
             .prepare(&fetch_sql)
