@@ -74,6 +74,10 @@ pub fn ManualSection(
     let downloading_url = RwSignal::new(Option::<String>::None);
     let download_error = RwSignal::new(Option::<String>::None);
 
+    // Delete state
+    let deleting_filename = RwSignal::new(Option::<String>::None);
+    let confirming_delete = RwSignal::new(Option::<String>::None);
+
     // Reset search state when the game changes (driven by URL params)
     let _reset_search = Effect::new(move || {
         let _ = param_key.get(); // track the reactive key
@@ -137,6 +141,32 @@ pub fn ManualSection(
         });
     };
 
+    let on_delete = move |filename: String| {
+        let sys = system.get_value();
+        deleting_filename.set(Some(filename.clone()));
+
+        // Clone values needed after the await (same safety pattern as on_download).
+        let sys_for_refresh = sys.clone();
+        let bt_for_refresh = base_title.get_value();
+
+        leptos::task::spawn_local(async move {
+            match server_fns::delete_manual(sys, filename).await {
+                Ok(()) => {
+                    // Refresh local manuals list
+                    if let Ok(manuals) =
+                        server_fns::get_local_manuals(sys_for_refresh, bt_for_refresh).await
+                    {
+                        local_manuals.set(manuals);
+                    }
+                }
+                Err(e) => {
+                    download_error.set(Some(e.to_string()));
+                }
+            }
+            deleting_filename.set(None);
+        });
+    };
+
     let has_docs = move || !game_docs.read().is_empty();
     let has_local = move || !local_manuals.read().is_empty();
     let has_content = move || has_docs() || has_local();
@@ -166,7 +196,12 @@ pub fn ManualSection(
                         key=|m| m.filename.clone()
                         let:manual
                     >
-                        <LocalManualLink manual=manual />
+                        <LocalManualLink
+                            manual=manual
+                            deleting_filename=deleting_filename
+                            confirming_delete=confirming_delete
+                            on_delete=on_delete.clone()
+                        />
                     </For>
                 </div>
             </Show>
@@ -260,9 +295,18 @@ fn DocumentLink(
     }
 }
 
-/// A single local manual link (downloaded PDF).
+/// A single local manual link (downloaded PDF) with inline delete confirmation.
 #[component]
-fn LocalManualLink(manual: LocalManual) -> impl IntoView {
+fn LocalManualLink<F>(
+    manual: LocalManual,
+    deleting_filename: RwSignal<Option<String>>,
+    confirming_delete: RwSignal<Option<String>>,
+    on_delete: F,
+) -> impl IntoView
+where
+    F: Fn(String) + Clone + Send + Sync + 'static,
+{
+    let i18n = use_i18n();
     let size_display = format_file_size(manual.size_bytes);
     let label = manual.label.clone();
     let lang_display = manual
@@ -271,14 +315,80 @@ fn LocalManualLink(manual: LocalManual) -> impl IntoView {
         .map(|l| format!(" ({l})"))
         .unwrap_or_default();
 
+    let filename = StoredValue::new(manual.filename.clone());
+    let is_deleting = move || {
+        deleting_filename
+            .read()
+            .as_ref()
+            .is_some_and(|f| *f == filename.get_value())
+    };
+    let is_confirming = move || {
+        confirming_delete
+            .read()
+            .as_ref()
+            .is_some_and(|f| *f == filename.get_value())
+    };
+
+    let on_delete_sv = StoredValue::new(on_delete);
+
+    // First click: enter confirmation mode
+    let on_click_delete = move |ev: leptos::ev::MouseEvent| {
+        ev.prevent_default();
+        ev.stop_propagation();
+        confirming_delete.set(Some(filename.get_value()));
+    };
+
+    // Confirm: actually delete
+    let on_click_confirm = move |ev: leptos::ev::MouseEvent| {
+        ev.prevent_default();
+        ev.stop_propagation();
+        confirming_delete.set(None);
+        (on_delete_sv.get_value())(filename.get_value());
+    };
+
+    // Cancel: revert to normal state
+    let on_click_cancel = move |ev: leptos::ev::MouseEvent| {
+        ev.prevent_default();
+        ev.stop_propagation();
+        confirming_delete.set(None);
+    };
+
+    let url = manual.url.clone();
+
     view! {
-        <a class="manual-link" href=manual.url target="_blank" rel="noopener">
-            <span class="manual-icon">{"\u{1F4C4}"}</span>
-            <span class="manual-info">
-                <span class="manual-label">{label}{lang_display}</span>
-                <span class="manual-meta">"PDF \u{00B7} "{size_display}</span>
-            </span>
-        </a>
+        <div class="manual-link-row">
+            <a class="manual-link" href=url target="_blank" rel="noopener">
+                <span class="manual-icon">{"\u{1F4C4}"}</span>
+                <span class="manual-info">
+                    <span class="manual-label">{label}{lang_display}</span>
+                    <span class="manual-meta">"PDF \u{00B7} "{size_display}</span>
+                </span>
+            </a>
+            <Show when=move || !is_confirming()>
+                <button
+                    class="manual-delete-btn"
+                    prop:disabled=is_deleting
+                    on:click=on_click_delete
+                    title="Delete manual"
+                >
+                    "\u{00D7}"
+                </button>
+            </Show>
+            <Show when=is_confirming>
+                <button
+                    class="manual-confirm-btn"
+                    on:click=on_click_confirm
+                >
+                    {move || t(i18n.locale.get(), "manual.confirm_delete")}
+                </button>
+                <button
+                    class="manual-cancel-btn"
+                    on:click=on_click_cancel
+                >
+                    {move || t(i18n.locale.get(), "manual.cancel")}
+                </button>
+            </Show>
+        </div>
     }
 }
 

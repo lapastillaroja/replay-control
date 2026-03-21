@@ -130,3 +130,83 @@
     opacity: 0.5;
     cursor: default;
 }
+
+/* Local manual row: link + delete button side by side */
+.manual-link-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+}
+
+.manual-link-row .manual-link {
+    flex: 1;
+    min-width: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+}
+
+.manual-delete-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top-right-radius: var(--radius-sm);
+    border-bottom-right-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.manual-delete-btn:hover {
+    color: var(--error);
+    border-color: var(--error);
+    background: var(--surface-hover);
+}
+
+.manual-delete-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Inline delete confirmation buttons */
+.manual-confirm-btn,
+.manual-cancel-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.manual-confirm-btn {
+    color: var(--error);
+    border-color: var(--error);
+    font-weight: 600;
+}
+
+.manual-confirm-btn:hover {
+    background: var(--error);
+    color: #fff;
+}
+
+.manual-cancel-btn {
+    border-top-right-radius: var(--radius-sm);
+    border-bottom-right-radius: var(--radius-sm);
+    color: var(--text-secondary);
+}
+
+.manual-cancel-btn:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}

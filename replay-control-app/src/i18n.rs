@@ -287,6 +287,8 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.view_manual" => "View",
         "game_detail.no_manual_results" => "No manuals found",
         "game_detail.manual_saved" => "Manual saved",
+        "manual.confirm_delete" => "Delete?",
+        "manual.cancel" => "Cancel",
         "game_detail.launch" => "Launch on TV",
         "game_detail.launching" => "Launching...",
         "game_detail.launched" => "Launched!",
