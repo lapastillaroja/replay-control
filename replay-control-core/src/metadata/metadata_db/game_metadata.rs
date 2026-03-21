@@ -1,6 +1,8 @@
 //! Operations on the `game_metadata` table.
 
-use rusqlite::{OptionalExtension, params};
+use std::path::Path;
+
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
@@ -8,9 +10,8 @@ use super::{GameMetadata, ImagePathUpdate, MetadataDb, MetadataStats};
 
 impl MetadataDb {
     /// Look up cached metadata for a specific game.
-    pub fn lookup(&self, system: &str, rom_filename: &str) -> Result<Option<GameMetadata>> {
-        let result = self
-            .conn
+    pub fn lookup(conn: &Connection, system: &str, rom_filename: &str) -> Result<Option<GameMetadata>> {
+        let result = conn
             .query_row(
                 "SELECT description, rating, rating_count, publisher, developer, genre, players, release_year,
                         cooperative, source, fetched_at, box_art_path, screenshot_path, title_path
@@ -41,15 +42,14 @@ impl MetadataDb {
     }
 
     /// Fetch all box art paths for a system in one query.
-    /// Returns a map of rom_filename → box_art_path for entries that have one.
+    /// Returns a map of rom_filename -> box_art_path for entries that have one.
     pub fn system_box_art_paths(
-        &self,
+        conn: &Connection,
         system: &str,
     ) -> Result<std::collections::HashMap<String, String>> {
         use std::collections::HashMap;
 
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, box_art_path FROM game_metadata
                  WHERE system = ?1 AND box_art_path IS NOT NULL",
@@ -73,7 +73,7 @@ impl MetadataDb {
     /// Batch look up ratings for a list of ROMs on a single system.
     /// Returns a map of rom_filename -> rating for those that have a rating.
     pub fn lookup_ratings(
-        &self,
+        conn: &Connection,
         system: &str,
         rom_filenames: &[&str],
     ) -> Result<std::collections::HashMap<String, f64>> {
@@ -84,8 +84,7 @@ impl MetadataDb {
         }
 
         let mut map = HashMap::new();
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, rating FROM game_metadata
                  WHERE system = ?1 AND rom_filename = ?2 AND rating IS NOT NULL",
@@ -110,11 +109,10 @@ impl MetadataDb {
     /// Fetch all ratings for a single system in one query.
     /// Returns a map of rom_filename -> rating for entries with a non-null rating.
     /// More efficient than `lookup_ratings()` when filtering all ROMs in a system.
-    pub fn system_ratings(&self, system: &str) -> Result<std::collections::HashMap<String, f64>> {
+    pub fn system_ratings(conn: &Connection, system: &str) -> Result<std::collections::HashMap<String, f64>> {
         use std::collections::HashMap;
 
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, rating FROM game_metadata
                  WHERE system = ?1 AND rating IS NOT NULL",
@@ -138,13 +136,12 @@ impl MetadataDb {
     /// Returns a map of `rom_filename -> rating_count`.
     /// Used to propagate vote counts to `game_library` during enrichment.
     pub fn system_metadata_rating_counts(
-        &self,
+        conn: &Connection,
         system: &str,
     ) -> Result<std::collections::HashMap<String, u32>> {
         use std::collections::HashMap;
 
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, rating_count FROM game_metadata
                  WHERE system = ?1 AND rating_count IS NOT NULL",
@@ -171,13 +168,12 @@ impl MetadataDb {
     /// Returns a map of `rom_filename -> genre`.
     /// Used to fill empty `game_library.genre` entries during enrichment.
     pub fn system_metadata_genres(
-        &self,
+        conn: &Connection,
         system: &str,
     ) -> Result<std::collections::HashMap<String, String>> {
         use std::collections::HashMap;
 
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, genre FROM game_metadata
                  WHERE system = ?1 AND genre IS NOT NULL AND genre != ''",
@@ -201,13 +197,12 @@ impl MetadataDb {
     /// Returns a map of `rom_filename -> players`.
     /// Used to fill empty `game_library.players` entries during enrichment.
     pub fn system_metadata_players(
-        &self,
+        conn: &Connection,
         system: &str,
     ) -> Result<std::collections::HashMap<String, u8>> {
         use std::collections::HashMap;
 
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, players FROM game_metadata
                  WHERE system = ?1 AND players IS NOT NULL",
@@ -231,13 +226,12 @@ impl MetadataDb {
     /// Returns a map of `rom_filename -> release_year`.
     /// Used to fill empty release year entries during enrichment.
     pub fn system_metadata_release_years(
-        &self,
+        conn: &Connection,
         system: &str,
     ) -> Result<std::collections::HashMap<String, u16>> {
         use std::collections::HashMap;
 
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, release_year FROM game_metadata
                  WHERE system = ?1 AND release_year IS NOT NULL",
@@ -261,13 +255,12 @@ impl MetadataDb {
     /// Returns a map of `rom_filename -> developer`.
     /// Used to fill empty developer entries during enrichment.
     pub fn system_metadata_developers(
-        &self,
+        conn: &Connection,
         system: &str,
     ) -> Result<std::collections::HashMap<String, String>> {
         use std::collections::HashMap;
 
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, developer FROM game_metadata
                  WHERE system = ?1 AND developer IS NOT NULL AND developer != ''",
@@ -290,9 +283,8 @@ impl MetadataDb {
     /// Fetch all metadata entries for a system.
     /// Returns a vec of `(rom_filename, GameMetadata)`.
     /// Used for normalized-title matching when enriching new ROMs.
-    pub fn system_metadata_all(&self, system: &str) -> Result<Vec<(String, GameMetadata)>> {
-        let mut stmt = self
-            .conn
+    pub fn system_metadata_all(conn: &Connection, system: &str) -> Result<Vec<(String, GameMetadata)>> {
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, description, rating, rating_count, publisher, developer, genre, players,
                         release_year, cooperative, source, fetched_at, box_art_path, screenshot_path,
@@ -333,9 +325,8 @@ impl MetadataDb {
     }
 
     /// Insert or update metadata for a game.
-    pub fn upsert(&self, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
-        self.conn
-            .execute(
+    pub fn upsert(conn: &Connection, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
+        conn.execute(
                 "INSERT INTO game_metadata (system, rom_filename, description, rating, rating_count, publisher, developer,
                     genre, players, release_year, cooperative, source, fetched_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
@@ -372,9 +363,8 @@ impl MetadataDb {
     }
 
     /// Bulk insert/update metadata within a single transaction.
-    pub fn bulk_upsert(&mut self, entries: &[(String, String, GameMetadata)]) -> Result<usize> {
-        let tx = self
-            .conn
+    pub fn bulk_upsert(conn: &mut Connection, entries: &[(String, String, GameMetadata)]) -> Result<usize> {
+        let tx = conn
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
 
@@ -427,14 +417,12 @@ impl MetadataDb {
     }
 
     /// Get coverage statistics.
-    pub fn stats(&self) -> Result<MetadataStats> {
-        let total_entries: usize = self
-            .conn
+    pub fn stats(conn: &Connection, db_path: &Path) -> Result<MetadataStats> {
+        let total_entries: usize = conn
             .query_row("SELECT COUNT(*) FROM game_metadata", [], |row| row.get(0))
             .map_err(|e| Error::Other(format!("Stats query failed: {e}")))?;
 
-        let with_description: usize = self
-            .conn
+        let with_description: usize = conn
             .query_row(
                 "SELECT COUNT(*) FROM game_metadata WHERE description IS NOT NULL AND description != ''",
                 [],
@@ -442,8 +430,7 @@ impl MetadataDb {
             )
             .map_err(|e| Error::Other(format!("Stats query failed: {e}")))?;
 
-        let with_rating: usize = self
-            .conn
+        let with_rating: usize = conn
             .query_row(
                 "SELECT COUNT(*) FROM game_metadata WHERE rating IS NOT NULL",
                 [],
@@ -451,12 +438,11 @@ impl MetadataDb {
             )
             .map_err(|e| Error::Other(format!("Stats query failed: {e}")))?;
 
-        let db_size_bytes = std::fs::metadata(&self.db_path)
+        let db_size_bytes = std::fs::metadata(db_path)
             .map(|m| m.len())
             .unwrap_or(0);
 
-        let last_updated_text = self
-            .conn
+        let last_updated_text = conn
             .query_row(
                 "SELECT imported_at FROM data_sources WHERE source_name = 'launchbox'",
                 [],
@@ -491,9 +477,8 @@ impl MetadataDb {
     }
 
     /// Get all ratings as a map of `(system, rom_filename) -> rating`.
-    pub fn all_ratings(&self) -> Result<std::collections::HashMap<(String, String), f64>> {
-        let mut stmt = self
-            .conn
+    pub fn all_ratings(conn: &Connection) -> Result<std::collections::HashMap<(String, String), f64>> {
+        let mut stmt = conn
             .prepare(
                 "SELECT system, rom_filename, rating FROM game_metadata WHERE rating IS NOT NULL",
             )
@@ -515,20 +500,17 @@ impl MetadataDb {
     }
 
     /// Delete all cached metadata.
-    pub fn clear(&self) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM game_metadata", [])
+    pub fn clear(conn: &Connection) -> Result<()> {
+        conn.execute("DELETE FROM game_metadata", [])
             .map_err(|e| Error::Other(format!("Clear failed: {e}")))?;
-        self.conn
-            .execute("VACUUM", [])
+        conn.execute("VACUUM", [])
             .map_err(|e| Error::Other(format!("Vacuum failed: {e}")))?;
         Ok(())
     }
 
     /// Check if the database has any entries.
-    pub fn is_empty(&self) -> Result<bool> {
-        let count: usize = self
-            .conn
+    pub fn is_empty(conn: &Connection) -> Result<bool> {
+        let count: usize = conn
             .query_row("SELECT COUNT(*) FROM game_metadata", [], |row| row.get(0))
             .map_err(|e| Error::Other(format!("Count query failed: {e}")))?;
         Ok(count == 0)
@@ -544,9 +526,8 @@ impl MetadataDb {
     /// referenced by .m3u playlists are excluded). When game_library is empty for a
     /// system (e.g. library not yet warmed after import), all game_metadata entries
     /// are counted as a fallback to avoid showing 0.
-    pub fn entries_per_system(&self) -> Result<Vec<(String, usize)>> {
-        let mut stmt = self
-            .conn
+    pub fn entries_per_system(conn: &Connection) -> Result<Vec<(String, usize)>> {
+        let mut stmt = conn
             .prepare(
                 "SELECT gm.system, COUNT(*) as cnt
                  FROM game_metadata gm
@@ -573,11 +554,10 @@ impl MetadataDb {
 
     /// Bulk update image paths for games within a single transaction.
     pub fn bulk_update_image_paths(
-        &mut self,
+        conn: &mut Connection,
         entries: &[ImagePathUpdate],
     ) -> Result<usize> {
-        let tx = self
-            .conn
+        let tx = conn
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
 
@@ -634,9 +614,8 @@ impl MetadataDb {
     }
 
     /// Clear image paths for a specific system in the DB.
-    pub fn clear_system_image_paths(&self, system: &str) -> Result<usize> {
-        let count = self
-            .conn
+    pub fn clear_system_image_paths(conn: &Connection, system: &str) -> Result<usize> {
+        let count = conn
             .execute(
                 "UPDATE game_metadata SET box_art_path = NULL, screenshot_path = NULL, title_path = NULL WHERE system = ?1",
                 params![system],
@@ -650,9 +629,8 @@ impl MetadataDb {
     /// Only counts `game_metadata` rows that have a matching entry in `game_library`,
     /// so orphaned metadata rows (for ROMs that have been deleted) are excluded.
     /// Falls back to counting all `game_metadata` rows when `game_library` is empty.
-    pub fn image_stats(&self) -> Result<(usize, usize)> {
-        let with_boxart: usize = self
-            .conn
+    pub fn image_stats(conn: &Connection) -> Result<(usize, usize)> {
+        let with_boxart: usize = conn
             .query_row(
                 "SELECT COUNT(*) FROM game_metadata gm
                  LEFT JOIN game_library gl ON gm.system = gl.system AND gm.rom_filename = gl.rom_filename
@@ -663,8 +641,7 @@ impl MetadataDb {
                 |row| row.get(0),
             )
             .map_err(|e| Error::Other(format!("Image stats query failed: {e}")))?;
-        let with_screenshot: usize = self
-            .conn
+        let with_screenshot: usize = conn
             .query_row(
                 "SELECT COUNT(*) FROM game_metadata gm
                  LEFT JOIN game_library gl ON gm.system = gl.system AND gm.rom_filename = gl.rom_filename
@@ -682,9 +659,8 @@ impl MetadataDb {
     ///
     /// Only deletes for systems that have entries in `game_library` (i.e., the library
     /// has been populated). Returns the number of deleted rows.
-    pub fn delete_orphaned_metadata(&self) -> Result<usize> {
-        let count = self
-            .conn
+    pub fn delete_orphaned_metadata(conn: &Connection) -> Result<usize> {
+        let count = conn
             .execute(
                 "DELETE FROM game_metadata
                  WHERE EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = game_metadata.system)
@@ -700,12 +676,13 @@ impl MetadataDb {
 
 #[cfg(test)]
 mod tests {
+    use super::super::MetadataDb;
     use super::super::tests::*;
 
     #[test]
     fn entries_per_system_no_game_library_returns_all() {
-        let (mut db, _dir) = open_temp_db();
-        db.bulk_upsert(&[
+        let (mut conn, _dir) = open_temp_db();
+        MetadataDb::bulk_upsert(&mut conn, &[
             (
                 "sega_smd".into(),
                 "Sonic.md".into(),
@@ -724,7 +701,7 @@ mod tests {
         ])
         .unwrap();
 
-        let counts = db.entries_per_system().unwrap();
+        let counts = MetadataDb::entries_per_system(&conn).unwrap();
         assert_eq!(counts.len(), 2);
         assert_eq!(counts[0], ("sega_smd".into(), 2));
         assert_eq!(counts[1], ("snes".into(), 1));
@@ -732,9 +709,9 @@ mod tests {
 
     #[test]
     fn entries_per_system_with_game_library_deduplicates_m3u() {
-        let (mut db, _dir) = open_temp_db();
+        let (mut conn, _dir) = open_temp_db();
 
-        db.bulk_upsert(&[
+        MetadataDb::bulk_upsert(&mut conn, &[
             (
                 "sega_cd".into(),
                 "Game.m3u".into(),
@@ -758,16 +735,17 @@ mod tests {
         ])
         .unwrap();
 
-        db.save_system_entries(
+        MetadataDb::save_system_entries(
+            &mut conn,
             "sega_cd",
             &[make_game_entry("sega_cd", "Game.m3u", true)],
             None,
         )
         .unwrap();
-        db.save_system_entries("snes", &[make_game_entry("snes", "Mario.sfc", false)], None)
+        MetadataDb::save_system_entries(&mut conn, "snes", &[make_game_entry("snes", "Mario.sfc", false)], None)
             .unwrap();
 
-        let counts = db.entries_per_system().unwrap();
+        let counts = MetadataDb::entries_per_system(&conn).unwrap();
         let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
         let snes = counts.iter().find(|(s, _)| s == "snes").unwrap();
 
@@ -777,9 +755,9 @@ mod tests {
 
     #[test]
     fn entries_per_system_mixed_cached_and_uncached_systems() {
-        let (mut db, _dir) = open_temp_db();
+        let (mut conn, _dir) = open_temp_db();
 
-        db.bulk_upsert(&[
+        MetadataDb::bulk_upsert(&mut conn, &[
             (
                 "sega_cd".into(),
                 "Game.m3u".into(),
@@ -803,14 +781,15 @@ mod tests {
         ])
         .unwrap();
 
-        db.save_system_entries(
+        MetadataDb::save_system_entries(
+            &mut conn,
             "sega_cd",
             &[make_game_entry("sega_cd", "Game.m3u", true)],
             None,
         )
         .unwrap();
 
-        let counts = db.entries_per_system().unwrap();
+        let counts = MetadataDb::entries_per_system(&conn).unwrap();
         let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
         let snes = counts.iter().find(|(s, _)| s == "snes").unwrap();
 
@@ -822,10 +801,10 @@ mod tests {
     /// This was the root cause of description coverage >100%.
     #[test]
     fn entries_per_system_excludes_thumbnail_only_rows() {
-        let (mut db, _dir) = open_temp_db();
+        let (mut conn, _dir) = open_temp_db();
 
         // Insert metadata with descriptions for 2 games.
-        db.bulk_upsert(&[
+        MetadataDb::bulk_upsert(&mut conn, &[
             (
                 "snes".into(),
                 "Mario.sfc".into(),
@@ -842,7 +821,7 @@ mod tests {
         // Insert a thumbnail-only row (no description) via bulk_update_image_paths.
         // This simulates what happens when thumbnails are downloaded for a game
         // that has no LaunchBox metadata entry.
-        db.bulk_update_image_paths(&[super::super::ImagePathUpdate {
+        MetadataDb::bulk_update_image_paths(&mut conn, &[super::super::ImagePathUpdate {
             system: "snes".into(),
             rom_filename: "Metroid.sfc".into(),
             box_art_path: Some("boxart/Metroid.png".into()),
@@ -852,7 +831,8 @@ mod tests {
         .unwrap();
 
         // Populate game_library with 3 games.
-        db.save_system_entries(
+        MetadataDb::save_system_entries(
+            &mut conn,
             "snes",
             &[
                 make_game_entry("snes", "Mario.sfc", false),
@@ -865,7 +845,7 @@ mod tests {
 
         // entries_per_system should only count the 2 games with descriptions,
         // not the thumbnail-only Metroid row.
-        let counts = db.entries_per_system().unwrap();
+        let counts = MetadataDb::entries_per_system(&conn).unwrap();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], ("snes".into(), 2));
     }
@@ -873,9 +853,9 @@ mod tests {
     /// Entries with no description should not be counted even without game_library.
     #[test]
     fn entries_per_system_no_description_not_counted() {
-        let (mut db, _dir) = open_temp_db();
+        let (mut conn, _dir) = open_temp_db();
 
-        db.bulk_upsert(&[
+        MetadataDb::bulk_upsert(&mut conn, &[
             (
                 "snes".into(),
                 "Mario.sfc".into(),
@@ -886,7 +866,7 @@ mod tests {
         ])
         .unwrap();
 
-        let counts = db.entries_per_system().unwrap();
+        let counts = MetadataDb::entries_per_system(&conn).unwrap();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], ("snes".into(), 1));
     }
@@ -894,9 +874,9 @@ mod tests {
     /// Empty string description should not be counted.
     #[test]
     fn entries_per_system_empty_description_not_counted() {
-        let (mut db, _dir) = open_temp_db();
+        let (mut conn, _dir) = open_temp_db();
 
-        db.bulk_upsert(&[
+        MetadataDb::bulk_upsert(&mut conn, &[
             (
                 "snes".into(),
                 "Mario.sfc".into(),
@@ -910,7 +890,7 @@ mod tests {
         ])
         .unwrap();
 
-        let counts = db.entries_per_system().unwrap();
+        let counts = MetadataDb::entries_per_system(&conn).unwrap();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], ("snes".into(), 1));
     }

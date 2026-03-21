@@ -1,6 +1,6 @@
 //! Operations on the `game_alias` and `game_series` tables.
 
-use rusqlite::params;
+use rusqlite::{Connection, params};
 
 use crate::error::{Error, Result};
 
@@ -9,15 +9,14 @@ use super::{AliasInsert, GameEntry, MetadataDb, SeriesInsert};
 impl MetadataDb {
     /// Insert or update a game alias (cross-name variant).
     pub fn upsert_alias(
-        &self,
+        conn: &Connection,
         system: &str,
         base_title: &str,
         alias_name: &str,
         alias_region: &str,
         source: &str,
     ) -> Result<()> {
-        self.conn
-            .execute(
+        conn.execute(
                 "INSERT OR REPLACE INTO game_alias (system, base_title, alias_name, alias_region, source)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![system, base_title, alias_name, alias_region, source],
@@ -27,13 +26,12 @@ impl MetadataDb {
     }
 
     /// Bulk insert game aliases within a single transaction.
-    pub fn bulk_insert_aliases(&mut self, aliases: &[AliasInsert]) -> Result<usize> {
+    pub fn bulk_insert_aliases(conn: &mut Connection, aliases: &[AliasInsert]) -> Result<usize> {
         if aliases.is_empty() {
             return Ok(0);
         }
 
-        let tx = self
-            .conn
+        let tx = conn
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
 
@@ -69,11 +67,11 @@ impl MetadataDb {
     /// Given `(system, base_title)`, returns all equivalent base_titles from
     /// `game_alias`: both aliases OF this game and canonical titles this game
     /// is an alias OF. Does not include the input `base_title` itself.
-    pub fn alias_base_titles(&self, system: &str, base_title: &str) -> Vec<String> {
+    pub fn alias_base_titles(conn: &Connection, system: &str, base_title: &str) -> Vec<String> {
         let mut titles = Vec::new();
 
         // 1. Aliases of this game: game_alias.alias_name WHERE base_title = ?
-        if let Ok(mut stmt) = self.conn.prepare(
+        if let Ok(mut stmt) = conn.prepare(
             "SELECT DISTINCT alias_name FROM game_alias
              WHERE system = ?1 AND base_title = ?2 COLLATE NOCASE",
         )
@@ -88,7 +86,7 @@ impl MetadataDb {
         }
 
         // 2. Canonical base_title that this game is an alias of
-        if let Ok(mut stmt) = self.conn.prepare(
+        if let Ok(mut stmt) = conn.prepare(
             "SELECT DISTINCT base_title FROM game_alias
              WHERE system = ?1 AND alias_name = ?2 COLLATE NOCASE",
         )
@@ -108,9 +106,8 @@ impl MetadataDb {
     }
 
     /// Clear all game aliases.
-    pub fn clear_aliases(&self) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM game_alias", [])
+    pub fn clear_aliases(conn: &Connection) -> Result<()> {
+        conn.execute("DELETE FROM game_alias", [])
             .map_err(|e| Error::Other(format!("Clear game_alias failed: {e}")))?;
         Ok(())
     }
@@ -118,13 +115,12 @@ impl MetadataDb {
     // ── Game Series (Wikidata-sourced franchise data) ────────────────────
 
     /// Bulk insert game series entries within a single transaction.
-    pub fn bulk_insert_series(&mut self, entries: &[SeriesInsert]) -> Result<usize> {
+    pub fn bulk_insert_series(conn: &mut Connection, entries: &[SeriesInsert]) -> Result<usize> {
         if entries.is_empty() {
             return Ok(0);
         }
 
-        let tx = self
-            .conn
+        let tx = conn
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
 
@@ -164,14 +160,13 @@ impl MetadataDb {
     /// across ALL systems. Uses the `game_series` table populated from Wikidata.
     /// Returns results ordered by series_order when available.
     pub fn wikidata_series_siblings(
-        &self,
+        conn: &Connection,
         system: &str,
         base_title: &str,
         region_pref: &str,
         limit: usize,
     ) -> Result<Vec<(GameEntry, Option<i32>)>> {
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "WITH current_series AS (
                     SELECT series_name FROM game_series
@@ -201,10 +196,11 @@ impl MetadataDb {
                       AND gl.is_special = 0
                       AND NOT (gl.system = ?1 AND gl.base_title = ?2 COLLATE NOCASE)
                 )
-                SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name, series_key, series_order
+                SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                        region, developer, genre, genre_group, rating, rating_count, players,
+                        is_clone, is_m3u, is_translation, is_hack, is_special,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        series_order
                 FROM deduped WHERE rn = 1
                 ORDER BY series_order NULLS LAST, display_name
                 LIMIT ?4",
@@ -216,7 +212,7 @@ impl MetadataDb {
                 params![system, base_title, region_pref, limit as i64],
                 |row| {
                     let entry = Self::row_to_game_entry(row)?;
-                    let order: Option<i32> = row.get(22)?;
+                    let order: Option<i32> = row.get(24)?;
                     Ok((entry, order))
                 },
             )
@@ -226,9 +222,8 @@ impl MetadataDb {
     }
 
     /// Check if a game has Wikidata series data in the `game_series` table.
-    pub fn has_wikidata_series(&self, system: &str, base_title: &str) -> bool {
-        self.conn
-            .query_row(
+    pub fn has_wikidata_series(conn: &Connection, system: &str, base_title: &str) -> bool {
+        conn.query_row(
                 "SELECT 1 FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
                 params![system, base_title],
                 |_| Ok(()),
@@ -237,9 +232,8 @@ impl MetadataDb {
     }
 
     /// Get the series name for a game from the `game_series` table.
-    pub fn lookup_series_name(&self, system: &str, base_title: &str) -> Option<String> {
-        self.conn
-            .query_row(
+    pub fn lookup_series_name(conn: &Connection, system: &str, base_title: &str) -> Option<String> {
+        conn.query_row(
                 "SELECT series_name FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
                 params![system, base_title],
                 |row| row.get(0),
@@ -257,13 +251,13 @@ impl MetadataDb {
     /// `followed_by_base_title`). If none exist, fall back to ordinal-based prev/next
     /// using `series_order` (find games with order N-1 and N+1 in the same series).
     pub fn sequel_info(
-        &self,
+        conn: &Connection,
         system: &str,
         base_title: &str,
         region_pref: &str,
     ) -> Result<SequelChainInfo> {
         // Step 1: Get series data for this game.
-        let row = self.conn.query_row(
+        let row = conn.query_row(
             "SELECT follows_base_title, followed_by_base_title, series_order, series_name
              FROM game_series
              WHERE system = ?1 AND base_title = ?2
@@ -292,8 +286,7 @@ impl MetadataDb {
 
         // Step 2: Get max series_order for "N of M" position display.
         let series_max_order = if series_order.is_some() {
-            self.conn
-                .query_row(
+            conn.query_row(
                     "SELECT MAX(series_order) FROM game_series
                      WHERE series_name = ?1 AND series_order IS NOT NULL",
                     params![series_name],
@@ -309,10 +302,10 @@ impl MetadataDb {
             // Use explicit P155/P156 sequel links.
             let follows_entry = follows_title
                 .as_ref()
-                .and_then(|title| self.find_best_rom(title, system, region_pref));
+                .and_then(|title| Self::find_best_rom(conn, title, system, region_pref));
             let followed_by_entry = followed_by_title
                 .as_ref()
-                .and_then(|title| self.find_best_rom(title, system, region_pref));
+                .and_then(|title| Self::find_best_rom(conn, title, system, region_pref));
 
             Ok(SequelChainInfo {
                 follows_title,
@@ -325,8 +318,8 @@ impl MetadataDb {
         } else if let Some(order) = series_order {
             // Fallback: synthesize prev/next from series_order (N-1, N+1).
             // Search across all systems for the adjacent ordinals.
-            let prev = self.find_series_neighbor(&series_name, order - 1, system, region_pref);
-            let next = self.find_series_neighbor(&series_name, order + 1, system, region_pref);
+            let prev = Self::find_series_neighbor(conn, &series_name, order - 1, system, region_pref);
+            let next = Self::find_series_neighbor(conn, &series_name, order + 1, system, region_pref);
 
             if prev.is_none() && next.is_none() {
                 return Ok(SequelChainInfo::default());
@@ -359,7 +352,7 @@ impl MetadataDb {
     /// Returns `Some((display_title, Option<GameEntry>))` — the title is always present,
     /// the GameEntry only if the game is in the user's library.
     fn find_series_neighbor(
-        &self,
+        conn: &Connection,
         series_name: &str,
         target_order: i32,
         preferred_system: &str,
@@ -369,8 +362,7 @@ impl MetadataDb {
             return None;
         }
         // Find a game_series entry with this ordinal, preferring the same system.
-        let base_title: String = self
-            .conn
+        let base_title: String = conn
             .query_row(
                 "SELECT base_title FROM game_series
                  WHERE series_name = ?1 AND series_order = ?2
@@ -381,7 +373,7 @@ impl MetadataDb {
             )
             .ok()?;
 
-        let entry = self.find_best_rom(&base_title, preferred_system, region_pref);
+        let entry = Self::find_best_rom(conn, &base_title, preferred_system, region_pref);
         // Use display_name from the entry if available, otherwise the base_title.
         let display = entry
             .as_ref()
@@ -392,17 +384,16 @@ impl MetadataDb {
 
     /// Find the best ROM for a given base_title, preferring a specific system and region.
     fn find_best_rom(
-        &self,
+        conn: &Connection,
         base_title: &str,
         preferred_system: &str,
         region_pref: &str,
     ) -> Option<GameEntry> {
-        self.conn
-            .query_row(
-                "SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name, series_key
+        conn.query_row(
+                "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                        region, developer, genre, genre_group, rating, rating_count, players,
+                        is_clone, is_m3u, is_translation, is_hack, is_special,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
                  FROM game_library
                  WHERE base_title = ?1 COLLATE NOCASE
                    AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
@@ -417,9 +408,8 @@ impl MetadataDb {
     }
 
     /// Clear all game series data.
-    pub fn clear_series(&self) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM game_series", [])
+    pub fn clear_series(conn: &Connection) -> Result<()> {
+        conn.execute("DELETE FROM game_series", [])
             .map_err(|e| Error::Other(format!("Clear game_series failed: {e}")))?;
         Ok(())
     }
@@ -449,7 +439,7 @@ mod tests {
 
     #[test]
     fn series_siblings_excludes_current_game() {
-        let (mut db, _dir) = open_temp_db();
+        let (mut conn, _dir) = open_temp_db();
 
         // Create game_library entries for Final Fight on two systems.
         let mut ff_arcade = make_game_entry("arcade_fbneo", "ffight.zip", false);
@@ -459,13 +449,13 @@ mod tests {
         let mut ff2 = make_game_entry("nintendo_snes", "Final Fight 2 (USA).sfc", false);
         ff2.base_title = "final fight 2".into();
 
-        db.save_system_entries("arcade_fbneo", &[ff_arcade], None)
+        super::super::MetadataDb::save_system_entries(&mut conn, "arcade_fbneo", &[ff_arcade], None)
             .unwrap();
-        db.save_system_entries("nintendo_snes", &[ff_snes, ff2], None)
+        super::super::MetadataDb::save_system_entries(&mut conn, "nintendo_snes", &[ff_snes, ff2], None)
             .unwrap();
 
         // Populate game_series for all three games.
-        db.bulk_insert_series(&[
+        super::super::MetadataDb::bulk_insert_series(&mut conn, &[
             SeriesInsert {
                 system: "arcade_fbneo".into(),
                 base_title: "final fight".into(),
@@ -497,8 +487,7 @@ mod tests {
         .unwrap();
 
         // Query siblings for arcade Final Fight.
-        let siblings = db
-            .wikidata_series_siblings("arcade_fbneo", "final fight", "usa", 20)
+        let siblings = super::super::MetadataDb::wikidata_series_siblings(&conn, "arcade_fbneo", "final fight", "usa", 20)
             .unwrap();
 
         let sibling_titles: Vec<&str> = siblings

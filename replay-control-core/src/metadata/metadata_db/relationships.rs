@@ -1,7 +1,7 @@
 //! Relationship queries: regional variants, translations, hacks, specials,
 //! alias variants, search aliases.
 
-use rusqlite::params;
+use rusqlite::{Connection, params};
 
 use crate::error::{Error, Result};
 
@@ -12,12 +12,11 @@ impl MetadataDb {
     /// that are not translations, hacks, specials, or arcade clones.
     /// Returns `(rom_filename, region, display_name)` tuples.
     pub fn regional_variants(
-        &self,
+        conn: &Connection,
         system: &str,
         rom_filename: &str,
     ) -> Result<Vec<(String, String, Option<String>)>> {
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, region, display_name FROM game_library
                  WHERE system = ?1
@@ -57,12 +56,11 @@ impl MetadataDb {
     /// Find translations of a game: other ROMs sharing the same base_title that are translations.
     /// Returns (rom_filename, display_name) pairs sorted by display_name.
     pub fn translations(
-        &self,
+        conn: &Connection,
         system: &str,
         rom_filename: &str,
     ) -> Result<Vec<(String, Option<String>)>> {
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, display_name FROM game_library
                  WHERE system = ?1
@@ -87,9 +85,8 @@ impl MetadataDb {
 
     /// Find hacks of a game: other ROMs sharing the same base_title that are hacks.
     /// Returns (rom_filename, display_name) pairs sorted by display_name.
-    pub fn hacks(&self, system: &str, rom_filename: &str) -> Result<Vec<(String, Option<String>)>> {
-        let mut stmt = self
-            .conn
+    pub fn hacks(conn: &Connection, system: &str, rom_filename: &str) -> Result<Vec<(String, Option<String>)>> {
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, display_name FROM game_library
                  WHERE system = ?1
@@ -115,12 +112,11 @@ impl MetadataDb {
     /// Find special versions of a game: other ROMs sharing the same base_title that are special.
     /// Returns (rom_filename, display_name) pairs sorted by display_name.
     pub fn specials(
-        &self,
+        conn: &Connection,
         system: &str,
         rom_filename: &str,
     ) -> Result<Vec<(String, Option<String>)>> {
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, display_name FROM game_library
                  WHERE system = ?1
@@ -148,14 +144,13 @@ impl MetadataDb {
     /// Given a ROM's system and base_title, find other games in the same system
     /// that are linked via aliases (same game, different name).
     pub fn alias_variants(
-        &self,
+        conn: &Connection,
         system: &str,
         base_title: &str,
         current_filename: &str,
         region_pref: &str,
     ) -> Result<Vec<GameEntry>> {
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "WITH related_titles AS (
                     -- Games whose base_title is an alias of the current game
@@ -194,10 +189,10 @@ impl MetadataDb {
                       AND gl.is_hack = 0
                       AND gl.is_special = 0
                 )
-                SELECT system, rom_filename, rom_path, display_name, size_bytes,
-                        is_m3u, box_art_url, driver_status, genre, genre_group, players, rating,
-                        is_clone, base_title, region, is_translation, is_hack, is_special,
-                        crc32, hash_mtime, hash_matched_name, series_key
+                SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                        region, developer, genre, genre_group, rating, rating_count, players,
+                        is_clone, is_m3u, is_translation, is_hack, is_special,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
                 FROM deduped WHERE rn = 1
                 ORDER BY display_name",
             )
@@ -217,10 +212,9 @@ impl MetadataDb {
     ///
     /// Returns `(system, base_title)` pairs where an alias matches the query.
     /// Used by search to expand results (e.g., searching "Bare Knuckle" finds "Streets of Rage").
-    pub fn search_aliases(&self, query: &str) -> Result<Vec<(String, String)>> {
+    pub fn search_aliases(conn: &Connection, query: &str) -> Result<Vec<(String, String)>> {
         let like_pattern = format!("%{query}%");
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT DISTINCT system, base_title FROM game_alias
                  WHERE alias_name LIKE ?1 COLLATE NOCASE",
@@ -239,11 +233,12 @@ impl MetadataDb {
 
 #[cfg(test)]
 mod tests {
+    use super::super::MetadataDb;
     use super::super::tests::*;
 
     #[test]
     fn specials_returns_special_roms_sharing_base_title() {
-        let (mut db, _dir) = open_temp_db();
+        let (mut conn, _dir) = open_temp_db();
 
         let mut original = make_game_entry("snes", "Game (USA).sfc", false);
         original.base_title = "Game".into();
@@ -259,10 +254,10 @@ mod tests {
         hz60.region = "europe".into();
         hz60.is_special = true;
 
-        db.save_system_entries("snes", &[original, fastrom, hz60], None)
+        MetadataDb::save_system_entries(&mut conn, "snes", &[original, fastrom, hz60], None)
             .unwrap();
 
-        let specials = db.specials("snes", "Game (USA).sfc").unwrap();
+        let specials = MetadataDb::specials(&conn, "snes", "Game (USA).sfc").unwrap();
         assert_eq!(specials.len(), 2);
         let filenames: Vec<&str> = specials.iter().map(|(f, _)| f.as_str()).collect();
         assert!(filenames.contains(&"Game (USA) (FastRom).sfc"));
@@ -271,7 +266,7 @@ mod tests {
 
     #[test]
     fn regional_variants_excludes_clones_and_specials() {
-        let (mut db, _dir) = open_temp_db();
+        let (mut conn, _dir) = open_temp_db();
 
         let mut original = make_game_entry("snes", "Game (USA).sfc", false);
         original.base_title = "game".into();
@@ -291,10 +286,10 @@ mod tests {
         special.region = "usa".into();
         special.is_special = true;
 
-        db.save_system_entries("snes", &[original, europe, clone, special], None)
+        MetadataDb::save_system_entries(&mut conn, "snes", &[original, europe, clone, special], None)
             .unwrap();
 
-        let variants = db.regional_variants("snes", "Game (USA).sfc").unwrap();
+        let variants = MetadataDb::regional_variants(&conn, "snes", "Game (USA).sfc").unwrap();
         assert_eq!(variants.len(), 2);
         let filenames: Vec<&str> = variants.iter().map(|(f, _, _)| f.as_str()).collect();
         assert!(filenames.contains(&"Game (USA).sfc"));

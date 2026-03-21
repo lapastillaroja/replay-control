@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use rusqlite::Connection;
+
 use crate::error::{Error, Result};
 use crate::metadata_db::MetadataDb;
 use crate::thumbnails::{self, ThumbnailKind};
@@ -206,7 +208,7 @@ pub struct ThumbnailEntry {
 
 /// Insert parsed thumbnail entries into the `thumbnail_index` table.
 pub fn insert_thumbnail_entries(
-    db: &mut MetadataDb,
+    conn: &mut Connection,
     source_name: &str,
     entries: &[ThumbnailEntry],
 ) -> Result<usize> {
@@ -222,14 +224,14 @@ pub fn insert_thumbnail_entries(
         })
         .collect();
 
-    db.bulk_insert_thumbnail_index(source_name, &tuples)
+    MetadataDb::bulk_insert_thumbnail_index(conn, source_name, &tuples)
 }
 
 /// Orchestrate the full manifest import for all repos.
 /// Calls `on_progress(repos_done, repos_total, current_repo_display_name)`.
 /// Returns import stats. Skips repos whose commit SHA hasn't changed.
 pub fn import_all_manifests(
-    db: &mut MetadataDb,
+    conn: &mut Connection,
     on_progress: &dyn Fn(usize, usize, &str),
     cancel: &AtomicBool,
     api_key: Option<&str>,
@@ -250,7 +252,7 @@ pub fn import_all_manifests(
         let source_name = thumbnails::libretro_source_name(&repo.display_name);
 
         // Check if repo has changed since last import.
-        if let Ok(Some(status)) = db.get_data_source(&source_name) {
+        if let Ok(Some(status)) = MetadataDb::get_data_source(conn, &source_name) {
             let existing_hash = status.version_hash.as_deref().unwrap_or("");
             if !existing_hash.is_empty() {
                 match check_repo_freshness(&repo.url_name, existing_hash, api_key) {
@@ -287,7 +289,8 @@ pub fn import_all_manifests(
             };
 
         // Upsert data_source BEFORE inserting thumbnail entries (FK constraint).
-        if let Err(e) = db.upsert_data_source(
+        if let Err(e) = MetadataDb::upsert_data_source(
+            conn,
             &source_name,
             "libretro-thumbnails",
             &commit_sha,
@@ -301,7 +304,7 @@ pub fn import_all_manifests(
             continue;
         }
 
-        let count = match insert_thumbnail_entries(db, &source_name, &entries) {
+        let count = match insert_thumbnail_entries(conn, &source_name, &entries) {
             Ok(c) => c,
             Err(e) => {
                 errors.push(format!("{}: {e}", repo.display_name));
@@ -310,7 +313,8 @@ pub fn import_all_manifests(
         };
 
         // Update with actual entry count.
-        if let Err(e) = db.upsert_data_source(
+        if let Err(e) = MetadataDb::upsert_data_source(
+            conn,
             &source_name,
             "libretro-thumbnails",
             &commit_sha,
@@ -409,7 +413,7 @@ pub struct ManifestFuzzyIndex {
 
 /// Build a ManifestFuzzyIndex from the DB for the given repos and kind.
 pub fn build_manifest_fuzzy_index(
-    db: &MetadataDb,
+    conn: &Connection,
     repo_display_names: &[&str],
     kind: &str,
 ) -> ManifestFuzzyIndex {
@@ -425,15 +429,13 @@ pub fn build_manifest_fuzzy_index(
         let source_name = thumbnails::libretro_source_name(display_name);
 
         // Look up branch from data_sources.
-        let branch = db
-            .get_data_source(&source_name)
+        let branch = MetadataDb::get_data_source(conn, &source_name)
             .ok()
             .flatten()
             .and_then(|s| s.branch)
             .unwrap_or_else(|| "master".to_string());
 
-        let entries = db
-            .query_thumbnail_index(&source_name, kind)
+        let entries = MetadataDb::query_thumbnail_index(conn, &source_name, kind)
             .unwrap_or_default();
 
         for entry in entries {
@@ -767,7 +769,7 @@ pub struct BoxArtVariant {
 /// collects all `Named_Boxarts` entries with the same base title. De-duplicates
 /// by symlink target so entries pointing to the same image appear only once.
 pub fn find_boxart_variants(
-    db: &MetadataDb,
+    conn: &Connection,
     system: &str,
     rom_filename: &str,
     storage_root: &std::path::Path,
@@ -818,15 +820,13 @@ pub fn find_boxart_variants(
         let url_name = thumbnails::repo_url_name(display_name);
         let source_name = thumbnails::libretro_source_name(display_name);
 
-        let branch = db
-            .get_data_source(&source_name)
+        let branch = MetadataDb::get_data_source(conn, &source_name)
             .ok()
             .flatten()
             .and_then(|s| s.branch)
             .unwrap_or_else(|| "master".to_string());
 
-        let entries = db
-            .query_thumbnail_index(&source_name, ThumbnailKind::Boxart.repo_dir())
+        let entries = MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
             .unwrap_or_default();
 
         for entry in &entries {
@@ -894,7 +894,7 @@ pub fn find_boxart_variants(
 
 /// Count distinct box art variants for a ROM without building the full list.
 /// Faster than `find_boxart_variants()` when only the count is needed.
-pub fn count_boxart_variants(db: &MetadataDb, system: &str, rom_filename: &str) -> usize {
+pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str) -> usize {
     use crate::thumbnails::{self, strip_tags, thumbnail_filename};
     use std::collections::HashSet;
 
@@ -929,8 +929,7 @@ pub fn count_boxart_variants(db: &MetadataDb, system: &str, rom_filename: &str) 
     for display_name in repo_names {
         let source_name = thumbnails::libretro_source_name(display_name);
 
-        let entries = db
-            .query_thumbnail_index(&source_name, ThumbnailKind::Boxart.repo_dir())
+        let entries = MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
             .unwrap_or_default();
 
         for entry in &entries {
@@ -988,7 +987,7 @@ pub struct DownloadStats {
 ///
 /// `on_progress(processed, total, downloaded)` is called periodically.
 pub fn download_system_thumbnails(
-    db: &MetadataDb,
+    conn: &Connection,
     storage_root: &Path,
     system: &str,
     kind: ThumbnailKind,
@@ -1001,7 +1000,7 @@ pub fn download_system_thumbnails(
     let display_names: Vec<&str> = repo_names.to_vec();
 
     // Build the fuzzy index from the manifest.
-    let manifest_index = build_manifest_fuzzy_index(db, &display_names, kind.repo_dir());
+    let manifest_index = build_manifest_fuzzy_index(conn, &display_names, kind.repo_dir());
 
     let rom_filenames = thumbnails::list_rom_filenames(storage_root, system);
     let total = rom_filenames.len();

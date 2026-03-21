@@ -39,49 +39,45 @@ pub struct VideoEntry {
     pub rom_filename: String,
 }
 
-/// Handle to the user data SQLite database.
-pub struct UserDataDb {
-    conn: Connection,
-    db_path: PathBuf,
-}
+/// Stateless query namespace for the user data SQLite database.
+///
+/// All methods are associated functions that take `conn: &Connection` as their
+/// first parameter. No connection ownership — the pool manages lifecycle.
+pub struct UserDataDb;
 
 impl UserDataDb {
     /// Tables to probe for corruption detection.
     /// NOTE: update this list when adding new tables.
-    const TABLES: &[&str] = &["box_art_overrides", "game_videos"];
+    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos"];
 
     /// Open (or create) the user data database at `<storage_root>/.replay-control/user_data.db`.
     ///
-    /// Uses the shared nolock→WAL open strategy (see `db_common`), runs table
+    /// Uses the shared nolock->WAL open strategy (see `db_common`), runs table
     /// init, then probes all tables for corruption — auto-recreates if corrupt.
-    pub fn open(storage_root: &Path, is_local: bool) -> Result<Self> {
+    /// Returns a raw `Connection` — the caller (or pool manager) owns it.
+    pub fn open(storage_root: &Path, is_local: bool) -> Result<(Connection, PathBuf)> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(USER_DATA_DB_FILE);
 
         let conn = crate::db_common::open_connection(&db_path, "user_data.db", is_local)?;
-        let db = Self {
-            conn,
-            db_path: db_path.clone(),
-        };
-        db.init()?;
+        Self::init_tables(&conn)?;
 
-        if let Err(detail) = crate::db_common::probe_tables(&db.conn, Self::TABLES) {
+        if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
             tracing::warn!("User data DB corrupt ({detail}), deleting and recreating");
-            drop(db);
+            drop(conn);
             crate::db_common::delete_db_files(&db_path);
             let conn = crate::db_common::open_connection(&db_path, "user_data.db", is_local)?;
-            let db = Self { conn, db_path };
-            db.init()?;
-            return Ok(db);
+            Self::init_tables(&conn)?;
+            return Ok((conn, db_path));
         }
 
-        Ok(db)
+        Ok((conn, db_path))
     }
 
-    fn init(&self) -> Result<()> {
-        self.conn
-            .execute_batch(
+    /// Create all tables if they don't exist.
+    pub fn init_tables(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS box_art_overrides (
                     system TEXT NOT NULL,
                     rom_filename TEXT NOT NULL,
@@ -116,9 +112,8 @@ impl UserDataDb {
     }
 
     /// Get the override path for a single ROM, if one exists.
-    pub fn get_override(&self, system: &str, rom_filename: &str) -> Result<Option<String>> {
-        self.conn
-            .query_row(
+    pub fn get_override(conn: &Connection, system: &str, rom_filename: &str) -> Result<Option<String>> {
+        conn.query_row(
                 "SELECT override_path FROM box_art_overrides
                  WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
@@ -130,7 +125,7 @@ impl UserDataDb {
 
     /// Set (insert or replace) a box art override.
     pub fn set_override(
-        &self,
+        conn: &Connection,
         system: &str,
         rom_filename: &str,
         override_path: &str,
@@ -140,8 +135,7 @@ impl UserDataDb {
             .unwrap_or_default()
             .as_secs() as i64;
 
-        self.conn
-            .execute(
+        conn.execute(
                 "INSERT OR REPLACE INTO box_art_overrides (system, rom_filename, override_path, set_at)
                  VALUES (?1, ?2, ?3, ?4)",
                 params![system, rom_filename, override_path, now],
@@ -151,9 +145,8 @@ impl UserDataDb {
     }
 
     /// Remove a box art override (revert to default).
-    pub fn remove_override(&self, system: &str, rom_filename: &str) -> Result<()> {
-        self.conn
-            .execute(
+    pub fn remove_override(conn: &Connection, system: &str, rom_filename: &str) -> Result<()> {
+        conn.execute(
                 "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
             )
@@ -162,9 +155,8 @@ impl UserDataDb {
     }
 
     /// Get all overrides for a system. Returns rom_filename -> override_path.
-    pub fn get_system_overrides(&self, system: &str) -> Result<HashMap<String, String>> {
-        let mut stmt = self
-            .conn
+    pub fn get_system_overrides(conn: &Connection, system: &str) -> Result<HashMap<String, String>> {
+        let mut stmt = conn
             .prepare("SELECT rom_filename, override_path FROM box_art_overrides WHERE system = ?1")
             .map_err(|e| Error::Other(format!("Failed to prepare system overrides query: {e}")))?;
 
@@ -189,7 +181,7 @@ impl UserDataDb {
     /// `base_titles` should include the primary base_title plus any alias
     /// base_titles resolved from `game_alias` in `metadata.db`.
     pub fn get_game_videos(
-        &self,
+        conn: &Connection,
         system: &str,
         base_titles: &[&str],
     ) -> Result<Vec<VideoEntry>> {
@@ -210,8 +202,7 @@ impl UserDataDb {
             placeholders.join(", ")
         );
 
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare get_game_videos: {e}")))?;
 
@@ -255,14 +246,13 @@ impl UserDataDb {
 
     /// Add a video to a game's list. Returns an error if a duplicate exists.
     pub fn add_game_video(
-        &self,
+        conn: &Connection,
         system: &str,
         rom_filename: &str,
         base_title: &str,
         entry: &VideoEntry,
     ) -> Result<()> {
-        let affected = self
-            .conn
+        let affected = conn
             .execute(
                 "INSERT OR IGNORE INTO game_videos
                     (system, base_title, rom_filename, video_id, url, platform,
@@ -292,23 +282,17 @@ impl UserDataDb {
 
     /// Remove a saved video by its ID from a game's list.
     pub fn remove_game_video(
-        &self,
+        conn: &Connection,
         system: &str,
         rom_filename: &str,
         video_id: &str,
     ) -> Result<()> {
-        self.conn
-            .execute(
+        conn.execute(
                 "DELETE FROM game_videos
                  WHERE system = ?1 AND rom_filename = ?2 AND video_id = ?3",
                 params![system, rom_filename, video_id],
             )
             .map_err(|e| Error::Other(format!("Failed to remove game_video: {e}")))?;
         Ok(())
-    }
-
-    /// Path to the database file on disk.
-    pub fn db_path(&self) -> &Path {
-        &self.db_path
     }
 }

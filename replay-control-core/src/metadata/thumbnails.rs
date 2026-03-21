@@ -434,14 +434,14 @@ pub fn clear_media(storage_root: &Path) -> Result<()> {
 /// Returns a list of `(system, file_path)` pairs for each orphaned image.
 pub fn find_orphaned_thumbnails(
     storage_root: &Path,
-    db: &crate::metadata_db::MetadataDb,
+    conn: &rusqlite::Connection,
 ) -> Result<Vec<(String, PathBuf)>> {
     let media_dir = storage_root.join(crate::storage::RC_DIR).join("media");
     if !media_dir.exists() {
         return Ok(Vec::new());
     }
 
-    let active_systems = db.active_systems()?;
+    let active_systems = crate::metadata_db::MetadataDb::active_systems(conn)?;
     let mut orphans = Vec::new();
 
     // Only check systems that have entries in game_library.
@@ -457,8 +457,7 @@ pub fn find_orphaned_thumbnails(
         // image paths. URLs look like `/media/sega_smd/boxart/Sonic.png`, so we strip
         // the `/media/<system>/` prefix to get `boxart/Sonic.png`.
         let prefix = format!("/media/{system}/");
-        let referenced: HashSet<String> = db
-            .active_box_art_urls(system)?
+        let referenced: HashSet<String> = crate::metadata_db::MetadataDb::active_box_art_urls(conn, system)?
             .into_iter()
             .filter_map(|url| url.strip_prefix(&prefix).map(|s| s.to_string()))
             .collect();
@@ -518,9 +517,9 @@ pub fn find_orphaned_thumbnails(
 /// Uses [`find_orphaned_thumbnails`] to identify files, then deletes each one.
 pub fn delete_orphaned_thumbnails(
     storage_root: &Path,
-    db: &crate::metadata_db::MetadataDb,
+    conn: &rusqlite::Connection,
 ) -> Result<(usize, u64)> {
-    let orphans = find_orphaned_thumbnails(storage_root, db)?;
+    let orphans = find_orphaned_thumbnails(storage_root, conn)?;
     let mut deleted = 0usize;
     let mut bytes_freed = 0u64;
 

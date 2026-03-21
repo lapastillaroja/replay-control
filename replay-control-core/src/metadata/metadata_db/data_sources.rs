@@ -1,6 +1,6 @@
 //! Operations on the `data_sources` and `thumbnail_index` tables.
 
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
@@ -9,7 +9,7 @@ use super::{DataSourceInfo, DataSourceStats, MetadataDb, ThumbnailIndexEntry, un
 impl MetadataDb {
     /// Insert or update a data source entry.
     pub fn upsert_data_source(
-        &self,
+        conn: &Connection,
         source_name: &str,
         source_type: &str,
         version_hash: &str,
@@ -17,8 +17,7 @@ impl MetadataDb {
         entry_count: usize,
     ) -> Result<()> {
         let now = unix_now();
-        self.conn
-            .execute(
+        conn.execute(
                 "INSERT INTO data_sources (source_name, source_type, version_hash, imported_at, entry_count, branch)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(source_name) DO UPDATE SET
@@ -33,9 +32,8 @@ impl MetadataDb {
     }
 
     /// Look up a single data source.
-    pub fn get_data_source(&self, source_name: &str) -> Result<Option<DataSourceInfo>> {
-        self.conn
-            .query_row(
+    pub fn get_data_source(conn: &Connection, source_name: &str) -> Result<Option<DataSourceInfo>> {
+        conn.query_row(
                 "SELECT source_name, source_type, version_hash, imported_at, entry_count, branch
                  FROM data_sources WHERE source_name = ?1",
                 params![source_name],
@@ -55,9 +53,8 @@ impl MetadataDb {
     }
 
     /// Get aggregate stats for a source type (e.g., "libretro-thumbnails").
-    pub fn get_data_source_stats(&self, source_type: &str) -> Result<DataSourceStats> {
-        self.conn
-            .query_row(
+    pub fn get_data_source_stats(conn: &Connection, source_type: &str) -> Result<DataSourceStats> {
+        conn.query_row(
                 "SELECT COUNT(*), COALESCE(SUM(entry_count), 0), MIN(imported_at)
                  FROM data_sources WHERE source_type = ?1",
                 params![source_type],
@@ -73,9 +70,8 @@ impl MetadataDb {
     }
 
     /// Count total rows in the thumbnail_index table.
-    pub fn thumbnail_index_count(&self) -> Result<i64> {
-        self.conn
-            .query_row("SELECT COUNT(*) FROM thumbnail_index", [], |row| row.get(0))
+    pub fn thumbnail_index_count(conn: &Connection) -> Result<i64> {
+        conn.query_row("SELECT COUNT(*) FROM thumbnail_index", [], |row| row.get(0))
             .map_err(|e| Error::Other(format!("thumbnail_index_count failed: {e}")))
     }
 
@@ -83,12 +79,11 @@ impl MetadataDb {
 
     /// Query thumbnail_index entries for a given repo and kind.
     pub fn query_thumbnail_index(
-        &self,
+        conn: &Connection,
         repo_name: &str,
         kind: &str,
     ) -> Result<Vec<ThumbnailIndexEntry>> {
-        let mut stmt = self
-            .conn
+        let mut stmt = conn
             .prepare(
                 "SELECT filename, symlink_target
                  FROM thumbnail_index
@@ -113,9 +108,8 @@ impl MetadataDb {
     }
 
     /// Delete all thumbnail_index entries for a given repo.
-    pub fn delete_thumbnail_index(&self, repo_name: &str) -> Result<usize> {
-        let count = self
-            .conn
+    pub fn delete_thumbnail_index(conn: &Connection, repo_name: &str) -> Result<usize> {
+        let count = conn
             .execute(
                 "DELETE FROM thumbnail_index WHERE repo_name = ?1",
                 params![repo_name],
@@ -127,12 +121,11 @@ impl MetadataDb {
     /// Bulk insert thumbnail_index entries within a single transaction.
     /// Deletes existing entries for the repo first.
     pub fn bulk_insert_thumbnail_index(
-        &mut self,
+        conn: &mut Connection,
         repo_name: &str,
         entries: &[(String, String, Option<String>)], // (kind, filename, symlink_target)
     ) -> Result<usize> {
-        let tx = self
-            .conn
+        let tx = conn
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
 
@@ -166,12 +159,10 @@ impl MetadataDb {
     }
 
     /// Clear all thumbnail index entries and their data_sources rows.
-    pub fn clear_thumbnail_index(&self) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM thumbnail_index", [])
+    pub fn clear_thumbnail_index(conn: &Connection) -> Result<()> {
+        conn.execute("DELETE FROM thumbnail_index", [])
             .map_err(|e| Error::Other(format!("Clear thumbnail_index failed: {e}")))?;
-        self.conn
-            .execute(
+        conn.execute(
                 "DELETE FROM data_sources WHERE source_type = 'libretro-thumbnails'",
                 [],
             )

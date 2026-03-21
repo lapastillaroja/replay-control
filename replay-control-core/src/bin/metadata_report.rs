@@ -29,7 +29,7 @@ fn main() {
         eprintln!("ROM index: {} entries", rom_index.len());
 
         eprintln!("Opening metadata DB...");
-        let mut db = MetadataDb::open(&storage.root, true).expect("Failed to open metadata DB");
+        let (mut conn, _db_path) = MetadataDb::open(&storage.root, true).expect("Failed to open metadata DB");
 
         eprintln!("Importing LaunchBox XML from {}...", xml_path.display());
         let (stats, _parse_result) = launchbox::import_launchbox(
@@ -38,7 +38,7 @@ fn main() {
             |total, matched, inserted| {
                 eprint!("\r  Progress: {total} scanned, {matched} matched, {inserted} inserted");
             },
-            |batch| db.bulk_upsert(batch),
+            |batch| MetadataDb::bulk_upsert(&mut conn, batch),
         )
         .expect("Import failed");
 
@@ -49,7 +49,7 @@ fn main() {
     }
 
     // Open external metadata DB (may not exist yet).
-    let meta_db = MetadataDb::open(&storage.root, true).ok();
+    let meta_conn = MetadataDb::open(&storage.root, true).ok().map(|(c, _)| c);
 
     let summaries = roms::scan_systems(&storage);
     let active: Vec<_> = summaries.iter().filter(|s| s.game_count > 0).collect();
@@ -175,8 +175,8 @@ fn main() {
             }
 
             // --- External metadata (SQLite) ---
-            if let Some(ref db) = meta_db
-                && let Ok(Some(meta)) = db.lookup(system_name, filename)
+            if let Some(ref conn) = meta_conn
+                && let Ok(Some(meta)) = MetadataDb::lookup(conn, system_name, filename)
             {
                 if meta.description.as_ref().is_some_and(|d| !d.is_empty()) {
                     external.description += 1;

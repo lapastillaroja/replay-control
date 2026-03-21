@@ -227,15 +227,15 @@ pub struct SystemMeta {
     pub total_size_bytes: u64,
 }
 
-/// Handle to the metadata SQLite database.
-pub struct MetadataDb {
-    conn: Connection,
-    db_path: PathBuf,
-}
+/// Stateless query namespace for the metadata SQLite database.
+///
+/// All methods are associated functions that take `conn: &Connection` as their
+/// first parameter. No connection ownership — the pool manages lifecycle.
+pub struct MetadataDb;
 
 impl MetadataDb {
     /// Tables to probe for corruption detection.
-    const TABLES: &[&str] = &[
+    pub const TABLES: &[&str] = &[
         "game_metadata",
         "game_library",
         "data_sources",
@@ -248,35 +248,30 @@ impl MetadataDb {
     ///
     /// Opens the metadata DB with strategy appropriate for the filesystem.
     /// Runs table init, probes for corruption, auto-recreates if corrupt.
-    pub fn open(storage_root: &Path, is_local: bool) -> Result<Self> {
+    /// Returns a raw `Connection` — the caller (or pool manager) owns it.
+    pub fn open(storage_root: &Path, is_local: bool) -> Result<(Connection, PathBuf)> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(METADATA_DB_FILE);
 
         let conn = crate::db_common::open_connection(&db_path, "metadata.db", is_local)?;
-        let db = Self {
-            conn,
-            db_path: db_path.clone(),
-        };
-        db.init()?;
+        Self::init_tables(&conn)?;
 
-        if let Err(detail) = crate::db_common::probe_tables(&db.conn, Self::TABLES) {
+        if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
             tracing::warn!("Metadata DB corrupt ({detail}), deleting and recreating");
-            drop(db);
+            drop(conn);
             crate::db_common::delete_db_files(&db_path);
             let conn = crate::db_common::open_connection(&db_path, "metadata.db", is_local)?;
-            let db = Self { conn, db_path };
-            db.init()?;
-            return Ok(db);
+            Self::init_tables(&conn)?;
+            return Ok((conn, db_path));
         }
 
-        Ok(db)
+        Ok((conn, db_path))
     }
 
     /// Create all tables if they don't exist.
-    fn init(&self) -> Result<()> {
-        self.conn
-            .execute_batch(
+    pub fn init_tables(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS game_metadata (
                     system TEXT NOT NULL,
                     rom_filename TEXT NOT NULL,
@@ -401,16 +396,6 @@ impl MetadataDb {
         Ok(())
     }
 
-    /// Provide a reference to the raw connection (for use by thumbnail_manifest).
-    pub fn conn(&self) -> &Connection {
-        &self.conn
-    }
-
-    /// Get path to the database file.
-    pub fn db_path(&self) -> &Path {
-        &self.db_path
-    }
-
     /// Helper: convert a row to GameEntry (used by multiple queries).
     ///
     /// Column order must match all SELECT statements that use this helper:
@@ -459,11 +444,12 @@ pub(crate) fn unix_now() -> i64 {
 mod tests {
     use super::*;
 
-    /// Open a MetadataDb backed by a temp directory.
-    pub(crate) fn open_temp_db() -> (MetadataDb, tempfile::TempDir) {
+    /// Open a metadata DB connection backed by a temp directory.
+    /// Returns a mutable `Connection` so tests can call both read and write methods.
+    pub(crate) fn open_temp_db() -> (Connection, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let db = MetadataDb::open(dir.path(), true).unwrap();
-        (db, dir)
+        let (conn, _path) = MetadataDb::open(dir.path(), true).unwrap();
+        (conn, dir)
     }
 
     pub(crate) fn make_metadata(box_art: Option<&str>) -> GameMetadata {
