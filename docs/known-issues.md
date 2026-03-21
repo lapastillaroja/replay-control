@@ -100,3 +100,25 @@ power users using SCP/NFS). Workaround: manually trigger re-import/update from
 the Metadata page.
 
 See `research/plans/thumbnail-new-roms-behavior.md` for full analysis.
+
+## Scroll Position Lost on Back Navigation
+
+When navigating from a game list (system page, search results, developer page) to a
+game detail page and then pressing Back, the scroll position resets to the top of
+the list. The user loses their place in long game lists.
+
+### Current behavior
+Leptos's `<Suspense>` re-renders the list from scratch on navigation. The browser's
+native scroll restoration doesn't work because the content is async-loaded.
+
+### Possible approaches
+1. **`scroll-restoration` CSS** — `overflow-anchor: auto` might help in some cases
+2. **Save scroll position in session storage** — store `window.scrollY` on navigate,
+   restore after the list re-renders
+3. **Keep-alive / caching** — cache the rendered list component so it doesn't
+   re-fetch on back navigation
+4. **Virtualized list** — only render visible items (overkill for current scale)
+
+### Priority
+Low — the UX impact is noticeable but not blocking. Users can scroll back manually.
+Infinite scroll means the list is usually short on initial load.
