@@ -220,19 +220,17 @@ async fn game_detail(
     let (mut description, mut rating, mut publisher, mut enriched_genre, mut enriched_developer) =
         (None, None, None, String::new(), String::new());
 
-    if let Some(guard) = state.metadata_db()
-        && let Some(db) = guard.as_ref()
-    {
-        if let Ok(Some(meta)) = MetadataDb::lookup(db, &system, &filename) {
-            description = meta.description;
-            rating = meta.rating.map(|r| r as f32);
-            publisher = meta.publisher;
-            if meta.developer.is_some() {
-                enriched_developer = meta.developer.unwrap_or_default();
-            }
-            if meta.genre.is_some() {
-                enriched_genre = meta.genre.unwrap_or_default();
-            }
+    if let Some(Ok(Some(meta))) = state.metadata_pool.read(|conn| {
+        MetadataDb::lookup(conn, &system, &filename)
+    }) {
+        description = meta.description;
+        rating = meta.rating.map(|r| r as f32);
+        publisher = meta.publisher;
+        if meta.developer.is_some() {
+            enriched_developer = meta.developer.unwrap_or_default();
+        }
+        if meta.genre.is_some() {
+            enriched_genre = meta.genre.unwrap_or_default();
         }
     }
 

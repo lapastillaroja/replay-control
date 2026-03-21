@@ -148,15 +148,9 @@ pub async fn get_roms_page(
     // Apply minimum rating filter: batch-load all ratings for the system,
     // then exclude ROMs below the threshold (unrated games are excluded).
     let pre_filtered: Vec<&RomEntry> = if let Some(threshold) = min_rating {
-        let ratings = if let Some(guard) = state.metadata_db() {
-            if let Some(db) = guard.as_ref() {
-                MetadataDb::system_ratings(db, &system).unwrap_or_default()
-            } else {
-                std::collections::HashMap::new()
-            }
-        } else {
-            std::collections::HashMap::new()
-        };
+        let ratings = state.metadata_pool.read(|conn| {
+            MetadataDb::system_ratings(conn, &system).unwrap_or_default()
+        }).unwrap_or_default();
         pre_filtered
             .into_iter()
             .filter(|r| {
@@ -250,11 +244,11 @@ pub async fn get_roms_page(
     }
 
     // Populate ratings from metadata DB (batch lookup for efficiency).
-    if let Some(guard) = state.metadata_db()
-        && let Some(db) = guard.as_ref()
     {
         let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
-        if let Ok(ratings) = MetadataDb::lookup_ratings(db, &system, &filenames) {
+        if let Some(Ok(ratings)) = state.metadata_pool.read(|conn| {
+            MetadataDb::lookup_ratings(conn, &system, &filenames)
+        }) {
             for rom in &mut roms {
                 if let Some(&rating) = ratings.get(&rom.game.rom_filename)
                     && rating > 0.0
@@ -329,16 +323,11 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
             .collect();
 
     // Count box art variants (lightweight — only needs the thumbnail index).
-    let variant_count = state
-        .metadata_db()
-        .and_then(|guard| {
-            guard.as_ref().map(|db| {
-                replay_control_core::thumbnail_manifest::count_boxart_variants(
-                    db, &system, &filename,
-                )
-            })
-        })
-        .unwrap_or(0);
+    let variant_count = state.metadata_pool.read(|conn| {
+        replay_control_core::thumbnail_manifest::count_boxart_variants(
+            conn, &system, &filename,
+        )
+    }).unwrap_or(0);
 
     let (tier, _, is_special) = replay_control_core::rom_tags::classify(&filename);
     let is_hack = tier == replay_control_core::rom_tags::RomTier::Hack;

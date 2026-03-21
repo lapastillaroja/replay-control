@@ -102,8 +102,9 @@ pub async fn organize_favorites(
         primary == OrganizeCriteria::Rating || secondary == Some(OrganizeCriteria::Rating);
     let ratings = if needs_ratings {
         state
-            .metadata_db()
-            .and_then(|guard| guard.as_ref().and_then(|conn| replay_control_core::metadata_db::MetadataDb::all_ratings(conn).ok()))
+            .metadata_pool
+            .read(|conn| replay_control_core::metadata_db::MetadataDb::all_ratings(conn).ok())
+            .flatten()
     } else {
         None
     };

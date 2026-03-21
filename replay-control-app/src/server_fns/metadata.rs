@@ -14,14 +14,13 @@ pub use replay_control_core::metadata_db::{
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let Some(guard) = state.metadata_db() else {
-        return Ok(MetadataStats::default());
-    };
-    let Some(db) = guard.as_ref() else {
-        return Ok(MetadataStats::default());
-    };
     let db_path = state.metadata_pool.db_path();
-    MetadataDb::stats(db, &db_path).map_err(|e| ServerFnError::new(e.to_string()))
+    let Some(result) = state.metadata_pool.read(|conn| {
+        MetadataDb::stats(conn, &db_path)
+    }) else {
+        return Ok(MetadataStats::default());
+    };
+    result.map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Start a background metadata import from a LaunchBox metadata XML file.
@@ -59,17 +58,11 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 
     // Get metadata entries and thumbnail counts per system from DB.
     // Return empty data when DB is unavailable (e.g., during import).
-    let (entries_per_system, thumbnails_per_system) = match state.metadata_db() {
-        Some(guard) if guard.as_ref().is_some() => {
-            let conn = guard.as_ref().unwrap();
-            let entries = MetadataDb::entries_per_system(conn)
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
-            let thumbnails = MetadataDb::thumbnails_per_system(conn)
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
-            (entries, thumbnails)
-        }
-        _ => (Vec::new(), Vec::new()),
-    };
+    let (entries_per_system, thumbnails_per_system) = state.metadata_pool.read(|conn| {
+        let entries = MetadataDb::entries_per_system(conn).unwrap_or_default();
+        let thumbnails = MetadataDb::thumbnails_per_system(conn).unwrap_or_default();
+        (entries, thumbnails)
+    }).unwrap_or_default();
 
     // Get total games per system from game library.
     let storage = state.storage();
@@ -134,13 +127,11 @@ pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state
-        .metadata_db()
-        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-    let db = guard
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-    MetadataDb::clear(db).map_err(|e| ServerFnError::new(e.to_string()))
+    state.metadata_pool.read(|conn| {
+        MetadataDb::clear(conn)
+    })
+    .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
+    .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Clear metadata DB and trigger re-import from launchbox-metadata.xml.

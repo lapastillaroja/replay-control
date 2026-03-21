@@ -79,10 +79,9 @@ pub async fn get_local_manuals(
 
     // Resolve alias base_titles for cross-name sharing.
     let mut all_titles = vec![base_title.clone()];
-    if let Some(guard) = state.metadata_db()
-        && let Some(db) = guard.as_ref()
-    {
-        let aliases = MetadataDb::alias_base_titles(db, &system, &base_title);
+    if let Some(aliases) = state.metadata_pool.read(|conn| {
+        MetadataDb::alias_base_titles(conn, &system, &base_title)
+    }) {
         all_titles.extend(aliases);
     }
 

@@ -29,22 +29,18 @@ pub async fn get_game_videos(
 
     // Resolve alias base_titles for cross-name sharing (best-effort).
     let mut all_titles = vec![base_title.clone()];
-    if let Some(guard) = state.metadata_db()
-        && let Some(db) = guard.as_ref()
-    {
-        let aliases = MetadataDb::alias_base_titles(db, &system, &base_title);
+    if let Some(aliases) = state.metadata_pool.read(|conn| {
+        MetadataDb::alias_base_titles(conn, &system, &base_title)
+    }) {
         all_titles.extend(aliases);
     }
 
-    let ud_guard = state
-        .user_data_db()
-        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
-    let ud_db = ud_guard
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
     let title_refs: Vec<&str> = all_titles.iter().map(|s| s.as_str()).collect();
-    UserDataDb::get_game_videos(ud_db, &system, &title_refs)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    state.user_data_pool.read(|conn| {
+        UserDataDb::get_game_videos(conn, &system, &title_refs)
+    })
+    .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+    .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Add a video to a game (from manual paste or recommendation pin).
@@ -80,16 +76,11 @@ pub async fn add_game_video(
         rom_filename: rom_filename.clone(),
     };
 
-    {
-        let ud_guard = state
-            .user_data_db()
-            .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
-        let ud_db = ud_guard
-            .as_ref()
-            .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
-        UserDataDb::add_game_video(ud_db, &system, &rom_filename, &base_title, &entry)
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-    }
+    state.user_data_pool.read(|conn| {
+        UserDataDb::add_game_video(conn, &system, &rom_filename, &base_title, &entry)
+    })
+    .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     Ok(entry)
 }
@@ -102,14 +93,11 @@ pub async fn remove_game_video(
     video_id: String,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let ud_guard = state
-        .user_data_db()
-        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
-    let ud_db = ud_guard
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
-    UserDataDb::remove_game_video(ud_db, &system, &rom_filename, &video_id)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    state.user_data_pool.read(|conn| {
+        UserDataDb::remove_game_video(conn, &system, &rom_filename, &video_id)
+    })
+    .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+    .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Search for video recommendations via the Piped API.

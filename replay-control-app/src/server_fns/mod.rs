@@ -334,10 +334,9 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     let state = leptos::prelude::expect_context::<crate::api::AppState>();
 
     // Check user_data_db for box art override FIRST (highest priority).
-    if let Some(ud_guard) = state.user_data_db()
-        && let Some(ud_db) = ud_guard.as_ref()
-        && let Ok(Some(override_path)) = UserDataDb::get_override(ud_db, &info.system, &info.rom_filename)
-    {
+    if let Some(override_path) = state.user_data_pool.read(|conn| {
+        UserDataDb::get_override(conn, &info.system, &info.rom_filename).ok().flatten()
+    }).flatten() {
         let full = state
             .storage()
             .rc_dir()
@@ -349,10 +348,10 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
         }
     }
 
-    if let Some(guard) = state.metadata_db()
-        && let Some(db) = guard.as_ref()
-    {
-        match MetadataDb::lookup(db, &info.system, &info.rom_filename) {
+    if let Some(lookup_result) = state.metadata_pool.read(|conn| {
+        MetadataDb::lookup(conn, &info.system, &info.rom_filename)
+    }) {
+        match lookup_result {
             Ok(Some(meta)) => {
                 info.description = meta.description;
                 info.rating = meta.rating.map(|r| r as f32);
@@ -464,10 +463,9 @@ pub(crate) fn resolve_box_art_url(
     let media_base = state.storage().rc_dir().join("media").join(system);
 
     // 0. Check user_data_db for box art override (highest priority).
-    if let Some(ud_guard) = state.user_data_db()
-        && let Some(ud_db) = ud_guard.as_ref()
-        && let Ok(Some(override_path)) = UserDataDb::get_override(ud_db, system, rom_filename)
-    {
+    if let Some(override_path) = state.user_data_pool.read(|conn| {
+        UserDataDb::get_override(conn, system, rom_filename).ok().flatten()
+    }).flatten() {
         let full = state
             .storage()
             .rc_dir()
@@ -481,9 +479,9 @@ pub(crate) fn resolve_box_art_url(
 
     // 1. Try metadata DB — but validate the file on disk (catches git fake-symlink artifacts).
     //    If the DB path is a fake symlink, try resolving it before falling back to disk scan.
-    if let Some(guard) = state.metadata_db()
-        && let Some(db) = guard.as_ref()
-        && let Ok(Some(meta)) = MetadataDb::lookup(db, system, rom_filename)
+    if let Some(Some(meta)) = state.metadata_pool.read(|conn| {
+        MetadataDb::lookup(conn, system, rom_filename).ok().flatten()
+    })
         && let Some(ref path) = meta.box_art_path
     {
         let full_path = media_base.join(path);

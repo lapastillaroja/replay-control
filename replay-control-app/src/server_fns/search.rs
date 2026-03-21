@@ -331,12 +331,13 @@ pub(crate) fn lookup_genre(system: &str, rom_filename: &str) -> String {
 
     // Fallback: check LaunchBox metadata for genre.
     let state = leptos::prelude::expect_context::<crate::api::AppState>();
-    if let Some(guard) = state.metadata_db()
-        && let Some(db) = guard.as_ref()
-        && let Ok(Some(meta)) = MetadataDb::lookup(db, system, rom_filename)
-        && let Some(genre) = meta.genre
-        && !genre.is_empty()
-    {
+    if let Some(genre) = state.metadata_pool.read(|conn| {
+        MetadataDb::lookup(conn, system, rom_filename)
+            .ok()
+            .flatten()
+            .and_then(|meta| meta.genre)
+            .filter(|g| !g.is_empty())
+    }).flatten() {
         return genre;
     }
 
@@ -474,15 +475,9 @@ pub async fn global_search(
 
         // Batch-load ratings for this system when a minimum rating filter is active.
         let system_ratings = if min_rating.is_some() {
-            if let Some(guard) = state.metadata_db() {
-                if let Some(db) = guard.as_ref() {
-                    MetadataDb::system_ratings(db, &sys.folder_name).unwrap_or_default()
-                } else {
-                    std::collections::HashMap::new()
-                }
-            } else {
-                std::collections::HashMap::new()
-            }
+            state.metadata_pool.read(|conn| {
+                MetadataDb::system_ratings(conn, &sys.folder_name).unwrap_or_default()
+            }).unwrap_or_default()
         } else {
             std::collections::HashMap::new()
         };
@@ -606,19 +601,16 @@ pub async fn global_search(
         replay_control_core::roms::mark_favorites(&storage, &sys.folder_name, &mut top_roms);
 
         // Batch lookup ratings from metadata DB.
-        let ratings_map = if let Some(guard) = state.metadata_db() {
-            if let Some(db) = guard.as_ref() {
-                let filenames: Vec<&str> = top_roms
-                    .iter()
-                    .map(|r| r.game.rom_filename.as_str())
-                    .collect();
-                MetadataDb::lookup_ratings(db, &sys.folder_name, &filenames)
+        let ratings_map = {
+            let filenames: Vec<&str> = top_roms
+                .iter()
+                .map(|r| r.game.rom_filename.as_str())
+                .collect();
+            let system_name = sys.folder_name.clone();
+            state.metadata_pool.read(|conn| {
+                MetadataDb::lookup_ratings(conn, &system_name, &filenames)
                     .unwrap_or_default()
-            } else {
-                std::collections::HashMap::new()
-            }
-        } else {
-            std::collections::HashMap::new()
+            }).unwrap_or_default()
         };
 
         let image_index = state.cache.get_image_index(&state, &sys.folder_name);

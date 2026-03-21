@@ -117,14 +117,9 @@ impl BackgroundManager {
             return;
         }
 
-        let should_import = if let Some(guard) = state.metadata_db() {
-            guard
-                .as_ref()
-                .and_then(|db| MetadataDb::is_empty(db).ok())
-                .unwrap_or(false)
-        } else {
-            false
-        };
+        let should_import = state.metadata_pool.read(|conn| {
+            MetadataDb::is_empty(conn).unwrap_or(false)
+        }).unwrap_or(false);
 
         if should_import {
             tracing::info!("Auto-importing metadata from {}", xml_path.display());
@@ -140,10 +135,9 @@ impl BackgroundManager {
         let region_secondary = state.region_preference_secondary();
 
         // Load all cached system metadata from L2.
-        let cached_meta = {
-            let guard = state.metadata_db();
-            guard.and_then(|g| MetadataDb::load_all_system_meta(g.as_ref()?).ok())
-        };
+        let cached_meta = state.metadata_pool.read(|conn| {
+            MetadataDb::load_all_system_meta(conn).ok()
+        }).flatten();
 
         let cached_meta = cached_meta.unwrap_or_default();
 
@@ -209,18 +203,13 @@ impl BackgroundManager {
     /// thumbnails yet) to avoid wasting time on GitHub API calls when offline.
     fn phase_auto_rebuild_thumbnail_index(state: &AppState) {
         // Check data_sources for libretro-thumbnails entries and thumbnail_index emptiness.
-        let (has_sources, index_empty) = {
-            let guard = state.metadata_db();
-            match guard.and_then(|g| {
-                let db = g.as_ref()?;
-                let stats = MetadataDb::get_data_source_stats(db, "libretro-thumbnails").ok()?;
-                // Also check if thumbnail_index itself has any rows.
-                let index_count: i64 = MetadataDb::thumbnail_index_count(db).unwrap_or(0);
-                Some((stats.repo_count > 0, index_count == 0))
-            }) {
-                Some(result) => result,
-                None => return, // DB unavailable
-            }
+        let (has_sources, index_empty) = match state.metadata_pool.read(|conn| {
+            let stats = MetadataDb::get_data_source_stats(conn, "libretro-thumbnails").ok()?;
+            let index_count: i64 = MetadataDb::thumbnail_index_count(conn).unwrap_or(0);
+            Some((stats.repo_count > 0, index_count == 0))
+        }).flatten() {
+            Some(result) => result,
+            None => return, // DB unavailable
         };
 
         if !has_sources {
@@ -251,25 +240,21 @@ impl BackgroundManager {
         let storage = state.storage();
         let media_dir = storage.rc_dir().join("media");
 
-        let mut total_entries = 0usize;
-        let mut total_repos = 0usize;
-
         let Ok(systems) = std::fs::read_dir(&media_dir) else {
             return;
         };
 
-        let mut db_guard = match state.metadata_db() {
-            Some(guard) => guard,
-            None => return,
-        };
-        let db = match db_guard.as_mut() {
-            Some(db) => db,
-            None => return,
-        };
+        // Collect all system image data from disk first (no DB needed).
+        struct SystemImageData {
+            system_str: String,
+            repo_names: &'static [&'static str],
+            entries: Vec<(String, String, Option<String>)>,
+        }
 
+        let mut system_data: Vec<SystemImageData> = Vec::new();
         for system_entry in systems.flatten() {
             let system_name = system_entry.file_name();
-            let system_str = system_name.to_string_lossy();
+            let system_str = system_name.to_string_lossy().into_owned();
 
             let Some(repo_names) =
                 replay_control_core::thumbnails::thumbnail_repo_names(&system_str)
@@ -284,41 +269,60 @@ impl BackgroundManager {
                 continue;
             }
 
-            // Register data_source with actual entry count, then insert index entries.
-            let repo_display = repo_names[0];
-            let source_name = replay_control_core::thumbnails::libretro_source_name(repo_display);
-            let branch = replay_control_core::thumbnail_manifest::default_branch(repo_display);
-            let entry_count = all_entries.len();
+            system_data.push(SystemImageData {
+                system_str,
+                repo_names,
+                entries: all_entries,
+            });
+        }
 
-            let _ = MetadataDb::upsert_data_source(db, 
-                &source_name,
-                "libretro-thumbnails",
-                "disk-rebuild",
-                branch,
-                entry_count,
-            );
+        // Now write all collected data to the DB in a single write() call.
+        let write_result = state.metadata_pool.write(|db| {
+            let mut w_total_entries = 0usize;
+            let mut w_total_repos = 0usize;
 
-            match MetadataDb::bulk_insert_thumbnail_index(db, &source_name, &all_entries) {
-                Ok(_) => total_entries += entry_count,
-                Err(e) => tracing::warn!("Failed to insert disk-based index for {system_str}: {e}"),
-            }
+            for data in &system_data {
+                let repo_display = data.repo_names[0];
+                let source_name = replay_control_core::thumbnails::libretro_source_name(repo_display);
+                let branch = replay_control_core::thumbnail_manifest::default_branch(repo_display);
+                let entry_count = data.entries.len();
 
-            // Register additional repos for multi-repo systems (e.g., arcade_dc → Naomi + Naomi 2).
-            for extra_repo in &repo_names[1..] {
-                let extra_source =
-                    replay_control_core::thumbnails::libretro_source_name(extra_repo);
-                let extra_branch =
-                    replay_control_core::thumbnail_manifest::default_branch(extra_repo);
-                let _ = MetadataDb::upsert_data_source(db, 
-                    &extra_source,
+                let _ = MetadataDb::upsert_data_source(db,
+                    &source_name,
                     "libretro-thumbnails",
                     "disk-rebuild",
-                    extra_branch,
-                    0,
+                    branch,
+                    entry_count,
                 );
+
+                match MetadataDb::bulk_insert_thumbnail_index(db, &source_name, &data.entries) {
+                    Ok(_) => w_total_entries += entry_count,
+                    Err(e) => tracing::warn!("Failed to insert disk-based index for {}: {e}", data.system_str),
+                }
+
+                // Register additional repos for multi-repo systems (e.g., arcade_dc → Naomi + Naomi 2).
+                for extra_repo in &data.repo_names[1..] {
+                    let extra_source =
+                        replay_control_core::thumbnails::libretro_source_name(extra_repo);
+                    let extra_branch =
+                        replay_control_core::thumbnail_manifest::default_branch(extra_repo);
+                    let _ = MetadataDb::upsert_data_source(db,
+                        &extra_source,
+                        "libretro-thumbnails",
+                        "disk-rebuild",
+                        extra_branch,
+                        0,
+                    );
+                }
+                w_total_repos += data.repo_names.len();
             }
-            total_repos += repo_names.len();
-        }
+
+            (w_total_entries, w_total_repos)
+        });
+
+        let Some((total_entries, total_repos)) = write_result else {
+            return; // DB unavailable
+        };
 
         if total_entries > 0 {
             tracing::info!(

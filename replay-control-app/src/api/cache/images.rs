@@ -110,9 +110,9 @@ impl GameLibrary {
             .flatten()
             .unwrap_or_default();
 
-        // Load DB paths and raw manifest data under a brief lock, then build
-        // the manifest fuzzy index outside the lock to avoid blocking other
-        // threads that need metadata_db (tokio worker starvation).
+        // Load DB paths and raw manifest data from the pool, then build
+        // the manifest fuzzy index outside the closure to avoid holding
+        // the pool connection longer than necessary.
         let (mut db_paths, raw_manifest_data) = state
             .metadata_pool
             .read(|conn| {

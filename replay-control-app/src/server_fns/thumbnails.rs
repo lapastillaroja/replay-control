@@ -78,7 +78,9 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
     let state = expect_context::<crate::api::AppState>();
     // Gracefully return defaults when the DB is temporarily unavailable
     // (e.g., during a metadata import or thumbnail update operation).
-    let Some(guard) = state.metadata_db() else {
+    let Some(stats) = state.metadata_pool.read(|conn| {
+        MetadataDb::get_data_source_stats(conn, "libretro-thumbnails")
+    }) else {
         return Ok(DataSourceSummary {
             entry_count: 0,
             repo_count: 0,
@@ -86,18 +88,7 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
             last_updated_text: String::new(),
         });
     };
-    let Some(db) = guard.as_ref() else {
-        return Ok(DataSourceSummary {
-            entry_count: 0,
-            repo_count: 0,
-            oldest_imported_at: None,
-            last_updated_text: String::new(),
-        });
-    };
-
-    let stats =
-                MetadataDb::get_data_source_stats(db, "libretro-thumbnails")
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let stats = stats.map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let last_updated_text = stats
         .oldest_imported_at
@@ -131,13 +122,9 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
 #[server(prefix = "/sfn")]
 pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let guard = state
-        .metadata_db()
-        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-    let db = guard
-        .as_ref()
-        .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-
-    MetadataDb::clear_thumbnail_index(db)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    state.metadata_pool.read(|conn| {
+        MetadataDb::clear_thumbnail_index(conn)
+    })
+    .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
+    .map_err(|e| ServerFnError::new(e.to_string()))
 }

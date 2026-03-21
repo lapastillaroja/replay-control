@@ -142,10 +142,8 @@ impl ImportPipeline {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;
 
         // Clear existing metadata.
-        if let Some(guard) = state.metadata_db()
-            && let Some(db) = guard.as_ref()
-        {
-            MetadataDb::clear(db).map_err(|e| e.to_string())?;
+        if let Some(result) = state.metadata_pool.read(MetadataDb::clear) {
+            result.map_err(|e| e.to_string())?;
         }
 
         // Find launchbox-metadata.xml (with fallback to old name) and trigger re-import.
@@ -240,10 +238,7 @@ impl ImportPipeline {
             };
 
             // Clear existing metadata before re-import.
-            if let Some(guard) = state.metadata_db()
-                && let Some(db) = guard.as_ref()
-                && let Err(e) = MetadataDb::clear(db)
-            {
+            if let Some(Err(e)) = state.metadata_pool.read(MetadataDb::clear) {
                 tracing::warn!("Failed to clear metadata DB before re-import: {e}");
             }
 
@@ -300,9 +295,9 @@ impl ImportPipeline {
 
         // Verify DB is available before starting the parse.
         {
-            let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-            if db_guard.is_none() {
-                tracing::error!("Metadata DB unavailable at import start (connection missing)");
+            let db_available = state.metadata_pool.read(|_conn| true).unwrap_or(false);
+            if !db_available {
+                tracing::error!("Metadata DB unavailable at import start (pool closed)");
                 let mut guard = self
                     .progress
                     .write()
@@ -329,22 +324,23 @@ impl ImportPipeline {
             }
         }
 
-        // Per-batch flush closure: locks DB, calls bulk_upsert, releases.
+        // Per-batch flush closure: acquires a write connection from the pool,
+        // calls bulk_upsert, then releases the connection.
         // The core crate calls this for each ~500-entry batch, keeping
-        // the DB Mutex held only for the duration of the SQL transaction.
-        let db_ref = state.metadata_db.clone();
+        // the DB connection held only for the duration of the SQL transaction.
+        let pool_ref = state.metadata_pool.clone();
         let flush_batch = |batch: &[(
             String,
             String,
             replay_control_core::metadata_db::GameMetadata,
         )]| {
-            let mut guard = db_ref.lock().expect("metadata_db lock poisoned");
-            let db = guard.as_mut().ok_or_else(|| {
+            pool_ref.write(|db| {
+                MetadataDb::bulk_upsert(db, batch)
+            }).ok_or_else(|| {
                 replay_control_core::error::Error::Other(
                     "Metadata DB unavailable during import".to_string(),
                 )
-            })?;
-            MetadataDb::bulk_upsert(db, batch)
+            })?
         };
 
         let progress_ref = self.progress.clone();
@@ -437,19 +433,14 @@ impl ImportPipeline {
             return;
         }
 
-        // Lock DB to load base_titles, then release.
+        // Read base_titles from DB via pool.
         tracing::debug!("LaunchBox aliases: loading base_titles from game_library...");
-        let base_titles: std::collections::HashMap<String, Vec<String>> = {
-            let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-            let Some(db) = guard.as_mut() else {
-                tracing::warn!("LaunchBox aliases: DB unavailable for reading base_titles");
-                return;
-            };
-            let systems = MetadataDb::active_systems(db).unwrap_or_default();
+        let base_titles: std::collections::HashMap<String, Vec<String>> = match state.metadata_pool.read(|conn| {
+            let systems = MetadataDb::active_systems(conn).unwrap_or_default();
             let mut map: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
             for system in &systems {
-                if let Ok(entries) = MetadataDb::load_system_entries(db, system) {
+                if let Ok(entries) = MetadataDb::load_system_entries(conn, system) {
                     for entry in entries {
                         if !entry.base_title.is_empty() {
                             map.entry(entry.base_title.clone())
@@ -460,7 +451,12 @@ impl ImportPipeline {
                 }
             }
             map
-            // MutexGuard drops here — DB lock released.
+        }) {
+            Some(map) => map,
+            None => {
+                tracing::warn!("LaunchBox aliases: DB unavailable for reading base_titles");
+                return;
+            }
         };
 
         // Call pure core matching function.
@@ -475,18 +471,18 @@ impl ImportPipeline {
             return;
         }
 
-        // Lock DB to insert aliases, then release.
+        // Write aliases to DB via pool.
         let count = aliases.len();
-        let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-        if let Some(db) = guard.as_mut() {
-            match MetadataDb::bulk_insert_aliases(db, &aliases) {
+        if let Some(result) = state.metadata_pool.write(|db| {
+            MetadataDb::bulk_insert_aliases(db, &aliases)
+        }) {
+            match result {
                 Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
                 Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
             }
         } else {
             tracing::warn!("LaunchBox aliases: DB unavailable for inserting aliases");
         }
-        // MutexGuard drops here — DB lock released.
     }
 }
 
@@ -602,10 +598,10 @@ impl ThumbnailPipeline {
 
         // Verify DB is available before starting.
         {
-            let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-            if db_guard.is_none() {
+            let db_available = state.metadata_pool.read(|_conn| true).unwrap_or(false);
+            if !db_available {
                 tracing::error!(
-                    "Metadata DB unavailable at thumbnail update start (connection missing)"
+                    "Metadata DB unavailable at thumbnail update start (pool closed)"
                 );
                 let mut guard = self.progress.write().expect("lock");
                 if let Some(ref mut p) = *guard {
@@ -629,24 +625,29 @@ impl ThumbnailPipeline {
         let api_key = replay_control_core::settings::read_github_api_key(&storage_root);
 
         let index_result = {
-            let mut db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-            let db = db_guard.as_mut().expect("DB availability verified above");
-            thumbnail_manifest::import_all_manifests(
-                db,
-                &|repos_done, repos_total, current_repo| {
-                    let mut guard = progress_ref.write().expect("lock");
-                    if let Some(ref mut p) = *guard {
-                        p.phase = ThumbnailPhase::Indexing;
-                        p.step_done = repos_done;
-                        p.step_total = repos_total;
-                        p.current_label = current_repo.to_string();
-                        p.elapsed_secs = start.elapsed().as_secs();
-                    }
-                },
-                cancel_ref,
-                api_key.as_deref(),
-            )
-            // MutexGuard drops here — DB lock released between phases.
+            let cancel_flag = cancel_ref.clone();
+            let api_key_owned = api_key.clone();
+            state.metadata_pool.write(|db| {
+                thumbnail_manifest::import_all_manifests(
+                    db,
+                    &|repos_done, repos_total, current_repo| {
+                        let mut guard = progress_ref.write().expect("lock");
+                        if let Some(ref mut p) = *guard {
+                            p.phase = ThumbnailPhase::Indexing;
+                            p.step_done = repos_done;
+                            p.step_total = repos_total;
+                            p.current_label = current_repo.to_string();
+                            p.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    },
+                    &cancel_flag,
+                    api_key_owned.as_deref(),
+                )
+            })
+            .unwrap_or_else(|| Err(replay_control_core::error::Error::Other(
+                "Metadata DB unavailable during thumbnail index".to_string(),
+            )))
+            // Pool connection returned here — released between phases.
         };
 
         let index_stats = match index_result {
@@ -783,10 +784,10 @@ impl ThumbnailPipeline {
                     break;
                 }
                 let prev_downloaded = total_downloaded;
-                let db_guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-                if let Some(db) = db_guard.as_ref() {
-                    let result = thumbnail_manifest::download_system_thumbnails(
-                        db,
+                let cancel_flag = cancel_ref.clone();
+                if let Some(result) = state.metadata_pool.read(|conn| {
+                    thumbnail_manifest::download_system_thumbnails(
+                        conn,
                         &storage_root,
                         system,
                         *kind,
@@ -804,9 +805,9 @@ impl ThumbnailPipeline {
                                 }
                             }
                         },
-                        cancel_ref,
-                    );
-
+                        &cancel_flag,
+                    )
+                }) {
                     match result {
                         Ok(stats) => {
                             total_downloaded += stats.downloaded;
@@ -818,7 +819,7 @@ impl ThumbnailPipeline {
                         }
                     }
                 }
-                // MutexGuard drops here — DB lock released between kinds.
+                // Pool connection returned here — released between kinds.
             }
 
             // Lock DB for image path update, then release.
@@ -893,14 +894,12 @@ impl ThumbnailPipeline {
     ) {
         use replay_control_core::image_matching::{build_dir_index, find_best_match};
 
-        // Lock DB to read visible filenames, then release.
-        let rom_filenames = {
-            let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-            let Some(db) = guard.as_mut() else {
-                return;
-            };
-            MetadataDb::visible_filenames(db, system).unwrap_or_default()
-            // MutexGuard drops here.
+        // Read visible filenames from DB via pool.
+        let rom_filenames = match state.metadata_pool.read(|conn| {
+            MetadataDb::visible_filenames(conn, system).unwrap_or_default()
+        }) {
+            Some(filenames) => filenames,
+            None => return,
         };
 
         // Build dir indexes (filesystem scan, no DB needed).
@@ -952,15 +951,13 @@ impl ThumbnailPipeline {
             }
         }
 
-        // Lock DB to write image path updates, then release.
-        if !updates.is_empty() {
-            let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
-            if let Some(db) = guard.as_mut()
-                && let Err(e) = MetadataDb::bulk_update_image_paths(db, &updates)
-            {
-                tracing::warn!("Failed to update image paths for {system}: {e}");
-            }
-            // MutexGuard drops here.
+        // Write image path updates to DB via pool.
+        if !updates.is_empty()
+            && let Some(Err(e)) = state.metadata_pool.write(|db| {
+                MetadataDb::bulk_update_image_paths(db, &updates)
+            })
+        {
+            tracing::warn!("Failed to update image paths for {system}: {e}");
         }
     }
 }
@@ -968,8 +965,6 @@ impl ThumbnailPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-#[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
     use std::sync::atomic::AtomicBool;
 
     #[test]
@@ -1109,39 +1104,4 @@ use replay_control_core::metadata_db::MetadataDb;
         assert_eq!(wins.load(Ordering::SeqCst), 1);
     }
 
-    /// DB Mutex contention: metadata_db() accessor returns a valid guard
-    /// even when another thread holds the Mutex briefly.
-    #[test]
-    fn db_mutex_contention_no_deadlock() {
-        use std::sync::Mutex;
-
-        // Simulate the metadata_db Mutex pattern from AppState.
-        let db_mutex: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(Some("db_handle".into())));
-
-        let db_clone = db_mutex.clone();
-        let barrier = Arc::new(std::sync::Barrier::new(2));
-        let barrier2 = barrier.clone();
-
-        // Thread 1: holds the lock for a bit.
-        let t1 = std::thread::spawn(move || {
-            let guard = db_clone.lock().unwrap();
-            barrier2.wait(); // signal that we hold the lock
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            assert!(guard.is_some());
-            drop(guard);
-        });
-
-        // Thread 2: tries to acquire the lock while thread 1 holds it.
-        barrier.wait(); // wait until thread 1 holds the lock
-        let start = std::time::Instant::now();
-        let guard = db_mutex.lock().unwrap();
-        let waited = start.elapsed();
-
-        // We should have waited for thread 1 to release.
-        assert!(waited.as_millis() >= 20, "Should have blocked on Mutex");
-        assert!(guard.is_some(), "DB should still be valid after contention");
-        drop(guard);
-
-        t1.join().unwrap();
-    }
 }

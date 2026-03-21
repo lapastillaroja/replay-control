@@ -7,13 +7,9 @@ use replay_control_core::metadata_db::MetadataDb;
 #[server(prefix = "/sfn")]
 pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let (with_boxart, with_snap) = match state.metadata_db() {
-        Some(guard) if guard.as_ref().is_some() => {
-            let conn = guard.as_ref().unwrap();
-            MetadataDb::image_stats(conn).unwrap_or((0, 0))
-        }
-        _ => (0, 0),
-    };
+    let (with_boxart, with_snap) = state.metadata_pool.read(|conn| {
+        MetadataDb::image_stats(conn).unwrap_or((0, 0))
+    }).unwrap_or((0, 0));
     let storage = state.storage();
     let media_size = replay_control_core::thumbnails::media_dir_size(&storage.root);
     Ok((with_boxart, with_snap, media_size))
@@ -46,27 +42,16 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
     let storage = state.storage();
 
     // 1. Delete orphaned metadata rows.
-    let metadata_deleted: usize = match state.metadata_db() {
-        Some(guard) if guard.as_ref().is_some() => {
-            let conn = guard.as_ref().unwrap();
-            MetadataDb::delete_orphaned_metadata(conn)
-                .map_err(|e| ServerFnError::new(e.to_string()))?
-        }
-        _ => 0,
-    };
-
     // 2. Delete orphaned thumbnail files.
-    let (files_deleted, bytes_freed) = match state.metadata_db() {
-        Some(guard) if guard.as_ref().is_some() => {
-            let conn = guard.as_ref().unwrap();
-            replay_control_core::thumbnails::delete_orphaned_thumbnails(
-                &storage.root,
-                conn,
-            )
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-        }
-        _ => (0, 0),
-    };
+    // Combined into a single pool read to avoid acquiring two connections.
+    let (metadata_deleted, files_deleted, bytes_freed) = state.metadata_pool.read(|conn| {
+        let meta_del = MetadataDb::delete_orphaned_metadata(conn).unwrap_or(0);
+        let (files_del, freed) = replay_control_core::thumbnails::delete_orphaned_thumbnails(
+            &storage.root,
+            conn,
+        ).unwrap_or((0, 0));
+        (meta_del, files_del, freed)
+    }).unwrap_or((0, 0, 0));
 
     Ok((metadata_deleted, files_deleted, bytes_freed))
 }
