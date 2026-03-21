@@ -153,6 +153,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLocalManuals>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameManuals>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadManual>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::DeleteManual>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLanguagePreference>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveLanguagePreference>(

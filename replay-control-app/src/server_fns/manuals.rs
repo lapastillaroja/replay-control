@@ -386,6 +386,34 @@ pub async fn download_manual(
     Ok(serve_url)
 }
 
+/// Delete a previously downloaded manual PDF.
+#[server(prefix = "/sfn")]
+pub async fn delete_manual(system: String, filename: String) -> Result<(), ServerFnError> {
+    // Path traversal protection
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err(ServerFnError::new("Invalid filename"));
+    }
+
+    let state = expect_context::<crate::api::AppState>();
+    let folder = replay_control_core::retrokit_manuals::manual_folder_name(&system).to_string();
+    let target_path = state.storage().manuals_dir().join(&folder).join(&filename);
+
+    tokio::task::spawn_blocking(move || {
+        if target_path.is_file() {
+            std::fs::remove_file(&target_path)
+                .map_err(|e| format!("Failed to delete manual: {e}"))
+        } else {
+            Err("Manual file not found".to_string())
+        }
+    })
+    .await
+    .map_err(|e| ServerFnError::new(format!("Task failed: {e}")))?
+    .map_err(ServerFnError::new)?;
+
+    tracing::info!("Manual deleted: {folder}/{filename}");
+    Ok(())
+}
+
 /// Load a retrokit TSV index from cache or fetch it.
 #[cfg(feature = "ssr")]
 async fn load_retrokit_index(
