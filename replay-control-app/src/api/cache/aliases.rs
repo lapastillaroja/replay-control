@@ -1,3 +1,4 @@
+use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::storage::StorageLocation;
 use replay_control_core::title_utils::fuzzy_match_key;
 
@@ -39,7 +40,7 @@ impl GameLibrary {
         }
 
         let count = aliases.len();
-        let result = self.with_db_mut(storage, |db| db.bulk_insert_aliases(&aliases));
+        let result = self.with_db_mut(storage, |conn| MetadataDb::bulk_insert_aliases(conn, &aliases));
         match result {
             Some(Ok(n)) => {
                 tracing::debug!("TGDB aliases for {system}: {n}/{count} inserted")
@@ -68,7 +69,7 @@ impl GameLibrary {
         }
 
         let count = series_entries.len();
-        let result = self.with_db_mut(storage, |db| db.bulk_insert_series(&series_entries));
+        let result = self.with_db_mut(storage, |conn| MetadataDb::bulk_insert_series(conn, &series_entries));
         match result {
             Some(Ok(n)) => {
                 tracing::debug!("Wikidata series for {system}: {n}/{count} inserted")

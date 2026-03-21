@@ -21,7 +21,7 @@ fn setup() {
     register_server_fns();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_systems_returns_test_systems() {
     setup();
     let tmp = create_test_storage();
@@ -55,7 +55,7 @@ async fn sfn_get_systems_returns_test_systems() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_roms_page_returns_roms() {
     setup();
     let tmp = create_test_storage();
@@ -92,7 +92,7 @@ async fn sfn_get_roms_page_returns_roms() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sfn_get_info_returns_system_info() {
     setup();
     let tmp = create_test_storage();
@@ -122,7 +122,7 @@ async fn sfn_get_info_returns_system_info() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn sfn_nonexistent_function_returns_error() {
     setup();
     let tmp = create_test_storage();

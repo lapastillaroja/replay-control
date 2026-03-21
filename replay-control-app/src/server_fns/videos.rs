@@ -1,4 +1,8 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
+#[cfg(feature = "ssr")]
+use replay_control_core::user_data_db::UserDataDb;
 
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::VideoEntry;
@@ -28,7 +32,7 @@ pub async fn get_game_videos(
     if let Some(guard) = state.metadata_db()
         && let Some(db) = guard.as_ref()
     {
-        let aliases = db.alias_base_titles(&system, &base_title);
+        let aliases = MetadataDb::alias_base_titles(db, &system, &base_title);
         all_titles.extend(aliases);
     }
 
@@ -39,8 +43,7 @@ pub async fn get_game_videos(
         .as_ref()
         .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
     let title_refs: Vec<&str> = all_titles.iter().map(|s| s.as_str()).collect();
-    ud_db
-        .get_game_videos(&system, &title_refs)
+    UserDataDb::get_game_videos(ud_db, &system, &title_refs)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -84,8 +87,7 @@ pub async fn add_game_video(
         let ud_db = ud_guard
             .as_ref()
             .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
-        ud_db
-            .add_game_video(&system, &rom_filename, &base_title, &entry)
+        UserDataDb::add_game_video(ud_db, &system, &rom_filename, &base_title, &entry)
             .map_err(|e| ServerFnError::new(e.to_string()))?;
     }
 
@@ -106,8 +108,7 @@ pub async fn remove_game_video(
     let ud_db = ud_guard
         .as_ref()
         .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
-    ud_db
-        .remove_game_video(&system, &rom_filename, &video_id)
+    UserDataDb::remove_game_video(ud_db, &system, &rom_filename, &video_id)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 

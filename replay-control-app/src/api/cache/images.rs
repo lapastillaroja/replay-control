@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use replay_control_core::image_matching::DirIndex;
+use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::thumbnail_manifest::ManifestFuzzyIndex;
+use replay_control_core::user_data_db::UserDataDb;
 
 use super::{CACHE_HARD_TTL, GameLibrary, dir_mtime};
 
@@ -13,7 +15,7 @@ use super::{CACHE_HARD_TTL, GameLibrary, dir_mtime};
 pub struct ImageIndex {
     /// Core directory index: exact, case-insensitive, fuzzy, version-stripped.
     pub dir_index: DirIndex,
-    /// DB paths: rom_filename → "boxart/{path}"
+    /// DB paths: rom_filename -> "boxart/{path}"
     pub db_paths: HashMap<String, String>,
     /// Manifest-backed fallback for images not yet downloaded.
     /// None if the thumbnail_index has no entries for this system.
@@ -101,22 +103,20 @@ impl GameLibrary {
             }
         }
 
-        // Load user box art overrides first (separate lock, released before metadata_db).
+        // Load user box art overrides first (separate pool, no contention with metadata).
         let user_overrides: HashMap<String, String> = state
-            .user_data_db()
-            .and_then(|guard| {
-                guard
-                    .as_ref()
-                    .and_then(|db| db.get_system_overrides(system).ok())
-            })
+            .user_data_pool
+            .read(|conn| UserDataDb::get_system_overrides(conn, system).ok())
+            .flatten()
             .unwrap_or_default();
 
         // Load DB paths and raw manifest data under a brief lock, then build
         // the manifest fuzzy index outside the lock to avoid blocking other
         // threads that need metadata_db (tokio worker starvation).
-        let (mut db_paths, raw_manifest_data) = if let Some(guard) = state.metadata_db() {
-            if let Some(db) = guard.as_ref() {
-                let paths = db.system_box_art_paths(system).unwrap_or_default();
+        let (mut db_paths, raw_manifest_data) = state
+            .metadata_pool
+            .read(|conn| {
+                let paths = MetadataDb::system_box_art_paths(conn, system).unwrap_or_default();
 
                 // Pre-fetch raw manifest data while we have the DB lock.
                 let raw = if let Some(repo_names) =
@@ -128,14 +128,13 @@ impl GameLibrary {
                             replay_control_core::thumbnails::repo_url_name(display_name);
                         let source_name =
                             replay_control_core::thumbnails::libretro_source_name(display_name);
-                        let branch = db
-                            .get_data_source(&source_name)
+                        let branch = MetadataDb::get_data_source(conn, &source_name)
                             .ok()
                             .flatten()
                             .and_then(|s| s.branch)
                             .unwrap_or_else(|| "master".to_string());
-                        let entries = db
-                            .query_thumbnail_index(
+                        let entries = MetadataDb::query_thumbnail_index(
+                                conn,
                                 &source_name,
                                 replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
                             )
@@ -147,13 +146,8 @@ impl GameLibrary {
                     None
                 };
                 (paths, raw)
-            } else {
-                (HashMap::new(), None)
-            }
-        } else {
-            (HashMap::new(), None)
-        };
-        // metadata_db lock released here.
+            })
+            .unwrap_or_else(|| (HashMap::new(), None));
 
         // Inject user box art overrides (highest priority — overwrites auto-matched paths).
         for (rom_filename, override_path) in user_overrides {

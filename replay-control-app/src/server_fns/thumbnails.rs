@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
 
 /// Progress for the two-phase thumbnail pipeline (index + download).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,8 +95,8 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
         });
     };
 
-    let stats = db
-        .get_data_source_stats("libretro-thumbnails")
+    let stats =
+                MetadataDb::get_data_source_stats(db, "libretro-thumbnails")
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let last_updated_text = stats
@@ -136,6 +138,6 @@ pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
         .as_ref()
         .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
 
-    db.clear_thumbnail_index()
+    MetadataDb::clear_thumbnail_index(db)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }

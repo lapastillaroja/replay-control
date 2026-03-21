@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
 
 /// Get image stats: (boxart_count, snap_count, media_size_bytes).
 /// Returns zeros when the DB is unavailable (e.g., during import).
@@ -7,7 +9,8 @@ pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let (with_boxart, with_snap) = match state.metadata_db() {
         Some(guard) if guard.as_ref().is_some() => {
-            guard.as_ref().unwrap().image_stats().unwrap_or((0, 0))
+            let conn = guard.as_ref().unwrap();
+            MetadataDb::image_stats(conn).unwrap_or((0, 0))
         }
         _ => (0, 0),
     };
@@ -43,21 +46,22 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
     let storage = state.storage();
 
     // 1. Delete orphaned metadata rows.
-    let metadata_deleted = match state.metadata_db() {
-        Some(guard) if guard.as_ref().is_some() => guard
-            .as_ref()
-            .unwrap()
-            .delete_orphaned_metadata()
-            .map_err(|e| ServerFnError::new(e.to_string()))?,
+    let metadata_deleted: usize = match state.metadata_db() {
+        Some(guard) if guard.as_ref().is_some() => {
+            let conn = guard.as_ref().unwrap();
+            MetadataDb::delete_orphaned_metadata(conn)
+                .map_err(|e| ServerFnError::new(e.to_string()))?
+        }
         _ => 0,
     };
 
     // 2. Delete orphaned thumbnail files.
     let (files_deleted, bytes_freed) = match state.metadata_db() {
         Some(guard) if guard.as_ref().is_some() => {
+            let conn = guard.as_ref().unwrap();
             replay_control_core::thumbnails::delete_orphaned_thumbnails(
                 &storage.root,
-                guard.as_ref().unwrap(),
+                conn,
             )
             .map_err(|e| ServerFnError::new(e.to_string()))?
         }

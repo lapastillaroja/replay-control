@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
 
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,8 +81,8 @@ pub async fn get_roms_page(
     let genre_groups: std::collections::HashMap<String, String> = if !genre.is_empty() {
         state
             .cache
-            .with_db_read(&storage, |db| {
-                db.load_system_entries(&system)
+            .with_db_read(&storage, |conn| {
+                MetadataDb::load_system_entries(conn, &system)
                     .map(|entries| {
                         entries
                             .into_iter()
@@ -148,7 +150,7 @@ pub async fn get_roms_page(
     let pre_filtered: Vec<&RomEntry> = if let Some(threshold) = min_rating {
         let ratings = if let Some(guard) = state.metadata_db() {
             if let Some(db) = guard.as_ref() {
-                db.system_ratings(&system).unwrap_or_default()
+                MetadataDb::system_ratings(db, &system).unwrap_or_default()
             } else {
                 std::collections::HashMap::new()
             }
@@ -252,7 +254,7 @@ pub async fn get_roms_page(
         && let Some(db) = guard.as_ref()
     {
         let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
-        if let Ok(ratings) = db.lookup_ratings(&system, &filenames) {
+        if let Ok(ratings) = MetadataDb::lookup_ratings(db, &system, &filenames) {
             for rom in &mut roms {
                 if let Some(&rating) = ratings.get(&rom.game.rom_filename)
                     && rating > 0.0

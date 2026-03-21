@@ -6,14 +6,17 @@ mod images;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
+use deadpool_sqlite::rusqlite;
 use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::recents::RecentEntry;
 use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core::roms::{RomEntry, SystemSummary};
 use replay_control_core::storage::StorageLocation;
+
+use super::DbPool;
 
 /// Hard TTL — even if mtime hasn't changed, re-scan after this long.
 const CACHE_HARD_TTL: Duration = Duration::from_secs(300);
@@ -66,8 +69,8 @@ pub struct GameLibrary {
     /// Wrapped in `Arc` so cache hits return a cheap `Arc::clone()` instead of
     /// deep-copying all 4 HashMaps.
     pub(super) images: std::sync::RwLock<HashMap<String, Arc<ImageIndex>>>,
-    /// Shared reference to the metadata DB for L2 persistent cache.
-    pub(super) db: Arc<Mutex<Option<MetadataDb>>>,
+    /// Metadata DB pool for L2 persistent cache.
+    pub(super) db: DbPool,
     /// Unified busy flag (same Arc as AppState.busy).
     /// When set, get_roms() returns empty instead of blocking on L3 scan.
     busy: Arc<std::sync::atomic::AtomicBool>,
@@ -78,7 +81,7 @@ pub struct GameLibrary {
 
 impl GameLibrary {
     pub(crate) fn new(
-        db: Arc<Mutex<Option<MetadataDb>>>,
+        db: DbPool,
         busy: Arc<std::sync::atomic::AtomicBool>,
         scanning: Arc<std::sync::atomic::AtomicBool>,
     ) -> Self {
@@ -94,51 +97,22 @@ impl GameLibrary {
         }
     }
 
-    /// Run a read-only closure with the DB, opening it if needed.
-    /// Public for recommendation queries that need direct DB access.
-    pub fn with_db_read<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
+    /// Run a read-only closure with the metadata DB connection.
+    /// Returns None if the DB is unavailable.
+    pub fn with_db_read<F, R>(&self, _storage: &StorageLocation, f: F) -> Option<R>
     where
-        F: FnOnce(&MetadataDb) -> R,
+        F: FnOnce(&rusqlite::Connection) -> R,
     {
-        self.with_db(storage, f)
+        self.db.read(f)
     }
 
-    /// Try to open the DB if not yet open, then run a read-only closure.
-    /// Returns None if the DB can't be opened.
-    pub(super) fn with_db<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
+    /// Run a write closure with the metadata DB connection.
+    /// Returns None if the DB is unavailable.
+    pub(super) fn with_db_mut<F, R>(&self, _storage: &StorageLocation, f: F) -> Option<R>
     where
-        F: FnOnce(&MetadataDb) -> R,
+        F: FnOnce(&mut rusqlite::Connection) -> R,
     {
-        let mut guard = self.db.lock().ok()?;
-        if guard.is_none() {
-            match MetadataDb::open(&storage.root, storage.kind.is_local()) {
-                Ok(db) => *guard = Some(db),
-                Err(e) => {
-                    tracing::debug!("Could not open metadata DB for cache: {e}");
-                    return None;
-                }
-            }
-        }
-        guard.as_ref().map(f)
-    }
-
-    /// Try to open the DB if not yet open, then run a mutable closure.
-    /// Returns None if the DB can't be opened.
-    pub(super) fn with_db_mut<F, R>(&self, storage: &StorageLocation, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut MetadataDb) -> R,
-    {
-        let mut guard = self.db.lock().ok()?;
-        if guard.is_none() {
-            match MetadataDb::open(&storage.root, storage.kind.is_local()) {
-                Ok(db) => *guard = Some(db),
-                Err(e) => {
-                    tracing::debug!("Could not open metadata DB for cache: {e}");
-                    return None;
-                }
-            }
-        }
-        guard.as_mut().map(f)
+        self.db.write(f)
     }
 
     /// Get cached systems or scan and cache.
@@ -181,7 +155,7 @@ impl GameLibrary {
     fn load_systems_from_db(&self, storage: &StorageLocation) -> Option<Vec<SystemSummary>> {
         use replay_control_core::systems;
 
-        let cached_meta = self.with_db(storage, |db| db.load_all_system_meta())?;
+        let cached_meta = self.with_db_read(storage, |conn| MetadataDb::load_all_system_meta(conn))?;
         let cached_meta = cached_meta.ok()?;
 
         if cached_meta.is_empty() {
@@ -224,7 +198,7 @@ impl GameLibrary {
     /// Write system summaries to SQLite game_library_meta.
     fn save_systems_to_db(&self, storage: &StorageLocation, summaries: &[SystemSummary]) {
         let roms_dir = storage.roms_dir();
-        self.with_db(storage, |db| {
+        self.with_db_mut(storage, |conn| {
             for summary in summaries {
                 if summary.game_count == 0 {
                     continue;
@@ -235,7 +209,8 @@ impl GameLibrary {
                         .ok()
                         .map(|d| d.as_secs() as i64)
                 });
-                let _ = db.save_system_meta(
+                let _ = MetadataDb::save_system_meta(
+                    conn,
                     &summary.folder_name,
                     mtime_secs,
                     summary.game_count,
@@ -344,7 +319,7 @@ impl GameLibrary {
         use replay_control_core::metadata_db::SystemMeta;
 
         let meta: SystemMeta = self
-            .with_db(storage, |db| db.load_system_meta(system))?
+            .with_db_read(storage, |conn| MetadataDb::load_system_meta(conn, system))?
             .ok()??;
 
         // No cached ROMs? Skip L2.
@@ -377,7 +352,7 @@ impl GameLibrary {
 
         // Load ROMs from DB.
         let cached_roms = self
-            .with_db(storage, |db| db.load_system_entries(system))?
+            .with_db_read(storage, |conn| MetadataDb::load_system_entries(conn, system))?
             .ok()?;
 
         if cached_roms.is_empty() && meta.rom_count > 0 {
@@ -457,11 +432,9 @@ impl GameLibrary {
             guard.clear();
         }
         // L2: Clear SQLite game_library.
-        if let Ok(guard) = self.db.lock()
-            && let Some(ref db) = *guard
-        {
-            let _ = db.clear_all_game_library();
-        }
+        self.db.write(|conn| {
+            let _ = MetadataDb::clear_all_game_library(conn);
+        });
     }
 
     /// Invalidate cache for a specific system.
@@ -474,11 +447,9 @@ impl GameLibrary {
             guard.remove(system);
         }
         // L2: Clear SQLite game_library for this system.
-        if let Ok(guard) = self.db.lock()
-            && let Some(ref db) = *guard
-        {
-            let _ = db.clear_system_game_library(system);
-        }
+        self.db.write(|conn| {
+            let _ = MetadataDb::clear_system_game_library(conn, system);
+        });
     }
 
     /// Invalidate only the favorites cache (after add/remove favorite).
@@ -519,7 +490,8 @@ mod tests {
     fn busy_flag_blocks_l3_scan() {
         let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let scanning = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let db = Arc::new(Mutex::new(None));
+        // Create a dummy DbPool with no connection (closed).
+        let db = DbPool::new_closed("test");
         let cache = GameLibrary::new(db, busy.clone(), scanning);
 
         // Set busy.
@@ -590,6 +562,7 @@ mod tests {
     /// batch operations, allowing other threads to access the DB.
     #[test]
     fn per_batch_locking_releases_between_batches() {
+        use std::sync::Mutex;
         let db_mutex: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(Some("db_handle".into())));
 
         // Simulate a per-batch flush pattern: lock, do work, release.

@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
 
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::{ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage};
@@ -18,7 +20,8 @@ pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     let Some(db) = guard.as_ref() else {
         return Ok(MetadataStats::default());
     };
-    db.stats().map_err(|e| ServerFnError::new(e.to_string()))
+    let db_path = state.metadata_pool.db_path();
+    MetadataDb::stats(db, &db_path).map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Start a background metadata import from a LaunchBox metadata XML file.
@@ -58,12 +61,10 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
     // Return empty data when DB is unavailable (e.g., during import).
     let (entries_per_system, thumbnails_per_system) = match state.metadata_db() {
         Some(guard) if guard.as_ref().is_some() => {
-            let db = guard.as_ref().unwrap();
-            let entries = db
-                .entries_per_system()
+            let conn = guard.as_ref().unwrap();
+            let entries = MetadataDb::entries_per_system(conn)
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
-            let thumbnails = db
-                .thumbnails_per_system()
+            let thumbnails = MetadataDb::thumbnails_per_system(conn)
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
             (entries, thumbnails)
         }
@@ -139,7 +140,7 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let db = guard
         .as_ref()
         .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
-    db.clear().map_err(|e| ServerFnError::new(e.to_string()))
+    MetadataDb::clear(db).map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Clear metadata DB and trigger re-import from launchbox-metadata.xml.

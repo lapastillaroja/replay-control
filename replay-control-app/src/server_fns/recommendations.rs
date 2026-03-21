@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
 
 /// A recommended game card with display info and navigation link.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,20 +60,20 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     let region_secondary_str = region_secondary.map(|r| r.as_str()).unwrap_or("");
 
     // Single DB access: run all SQL queries under one Mutex lock.
-    let db_data = state.cache.with_db_read(&storage, |db| {
-        let random_pool = db
-            .random_cached_roms_diverse(count, region_str, region_secondary_str)
+    let db_data = state.cache.with_db_read(&storage, |conn| {
+        let random_pool =
+                          MetadataDb::random_cached_roms_diverse(conn, count, region_str, region_secondary_str)
             .unwrap_or_default();
-        let genre_counts = db.genre_counts().unwrap_or_default();
-        let multiplayer = db.multiplayer_count().unwrap_or(0);
-        let top_rated = db
-            .top_rated_cached_roms(count * 3, region_str, region_secondary_str)
+        let genre_counts = MetadataDb::genre_counts(conn).unwrap_or_default();
+        let multiplayer = MetadataDb::multiplayer_count(conn).unwrap_or(0);
+        let top_rated =
+                        MetadataDb::top_rated_cached_roms(conn, count * 3, region_str, region_secondary_str)
             .unwrap_or_default();
         let fav_roms = favorites_info.as_ref().map(|fi| {
             let exclude: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
             let top_genre = fi.top_genre.as_deref();
-            let mut roms = db
-                .system_roms_excluding(
+            let mut roms =
+                           MetadataDb::system_roms_excluding(conn, 
                     &fi.system,
                     &exclude,
                     top_genre,
@@ -84,8 +86,8 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             if roms.len() < count && top_genre.is_some() {
                 let have: std::collections::HashSet<String> =
                     roms.iter().map(|r| r.rom_filename.clone()).collect();
-                let more = db
-                    .system_roms_excluding(
+                let more =
+                           MetadataDb::system_roms_excluding(conn, 
                         &fi.system,
                         &exclude,
                         None,
@@ -230,8 +232,8 @@ fn collect_favorites_info(
     // Determine top genre_group from favorites using game_library DB.
     let genre_map: std::collections::HashMap<String, String> = state
         .cache
-        .with_db_read(storage, |db| {
-            db.load_system_entries(chosen_system)
+        .with_db_read(storage, |conn| {
+            MetadataDb::load_system_entries(conn, chosen_system)
                 .map(|entries| {
                     entries
                         .into_iter()

@@ -18,7 +18,7 @@ fn setup() {
     register_server_fns();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn home_page_returns_200_with_replay_control() {
     setup();
     let tmp = create_test_storage();
@@ -43,7 +43,7 @@ async fn home_page_returns_200_with_replay_control() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn more_page_returns_200() {
     setup();
     let tmp = create_test_storage();
@@ -60,7 +60,7 @@ async fn more_page_returns_200() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn nonexistent_page_returns_200_with_not_found_message() {
     setup();
     let tmp = create_test_storage();
@@ -91,7 +91,7 @@ async fn nonexistent_page_returns_200_with_not_found_message() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn style_css_endpoint_returns_css() {
     setup();
     let tmp = create_test_storage();

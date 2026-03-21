@@ -10,7 +10,7 @@ use common::{
     assert_json_ok, cleanup_test_storage, create_test_storage, test_api_router, test_app_state,
 };
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn api_systems_returns_ok_with_json() {
     let tmp = create_test_storage();
     let state = test_app_state(&tmp);
@@ -47,7 +47,7 @@ async fn api_systems_returns_ok_with_json() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn api_system_roms_returns_roms_for_valid_system() {
     let tmp = create_test_storage();
     let state = test_app_state(&tmp);
@@ -78,7 +78,7 @@ async fn api_system_roms_returns_roms_for_valid_system() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn api_system_roms_returns_not_found_for_nonexistent_system() {
     let tmp = create_test_storage();
     let state = test_app_state(&tmp);
@@ -99,7 +99,7 @@ async fn api_system_roms_returns_not_found_for_nonexistent_system() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn api_info_returns_system_info() {
     let tmp = create_test_storage();
     let state = test_app_state(&tmp);
@@ -132,7 +132,7 @@ async fn api_info_returns_system_info() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn api_favorites_empty_initially() {
     let tmp = create_test_storage();
     let state = test_app_state(&tmp);
@@ -155,7 +155,7 @@ async fn api_favorites_empty_initially() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn api_recents_empty_initially() {
     let tmp = create_test_storage();
     let state = test_app_state(&tmp);
@@ -178,7 +178,7 @@ async fn api_recents_empty_initially() {
     cleanup_test_storage(&tmp);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn api_systems_includes_multiple_systems() {
     let tmp = create_test_storage();
     let state = test_app_state(&tmp);

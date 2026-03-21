@@ -1,3 +1,4 @@
+use replay_control_core::metadata_db::MetadataDb;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -119,7 +120,7 @@ impl BackgroundManager {
         let should_import = if let Some(guard) = state.metadata_db() {
             guard
                 .as_ref()
-                .and_then(|db| db.is_empty().ok())
+                .and_then(|db| MetadataDb::is_empty(db).ok())
                 .unwrap_or(false)
         } else {
             false
@@ -141,7 +142,7 @@ impl BackgroundManager {
         // Load all cached system metadata from L2.
         let cached_meta = {
             let guard = state.metadata_db();
-            guard.and_then(|g| g.as_ref()?.load_all_system_meta().ok())
+            guard.and_then(|g| MetadataDb::load_all_system_meta(g.as_ref()?).ok())
         };
 
         let cached_meta = cached_meta.unwrap_or_default();
@@ -212,9 +213,9 @@ impl BackgroundManager {
             let guard = state.metadata_db();
             match guard.and_then(|g| {
                 let db = g.as_ref()?;
-                let stats = db.get_data_source_stats("libretro-thumbnails").ok()?;
+                let stats = MetadataDb::get_data_source_stats(db, "libretro-thumbnails").ok()?;
                 // Also check if thumbnail_index itself has any rows.
-                let index_count: i64 = db.thumbnail_index_count().unwrap_or(0);
+                let index_count: i64 = MetadataDb::thumbnail_index_count(db).unwrap_or(0);
                 Some((stats.repo_count > 0, index_count == 0))
             }) {
                 Some(result) => result,
@@ -289,7 +290,7 @@ impl BackgroundManager {
             let branch = replay_control_core::thumbnail_manifest::default_branch(repo_display);
             let entry_count = all_entries.len();
 
-            let _ = db.upsert_data_source(
+            let _ = MetadataDb::upsert_data_source(db, 
                 &source_name,
                 "libretro-thumbnails",
                 "disk-rebuild",
@@ -297,7 +298,7 @@ impl BackgroundManager {
                 entry_count,
             );
 
-            match db.bulk_insert_thumbnail_index(&source_name, &all_entries) {
+            match MetadataDb::bulk_insert_thumbnail_index(db, &source_name, &all_entries) {
                 Ok(_) => total_entries += entry_count,
                 Err(e) => tracing::warn!("Failed to insert disk-based index for {system_str}: {e}"),
             }
@@ -308,7 +309,7 @@ impl BackgroundManager {
                     replay_control_core::thumbnails::libretro_source_name(extra_repo);
                 let extra_branch =
                     replay_control_core::thumbnail_manifest::default_branch(extra_repo);
-                let _ = db.upsert_data_source(
+                let _ = MetadataDb::upsert_data_source(db, 
                     &extra_source,
                     "libretro-thumbnails",
                     "disk-rebuild",
@@ -420,8 +421,8 @@ impl AppState {
                 // Check if game library is empty -- if so, populate before enriching.
                 let is_empty = state
                     .cache
-                    .with_db_read(&storage, |db| {
-                        db.load_all_system_meta()
+                    .with_db_read(&storage, |conn| {
+                        MetadataDb::load_all_system_meta(conn)
                             .map(|m| m.is_empty())
                             .unwrap_or(true)
                     })

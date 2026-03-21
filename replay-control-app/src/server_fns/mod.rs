@@ -1,3 +1,8 @@
+#[cfg(feature = "ssr")]
+use replay_control_core::user_data_db::UserDataDb;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
+
 mod boxart;
 mod favorites;
 mod images;
@@ -331,7 +336,7 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     // Check user_data_db for box art override FIRST (highest priority).
     if let Some(ud_guard) = state.user_data_db()
         && let Some(ud_db) = ud_guard.as_ref()
-        && let Ok(Some(override_path)) = ud_db.get_override(&info.system, &info.rom_filename)
+        && let Ok(Some(override_path)) = UserDataDb::get_override(ud_db, &info.system, &info.rom_filename)
     {
         let full = state
             .storage()
@@ -347,7 +352,7 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     if let Some(guard) = state.metadata_db()
         && let Some(db) = guard.as_ref()
     {
-        match db.lookup(&info.system, &info.rom_filename) {
+        match MetadataDb::lookup(db, &info.system, &info.rom_filename) {
             Ok(Some(meta)) => {
                 info.description = meta.description;
                 info.rating = meta.rating.map(|r| r as f32);
@@ -461,7 +466,7 @@ pub(crate) fn resolve_box_art_url(
     // 0. Check user_data_db for box art override (highest priority).
     if let Some(ud_guard) = state.user_data_db()
         && let Some(ud_db) = ud_guard.as_ref()
-        && let Ok(Some(override_path)) = ud_db.get_override(system, rom_filename)
+        && let Ok(Some(override_path)) = UserDataDb::get_override(ud_db, system, rom_filename)
     {
         let full = state
             .storage()
@@ -478,7 +483,7 @@ pub(crate) fn resolve_box_art_url(
     //    If the DB path is a fake symlink, try resolving it before falling back to disk scan.
     if let Some(guard) = state.metadata_db()
         && let Some(db) = guard.as_ref()
-        && let Ok(Some(meta)) = db.lookup(system, rom_filename)
+        && let Ok(Some(meta)) = MetadataDb::lookup(db, system, rom_filename)
         && let Some(ref path) = meta.box_art_path
     {
         let full_path = media_base.join(path);

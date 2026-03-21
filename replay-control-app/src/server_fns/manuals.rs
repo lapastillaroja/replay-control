@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
 
 #[cfg(feature = "ssr")]
 pub use replay_control_core::game_docs::GameDocument;
@@ -80,7 +82,7 @@ pub async fn get_local_manuals(
     if let Some(guard) = state.metadata_db()
         && let Some(db) = guard.as_ref()
     {
-        let aliases = db.alias_base_titles(&system, &base_title);
+        let aliases = MetadataDb::alias_base_titles(db, &system, &base_title);
         all_titles.extend(aliases);
     }
 

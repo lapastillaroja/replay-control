@@ -1,4 +1,6 @@
 #[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
+#[cfg(feature = "ssr")]
 use super::recommendations::{resolve_box_art_for_picks, to_recommended};
 use super::*;
 
@@ -118,14 +120,14 @@ pub async fn get_related_games(
     let region_pref_str = format!("{:?}", region_pref).to_lowercase();
 
     // Single DB access for all queries.
-    let db_data = state.cache.with_db_read(&storage, |db| {
-        let variants = db.regional_variants(&system, &filename).unwrap_or_default();
-        let translations_raw = db.translations(&system, &filename).unwrap_or_default();
-        let hacks_raw = db.hacks(&system, &filename).unwrap_or_default();
-        let specials_raw = db.specials(&system, &filename).unwrap_or_default();
+    let db_data = state.cache.with_db_read(&storage, |conn| {
+        let variants = MetadataDb::regional_variants(conn, &system, &filename).unwrap_or_default();
+        let translations_raw = MetadataDb::translations(conn, &system, &filename).unwrap_or_default();
+        let hacks_raw = MetadataDb::hacks(conn, &system, &filename).unwrap_or_default();
+        let specials_raw = MetadataDb::specials(conn, &system, &filename).unwrap_or_default();
 
         // Load all entries once — used for current entry lookup and arcade clone siblings.
-        let all_entries = db.load_system_entries(&system).unwrap_or_default();
+        let all_entries = MetadataDb::load_system_entries(conn, &system).unwrap_or_default();
 
         // Get the current game's base_title, series_key for relationship queries.
         let current_entry = all_entries.iter().find(|e| e.rom_filename == filename);
@@ -146,35 +148,35 @@ pub async fn get_related_games(
 
         // Series siblings: prefer Wikidata data (has ordering), fall back to algorithmic series_key.
         let (series_raw, series_name_raw) = {
-            let wikidata = db
-                .wikidata_series_siblings(&system, &base_title, &region_pref_str, 20)
+            let wikidata =
+                           MetadataDb::wikidata_series_siblings(conn, &system, &base_title, &region_pref_str, 20)
                 .unwrap_or_default();
             if !wikidata.is_empty() {
                 // Wikidata series found: use it (entries come with optional order).
-                let sname = db
-                    .lookup_series_name(&system, &base_title)
+                let sname =
+                            MetadataDb::lookup_series_name(conn, &system, &base_title)
                     .unwrap_or_default();
                 let entries: Vec<_> = wikidata.into_iter().map(|(entry, _order)| entry).collect();
                 (entries, sname)
             } else {
                 // Fall back to algorithmic series_key matching.
-                let fallback = db
-                    .series_siblings(&series_key, &base_title, &region_pref_str, 20)
+                let fallback =
+                               MetadataDb::series_siblings(conn, &series_key, &base_title, &region_pref_str, 20)
                     .unwrap_or_default();
                 (fallback, String::new())
             }
         };
 
         // Alias variants: cross-name variants via game_alias table.
-        let alias_raw = db
-            .alias_variants(&system, &base_title, &filename, &region_pref_str)
+        let alias_raw =
+                        MetadataDb::alias_variants(conn, &system, &base_title, &filename, &region_pref_str)
             .unwrap_or_default();
 
         let similar = if detail_genre.is_empty() {
             Vec::new()
         } else {
             let limit = if is_arcade { 24 } else { 8 };
-            db.similar_by_genre(&system, &detail_genre, &filename, limit)
+            MetadataDb::similar_by_genre(conn, &system, &detail_genre, &filename, limit)
                 .unwrap_or_default()
         };
 
@@ -186,8 +188,8 @@ pub async fn get_related_games(
         };
 
         // Sequel/prequel chain info (Wikidata P155/P156).
-        let sequel_chain = db
-            .sequel_info(&system, &base_title, &region_pref_str)
+        let sequel_chain =
+                           MetadataDb::sequel_info(conn, &system, &base_title, &region_pref_str)
             .unwrap_or_default();
 
         (

@@ -4,6 +4,7 @@
 //! have stable, hash-free URLs that the core can call reliably.
 
 use axum::extract::{Path, State};
+use replay_control_core::metadata_db::MetadataDb;
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -222,7 +223,7 @@ async fn game_detail(
     if let Some(guard) = state.metadata_db()
         && let Some(db) = guard.as_ref()
     {
-        if let Ok(Some(meta)) = db.lookup(&system, &filename) {
+        if let Ok(Some(meta)) = MetadataDb::lookup(db, &system, &filename) {
             description = meta.description;
             rating = meta.rating.map(|r| r as f32);
             publisher = meta.publisher;

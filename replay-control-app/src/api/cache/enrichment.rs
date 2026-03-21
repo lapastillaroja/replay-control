@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use replay_control_core::metadata_db::MetadataDb;
+
 use super::GameLibrary;
 
 impl GameLibrary {
@@ -16,47 +18,47 @@ impl GameLibrary {
 
         // Load ratings from game_metadata table (from LaunchBox import).
         let ratings: HashMap<String, f64> = state
-            .metadata_db()
-            .and_then(|guard| guard.as_ref()?.system_ratings(system).ok())
+            .metadata_pool
+            .read(|conn| MetadataDb::system_ratings(conn, system).ok())
+            .flatten()
             .unwrap_or_default();
 
         // Load genres from game_metadata table (from LaunchBox import).
         // Used to fill empty game_library.genre entries.
         let lb_genres: HashMap<String, String> = state
-            .metadata_db()
-            .and_then(|guard| guard.as_ref()?.system_metadata_genres(system).ok())
+            .metadata_pool
+            .read(|conn| MetadataDb::system_metadata_genres(conn, system).ok())
+            .flatten()
             .unwrap_or_default();
 
         // Load player counts from game_metadata table (from LaunchBox import).
         // Used to fill empty game_library.players entries as a fallback.
         let lb_players: HashMap<String, u8> = state
-            .metadata_db()
-            .and_then(|guard| guard.as_ref()?.system_metadata_players(system).ok())
+            .metadata_pool
+            .read(|conn| MetadataDb::system_metadata_players(conn, system).ok())
+            .flatten()
             .unwrap_or_default();
 
         // Load rating counts from game_metadata table (from LaunchBox import).
         // Used to propagate vote counts to game_library for weighted scoring.
         let lb_rating_counts: HashMap<String, u32> = state
-            .metadata_db()
-            .and_then(|guard| {
-                guard
-                    .as_ref()?
-                    .system_metadata_rating_counts(system)
-                    .ok()
-            })
+            .metadata_pool
+            .read(|conn| MetadataDb::system_metadata_rating_counts(conn, system).ok())
+            .flatten()
             .unwrap_or_default();
 
         // Load developers from game_metadata table (from LaunchBox import).
         // Used to fill empty game_library.developer entries as a fallback.
         let lb_developers: HashMap<String, String> = state
-            .metadata_db()
-            .and_then(|guard| guard.as_ref()?.system_metadata_developers(system).ok())
+            .metadata_pool
+            .read(|conn| MetadataDb::system_metadata_developers(conn, system).ok())
+            .flatten()
             .unwrap_or_default();
 
         // Load current game_library genres from L2 to know which are already set.
         let existing_genres: HashSet<String> = self
-            .with_db_read(&storage, |db| {
-                db.system_rom_genres(system)
+            .with_db_read(&storage, |conn| {
+                MetadataDb::system_rom_genres(conn, system)
                     .map(|map| map.into_keys().collect())
                     .unwrap_or_default()
             })
@@ -64,15 +66,15 @@ impl GameLibrary {
 
         // Load current game_library players from L2 to know which already have player data.
         let existing_players: HashSet<String> = self
-            .with_db_read(&storage, |db| {
-                db.system_rom_players(system).unwrap_or_default()
+            .with_db_read(&storage, |conn| {
+                MetadataDb::system_rom_players(conn, system).unwrap_or_default()
             })
             .unwrap_or_default();
 
         // Load current game_library developers from L2 to know which already have developer data.
         let existing_developers: HashSet<String> = self
-            .with_db_read(&storage, |db| {
-                db.system_rom_developers(system).unwrap_or_default()
+            .with_db_read(&storage, |conn| {
+                MetadataDb::system_rom_developers(conn, system).unwrap_or_default()
             })
             .unwrap_or_default();
 
@@ -159,8 +161,8 @@ impl GameLibrary {
 
         if !developer_updates.is_empty() {
             let dev_count = developer_updates.len();
-            self.with_db_mut(&storage, |db| {
-                if let Err(e) = db.update_developers(system, &developer_updates) {
+            self.with_db_mut(&storage, |conn| {
+                if let Err(e) = MetadataDb::update_developers(conn, system, &developer_updates) {
                     tracing::warn!("Developer enrichment failed for {system}: {e}");
                 }
             });
@@ -175,8 +177,8 @@ impl GameLibrary {
 
         let count = enrichments.len();
         // Use targeted SQL update for box_art_url, genre, and rating.
-        self.with_db_mut(&storage, |db| {
-            if let Err(e) = db.update_box_art_genre_rating(system, &enrichments) {
+        self.with_db_mut(&storage, |conn| {
+            if let Err(e) = MetadataDb::update_box_art_genre_rating(conn, system, &enrichments) {
                 tracing::warn!("Enrichment failed for {system}: {e}");
             }
         });
@@ -230,8 +232,9 @@ impl GameLibrary {
 
         // Gather inputs: existing metadata from DB.
         let all_metadata = state
-            .metadata_db()
-            .and_then(|guard| guard.as_ref()?.system_metadata_all(system).ok())
+            .metadata_pool
+            .read(|conn| MetadataDb::system_metadata_all(conn, system).ok())
+            .flatten()
             .unwrap_or_default();
 
         if all_metadata.is_empty() {
@@ -276,8 +279,8 @@ impl GameLibrary {
 
         // Persist new matches to game_metadata.
         let count = new_entries.len();
-        self.with_db_mut(&storage, |db| {
-            if let Err(e) = db.bulk_upsert(&new_entries) {
+        self.with_db_mut(&storage, |conn| {
+            if let Err(e) = MetadataDb::bulk_upsert(conn, &new_entries) {
                 tracing::warn!("Auto-match metadata persist failed for {system}: {e}");
             }
         });

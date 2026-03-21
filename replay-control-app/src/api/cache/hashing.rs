@@ -4,6 +4,8 @@ use std::path::Path;
 use replay_control_core::roms::RomEntry;
 use replay_control_core::storage::StorageLocation;
 
+use replay_control_core::metadata_db::MetadataDb;
+
 use super::{GameLibrary, dir_mtime};
 
 impl GameLibrary {
@@ -31,7 +33,7 @@ impl GameLibrary {
 
         // Load cached hashes from L2 (database).
         let cached_hashes = self
-            .with_db(storage, |db| db.load_cached_hashes(system))
+            .with_db_read(storage, |conn| MetadataDb::load_cached_hashes(conn, system))
             .and_then(|r| r.ok())
             .unwrap_or_default();
 
@@ -269,8 +271,8 @@ impl GameLibrary {
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
             cached_roms.len()
         );
-        let result = self.with_db_mut(storage, |db| {
-            db.save_system_entries(system, &cached_roms, mtime_secs)
+        let result = self.with_db_mut(storage, |conn| {
+            MetadataDb::save_system_entries(conn, system, &cached_roms, mtime_secs)
         });
         match result {
             Some(Ok(())) => {

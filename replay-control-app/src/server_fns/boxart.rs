@@ -1,4 +1,8 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
+#[cfg(feature = "ssr")]
+use replay_control_core::user_data_db::UserDataDb;
 
 /// A box art variant returned to the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,12 +32,12 @@ pub async fn get_boxart_variants(
     let Some(guard) = state.metadata_db() else {
         return Ok(Vec::new());
     };
-    let Some(db) = guard.as_ref() else {
+    let Some(conn) = guard.as_ref() else {
         return Ok(Vec::new());
     };
 
     let core_variants = replay_control_core::thumbnail_manifest::find_boxart_variants(
-        db,
+        conn,
         &system,
         &rom_filename,
         &storage.root,
@@ -73,7 +77,7 @@ pub async fn set_boxart_override(
         let guard = state
             .metadata_db()
             .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?;
-        let db = guard
+        let conn = guard
             .as_ref()
             .ok_or_else(|| ServerFnError::new("Metadata DB not available"))?;
 
@@ -85,15 +89,14 @@ pub async fn set_boxart_override(
             let url_name = replay_control_core::thumbnails::repo_url_name(display_name);
             let source_name = replay_control_core::thumbnails::libretro_source_name(display_name);
 
-            let branch = db
-                .get_data_source(&source_name)
+            let branch = MetadataDb::get_data_source(conn, &source_name)
                 .ok()
                 .flatten()
                 .and_then(|s| s.branch)
                 .unwrap_or_else(|| "master".to_string());
 
-            let entries = db
-                .query_thumbnail_index(
+            let entries = MetadataDb::query_thumbnail_index(
+                    conn,
                     &source_name,
                     replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
                 )
@@ -161,11 +164,10 @@ pub async fn set_boxart_override(
         let ud_guard = state
             .user_data_db()
             .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
-        let ud_db = ud_guard
+        let ud_conn = ud_guard
             .as_ref()
             .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
-        ud_db
-            .set_override(&system, &rom_filename, &override_path)
+        UserDataDb::set_override(ud_conn, &system, &rom_filename, &override_path)
             .map_err(|e| ServerFnError::new(e.to_string()))?;
     }
 
@@ -188,11 +190,10 @@ pub async fn reset_boxart_override(
         let ud_guard = state
             .user_data_db()
             .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?;
-        let ud_db = ud_guard
+        let ud_conn = ud_guard
             .as_ref()
             .ok_or_else(|| ServerFnError::new("User data DB not available"))?;
-        ud_db
-            .remove_override(&system, &rom_filename)
+        UserDataDb::remove_override(ud_conn, &system, &rom_filename)
             .map_err(|e| ServerFnError::new(e.to_string()))?;
     }
 

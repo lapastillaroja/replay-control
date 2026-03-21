@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
 
 /// Developer search result: a matched developer with their games.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -331,7 +333,7 @@ pub(crate) fn lookup_genre(system: &str, rom_filename: &str) -> String {
     let state = leptos::prelude::expect_context::<crate::api::AppState>();
     if let Some(guard) = state.metadata_db()
         && let Some(db) = guard.as_ref()
-        && let Ok(Some(meta)) = db.lookup(system, rom_filename)
+        && let Ok(Some(meta)) = MetadataDb::lookup(db, system, rom_filename)
         && let Some(genre) = meta.genre
         && !genre.is_empty()
     {
@@ -403,8 +405,8 @@ pub async fn global_search(
     let alias_hits: std::collections::HashSet<(String, String)> = if !q.is_empty() {
         state
             .cache
-            .with_db_read(&storage, |db| {
-                db.search_aliases(&q)
+            .with_db_read(&storage, |conn| {
+                MetadataDb::search_aliases(conn, &q)
                     .unwrap_or_default()
                     .into_iter()
                     .collect()
@@ -451,8 +453,8 @@ pub async fn global_search(
             std::collections::HashMap<String, String>,
         ) = state
             .cache
-            .with_db_read(&storage, |db| {
-                db.load_system_entries(&sys.folder_name)
+            .with_db_read(&storage, |conn| {
+                MetadataDb::load_system_entries(conn, &sys.folder_name)
                     .map(|entries| {
                         let genres: std::collections::HashMap<String, String> = entries
                             .iter()
@@ -474,7 +476,7 @@ pub async fn global_search(
         let system_ratings = if min_rating.is_some() {
             if let Some(guard) = state.metadata_db() {
                 if let Some(db) = guard.as_ref() {
-                    db.system_ratings(&sys.folder_name).unwrap_or_default()
+                    MetadataDb::system_ratings(db, &sys.folder_name).unwrap_or_default()
                 } else {
                     std::collections::HashMap::new()
                 }
@@ -610,7 +612,7 @@ pub async fn global_search(
                     .iter()
                     .map(|r| r.game.rom_filename.as_str())
                     .collect();
-                db.lookup_ratings(&sys.folder_name, &filenames)
+                MetadataDb::lookup_ratings(db, &sys.folder_name, &filenames)
                     .unwrap_or_default()
             } else {
                 std::collections::HashMap::new()
@@ -687,7 +689,7 @@ pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
         .cache
-        .with_db_read(&storage, |db| db.all_genre_groups().unwrap_or_default())
+        .with_db_read(&storage, |conn| MetadataDb::all_genre_groups(conn).unwrap_or_default())
         .unwrap_or_default();
 
     Ok(genres)
@@ -702,8 +704,8 @@ pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnEr
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
         .cache
-        .with_db_read(&storage, |db| {
-            db.system_genre_groups(&system).unwrap_or_default()
+        .with_db_read(&storage, |conn| {
+            MetadataDb::system_genre_groups(conn, &system).unwrap_or_default()
         })
         .unwrap_or_default();
 
@@ -731,15 +733,14 @@ pub async fn search_by_developer(
     let limit = limit.clamp(1, 30);
 
     // Single DB access: find matching developers, then fetch games for the top match.
-    let db_result = state.cache.with_db_read(&storage, |db| {
-        let matches = db.find_developer_matches(&q).unwrap_or_default();
+    let db_result = state.cache.with_db_read(&storage, |conn| {
+        let matches = MetadataDb::find_developer_matches(conn, &q).unwrap_or_default();
         if matches.is_empty() {
             return None;
         }
 
         let (top_dev, top_count) = &matches[0];
-        let games = db
-            .games_by_developer(top_dev, limit, region_str, region_secondary_str)
+        let games = MetadataDb::games_by_developer(conn, top_dev, limit, region_str, region_secondary_str)
             .unwrap_or_default();
 
         let other_developers: Vec<DeveloperMatch> = matches[1..]
@@ -833,8 +834,8 @@ pub async fn get_developer_genres(
 
     let genres = state
         .cache
-        .with_db_read(&storage, |db| {
-            db.developer_genre_groups(&developer, system_filter)
+        .with_db_read(&storage, |conn| {
+            MetadataDb::developer_genre_groups(conn, &developer, system_filter)
                 .unwrap_or_default()
         })
         .unwrap_or_default();
@@ -884,10 +885,10 @@ pub async fn get_developer_games(
     };
 
     // Fetch systems and paginated games in one DB session.
-    let db_result = state.cache.with_db_read(&storage, |db| {
-        let systems_raw = db.developer_systems(&developer).unwrap_or_default();
-        let (entries, has_more, total) = db
-            .developer_games_paginated(
+    let db_result = state.cache.with_db_read(&storage, |conn| {
+        let systems_raw = MetadataDb::developer_systems(conn, &developer).unwrap_or_default();
+        let (entries, has_more, total) = MetadataDb::developer_games_paginated(
+                conn,
                 &developer,
                 system_filter,
                 offset,

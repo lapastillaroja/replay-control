@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
+use replay_control_core::metadata_db::MetadataDb;
+
 use super::AppState;
 
 // ── ImportPipeline ─────────────────────────────────────────────────
@@ -143,7 +145,7 @@ impl ImportPipeline {
         if let Some(guard) = state.metadata_db()
             && let Some(db) = guard.as_ref()
         {
-            db.clear().map_err(|e| e.to_string())?;
+            MetadataDb::clear(db).map_err(|e| e.to_string())?;
         }
 
         // Find launchbox-metadata.xml (with fallback to old name) and trigger re-import.
@@ -240,7 +242,7 @@ impl ImportPipeline {
             // Clear existing metadata before re-import.
             if let Some(guard) = state.metadata_db()
                 && let Some(db) = guard.as_ref()
-                && let Err(e) = db.clear()
+                && let Err(e) = MetadataDb::clear(db)
             {
                 tracing::warn!("Failed to clear metadata DB before re-import: {e}");
             }
@@ -342,7 +344,7 @@ impl ImportPipeline {
                     "Metadata DB unavailable during import".to_string(),
                 )
             })?;
-            db.bulk_upsert(batch)
+            MetadataDb::bulk_upsert(db, batch)
         };
 
         let progress_ref = self.progress.clone();
@@ -443,11 +445,11 @@ impl ImportPipeline {
                 tracing::warn!("LaunchBox aliases: DB unavailable for reading base_titles");
                 return;
             };
-            let systems = db.active_systems().unwrap_or_default();
+            let systems = MetadataDb::active_systems(db).unwrap_or_default();
             let mut map: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
             for system in &systems {
-                if let Ok(entries) = db.load_system_entries(system) {
+                if let Ok(entries) = MetadataDb::load_system_entries(db, system) {
                     for entry in entries {
                         if !entry.base_title.is_empty() {
                             map.entry(entry.base_title.clone())
@@ -477,7 +479,7 @@ impl ImportPipeline {
         let count = aliases.len();
         let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
         if let Some(db) = guard.as_mut() {
-            match db.bulk_insert_aliases(&aliases) {
+            match MetadataDb::bulk_insert_aliases(db, &aliases) {
                 Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
                 Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
             }
@@ -897,7 +899,7 @@ impl ThumbnailPipeline {
             let Some(db) = guard.as_mut() else {
                 return;
             };
-            db.visible_filenames(system).unwrap_or_default()
+            MetadataDb::visible_filenames(db, system).unwrap_or_default()
             // MutexGuard drops here.
         };
 
@@ -954,7 +956,7 @@ impl ThumbnailPipeline {
         if !updates.is_empty() {
             let mut guard = state.metadata_db.lock().expect("metadata_db lock poisoned");
             if let Some(db) = guard.as_mut()
-                && let Err(e) = db.bulk_update_image_paths(&updates)
+                && let Err(e) = MetadataDb::bulk_update_image_paths(db, &updates)
             {
                 tracing::warn!("Failed to update image paths for {system}: {e}");
             }
@@ -966,6 +968,8 @@ impl ThumbnailPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
     use std::sync::atomic::AtomicBool;
 
     #[test]

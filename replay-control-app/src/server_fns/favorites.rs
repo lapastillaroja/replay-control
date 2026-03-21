@@ -103,7 +103,7 @@ pub async fn organize_favorites(
     let ratings = if needs_ratings {
         state
             .metadata_db()
-            .and_then(|guard| guard.as_ref().and_then(|db| db.all_ratings().ok()))
+            .and_then(|guard| guard.as_ref().and_then(|conn| replay_control_core::metadata_db::MetadataDb::all_ratings(conn).ok()))
     } else {
         None
     };

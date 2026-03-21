@@ -15,8 +15,263 @@ pub use import::{ImportPipeline, ThumbnailPipeline};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use deadpool_sqlite::rusqlite;
 use replay_control_core::config::ReplayConfig;
 use replay_control_core::storage::{StorageKind, StorageLocation};
+
+// ── Custom deadpool Manager ───────────────────────────────────────
+
+use deadpool::managed::{self, Metrics, RecycleError};
+use deadpool_sync::SyncWrapper;
+
+/// Custom deadpool Manager that uses `db_common::open_connection()` for
+/// proper WAL/nolock/PRAGMA configuration instead of plain `Connection::open()`.
+struct SqliteManager {
+    db_path: PathBuf,
+    is_local: bool,
+    label: String,
+}
+
+impl std::fmt::Debug for SqliteManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SqliteManager")
+            .field("db_path", &self.db_path)
+            .field("is_local", &self.is_local)
+            .field("label", &self.label)
+            .finish()
+    }
+}
+
+impl managed::Manager for SqliteManager {
+    type Type = SyncWrapper<rusqlite::Connection>;
+    type Error = rusqlite::Error;
+
+    async fn create(&self) -> Result<SyncWrapper<rusqlite::Connection>, Self::Error> {
+        let db_path = self.db_path.clone();
+        let is_local = self.is_local;
+        let label = self.label.clone();
+
+        SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
+            replay_control_core::db_common::open_connection(&db_path, &label, is_local)
+                .map_err(|e| {
+                    rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(1),
+                        Some(e.to_string()),
+                    )
+                })
+        })
+        .await
+    }
+
+    async fn recycle(
+        &self,
+        conn: &mut SyncWrapper<rusqlite::Connection>,
+        _metrics: &Metrics,
+    ) -> managed::RecycleResult<Self::Error> {
+        // Skip the SELECT health check (Matrix SDK found this 3.5x faster).
+        // If the connection is broken, interact() will fail and the pool
+        // will discard it automatically.
+        if conn.is_mutex_poisoned() {
+            return Err(RecycleError::message("mutex poisoned"));
+        }
+        Ok(())
+    }
+}
+
+/// Alias for a deadpool pool using our custom manager.
+type SqlitePool = managed::Pool<SqliteManager>;
+
+// ── DbPool ────────────────────────────────────────────────────────
+
+/// Connection pool for a single SQLite database.
+///
+/// Uses `deadpool` for true concurrent reads (WAL mode allows multiple readers)
+/// with separate read and write pools.
+///
+/// - **Read pool**: `max_size=3` for local storage (concurrent WAL reads), `1` for NFS
+/// - **Write pool**: `max_size=1` (SQLite serialises writes)
+///
+/// Provides synchronous `read()` / `write()` helpers. Under the hood, each call
+/// acquires a connection from the pool, runs the closure via `SyncWrapper::lock()`,
+/// and returns the connection to the pool.
+///
+/// The pools are wrapped in `Arc<RwLock<>>` so that `close()` / `reopen()` can
+/// swap them across all clones of the same `DbPool`.
+#[derive(Clone)]
+pub struct DbPool {
+    /// Multiple read connections (WAL concurrent readers).
+    read_pool: Arc<std::sync::RwLock<Option<SqlitePool>>>,
+    /// Single write connection (SQLite serialises writes).
+    write_pool: Arc<std::sync::RwLock<Option<SqlitePool>>>,
+    db_path: Arc<std::sync::RwLock<PathBuf>>,
+    label: &'static str,
+    /// Opener function for creating additional connections (used by `reopen()`
+    /// to verify the DB is accessible before rebuilding pools).
+    opener: fn(&std::path::Path, bool) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+}
+
+/// Build a deadpool `SqlitePool` with the given size.
+fn build_pool(
+    db_path: &std::path::Path,
+    is_local: bool,
+    label: &str,
+    max_size: usize,
+) -> Result<SqlitePool, Box<dyn std::error::Error>> {
+    let mgr = SqliteManager {
+        db_path: db_path.to_path_buf(),
+        is_local,
+        label: label.to_string(),
+    };
+    let pool = managed::Pool::builder(mgr)
+        .max_size(max_size)
+        .build()
+        .map_err(|e| format!("{label}: failed to build pool: {e}"))?;
+    Ok(pool)
+}
+
+impl DbPool {
+    /// Create a new pool. Opens the DB eagerly (via `opener`) to fail fast at
+    /// startup, then builds read and write pools backed by the custom manager.
+    fn new(
+        db_path: PathBuf,
+        is_local: bool,
+        label: &'static str,
+        opener: fn(&std::path::Path, bool) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let read_size = if is_local { 3 } else { 1 };
+        let read_pool = build_pool(&db_path, is_local, &format!("{label}_read"), read_size)?;
+        let write_pool = build_pool(&db_path, is_local, &format!("{label}_write"), 1)?;
+
+        Ok(Self {
+            read_pool: Arc::new(std::sync::RwLock::new(Some(read_pool))),
+            write_pool: Arc::new(std::sync::RwLock::new(Some(write_pool))),
+            db_path: Arc::new(std::sync::RwLock::new(db_path)),
+            label,
+            opener,
+        })
+    }
+
+    /// Create a closed (empty) pool for tests. All reads/writes return `None`.
+    #[cfg(test)]
+    pub(crate) fn new_closed(label: &'static str) -> Self {
+        Self {
+            read_pool: Arc::new(std::sync::RwLock::new(None)),
+            write_pool: Arc::new(std::sync::RwLock::new(None)),
+            db_path: Arc::new(std::sync::RwLock::new(PathBuf::new())),
+            label,
+            opener: |_, _| Err(replay_control_core::error::Error::Other("test".into())),
+        }
+    }
+
+    /// Run a read-only closure with a database connection from the read pool.
+    ///
+    /// Multiple concurrent `read()` calls get different connections (up to
+    /// `max_size`), enabling true concurrent reads under WAL mode.
+    ///
+    /// Returns `None` if the pool is closed (DB unavailable).
+    pub fn read<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&rusqlite::Connection) -> R,
+    {
+        let pool_guard = self.read_pool.read().ok()?;
+        let pool = pool_guard.as_ref()?;
+        let obj = Self::blocking_get(pool)?;
+        drop(pool_guard); // release RwLock before running the closure
+        let guard = obj.lock().ok()?;
+        Some(f(&guard))
+    }
+
+    /// Run a mutable closure with the single write connection.
+    ///
+    /// Returns `None` if the pool is closed (DB unavailable).
+    pub fn write<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> R,
+    {
+        let pool_guard = self.write_pool.read().ok()?;
+        let pool = pool_guard.as_ref()?;
+        let obj = Self::blocking_get(pool)?;
+        drop(pool_guard);
+        let mut guard = obj.lock().ok()?;
+        Some(f(&mut guard))
+    }
+
+    /// Close the pools (e.g., after storage change).
+    /// Next call to `read`/`write` will return `None` until `reopen` is called.
+    pub(crate) fn close(&self) {
+        if let Ok(mut guard) = self.read_pool.write() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = self.write_pool.write() {
+            *guard = None;
+        }
+    }
+
+    /// Re-open at a new storage root. Rebuilds both pools with fresh connections.
+    pub(crate) fn reopen(&self, storage_root: &std::path::Path, is_local: bool) -> bool {
+        // Verify we can open the DB at the new location.
+        match (self.opener)(storage_root, is_local) {
+            Ok((_conn, path)) => {
+                let read_size = if is_local { 3 } else { 1 };
+                let new_read = match build_pool(&path, is_local, &format!("{}_read", self.label), read_size) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::debug!("Could not rebuild {} read pool: {e}", self.label);
+                        return false;
+                    }
+                };
+                let new_write = match build_pool(&path, is_local, &format!("{}_write", self.label), 1) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::debug!("Could not rebuild {} write pool: {e}", self.label);
+                        return false;
+                    }
+                };
+                // Swap pools (old connections drain naturally when Objects are returned).
+                if let Ok(mut guard) = self.read_pool.write() {
+                    *guard = Some(new_read);
+                }
+                if let Ok(mut guard) = self.write_pool.write() {
+                    *guard = Some(new_write);
+                }
+                if let Ok(mut guard) = self.db_path.write() {
+                    *guard = path;
+                }
+                true
+            }
+            Err(e) => {
+                tracing::debug!("Could not re-open {} DB: {e}", self.label);
+                false
+            }
+        }
+    }
+
+    /// Get the current DB file path.
+    pub fn db_path(&self) -> PathBuf {
+        self.db_path.read().expect("db_path lock poisoned").clone()
+    }
+
+    /// Check if the DB file still exists on disk.
+    pub fn db_file_exists(&self) -> bool {
+        self.db_path.read().expect("db_path lock poisoned").exists()
+    }
+
+    /// Synchronously get a connection from a deadpool pool.
+    ///
+    /// Uses `block_in_place` + `block_on` which works from tokio multi-thread
+    /// worker threads and `spawn_blocking` threads. The production runtime is
+    /// always multi-thread (`#[tokio::main]`).
+    ///
+    /// **Note**: Panics on `current_thread` runtime (single-thread `#[tokio::test]`).
+    /// Integration tests must use `#[tokio::test(flavor = "multi_thread")]`.
+    fn blocking_get(
+        pool: &SqlitePool,
+    ) -> Option<managed::Object<SqliteManager>> {
+        let handle = tokio::runtime::Handle::try_current().ok()?;
+        let result = tokio::task::block_in_place(|| handle.block_on(pool.get()));
+        result.ok()
+    }
+}
 
 /// Shared application state.
 #[derive(Clone)]
@@ -30,12 +285,21 @@ pub struct AppState {
     /// When Some, the app uses this skin index (persisted in `settings.cfg`).
     /// When None, defers to `replay.cfg`'s `system_skin` (sync mode).
     pub skin_override: Arc<std::sync::RwLock<Option<u32>>>,
-    /// Metadata DB handle (lazily opened on first access).
-    pub(crate) metadata_db:
-        Arc<std::sync::Mutex<Option<replay_control_core::metadata_db::MetadataDb>>>,
-    /// User data DB handle (lazily opened on first access).
-    pub(crate) user_data_db:
-        Arc<std::sync::Mutex<Option<replay_control_core::user_data_db::UserDataDb>>>,
+    /// Metadata DB pool (deadpool-backed, concurrent reads).
+    pub metadata_pool: DbPool,
+    /// User data DB pool (deadpool-backed, concurrent reads).
+    pub user_data_pool: DbPool,
+    /// Legacy metadata DB connection for server_fns and import pipeline.
+    ///
+    /// This is a single connection separate from the deadpool pools. It exists
+    /// to support the `metadata_db()` / `user_data_db()` shim methods that
+    /// return a `MutexGuard<Option<Connection>>`, which cannot be expressed
+    /// with the pool's closure-based API.
+    ///
+    /// **Plan**: migrate remaining callers to `metadata_pool.read()`/`write()`,
+    /// then remove these fields.
+    pub(crate) metadata_db: Arc<std::sync::Mutex<Option<rusqlite::Connection>>>,
+    pub(crate) user_data_db_legacy: Arc<std::sync::Mutex<Option<rusqlite::Connection>>>,
     /// Import pipeline (metadata import operations).
     pub import: Arc<ImportPipeline>,
     /// Thumbnail pipeline (index + download operations).
@@ -48,6 +312,22 @@ pub struct AppState {
     pub(crate) busy_label: Arc<std::sync::RwLock<String>>,
     /// Scanning indicator: true only during Phase 2 (game library populate).
     scanning: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Opener for metadata DB.
+fn open_metadata_db(
+    storage_root: &std::path::Path,
+    is_local: bool,
+) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
+    replay_control_core::metadata_db::MetadataDb::open(storage_root, is_local)
+}
+
+/// Opener for user data DB.
+fn open_user_data_db(
+    storage_root: &std::path::Path,
+    is_local: bool,
+) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
+    replay_control_core::user_data_db::UserDataDb::open(storage_root, is_local)
 }
 
 impl AppState {
@@ -96,17 +376,25 @@ impl AppState {
         // Open DBs eagerly at startup so they're ready for the first request.
         // Fail-fast: if DB creation/open fails here, the service can't function.
         let is_local = storage.kind.is_local();
-        let metadata_db =
+
+        // Open the DB files eagerly to create schema + run migrations. The
+        // connections returned here serve double duty:
+        // 1. Verify the DB is accessible (fail-fast at startup)
+        // 2. Seed the legacy Mutex connections for the import pipeline and
+        //    server_fns that haven't been migrated to the pool API yet
+        let (meta_conn, meta_path) =
             replay_control_core::metadata_db::MetadataDb::open(&storage.root, is_local)
                 .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
-        tracing::info!("Metadata DB ready at {}", metadata_db.db_path().display());
-        let metadata_db = Arc::new(std::sync::Mutex::new(Some(metadata_db)));
+        tracing::info!("Metadata DB ready at {}", meta_path.display());
+        let metadata_pool = DbPool::new(meta_path.clone(), is_local, "metadata_db", open_metadata_db)?;
+        let metadata_db = Arc::new(std::sync::Mutex::new(Some(meta_conn)));
 
-        let user_data_db =
+        let (ud_conn, ud_path) =
             replay_control_core::user_data_db::UserDataDb::open(&storage.root, is_local)
                 .map_err(|e| format!("Failed to open user data DB: {e}"))?;
-        tracing::info!("User data DB ready at {}", user_data_db.db_path().display());
-        let user_data_db = Arc::new(std::sync::Mutex::new(Some(user_data_db)));
+        tracing::info!("User data DB ready at {}", ud_path.display());
+        let user_data_pool = DbPool::new(ud_path.clone(), is_local, "user_data_db", open_user_data_db)?;
+        let user_data_db_legacy = Arc::new(std::sync::Mutex::new(Some(ud_conn)));
 
         // Unified busy flag shared across all background operations.
         let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -124,14 +412,16 @@ impl AppState {
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
             cache: Arc::new(GameLibrary::new(
-                metadata_db.clone(),
+                metadata_pool.clone(),
                 busy.clone(),
                 scanning.clone(),
             )),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(initial_skin)),
+            metadata_pool,
+            user_data_pool,
             metadata_db,
-            user_data_db,
+            user_data_db_legacy,
             import,
             thumbnails,
             pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
@@ -147,73 +437,24 @@ impl AppState {
         self.storage.read().expect("storage lock poisoned").clone()
     }
 
-    /// Get a lock on the metadata DB, lazily opening it on first access.
-    /// Returns None if the DB can't be opened (e.g., storage not available).
-    /// Re-opens automatically if the DB file was deleted externally.
+    /// Legacy shim: get a `MutexGuard` for the metadata DB connection.
+    ///
+    /// Server_fns and the import pipeline use this to access the DB with the
+    /// `guard.as_ref()` pattern. New code should use `metadata_pool.read()`
+    /// instead for concurrent reads via the deadpool pool.
     pub fn metadata_db(
         &self,
-    ) -> Option<std::sync::MutexGuard<'_, Option<replay_control_core::metadata_db::MetadataDb>>>
-    {
-        let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
-        // Drop stale connection if the DB file was deleted externally.
-        if let Some(ref db) = *guard
-            && !db.db_path().exists()
-        {
-            tracing::warn!("Metadata DB file deleted externally, re-opening");
-            *guard = None;
-        }
-        if guard.is_none() {
-            let storage = self.storage();
-            match replay_control_core::metadata_db::MetadataDb::open(
-                &storage.root,
-                storage.kind.is_local(),
-            ) {
-                Ok(db) => {
-                    *guard = Some(db);
-                }
-                Err(e) => {
-                    tracing::debug!("Could not open metadata DB: {e}");
-                    return None;
-                }
-            }
-        }
-        Some(guard)
+    ) -> Option<std::sync::MutexGuard<'_, Option<rusqlite::Connection>>> {
+        let guard = self.metadata_db.lock().ok()?;
+        if guard.is_some() { Some(guard) } else { None }
     }
 
-    /// Get a lock on the user data DB, lazily opening it on first access.
-    /// Returns None if the DB can't be opened.
-    /// Re-opens automatically if the DB file was deleted externally.
+    /// Legacy shim: get a `MutexGuard` for the user data DB connection.
     pub fn user_data_db(
         &self,
-    ) -> Option<std::sync::MutexGuard<'_, Option<replay_control_core::user_data_db::UserDataDb>>>
-    {
-        let mut guard = self
-            .user_data_db
-            .lock()
-            .expect("user_data_db lock poisoned");
-        // Drop stale connection if the DB file was deleted externally.
-        if let Some(ref db) = *guard
-            && !db.db_path().exists()
-        {
-            tracing::warn!("User data DB file deleted externally, re-opening");
-            *guard = None;
-        }
-        if guard.is_none() {
-            let storage = self.storage();
-            match replay_control_core::user_data_db::UserDataDb::open(
-                &storage.root,
-                storage.kind.is_local(),
-            ) {
-                Ok(db) => {
-                    *guard = Some(db);
-                }
-                Err(e) => {
-                    tracing::debug!("Could not open user_data DB: {e}");
-                    return None;
-                }
-            }
-        }
-        Some(guard)
+    ) -> Option<std::sync::MutexGuard<'_, Option<rusqlite::Connection>>> {
+        let guard = self.user_data_db_legacy.lock().ok()?;
+        if guard.is_some() { Some(guard) } else { None }
     }
 
     /// Get the user's region preference from `.replay-control/settings.cfg`.
@@ -297,19 +538,31 @@ impl AppState {
                 *guard = new_storage;
             }
 
-            // Close old DB connections so they re-open at the new storage root
-            // on next access.  The cache's `db` field is the same Arc, so
-            // setting metadata_db to None also affects cache.with_db().
-            {
-                let mut guard = self.metadata_db.lock().expect("metadata_db lock poisoned");
+            // Close old DB connections so they re-open at the new storage root.
+            self.metadata_pool.close();
+            self.user_data_pool.close();
+            // Also close legacy connections.
+            if let Ok(mut guard) = self.metadata_db.lock() {
                 *guard = None;
             }
-            {
-                let mut guard = self
-                    .user_data_db
-                    .lock()
-                    .expect("user_data_db lock poisoned");
+            if let Ok(mut guard) = self.user_data_db_legacy.lock() {
                 *guard = None;
+            }
+            // Re-open at the new storage root.
+            let new_storage_ref = self.storage();
+            let new_is_local = new_storage_ref.kind.is_local();
+            self.metadata_pool.reopen(&new_storage_ref.root, new_is_local);
+            self.user_data_pool.reopen(&new_storage_ref.root, new_is_local);
+            // Re-open legacy connections.
+            if let Ok((conn, _)) = open_metadata_db(&new_storage_ref.root, new_is_local)
+                && let Ok(mut guard) = self.metadata_db.lock()
+            {
+                *guard = Some(conn);
+            }
+            if let Ok((conn, _)) = open_user_data_db(&new_storage_ref.root, new_is_local)
+                && let Ok(mut guard) = self.user_data_db_legacy.lock()
+            {
+                *guard = Some(conn);
             }
 
             self.cache.invalidate();
