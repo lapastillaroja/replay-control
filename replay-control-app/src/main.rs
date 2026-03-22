@@ -33,6 +33,47 @@ mod ssr {
         site_root: String,
     }
 
+    /// Build an SSE stream that polls a progress function every 200ms.
+    ///
+    /// The `poll_fn` closure returns `(json_string, is_active)` on each tick.
+    /// The stream auto-closes after 5 consecutive idle ticks (1s of inactivity).
+    fn sse_progress_stream<F>(
+        poll_fn: F,
+    ) -> axum::response::sse::Sse<impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>
+    where
+        F: Fn() -> (String, bool) + Send + 'static,
+    {
+        use axum::response::sse::{Event, Sse};
+        use std::convert::Infallible;
+        use tokio_stream::StreamExt;
+
+        let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+        let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
+            std::time::Duration::from_millis(200),
+        ))
+        .map({
+            let idle_count = idle_count.clone();
+            move |_| {
+                let (json, is_active) = poll_fn();
+                if is_active {
+                    idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
+                } else {
+                    idle_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                Ok::<_, Infallible>(Event::default().data(json))
+            }
+        })
+        .take_while({
+            let idle_count = idle_count.clone();
+            move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
+        });
+
+        Sse::new(stream).keep_alive(
+            axum::response::sse::KeepAlive::new().interval(std::time::Duration::from_secs(15)),
+        )
+    }
+
     /// Serve in-folder documents (PDFs, text files, images) from a game's ROM directory.
     ///
     /// URL format: `/rom-docs/<system>/<base64_rom_filename>/<relative_doc_path>`
@@ -447,109 +488,52 @@ mod ssr {
             },
         );
 
-        // SSE endpoint for real-time metadata import progress.
-        // Same pattern as image progress: 200ms interval, idle counter, auto-close.
+        // SSE endpoints for real-time progress (metadata import + thumbnail update).
         let metadata_sse_state = app_state.clone();
         let metadata_sse_handler = axum::routing::get(move || {
             let state = metadata_sse_state.clone();
             async move {
-                use axum::response::sse::{Event, Sse};
-                use std::convert::Infallible;
-                use tokio_stream::StreamExt;
-
                 let import = state.import.clone();
-                let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-
-                let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
-                    std::time::Duration::from_millis(200),
-                ))
-                .map({
-                    let idle_count = idle_count.clone();
-                    move |_| {
-                        let progress = import.progress();
-                        let is_active = progress.as_ref().is_some_and(|p| {
-                            use replay_control_app::server_fns::ImportState;
-                            matches!(
-                                p.state,
-                                ImportState::Downloading
-                                    | ImportState::BuildingIndex
-                                    | ImportState::Parsing
-                            )
-                        });
-                        let json = match &progress {
-                            Some(p) => serde_json::to_string(p).unwrap_or_default(),
-                            None => "null".to_string(),
-                        };
-
-                        if is_active {
-                            idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
-                        } else {
-                            idle_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        Ok::<_, Infallible>(Event::default().data(json))
-                    }
+                sse_progress_stream(move || {
+                    let progress = import.progress();
+                    let is_active = progress.as_ref().is_some_and(|p| {
+                        use replay_control_app::server_fns::ImportState;
+                        matches!(
+                            p.state,
+                            ImportState::Downloading
+                                | ImportState::BuildingIndex
+                                | ImportState::Parsing
+                        )
+                    });
+                    let json = match &progress {
+                        Some(p) => serde_json::to_string(p).unwrap_or_default(),
+                        None => "null".to_string(),
+                    };
+                    (json, is_active)
                 })
-                // Close stream after 5 consecutive idle ticks (1s of no active operation).
-                .take_while({
-                    let idle_count = idle_count.clone();
-                    move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
-                });
-
-                Sse::new(stream).keep_alive(
-                    axum::response::sse::KeepAlive::new()
-                        .interval(std::time::Duration::from_secs(15)),
-                )
             }
         });
 
-        // SSE endpoint for real-time thumbnail update progress.
         let thumbnail_sse_state = app_state.clone();
         let thumbnail_sse_handler = axum::routing::get(move || {
             let state = thumbnail_sse_state.clone();
             async move {
-                use axum::response::sse::{Event, Sse};
-                use std::convert::Infallible;
-                use tokio_stream::StreamExt;
-
                 let thumbnails = state.thumbnails.clone();
-                let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-
-                let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
-                    std::time::Duration::from_millis(200),
-                ))
-                .map({
-                    let idle_count = idle_count.clone();
-                    move |_| {
-                        let progress = thumbnails.progress();
-                        let is_active = progress.as_ref().is_some_and(|p| {
-                            use replay_control_app::server_fns::ThumbnailPhase;
-                            matches!(
-                                p.phase,
-                                ThumbnailPhase::Indexing | ThumbnailPhase::Downloading
-                            )
-                        });
-                        let json = match &progress {
-                            Some(p) => serde_json::to_string(p).unwrap_or_default(),
-                            None => "null".to_string(),
-                        };
-
-                        if is_active {
-                            idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
-                        } else {
-                            idle_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        Ok::<_, Infallible>(Event::default().data(json))
-                    }
+                sse_progress_stream(move || {
+                    let progress = thumbnails.progress();
+                    let is_active = progress.as_ref().is_some_and(|p| {
+                        use replay_control_app::server_fns::ThumbnailPhase;
+                        matches!(
+                            p.phase,
+                            ThumbnailPhase::Indexing | ThumbnailPhase::Downloading
+                        )
+                    });
+                    let json = match &progress {
+                        Some(p) => serde_json::to_string(p).unwrap_or_default(),
+                        None => "null".to_string(),
+                    };
+                    (json, is_active)
                 })
-                .take_while({
-                    let idle_count = idle_count.clone();
-                    move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
-                });
-
-                Sse::new(stream).keep_alive(
-                    axum::response::sse::KeepAlive::new()
-                        .interval(std::time::Duration::from_secs(15)),
-                )
             }
         });
 
