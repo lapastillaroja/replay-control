@@ -973,7 +973,7 @@ fn extract_region_label(filename: &str) -> String {
 }
 
 /// Stats from a download operation.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct DownloadStats {
     pub total: usize,
     pub downloaded: usize,

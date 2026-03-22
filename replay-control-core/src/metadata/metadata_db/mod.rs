@@ -103,7 +103,7 @@ pub struct GameMetadata {
 }
 
 /// Import statistics.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct ImportStats {
     pub total_source: usize,
     pub matched: usize,

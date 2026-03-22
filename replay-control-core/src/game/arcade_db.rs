@@ -16,7 +16,7 @@ pub enum DriverStatus {
 }
 
 /// Metadata for an arcade game ROM.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ArcadeGameInfo {
     /// ROM zip filename without extension (e.g., "mslug6").
     pub rom_name: &'static str,

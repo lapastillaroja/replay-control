@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 /// A supported RePlayOS system (console, arcade, computer, or handheld).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct System {
     pub folder_name: &'static str,
     pub display_name: &'static str,

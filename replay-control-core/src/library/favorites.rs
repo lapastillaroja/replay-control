@@ -200,7 +200,7 @@ pub enum OrganizeCriteria {
 }
 
 /// Result of an organize or flatten operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct OrganizeResult {
     pub organized: usize,
     pub skipped: usize,

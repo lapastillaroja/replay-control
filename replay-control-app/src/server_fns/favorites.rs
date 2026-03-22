@@ -9,7 +9,7 @@ pub struct FavoriteWithArt {
 }
 
 /// Result of organizing favorites into subfolders.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct OrganizeResult {
     pub organized: usize,
     pub skipped: usize,

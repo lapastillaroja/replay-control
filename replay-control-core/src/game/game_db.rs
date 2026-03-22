@@ -9,7 +9,7 @@
 /// - `GameEntry`: one per ROM filename variant, references a CanonicalGame
 ///
 /// Shared metadata for a canonical game (one per unique game title per system).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CanonicalGame {
     /// Clean display title (e.g., "Super Mario World").
     pub display_name: &'static str,
@@ -26,7 +26,7 @@ pub struct CanonicalGame {
 }
 
 /// Metadata for a specific ROM file variant.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct GameEntry {
     /// Canonical filename stem from No-Intro (without extension).
     pub canonical_name: &'static str,
