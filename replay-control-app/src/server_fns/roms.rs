@@ -435,3 +435,116 @@ fn parse_rom_path(rom_path: &str) -> Option<(String, String)> {
     let rom_filename = rest.rsplit_once('/').map(|(_, f)| f).unwrap_or(rest);
     Some((system.to_string(), rom_filename.to_string()))
 }
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    use super::*;
+
+    // --- parse_rom_path ---
+
+    #[test]
+    fn parse_simple_rom_path() {
+        let result = parse_rom_path("/roms/sega_smd/Sonic.md");
+        assert_eq!(
+            result,
+            Some(("sega_smd".to_string(), "Sonic.md".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_nested_rom_path() {
+        let result = parse_rom_path(
+            "/roms/arcade_dc/Atomiswave/Horizontal Games/00 Clean Romset/ggx15.zip",
+        );
+        assert_eq!(
+            result,
+            Some(("arcade_dc".to_string(), "ggx15.zip".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_rom_path_missing_prefix() {
+        assert_eq!(parse_rom_path("sega_smd/Sonic.md"), None);
+    }
+
+    #[test]
+    fn parse_rom_path_only_system() {
+        // No filename after system
+        assert_eq!(parse_rom_path("/roms/sega_smd"), None);
+    }
+
+    #[test]
+    fn parse_rom_path_with_spaces() {
+        let result = parse_rom_path("/roms/nintendo_snes/Super Mario World (USA).sfc");
+        assert_eq!(
+            result,
+            Some((
+                "nintendo_snes".to_string(),
+                "Super Mario World (USA).sfc".to_string()
+            ))
+        );
+    }
+
+    // --- validate_path_safe ---
+
+    #[test]
+    fn safe_path_accepted() {
+        assert!(validate_path_safe("sega_smd/Sonic.md").is_ok());
+    }
+
+    #[test]
+    fn path_traversal_rejected() {
+        assert!(validate_path_safe("../etc/passwd").is_err());
+        assert!(validate_path_safe("foo/../../bar").is_err());
+    }
+
+    #[test]
+    fn backslash_rejected() {
+        assert!(validate_path_safe("foo\\bar.rom").is_err());
+    }
+
+    #[test]
+    fn empty_path_accepted() {
+        assert!(validate_path_safe("").is_ok());
+    }
+
+    // --- system_player_counts ---
+
+    #[test]
+    fn batch_player_counts_known_system() {
+        // SNES has player data in game_db. Super Mario World is a known 1-player game.
+        let filenames = vec!["Super Mario World (USA).sfc"];
+        let counts = system_player_counts("nintendo_snes", &filenames);
+        // Should return either a count > 0 or not be present (if the DB has it).
+        // The key invariant: no entries with players == 0 in the map.
+        for &p in counts.values() {
+            assert!(p > 0, "Batch map should only contain positive player counts");
+        }
+    }
+
+    #[test]
+    fn batch_player_counts_unknown_filenames() {
+        let filenames = vec!["nonexistent_game_12345.sfc"];
+        let counts = system_player_counts("nintendo_snes", &filenames);
+        assert!(
+            !counts.contains_key("nonexistent_game_12345.sfc"),
+            "Unknown game should not appear in counts map"
+        );
+    }
+
+    #[test]
+    fn batch_player_counts_empty_input() {
+        let counts = system_player_counts("nintendo_snes", &[]);
+        assert!(counts.is_empty());
+    }
+
+    #[test]
+    fn batch_player_counts_arcade_system() {
+        // Arcade ROMs use .zip extension; system_player_counts should handle stripping it.
+        let filenames = vec!["mslug6.zip"];
+        let counts = system_player_counts("arcade_fbneo", &filenames);
+        if let Some(&p) = counts.get("mslug6.zip") {
+            assert!(p >= 2, "Metal Slug 6 should be at least 2 players, got {p}");
+        }
+    }
+}

@@ -1007,7 +1007,10 @@ pub async fn get_developer_games(
 
 #[cfg(all(test, feature = "ssr"))]
 mod tests {
-    use super::search_score;
+    use super::{
+        count_adjacent_pairs, count_exact_word_matches, search_score, split_into_words,
+        try_word_match, words_in_order,
+    };
     use replay_control_core::rom_tags::RegionPreference;
 
     /// Default preference for tests (matches pre-preference behavior).
@@ -1557,6 +1560,235 @@ mod tests {
             hedgehog > blast,
             "Hedgehog 3 ({hedgehog}) should beat 3D Blast ({blast})"
         );
+    }
+
+    // --- split_into_words ---
+
+    #[test]
+    fn split_words_basic() {
+        assert_eq!(split_into_words("super mario"), vec!["super", "mario"]);
+    }
+
+    #[test]
+    fn split_words_hyphenated() {
+        assert_eq!(
+            split_into_words("x-men vs street"),
+            vec!["x", "men", "vs", "street"]
+        );
+    }
+
+    #[test]
+    fn split_words_strips_trailing_punctuation() {
+        assert_eq!(split_into_words("hello! world."), vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn split_words_empty() {
+        let result: Vec<&str> = split_into_words("");
+        assert!(result.is_empty());
+    }
+
+    // --- words_in_order ---
+
+    #[test]
+    fn words_in_order_positive() {
+        assert!(words_in_order(
+            &["super", "mario"],
+            &["super", "mario", "world"]
+        ));
+    }
+
+    #[test]
+    fn words_in_order_negative() {
+        assert!(!words_in_order(
+            &["mario", "super"],
+            &["super", "mario", "world"]
+        ));
+    }
+
+    #[test]
+    fn words_in_order_prefix_match() {
+        // "mar" should match "mario" via starts_with
+        assert!(words_in_order(
+            &["sup", "mar"],
+            &["super", "mario", "world"]
+        ));
+    }
+
+    // --- count_adjacent_pairs ---
+
+    #[test]
+    fn adjacent_pairs_all_adjacent() {
+        // "super mario world" in title "super mario world" -> 2 adjacent pairs
+        let pairs = count_adjacent_pairs(
+            &["super", "mario", "world"],
+            &["super", "mario", "world"],
+        );
+        assert_eq!(pairs, 2);
+    }
+
+    #[test]
+    fn adjacent_pairs_none_adjacent() {
+        // "mario world" in "world of mario" -> 0 adjacent pairs
+        let pairs = count_adjacent_pairs(&["mario", "world"], &["world", "of", "mario"]);
+        assert_eq!(pairs, 0);
+    }
+
+    #[test]
+    fn adjacent_pairs_single_word() {
+        assert_eq!(count_adjacent_pairs(&["mario"], &["mario"]), 0);
+    }
+
+    // --- count_exact_word_matches ---
+
+    #[test]
+    fn exact_word_matches_all() {
+        let count = count_exact_word_matches(
+            &["super", "mario"],
+            &["super", "mario", "world"],
+        );
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn exact_word_matches_prefix_only() {
+        // "mar" is not an exact match for "mario"
+        let count =
+            count_exact_word_matches(&["mar"], &["super", "mario", "world"]);
+        assert_eq!(count, 0);
+    }
+
+    // --- try_word_match ---
+
+    #[test]
+    fn try_word_match_display_name() {
+        let result = try_word_match(
+            &["super", "mario"],
+            &["super", "mario", "world"],
+            &["super", "mario", "world", "(usa)"],
+        );
+        assert!(result.is_some());
+        let (score, is_filename) = result.unwrap();
+        assert!(!is_filename, "Should match display name, not filename");
+        assert!(score >= 400, "Word match in display should be >= 400, got {score}");
+    }
+
+    #[test]
+    fn try_word_match_filename_only() {
+        // Query words only in filename, not display name
+        let result = try_word_match(
+            &["usa", "rev"],
+            &["tetris"],
+            &["tetris", "(usa)", "(rev", "1)"],
+        );
+        if let Some((score, is_filename)) = result {
+            assert!(is_filename, "Should match filename");
+            assert!(score >= 300, "Word match in filename should be >= 300, got {score}");
+        }
+    }
+
+    #[test]
+    fn try_word_match_no_match() {
+        let result = try_word_match(
+            &["zzz", "yyy"],
+            &["super", "mario"],
+            &["super", "mario", "(usa)"],
+        );
+        assert!(result.is_none());
+    }
+
+    // --- Region preference scoring ---
+
+    #[test]
+    fn preferred_region_scores_higher() {
+        use RegionPreference::*;
+        let usa_score = search_score(
+            "tetris",
+            "Tetris",
+            "Tetris (USA).nes",
+            Usa,
+            SEC,
+        );
+        let jpn_score = search_score(
+            "tetris",
+            "Tetris",
+            "Tetris (Japan).nes",
+            Usa,
+            SEC,
+        );
+        assert!(
+            usa_score > jpn_score,
+            "USA ROM ({usa_score}) should score higher than Japan ({jpn_score}) with USA preference"
+        );
+    }
+
+    #[test]
+    fn secondary_preference_used() {
+        use RegionPreference::*;
+        let jpn_primary = search_score(
+            "tetris",
+            "Tetris",
+            "Tetris (Japan).nes",
+            Japan,
+            Some(Europe),
+        );
+        let eur_secondary = search_score(
+            "tetris",
+            "Tetris",
+            "Tetris (Europe).nes",
+            Japan,
+            Some(Europe),
+        );
+        // Both should score > 0 and Japan should be >= Europe
+        assert!(jpn_primary > 0);
+        assert!(eur_secondary > 0);
+        assert!(
+            jpn_primary >= eur_secondary,
+            "Primary pref ({jpn_primary}) should be >= secondary ({eur_secondary})"
+        );
+    }
+
+    // --- Tier penalty in scoring ---
+
+    #[test]
+    fn hack_scores_lower_than_original() {
+        let original = search_score(
+            "mario",
+            "Super Mario World",
+            "Super Mario World (USA).sfc",
+            PREF,
+            SEC,
+        );
+        let hack = search_score(
+            "mario",
+            "Super Mario World",
+            "Super Mario World (Hack).sfc",
+            PREF,
+            SEC,
+        );
+        assert!(
+            original > hack,
+            "Original ({original}) should beat hack ({hack})"
+        );
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn empty_query_gets_high_score() {
+        // An empty string is a substring of everything, so it matches
+        // at the "exact match" tier (display_lower == query when both are lowered).
+        // Actually "" == "" is false here because display_lower is "tetris" not "".
+        // But "".contains("") is true, so it scores in the substring tier.
+        let score = search_score("", "Tetris", "Tetris (USA).nes", PREF, SEC);
+        assert!(score > 0, "Empty query matches via substring, got {score}");
+    }
+
+    #[test]
+    fn single_char_query() {
+        // Single character should still work via substring match
+        let score = search_score("t", "Tetris", "Tetris (USA).nes", PREF, SEC);
+        assert!(score > 0, "Single char query 't' should match Tetris");
     }
 }
 
