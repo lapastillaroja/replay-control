@@ -248,10 +248,10 @@ pub fn preferred_languages(
         langs.push(default_language_for_region(region).to_string());
     }
 
-    if let Some(s) = secondary.filter(|s| !s.is_empty()) {
-        if !langs.contains(&s.to_string()) {
-            langs.push(s.to_string());
-        }
+    if let Some(s) = secondary.filter(|s| !s.is_empty())
+        && !langs.contains(&s.to_string())
+    {
+        langs.push(s.to_string());
     }
 
     // Always include English as a fallback

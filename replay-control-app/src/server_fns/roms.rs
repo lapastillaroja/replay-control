@@ -348,8 +348,18 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     })
 }
 
+/// Reject paths that attempt directory traversal.
+#[cfg(feature = "ssr")]
+fn validate_path_safe(path: &str) -> Result<(), ServerFnError> {
+    if path.contains("..") || path.contains('\\') {
+        return Err(ServerFnError::new("Invalid path"));
+    }
+    Ok(())
+}
+
 #[server(prefix = "/sfn")]
 pub async fn delete_rom(relative_path: String) -> Result<(), ServerFnError> {
+    validate_path_safe(&relative_path)?;
     let state = expect_context::<crate::api::AppState>();
     replay_control_core::roms::delete_rom(&state.storage(), &relative_path)
         .map_err(|e| ServerFnError::new(e.to_string()))
@@ -360,6 +370,8 @@ pub async fn rename_rom(
     relative_path: String,
     new_filename: String,
 ) -> Result<String, ServerFnError> {
+    validate_path_safe(&relative_path)?;
+    validate_path_safe(&new_filename)?;
     let state = expect_context::<crate::api::AppState>();
     let new_path =
         replay_control_core::roms::rename_rom(&state.storage(), &relative_path, &new_filename)

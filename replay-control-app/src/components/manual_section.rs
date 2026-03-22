@@ -179,7 +179,7 @@ pub fn ManualSection(
                             manual=manual
                             deleting_filename=deleting_filename
                             confirming_delete=confirming_delete
-                            on_delete=on_delete.clone()
+                            on_delete=on_delete
                         />
                     </For>
                 </div>

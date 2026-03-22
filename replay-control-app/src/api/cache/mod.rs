@@ -155,7 +155,7 @@ impl GameLibrary {
     fn load_systems_from_db(&self, storage: &StorageLocation) -> Option<Vec<SystemSummary>> {
         use replay_control_core::systems;
 
-        let cached_meta = self.with_db_read(storage, |conn| MetadataDb::load_all_system_meta(conn))?;
+        let cached_meta = self.with_db_read(storage, MetadataDb::load_all_system_meta)?;
         let cached_meta = cached_meta.ok()?;
 
         if cached_meta.is_empty() {

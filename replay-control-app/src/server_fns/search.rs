@@ -163,6 +163,48 @@ fn try_word_match(
     None
 }
 
+/// Apply shared bonuses and penalties to a base score: length bonus, tier penalty,
+/// and region bonus. Used by both the word-match and prefix/contains paths.
+#[cfg(feature = "ssr")]
+fn apply_bonuses(
+    base: u32,
+    filename: &str,
+    display_name: &str,
+    region_pref: replay_control_core::rom_tags::RegionPreference,
+    region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
+) -> u32 {
+    use replay_control_core::rom_tags::RomTier;
+
+    // Shorter names are more likely the original game
+    let length_bonus: u32 = if display_name.len() < 40 { 100 } else { 0 };
+
+    // Tier penalty: deprioritize non-original ROMs
+    let (tier, region, _) = replay_control_core::rom_tags::classify(filename);
+    let tier_penalty = match tier {
+        RomTier::Original => 0,
+        RomTier::Revision => 5,
+        RomTier::RegionVariant => 10,
+        RomTier::Translation => 50,
+        RomTier::Unlicensed => 60,
+        RomTier::Homebrew => 100,
+        RomTier::Hack => 200,
+        RomTier::PreRelease => 250,
+        RomTier::Pirate => 300,
+    };
+
+    // Region bonus: based on sort_key from user's preference.
+    // Lower sort_key = higher bonus.
+    let region_bonus: u32 = match region.sort_key(region_pref, region_secondary) {
+        0 => 20, // World (or preferred when World is the preference)
+        1 => 15, // User's preferred region
+        2 => 10, // Second-best major region
+        3 => 5,  // Third major region
+        _ => 0,  // Other / Unknown
+    };
+
+    (base + length_bonus + region_bonus).saturating_sub(tier_penalty)
+}
+
 /// Compute a relevance score for a ROM against a search query.
 /// Higher = more relevant. Returns 0 for no match.
 /// The `region_pref` parameter controls which region gets the highest bonus.
@@ -239,61 +281,13 @@ pub(crate) fn search_score(
 
         match word_score {
             Some((word_base, _)) => {
-                // Apply the same bonuses/penalties as other tiers
-                let length_bonus: u32 = if display_name.len() < 40 { 100 } else { 0 };
-                let (tier, region, _) = replay_control_core::rom_tags::classify(filename);
-                let tier_penalty = match tier {
-                    replay_control_core::rom_tags::RomTier::Original => 0,
-                    replay_control_core::rom_tags::RomTier::Revision => 5,
-                    replay_control_core::rom_tags::RomTier::RegionVariant => 10,
-                    replay_control_core::rom_tags::RomTier::Translation => 50,
-                    replay_control_core::rom_tags::RomTier::Unlicensed => 60,
-                    replay_control_core::rom_tags::RomTier::Homebrew => 100,
-                    replay_control_core::rom_tags::RomTier::Hack => 200,
-                    replay_control_core::rom_tags::RomTier::PreRelease => 250,
-                    replay_control_core::rom_tags::RomTier::Pirate => 300,
-                };
-                let region_bonus: u32 = match region.sort_key(region_pref, region_secondary) {
-                    0 => 20,
-                    1 => 15,
-                    2 => 10,
-                    3 => 5,
-                    _ => 0,
-                };
-                return (word_base + length_bonus + region_bonus).saturating_sub(tier_penalty);
+                return apply_bonuses(word_base, filename, display_name, region_pref, region_secondary);
             }
             None => return 0,
         }
     };
 
-    // Shorter names are more likely the original game
-    let length_bonus: u32 = if display_name.len() < 40 { 100 } else { 0 };
-
-    // Tier penalty: deprioritize non-original ROMs
-    let (tier, region, _) = replay_control_core::rom_tags::classify(filename);
-    let tier_penalty = match tier {
-        replay_control_core::rom_tags::RomTier::Original => 0,
-        replay_control_core::rom_tags::RomTier::Revision => 5,
-        replay_control_core::rom_tags::RomTier::RegionVariant => 10,
-        replay_control_core::rom_tags::RomTier::Translation => 50,
-        replay_control_core::rom_tags::RomTier::Unlicensed => 60,
-        replay_control_core::rom_tags::RomTier::Homebrew => 100,
-        replay_control_core::rom_tags::RomTier::Hack => 200,
-        replay_control_core::rom_tags::RomTier::PreRelease => 250,
-        replay_control_core::rom_tags::RomTier::Pirate => 300,
-    };
-
-    // Region bonus: based on sort_key from user's preference.
-    // Lower sort_key = higher bonus.
-    let region_bonus: u32 = match region.sort_key(region_pref, region_secondary) {
-        0 => 20, // World (or preferred when World is the preference)
-        1 => 15, // User's preferred region
-        2 => 10, // Second-best major region
-        3 => 5,  // Third major region
-        _ => 0,  // Other / Unknown
-    };
-
-    (base + length_bonus + region_bonus).saturating_sub(tier_penalty)
+    apply_bonuses(base, filename, display_name, region_pref, region_secondary)
 }
 
 /// Look up the normalized genre for a ROM on a given system.

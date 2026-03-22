@@ -379,10 +379,10 @@ mod ssr {
                     // Verify the resolved path is within the game directory
                     match file_path.canonicalize() {
                         Ok(canonical) => {
-                            if let Ok(game_canonical) = game_dir.canonicalize() {
-                                if !canonical.starts_with(&game_canonical) {
-                                    return StatusCode::BAD_REQUEST.into_response();
-                                }
+                            if let Ok(game_canonical) = game_dir.canonicalize()
+                                && !canonical.starts_with(&game_canonical)
+                            {
+                                return StatusCode::BAD_REQUEST.into_response();
                             }
                         }
                         Err(_) => return StatusCode::NOT_FOUND.into_response(),

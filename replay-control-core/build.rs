@@ -863,26 +863,26 @@ fn parse_nplayers_ini(path: &Path) -> HashMap<String, u8> {
             continue;
         }
 
-        if in_nplayers_section {
-            if let Some((rom_name, value)) = trimmed.split_once('=') {
-                let rom_name = rom_name.trim();
-                let value = value.trim();
+        if in_nplayers_section
+            && let Some((rom_name, value)) = trimmed.split_once('=')
+        {
+            let rom_name = rom_name.trim();
+            let value = value.trim();
 
-                // Skip non-game entries
-                if value == "???"
-                    || value == "Device"
-                    || value == "Non-arcade"
-                    || value == "BIOS"
-                    || value == "Pinball"
-                {
-                    continue;
-                }
+            // Skip non-game entries
+            if value == "???"
+                || value == "Device"
+                || value == "Non-arcade"
+                || value == "BIOS"
+                || value == "Pinball"
+            {
+                continue;
+            }
 
-                // Parse player count from values like "2P sim", "4P alt / 2P sim", "1P"
-                // For compound entries like "4P alt / 2P sim", take the first (max) number
-                if let Some(players) = parse_nplayers_value(value) {
-                    players_map.insert(rom_name.to_string(), players);
-                }
+            // Parse player count from values like "2P sim", "4P alt / 2P sim", "1P"
+            // For compound entries like "4P alt / 2P sim", take the first (max) number
+            if let Some(players) = parse_nplayers_value(value) {
+                players_map.insert(rom_name.to_string(), players);
             }
         }
     }
@@ -906,10 +906,10 @@ fn parse_nplayers_value(value: &str) -> Option<u8> {
         if let Some(p_pos) = part.find('P') {
             // Extract digits immediately before 'P'
             let prefix = &part[..p_pos];
-            if let Ok(n) = prefix.trim().parse::<u8>() {
-                if n > 0 {
-                    return Some(n);
-                }
+            if let Ok(n) = prefix.trim().parse::<u8>()
+                && n > 0
+            {
+                return Some(n);
             }
         }
     }
@@ -1770,15 +1770,15 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
                     continue;
                 }
                 let crc = nointro_entries[idx].crc32;
-                if final_players == 0 {
-                    if let Some(users_str) = maxusers.get(&crc) {
-                        final_players = users_str.parse().unwrap_or(0);
-                    }
+                if final_players == 0
+                    && let Some(users_str) = maxusers.get(&crc)
+                {
+                    final_players = users_str.parse().unwrap_or(0);
                 }
-                if final_genre.is_empty() {
-                    if let Some(genre_str) = genres.get(&crc) {
-                        final_genre = genre_str.clone();
-                    }
+                if final_genre.is_empty()
+                    && let Some(genre_str) = genres.get(&crc)
+                {
+                    final_genre = genre_str.clone();
                 }
                 if final_players > 0 && !final_genre.is_empty() {
                     break;
@@ -1793,15 +1793,15 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
                         continue;
                     }
                     let crc = nointro_entries[idx].crc32;
-                    if final_players == 0 {
-                        if let Some(users_str) = maxusers.get(&crc) {
-                            final_players = users_str.parse().unwrap_or(0);
-                        }
+                    if final_players == 0
+                        && let Some(users_str) = maxusers.get(&crc)
+                    {
+                        final_players = users_str.parse().unwrap_or(0);
                     }
-                    if final_genre.is_empty() {
-                        if let Some(genre_str) = genres.get(&crc) {
-                            final_genre = genre_str.clone();
-                        }
+                    if final_genre.is_empty()
+                        && let Some(genre_str) = genres.get(&crc)
+                    {
+                        final_genre = genre_str.clone();
                     }
                     if final_players > 0 && !final_genre.is_empty() {
                         break;

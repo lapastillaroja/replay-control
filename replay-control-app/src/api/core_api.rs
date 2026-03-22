@@ -72,7 +72,7 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
                 display_name: entry
                     .game
                     .display_name
-                    .unwrap_or_else(|| entry.game.rom_filename),
+                    .unwrap_or(entry.game.rom_filename),
                 box_art_url,
             }
         })
@@ -111,7 +111,7 @@ async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEnt
                 display_name: fav
                     .game
                     .display_name
-                    .unwrap_or_else(|| fav.game.rom_filename),
+                    .unwrap_or(fav.game.rom_filename),
                 box_art_url,
             }
         })

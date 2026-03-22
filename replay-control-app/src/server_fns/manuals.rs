@@ -667,17 +667,17 @@ fn resolve_m3u_game_dir(
             // If this line references a .svm, resolve the game directory from it
             if line.to_lowercase().ends_with(".svm") {
                 let svm_candidate = std::path::PathBuf::from(line);
-                if svm_candidate.exists() {
-                    if let Some(dir) = resolve_svm_game_dir(&svm_candidate, roms_dir) {
-                        return Some(dir);
-                    }
+                if svm_candidate.exists()
+                    && let Some(dir) = resolve_svm_game_dir(&svm_candidate, roms_dir)
+                {
+                    return Some(dir);
                 }
                 // Try relative to roms_dir
                 let rel_svm = roms_dir.join(line);
-                if rel_svm.exists() {
-                    if let Some(dir) = resolve_svm_game_dir(&rel_svm, roms_dir) {
-                        return Some(dir);
-                    }
+                if rel_svm.exists()
+                    && let Some(dir) = resolve_svm_game_dir(&rel_svm, roms_dir)
+                {
+                    return Some(dir);
                 }
                 // Try the parent directory of the referenced .svm
                 let svm_path = std::path::PathBuf::from(line);

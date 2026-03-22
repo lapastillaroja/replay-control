@@ -18,6 +18,15 @@ pub fn use_debounced<T: Clone + PartialEq + Send + Sync + 'static>(
 
         let timer_handle: StoredValue<Option<i32>> = StoredValue::new(None);
 
+        // Track whether the callback has been created so we only leak one Closure
+        // for the entire lifetime of this hook (instead of one per keystroke).
+        let callback_created: StoredValue<bool> = StoredValue::new(false);
+        // The pending value is stored here so the single callback can read it.
+        let pending: StoredValue<Option<T>> = StoredValue::new(None);
+        // The JS function reference stored as JsValue (Function is !Send, JsValue is !Send too,
+        // but StoredValue handles the thread-safety wrapper for us).
+        let js_fn: StoredValue<Option<web_sys::js_sys::Function>> = StoredValue::new(None);
+
         Effect::new(move || {
             let val = source.get();
 
@@ -28,19 +37,32 @@ pub fn use_debounced<T: Clone + PartialEq + Send + Sync + 'static>(
                 w.clear_timeout_with_handle(handle);
             }
 
-            let cb = Closure::<dyn Fn()>::new(move || {
-                debounced.set(val.clone());
-            });
-            if let Some(window) = web_sys::window()
+            // Store the latest value for the callback.
+            pending.set_value(Some(val));
+
+            // Create the callback once and store the JS function reference.
+            if !callback_created.get_value() {
+                let cb = Closure::<dyn Fn()>::new(move || {
+                    if let Some(val) = pending.get_value() {
+                        debounced.set(val);
+                    }
+                });
+                let func: web_sys::js_sys::Function = cb.as_ref().unchecked_ref::<web_sys::js_sys::Function>().clone();
+                js_fn.set_value(Some(func));
+                cb.forget(); // Leak once, not per keystroke.
+                callback_created.set_value(true);
+            }
+
+            if let Some(func) = js_fn.get_value()
+                && let Some(window) = web_sys::window()
                 && let Ok(handle) =
                     window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                        cb.as_ref().unchecked_ref(),
+                        &func,
                         delay_ms,
                     )
             {
                 timer_handle.set_value(Some(handle));
             }
-            cb.forget();
         });
 
         on_cleanup(move || {
