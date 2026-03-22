@@ -4,6 +4,53 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## 2026-03-22
+
+### Performance
+- feat: deadpool-sqlite connection pool — 3 concurrent read connections + 1 write, replacing single Mutex (`2fc1016`, `618314a`)
+- fix: batch player lookups to eliminate N+1 in multiplayer filter (`3447489`)
+- docs: load test results — 2x throughput for DB-heavy endpoints, 89x for light endpoints under mixed load (`b9d60f9`)
+
+### Bug Fixes
+- fix: WASM panic on game detail navigation — ManualSection's param_key Memo triggered effects on disposed signals, freezing the page on "Loading..." (`a009d03`)
+- fix: hydration mismatch in GameListItem — removed `#[cfg(ssr)]` system_label resolution that differed between server and client (`9694dd5`)
+- fix: path traversal protection on delete_rom/rename_rom server functions (`478f6ec`)
+- fix: Closure::forget memory leak in use_debounce — single closure instead of one per keystroke (`478f6ec`)
+- fix: SystemTime unwrap → unwrap_or_default in videos.rs (`478f6ec`)
+
+### Code Quality
+- refactor: make MetadataDb + UserDataDb stateless query namespaces — methods take `conn: &Connection` (`40072d9`)
+- refactor: add Copy derive to 9 qualifying types (`f21652a`)
+- refactor: split global_search (295 lines) into focused helper functions (`dbbb2b0`)
+- refactor: extract rom_docs_handler from 127-line inline closure in main.rs (`1952b30`)
+- refactor: deduplicate SSE handlers with generic sse_progress_stream builder (`ad3968a`)
+- refactor: deduplicate MEGABIT_SYSTEMS — SSR delegates to core crate (`dedbe97`)
+- refactor: standardize 28 ad-hoc lock expect() messages in import.rs (`be09c8a`)
+- fix: resolve 14 clippy warnings across crates (`478f6ec`)
+- fix: improve curl_get_json with redirect following, connect timeout, Accept header (`9694dd5`)
+- test: integration tests for search helpers, ROM path parsing, batch player lookup (117 tests) (`5678068`)
+- style: increase default text size to 110%, large to 140% (`d272648`)
+
+### Documentation
+- docs: DB connection pool architecture — design + implementation status (`d01cd23`)
+- docs: ROM management analysis — multi-file rename/delete patterns (`a74979a`)
+- docs: add scroll restoration to known issues (`a641780`)
+
+## 2026-03-21
+
+- feat: game manuals — in-folder document detection + archive.org on-demand download via RetroKit TSV (`70f1c48`)
+- feat: inline delete confirmation for downloaded manuals (`ae8ed86`)
+- feat: language preferences for manual search (`e8ab675`)
+- fix: wrap manual server functions in spawn_blocking + register DeleteManual (`fe8cdca`)
+- fix: 7 correctness + performance fixes for libretro core (`9a9411f`)
+- feat: home screen + screensaver design for libretro core (`713c0ff`)
+- feat: skin/theme support for libretro core with 11 palette mappings (`203a85b`)
+- fix: double-buffered video + UI polish for libretro core (`80c2f3c`)
+- feat: multi-page UI, crash fixes, position memory for libretro core (`2cfd599`)
+- docs: libretro core skin/theme design (`98c4bb5`)
+- docs: RetroAchievements evaluation, core home screen + screensaver designs (`b28f753`)
+- docs: update feature documentation through 2026-03-20 (`78e9731`)
+
 ## 2026-03-20
 
 - feat: add Named_Titles support and screenshot gallery — title screen + in-game screenshot displayed as labeled gallery on game detail page (`4c10d4e`)
