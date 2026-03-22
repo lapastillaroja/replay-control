@@ -1,13 +1,13 @@
 use leptos::prelude::*;
-use leptos_router::hooks::use_params_map;
 
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, GameDocument, LocalManual, ManualRecommendation};
 
 /// Full manual section: in-folder documents, saved manuals, search, and results.
 ///
-/// Resources use URL params as their reactive key so they refetch automatically
-/// when the user navigates between games via client-side navigation.
+/// This component is inside the game detail `<Suspense>`, so it gets recreated
+/// with fresh props whenever the user navigates between games. No need for
+/// reactive URL param tracking — all state starts fresh per game.
 #[component]
 pub fn ManualSection(
     system: StoredValue<String>,
@@ -17,20 +17,10 @@ pub fn ManualSection(
 ) -> impl IntoView {
     let i18n = use_i18n();
 
-    // Use URL params as the reactive key for Resources. This ensures they
-    // refetch when the user navigates between games (StoredValue::get_value()
-    // is not reactive, so it can't drive Resource refetches on its own).
-    let params = use_params_map();
-    let param_key = Memo::new(move |_| {
-        let p = params.read();
-        let sys = p.get("system").unwrap_or_default();
-        let fname = p.get("filename").unwrap_or_default();
-        (sys, fname)
-    });
-
-    // In-folder documents (Phase 1)
+    // In-folder documents (Phase 1).
+    // Resource fires once when the component is created (key is constant).
     let docs_resource = Resource::new(
-        move || param_key.get(),
+        || (),
         move |_| {
             let sys = system.get_value();
             let fname = rom_filename.get_value();
@@ -48,7 +38,7 @@ pub fn ManualSection(
 
     // Local manuals (Phase 2 -- previously downloaded)
     let local_resource = Resource::new(
-        move || param_key.get(),
+        || (),
         move |_| {
             let sys = system.get_value();
             let bt = base_title.get_value();
@@ -77,17 +67,6 @@ pub fn ManualSection(
     // Delete state
     let deleting_filename = RwSignal::new(Option::<String>::None);
     let confirming_delete = RwSignal::new(Option::<String>::None);
-
-    // Reset search state when the game changes (driven by URL params)
-    let _reset_search = Effect::new(move || {
-        let _ = param_key.get(); // track the reactive key
-        searched.set(false);
-        search_results.set(vec![]);
-        search_error.set(None);
-        searching.set(false);
-        downloading_url.set(None);
-        download_error.set(None);
-    });
 
     let on_search = move |_| {
         searching.set(true);
