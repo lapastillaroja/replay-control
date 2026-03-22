@@ -43,19 +43,10 @@ pub fn GameListItem(
     ));
 
     // Resolve system display name for the badge.
+    // All callers that set show_system=true pass system_display, so the
+    // fallback to raw folder name only exists as a safety net.
     let system_label = StoredValue::new(if show_system {
-        system_display.unwrap_or_else(|| {
-            #[cfg(feature = "ssr")]
-            {
-                replay_control_core::systems::find_system(&system.get_value())
-                    .map(|s| s.display_name.to_string())
-                    .unwrap_or_else(|| system.get_value())
-            }
-            #[cfg(not(feature = "ssr"))]
-            {
-                system.get_value()
-            }
-        })
+        system_display.unwrap_or_else(|| system.get_value())
     } else {
         String::new()
     });

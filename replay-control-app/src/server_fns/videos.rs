@@ -221,13 +221,22 @@ pub async fn search_game_videos(
 #[cfg(feature = "ssr")]
 async fn curl_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
     let output = tokio::process::Command::new("curl")
-        .args(["-sS", "--max-time", &timeout_secs.to_string(), url])
+        .args([
+            "-sSL",                                   // silent, show errors, follow redirects
+            "--connect-timeout", "5",                  // connection timeout
+            "--max-time", &timeout_secs.to_string(),   // total timeout
+            "-H", "Accept: application/json",          // explicit accept header
+            url,
+        ])
         .output()
         .await
         .map_err(|e| format!("curl spawn failed: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("curl failed: {stderr}"));
+        return Err(format!("curl failed (exit {}): {stderr}", output.status));
+    }
+    if output.stdout.is_empty() {
+        return Err("empty response".to_string());
     }
     serde_json::from_slice(&output.stdout).map_err(|e| format!("JSON parse error: {e}"))
 }
