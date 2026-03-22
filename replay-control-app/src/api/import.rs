@@ -1,10 +1,22 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use replay_control_core::metadata_db::MetadataDb;
 
 use super::AppState;
+
+/// Acquire a read lock, panicking on poison with a standard message.
+fn read_lock<'a, T>(lock: &'a RwLock<T>, label: &str) -> RwLockReadGuard<'a, T> {
+    lock.read()
+        .unwrap_or_else(|e| panic!("{label} read lock poisoned: {e}"))
+}
+
+/// Acquire a write lock, panicking on poison with a standard message.
+fn write_lock<'a, T>(lock: &'a RwLock<T>, label: &str) -> RwLockWriteGuard<'a, T> {
+    lock.write()
+        .unwrap_or_else(|e| panic!("{label} write lock poisoned: {e}"))
+}
 
 // ── ImportPipeline ─────────────────────────────────────────────────
 
@@ -25,6 +37,20 @@ impl ImportPipeline {
             busy,
             progress: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Acquire a read lock on import progress.
+    fn read_progress(
+        &self,
+    ) -> RwLockReadGuard<'_, Option<replay_control_core::metadata_db::ImportProgress>> {
+        read_lock(&self.progress, "import_progress")
+    }
+
+    /// Acquire a write lock on import progress.
+    fn write_progress(
+        &self,
+    ) -> RwLockWriteGuard<'_, Option<replay_control_core::metadata_db::ImportProgress>> {
+        write_lock(&self.progress, "import_progress")
     }
 
     /// Check if the shared busy flag is set.
@@ -49,24 +75,17 @@ impl ImportPipeline {
     /// Used by the startup pipeline to wait for auto-import completion.
     pub fn has_active_progress(&self) -> bool {
         use replay_control_core::metadata_db::ImportState;
-        self.progress
-            .read()
-            .expect("import_progress lock poisoned")
-            .as_ref()
-            .is_some_and(|p| {
-                matches!(
-                    p.state,
-                    ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
-                )
-            })
+        self.read_progress().as_ref().is_some_and(|p| {
+            matches!(
+                p.state,
+                ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
+            )
+        })
     }
 
     /// Get current import progress (clone).
     pub fn progress(&self) -> Option<replay_control_core::metadata_db::ImportProgress> {
-        self.progress
-            .read()
-            .expect("import_progress lock poisoned")
-            .clone()
+        self.read_progress().clone()
     }
 
     /// Start a background metadata import from a LaunchBox XML file.
@@ -97,7 +116,7 @@ impl ImportPipeline {
 
         // Check if already running (shouldn't happen with the atomic guard, but be safe).
         {
-            let guard = self.progress.read().expect("import_progress lock poisoned");
+            let guard = self.read_progress();
             if let Some(ref p) = *guard
                 && matches!(
                     p.state,
@@ -111,10 +130,7 @@ impl ImportPipeline {
 
         // Set initial progress.
         {
-            let mut guard = self
-                .progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.write_progress();
             *guard = Some(ImportProgress {
                 state: ImportState::BuildingIndex,
                 processed: 0,
@@ -184,7 +200,7 @@ impl ImportPipeline {
 
         // Check if already running (shouldn't happen with the atomic guard, but be safe).
         {
-            let guard = self.progress.read().expect("import_progress lock poisoned");
+            let guard = self.read_progress();
             if let Some(ref p) = *guard
                 && matches!(
                     p.state,
@@ -198,10 +214,7 @@ impl ImportPipeline {
 
         // Set initial progress to Downloading.
         {
-            let mut guard = self
-                .progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.write_progress();
             *guard = Some(ImportProgress {
                 state: ImportState::Downloading,
                 processed: 0,
@@ -222,11 +235,7 @@ impl ImportPipeline {
             let xml_path = match replay_control_core::launchbox::download_metadata(&rc_dir) {
                 Ok(path) => path,
                 Err(e) => {
-                    let mut guard = state
-                        .import
-                        .progress
-                        .write()
-                        .expect("import_progress lock poisoned");
+                    let mut guard = write_lock(&state.import.progress, "import_progress");
                     if let Some(ref mut p) = *guard {
                         p.state = ImportState::Failed;
                         p.error = Some(format!("Download failed: {e}"));
@@ -244,11 +253,7 @@ impl ImportPipeline {
 
             // Update elapsed before starting import.
             {
-                let mut guard = state
-                    .import
-                    .progress
-                    .write()
-                    .expect("import_progress lock poisoned");
+                let mut guard = write_lock(&state.import.progress, "import_progress");
                 if let Some(ref mut p) = *guard {
                     p.elapsed_secs = start.elapsed().as_secs();
                 }
@@ -281,10 +286,7 @@ impl ImportPipeline {
         // Build ROM index (no DB needed).
         let storage_root = state.storage().root.clone();
         {
-            let mut guard = self
-                .progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.write_progress();
             if let Some(ref mut p) = *guard {
                 p.state = ImportState::BuildingIndex;
                 p.elapsed_secs = start.elapsed().as_secs();
@@ -298,10 +300,7 @@ impl ImportPipeline {
             let db_available = state.metadata_pool.read(|_conn| true).unwrap_or(false);
             if !db_available {
                 tracing::error!("Metadata DB unavailable at import start (pool closed)");
-                let mut guard = self
-                    .progress
-                    .write()
-                    .expect("import_progress lock poisoned");
+                let mut guard = self.write_progress();
                 if let Some(ref mut p) = *guard {
                     p.state = ImportState::Failed;
                     p.error = Some("Metadata DB unavailable".to_string());
@@ -314,10 +313,7 @@ impl ImportPipeline {
 
         // Update progress to Parsing.
         {
-            let mut guard = self
-                .progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.write_progress();
             if let Some(ref mut p) = *guard {
                 p.state = ImportState::Parsing;
                 p.elapsed_secs = start.elapsed().as_secs();
@@ -349,7 +345,7 @@ impl ImportPipeline {
             &xml_path,
             &rom_index,
             |processed, matched, inserted| {
-                let mut guard = progress_ref.write().expect("import_progress lock poisoned");
+                let mut guard = write_lock(&progress_ref, "import_progress");
                 if let Some(ref mut p) = *guard {
                     p.processed = processed;
                     p.matched = matched;
@@ -382,10 +378,7 @@ impl ImportPipeline {
 
         // Update final progress.
         {
-            let mut guard = self
-                .progress
-                .write()
-                .expect("import_progress lock poisoned");
+            let mut guard = self.write_progress();
             match result {
                 Ok((stats, _)) => {
                     *guard = Some(ImportProgress {
@@ -417,7 +410,7 @@ impl ImportPipeline {
         // Clear busy flag, label, and progress.
         self.busy.store(false, Ordering::SeqCst);
         state.set_busy_label("");
-        *self.progress.write().expect("import_progress lock") = None;
+        *self.write_progress() = None;
     }
 
     /// Import LaunchBox alternate names into the `game_alias` table.
@@ -508,12 +501,21 @@ impl ThumbnailPipeline {
         }
     }
 
+    /// Acquire a read lock on thumbnail progress.
+    fn read_progress(&self) -> RwLockReadGuard<'_, Option<crate::server_fns::ThumbnailProgress>> {
+        read_lock(&self.progress, "thumbnail_progress")
+    }
+
+    /// Acquire a write lock on thumbnail progress.
+    fn write_progress(
+        &self,
+    ) -> RwLockWriteGuard<'_, Option<crate::server_fns::ThumbnailProgress>> {
+        write_lock(&self.progress, "thumbnail_progress")
+    }
+
     /// Get current thumbnail pipeline progress (clone).
     pub fn progress(&self) -> Option<crate::server_fns::ThumbnailProgress> {
-        self.progress
-            .read()
-            .expect("thumbnail_progress lock poisoned")
-            .clone()
+        self.read_progress().clone()
     }
 
     /// Request cancellation of the current thumbnail update.
@@ -524,10 +526,7 @@ impl ThumbnailPipeline {
     /// Check if a thumbnail update is already running.
     fn is_thumbnail_update_running(&self) -> bool {
         use crate::server_fns::ThumbnailPhase;
-        let guard = self
-            .progress
-            .read()
-            .expect("thumbnail_progress lock poisoned");
+        let guard = self.read_progress();
         guard.as_ref().is_some_and(|p| {
             matches!(
                 p.phase,
@@ -556,10 +555,7 @@ impl ThumbnailPipeline {
 
         // Write initial progress before spawning.
         {
-            let mut guard = self
-                .progress
-                .write()
-                .expect("thumbnail_progress lock poisoned");
+            let mut guard = self.write_progress();
             *guard = Some(ThumbnailProgress {
                 phase: ThumbnailPhase::Indexing,
                 current_label: String::new(),
@@ -603,7 +599,7 @@ impl ThumbnailPipeline {
                 tracing::error!(
                     "Metadata DB unavailable at thumbnail update start (pool closed)"
                 );
-                let mut guard = self.progress.write().expect("lock");
+                let mut guard = self.write_progress();
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Failed;
                     p.error = Some("Metadata DB unavailable".to_string());
@@ -631,7 +627,7 @@ impl ThumbnailPipeline {
                 thumbnail_manifest::import_all_manifests(
                     db,
                     &|repos_done, repos_total, current_repo| {
-                        let mut guard = progress_ref.write().expect("lock");
+                        let mut guard = write_lock(&progress_ref, "thumbnail_progress");
                         if let Some(ref mut p) = *guard {
                             p.phase = ThumbnailPhase::Indexing;
                             p.step_done = repos_done;
@@ -683,7 +679,7 @@ impl ThumbnailPipeline {
                                 .unwrap_or("unknown"),
                         )
                     };
-                    let mut guard = self.progress.write().expect("lock");
+                    let mut guard = self.write_progress();
                     if let Some(ref mut p) = *guard {
                         p.phase = ThumbnailPhase::Failed;
                         p.error = Some(msg);
@@ -695,7 +691,7 @@ impl ThumbnailPipeline {
 
                 // Update progress with index results.
                 {
-                    let mut guard = self.progress.write().expect("lock");
+                    let mut guard = self.write_progress();
                     if let Some(ref mut p) = *guard {
                         p.entries_indexed = stats.total_entries;
                         p.elapsed_secs = start.elapsed().as_secs();
@@ -704,7 +700,7 @@ impl ThumbnailPipeline {
                 stats
             }
             Err(e) => {
-                let mut guard = self.progress.write().expect("lock");
+                let mut guard = self.write_progress();
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Failed;
                     p.error = Some(format!("Index failed: {e}"));
@@ -717,7 +713,7 @@ impl ThumbnailPipeline {
 
         // Check cancellation between phases.
         if cancel_ref.load(Ordering::Relaxed) {
-            let mut guard = self.progress.write().expect("lock");
+            let mut guard = self.write_progress();
             if let Some(ref mut p) = *guard {
                 p.phase = ThumbnailPhase::Cancelled;
                 p.elapsed_secs = start.elapsed().as_secs();
@@ -731,7 +727,7 @@ impl ThumbnailPipeline {
         // then released between systems.
 
         {
-            let mut guard = self.progress.write().expect("lock");
+            let mut guard = self.write_progress();
             if let Some(ref mut p) = *guard {
                 p.phase = ThumbnailPhase::Downloading;
                 p.step_done = 0;
@@ -768,7 +764,7 @@ impl ThumbnailPipeline {
 
             // Update progress for this system.
             {
-                let mut guard = self.progress.write().expect("lock");
+                let mut guard = self.write_progress();
                 if let Some(ref mut p) = *guard {
                     p.current_label = system_display.clone();
                     p.step_done = i;
@@ -792,7 +788,7 @@ impl ThumbnailPipeline {
                         system,
                         *kind,
                         &|processed, total, downloaded| {
-                            let mut guard = progress_ref.write().expect("lock");
+                            let mut guard = write_lock(&progress_ref, "thumbnail_progress");
                             if let Some(ref mut p) = *guard {
                                 p.step_done = i;
                                 p.step_total = total_systems;
@@ -838,7 +834,7 @@ impl ThumbnailPipeline {
 
         // Set final progress.
         {
-            let mut guard = self.progress.write().expect("lock");
+            let mut guard = self.write_progress();
             if cancelled {
                 if let Some(ref mut p) = *guard {
                     p.phase = ThumbnailPhase::Cancelled;
@@ -878,7 +874,7 @@ impl ThumbnailPipeline {
         // Clear busy flag, label, and progress.
         self.busy.store(false, Ordering::SeqCst);
         state.set_busy_label("");
-        *self.progress.write().expect("thumbnail_progress lock") = None;
+        *self.write_progress() = None;
     }
 
     /// Scan the media directory for a system and update game_metadata image paths.
