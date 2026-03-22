@@ -1,5 +1,7 @@
 use super::*;
 #[cfg(feature = "ssr")]
+use super::search::system_player_counts;
+#[cfg(feature = "ssr")]
 use replay_control_core::metadata_db::MetadataDb;
 
 /// A page of ROM results with total count.
@@ -97,6 +99,17 @@ pub async fn get_roms_page(
         std::collections::HashMap::new()
     };
 
+    // Batch-load player counts for multiplayer filtering.
+    let player_counts = if multiplayer_only {
+        let filenames: Vec<&str> = all_roms
+            .iter()
+            .map(|r| r.game.rom_filename.as_str())
+            .collect();
+        system_player_counts(&system, &filenames)
+    } else {
+        std::collections::HashMap::new()
+    };
+
     // Apply tier-based, clone, and genre filters before search scoring.
     let pre_filtered: Vec<&RomEntry> = all_roms
         .iter()
@@ -141,7 +154,9 @@ pub async fn get_roms_page(
             if !multiplayer_only {
                 return true;
             }
-            lookup_players(&system, &r.game.rom_filename) >= 2
+            player_counts
+                .get(&r.game.rom_filename)
+                .is_some_and(|&p| p >= 2)
         })
         .collect();
 
@@ -235,11 +250,14 @@ pub async fn get_roms_page(
         }
     }
 
-    // Populate players from game_db / arcade_db.
-    for rom in &mut roms {
-        let p = lookup_players(&system, &rom.game.rom_filename);
-        if p > 0 {
-            rom.players = Some(p);
+    // Populate players from game_db / arcade_db (batch lookup).
+    {
+        let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
+        let players = system_player_counts(&system, &filenames);
+        for rom in &mut roms {
+            if let Some(&p) = players.get(&rom.game.rom_filename) {
+                rom.players = Some(p);
+            }
         }
     }
 

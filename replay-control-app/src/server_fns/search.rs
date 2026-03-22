@@ -338,10 +338,16 @@ pub(crate) fn lookup_genre(system: &str, rom_filename: &str) -> String {
     String::new()
 }
 
-/// Look up the max player count for a ROM on a given system.
-/// Returns 0 if unknown.
+/// Batch-lookup player counts for all ROMs in a system.
+///
+/// Returns a map from ROM filename to player count, only including entries
+/// where the player count is known (> 0). This avoids the N+1 pattern of
+/// calling `lookup_players` individually per ROM during filtering.
 #[cfg(feature = "ssr")]
-pub(crate) fn lookup_players(system: &str, rom_filename: &str) -> u8 {
+pub(crate) fn system_player_counts(
+    system: &str,
+    rom_filenames: &[&str],
+) -> std::collections::HashMap<String, u8> {
     use replay_control_core::arcade_db;
     use replay_control_core::game_db;
     use replay_control_core::systems::{self, SystemCategory};
@@ -349,23 +355,30 @@ pub(crate) fn lookup_players(system: &str, rom_filename: &str) -> u8 {
     let is_arcade =
         systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
 
-    if is_arcade {
-        let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
-        arcade_db::lookup_arcade_game(stem)
-            .map(|info| info.players)
-            .unwrap_or(0)
-    } else {
-        let stem = rom_filename
-            .rfind('.')
-            .map(|i| &rom_filename[..i])
-            .unwrap_or(rom_filename);
-        let entry = game_db::lookup_game(system, stem);
-        let game = entry.map(|e| e.game).or_else(|| {
-            let normalized = game_db::normalize_filename(stem);
-            game_db::lookup_by_normalized_title(system, &normalized)
-        });
-        game.map(|g| g.players).unwrap_or(0)
+    let mut counts = std::collections::HashMap::with_capacity(rom_filenames.len());
+    for &filename in rom_filenames {
+        let players = if is_arcade {
+            let stem = filename.strip_suffix(".zip").unwrap_or(filename);
+            arcade_db::lookup_arcade_game(stem)
+                .map(|info| info.players)
+                .unwrap_or(0)
+        } else {
+            let stem = filename
+                .rfind('.')
+                .map(|i| &filename[..i])
+                .unwrap_or(filename);
+            let entry = game_db::lookup_game(system, stem);
+            let game = entry.map(|e| e.game).or_else(|| {
+                let normalized = game_db::normalize_filename(stem);
+                game_db::lookup_by_normalized_title(system, &normalized)
+            });
+            game.map(|g| g.players).unwrap_or(0)
+        };
+        if players > 0 {
+            counts.insert(filename.to_string(), players);
+        }
     }
+    counts
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -476,6 +489,17 @@ pub async fn global_search(
             std::collections::HashMap::new()
         };
 
+        // Batch-load player counts for multiplayer filtering.
+        let system_players = if multiplayer_only {
+            let filenames: Vec<&str> = all_roms
+                .iter()
+                .map(|r| r.game.rom_filename.as_str())
+                .collect();
+            system_player_counts(&sys.folder_name, &filenames)
+        } else {
+            std::collections::HashMap::new()
+        };
+
         let mut scored: Vec<(u32, &RomEntry)> = all_roms
             .iter()
             .filter(|r| {
@@ -521,7 +545,9 @@ pub async fn global_search(
                 if !multiplayer_only {
                     return true;
                 }
-                lookup_players(&sys.folder_name, &r.game.rom_filename) >= 2
+                system_players
+                    .get(&r.game.rom_filename)
+                    .is_some_and(|&p| p >= 2)
             })
             .filter(|r| {
                 if let Some(threshold) = min_rating {
@@ -607,6 +633,20 @@ pub async fn global_search(
             }).unwrap_or_default()
         };
 
+        // Batch-load player counts for top results.
+        // Reuse system-wide map when multiplayer filter was active; otherwise compute for top results only.
+        let top_players_owned;
+        let top_players: &std::collections::HashMap<String, u8> = if multiplayer_only {
+            &system_players
+        } else {
+            let filenames: Vec<&str> = top_roms
+                .iter()
+                .map(|r| r.game.rom_filename.as_str())
+                .collect();
+            top_players_owned = system_player_counts(&sys.folder_name, &filenames);
+            &top_players_owned
+        };
+
         let image_index = state.cache.get_image_index(&state, &sys.folder_name);
         let top_results: Vec<GlobalSearchResult> = top_roms
             .into_iter()
@@ -622,7 +662,6 @@ pub async fn global_search(
                     .get(&rom.game.rom_filename)
                     .cloned()
                     .unwrap_or_else(|| lookup_genre(&sys.folder_name, &rom.game.rom_filename));
-                let players_val = lookup_players(&sys.folder_name, &rom.game.rom_filename);
                 let rating = ratings_map
                     .get(&rom.game.rom_filename)
                     .filter(|&&r| r > 0.0)
@@ -632,18 +671,14 @@ pub async fn global_search(
                         .game
                         .display_name
                         .unwrap_or_else(|| rom.game.rom_filename.clone()),
-                    rom_filename: rom.game.rom_filename,
+                    rom_filename: rom.game.rom_filename.clone(),
                     system: sys.folder_name.clone(),
                     rom_path: rom.game.rom_path,
                     genre: genre_str,
                     is_favorite: rom.is_favorite,
                     box_art_url,
                     rating,
-                    players: if players_val > 0 {
-                        Some(players_val)
-                    } else {
-                        None
-                    },
+                    players: top_players.get(&rom.game.rom_filename).copied(),
                 }
             })
             .collect();
