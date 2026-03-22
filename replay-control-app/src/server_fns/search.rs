@@ -381,6 +381,184 @@ pub(crate) fn system_player_counts(
     counts
 }
 
+/// Bundled filter flags for global search.
+#[cfg(feature = "ssr")]
+struct SearchFilters {
+    hide_hacks: bool,
+    hide_translations: bool,
+    hide_betas: bool,
+    hide_clones: bool,
+    multiplayer_only: bool,
+    min_rating: Option<f32>,
+    genre: String,
+}
+
+/// Filter and score ROMs for a single system.
+///
+/// Applies tier filters, clone filter, genre filter, multiplayer filter,
+/// rating filter, then scores each ROM by query match. Returns scored
+/// entries sorted by relevance (descending).
+#[cfg(feature = "ssr")]
+fn filter_and_score_roms<'a>(
+    all_roms: &'a [RomEntry],
+    filters: &SearchFilters,
+    is_arcade: bool,
+    q: &str,
+    region_pref: replay_control_core::rom_tags::RegionPreference,
+    region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
+    system_genre_groups: &std::collections::HashMap<String, String>,
+    system_base_titles: &std::collections::HashMap<String, String>,
+    system_ratings: &std::collections::HashMap<String, f64>,
+    system_players: &std::collections::HashMap<String, u8>,
+    alias_base_titles: Option<&std::collections::HashSet<String>>,
+) -> Vec<(u32, &'a RomEntry)> {
+    use replay_control_core::rom_tags;
+
+    let mut scored: Vec<(u32, &RomEntry)> = all_roms
+        .iter()
+        .filter(|r| {
+            if filters.hide_hacks || filters.hide_translations || filters.hide_betas {
+                let (tier, _, _) = rom_tags::classify(&r.game.rom_filename);
+                if filters.hide_hacks && tier == rom_tags::RomTier::Hack {
+                    return false;
+                }
+                if filters.hide_translations && tier == rom_tags::RomTier::Translation {
+                    return false;
+                }
+                if filters.hide_betas && tier == rom_tags::RomTier::PreRelease {
+                    return false;
+                }
+            }
+            if filters.hide_clones && is_arcade {
+                use replay_control_core::arcade_db;
+                let stem = r
+                    .game
+                    .rom_filename
+                    .strip_suffix(".zip")
+                    .unwrap_or(&r.game.rom_filename);
+                if let Some(info) = arcade_db::lookup_arcade_game(stem)
+                    && info.is_clone
+                {
+                    return false;
+                }
+            }
+            true
+        })
+        .filter(|r| {
+            if filters.genre.is_empty() {
+                return true;
+            }
+            system_genre_groups
+                .get(&r.game.rom_filename)
+                .is_some_and(|gg| gg.eq_ignore_ascii_case(&filters.genre))
+        })
+        .filter(|r| {
+            if !filters.multiplayer_only {
+                return true;
+            }
+            system_players
+                .get(&r.game.rom_filename)
+                .is_some_and(|&p| p >= 2)
+        })
+        .filter(|r| {
+            if let Some(threshold) = filters.min_rating {
+                system_ratings
+                    .get(&r.game.rom_filename)
+                    .is_some_and(|&rating| rating >= threshold as f64)
+            } else {
+                true
+            }
+        })
+        .filter_map(|r| {
+            if q.is_empty() {
+                if !filters.genre.is_empty() || filters.multiplayer_only {
+                    let display = r
+                        .game
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&r.game.rom_filename);
+                    let score = 1000u32.saturating_sub(display.len() as u32);
+                    Some((score, r))
+                } else {
+                    None
+                }
+            } else {
+                let display = r
+                    .game
+                    .display_name
+                    .as_deref()
+                    .unwrap_or(&r.game.rom_filename);
+                let mut score = search_score(
+                    q,
+                    display,
+                    &r.game.rom_filename,
+                    region_pref,
+                    region_secondary,
+                );
+
+                // Alias expansion: if this ROM's base_title was found via alias search,
+                // give it a minimum score so it appears in results.
+                if score == 0
+                    && let Some(system_aliases) = alias_base_titles
+                    && let Some(bt) = system_base_titles.get(&r.game.rom_filename)
+                    && system_aliases.contains(bt)
+                {
+                    score = 350;
+                }
+
+                if score > 0 { Some((score, r)) } else { None }
+            }
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored
+}
+
+/// Build `GlobalSearchResult` entries from the top-scoring ROMs.
+#[cfg(feature = "ssr")]
+fn build_search_results(
+    state: &crate::api::AppState,
+    system: &str,
+    top_roms: Vec<RomEntry>,
+    system_genre_groups: &std::collections::HashMap<String, String>,
+    ratings_map: &std::collections::HashMap<String, f64>,
+    players_map: &std::collections::HashMap<String, u8>,
+) -> Vec<GlobalSearchResult> {
+    let image_index = state.cache.get_image_index(state, system);
+    top_roms
+        .into_iter()
+        .map(|rom| {
+            let box_art_url =
+                state
+                    .cache
+                    .resolve_box_art(state, &image_index, system, &rom.game.rom_filename);
+            let genre_str = system_genre_groups
+                .get(&rom.game.rom_filename)
+                .cloned()
+                .unwrap_or_else(|| lookup_genre(system, &rom.game.rom_filename));
+            let rating = ratings_map
+                .get(&rom.game.rom_filename)
+                .filter(|&&r| r > 0.0)
+                .map(|&r| r as f32);
+            GlobalSearchResult {
+                display_name: rom
+                    .game
+                    .display_name
+                    .unwrap_or_else(|| rom.game.rom_filename.clone()),
+                rom_filename: rom.game.rom_filename.clone(),
+                system: system.to_string(),
+                rom_path: rom.game.rom_path,
+                genre: genre_str,
+                is_favorite: rom.is_favorite,
+                box_art_url,
+                rating,
+                players: players_map.get(&rom.game.rom_filename).copied(),
+            }
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 #[server(prefix = "/sfn")]
 pub async fn global_search(
@@ -394,7 +572,6 @@ pub async fn global_search(
     genre: String,
     per_system_limit: usize,
 ) -> Result<GlobalSearchResults, ServerFnError> {
-    use replay_control_core::rom_tags;
     use replay_control_core::systems::{self as sys_db, SystemCategory};
 
     let state = expect_context::<crate::api::AppState>();
@@ -403,36 +580,39 @@ pub async fn global_search(
     let region_secondary = state.region_preference_secondary();
     let systems = state.cache.get_systems(&storage);
     let q = query.to_lowercase();
-    let per_system_limit = if per_system_limit == 0 {
-        3
-    } else {
-        per_system_limit
+    let per_system_limit = if per_system_limit == 0 { 3 } else { per_system_limit };
+
+    let filters = SearchFilters {
+        hide_hacks,
+        hide_translations,
+        hide_betas,
+        hide_clones,
+        multiplayer_only,
+        min_rating,
+        genre,
     };
 
     // Search aliases for cross-name expansion (e.g., "Bare Knuckle" -> "Streets of Rage").
-    let alias_hits: std::collections::HashSet<(String, String)> = if !q.is_empty() {
-        state
-            .cache
-            .with_db_read(&storage, |conn| {
-                MetadataDb::search_aliases(conn, &q)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .collect()
-            })
-            .unwrap_or_default()
-    } else {
-        std::collections::HashSet::new()
-    };
-
-    // Build a set of base_titles per system that matched via alias.
-    let alias_base_titles: std::collections::HashMap<String, std::collections::HashSet<String>> = {
-        let mut map: std::collections::HashMap<String, std::collections::HashSet<String>> =
-            std::collections::HashMap::new();
-        for (sys, bt) in &alias_hits {
-            map.entry(sys.clone()).or_default().insert(bt.clone());
-        }
-        map
-    };
+    let alias_base_titles: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        if !q.is_empty() {
+            let alias_hits: std::collections::HashSet<(String, String)> = state
+                .cache
+                .with_db_read(&storage, |conn| {
+                    MetadataDb::search_aliases(conn, &q)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut map: std::collections::HashMap<String, std::collections::HashSet<String>> =
+                std::collections::HashMap::new();
+            for (sys, bt) in alias_hits {
+                map.entry(sys).or_default().insert(bt);
+            }
+            map
+        } else {
+            std::collections::HashMap::new()
+        };
 
     let mut groups: Vec<SystemSearchGroup> = Vec::new();
     let mut total_results = 0usize;
@@ -455,7 +635,6 @@ pub async fn global_search(
             };
 
         // Batch-load genre groups and base_titles for this system.
-        // Developer matching is handled separately by `search_by_developer`.
         let (system_genre_groups, system_base_titles): (
             std::collections::HashMap<String, String>,
             std::collections::HashMap<String, String>,
@@ -481,7 +660,7 @@ pub async fn global_search(
             .unwrap_or_default();
 
         // Batch-load ratings for this system when a minimum rating filter is active.
-        let system_ratings = if min_rating.is_some() {
+        let system_ratings = if filters.min_rating.is_some() {
             state.metadata_pool.read(|conn| {
                 MetadataDb::system_ratings(conn, &sys.folder_name).unwrap_or_default()
             }).unwrap_or_default()
@@ -490,7 +669,7 @@ pub async fn global_search(
         };
 
         // Batch-load player counts for multiplayer filtering.
-        let system_players = if multiplayer_only {
+        let system_players = if filters.multiplayer_only {
             let filenames: Vec<&str> = all_roms
                 .iter()
                 .map(|r| r.game.rom_filename.as_str())
@@ -500,114 +679,24 @@ pub async fn global_search(
             std::collections::HashMap::new()
         };
 
-        let mut scored: Vec<(u32, &RomEntry)> = all_roms
-            .iter()
-            .filter(|r| {
-                // Apply tier-based filters (hacks, translations, betas/protos).
-                if hide_hacks || hide_translations || hide_betas {
-                    let (tier, _, _) = rom_tags::classify(&r.game.rom_filename);
-                    if hide_hacks && tier == rom_tags::RomTier::Hack {
-                        return false;
-                    }
-                    if hide_translations && tier == rom_tags::RomTier::Translation {
-                        return false;
-                    }
-                    if hide_betas && tier == rom_tags::RomTier::PreRelease {
-                        return false;
-                    }
-                }
-                // Apply clone filter (arcade only).
-                if hide_clones && is_arcade {
-                    use replay_control_core::arcade_db;
-                    let stem = r
-                        .game
-                        .rom_filename
-                        .strip_suffix(".zip")
-                        .unwrap_or(&r.game.rom_filename);
-                    if let Some(info) = arcade_db::lookup_arcade_game(stem)
-                        && info.is_clone
-                    {
-                        return false;
-                    }
-                }
-                true
-            })
-            .filter(|r| {
-                // Apply genre filter using genre_group from game_library.
-                if genre.is_empty() {
-                    return true;
-                }
-                system_genre_groups
-                    .get(&r.game.rom_filename)
-                    .is_some_and(|gg| gg.eq_ignore_ascii_case(&genre))
-            })
-            .filter(|r| {
-                if !multiplayer_only {
-                    return true;
-                }
-                system_players
-                    .get(&r.game.rom_filename)
-                    .is_some_and(|&p| p >= 2)
-            })
-            .filter(|r| {
-                if let Some(threshold) = min_rating {
-                    system_ratings
-                        .get(&r.game.rom_filename)
-                        .is_some_and(|&rating| rating >= threshold as f64)
-                } else {
-                    true
-                }
-            })
-            .filter_map(|r| {
-                if q.is_empty() {
-                    // No query: if genre is set or multiplayer filter active, include all matching; otherwise skip.
-                    if !genre.is_empty() || multiplayer_only {
-                        // Assign a default score based on display name length.
-                        let display = r
-                            .game
-                            .display_name
-                            .as_deref()
-                            .unwrap_or(&r.game.rom_filename);
-                        let score = 1000u32.saturating_sub(display.len() as u32);
-                        Some((score, r))
-                    } else {
-                        None
-                    }
-                } else {
-                    let display = r
-                        .game
-                        .display_name
-                        .as_deref()
-                        .unwrap_or(&r.game.rom_filename);
-                    let mut score = search_score(
-                        &q,
-                        display,
-                        &r.game.rom_filename,
-                        region_pref,
-                        region_secondary,
-                    );
-
-                    // Alias expansion: if this ROM's base_title was found via alias search,
-                    // give it a minimum score so it appears in results.
-                    if score == 0
-                        && let Some(system_aliases) = alias_base_titles.get(&sys.folder_name)
-                        && let Some(bt) = system_base_titles.get(&r.game.rom_filename)
-                        && system_aliases.contains(bt)
-                    {
-                        // Score it like a word-level match (below substring tier).
-                        score = 350;
-                    }
-
-                    if score > 0 { Some((score, r)) } else { None }
-                }
-            })
-            .collect();
+        let scored = filter_and_score_roms(
+            &all_roms,
+            &filters,
+            is_arcade,
+            &q,
+            region_pref,
+            region_secondary,
+            &system_genre_groups,
+            &system_base_titles,
+            &system_ratings,
+            &system_players,
+            alias_base_titles.get(&sys.folder_name),
+        );
 
         if scored.is_empty() {
             continue;
         }
 
-        scored.sort_by(|a, b| b.0.cmp(&a.0));
         let match_count = scored.len();
         total_results += match_count;
 
@@ -634,9 +723,8 @@ pub async fn global_search(
         };
 
         // Batch-load player counts for top results.
-        // Reuse system-wide map when multiplayer filter was active; otherwise compute for top results only.
         let top_players_owned;
-        let top_players: &std::collections::HashMap<String, u8> = if multiplayer_only {
+        let top_players: &std::collections::HashMap<String, u8> = if filters.multiplayer_only {
             &system_players
         } else {
             let filenames: Vec<&str> = top_roms
@@ -647,41 +735,14 @@ pub async fn global_search(
             &top_players_owned
         };
 
-        let image_index = state.cache.get_image_index(&state, &sys.folder_name);
-        let top_results: Vec<GlobalSearchResult> = top_roms
-            .into_iter()
-            .map(|rom| {
-                let box_art_url = state.cache.resolve_box_art(
-                    &state,
-                    &image_index,
-                    &sys.folder_name,
-                    &rom.game.rom_filename,
-                );
-                // Use genre_group from batch-loaded map; fall back to lookup_genre.
-                let genre_str = system_genre_groups
-                    .get(&rom.game.rom_filename)
-                    .cloned()
-                    .unwrap_or_else(|| lookup_genre(&sys.folder_name, &rom.game.rom_filename));
-                let rating = ratings_map
-                    .get(&rom.game.rom_filename)
-                    .filter(|&&r| r > 0.0)
-                    .map(|&r| r as f32);
-                GlobalSearchResult {
-                    display_name: rom
-                        .game
-                        .display_name
-                        .unwrap_or_else(|| rom.game.rom_filename.clone()),
-                    rom_filename: rom.game.rom_filename.clone(),
-                    system: sys.folder_name.clone(),
-                    rom_path: rom.game.rom_path,
-                    genre: genre_str,
-                    is_favorite: rom.is_favorite,
-                    box_art_url,
-                    rating,
-                    players: top_players.get(&rom.game.rom_filename).copied(),
-                }
-            })
-            .collect();
+        let top_results = build_search_results(
+            &state,
+            &sys.folder_name,
+            top_roms,
+            &system_genre_groups,
+            &ratings_map,
+            top_players,
+        );
 
         groups.push(SystemSearchGroup {
             system: sys.folder_name.clone(),
