@@ -72,23 +72,14 @@ if [[ -n "$TARGET" ]]; then
 
     # For aarch64 cross-compilation, ensure C headers are available.
     # The bundled SQLite in rusqlite needs libc headers for the target.
-    if [[ "$TARGET" == "aarch64-unknown-linux-gnu" && -z "${CFLAGS_aarch64_unknown_linux_gnu:-}" ]]; then
-        SYSROOT="/tmp/aarch64-sysroot"
-        if [[ ! -f "$SYSROOT/usr/include/stdio.h" ]]; then
-            echo "    Setting up aarch64 sysroot (downloading headers)..."
-            mkdir -p /tmp/aarch64-rpms
-            dnf download --forcearch=aarch64 --destdir=/tmp/aarch64-rpms glibc-devel kernel-headers 2>/dev/null
-            mkdir -p "$SYSROOT"
-            for rpm in /tmp/aarch64-rpms/*.rpm; do
-                rpm2cpio "$rpm" | (cd "$SYSROOT" && cpio -idm 2>/dev/null)
-            done
-        fi
-        if [[ -f "$SYSROOT/usr/include/stdio.h" ]]; then
-            echo "    Using aarch64 sysroot at $SYSROOT"
-            export CFLAGS_aarch64_unknown_linux_gnu="--sysroot=$SYSROOT/usr -I$SYSROOT/usr/include"
-        else
-            echo "    WARNING: Could not set up aarch64 sysroot. Build may fail."
-            echo "    Install glibc-devel.aarch64 or set CFLAGS_aarch64_unknown_linux_gnu manually."
+    if [[ "$TARGET" == "aarch64-unknown-linux-gnu" ]]; then
+        local sysroot="/usr/aarch64-linux-gnu/sys-root"
+        if [[ ! -f "$sysroot/usr/include/stdio.h" || ! -f "$sysroot/usr/lib64/crti.o" || ! -f "$sysroot/usr/lib64/libgcc_s.so" ]]; then
+            echo ""
+            echo "    ERROR: aarch64 sysroot not found at $sysroot"
+            echo "    See docs/reference/cross-compilation.md for setup instructions."
+            echo ""
+            exit 1
         fi
     fi
 

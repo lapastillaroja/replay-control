@@ -199,7 +199,7 @@ build_ssr_local() {
 
 build_ssr_aarch64() {
     phase "Building server (dev, aarch64)"
-    setup_aarch64_sysroot
+    check_aarch64_sysroot
 
     cargo build -p "$CRATE" --bin "$CRATE" \
         --target "$TARGET_TRIPLE" \
@@ -222,32 +222,19 @@ copy_assets() {
 
 # ── aarch64 cross-compilation setup ─────────────────────────────────────────
 
-setup_aarch64_sysroot() {
-    # Skip if CFLAGS already set by the user
-    if [[ -n "${CFLAGS_aarch64_unknown_linux_gnu:-}" ]]; then
+check_aarch64_sysroot() {
+    local sysroot="/usr/aarch64-linux-gnu/sys-root"
+    if [[ -f "$sysroot/usr/include/stdio.h" && -f "$sysroot/usr/lib64/crti.o" && -f "$sysroot/usr/lib64/libgcc_s.so" ]]; then
         return
     fi
 
-    local sysroot="/tmp/aarch64-sysroot"
-    if [[ -f "$sysroot/usr/include/stdio.h" ]]; then
-        export CFLAGS_aarch64_unknown_linux_gnu="--sysroot=$sysroot/usr -I$sysroot/usr/include"
-        return
-    fi
-
-    info "Setting up aarch64 sysroot (first time only)..."
-    mkdir -p /tmp/aarch64-rpms
-    dnf download --forcearch=aarch64 --destdir=/tmp/aarch64-rpms glibc-devel kernel-headers 2>/dev/null
-    mkdir -p "$sysroot"
-    for rpm in /tmp/aarch64-rpms/*.rpm; do
-        rpm2cpio "$rpm" | (cd "$sysroot" && cpio -idm 2>/dev/null)
-    done
-
-    if [[ -f "$sysroot/usr/include/stdio.h" ]]; then
-        export CFLAGS_aarch64_unknown_linux_gnu="--sysroot=$sysroot/usr -I$sysroot/usr/include"
-        success "aarch64 sysroot ready"
-    else
-        fatal "Could not set up aarch64 sysroot. Install glibc-devel.aarch64 or set CFLAGS_aarch64_unknown_linux_gnu manually."
-    fi
+    echo ""
+    echo "  aarch64 cross-compile sysroot not found at $sysroot"
+    echo ""
+    echo "  The aarch64 GCC sysroot needs headers and libraries for the target."
+    echo "  See docs/reference/cross-compilation.md for setup instructions."
+    echo ""
+    fatal "aarch64 sysroot missing."
 }
 
 # ── SSH helpers ──────────────────────────────────────────────────────────────
