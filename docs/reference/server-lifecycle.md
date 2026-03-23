@@ -192,10 +192,12 @@ how many connections exist. On WAL-mode filesystems (ext4, etc.), the read
 pool has 3 connections for concurrent page loads. On DELETE-mode filesystems
 (exFAT, NFS), the read pool has 1 connection (no concurrent readers).
 
-The `scanning` AtomicBool prevents concurrent import + thumbnail operations.
-User-triggered operations check `is_scanning()` before starting. ROM lookups
-(`get_roms`) check the `scanning` flag (not the legacy `busy` flag) so they
-work correctly during thumbnail updates and imports.
+The `busy` AtomicBool provides mutual exclusion for user-triggered operations
+(import, thumbnail update, rebuild). Each operation claims the flag atomically
+before starting; if already claimed, the UI shows "Another operation is already
+running." The `scanning` AtomicBool is separate and only true during the
+Phase 2 startup scan (game library populate). ROM lookups (`get_roms`) check
+the `scanning` flag so they work correctly during the startup pipeline.
 
 ---
 
@@ -209,7 +211,7 @@ These run in the background via `tokio::spawn`, with SSE progress streaming.
 | LaunchBox download + import | Metadata page button | SSE: download → import | No |
 | Thumbnail update | Metadata page button | SSE: index → download per system | Yes |
 | Metadata regenerate | Metadata page button | SSE: clear → re-import | No |
-| Game library rebuild | Metadata page button | Synchronous (fast) | No |
+| Game library rebuild | Metadata page button | SSE: scan → enrich per system | No |
 
 All mutually exclusive via the shared `scanning` flag. The UI checks
 `is_scanning()` before starting and shows "Another operation is
