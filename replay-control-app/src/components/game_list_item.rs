@@ -102,15 +102,26 @@ pub fn GameListItem(
                     <A href=game_href.get_value() attr:class="rom-name rom-name-link">
                         {display_name}
                     </A>
-                    {driver_status.as_ref().map(|status| {
-                        let class = match status.as_str() {
-                            "Working" => "driver-dot driver-dot-working",
-                            "Imperfect" => "driver-dot driver-dot-imperfect",
-                            "Preliminary" => "driver-dot driver-dot-preliminary",
-                            _ => "driver-dot driver-dot-unknown",
+                    {driver_status.as_ref().and_then(|status| {
+                        // Only show the dot for non-Working statuses — "Working" is the
+                        // default/expected state and showing a green dot for every working
+                        // game adds noise without value.
+                        let (class, title) = match status.as_str() {
+                            "Working" => return None,
+                            "Imperfect" => (
+                                "driver-dot driver-dot-imperfect",
+                                "Emulation: minor issues",
+                            ),
+                            "Preliminary" => (
+                                "driver-dot driver-dot-preliminary",
+                                "Emulation: not fully playable",
+                            ),
+                            _ => (
+                                "driver-dot driver-dot-unknown",
+                                "Emulation: unknown status",
+                            ),
                         };
-                        let title = format!("Driver: {status}");
-                        view! { <span class=class title=title></span> }
+                        Some(view! { <span class=class title=title></span> })
                     })}
                 </div>
                 <div class="game-list-badges">

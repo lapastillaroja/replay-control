@@ -340,11 +340,34 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                         <span class="game-meta-value">{r}</span>
                     </div>
                 })}
-                {driver_status.map(|s| view! {
-                    <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.status")}</span>
-                        <span class="game-meta-value">{s}</span>
-                    </div>
+                {driver_status.map(|s| {
+                    let (dot_class, label) = match s.as_str() {
+                        "Working" => (
+                            "driver-dot driver-dot-working",
+                            "Works perfectly",
+                        ),
+                        "Imperfect" => (
+                            "driver-dot driver-dot-imperfect",
+                            "Playable with minor issues",
+                        ),
+                        "Preliminary" => (
+                            "driver-dot driver-dot-preliminary",
+                            "Not fully playable",
+                        ),
+                        _ => (
+                            "driver-dot driver-dot-unknown",
+                            "Unknown",
+                        ),
+                    };
+                    view! {
+                        <div class="game-meta-item">
+                            <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.emulation")}</span>
+                            <span class="game-meta-value game-meta-status">
+                                <span class=dot_class></span>
+                                {label}
+                            </span>
+                        </div>
+                    }
                 })}
                 <Show when=move || has_category>
                     <div class="game-meta-item">

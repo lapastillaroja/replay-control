@@ -248,6 +248,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "game_detail.genre" => "Genre",
         "game_detail.developer" => "Developer",
         "game_detail.status" => "Status",
+        "game_detail.emulation" => "Emulation",
         "game_detail.raw_category" => "Raw Category",
         "game_detail.region" => "Region",
         "game_detail.description" => "Description",

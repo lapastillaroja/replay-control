@@ -109,6 +109,8 @@ $RECYCLE.BIN/
 server_debug.log
 /reference/
 __pycache__/
+research/investigations/load-tests/
+tools/bench-results/
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,linux,macos,windows,visualstudiocode
 
