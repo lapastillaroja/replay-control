@@ -18,42 +18,71 @@ use replay_control_core::storage::StorageLocation;
 
 use super::DbPool;
 
-/// Hard TTL — even if mtime hasn't changed, re-scan after this long.
-const CACHE_HARD_TTL: Duration = Duration::from_secs(300);
+/// Hard TTL for NFS storage — even if mtime hasn't changed, re-scan after this long.
+/// Local storage (SD/USB/NVMe) has no TTL because inotify + mtime + explicit
+/// invalidation already cover all change scenarios.
+const NFS_CACHE_TTL: Duration = Duration::from_secs(1800); // 30 minutes
 
 /// Read the mtime of a directory (single stat call).
 pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
-/// Cached result with mtime-based + hard-TTL invalidation.
-pub(super) struct CacheEntry<T> {
-    pub(super) data: T,
+/// Mtime + optional TTL freshness tracker.
+///
+/// Shared by `CacheEntry`, `FavoritesCache`, and `ImageIndex` to avoid
+/// duplicating the same expiry/mtime logic across cache types.
+///
+/// For local storage (SD/USB/NVMe), there is no TTL — inotify watcher + mtime
+/// comparison + explicit `invalidate()` calls cover all change scenarios.
+/// For NFS, a 30-minute TTL acts as a safety net since inotify doesn't detect
+/// remote changes (lazy: only checked on access, so it won't wake idle disks).
+pub(super) struct Freshness {
     dir_mtime: Option<SystemTime>,
-    expires: Instant,
+    /// `None` for local storage (no TTL), `Some` for NFS.
+    expires: Option<Instant>,
 }
 
-impl<T: Clone> CacheEntry<T> {
-    pub(super) fn new(data: T, dir: &Path) -> Self {
+impl Freshness {
+    pub(super) fn new(dir: &Path, is_local: bool) -> Self {
         Self {
-            data,
             dir_mtime: dir_mtime(dir),
-            expires: Instant::now() + CACHE_HARD_TTL,
+            expires: if is_local {
+                None
+            } else {
+                Some(Instant::now() + NFS_CACHE_TTL)
+            },
         }
     }
 
-    /// Check if cached data is still fresh.
-    /// Fresh = hard TTL not expired AND directory mtime unchanged.
+    /// Fresh = hard TTL not expired (if set) AND directory mtime unchanged.
     pub(super) fn is_fresh(&self, dir: &Path) -> bool {
-        if Instant::now() >= self.expires {
+        if self.expires.is_some_and(|exp| Instant::now() >= exp) {
             return false;
         }
-        // Compare directory mtime — if it changed, cache is stale.
         match (self.dir_mtime, dir_mtime(dir)) {
             (Some(cached), Some(current)) => cached == current,
-            // If we can't read mtime (e.g., NFS flake), trust hard TTL.
             _ => true,
         }
+    }
+}
+
+/// Cached result with freshness tracking.
+pub(super) struct CacheEntry<T> {
+    pub(super) data: T,
+    freshness: Freshness,
+}
+
+impl<T: Clone> CacheEntry<T> {
+    pub(super) fn new(data: T, dir: &Path, is_local: bool) -> Self {
+        Self {
+            data,
+            freshness: Freshness::new(dir, is_local),
+        }
+    }
+
+    pub(super) fn is_fresh(&self, dir: &Path) -> bool {
+        self.freshness.is_fresh(dir)
     }
 }
 
@@ -129,12 +158,13 @@ impl GameLibrary {
         }
 
         // L2: Try SQLite game_library_meta (reconstructs SystemSummary from cached metadata).
+        let is_local = storage.kind.is_local();
         if let Some(summaries) = self.load_systems_from_db(storage)
             && !summaries.is_empty()
         {
             // Store in L1.
             if let Ok(mut guard) = self.systems.write() {
-                *guard = Some(CacheEntry::new(summaries.clone(), &roms_dir));
+                *guard = Some(CacheEntry::new(summaries.clone(), &roms_dir, is_local));
             }
             return summaries;
         }
@@ -142,7 +172,7 @@ impl GameLibrary {
         // L3: Cache miss — full filesystem scan.
         let summaries = replay_control_core::roms::scan_systems(storage);
         if let Ok(mut guard) = self.systems.write() {
-            *guard = Some(CacheEntry::new(summaries.clone(), &roms_dir));
+            *guard = Some(CacheEntry::new(summaries.clone(), &roms_dir, is_local));
         }
 
         // Write-through to L2 (background-safe: no lock held on L1).
@@ -268,7 +298,10 @@ impl GameLibrary {
         if let Some(roms) = self.load_roms_from_db(storage, system, &system_dir) {
             let arc = Arc::new(roms);
             if let Ok(mut guard) = self.roms.write() {
-                guard.insert(key, CacheEntry::new(Arc::clone(&arc), &system_dir));
+                guard.insert(
+                    key,
+                    CacheEntry::new(Arc::clone(&arc), &system_dir, storage.kind.is_local()),
+                );
             }
             return Some(arc);
         }
@@ -300,7 +333,10 @@ impl GameLibrary {
         let arc = Arc::new(roms);
 
         if let Ok(mut guard) = self.roms.write() {
-            guard.insert(key.clone(), CacheEntry::new(Arc::clone(&arc), &system_dir));
+            guard.insert(
+                key.clone(),
+                CacheEntry::new(Arc::clone(&arc), &system_dir, storage.kind.is_local()),
+            );
         }
 
         // Write-through to L2.
@@ -408,7 +444,11 @@ impl GameLibrary {
 
         let entries = replay_control_core::recents::list_recents(storage)?;
         if let Ok(mut guard) = self.recents.write() {
-            *guard = Some(CacheEntry::new(entries.clone(), &recents_dir));
+            *guard = Some(CacheEntry::new(
+                entries.clone(),
+                &recents_dir,
+                storage.kind.is_local(),
+            ));
         }
         Ok(entries)
     }

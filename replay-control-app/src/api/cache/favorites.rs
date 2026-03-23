@@ -1,17 +1,18 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::time::{Instant, SystemTime};
 
 use replay_control_core::storage::StorageLocation;
 
-use super::{CACHE_HARD_TTL, GameLibrary, dir_mtime};
+use super::{Freshness, GameLibrary};
 
 /// Cached favorites: per-system set of favorited filenames.
+///
+/// Local storage uses no TTL (inotify + mtime + explicit invalidation suffice).
+/// NFS uses a 30-minute TTL as a safety net.
 pub(in crate::api) struct FavoritesCache {
-    /// system → set of ROM filenames that are favorited.
+    /// system -> set of ROM filenames that are favorited.
     pub(in crate::api) data: HashMap<String, HashSet<String>>,
-    dir_mtime: Option<SystemTime>,
-    expires: Instant,
+    freshness: Freshness,
 }
 
 impl FavoritesCache {
@@ -26,19 +27,12 @@ impl FavoritesCache {
         }
         Self {
             data,
-            dir_mtime: dir_mtime(&favs_dir),
-            expires: Instant::now() + CACHE_HARD_TTL,
+            freshness: Freshness::new(&favs_dir, storage.kind.is_local()),
         }
     }
 
     pub(in crate::api) fn is_fresh(&self, favs_dir: &Path) -> bool {
-        if Instant::now() >= self.expires {
-            return false;
-        }
-        match (self.dir_mtime, dir_mtime(favs_dir)) {
-            (Some(cached), Some(current)) => cached == current,
-            _ => true,
-        }
+        self.freshness.is_fresh(favs_dir)
     }
 }
 

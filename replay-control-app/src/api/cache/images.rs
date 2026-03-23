@@ -1,17 +1,19 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
 
 use replay_control_core::image_matching::DirIndex;
 use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::thumbnail_manifest::ManifestFuzzyIndex;
 use replay_control_core::user_data_db::UserDataDb;
 
-use super::{CACHE_HARD_TTL, GameLibrary, dir_mtime};
+use super::{Freshness, GameLibrary};
 
 /// Cached per-system image directory index for batch box art resolution.
 /// Wraps a core `DirIndex` for filesystem-based matching, plus app-specific
 /// fields for DB path lookups and on-demand manifest downloads.
+///
+/// Local storage uses no TTL (inotify + mtime + explicit invalidation suffice).
+/// NFS uses a 30-minute TTL as a safety net.
 pub struct ImageIndex {
     /// Core directory index: exact, case-insensitive, fuzzy, version-stripped.
     pub dir_index: DirIndex,
@@ -20,19 +22,12 @@ pub struct ImageIndex {
     /// Manifest-backed fallback for images not yet downloaded.
     /// None if the thumbnail_index has no entries for this system.
     pub manifest: Option<ManifestFuzzyIndex>,
-    dir_mtime: Option<SystemTime>,
-    expires: Instant,
+    freshness: Freshness,
 }
 
 impl ImageIndex {
     pub(super) fn is_fresh(&self, boxart_dir: &std::path::Path) -> bool {
-        if Instant::now() >= self.expires {
-            return false;
-        }
-        match (self.dir_mtime, dir_mtime(boxart_dir)) {
-            (Some(cached), Some(current)) => cached == current,
-            _ => true,
-        }
+        self.freshness.is_fresh(boxart_dir)
     }
 }
 
@@ -167,12 +162,12 @@ impl GameLibrary {
             }
         });
 
+        let is_local = state.storage().kind.is_local();
         let arc = Arc::new(ImageIndex {
             dir_index,
             db_paths,
             manifest,
-            dir_mtime: dir_mtime(&boxart_dir),
-            expires: Instant::now() + CACHE_HARD_TTL,
+            freshness: Freshness::new(&boxart_dir, is_local),
         });
 
         if let Ok(mut guard) = self.images.write() {
