@@ -39,14 +39,14 @@ pub fn GameScrollCard(
     let has_art = box_art_url.is_some();
 
     view! {
-        <A href=href attr:class="recent-item rom-name-link">
+        <A href=href attr:class="scroll-card-item rom-name-link">
             {if has_art {
-                view! { <img class="recent-thumb" src=box_art_url loading="lazy" /> }.into_any()
+                view! { <img class="scroll-card-thumb" src=box_art_url loading="lazy" /> }.into_any()
             } else {
-                view! { <div class="recent-thumb-placeholder"></div> }.into_any()
+                view! { <div class="scroll-card-thumb-placeholder"></div> }.into_any()
             }}
-            <div class="recent-name">{name}</div>
-            <div class="recent-system">{system}</div>
+            <div class="scroll-card-name">{name}</div>
+            <div class="scroll-card-system">{system}</div>
         </A>
     }
 }

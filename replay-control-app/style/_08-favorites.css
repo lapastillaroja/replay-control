@@ -94,6 +94,13 @@
     color: var(--text-secondary);
 }
 
+.fav-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+}
+
 .fav-star-btn {
     background: none;
     border: none;

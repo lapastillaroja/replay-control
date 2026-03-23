@@ -62,7 +62,7 @@ pub fn HomePage() -> impl IntoView {
                                 view! { <p class="empty-state">{t(locale, "home.no_recent")}</p> }.into_any()
                             } else {
                                 view! {
-                                    <div class="recent-scroll">
+                                    <div class="scroll-card-row">
                                         {items.into_iter().map(|item| {
                                             let name = item.entry.game.display_name.clone().unwrap_or_else(|| item.entry.game.rom_filename.clone());
                                             let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
@@ -195,7 +195,7 @@ fn RecommendationSections(
         <Show when=move || has_random>
             <section class="section">
                 <h2 class="section-title">{t(locale, "home.discover_random")}</h2>
-                <div class="recent-scroll">
+                <div class="scroll-card-row">
                     {data.random_picks.iter().map(|game| {
                         let href = game.href.clone();
                         let name = game.display_name.clone();
@@ -216,7 +216,7 @@ fn RecommendationSections(
                         <h2 class="section-title">{section_title}</h2>
                         <A href=see_all_href attr:class="section-link">{t(locale, "home.see_all")}</A>
                     </div>
-                    <div class="recent-scroll">
+                    <div class="scroll-card-row">
                         {fp.picks.iter().map(|game| {
                             let href = game.href.clone();
                             let name = game.display_name.clone();
@@ -234,7 +234,7 @@ fn RecommendationSections(
                 view! {
                     <section class="section">
                         <h2 class="section-title">{t(locale, "home.top_rated")}</h2>
-                        <div class="recent-scroll">
+                        <div class="scroll-card-row">
                             {picks.iter().map(|game| {
                                 let href = game.href.clone();
                                 let name = game.display_name.clone();

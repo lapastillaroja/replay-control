@@ -27,12 +27,12 @@ pub fn FavoritesPage() -> impl IntoView {
     view! {
         <div class="page favorites-page">
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let favs = favorites.await?;
                         Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view toggle_label /> })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }
@@ -177,7 +177,7 @@ where
             <Show when=move || !recent_items().is_empty()>
                 <section class="section">
                     <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.recently_added")}</h2>
-                    <div class="recent-scroll">
+                    <div class="scroll-card-row">
                         {move || recent_items().into_iter().map(|f| {
                             let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
                             let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
@@ -306,7 +306,7 @@ where
                 key=|f| f.fav.marker_filename.clone()
                 let:f
             >
-                <FavItem fav=f.fav box_art_url=f.box_art_url show_system=true confirm_remove remove_fav=remove_fav.clone() />
+                <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=true confirm_remove remove_fav=remove_fav.clone() />
             </For>
         </div>
     }
@@ -351,7 +351,7 @@ where
                             </h3>
                             {favs.into_iter().map(|f| {
                                 let remove_fav = remove_fav.clone();
-                                view! { <FavItem fav=f.fav box_art_url=f.box_art_url show_system=false confirm_remove remove_fav /> }
+                                view! { <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=false confirm_remove remove_fav /> }
                             }).collect::<Vec<_>>()}
                         </div>
                     }
@@ -365,6 +365,8 @@ where
 fn FavItem<F>(
     fav: crate::server_fns::Favorite,
     box_art_url: Option<String>,
+    #[prop(default = None)]
+    genre: Option<String>,
     show_system: bool,
     confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,
@@ -389,6 +391,8 @@ where
     } else {
         None
     };
+    let has_genre = genre.as_ref().is_some_and(|g| !g.is_empty());
+    let genre = StoredValue::new(genre.unwrap_or_default());
 
     let is_confirming =
         move || confirm_remove.read().as_deref() == Some(&*fav_filename.get_value());
@@ -417,7 +421,12 @@ where
             </A>
             <div class="fav-info">
                 <A href=game_href.get_value() attr:class="fav-name rom-name-link">{rom_name}</A>
-                {system_display.map(|s| view! { <span class="fav-system">{s}</span> })}
+                <div class="fav-badges">
+                    {system_display.map(|s| view! { <span class="fav-system">{s}</span> })}
+                    <Show when=move || has_genre>
+                        <span class="search-badge search-badge-genre">{genre.get_value()}</span>
+                    </Show>
+                </div>
             </div>
             <Show when=is_confirming fallback=move || view! {
                 <button class="fav-star-btn" title="Remove from favorites" on:click=on_star_click>
@@ -622,12 +631,12 @@ pub fn SystemFavoritesPage() -> impl IntoView {
     view! {
         <div class="page favorites-page">
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let favs = favorites.await?;
-                        Ok::<_, ServerFnError>(view! { <SystemFavoritesContent favs /> })
+                        Ok::<_ , ServerFnError>(view! { <SystemFavoritesContent favs /> })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }
@@ -686,7 +695,7 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
                     key=|f| f.fav.marker_filename.clone()
                     let:f
                 >
-                    <FavItem fav=f.fav box_art_url=f.box_art_url show_system=false confirm_remove remove_fav />
+                    <FavItem fav=f.fav box_art_url=f.box_art_url genre=f.genre show_system=false confirm_remove remove_fav />
                 </For>
             </div>
         </Show>

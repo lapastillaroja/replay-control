@@ -1,11 +1,22 @@
 use super::*;
 
-/// A favorite enriched with box art URL.
+/// Build a `FavoriteWithArt` from a favorite and its resolved box art URL.
+#[cfg(feature = "ssr")]
+fn enrich_favorite(fav: Favorite, box_art_url: Option<String>) -> FavoriteWithArt {
+    let genre_str = super::search::lookup_genre(&fav.game.system, &fav.game.rom_filename);
+    let genre = if genre_str.is_empty() { None } else { Some(genre_str) };
+    FavoriteWithArt { fav, box_art_url, genre }
+}
+
+/// A favorite enriched with box art URL and genre.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FavoriteWithArt {
     #[serde(flatten)]
     pub fav: Favorite,
     pub box_art_url: Option<String>,
+    /// Genre string for display (e.g., "Platform", "Beat 'em Up").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
 }
 
 /// Result of organizing favorites into subfolders.
@@ -36,7 +47,7 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
                 &fav.game.system,
                 &fav.game.rom_filename,
             );
-            FavoriteWithArt { fav, box_art_url }
+            enrich_favorite(fav, box_art_url)
         })
         .collect())
 }
@@ -56,7 +67,7 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
                 &fav.game.system,
                 &fav.game.rom_filename,
             );
-            FavoriteWithArt { fav, box_art_url }
+            enrich_favorite(fav, box_art_url)
         })
         .collect())
 }

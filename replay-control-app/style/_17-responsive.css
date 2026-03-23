@@ -71,14 +71,14 @@
         font-size: 1.25rem;
     }
 
-    /* Recent games: grid instead of horizontal scroll */
-    .recent-scroll {
+    /* Scroll cards: grid instead of horizontal scroll */
+    .scroll-card-row {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         overflow-x: visible;
     }
 
-    .recent-item {
+    .scroll-card-item {
         width: auto;
         flex-shrink: unset;
     }
@@ -113,11 +113,6 @@
         width: 100%;
     }
 
-    /* Game cover: slightly larger */
-    .game-cover {
-        max-height: 22rem;
-    }
-
     .game-cover-img {
         max-height: 22rem;
     }
@@ -130,16 +125,6 @@
     /* Game list item: show system/genre badges on wider screens */
     .game-list-badges {
         display: flex;
-    }
-
-    /* Search result items: more padding */
-    .search-result-item {
-        padding: 12px 20px;
-    }
-
-    .search-result-thumb {
-        height: 3rem;
-        max-width: 4.5rem;
     }
 
     /* Discover grid: 3 columns */
@@ -166,8 +151,8 @@
         grid-template-columns: repeat(4, 1fr);
     }
 
-    /* Recent games: 5 columns */
-    .recent-scroll {
+    /* Scroll cards: 5 columns */
+    .scroll-card-row {
         grid-template-columns: repeat(5, 1fr);
     }
 }
@@ -195,8 +180,8 @@
         grid-template-columns: repeat(4, 1fr);
     }
 
-    /* Recent games: 6 columns */
-    .recent-scroll {
+    /* Scroll cards: 6 columns */
+    .scroll-card-row {
         grid-template-columns: repeat(6, 1fr);
     }
 

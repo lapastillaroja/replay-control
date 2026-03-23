@@ -57,8 +57,8 @@
     font-size: 0.9rem;
 }
 
-/* Recent scroll */
-.recent-scroll {
+/* Scroll card row (horizontal game cards) */
+.scroll-card-row {
     display: flex;
     gap: 12px;
     overflow-x: auto;
@@ -67,7 +67,7 @@
     scrollbar-color: var(--border) transparent;
 }
 
-.recent-item {
+.scroll-card-item {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -81,11 +81,11 @@
     transition: border-color 0.2s;
 }
 
-.recent-item:hover {
+.scroll-card-item:hover {
     border-color: var(--accent);
 }
 
-.recent-thumb {
+.scroll-card-thumb {
     height: 5rem;
     width: auto;
     max-width: 6.25rem;
@@ -94,7 +94,7 @@
     margin-bottom: 8px;
 }
 
-.recent-thumb-placeholder {
+.scroll-card-thumb-placeholder {
     width: 3.5rem;
     height: 5rem;
     background: var(--border);
@@ -102,7 +102,7 @@
     margin-bottom: 8px;
 }
 
-.recent-name {
+.scroll-card-name {
     font-size: 0.8rem;
     font-weight: 500;
     white-space: nowrap;
@@ -113,7 +113,7 @@
     text-align: center;
 }
 
-.recent-system {
+.scroll-card-system {
     font-size: 0.7rem;
     color: var(--text-secondary);
     text-align: center;

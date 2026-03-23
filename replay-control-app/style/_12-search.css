@@ -141,63 +141,6 @@
     flex-direction: column;
 }
 
-.search-result-item {
-    display: flex;
-    align-items: center;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.15s;
-}
-
-.search-result-item:last-child {
-    border-bottom: none;
-}
-
-.search-result-item:hover {
-    background: var(--surface-hover);
-}
-
-.search-result-thumb-link {
-    flex-shrink: 0;
-    margin-right: 12px;
-    line-height: 0;
-}
-
-.search-result-thumb {
-    height: 2.5rem;
-    width: auto;
-    max-width: 3.5rem;
-    object-fit: contain;
-    border-radius: 3px;
-}
-
-.search-result-thumb-placeholder {
-    width: 2.5rem;
-    height: 2.5rem;
-    background: var(--border);
-    border-radius: 3px;
-}
-
-.search-result-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.search-result-name {
-    display: block;
-    font-size: 0.85rem;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.search-result-badges {
-    display: flex;
-    gap: 6px;
-    margin-top: 2px;
-}
-
 .search-badge {
     font-size: 0.7rem;
     padding: 1px 6px;
