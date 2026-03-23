@@ -177,6 +177,640 @@ pub fn rename_rom(
     Ok(new_path)
 }
 
+// ---------------------------------------------------------------------------
+// ROM grouping, multi-file delete, rename restrictions, and disc detection
+// ---------------------------------------------------------------------------
+
+/// Classification of a file within a ROM group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FileKind {
+    /// The main ROM file the user interacts with (M3U, CUE, CHD, ZIP, etc.)
+    Primary,
+    /// A disc image referenced by an M3U or CUE (CHD, BIN, DIM, GDI dir, etc.)
+    Disc,
+    /// A companion sidecar file (SBI, etc.)
+    Companion,
+    /// An entire data directory (ScummVM game folder contents)
+    DataDir,
+}
+
+/// A single file (or directory) within a grouped ROM set.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupedFile {
+    /// Absolute path on disk.
+    pub path: PathBuf,
+    /// Size in bytes (for directories, the recursive total).
+    pub size_bytes: u64,
+    /// Classification of this file in the group.
+    pub kind: FileKind,
+}
+
+/// Report returned by `delete_rom_group`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteReport {
+    pub deleted: Vec<PathBuf>,
+    pub bytes_freed: u64,
+    pub errors: Vec<String>,
+}
+
+/// Information about multi-disc sets detected by filename pattern.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscInfo {
+    pub disc_number: u32,
+    pub total_discs: u32,
+    /// Filenames of all sibling discs (including this one).
+    pub siblings: Vec<String>,
+}
+
+/// Enumerate all files that belong to a ROM group.
+///
+/// Given the `relative_path` of the primary ROM file (as returned by
+/// `rom_path` in `GameRef`), returns every file and directory that should
+/// be treated as a unit for delete/size purposes.
+///
+/// `system` is the system folder name (e.g. "sony_psx", "scummvm").
+pub fn list_rom_group(
+    storage: &StorageLocation,
+    system: &str,
+    relative_path: &str,
+) -> Result<Vec<GroupedFile>> {
+    let full_path = storage.root.join(relative_path.trim_start_matches('/'));
+    if !full_path.exists() {
+        return Err(Error::RomNotFound(full_path.clone()));
+    }
+
+    // Validate path stays within storage root.
+    let canonical = full_path
+        .canonicalize()
+        .map_err(|e| Error::io(&full_path, e))?;
+    let root_canonical = storage
+        .root
+        .canonicalize()
+        .map_err(|e| Error::io(&storage.root, e))?;
+    if !canonical.starts_with(&root_canonical) {
+        return Err(Error::Other("Path traversal detected".to_string()));
+    }
+
+    let ext = full_path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    let parent_dir = full_path.parent().unwrap_or(Path::new("/"));
+
+    let mut group = Vec::new();
+
+    // Always include the primary file.
+    let primary_size = std::fs::metadata(&full_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    group.push(GroupedFile {
+        path: full_path.clone(),
+        size_bytes: primary_size,
+        kind: FileKind::Primary,
+    });
+
+    if ext == "m3u" {
+        // Determine if this is a ScummVM M3U by checking the system folder.
+        let is_scummvm = system == "scummvm";
+
+        // Parse the M3U to get referenced filenames.
+        let refs = parse_m3u_references(&full_path);
+
+        if is_scummvm {
+            // ScummVM M3U: the M3U references a .svm/.scummvm file inside a
+            // game subdirectory. We want to include the entire subdirectory.
+            //
+            // Parse the raw lines to find the subdirectory path.
+            let raw_lines = parse_m3u_raw_lines(&full_path);
+            for raw_line in &raw_lines {
+                let normalized = raw_line.replace('\\', "/");
+                // Try resolving the referenced file to find its parent dir.
+                let resolved = resolve_m3u_reference(&normalized, parent_dir, &storage.roms_dir());
+                if let Some(ref_path) = resolved
+                    && let Some(game_dir) = ref_path.parent()
+                    && game_dir.is_dir()
+                    && game_dir != parent_dir
+                {
+                    // The game data directory is the parent of the .svm file.
+                    let dir_size = dir_total_size(game_dir);
+                    group.push(GroupedFile {
+                        path: game_dir.to_path_buf(),
+                        size_bytes: dir_size,
+                        kind: FileKind::DataDir,
+                    });
+                }
+            }
+        } else {
+            // Non-ScummVM M3U: add each referenced disc file.
+            // Parse raw lines once (needed for resolving subdirectory references).
+            let raw_lines = parse_m3u_raw_lines(&full_path);
+            for ref_name in &refs {
+                // Try to find the file in the same directory or resolve
+                // from the raw M3U lines.
+                let disc_path = parent_dir.join(ref_name);
+                if disc_path.exists() && disc_path.is_file() {
+                    let size = std::fs::metadata(&disc_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    group.push(GroupedFile {
+                        path: disc_path,
+                        size_bytes: size,
+                        kind: FileKind::Disc,
+                    });
+                } else {
+                    // Try resolving from raw lines (subdirectory references).
+                    for raw_line in &raw_lines {
+                        let normalized = raw_line.replace('\\', "/");
+                        let filename = Path::new(&normalized)
+                            .file_name()
+                            .and_then(|f| f.to_str())
+                            .unwrap_or("");
+                        if filename.eq_ignore_ascii_case(ref_name)
+                            && let Some(resolved) =
+                                resolve_m3u_reference(&normalized, parent_dir, &storage.roms_dir())
+                        {
+                            if resolved.is_file() {
+                                let size = std::fs::metadata(&resolved)
+                                    .map(|m| m.len())
+                                    .unwrap_or(0);
+                                group.push(GroupedFile {
+                                    path: resolved,
+                                    size_bytes: size,
+                                    kind: FileKind::Disc,
+                                });
+                            } else if resolved.is_dir() {
+                                // GDI subdirectory reference.
+                                let size = dir_total_size(&resolved);
+                                group.push(GroupedFile {
+                                    path: resolved,
+                                    size_bytes: size,
+                                    kind: FileKind::Disc,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // For M3U + CHD/DIM: also check for SBI companions for each disc.
+            for ref_name in &refs {
+                let disc_path = parent_dir.join(ref_name);
+                add_sbi_companion(&disc_path, &mut group);
+            }
+        }
+    } else if ext == "cue" {
+        // CUE+BIN: parse FILE directives to find referenced BIN files.
+        let bin_files = parse_cue_file_references(&full_path);
+        for bin_name in &bin_files {
+            let bin_path = parent_dir.join(bin_name);
+            if bin_path.exists() && bin_path.is_file() {
+                let size = std::fs::metadata(&bin_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                group.push(GroupedFile {
+                    path: bin_path,
+                    size_bytes: size,
+                    kind: FileKind::Disc,
+                });
+            }
+        }
+    } else if ext == "chd" {
+        // Single CHD: check for SBI companions.
+        add_sbi_companion(&full_path, &mut group);
+
+        // For arcade_dc: check for companion GD-ROM CHD files.
+        if system == "arcade_dc" {
+            add_arcade_dc_companion_chds(&full_path, parent_dir, &mut group);
+        }
+    } else if ext == "zip" && system == "arcade_dc" {
+        // Arcade ZIP: check for companion GD-ROM CHD files.
+        add_arcade_dc_companion_chds(&full_path, parent_dir, &mut group);
+    }
+
+    // Add SBI companion for the primary file itself (non-M3U case).
+    if ext != "m3u" && ext != "cue" {
+        add_sbi_companion(&full_path, &mut group);
+        // Deduplicate: remove any SBI that was added twice (by the primary check
+        // and by the CHD-specific check).
+        dedup_group(&mut group);
+    }
+
+    Ok(group)
+}
+
+/// Delete all files in a ROM group and clean up empty parent directories.
+pub fn delete_rom_group(
+    storage: &StorageLocation,
+    system: &str,
+    relative_path: &str,
+) -> Result<DeleteReport> {
+    let group = list_rom_group(storage, system, relative_path)?;
+
+    let mut report = DeleteReport {
+        deleted: Vec::new(),
+        bytes_freed: 0,
+        errors: Vec::new(),
+    };
+
+    // Delete files first, then directories (in reverse order so children
+    // are deleted before parents).
+    let (dirs, files): (Vec<_>, Vec<_>) = group.into_iter().partition(|g| {
+        g.kind == FileKind::DataDir || g.path.is_dir()
+    });
+
+    for file in &files {
+        match std::fs::remove_file(&file.path) {
+            Ok(()) => {
+                report.deleted.push(file.path.clone());
+                report.bytes_freed += file.size_bytes;
+            }
+            Err(e) => {
+                report.errors.push(format!("{}: {e}", file.path.display()));
+            }
+        }
+    }
+
+    // Delete data directories (recursively).
+    for dir in &dirs {
+        match std::fs::remove_dir_all(&dir.path) {
+            Ok(()) => {
+                report.deleted.push(dir.path.clone());
+                report.bytes_freed += dir.size_bytes;
+            }
+            Err(e) => {
+                report.errors.push(format!("{}: {e}", dir.path.display()));
+            }
+        }
+    }
+
+    // Clean up empty parent directories (walk up from the primary file's
+    // parent, stopping at the system roms directory).
+    let system_dir = storage.system_roms_dir(system);
+    if let Some(primary) = files.first().or(dirs.first())
+        && let Some(parent) = primary.path.parent()
+    {
+        cleanup_empty_parents(parent, &system_dir);
+    }
+
+    Ok(report)
+}
+
+/// Detect multi-disc sets based on `(Disc N)` / `(Disk N)` filename patterns.
+///
+/// Returns `Some(DiscInfo)` if this filename is part of a multi-disc set
+/// (i.e., there are sibling files with the same base name but different
+/// disc numbers). Returns `None` for single-disc games or non-matching names.
+pub fn detect_disc_set(
+    storage: &StorageLocation,
+    system: &str,
+    rom_filename: &str,
+) -> Option<DiscInfo> {
+    let (base, disc_num) = parse_disc_pattern(rom_filename)?;
+
+    let system_dir = storage.system_roms_dir(system);
+    if !system_dir.exists() {
+        return None;
+    }
+
+    // Scan the directory for siblings with the same base pattern.
+    let entries = std::fs::read_dir(&system_dir).ok()?;
+    let mut siblings: Vec<(u32, String)> = Vec::new();
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some((other_base, other_num)) = parse_disc_pattern(&name)
+            && other_base == base
+        {
+            siblings.push((other_num, name));
+        }
+    }
+
+    // Only report as multi-disc if there's more than one disc.
+    if siblings.len() <= 1 {
+        return None;
+    }
+
+    siblings.sort_by_key(|(num, _)| *num);
+    let total_discs = siblings.len() as u32;
+    let sibling_names: Vec<String> = siblings.into_iter().map(|(_, name)| name).collect();
+
+    Some(DiscInfo {
+        disc_number: disc_num,
+        total_discs,
+        siblings: sibling_names,
+    })
+}
+
+/// Determine whether a ROM file can be safely renamed.
+///
+/// Returns `(allowed, reason)` where `reason` explains why rename is blocked.
+pub fn check_rename_allowed(
+    storage: &StorageLocation,
+    system: &str,
+    relative_path: &str,
+) -> (bool, Option<String>) {
+    let full_path = storage.root.join(relative_path.trim_start_matches('/'));
+    let ext = full_path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    // CUE+BIN: renaming would break internal FILE directives.
+    if ext == "cue" {
+        return (
+            false,
+            Some("Rename is not available for CUE files — they reference BIN files by name internally, and renaming would break the game.".to_string()),
+        );
+    }
+
+    // ScummVM M3U: contains absolute paths to game data.
+    if ext == "m3u" && system == "scummvm" {
+        return (
+            false,
+            Some("Rename is not available for ScummVM games — playlists contain absolute paths to game data.".to_string()),
+        );
+    }
+
+    // Binary M3U (X68000): check if the M3U contains binary data.
+    if ext == "m3u" && is_binary_m3u(&full_path) {
+        return (
+            false,
+            Some("Rename is not available — this playlist contains embedded disc data.".to_string()),
+        );
+    }
+
+    (true, None)
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions for ROM grouping
+// ---------------------------------------------------------------------------
+
+/// Parse an M3U file and return the raw line content (before extracting filenames).
+/// This preserves full paths for ScummVM absolute path resolution.
+fn parse_m3u_raw_lines(m3u_path: &Path) -> Vec<String> {
+    const MAX_M3U_BYTES: u64 = 8192;
+
+    let file = match std::fs::File::open(m3u_path) {
+        Ok(f) => f,
+        Err(_) => return vec![],
+    };
+
+    let reader = BufReader::new(file.take(MAX_M3U_BYTES));
+    let mut lines = Vec::new();
+
+    for line_result in reader.lines() {
+        let line = match line_result {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        let trimmed = line.trim().to_string();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if !looks_like_filename(&trimmed) {
+            break;
+        }
+        lines.push(trimmed);
+    }
+
+    lines
+}
+
+/// Resolve an M3U reference line to an absolute path on disk.
+///
+/// Handles:
+/// - Absolute paths with `/roms/` prefix (Pi-side paths)
+/// - Relative paths (resolved from the M3U's parent directory)
+fn resolve_m3u_reference(
+    line: &str,
+    m3u_parent: &Path,
+    roms_root: &Path,
+) -> Option<PathBuf> {
+    let normalized = line.replace('\\', "/");
+
+    // Try resolving via /roms/ prefix (absolute Pi-side paths).
+    if let Some(after_roms) = normalized.split("/roms/").nth(1) {
+        let candidate = roms_root.join(after_roms);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // Try resolving relative to the M3U file's parent directory.
+    let candidate = m3u_parent.join(&normalized);
+    if candidate.exists() {
+        return Some(candidate);
+    }
+
+    // Try just the filename in the parent directory.
+    let filename = Path::new(&normalized)
+        .file_name()
+        .and_then(|f| f.to_str())?;
+    let candidate = m3u_parent.join(filename);
+    if candidate.exists() {
+        return Some(candidate);
+    }
+
+    None
+}
+
+/// Parse CUE file FILE directives to extract referenced BIN filenames.
+///
+/// CUE files contain lines like:
+///   FILE "023 RADIANT SILVERGUN (J).BIN" BINARY
+fn parse_cue_file_references(cue_path: &Path) -> Vec<String> {
+    let content = match std::fs::read_to_string(cue_path) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+
+    let mut files = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("FILE ") {
+            // Extract the filename between quotes, or the first token.
+            if let Some(start) = rest.find('"') {
+                if let Some(end) = rest[start + 1..].find('"') {
+                    files.push(rest[start + 1..start + 1 + end].to_string());
+                }
+            } else {
+                // No quotes: take first whitespace-delimited token.
+                if let Some(name) = rest.split_whitespace().next() {
+                    files.push(name.to_string());
+                }
+            }
+        }
+    }
+
+    files
+}
+
+/// Check if an M3U file is a binary M3U (X68000 style: first line is a
+/// filename, followed by raw binary disc data).
+fn is_binary_m3u(m3u_path: &Path) -> bool {
+    let file = match std::fs::File::open(m3u_path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+
+    // Read the first 256 bytes. If we find non-UTF-8 data after the first
+    // line, it's a binary M3U.
+    let mut buf = [0u8; 256];
+    let n = match std::io::Read::read(&mut &file, &mut buf) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+
+    // Find the end of the first line.
+    let first_newline = buf[..n].iter().position(|&b| b == b'\n' || b == b'\r');
+    if let Some(pos) = first_newline {
+        // Check if data after the first line contains control characters
+        // (indicating binary content). Skip CR/LF.
+        let after = &buf[pos..n];
+        for &b in after {
+            if b == b'\n' || b == b'\r' || b == b'\t' {
+                continue;
+            }
+            if !(0x20..=0x7E).contains(&b) {
+                return true; // Binary data found.
+            }
+        }
+    }
+
+    false
+}
+
+/// Add SBI companion file if it exists alongside the given ROM path.
+fn add_sbi_companion(rom_path: &Path, group: &mut Vec<GroupedFile>) {
+    if let Some(stem) = rom_path.file_stem().and_then(|s| s.to_str())
+        && let Some(parent) = rom_path.parent()
+    {
+        let sbi_path = parent.join(format!("{stem}.sbi"));
+        if sbi_path.exists() && sbi_path.is_file() {
+            let size = std::fs::metadata(&sbi_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            group.push(GroupedFile {
+                path: sbi_path,
+                size_bytes: size,
+                kind: FileKind::Companion,
+            });
+        }
+    }
+}
+
+/// Add companion GD-ROM CHD files for arcade_dc ZIP/CHD ROMs.
+///
+/// In arcade_dc, games like `ikaruga.zip` have companion CHD files
+/// named like `gdl-0010.chd` or `gds-0009a.chd`.
+/// We look up known companion CHDs using the arcade_db.
+fn add_arcade_dc_companion_chds(
+    _rom_path: &Path,
+    parent_dir: &Path,
+    group: &mut Vec<GroupedFile>,
+) {
+    // Scan for any gdl-*.chd or gds-*.chd files in the same directory.
+    // These are always companion files, never standalone games.
+    if let Ok(entries) = std::fs::read_dir(parent_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if name.ends_with(".chd")
+                && (name.starts_with("gdl-") || name.starts_with("gds-"))
+            {
+                let path = entry.path();
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                group.push(GroupedFile {
+                    path,
+                    size_bytes: size,
+                    kind: FileKind::Companion,
+                });
+            }
+        }
+    }
+}
+
+/// Recursively compute the total size of all files in a directory.
+fn dir_total_size(dir: &Path) -> u64 {
+    let mut total = 0u64;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                total += dir_total_size(&path);
+            } else {
+                total += entry.metadata().map(|m| m.len()).unwrap_or(0);
+            }
+        }
+    }
+    total
+}
+
+/// Remove duplicate entries from a GroupedFile list (by path).
+fn dedup_group(group: &mut Vec<GroupedFile>) {
+    let mut seen = HashSet::new();
+    group.retain(|g| seen.insert(g.path.clone()));
+}
+
+/// Walk up from `dir` towards `stop_at`, removing empty directories.
+fn cleanup_empty_parents(dir: &Path, stop_at: &Path) {
+    let mut current = dir.to_path_buf();
+    while current != *stop_at && current.starts_with(stop_at) {
+        // Only remove if the directory is empty.
+        match std::fs::read_dir(&current) {
+            Ok(mut entries) => {
+                if entries.next().is_some() {
+                    break; // Directory not empty.
+                }
+                let _ = std::fs::remove_dir(&current);
+            }
+            Err(_) => break,
+        }
+        current = match current.parent() {
+            Some(p) => p.to_path_buf(),
+            None => break,
+        };
+    }
+}
+
+/// Parse `(Disc N)` or `(Disk N)` pattern from a filename.
+///
+/// Returns `(base_with_ext, disc_number)` where `base_with_ext` is the
+/// filename with the disc indicator removed but extension preserved,
+/// used for matching siblings.
+fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
+    // Match patterns like "(Disc 1)", "(Disk 2)", "(Disc 1 of 4)" etc.
+    // Case-insensitive.
+    let lower = filename.to_lowercase();
+
+    // Find the disc/disk pattern.
+    let patterns = ["(disc ", "(disk "];
+    for pattern in &patterns {
+        if let Some(start) = lower.find(pattern) {
+            // Find the closing parenthesis.
+            if let Some(end) = lower[start..].find(')') {
+                let inner = &lower[start + pattern.len()..start + end];
+                // Extract the disc number (might be "1", "1 of 4", etc.)
+                let num_str = inner.split_whitespace().next()?;
+                let disc_num: u32 = num_str.parse().ok()?;
+
+                // Build the base string: everything except the disc pattern.
+                // Preserve the original case for the base.
+                let base = format!(
+                    "{}{}",
+                    &filename[..start].trim_end(),
+                    &filename[start + end + 1..]
+                );
+
+                return Some((base.trim().to_string(), disc_num));
+            }
+        }
+    }
+
+    None
+}
+
 /// Detect duplicate ROMs across all systems by file size + name similarity.
 pub fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
     let roms_dir = storage.roms_dir();
@@ -1120,5 +1754,426 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    // --- parse_cue_file_references ---
+
+    #[test]
+    fn parse_cue_simple_bin() {
+        let tmp = tempdir();
+        let cue = tmp.join("game.cue");
+        fs::write(
+            &cue,
+            "FILE \"GAME.BIN\" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n",
+        )
+        .unwrap();
+        let refs = parse_cue_file_references(&cue);
+        assert_eq!(refs, vec!["GAME.BIN"]);
+    }
+
+    #[test]
+    fn parse_cue_multiple_bins() {
+        let tmp = tempdir();
+        let cue = tmp.join("game.cue");
+        fs::write(
+            &cue,
+            "FILE \"Track 01.bin\" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n\
+             FILE \"Track 02.bin\" BINARY\n  TRACK 02 AUDIO\n    INDEX 01 00:00:00\n",
+        )
+        .unwrap();
+        let refs = parse_cue_file_references(&cue);
+        assert_eq!(refs, vec!["Track 01.bin", "Track 02.bin"]);
+    }
+
+    #[test]
+    fn parse_cue_nonexistent() {
+        let refs = parse_cue_file_references(Path::new("/nonexistent/game.cue"));
+        assert!(refs.is_empty());
+    }
+
+    // --- is_binary_m3u ---
+
+    #[test]
+    fn detect_binary_m3u() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        let mut content = b"Game.dim\r\n".to_vec();
+        content.extend_from_slice(&[0xe5; 256]);
+        fs::write(&m3u, &content).unwrap();
+        assert!(is_binary_m3u(&m3u));
+    }
+
+    #[test]
+    fn detect_text_m3u() {
+        let tmp = tempdir();
+        let m3u = tmp.join("game.m3u");
+        fs::write(&m3u, "Disc1.chd\nDisc2.chd\n").unwrap();
+        assert!(!is_binary_m3u(&m3u));
+    }
+
+    // --- parse_disc_pattern ---
+
+    #[test]
+    fn parse_disc_pattern_standard() {
+        let (base, num) = parse_disc_pattern("Panzer Dragoon Saga (USA) (Disc 1).chd").unwrap();
+        assert_eq!(num, 1);
+        assert_eq!(base, "Panzer Dragoon Saga (USA).chd");
+    }
+
+    #[test]
+    fn parse_disc_pattern_disk_variant() {
+        let (base, num) =
+            parse_disc_pattern("Game (1989)(System Sacom)(Disk 2 of 4).dim").unwrap();
+        assert_eq!(num, 2);
+        assert_eq!(base, "Game (1989)(System Sacom).dim");
+    }
+
+    #[test]
+    fn parse_disc_pattern_no_match() {
+        assert!(parse_disc_pattern("Sonic The Hedgehog (USA).md").is_none());
+    }
+
+    // --- detect_disc_set ---
+
+    #[test]
+    fn detect_multi_disc_set() {
+        let tmp = tempdir();
+        let saturn_dir = tmp.join("roms/sega_st");
+        fs::create_dir_all(&saturn_dir).unwrap();
+
+        fs::write(saturn_dir.join("PDS (USA) (Disc 1).chd"), &[0u8; 100]).unwrap();
+        fs::write(saturn_dir.join("PDS (USA) (Disc 2).chd"), &[0u8; 100]).unwrap();
+        fs::write(saturn_dir.join("PDS (USA) (Disc 3).chd"), &[0u8; 100]).unwrap();
+        fs::write(saturn_dir.join("PDS (USA) (Disc 4).chd"), &[0u8; 100]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let info = detect_disc_set(&storage, "sega_st", "PDS (USA) (Disc 1).chd").unwrap();
+
+        assert_eq!(info.disc_number, 1);
+        assert_eq!(info.total_discs, 4);
+        assert_eq!(info.siblings.len(), 4);
+    }
+
+    #[test]
+    fn detect_single_disc_returns_none() {
+        let tmp = tempdir();
+        let saturn_dir = tmp.join("roms/sega_st");
+        fs::create_dir_all(&saturn_dir).unwrap();
+
+        fs::write(saturn_dir.join("Game (Disc 1).chd"), &[0u8; 100]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        assert!(detect_disc_set(&storage, "sega_st", "Game (Disc 1).chd").is_none());
+    }
+
+    // --- list_rom_group ---
+
+    #[test]
+    fn group_single_file() {
+        let tmp = tempdir();
+        let nes_dir = tmp.join("roms/nintendo_nes");
+        fs::create_dir_all(&nes_dir).unwrap();
+        fs::write(nes_dir.join("Sonic.nes"), &[0u8; 256]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let group =
+            list_rom_group(&storage, "nintendo_nes", "roms/nintendo_nes/Sonic.nes").unwrap();
+
+        assert_eq!(group.len(), 1);
+        assert_eq!(group[0].kind, FileKind::Primary);
+        assert_eq!(group[0].size_bytes, 256);
+    }
+
+    #[test]
+    fn group_m3u_with_disc_files() {
+        let tmp = tempdir();
+        let psx_dir = tmp.join("roms/sony_psx");
+        fs::create_dir_all(&psx_dir).unwrap();
+
+        fs::write(
+            psx_dir.join("FF7.m3u"),
+            "FF7 (Disc 1).chd\nFF7 (Disc 2).chd\nFF7 (Disc 3).chd\n",
+        )
+        .unwrap();
+        fs::write(psx_dir.join("FF7 (Disc 1).chd"), &[0u8; 500]).unwrap();
+        fs::write(psx_dir.join("FF7 (Disc 2).chd"), &[0u8; 600]).unwrap();
+        fs::write(psx_dir.join("FF7 (Disc 3).chd"), &[0u8; 700]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let group = list_rom_group(&storage, "sony_psx", "roms/sony_psx/FF7.m3u").unwrap();
+
+        // Should have: 1 primary (M3U) + 3 disc files
+        assert_eq!(group.len(), 4);
+        assert_eq!(
+            group.iter().filter(|g| g.kind == FileKind::Primary).count(),
+            1
+        );
+        assert_eq!(
+            group.iter().filter(|g| g.kind == FileKind::Disc).count(),
+            3
+        );
+        let total_size: u64 = group.iter().map(|g| g.size_bytes).sum();
+        assert!(total_size > 1800); // At least the disc file sizes
+    }
+
+    #[test]
+    fn group_m3u_with_sbi_companions() {
+        let tmp = tempdir();
+        let psx_dir = tmp.join("roms/sony_psx");
+        fs::create_dir_all(&psx_dir).unwrap();
+
+        fs::write(psx_dir.join("FF8.m3u"), "FF8 (Disc 1).chd\n").unwrap();
+        fs::write(psx_dir.join("FF8 (Disc 1).chd"), &[0u8; 500]).unwrap();
+        fs::write(psx_dir.join("FF8 (Disc 1).sbi"), &[0u8; 50]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let group = list_rom_group(&storage, "sony_psx", "roms/sony_psx/FF8.m3u").unwrap();
+
+        // M3U + disc CHD + SBI companion
+        assert_eq!(group.len(), 3);
+        assert!(group.iter().any(|g| g.kind == FileKind::Companion));
+    }
+
+    #[test]
+    fn group_cue_with_bin() {
+        let tmp = tempdir();
+        let saturn_dir = tmp.join("roms/sega_st/Game");
+        fs::create_dir_all(&saturn_dir).unwrap();
+
+        fs::write(
+            saturn_dir.join("Game.cue"),
+            "FILE \"GAME.BIN\" BINARY\n  TRACK 01 MODE1/2352\n",
+        )
+        .unwrap();
+        fs::write(saturn_dir.join("GAME.BIN"), &[0u8; 1000]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let group =
+            list_rom_group(&storage, "sega_st", "roms/sega_st/Game/Game.cue").unwrap();
+
+        assert_eq!(group.len(), 2);
+        assert!(group.iter().any(|g| g.kind == FileKind::Primary));
+        assert!(group.iter().any(|g| g.kind == FileKind::Disc));
+    }
+
+    #[test]
+    fn group_chd_with_sbi() {
+        let tmp = tempdir();
+        let psx_dir = tmp.join("roms/sony_psx");
+        fs::create_dir_all(&psx_dir).unwrap();
+
+        fs::write(psx_dir.join("Game.chd"), &[0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Game.sbi"), &[0u8; 30]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let group = list_rom_group(&storage, "sony_psx", "roms/sony_psx/Game.chd").unwrap();
+
+        assert_eq!(group.len(), 2);
+        assert!(group.iter().any(|g| g.kind == FileKind::Primary));
+        assert!(group.iter().any(|g| g.kind == FileKind::Companion));
+    }
+
+    #[test]
+    fn group_scummvm_m3u_includes_game_dir() {
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        let game_dir = scummvm_dir.join("Cool Game (CD)");
+        fs::create_dir_all(&game_dir).unwrap();
+
+        fs::write(
+            scummvm_dir.join("Cool Game (CD).m3u"),
+            format!(
+                "{}/Cool Game (CD)/Cool Game (CD).svm\n",
+                scummvm_dir.display()
+            ),
+        )
+        .unwrap();
+        fs::write(game_dir.join("Cool Game (CD).svm"), "scummvm-id").unwrap();
+        fs::write(game_dir.join("DATA.PAK"), &[0u8; 5000]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let group = list_rom_group(
+            &storage,
+            "scummvm",
+            "roms/scummvm/Cool Game (CD).m3u",
+        )
+        .unwrap();
+
+        // Primary M3U + DataDir
+        assert_eq!(group.len(), 2);
+        assert!(group.iter().any(|g| g.kind == FileKind::Primary));
+        assert!(group.iter().any(|g| g.kind == FileKind::DataDir));
+        // DataDir should include size of both files in the game directory
+        let dir_entry = group.iter().find(|g| g.kind == FileKind::DataDir).unwrap();
+        assert!(dir_entry.size_bytes >= 5000);
+    }
+
+    // --- delete_rom_group ---
+
+    #[test]
+    fn delete_single_file_group() {
+        let tmp = tempdir();
+        let nes_dir = tmp.join("roms/nintendo_nes");
+        fs::create_dir_all(&nes_dir).unwrap();
+        fs::write(nes_dir.join("Game.nes"), &[0u8; 256]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let report =
+            delete_rom_group(&storage, "nintendo_nes", "roms/nintendo_nes/Game.nes").unwrap();
+
+        assert_eq!(report.deleted.len(), 1);
+        assert_eq!(report.bytes_freed, 256);
+        assert!(report.errors.is_empty());
+        assert!(!nes_dir.join("Game.nes").exists());
+    }
+
+    #[test]
+    fn delete_m3u_with_discs() {
+        let tmp = tempdir();
+        let psx_dir = tmp.join("roms/sony_psx");
+        fs::create_dir_all(&psx_dir).unwrap();
+
+        fs::write(
+            psx_dir.join("Game.m3u"),
+            "Game (Disc 1).chd\nGame (Disc 2).chd\n",
+        )
+        .unwrap();
+        fs::write(psx_dir.join("Game (Disc 1).chd"), &[0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Game (Disc 2).chd"), &[0u8; 600]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let report =
+            delete_rom_group(&storage, "sony_psx", "roms/sony_psx/Game.m3u").unwrap();
+
+        assert!(report.errors.is_empty());
+        assert!(!psx_dir.join("Game.m3u").exists());
+        assert!(!psx_dir.join("Game (Disc 1).chd").exists());
+        assert!(!psx_dir.join("Game (Disc 2).chd").exists());
+    }
+
+    #[test]
+    fn delete_cue_bin_in_subdir() {
+        let tmp = tempdir();
+        let saturn_dir = tmp.join("roms/sega_st/Game");
+        fs::create_dir_all(&saturn_dir).unwrap();
+
+        fs::write(
+            saturn_dir.join("Game.cue"),
+            "FILE \"GAME.BIN\" BINARY\n",
+        )
+        .unwrap();
+        fs::write(saturn_dir.join("GAME.BIN"), &[0u8; 1000]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let report =
+            delete_rom_group(&storage, "sega_st", "roms/sega_st/Game/Game.cue").unwrap();
+
+        assert!(report.errors.is_empty());
+        assert!(!saturn_dir.join("Game.cue").exists());
+        assert!(!saturn_dir.join("GAME.BIN").exists());
+        // Empty subdirectory should be cleaned up.
+        assert!(!saturn_dir.exists());
+    }
+
+    #[test]
+    fn delete_scummvm_with_game_dir() {
+        let tmp = tempdir();
+        let scummvm_dir = tmp.join("roms/scummvm");
+        let game_dir = scummvm_dir.join("Cool Game");
+        fs::create_dir_all(&game_dir).unwrap();
+
+        fs::write(
+            scummvm_dir.join("Cool Game.m3u"),
+            format!("{}/Cool Game/Cool Game.svm\n", scummvm_dir.display()),
+        )
+        .unwrap();
+        fs::write(game_dir.join("Cool Game.svm"), "scummvm-id").unwrap();
+        fs::write(game_dir.join("DATA.PAK"), &[0u8; 5000]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let report = delete_rom_group(
+            &storage,
+            "scummvm",
+            "roms/scummvm/Cool Game.m3u",
+        )
+        .unwrap();
+
+        assert!(report.errors.is_empty());
+        assert!(!scummvm_dir.join("Cool Game.m3u").exists());
+        assert!(!game_dir.exists());
+    }
+
+    // --- check_rename_allowed ---
+
+    #[test]
+    fn rename_allowed_for_single_file() {
+        let tmp = tempdir();
+        let nes_dir = tmp.join("roms/nintendo_nes");
+        fs::create_dir_all(&nes_dir).unwrap();
+        fs::write(nes_dir.join("Game.nes"), &[0u8; 10]).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let (allowed, reason) =
+            check_rename_allowed(&storage, "nintendo_nes", "roms/nintendo_nes/Game.nes");
+        assert!(allowed);
+        assert!(reason.is_none());
+    }
+
+    #[test]
+    fn rename_blocked_for_cue() {
+        let tmp = tempdir();
+        let dir = tmp.join("roms/sega_st");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Game.cue"), "FILE \"G.BIN\" BINARY\n").unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let (allowed, reason) =
+            check_rename_allowed(&storage, "sega_st", "roms/sega_st/Game.cue");
+        assert!(!allowed);
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn rename_blocked_for_scummvm_m3u() {
+        let tmp = tempdir();
+        let dir = tmp.join("roms/scummvm");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Game.m3u"), "/path/to/Game.svm\n").unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let (allowed, reason) =
+            check_rename_allowed(&storage, "scummvm", "roms/scummvm/Game.m3u");
+        assert!(!allowed);
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn rename_blocked_for_binary_m3u() {
+        let tmp = tempdir();
+        let dir = tmp.join("roms/sharp_x68k");
+        fs::create_dir_all(&dir).unwrap();
+
+        let mut content = b"Game.dim\r\n".to_vec();
+        content.extend_from_slice(&[0xe5; 256]);
+        fs::write(dir.join("Game.m3u"), &content).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let (allowed, reason) =
+            check_rename_allowed(&storage, "sharp_x68k", "roms/sharp_x68k/Game.m3u");
+        assert!(!allowed);
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn rename_allowed_for_text_m3u() {
+        let tmp = tempdir();
+        let dir = tmp.join("roms/sony_psx");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Game.m3u"), "Game (Disc 1).chd\n").unwrap();
+
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let (allowed, _) =
+            check_rename_allowed(&storage, "sony_psx", "roms/sony_psx/Game.m3u");
+        assert!(allowed);
     }
 }

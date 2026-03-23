@@ -45,8 +45,47 @@ pub struct RomDetail {
     /// Normalized base_title for cross-variant video sharing.
     #[serde(default)]
     pub base_title: String,
+    /// Whether this ROM can be safely renamed.
+    #[serde(default = "default_true")]
+    pub rename_allowed: bool,
+    /// Explanation when rename is not allowed.
+    #[serde(default)]
+    pub rename_reason: Option<String>,
+    /// Multi-disc set info (if part of a disc set without M3U wrapper).
+    #[serde(default)]
+    pub disc_info: Option<DiscInfoDto>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
+/// Serializable multi-disc info for the UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscInfoDto {
+    pub disc_number: u32,
+    pub total_discs: u32,
+    pub siblings: Vec<String>,
+}
+
+/// Summary of files in a ROM group (for delete confirmation).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RomFileGroup {
+    pub files: Vec<RomFileEntry>,
+    pub total_size: u64,
+    pub file_count: usize,
+}
+
+/// A single file entry in a ROM group summary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RomFileEntry {
+    pub filename: String,
+    pub size_bytes: u64,
+    pub kind: String,
+}
+
+// clippy::too_many_arguments — Leptos server functions require flat parameter lists
+// for serialization; wrapping in a struct is not supported by the #[server] macro.
 #[allow(clippy::too_many_arguments)]
 #[server(prefix = "/sfn")]
 pub async fn get_roms_page(
@@ -353,6 +392,21 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let base_title =
         replay_control_core::title_utils::base_title(&game.display_name);
 
+    // Determine rename restrictions.
+    let (rename_allowed, rename_reason) = replay_control_core::roms::check_rename_allowed(
+        &storage,
+        &system,
+        rom.game.rom_path.trim_start_matches('/'),
+    );
+
+    // Detect multi-disc set.
+    let disc_info = replay_control_core::roms::detect_disc_set(&storage, &system, &filename)
+        .map(|di| DiscInfoDto {
+            disc_number: di.disc_number,
+            total_discs: di.total_discs,
+            siblings: di.siblings,
+        });
+
     Ok(RomDetail {
         game,
         size_bytes: rom.size_bytes,
@@ -363,6 +417,9 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         is_hack,
         is_special,
         base_title,
+        rename_allowed,
+        rename_reason,
+        disc_info,
     })
 }
 
@@ -375,26 +432,319 @@ fn validate_path_safe(path: &str) -> Result<(), ServerFnError> {
     Ok(())
 }
 
+/// Get the file group for a ROM (for delete confirmation UI).
 #[server(prefix = "/sfn")]
-pub async fn delete_rom(relative_path: String) -> Result<(), ServerFnError> {
+pub async fn get_rom_file_group(
+    system: String,
+    relative_path: String,
+) -> Result<RomFileGroup, ServerFnError> {
     validate_path_safe(&relative_path)?;
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::roms::delete_rom(&state.storage(), &relative_path)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+    let storage = state.storage();
+
+    let mut group = replay_control_core::roms::list_rom_group(&storage, &system, &relative_path)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // If this ROM is part of a multi-disc set (no M3U), include sibling discs.
+    let rom_filename = std::path::Path::new(&relative_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if let Some(disc_info) = replay_control_core::roms::detect_disc_set(&storage, &system, &rom_filename) {
+        let system_dir = storage.system_roms_dir(&system);
+        for sibling in &disc_info.siblings {
+            if *sibling == rom_filename {
+                continue; // Already in the group as Primary.
+            }
+            let sibling_path = system_dir.join(sibling);
+            if sibling_path.exists() {
+                let size = std::fs::metadata(&sibling_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                group.push(replay_control_core::roms::GroupedFile {
+                    path: sibling_path,
+                    size_bytes: size,
+                    kind: replay_control_core::roms::FileKind::Disc,
+                });
+            }
+        }
+    }
+
+    let total_size: u64 = group.iter().map(|g| g.size_bytes).sum();
+    let file_count = group.len();
+
+    let files = group
+        .into_iter()
+        .map(|g| {
+            let filename = g
+                .path
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| g.path.display().to_string());
+            let kind = match g.kind {
+                replay_control_core::roms::FileKind::Primary => "primary",
+                replay_control_core::roms::FileKind::Disc => "disc",
+                replay_control_core::roms::FileKind::Companion => "companion",
+                replay_control_core::roms::FileKind::DataDir => "directory",
+            };
+            RomFileEntry {
+                filename,
+                size_bytes: g.size_bytes,
+                kind: kind.to_string(),
+            }
+        })
+        .collect();
+
+    Ok(RomFileGroup {
+        files,
+        total_size,
+        file_count,
+    })
+}
+
+#[server(prefix = "/sfn")]
+pub async fn delete_rom(
+    system: String,
+    relative_path: String,
+) -> Result<(), ServerFnError> {
+    validate_path_safe(&relative_path)?;
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+
+    // Extract ROM filename for cleanup.
+    let rom_filename = std::path::Path::new(&relative_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // Check for multi-disc set — include siblings in the deletion.
+    let disc_siblings: Vec<String> = replay_control_core::roms::detect_disc_set(
+        &storage, &system, &rom_filename,
+    )
+    .map(|di| di.siblings)
+    .unwrap_or_default();
+
+    // Delete the primary ROM group.
+    let report = replay_control_core::roms::delete_rom_group(&storage, &system, &relative_path)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if !report.errors.is_empty() {
+        tracing::warn!("Errors during ROM group delete: {:?}", report.errors);
+    }
+
+    // Delete multi-disc siblings (if any).
+    for sibling in &disc_siblings {
+        if *sibling == rom_filename {
+            continue; // Already deleted as part of the primary group.
+        }
+        let sibling_rel = format!("roms/{system}/{sibling}");
+        if let Err(e) = replay_control_core::roms::delete_rom_group(&storage, &system, &sibling_rel) {
+            tracing::warn!("Failed to delete disc sibling {sibling}: {e}");
+        }
+    }
+
+    // Phase 3: Orphan data cascade — clean up associated data.
+    let filenames_to_clean: Vec<String> = if disc_siblings.is_empty() {
+        vec![rom_filename]
+    } else {
+        disc_siblings
+    };
+
+    for fname in &filenames_to_clean {
+        delete_rom_cleanup(&state, &storage, &system, fname);
+    }
+
+    // Invalidate caches.
+    state.cache.invalidate_system(&system);
+    state.cache.invalidate_favorites();
+
+    Ok(())
+}
+
+/// Find screenshot files matching a ROM filename prefix.
+///
+/// Returns `(path, suffix)` pairs where suffix starts with `_` or `.`
+/// (e.g., `_001.png`, `.png`).
+#[cfg(feature = "ssr")]
+fn find_matching_screenshots(
+    captures_dir: &std::path::Path,
+    rom_filename: &str,
+) -> Vec<(std::path::PathBuf, String)> {
+    let mut matches = Vec::new();
+    if captures_dir.exists()
+        && let Ok(entries) = std::fs::read_dir(captures_dir)
+    {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(rest) = name.strip_prefix(rom_filename)
+                && (rest.starts_with('_') || rest.starts_with('.'))
+            {
+                matches.push((entry.path(), rest.to_string()));
+            }
+        }
+    }
+    matches
+}
+
+/// Clean up orphaned data after a ROM deletion.
+#[cfg(feature = "ssr")]
+fn delete_rom_cleanup(
+    state: &crate::api::AppState,
+    storage: &replay_control_core::storage::StorageLocation,
+    system: &str,
+    rom_filename: &str,
+) {
+    // 1. Delete matching favorites (search all subfolders).
+    let fav_filename = format!("{system}@{rom_filename}.fav");
+    let favs_dir = storage.favorites_dir();
+    delete_fav_recursive(&favs_dir, &fav_filename);
+
+    // 2. Delete matching screenshots.
+    let captures_dir = storage.captures_dir().join(system);
+    for (path, _) in find_matching_screenshots(&captures_dir, rom_filename) {
+        let _ = std::fs::remove_file(path);
+    }
+
+    // 3. Delete user_data.db entries (videos, box art overrides).
+    state.user_data_pool.write(|conn| {
+        replay_control_core::user_data_db::UserDataDb::delete_for_rom(conn, system, rom_filename);
+    });
+
+    // 4. Delete metadata.db game_library entry.
+    state.metadata_pool.write(|conn| {
+        replay_control_core::metadata_db::MetadataDb::delete_for_rom(conn, system, rom_filename);
+    });
+}
+
+/// Recursively search for and delete a .fav file in the favorites directory tree.
+#[cfg(feature = "ssr")]
+fn delete_fav_recursive(dir: &std::path::Path, fav_filename: &str) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with('_') && !name.starts_with('.') {
+                // Check if the file exists directly in this subdir.
+                let candidate = path.join(fav_filename);
+                if candidate.exists() {
+                    let _ = std::fs::remove_file(&candidate);
+                }
+                delete_fav_recursive(&path, fav_filename);
+            }
+        } else if entry.file_name().to_string_lossy() == fav_filename {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 #[server(prefix = "/sfn")]
 pub async fn rename_rom(
+    system: String,
     relative_path: String,
     new_filename: String,
 ) -> Result<String, ServerFnError> {
     validate_path_safe(&relative_path)?;
     validate_path_safe(&new_filename)?;
     let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+
+    // Extract old filename for cascade.
+    let old_filename = std::path::Path::new(&relative_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+
     let new_path =
-        replay_control_core::roms::rename_rom(&state.storage(), &relative_path, &new_filename)
+        replay_control_core::roms::rename_rom(&storage, &relative_path, &new_filename)
             .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Phase 3: Rename cascade — update all associated data.
+    rename_rom_cascade(&state, &storage, &system, &old_filename, &new_filename);
+
+    // Invalidate caches.
+    state.cache.invalidate_system(&system);
+    state.cache.invalidate_favorites();
+
     Ok(new_path.display().to_string())
+}
+
+/// Cascade rename updates to all data sources.
+///
+/// Errors are logged but do not block the rename — the file rename
+/// has already succeeded by the time this is called.
+#[cfg(feature = "ssr")]
+fn rename_rom_cascade(
+    state: &crate::api::AppState,
+    storage: &replay_control_core::storage::StorageLocation,
+    system: &str,
+    old_filename: &str,
+    new_filename: &str,
+) {
+    // 1. Rename favorites (.fav file rename + content update).
+    let old_fav = format!("{system}@{old_filename}.fav");
+    let new_fav = format!("{system}@{new_filename}.fav");
+    rename_fav_recursive(&storage.favorites_dir(), &old_fav, &new_fav, system, new_filename);
+
+    // 2. Rename screenshots.
+    let captures_dir = storage.captures_dir().join(system);
+    for (path, rest) in find_matching_screenshots(&captures_dir, old_filename) {
+        let new_name = format!("{new_filename}{rest}");
+        let new_path = captures_dir.join(&new_name);
+        if let Err(e) = std::fs::rename(&path, &new_path) {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            tracing::warn!("Failed to rename screenshot {name} -> {new_name}: {e}");
+        }
+    }
+
+    // 3. Update user_data.db (box art overrides, game videos).
+    state.user_data_pool.write(|conn| {
+        replay_control_core::user_data_db::UserDataDb::rename_for_rom(
+            conn, system, old_filename, new_filename,
+        );
+    });
+
+    // 4. Update metadata.db game_library entry.
+    state.metadata_pool.write(|conn| {
+        replay_control_core::metadata_db::MetadataDb::rename_for_rom(
+            conn, system, old_filename, new_filename,
+        );
+    });
+}
+
+/// Recursively find and rename a .fav file, updating its content too.
+#[cfg(feature = "ssr")]
+fn rename_fav_recursive(
+    dir: &std::path::Path,
+    old_fav: &str,
+    new_fav: &str,
+    system: &str,
+    new_filename: &str,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with('_') && !name.starts_with('.') {
+                rename_fav_recursive(&path, old_fav, new_fav, system, new_filename);
+            }
+        } else if entry.file_name().to_string_lossy() == old_fav {
+            let new_path = path.parent().unwrap_or(dir).join(new_fav);
+            // Update the content (rom_path inside the .fav file).
+            let new_content = format!("/roms/{system}/{new_filename}");
+            if let Err(e) = std::fs::write(&path, &new_content) {
+                tracing::warn!("Failed to update .fav content: {e}");
+            }
+            if let Err(e) = std::fs::rename(&path, &new_path) {
+                tracing::warn!("Failed to rename .fav file: {e}");
+            }
+        }
+    }
 }
 
 #[server(prefix = "/sfn")]

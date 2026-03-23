@@ -13,6 +13,24 @@ use crate::pages::ErrorDisplay;
 use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
 
+/// Split a filename into `(stem, extension)` using `std::path::Path`.
+///
+/// Returns `("file", "zip")` for `"file.zip"`, or `("file", "")` if no extension.
+fn split_filename(filename: &str) -> (String, String) {
+    let path = std::path::Path::new(filename);
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename)
+        .to_string();
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+    (stem, ext)
+}
+
 #[component]
 pub fn GameDetailPage() -> impl IntoView {
     let i18n = use_i18n();
@@ -61,12 +79,8 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let system_display = game.system_display.clone();
     let size_display = format_size_for_system(detail.size_bytes, &system);
     let has_arcade = game.rotation.is_some();
-    let ext = game
-        .rom_filename
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_uppercase();
+    let (_, ext_lower) = split_filename(&game.rom_filename);
+    let ext = ext_lower.to_uppercase();
     // Use browser history for back navigation when available (preserves scroll position
     // and works correctly regardless of where the user came from — home, favorites, etc.)
     #[cfg(feature = "hydrate")]
@@ -152,7 +166,12 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
 
     // Rename state
     let is_renaming = RwSignal::new(false);
-    let rename_value = RwSignal::new(game.rom_filename.clone());
+    // Pre-fill rename with stem only (extension is displayed separately).
+    let (file_stem, file_ext) = split_filename(&game.rom_filename);
+    let rename_value = RwSignal::new(file_stem);
+    let file_ext_sv = StoredValue::new(file_ext);
+    let rename_allowed = detail.rename_allowed;
+    let rename_reason = StoredValue::new(detail.rename_reason.clone());
 
     // Toggle favorite
     let on_toggle_fav = move |_| {
@@ -459,6 +478,8 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                     filename=filename_sv
                     relative_path=relative_path_sv
                     system=system_sv
+                    file_ext=file_ext_sv
+                    rename_allowed
                 />
 
                 <GameDeleteAction
@@ -467,6 +488,9 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                     system=system_sv
                 />
             </div>
+            {rename_reason.get_value().map(|reason| view! {
+                <p class="game-action-note">{reason}</p>
+            })}
         </section>
     }
 }
@@ -547,6 +571,10 @@ fn GameLaunchAction(relative_path: StoredValue<String>) -> impl IntoView {
 }
 
 /// Rename action: shows a button that toggles to an inline rename form.
+///
+/// When `rename_allowed` is false, the button is hidden. The reason is shown
+/// separately below the actions row by the parent component.
+/// The rename input shows only the stem; the extension is displayed as a fixed suffix.
 #[component]
 fn GameRenameAction(
     is_renaming: RwSignal<bool>,
@@ -554,18 +582,29 @@ fn GameRenameAction(
     filename: StoredValue<String>,
     relative_path: StoredValue<String>,
     system: StoredValue<String>,
+    file_ext: StoredValue<String>,
+    rename_allowed: bool,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let navigate = use_navigate();
 
     let do_rename = StoredValue::new(move || {
         let rp = relative_path.get_value();
-        let new_name = rename_value.get();
+        let stem = rename_value.get();
+        let ext = file_ext.get_value();
+        let new_name = if ext.is_empty() {
+            stem
+        } else {
+            format!("{stem}.{ext}")
+        };
         let sys = system.get_value();
         is_renaming.set(false);
         let nav = navigate.clone();
         leptos::task::spawn_local(async move {
-            if server_fns::rename_rom(rp, new_name.clone()).await.is_ok() {
+            if server_fns::rename_rom(sys.clone(), rp, new_name.clone())
+                .await
+                .is_ok()
+            {
                 let encoded = urlencoding::encode(&new_name);
                 let href = format!("/games/{sys}/{encoded}");
                 nav(&href, Default::default());
@@ -586,37 +625,50 @@ fn GameRenameAction(
     };
 
     view! {
-        <Show when=move || is_renaming.get() fallback=move || view! {
-            <button class="game-action-btn" on:click=move |_| {
-                rename_value.set(filename.get_value());
-                is_renaming.set(true);
+        <Show when=move || rename_allowed>
+            <Show when=move || is_renaming.get() fallback=move || view! {
+                <button class="game-action-btn" on:click=move |_| {
+                    // Pre-fill with stem (no extension).
+                    let (stem, _) = split_filename(&filename.get_value());
+                    rename_value.set(stem);
+                    is_renaming.set(true);
+                }>
+                    <span class="game-action-icon">{"\u{270F}"}</span>
+                    {move || t(i18n.locale.get(), "game_detail.rename")}
+                </button>
             }>
-                <span class="game-action-icon">{"\u{270F}"}</span>
-                {move || t(i18n.locale.get(), "game_detail.rename")}
-            </button>
-        }>
-            <div class="game-rename-inline">
-                <input
-                    type="text"
-                    class="rename-input"
-                    prop:value=move || rename_value.get()
-                    on:input=move |ev| rename_value.set(event_target_value(&ev))
-                    on:keydown=on_keydown
-                />
-                <div class="game-rename-btns">
-                    <button class="rom-action-btn" on:click=on_click>
-                        {"\u{2713}"}
-                    </button>
-                    <button class="rom-action-btn" on:click=move |_| is_renaming.set(false)>
-                        {"\u{2715}"}
-                    </button>
+                <div class="game-rename-inline">
+                    <div class="rename-input-group">
+                        <input
+                            type="text"
+                            class="rename-input"
+                            prop:value=move || rename_value.get()
+                            on:input=move |ev| rename_value.set(event_target_value(&ev))
+                            on:keydown=on_keydown
+                        />
+                        <span class="rename-ext">{move || {
+                            let ext = file_ext.get_value();
+                            if ext.is_empty() { String::new() } else { format!(".{ext}") }
+                        }}</span>
+                    </div>
+                    <div class="game-rename-btns">
+                        <button class="rom-action-btn" on:click=on_click>
+                            {"\u{2713}"}
+                        </button>
+                        <button class="rom-action-btn" on:click=move |_| is_renaming.set(false)>
+                            {"\u{2715}"}
+                        </button>
+                    </div>
                 </div>
-            </div>
+            </Show>
         </Show>
     }
 }
 
-/// Delete action: shows a button that toggles to a confirm/cancel pair.
+/// Delete action: shows file count and total size in confirmation.
+///
+/// When the user clicks "Delete", a file group is fetched to show what
+/// will be deleted, then the user confirms or cancels.
 #[component]
 fn GameDeleteAction(
     confirming_delete: RwSignal<bool>,
@@ -626,13 +678,30 @@ fn GameDeleteAction(
     let i18n = use_i18n();
     let navigate = use_navigate();
 
+    // File group info for the delete confirmation.
+    let delete_info = RwSignal::new(Option::<(usize, String)>::None);
+
+    let on_start_delete = move |_| {
+        confirming_delete.set(true);
+        delete_info.set(None);
+
+        let sys = system.get_value();
+        let rp = relative_path.get_value();
+        leptos::task::spawn_local(async move {
+            if let Ok(group) = server_fns::get_rom_file_group(sys, rp).await {
+                let size_display = crate::util::format_size(group.total_size);
+                delete_info.set(Some((group.file_count, size_display)));
+            }
+        });
+    };
+
     let nav_sv = StoredValue::new(navigate);
     let on_delete = move |_| {
         let rp = relative_path.get_value();
         let sys = system.get_value();
         let nav = nav_sv.get_value();
         leptos::task::spawn_local(async move {
-            if server_fns::delete_rom(rp).await.is_ok() {
+            if server_fns::delete_rom(sys.clone(), rp).await.is_ok() {
                 let href = format!("/games/{sys}");
                 nav(&href, Default::default());
             }
@@ -641,12 +710,27 @@ fn GameDeleteAction(
 
     view! {
         <Show when=move || confirming_delete.get() fallback=move || view! {
-            <button class="game-action-btn game-action-delete" on:click=move |_| confirming_delete.set(true)>
+            <button class="game-action-btn game-action-delete" on:click=on_start_delete>
                 <span class="game-action-icon">{"\u{2715}"}</span>
                 {move || t(i18n.locale.get(), "game_detail.delete")}
             </button>
         }>
             <div class="game-delete-confirm">
+                {move || {
+                    delete_info.get().map(|(count, size)| {
+                        if count > 1 {
+                            view! {
+                                <p class="delete-info">
+                                    {format!("{count} files ({size})")}
+                                </p>
+                            }.into_any()
+                        } else {
+                            view! {
+                                <p class="delete-info">{size}</p>
+                            }.into_any()
+                        }
+                    })
+                }}
                 <button class="game-action-btn game-action-delete-confirm" on:click=on_delete>
                     {move || t(i18n.locale.get(), "game_detail.confirm_delete")}
                 </button>
@@ -657,6 +741,7 @@ fn GameDeleteAction(
         </Show>
     }
 }
+
 
 /// Related games section: regional variants and "More Like This" (genre-based).
 /// Loads lazily via its own Resource so it never blocks the main page render.
@@ -823,7 +908,7 @@ fn SimilarGamesRow(
                     }
                 }}
             </h2>
-            <div class="recent-scroll">
+            <div class="scroll-card-row">
                 {games.into_iter().map(|game| {
                     let name = game.label.unwrap_or(game.display_name);
                     view! {

@@ -7,15 +7,12 @@
 }
 
 .game-cover {
-    aspect-ratio: 4 / 3;
     background: var(--surface);
     border: 2px solid var(--accent-border);
     border-radius: var(--radius);
     display: flex;
     align-items: center;
     justify-content: center;
-    max-height: 18.75rem;
-    overflow: hidden;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
@@ -223,8 +220,45 @@
     width: 100%;
 }
 
+.game-rename-inline .rename-input-group {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 0;
+}
+
 .game-rename-inline .rename-input {
     flex: 1;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.game-rename-inline .rename-ext {
+    padding: 6px 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: none;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    color: var(--text-secondary);
+    font-family: monospace;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.game-action-note {
+    margin: 0.5rem 0 0;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-style: italic;
+    border-left: 2px solid var(--border);
+}
+
+.delete-info {
+    margin: 0;
+    padding: 4px 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
 }
 
 /* Regional variant chips */

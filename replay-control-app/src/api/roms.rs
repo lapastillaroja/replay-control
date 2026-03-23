@@ -32,12 +32,16 @@ async fn delete_rom(
     State(state): State<AppState>,
     Json(payload): Json<DeleteRomRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    replay_control_core::roms::delete_rom(&state.storage(), &payload.relative_path)
-        .map(|_| {
-            state.cache.invalidate();
-            StatusCode::NO_CONTENT
-        })
-        .map_err(|_| StatusCode::NOT_FOUND)
+    replay_control_core::roms::delete_rom_group(
+        &state.storage(),
+        &payload.system,
+        &payload.relative_path,
+    )
+    .map(|_| {
+        state.cache.invalidate();
+        StatusCode::NO_CONTENT
+    })
+    .map_err(|_| StatusCode::NOT_FOUND)
 }
 
 async fn rename_rom(
@@ -75,6 +79,7 @@ async fn find_duplicates(State(state): State<AppState>) -> Json<Vec<DuplicateRes
 
 #[derive(Deserialize)]
 struct DeleteRomRequest {
+    system: String,
     relative_path: String,
 }
 
