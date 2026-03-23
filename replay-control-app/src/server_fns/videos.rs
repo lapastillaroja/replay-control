@@ -76,7 +76,7 @@ pub async fn add_game_video(
         rom_filename: rom_filename.clone(),
     };
 
-    state.user_data_pool.read(|conn| {
+    state.user_data_pool.write(|conn| {
         UserDataDb::add_game_video(conn, &system, &rom_filename, &base_title, &entry)
     })
     .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
@@ -93,7 +93,7 @@ pub async fn remove_game_video(
     video_id: String,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state.user_data_pool.read(|conn| {
+    state.user_data_pool.write(|conn| {
         UserDataDb::remove_game_video(conn, &system, &rom_filename, &video_id)
     })
     .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?

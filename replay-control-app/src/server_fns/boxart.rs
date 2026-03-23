@@ -152,7 +152,7 @@ pub async fn set_boxart_override(
     // Persist the override in user_data.db.
     let boxart_dir = ThumbnailKind::Boxart.media_dir();
     let override_path = format!("{boxart_dir}/{variant_filename}.png");
-    state.user_data_pool.read(|conn| {
+    state.user_data_pool.write(|conn| {
         UserDataDb::set_override(conn, &system, &rom_filename, &override_path)
     })
     .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
@@ -173,7 +173,7 @@ pub async fn reset_boxart_override(
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    state.user_data_pool.read(|conn| {
+    state.user_data_pool.write(|conn| {
         UserDataDb::remove_override(conn, &system, &rom_filename)
     })
     .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?

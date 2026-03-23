@@ -66,7 +66,7 @@ impl MetadataDb {
                     })
                 },
             )
-            .map_err(|e| Error::Other(format!("get_data_source_stats failed: {e}")))
+            .map_err(|e| Error::Other(format!("get_data_source_stats failed: {e:?}")))
     }
 
     /// Count total rows in the thumbnail_index table.

@@ -88,7 +88,10 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
             last_updated_text: String::new(),
         });
     };
-    let stats = stats.map_err(|e| ServerFnError::new(e.to_string()))?;
+    let stats = stats.map_err(|e| {
+        tracing::warn!("get_thumbnail_data_source failed: {e:?}");
+        ServerFnError::new("Could not load thumbnail stats. Please try again.")
+    })?;
 
     let last_updated_text = stats
         .oldest_imported_at
@@ -122,7 +125,7 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
 #[server(prefix = "/sfn")]
 pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state.metadata_pool.read(|conn| {
+    state.metadata_pool.write(|conn| {
         MetadataDb::clear_thumbnail_index(conn)
     })
     .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?

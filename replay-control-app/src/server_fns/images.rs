@@ -43,8 +43,7 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
 
     // 1. Delete orphaned metadata rows.
     // 2. Delete orphaned thumbnail files.
-    // Combined into a single pool read to avoid acquiring two connections.
-    let (metadata_deleted, files_deleted, bytes_freed) = state.metadata_pool.read(|conn| {
+    let (metadata_deleted, files_deleted, bytes_freed) = state.metadata_pool.write(|conn| {
         let meta_del = MetadataDb::delete_orphaned_metadata(conn).unwrap_or(0);
         let (files_del, freed) = replay_control_core::thumbnails::delete_orphaned_thumbnails(
             &storage.root,
