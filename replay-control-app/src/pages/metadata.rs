@@ -848,9 +848,10 @@ fn ThumbnailProgressDisplay(
 ///
 /// Main actions (always visible):
 /// - Rebuild Game Library
-/// - Clear Downloaded Images
+/// - Cleanup Orphaned Images
 ///
-/// Advanced actions (collapsed by default):
+/// Advanced actions (collapsed by default, destructive/costly):
+/// - Clear Downloaded Images (re-download is very costly)
 /// - Clear Metadata
 /// - Clear Thumbnail Index
 #[component]
@@ -1000,15 +1001,6 @@ fn DataManagementSection(
                     on_confirm=on_rebuild
                 />
                 <ClearActionCard
-                    confirming=confirming_images
-                    clearing=clearing_images
-                    result=images_result
-                    label_key="metadata.clear_images"
-                    clearing_key="metadata.clearing_images"
-                    confirm_key="metadata.confirm_clear_images"
-                    on_confirm=on_clear_images
-                />
-                <ClearActionCard
                     confirming=confirming_orphans
                     clearing=cleaning_orphans
                     result=orphans_result
@@ -1019,7 +1011,7 @@ fn DataManagementSection(
                 />
             </div>
 
-            // Advanced actions (collapsed by default)
+            // Advanced actions (collapsed by default) — destructive or costly operations
             <div class="advanced-toggle">
                 <button
                     class="advanced-toggle-btn"
@@ -1031,6 +1023,15 @@ fn DataManagementSection(
             </div>
             <Show when=move || show_advanced.get()>
                 <div class="manage-actions">
+                    <ClearActionCard
+                        confirming=confirming_images
+                        clearing=clearing_images
+                        result=images_result
+                        label_key="metadata.clear_images"
+                        clearing_key="metadata.clearing_images"
+                        confirm_key="metadata.confirm_clear_images"
+                        on_confirm=on_clear_images
+                    />
                     <ClearActionCard
                         confirming=confirming_metadata
                         clearing=clearing_metadata
