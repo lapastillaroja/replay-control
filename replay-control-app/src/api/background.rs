@@ -83,6 +83,8 @@ impl BackgroundManager {
 
             state.set_busy_label("Scanning game library...");
             Self::phase_cache_verification(state);
+            // Checkpoint after Phase 2 writes (game_library inserts/updates).
+            state.metadata_pool.checkpoint();
 
             state.set_busy_label("Rebuilding thumbnail index...");
             Self::phase_auto_rebuild_thumbnail_index(state);
@@ -325,6 +327,8 @@ impl BackgroundManager {
         };
 
         if total_entries > 0 {
+            // Checkpoint WAL after the bulk thumbnail index writes.
+            state.metadata_pool.checkpoint();
             tracing::info!(
                 "Thumbnail index rebuilt from disk: {total_entries} entries across {total_repos} repos"
             );

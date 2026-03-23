@@ -158,7 +158,7 @@ impl ImportPipeline {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;
 
         // Clear existing metadata.
-        if let Some(result) = state.metadata_pool.read(MetadataDb::clear) {
+        if let Some(result) = state.metadata_pool.write(|conn| MetadataDb::clear(conn)) {
             result.map_err(|e| e.to_string())?;
         }
 
@@ -247,7 +247,7 @@ impl ImportPipeline {
             };
 
             // Clear existing metadata before re-import.
-            if let Some(Err(e)) = state.metadata_pool.read(MetadataDb::clear) {
+            if let Some(Err(e)) = state.metadata_pool.write(|conn| MetadataDb::clear(conn)) {
                 tracing::warn!("Failed to clear metadata DB before re-import: {e}");
             }
 
@@ -355,6 +355,10 @@ impl ImportPipeline {
             },
             flush_batch,
         );
+
+        // Checkpoint WAL after the heavy batch writes so readers don't
+        // have to traverse a large WAL and the file stays bounded.
+        state.metadata_pool.checkpoint();
 
         // Invalidate image cache so updated metadata paths are picked up.
         state.cache.invalidate_images();
@@ -710,6 +714,9 @@ impl ThumbnailPipeline {
                 return;
             }
         };
+
+        // Checkpoint WAL after the index phase's bulk writes.
+        state.metadata_pool.checkpoint();
 
         // Check cancellation between phases.
         if cancel_ref.load(Ordering::Relaxed) {

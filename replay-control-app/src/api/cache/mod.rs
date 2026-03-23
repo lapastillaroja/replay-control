@@ -266,9 +266,11 @@ impl GameLibrary {
             return Ok(roms);
         }
 
-        // During warmup, return empty — the background pipeline will populate.
-        if self.busy.load(std::sync::atomic::Ordering::Acquire) {
-            tracing::debug!("get_roms({system}): returning empty (warmup in progress)");
+        // During startup scanning (Phase 2), return empty — the pipeline will populate.
+        // Only `scanning` blocks here, not `busy` — busy is also set during thumbnail
+        // update and import, which should NOT prevent ROM lookups.
+        if self.scanning.load(std::sync::atomic::Ordering::Acquire) {
+            tracing::debug!("get_roms({system}): returning empty (startup scan in progress)");
             return Ok(Arc::new(Vec::new()));
         }
 

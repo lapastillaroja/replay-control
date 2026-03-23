@@ -20,7 +20,10 @@ pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     }) else {
         return Ok(MetadataStats::default());
     };
-    result.map_err(|e| ServerFnError::new(e.to_string()))
+    result.map_err(|e| {
+        tracing::warn!("get_metadata_stats failed: {e:?}");
+        ServerFnError::new("Could not load metadata stats. Please try again.")
+    })
 }
 
 /// Start a background metadata import from a LaunchBox metadata XML file.
@@ -127,11 +130,15 @@ pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state.metadata_pool.read(|conn| {
+    state.metadata_pool.write(|conn| {
         MetadataDb::clear(conn)
     })
     .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Checkpoint WAL after the DELETE + VACUUM.
+    state.metadata_pool.checkpoint();
+    Ok(())
 }
 
 /// Clear metadata DB and trigger re-import from launchbox-metadata.xml.
