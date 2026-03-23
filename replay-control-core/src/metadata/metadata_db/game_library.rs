@@ -129,7 +129,7 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
             })
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -665,7 +665,7 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map(params![q], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
             })
             .map_err(|e| Error::Other(format!("Query find_developer_matches: {e}")))?;
 
@@ -765,7 +765,7 @@ impl MetadataDb {
             )"
         );
         let total: usize = conn
-            .query_row(&count_sql, count_refs.as_slice(), |row| row.get(0))
+            .query_row(&count_sql, count_refs.as_slice(), |row| row.get::<_, i64>(0).map(|v| v as usize))
             .map_err(|e| Error::Other(format!("Count developer_games_paginated: {e}")))?;
 
         // ── Fetch query ──
@@ -876,7 +876,7 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map(params![developer], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
             })
             .map_err(|e| Error::Other(format!("Query developer_systems: {e}")))?;
 

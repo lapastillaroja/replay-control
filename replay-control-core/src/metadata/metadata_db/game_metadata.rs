@@ -419,24 +419,24 @@ impl MetadataDb {
     /// Get coverage statistics.
     pub fn stats(conn: &Connection, db_path: &Path) -> Result<MetadataStats> {
         let total_entries: usize = conn
-            .query_row("SELECT COUNT(*) FROM game_metadata", [], |row| row.get(0))
-            .map_err(|e| Error::Other(format!("Stats query failed: {e}")))?;
+            .query_row("SELECT COUNT(*) FROM game_metadata", [], |row| row.get::<_, i64>(0).map(|v| v as usize))
+            .map_err(|e| Error::Other(format!("Stats query failed: {e:?}")))?;
 
         let with_description: usize = conn
             .query_row(
                 "SELECT COUNT(*) FROM game_metadata WHERE description IS NOT NULL AND description != ''",
                 [],
-                |row| row.get(0),
+                |row| row.get::<_, i64>(0).map(|v| v as usize),
             )
-            .map_err(|e| Error::Other(format!("Stats query failed: {e}")))?;
+            .map_err(|e| Error::Other(format!("Stats query failed: {e:?}")))?;
 
         let with_rating: usize = conn
             .query_row(
                 "SELECT COUNT(*) FROM game_metadata WHERE rating IS NOT NULL",
                 [],
-                |row| row.get(0),
+                |row| row.get::<_, i64>(0).map(|v| v as usize),
             )
-            .map_err(|e| Error::Other(format!("Stats query failed: {e}")))?;
+            .map_err(|e| Error::Other(format!("Stats query failed: {e:?}")))?;
 
         let db_size_bytes = std::fs::metadata(db_path)
             .map(|m| m.len())
@@ -548,7 +548,7 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
             })
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -645,7 +645,7 @@ impl MetadataDb {
                    AND (gl.rom_filename IS NOT NULL
                         OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system))",
                 [],
-                |row| row.get(0),
+                |row| row.get::<_, i64>(0).map(|v| v as usize),
             )
             .map_err(|e| Error::Other(format!("Image stats query failed: {e}")))?;
         let with_screenshot: usize = conn
@@ -656,7 +656,7 @@ impl MetadataDb {
                    AND (gl.rom_filename IS NOT NULL
                         OR NOT EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = gm.system))",
                 [],
-                |row| row.get(0),
+                |row| row.get::<_, i64>(0).map(|v| v as usize),
             )
             .map_err(|e| Error::Other(format!("Image stats query failed: {e}")))?;
         Ok((with_boxart, with_screenshot))
