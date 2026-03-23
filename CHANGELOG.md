@@ -4,6 +4,47 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## 2026-03-23
+
+### Performance
+- perf: full SSR for all pages — `Resource::new_blocking()` + `Suspense` replaces `Transition` on 10 pages, eliminating loading spinner flash; Home 2KB->74KB first paint (`8bfccc6`)
+- perf: remove cache TTL for local storage — inotify + mtime + explicit invalidation covers all change scenarios; NFS TTL increased from 5min to 30min (`c6c0aa2`)
+- perf: add 4 SQLite indexes (base_title, data_sources_type, series_order, alias_system), optimize `is_empty()` with EXISTS and `delete_orphaned_metadata()` with NOT EXISTS (`1a1a858`)
+- chore: upgrade rusqlite 0.32->0.38, SQLite 3.46.0->3.51.1 (`eb5958c`)
+
+### Bug Fixes
+- fix: filesystem-aware SQLite journal mode — WAL only on ext4/btrfs/xfs/f2fs; exFAT/FAT32 (USB) get DELETE mode, fixing SQLITE_IOERR_SHORT_READ (522) caused by WAL shared memory incompatibility (`11dc11c`)
+- fix: move 9 write operations from read pool to write pool — caught by `query_only = ON` defense on read connections (`3921262`)
+- fix: explicit WAL checkpoints after bulk writes, use `scanning` flag instead of `busy` so ROM lookups work during import/thumbnail update (`e1f0fcd`)
+- fix: favorites showing empty on reload — replace Transition with Suspense for predictable SSR hydration (`e8e3a8b`)
+- fix: check server busy state before starting metadata/thumbnail operations — prevents flash-then-error when another operation is running (`26b6db1`)
+- fix: move Clear Downloaded Images to Advanced section — re-downloading all thumbnails is costly, now gated behind Advanced toggle (`1952844`)
+- fix: iOS Safari box art rendering (`e8e3a8b`)
+
+### Features
+- feat: multi-file ROM delete — enumerates and deletes all associated files (M3U discs, CUE BINs, ScummVM data dirs, SBI companions, arcade CHDs) with file count + total size in confirmation dialog (`445abc9`)
+- feat: ROM rename restrictions — block rename for CUE+BIN, ScummVM, binary M3U with reason displayed below actions (`445abc9`)
+- feat: orphan cascade on delete/rename — favorites, screenshots, user_data.db (videos, box art), metadata.db all cleaned up via new `delete_for_rom`/`rename_for_rom` methods (`445abc9`)
+- feat: multi-disc detection — `detect_disc_set` finds (Disc N) siblings for Saturn-style CHDs without M3U wrappers (`445abc9`)
+- feat: genre badges in favorites cards (`e8e3a8b`)
+- feat: improved driver_status UX — hide green "Working" dots (noise for 56% of games), user-friendly labels replacing MAME jargon, "Emulation" heading (`5273f51`)
+- feat: production SQLite PRAGMAs — journal_size_limit, foreign_keys, busy_timeout, manual WAL checkpoints on write connections, `query_only` on read connections, hourly PRAGMA optimize, eager pool warmup (`11dc11c`)
+
+### Code Quality
+- refactor: remove `is_local` from DB layer, use `JournalMode` enum — DB auto-detects filesystem via `/proc/mounts`, pool sizing based on journal mode (WAL=3 readers, DELETE=1), clean separation from `StorageKind` (`c2abf22`)
+- refactor: extract param structs (`FilterUrlParams`, `SystemLookups`, `PaginationParams`) replacing 3 `#[allow(clippy::too_many_arguments)]` (`6aa8661`)
+- refactor: consolidate 3 duplicate `format_size` functions into `util::format_size` (`6aa8661`)
+- refactor: extract shared `Freshness` struct for cache TTL logic, eliminating duplication across 3 files (`c6c0aa2`)
+- style: remove ~50 lines dead CSS, rename `.recent-*` prefix to `.scroll-card-*` (`e8e3a8b`)
+- chore: remove sysroot hack — use standard Fedora `dnf --installroot` cross-compile setup with clear setup instructions (`4f28ac2`)
+
+### Documentation
+- docs: update for filesystem-aware journal mode, SQLite upgrade, server lifecycle (`04db204`)
+- docs: update all documentation for pool migration, ROM management, cache TTL (`9a278c6`)
+- docs: add research documents — distribution strategy, git audit, SSR analysis (`8ccc06c`)
+- docs: mark ROM rename cascade as resolved in known issues (`896c927`)
+- docs: add cross-compilation reference guide for Fedora (`4f28ac2`)
+
 ## 2026-03-22
 
 ### Performance
