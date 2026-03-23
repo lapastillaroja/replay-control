@@ -199,8 +199,8 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "more.skin" => "Skin",
         "skin.title" => "Skin",
         "skin.current" => "Current",
-        "skin.hint" => "Select a skin. Reload the page to see the changes.",
-        "skin.applied" => "Skin saved. Reload to see the new skin.",
+        "skin.hint" => "Select a skin to apply it.",
+        "skin.applied" => "Skin applied.",
         "skin.sync" => "Sync with ReplayOS",
         "skin.sync_hint" => "When enabled, the app skin follows the ReplayOS skin setting.",
 

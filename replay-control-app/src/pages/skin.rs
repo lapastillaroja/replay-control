@@ -40,6 +40,8 @@ fn SkinGrid(current: u32, sync: bool, skins: Vec<server_fns::SkinInfo>) -> impl 
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
+    // Keep a lookup so we can apply skin CSS when toggling sync.
+
     let on_toggle_sync = move |_| {
         let new_sync = !sync_enabled.get_untracked();
         saving.set(true);
@@ -48,6 +50,10 @@ fn SkinGrid(current: u32, sync: bool, skins: Vec<server_fns::SkinInfo>) -> impl 
             match server_fns::set_skin_sync(new_sync).await {
                 Ok(()) => {
                     sync_enabled.set(new_sync);
+                    #[cfg(feature = "hydrate")]
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.location().reload();
+                    }
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -132,9 +138,13 @@ fn SkinCard(
         leptos::task::spawn_local(async move {
             match server_fns::set_skin(index).await {
                 Ok(()) => {
-                    active.set(index);
-                    let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "skin.applied").to_string())));
+                    // Reload the page so the SSR-rendered skin theme
+                    // style tag picks up the new skin. Simpler and more
+                    // reliable than replicating CSS variable logic client-side.
+                    #[cfg(feature = "hydrate")]
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.location().reload();
+                    }
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
