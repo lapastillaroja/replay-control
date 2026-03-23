@@ -8,6 +8,7 @@ pub use platform::systems;
 
 mod game;
 pub use game::arcade_db;
+pub use game::developer;
 pub use game::game_db;
 pub use game::game_ref;
 pub use game::genre;

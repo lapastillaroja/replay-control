@@ -153,10 +153,13 @@ impl GameLibrary {
             .iter()
             .filter(|f| !existing_developers.contains(*f))
             .filter_map(|f| {
-                lb_developers
-                    .get(f)
-                    .map(|dev| (f.clone(), dev.clone()))
+                lb_developers.get(f).map(|dev| {
+                    let normalized =
+                        replay_control_core::developer::normalize_developer(dev);
+                    (f.clone(), normalized)
+                })
             })
+            .filter(|(_, dev)| !dev.is_empty())
             .collect();
 
         if !developer_updates.is_empty() {

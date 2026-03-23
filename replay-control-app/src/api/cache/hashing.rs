@@ -153,7 +153,9 @@ impl GameLibrary {
                                 let group =
                                     replay_control_core::genre::normalize_genre(info.category)
                                         .to_string();
-                                let dev = info.manufacturer.to_string();
+                                let dev = replay_control_core::developer::normalize_developer(
+                                    info.manufacturer,
+                                );
                                 (
                                     detail,
                                     group,
