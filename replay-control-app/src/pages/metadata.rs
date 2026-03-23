@@ -115,10 +115,16 @@ pub fn MetadataPage() -> impl IntoView {
         if importing.get() || thumb_updating.get() {
             return;
         }
-        importing.set(true);
-        import_message.set(None);
-        progress.set(None);
         leptos::task::spawn_local(async move {
+            if let Ok(busy) = server_fns::is_metadata_busy().await {
+                if busy {
+                    import_message.set(Some("Another operation is already running".to_string()));
+                    return;
+                }
+            }
+            importing.set(true);
+            import_message.set(None);
+            progress.set(None);
             match server_fns::download_metadata().await {
                 Ok(()) => {
                     watch_metadata_progress(importing, progress, import_message, stats, coverage);
@@ -135,20 +141,29 @@ pub fn MetadataPage() -> impl IntoView {
         if thumb_updating.get() || importing.get() {
             return;
         }
-        thumb_updating.set(true);
-        thumb_cancelling.set(false);
-        thumb_message.set(None);
-        thumb_progress.set(Some(server_fns::ThumbnailProgress {
-            phase: ThumbnailPhase::Indexing,
-            current_label: String::new(),
-            step_done: 0,
-            step_total: 0,
-            downloaded: 0,
-            entries_indexed: 0,
-            elapsed_secs: 0,
-            error: None,
-        }));
+        // Check server-side busy state before showing progress UI.
+        // Prevents "Fetching index..." flash followed by error when
+        // another operation (e.g., LaunchBox import) is already running.
         leptos::task::spawn_local(async move {
+            if let Ok(busy) = server_fns::is_metadata_busy().await {
+                if busy {
+                    thumb_message.set(Some("Another operation is already running".to_string()));
+                    return;
+                }
+            }
+            thumb_updating.set(true);
+            thumb_cancelling.set(false);
+            thumb_message.set(None);
+            thumb_progress.set(Some(server_fns::ThumbnailProgress {
+                phase: ThumbnailPhase::Indexing,
+                current_label: String::new(),
+                step_done: 0,
+                step_total: 0,
+                downloaded: 0,
+                entries_indexed: 0,
+                elapsed_secs: 0,
+                error: None,
+            }));
             match server_fns::update_thumbnails().await {
                 Ok(()) => {
                     watch_thumbnail_progress(
