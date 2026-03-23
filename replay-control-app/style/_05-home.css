@@ -46,6 +46,10 @@
     flex-shrink: 0;
 }
 
+.hero-info {
+    min-width: 0;
+}
+
 .hero-title {
     font-size: 1.1rem;
     font-weight: 600;
@@ -55,6 +59,9 @@
 .hero-system {
     color: var(--text-secondary);
     font-size: 0.9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Scroll card row (horizontal game cards) */
@@ -73,6 +80,7 @@
     align-items: center;
     flex-shrink: 0;
     width: 8.125rem;
+    min-width: 0;
     background: var(--surface);
     border-radius: var(--radius-sm);
     padding: 12px;
@@ -105,9 +113,12 @@
 .scroll-card-name {
     font-size: 0.8rem;
     font-weight: 500;
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
     margin-bottom: 4px;
     width: 100%;
     text-align: center;
@@ -117,6 +128,10 @@
     font-size: 0.7rem;
     color: var(--text-secondary);
     text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
 }
 
 /* Stats grid */
