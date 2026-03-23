@@ -139,6 +139,13 @@
     line-height: 1.5;
 }
 
+.manage-action-progress {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 8px;
+    font-style: italic;
+}
+
 .manage-action-result {
     font-size: 0.85rem;
     color: var(--success);
