@@ -1,46 +1,14 @@
 # Known Issues & TODOs
 
-## ROM Rename Side Effects
+## ~~ROM Rename Side Effects~~ (RESOLVED)
 
-When a ROM file is renamed via the companion app, several data sources that
-reference the original filename become orphaned:
+**Fixed in `445abc9` (2026-03-23).** ROM rename and delete now cascade to all
+associated data: favorites, screenshots, user_data.db (videos, box art overrides),
+and metadata.db game_library entries. See ROM management Phase 3 in
+`research/investigations/rom-management-analysis.md`.
 
-| Data | Location | Impact |
-|------|----------|--------|
-| User screenshots | `captures/{system}/{old_filename}_*.png` | Screenshots no longer match the renamed ROM |
-| Pinned videos | `user_data.db` `game_videos` table (keyed by `system + rom_filename`) | Video links lost for the renamed ROM |
-| Favorites | `_favorites/*/{system}@{old_filename}.fav` | RePlayOS manages these — .fav file content has the old path |
-| Recent entries | `_recent/{system}@{old_filename}.rec` | Old path in .rec file |
-| Metadata DB | `.replay-control/metadata.db` | Cached metadata keyed by old filename |
-
-### Current behavior
-- **Favorites**: Not updated — `.fav` file still references the old filename.
-  RePlayOS won't find the renamed ROM via the old favorite.
-- **Recent entries**: Not updated — old entries become orphaned (acceptable,
-  they expire naturally).
-- **User screenshots**: Not updated — orphaned after rename.
-- **Pinned videos**: Not updated — `game_videos` table in `user_data.db`
-  still references the old filename.
-- **Metadata DB**: Not updated — stale cache entry (re-import would fix).
-- **Box art overrides**: Not updated — `box_art_overrides` table in
-  `user_data.db` still references the old filename.
-
-### Proposed solution
-When renaming a ROM, cascade the rename to related data:
-1. Rename `.fav` file and update its content in `_favorites/`
-2. Rename matching screenshot files in `captures/{system}/`
-3. Update `game_videos` and `box_art_overrides` in `user_data.db`
-4. Update `game_library` entry in `metadata.db` (or invalidate cache)
-5. Recent entries: skip (they expire naturally)
-
-This is documented as Phase 3 ("Orphan Data Cascade") in
-`research/investigations/rom-management-analysis.md`. The function should wrap the
-existing `rename_rom()` and handle all side effects. Failures in side effects should
-be logged but not block the rename.
-
-### Priority
-Medium — affects users who rename ROMs and have screenshots/videos for them.
-The workaround is to re-take screenshots or re-pin videos after renaming.
+Remaining limitation: recent entries (`.rec` files) are not updated on rename
+(acceptable — they expire naturally).
 
 ## Alpha Player Hidden from UI
 
@@ -87,8 +55,10 @@ app, some data sources pick them up automatically and others do not.
   `queue_on_demand_download()` when viewing a ROM with no local image. The image
   appears on the second page load. If the index was never built, no images
   appear until the user runs "Update Images".
-- No background ROM rescan runs while the server is up — the filesystem watcher
-  only monitors `replay.cfg`, not ROM directories.
+- A filesystem watcher (inotify) monitors ROM directories on local storage
+  (SD/USB/NVMe) and triggers automatic rescans within 3 seconds of changes.
+  NFS mounts have no watcher; changes are detected via mtime on next access
+  (30-minute TTL as safety net).
 
 ### Proposed solution
 1. **LaunchBox metadata**: On ROM cache miss (new file detected), queue a
