@@ -81,7 +81,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Atari 7800",
         manufacturer: "Atari",
         category: SystemCategory::Console,
-        extensions: &["a78", "bin"],
+        extensions: &["a78", "bin", "cdf"],
         launchbox_platforms: &["Atari 7800"],
     },
     System {
@@ -105,7 +105,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Amstrad CPC",
         manufacturer: "Amstrad",
         category: SystemCategory::Computer,
-        extensions: &["dsk", "sna", "tap", "cdt"],
+        extensions: &["dsk", "sna", "tap", "cdt", "voc", "cpr", "m3u"],
         launchbox_platforms: &["Amstrad CPC"],
     },
     System {
@@ -113,7 +113,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Commodore Amiga",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
-        extensions: &["adf", "hdf", "ipf", "lha"],
+        extensions: &["adf", "hdf", "ipf", "lha", "adz", "dms", "fdi", "raw", "hdz", "slave", "info", "uae", "m3u"],
         launchbox_platforms: &["Commodore Amiga"],
     },
     System {
@@ -121,7 +121,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Commodore Amiga CD",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
-        extensions: &["iso", "cue", "chd"],
+        extensions: &["iso", "cue", "chd", "ccd", "nrg", "mds", "m3u"],
         launchbox_platforms: &[],
     },
     System {
@@ -129,7 +129,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Commodore 64",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
-        extensions: &["d64", "t64", "tap", "prg", "crt"],
+        extensions: &["d64", "t64", "tap", "prg", "crt", "d71", "d80", "d81", "d82", "g64", "g41", "x64", "p00", "bin", "gz", "d6z", "d8z", "g6z", "g4z", "x6z", "cmd", "m3u", "vfl", "vs"],
         launchbox_platforms: &["Commodore 64"],
     },
     System {
@@ -137,7 +137,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "IBM PC (DOS)",
         manufacturer: "IBM",
         category: SystemCategory::Computer,
-        extensions: &["zip", "exe", "com", "bat", "conf"],
+        extensions: &["zip", "exe", "com", "bat", "dosz", "iso", "cue", "img", "m3u", "m3u8"],
         launchbox_platforms: &["MS-DOS"],
     },
     System {
@@ -145,7 +145,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "MSX",
         manufacturer: "Microsoft",
         category: SystemCategory::Computer,
-        extensions: &["rom", "mx1", "mx2", "dsk"],
+        extensions: &["rom", "mx1", "mx2", "dsk", "ri", "col", "sg", "sc", "sf", "cas", "m3u"],
         launchbox_platforms: &["Microsoft MSX", "Microsoft MSX2"],
     },
     System {
@@ -153,7 +153,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "PC Engine / TurboGrafx-16",
         manufacturer: "NEC",
         category: SystemCategory::Console,
-        extensions: &["pce", "sgx"],
+        extensions: &["pce", "sgx", "toc"],
         launchbox_platforms: &["NEC TurboGrafx-16", "NEC PC Engine"],
     },
     System {
@@ -161,7 +161,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "PC Engine CD",
         manufacturer: "NEC",
         category: SystemCategory::Console,
-        extensions: &["cue", "chd", "ccd"],
+        extensions: &["cue", "chd", "ccd", "m3u"],
         launchbox_platforms: &["NEC TurboGrafx-CD", "NEC PC Engine CD-ROM"],
     },
     System {
@@ -177,7 +177,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Game Boy",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
-        extensions: &["gb"],
+        extensions: &["gb", "sgb"],
         launchbox_platforms: &["Nintendo Game Boy"],
     },
     System {
@@ -193,7 +193,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Game Boy Color",
         manufacturer: "Nintendo",
         category: SystemCategory::Handheld,
-        extensions: &["gbc"],
+        extensions: &["gbc", "sgbc"],
         launchbox_platforms: &["Nintendo Game Boy Color"],
     },
     System {
@@ -201,7 +201,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Nintendo 64",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
-        extensions: &["z64", "n64", "v64"],
+        extensions: &["z64", "n64", "v64", "bin", "u1"],
         launchbox_platforms: &["Nintendo 64"],
     },
     System {
@@ -209,7 +209,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Nintendo Entertainment System",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
-        extensions: &["nes", "unif", "unf"],
+        extensions: &["nes", "unif", "unf", "fds"],
         launchbox_platforms: &["Nintendo Entertainment System"],
     },
     System {
@@ -217,7 +217,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Super Nintendo",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
-        extensions: &["smc", "sfc"],
+        extensions: &["smc", "sfc", "swc", "fig", "bs", "st"],
         launchbox_platforms: &["Super Nintendo Entertainment System"],
     },
     System {
@@ -257,7 +257,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Sega CD / Mega-CD",
         manufacturer: "Sega",
         category: SystemCategory::Console,
-        extensions: &["chd", "cue", "iso"],
+        extensions: &["chd", "cue", "iso", "m3u"],
         launchbox_platforms: &["Sega CD"],
     },
     System {
@@ -265,7 +265,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Sega Dreamcast",
         manufacturer: "Sega",
         category: SystemCategory::Console,
-        extensions: &["gdi", "chd", "cdi"],
+        extensions: &["gdi", "chd", "cdi", "elf", "cue", "lst", "dat", "m3u"],
         launchbox_platforms: &["Sega Dreamcast"],
     },
     System {
@@ -305,7 +305,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Sega Saturn",
         manufacturer: "Sega",
         category: SystemCategory::Console,
-        extensions: &["chd", "cue", "iso"],
+        extensions: &["chd", "cue", "iso", "ccd", "toc", "m3u"],
         launchbox_platforms: &["Sega Saturn"],
     },
     System {
@@ -313,7 +313,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Sharp X68000",
         manufacturer: "Sharp",
         category: SystemCategory::Computer,
-        extensions: &["dim", "hdf", "m3u"],
+        extensions: &["dim", "hdf", "m3u", "img", "d88", "88d", "hdm", "dup", "2hd", "xdf", "cmd"],
         launchbox_platforms: &["Sharp X68000"],
     },
     System {
@@ -321,7 +321,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "ZX Spectrum",
         manufacturer: "Sinclair",
         category: SystemCategory::Computer,
-        extensions: &["tzx", "tap", "z80", "sna"],
+        extensions: &["tzx", "tap", "z80", "sna", "rzx", "scl", "trd", "dsk", "dck", "szx"],
         launchbox_platforms: &["Sinclair ZX Spectrum"],
     },
     System {
@@ -345,7 +345,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Neo Geo Pocket",
         manufacturer: "SNK",
         category: SystemCategory::Handheld,
-        extensions: &["ngp", "ngc"],
+        extensions: &["ngp", "ngc", "ngpc", "npc"],
         launchbox_platforms: &["SNK Neo Geo Pocket", "SNK Neo Geo Pocket Color"],
     },
     System {
@@ -353,7 +353,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "PlayStation",
         manufacturer: "Sony",
         category: SystemCategory::Console,
-        extensions: &["chd", "cue", "bin", "img", "pbp", "m3u"],
+        extensions: &["chd", "cue", "bin", "img", "pbp", "m3u", "exe", "psexe", "iso", "ecm", "mds", "psf"],
         launchbox_platforms: &["Sony Playstation"],
     },
     System {
@@ -361,7 +361,7 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Alpha Player",
         manufacturer: "RePlayOS",
         category: SystemCategory::Utility,
-        extensions: &["mkv", "avi", "mp4", "mp3", "flac", "ogg"],
+        extensions: &["mkv", "avi", "mp4", "mp3", "flac", "ogg", "f4v", "f4f", "3gp", "ogm", "flv", "m4a", "webm", "3g2", "mov", "wmv", "mpg", "mpeg", "vob", "asf", "divx", "m2p", "m2ts", "ps", "ts", "mxf", "wma", "wav", "s3m", "it", "xm", "mod", "ay", "gbs", "gym", "hes", "kss", "nsf", "nsfe", "sap", "spc", "vgm", "vgz"],
         launchbox_platforms: &[],
     },
 ];
