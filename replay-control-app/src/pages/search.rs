@@ -41,7 +41,7 @@ pub fn SearchPage() -> impl IntoView {
     let random_loading = RwSignal::new(false);
 
     // Genre list resource.
-    let genres_resource = Resource::new(|| (), |_| server_fns::get_all_genres());
+    let genres_resource = Resource::new_blocking(|| (), |_| server_fns::get_all_genres());
 
     // Load recent searches from localStorage after hydration.
     // This runs as a one-shot effect so SSR and hydration both see an empty
@@ -246,7 +246,7 @@ pub fn SearchPage() -> impl IntoView {
             </div>
 
             // Developer match block (horizontal scroll, shown above regular results).
-            <Transition fallback=|| ()>
+            <Suspense fallback=|| ()>
                 {move || Suspend::new(async move {
                     let locale = i18n.locale.get();
                     let query = debounced_query.get();
@@ -255,9 +255,9 @@ pub fn SearchPage() -> impl IntoView {
                         view! { <DeveloperBlock data locale query /> }
                     }))
                 })}
-            </Transition>
+            </Suspense>
 
-            <Transition fallback=move || view! {
+            <Suspense fallback=move || view! {
                 <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div>
             }>
                 {move || Suspend::new(async move {
@@ -273,7 +273,7 @@ pub fn SearchPage() -> impl IntoView {
                         <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc genre=g />
                     })
                 })}
-            </Transition>
+            </Suspense>
         </div>
     }
 }

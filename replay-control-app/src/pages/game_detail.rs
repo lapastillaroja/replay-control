@@ -44,7 +44,7 @@ pub fn GameDetailPage() -> impl IntoView {
             .unwrap_or(raw)
     };
 
-    let detail = Resource::new(
+    let detail = Resource::new_blocking(
         move || (system(), filename()),
         |(sys, fname)| server_fns::get_rom_detail(sys, fname),
     );

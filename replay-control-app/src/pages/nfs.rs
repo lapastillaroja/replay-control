@@ -10,7 +10,7 @@ use crate::server_fns;
 #[component]
 pub fn NfsPage() -> impl IntoView {
     let i18n = use_i18n();
-    let nfs = Resource::new(|| (), |_| server_fns::get_nfs_config());
+    let nfs = Resource::new_blocking(|| (), |_| server_fns::get_nfs_config());
 
     view! {
         <div class="page settings-page">
@@ -22,12 +22,12 @@ pub fn NfsPage() -> impl IntoView {
             </div>
 
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let config = nfs.await?;
                         Ok::<_, ServerFnError>(view! { <NfsForm config /> })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }

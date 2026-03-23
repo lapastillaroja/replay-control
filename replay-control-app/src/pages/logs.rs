@@ -21,7 +21,7 @@ pub fn LogsPage() -> impl IntoView {
     let source = RwSignal::new("all".to_string());
     let version = RwSignal::new(0u32);
 
-    let logs = Resource::new(
+    let logs = Resource::new_blocking(
         move || (source.get(), version.get()),
         |(src, _)| server_fns::get_system_logs(src, LOG_LINES),
     );
@@ -58,14 +58,14 @@ pub fn LogsPage() -> impl IntoView {
             </div>
 
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let text = logs.await?;
                         Ok::<_, ServerFnError>(view! {
                             <pre class="logs-output">{text}</pre>
                         })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }

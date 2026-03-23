@@ -10,11 +10,11 @@ use crate::util::{format_number, format_size};
 #[component]
 pub fn MetadataPage() -> impl IntoView {
     let i18n = use_i18n();
-    let stats = Resource::new(|| (), |_| server_fns::get_metadata_stats());
-    let coverage = Resource::new(|| (), |_| server_fns::get_system_coverage());
-    let data_source = Resource::new(|| (), |_| server_fns::get_thumbnail_data_source());
-    let image_stats = Resource::new(|| (), |_| server_fns::get_image_stats());
-    let builtin_stats = Resource::new(|| (), |_| server_fns::get_builtin_db_stats());
+    let stats = Resource::new_blocking(|| (), |_| server_fns::get_metadata_stats());
+    let coverage = Resource::new_blocking(|| (), |_| server_fns::get_system_coverage());
+    let data_source = Resource::new_blocking(|| (), |_| server_fns::get_thumbnail_data_source());
+    let image_stats = Resource::new_blocking(|| (), |_| server_fns::get_image_stats());
+    let builtin_stats = Resource::new_blocking(|| (), |_| server_fns::get_builtin_db_stats());
 
     // LaunchBox import state
     let importing = RwSignal::new(false);
@@ -189,7 +189,7 @@ pub fn MetadataPage() -> impl IntoView {
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.system_overview")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let data = coverage.await?;
@@ -241,7 +241,7 @@ pub fn MetadataPage() -> impl IntoView {
                                 }.into_any()
                             })
                         })}
-                    </Transition>
+                    </Suspense>
                 </ErrorBoundary>
             </section>
 
@@ -251,7 +251,7 @@ pub fn MetadataPage() -> impl IntoView {
 
                 // Built-in data info block
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Transition fallback=move || ()>
+                    <Suspense fallback=move || ()>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let bs = builtin_stats.await?;
@@ -280,7 +280,7 @@ pub fn MetadataPage() -> impl IntoView {
                                 </div>
                             })
                         })}
-                    </Transition>
+                    </Suspense>
                 </ErrorBoundary>
 
                 // Descriptions & Ratings (LaunchBox)
@@ -289,7 +289,7 @@ pub fn MetadataPage() -> impl IntoView {
                         <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.descriptions_launchbox")}</span>
                     </div>
                     <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                        <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                             {move || Suspend::new(async move {
                                 let locale = i18n.locale.get();
                                 let data = stats.await?;
@@ -310,7 +310,7 @@ pub fn MetadataPage() -> impl IntoView {
                                     }.into_any()
                                 })
                             })}
-                        </Transition>
+                        </Suspense>
                     </ErrorBoundary>
                     <div class="data-source-actions">
                         <button
@@ -339,7 +339,7 @@ pub fn MetadataPage() -> impl IntoView {
                         <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.thumbnails_libretro")}</span>
                     </div>
                     <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                        <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                             {move || Suspend::new(async move {
                                 let locale = i18n.locale.get();
                                 let ds = data_source.await?;
@@ -394,7 +394,7 @@ pub fn MetadataPage() -> impl IntoView {
                                     }.into_any()
                                 })
                             })}
-                        </Transition>
+                        </Suspense>
                     </ErrorBoundary>
                     <div class="data-source-actions">
                         <button

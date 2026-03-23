@@ -9,7 +9,7 @@ use crate::server_fns;
 #[component]
 pub fn SkinPage() -> impl IntoView {
     let i18n = use_i18n();
-    let skins = Resource::new(|| (), |_| server_fns::get_skins());
+    let skins = Resource::new_blocking(|| (), |_| server_fns::get_skins());
 
     view! {
         <div class="page settings-page">
@@ -21,12 +21,12 @@ pub fn SkinPage() -> impl IntoView {
             </div>
 
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let (current, sync, skins) = skins.await?;
                         Ok::<_, ServerFnError>(view! { <SkinGrid current sync skins /> })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }

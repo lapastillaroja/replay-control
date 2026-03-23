@@ -9,7 +9,7 @@ use crate::server_fns;
 #[component]
 pub fn GithubPage() -> impl IntoView {
     let i18n = use_i18n();
-    let api_key = Resource::new(|| (), |_| server_fns::get_github_api_key());
+    let api_key = Resource::new_blocking(|| (), |_| server_fns::get_github_api_key());
 
     view! {
         <div class="page settings-page">
@@ -21,12 +21,12 @@ pub fn GithubPage() -> impl IntoView {
             </div>
 
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let current = api_key.await?;
                         Ok::<_, ServerFnError>(view! { <ApiKeyForm current /> })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }

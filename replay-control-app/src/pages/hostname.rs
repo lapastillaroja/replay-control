@@ -9,7 +9,7 @@ use crate::server_fns;
 #[component]
 pub fn HostnamePage() -> impl IntoView {
     let i18n = use_i18n();
-    let hostname = Resource::new(|| (), |_| server_fns::get_hostname());
+    let hostname = Resource::new_blocking(|| (), |_| server_fns::get_hostname());
 
     view! {
         <div class="page settings-page">
@@ -21,12 +21,12 @@ pub fn HostnamePage() -> impl IntoView {
             </div>
 
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let current = hostname.await?;
                         Ok::<_, ServerFnError>(view! { <HostnameForm current /> })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }

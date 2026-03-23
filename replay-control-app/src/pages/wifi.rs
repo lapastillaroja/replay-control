@@ -10,7 +10,7 @@ use crate::server_fns;
 #[component]
 pub fn WifiPage() -> impl IntoView {
     let i18n = use_i18n();
-    let wifi = Resource::new(|| (), |_| server_fns::get_wifi_config());
+    let wifi = Resource::new_blocking(|| (), |_| server_fns::get_wifi_config());
 
     view! {
         <div class="page settings-page">
@@ -22,12 +22,12 @@ pub fn WifiPage() -> impl IntoView {
             </div>
 
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let config = wifi.await?;
                         Ok::<_, ServerFnError>(view! { <WifiForm config /> })
                     })}
-                </Transition>
+                </Suspense>
             </ErrorBoundary>
         </div>
     }
