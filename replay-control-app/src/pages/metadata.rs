@@ -4,7 +4,7 @@ use server_fn::ServerFnError;
 
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
-use crate::server_fns::{self, ImportState, RebuildPhase, ThumbnailPhase};
+use crate::server_fns::{self, Activity, ImportState, RebuildPhase, ThumbnailPhase};
 use crate::util::{format_number, format_size};
 
 #[component]
@@ -16,194 +16,132 @@ pub fn MetadataPage() -> impl IntoView {
     let image_stats = Resource::new_blocking(|| (), |_| server_fns::get_image_stats());
     let builtin_stats = Resource::new_blocking(|| (), |_| server_fns::get_builtin_db_stats());
 
-    // LaunchBox import state
-    let importing = RwSignal::new(false);
-    let import_message = RwSignal::new(Option::<String>::None);
-    let progress = RwSignal::new(Option::<server_fns::ImportProgress>::None);
+    // Single activity signal (replaces importing + thumb_updating + rebuilding).
+    let activity = RwSignal::new(Activity::Idle);
 
-    // Thumbnail update state
-    let thumb_updating = RwSignal::new(false);
-    let thumb_progress = RwSignal::new(Option::<server_fns::ThumbnailProgress>::None);
-    let thumb_message = RwSignal::new(Option::<String>::None);
-    let thumb_cancelling = RwSignal::new(false);
+    // Result message signal — set by SSE watcher on terminal events, cleared by client-side timer.
+    let result_message = RwSignal::new(None::<String>);
 
-    // Rebuild state (owned here so on-mount resume can drive it)
-    let rebuilding = RwSignal::new(false);
-    let rebuild_result = RwSignal::new(Option::<String>::None);
-
-    // Unified busy signal — disables all action buttons reactively.
-    let any_busy = Memo::new(move |_| {
-        importing.get() || thumb_updating.get() || rebuilding.get()
+    // Progress signals derived from activity for display components.
+    let import_progress = Memo::new(move |_| match activity.get() {
+        Activity::Import { progress } => Some(progress),
+        _ => None,
     });
+    let thumb_progress = Memo::new(move |_| match activity.get() {
+        Activity::ThumbnailUpdate { progress, .. } => Some(progress),
+        _ => None,
+    });
+
+    // Derived helpers.
+    let is_busy = Memo::new(move |_| !matches!(activity.get(), Activity::Idle));
+    let is_importing = Memo::new(move |_| matches!(activity.get(), Activity::Import { .. }));
+    let is_thumb_updating = Memo::new(move |_| {
+        matches!(activity.get(), Activity::ThumbnailUpdate { .. })
+    });
+    let can_cancel = Memo::new(move |_| {
+        matches!(activity.get(), Activity::ThumbnailUpdate { .. })
+    });
+
+    // Thumbnail cancel UI state (local, not derived from server).
+    let thumb_cancelling = RwSignal::new(false);
 
     // Close any leaked EventSource connections when this component unmounts.
     #[cfg(target_arch = "wasm32")]
     {
         on_cleanup(move || {
-            close_metadata_sse();
-            close_thumbnail_sse();
-            close_rebuild_sse();
+            close_activity_sse();
         });
     }
 
     // Check for in-progress operations on page load.
     Effect::new(move || {
         leptos::task::spawn_local(async move {
-            if let Ok(Some(p)) = server_fns::get_import_progress().await {
-                match p.state {
-                    ImportState::Downloading
-                    | ImportState::BuildingIndex
-                    | ImportState::Parsing => {
-                        progress.set(Some(p));
-                        importing.set(true);
-                        watch_metadata_progress(
-                            importing,
-                            progress,
-                            import_message,
-                            stats,
-                            coverage,
-                        );
-                    }
-                    ImportState::Complete => {
-                        import_message.set(Some(format!(
-                            "Import complete: {} matched, {} inserted ({}s)",
-                            p.matched, p.inserted, p.elapsed_secs,
-                        )));
-                    }
-                    ImportState::Failed => {
-                        import_message.set(Some(format!(
-                            "Import failed: {}",
-                            p.error.as_deref().unwrap_or("unknown error"),
-                        )));
-                    }
-                }
-            }
-        });
-    });
-
-    Effect::new(move || {
-        leptos::task::spawn_local(async move {
-            if let Ok(Some(p)) = server_fns::get_thumbnail_progress().await {
-                match p.phase {
-                    ThumbnailPhase::Indexing | ThumbnailPhase::Downloading => {
-                        thumb_progress.set(Some(p));
-                        thumb_updating.set(true);
-                        watch_thumbnail_progress(
-                            thumb_updating,
-                            thumb_progress,
-                            thumb_message,
-                            thumb_cancelling,
-                            data_source,
-                            image_stats,
-                            coverage,
-                        );
-                    }
-                    ThumbnailPhase::Complete => {
-                        thumb_message.set(Some(format!(
-                            "Complete: {} indexed, {} downloaded ({}s)",
-                            p.entries_indexed, p.downloaded, p.elapsed_secs,
-                        )));
-                    }
-                    ThumbnailPhase::Cancelled => {
-                        thumb_message.set(Some(format!(
-                            "Cancelled after {}s ({} downloaded)",
-                            p.elapsed_secs, p.downloaded,
-                        )));
-                    }
-                    ThumbnailPhase::Failed => {
-                        thumb_message.set(Some(format!(
-                            "Failed: {}",
-                            p.error.as_deref().unwrap_or("unknown error"),
-                        )));
-                    }
-                }
-            }
-        });
-    });
-
-    Effect::new(move || {
-        leptos::task::spawn_local(async move {
-            if let Ok(Some(p)) = server_fns::get_rebuild_progress().await {
-                match p.phase {
-                    RebuildPhase::Scanning | RebuildPhase::Enriching => {
-                        rebuilding.set(true);
-                        watch_rebuild_progress(
-                            rebuilding,
-                            rebuild_result,
-                            stats,
-                            coverage,
-                        );
-                    }
-                    RebuildPhase::Complete => {
-                        rebuild_result.set(Some(format!(
-                            "Rebuild complete ({}s)",
-                            p.elapsed_secs,
-                        )));
-                    }
-                    RebuildPhase::Failed => {
-                        rebuild_result.set(Some(format!(
-                            "Rebuild failed: {}",
-                            p.error.as_deref().unwrap_or("unknown error"),
-                        )));
-                    }
-                }
+            if let Ok(act) = server_fns::get_activity().await
+                && !matches!(act, Activity::Idle)
+            {
+                activity.set(act);
+                watch_activity(
+                    activity,
+                    result_message,
+                    thumb_cancelling,
+                    stats,
+                    coverage,
+                    data_source,
+                    image_stats,
+                );
             }
         });
     });
 
     let on_download = move |_| {
-        if any_busy.get() {
+        if is_busy.get() {
             return;
         }
-        importing.set(true);
-        import_message.set(None);
-        progress.set(None);
+        result_message.set(None);
         leptos::task::spawn_local(async move {
             match server_fns::download_metadata().await {
                 Ok(()) => {
-                    watch_metadata_progress(importing, progress, import_message, stats, coverage);
+                    // Set a placeholder activity so buttons disable immediately.
+                    activity.set(Activity::Import {
+                        progress: server_fns::ImportProgress {
+                            state: ImportState::Downloading,
+                            processed: 0,
+                            matched: 0,
+                            inserted: 0,
+                            elapsed_secs: 0,
+                            error: None,
+                        },
+                    });
+                    watch_activity(
+                        activity,
+                        result_message,
+                        thumb_cancelling,
+                        stats,
+                        coverage,
+                        data_source,
+                        image_stats,
+                    );
                 }
                 Err(e) => {
-                    import_message.set(Some(format!("Error: {e}")));
-                    importing.set(false);
+                    result_message.set(Some(format!("Error: {e}")));
                 }
             }
         });
     };
 
     let on_thumb_update = move |_| {
-        if any_busy.get() {
+        if is_busy.get() {
             return;
         }
-        thumb_updating.set(true);
         thumb_cancelling.set(false);
-        thumb_message.set(None);
+        result_message.set(None);
         leptos::task::spawn_local(async move {
-            thumb_progress.set(Some(server_fns::ThumbnailProgress {
-                phase: ThumbnailPhase::Indexing,
-                current_label: String::new(),
-                step_done: 0,
-                step_total: 0,
-                downloaded: 0,
-                entries_indexed: 0,
-                elapsed_secs: 0,
-                error: None,
-            }));
             match server_fns::update_thumbnails().await {
                 Ok(()) => {
-                    watch_thumbnail_progress(
-                        thumb_updating,
-                        thumb_progress,
-                        thumb_message,
+                    activity.set(server_fns::make_thumbnail_update_activity(
+                        server_fns::ThumbnailProgress {
+                            phase: ThumbnailPhase::Indexing,
+                            current_label: String::new(),
+                            step_done: 0,
+                            step_total: 0,
+                            downloaded: 0,
+                            entries_indexed: 0,
+                            elapsed_secs: 0,
+                            error: None,
+                        },
+                    ));
+                    watch_activity(
+                        activity,
+                        result_message,
                         thumb_cancelling,
+                        stats,
+                        coverage,
                         data_source,
                         image_stats,
-                        coverage,
                     );
                 }
                 Err(e) => {
-                    thumb_message.set(Some(format!("Error: {e}")));
-                    thumb_updating.set(false);
+                    result_message.set(Some(format!("Error: {e}")));
                 }
             }
         });
@@ -356,20 +294,22 @@ pub fn MetadataPage() -> impl IntoView {
                         <button
                             class="metadata-download-btn"
                             on:click=on_download
-                            disabled=move || any_busy.get()
+                            disabled=move || is_busy.get()
                         >
-                            {move || if importing.get() {
+                            {move || if is_importing.get() {
                                 t(i18n.locale.get(), "metadata.downloading_metadata")
                             } else {
                                 t(i18n.locale.get(), "metadata.download_metadata")
                             }}
                         </button>
                     </div>
-                    <Show when=move || progress.read().is_some()>
-                        <ImportProgressDisplay progress />
+                    <Show when=move || import_progress.get().is_some()>
+                        <ImportProgressDisplay progress=import_progress />
                     </Show>
-                    <Show when=move || import_message.read().is_some()>
-                        <p class="settings-saved">{move || import_message.get().unwrap_or_default()}</p>
+                    <Show when=move || {
+                        result_message.read().is_some() && matches!(activity.get(), Activity::Idle | Activity::Import { .. })
+                    }>
+                        <p class="settings-saved">{move || result_message.get().unwrap_or_default()}</p>
                     </Show>
                 </div>
 
@@ -440,15 +380,15 @@ pub fn MetadataPage() -> impl IntoView {
                         <button
                             class="metadata-download-btn"
                             on:click=on_thumb_update
-                            disabled=move || any_busy.get()
+                            disabled=move || is_busy.get()
                         >
-                            {move || if thumb_updating.get() {
+                            {move || if is_thumb_updating.get() {
                                 t(i18n.locale.get(), "metadata.thumbnail_updating")
                             } else {
                                 t(i18n.locale.get(), "metadata.thumbnail_update")
                             }}
                         </button>
-                        <Show when=move || thumb_updating.get()>
+                        <Show when=move || can_cancel.get()>
                             <button
                                 class="form-btn form-btn-secondary"
                                 on:click=on_thumb_cancel
@@ -462,17 +402,19 @@ pub fn MetadataPage() -> impl IntoView {
                             </button>
                         </Show>
                     </div>
-                    <Show when=move || thumb_progress.read().is_some()>
+                    <Show when=move || thumb_progress.get().is_some()>
                         <ThumbnailProgressDisplay progress=thumb_progress />
                     </Show>
-                    <Show when=move || thumb_message.read().is_some()>
-                        <p class="settings-saved">{move || thumb_message.get().unwrap_or_default()}</p>
+                    <Show when=move || {
+                        result_message.read().is_some() && matches!(activity.get(), Activity::Idle) && !is_importing.get()
+                    }>
+                        <p class="settings-saved">{move || result_message.get().unwrap_or_default()}</p>
                     </Show>
                 </div>
             </section>
 
             // ── Data Management ───────────────────────────────────────
-            <DataManagementSection stats coverage rebuilding rebuild_result any_busy />
+            <DataManagementSection stats coverage activity result_message is_busy />
 
             // ── Attribution ───────────────────────────────────────────
             <section class="section">
@@ -484,39 +426,15 @@ pub fn MetadataPage() -> impl IntoView {
 }
 
 // ── EventSource lifecycle management ─────────────────────────────────────
-//
-// We track active SSE connections in thread-locals so we can close old ones
-// before opening new ones (prevents leaked connections on SPA navigation)
-// and close them on component unmount via on_cleanup.
 
 #[cfg(target_arch = "wasm32")]
 thread_local! {
-    static METADATA_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
-    static THUMBNAIL_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
-    static REBUILD_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
+    static ACTIVITY_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_arch = "wasm32")]
-fn close_metadata_sse() {
-    METADATA_ES.with(|cell| {
-        if let Some(es) = cell.borrow_mut().take() {
-            es.close();
-        }
-    });
-}
-
-#[cfg(target_arch = "wasm32")]
-fn close_thumbnail_sse() {
-    THUMBNAIL_ES.with(|cell| {
-        if let Some(es) = cell.borrow_mut().take() {
-            es.close();
-        }
-    });
-}
-
-#[cfg(target_arch = "wasm32")]
-fn close_rebuild_sse() {
-    REBUILD_ES.with(|cell| {
+fn close_activity_sse() {
+    ACTIVITY_ES.with(|cell| {
         if let Some(es) = cell.borrow_mut().take() {
             es.close();
         }
@@ -525,113 +443,18 @@ fn close_rebuild_sse() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
-fn close_metadata_sse() {}
+fn close_activity_sse() {}
 
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(dead_code)]
-fn close_thumbnail_sse() {}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(dead_code)]
-fn close_rebuild_sse() {}
-
-/// Watches metadata import progress via SSE.
+/// Watches activity progress via single SSE endpoint.
 #[allow(unused_variables, unreachable_code)]
-fn watch_metadata_progress(
-    importing: RwSignal<bool>,
-    progress: RwSignal<Option<server_fns::ImportProgress>>,
-    import_message: RwSignal<Option<String>>,
+fn watch_activity(
+    activity: RwSignal<Activity>,
+    result_message: RwSignal<Option<String>>,
+    thumb_cancelling: RwSignal<bool>,
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
-) {
-    #[cfg(not(target_arch = "wasm32"))]
-    return;
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::prelude::*;
-
-        // Close any existing metadata SSE connection before opening a new one.
-        close_metadata_sse();
-
-        let es = match web_sys::EventSource::new("/sse/metadata-progress") {
-            Ok(es) => es,
-            Err(_) => return,
-        };
-
-        // Track this connection so on_cleanup or a future call can close it.
-        METADATA_ES.with(|cell| {
-            *cell.borrow_mut() = Some(es.clone());
-        });
-
-        let es_clone = es.clone();
-        let on_message =
-            Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-                let data = event.data().as_string().unwrap_or_default();
-                if data == "null" || data.is_empty() {
-                    return;
-                }
-                let p: server_fns::ImportProgress = match serde_json::from_str(&data) {
-                    Ok(p) => p,
-                    Err(_) => return,
-                };
-
-                let done = matches!(p.state, ImportState::Complete | ImportState::Failed);
-
-                if p.state == ImportState::Complete {
-                    import_message.set(Some(format!(
-                        "Import complete: {} matched, {} inserted ({}s)",
-                        p.matched, p.inserted, p.elapsed_secs,
-                    )));
-                } else if p.state == ImportState::Failed {
-                    import_message.set(Some(format!(
-                        "Import failed: {}",
-                        p.error.as_deref().unwrap_or("unknown error"),
-                    )));
-                }
-
-                progress.set(Some(p));
-
-                if done {
-                    importing.set(false);
-                    stats.refetch();
-                    coverage.refetch();
-                    es_clone.close();
-                    METADATA_ES.with(|cell| {
-                        cell.borrow_mut().take();
-                    });
-                }
-            });
-
-        es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        on_message.forget();
-
-        // When the server closes the stream (idle timeout), close our side
-        // to prevent EventSource auto-reconnect spam.
-        // Also clear the importing flag so buttons re-enable.
-        let es_err = es.clone();
-        let on_error = Closure::<dyn Fn()>::new(move || {
-            es_err.close();
-            importing.set(false);
-            METADATA_ES.with(|cell| {
-                cell.borrow_mut().take();
-            });
-        });
-        es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-        on_error.forget();
-    }
-}
-
-/// Watches thumbnail update progress via SSE.
-#[allow(unused_variables, unreachable_code)]
-fn watch_thumbnail_progress(
-    updating: RwSignal<bool>,
-    progress: RwSignal<Option<server_fns::ThumbnailProgress>>,
-    message: RwSignal<Option<String>>,
-    cancelling: RwSignal<bool>,
     data_source: Resource<Result<server_fns::DataSourceSummary, ServerFnError>>,
     image_stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
-    coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     return;
@@ -640,16 +463,16 @@ fn watch_thumbnail_progress(
     {
         use wasm_bindgen::prelude::*;
 
-        // Close any existing thumbnail SSE connection before opening a new one.
-        close_thumbnail_sse();
+        // Close any existing SSE connection before opening a new one.
+        close_activity_sse();
 
-        let es = match web_sys::EventSource::new("/sse/thumbnail-progress") {
+        let es = match web_sys::EventSource::new("/sse/activity") {
             Ok(es) => es,
             Err(_) => return,
         };
 
         // Track this connection so on_cleanup or a future call can close it.
-        THUMBNAIL_ES.with(|cell| {
+        ACTIVITY_ES.with(|cell| {
             *cell.borrow_mut() = Some(es.clone());
         });
 
@@ -657,169 +480,64 @@ fn watch_thumbnail_progress(
         let on_message =
             Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
                 let data = event.data().as_string().unwrap_or_default();
-                if data == "null" || data.is_empty() {
+                if data.is_empty() {
                     return;
                 }
-                let p: server_fns::ThumbnailProgress = match serde_json::from_str(&data) {
-                    Ok(p) => p,
+                let act: Activity = match serde_json::from_str(&data) {
+                    Ok(act) => act,
                     Err(_) => return,
                 };
 
-                let done = matches!(
-                    p.phase,
-                    ThumbnailPhase::Complete | ThumbnailPhase::Failed | ThumbnailPhase::Cancelled
-                );
+                if act.is_terminal() {
+                    // Extract completion text before resetting to Idle.
+                    let message = act.terminal_message();
 
-                if done {
-                    cancelling.set(false);
-                    match p.phase {
-                        ThumbnailPhase::Complete => {
-                            message.set(Some(format!(
-                                "Complete: {} indexed, {} downloaded ({}s)",
-                                p.entries_indexed, p.downloaded, p.elapsed_secs,
-                            )));
-                        }
-                        ThumbnailPhase::Cancelled => {
-                            message.set(Some(format!(
-                                "Cancelled after {}s ({} downloaded)",
-                                p.elapsed_secs, p.downloaded,
-                            )));
-                        }
-                        ThumbnailPhase::Failed => {
-                            message.set(Some(format!(
-                                "Failed: {}",
-                                p.error.as_deref().unwrap_or("unknown error"),
-                            )));
-                        }
-                        _ => {}
+                    // Reset cancelling state if this was a thumbnail operation.
+                    if matches!(act, Activity::ThumbnailUpdate { .. }) {
+                        thumb_cancelling.set(false);
                     }
-                    progress.set(Some(p));
-                    updating.set(false);
+
+                    // 1. Set activity to Idle immediately (buttons re-enable).
+                    activity.set(Activity::Idle);
+
+                    // 2. Set result message for display.
+                    if !message.is_empty() {
+                        result_message.set(Some(message));
+
+                        // 3. Start client-side timer to clear the message after 5s.
+                        gloo_timers::callback::Timeout::new(5_000, move || {
+                            result_message.set(None);
+                        })
+                        .forget();
+                    }
+
+                    // Refetch relevant resources.
+                    stats.refetch();
+                    coverage.refetch();
                     data_source.refetch();
                     image_stats.refetch();
-                    coverage.refetch();
+
+                    // Close SSE — operation is done.
                     es_clone.close();
-                    THUMBNAIL_ES.with(|cell| {
+                    ACTIVITY_ES.with(|cell| {
                         cell.borrow_mut().take();
                     });
-                    return;
-                }
+                } else if matches!(act, Activity::Idle) {
+                    // Server went Idle (guard dropped). Update activity signal.
+                    activity.set(Activity::Idle);
+                    // Refetch in case we missed a terminal event.
+                    stats.refetch();
+                    coverage.refetch();
+                    data_source.refetch();
+                    image_stats.refetch();
 
-                progress.set(Some(p));
-            });
-
-        es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        on_message.forget();
-
-        // When the server closes the stream (idle timeout), close our side
-        // to prevent EventSource auto-reconnect spam.
-        // Also clear the updating flag so buttons re-enable.
-        let es_err = es.clone();
-        let on_error = Closure::<dyn Fn()>::new(move || {
-            es_err.close();
-            updating.set(false);
-            THUMBNAIL_ES.with(|cell| {
-                cell.borrow_mut().take();
-            });
-        });
-        es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-        on_error.forget();
-    }
-}
-
-/// Watches rebuild progress via SSE.
-#[allow(unused_variables, unreachable_code)]
-fn watch_rebuild_progress(
-    rebuilding: RwSignal<bool>,
-    rebuild_result: RwSignal<Option<String>>,
-    stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
-    coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
-) {
-    #[cfg(not(target_arch = "wasm32"))]
-    return;
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::prelude::*;
-
-        // Close any existing rebuild SSE connection before opening a new one.
-        close_rebuild_sse();
-
-        let es = match web_sys::EventSource::new("/sse/rebuild-progress") {
-            Ok(es) => es,
-            Err(_) => return,
-        };
-
-        // Track this connection so on_cleanup or a future call can close it.
-        REBUILD_ES.with(|cell| {
-            *cell.borrow_mut() = Some(es.clone());
-        });
-
-        let es_clone = es.clone();
-        let on_message =
-            Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-                let data = event.data().as_string().unwrap_or_default();
-                if data == "null" || data.is_empty() {
-                    return;
-                }
-                let p: server_fns::RebuildProgress = match serde_json::from_str(&data) {
-                    Ok(p) => p,
-                    Err(_) => return,
-                };
-
-                match p.phase {
-                    RebuildPhase::Scanning => {
-                        let msg = if p.systems_total > 0 {
-                            format!(
-                                "Scanning {}... ({}/{})",
-                                p.current_system, p.systems_done, p.systems_total,
-                            )
-                        } else if p.current_system.is_empty() {
-                            "Scanning...".to_string()
-                        } else {
-                            format!("Scanning {}...", p.current_system)
-                        };
-                        rebuild_result.set(Some(msg));
-                    }
-                    RebuildPhase::Enriching => {
-                        let msg = if p.systems_total > 0 {
-                            format!(
-                                "Enriching {}... ({}/{})",
-                                p.current_system, p.systems_done, p.systems_total,
-                            )
-                        } else if p.current_system.is_empty() {
-                            "Enriching...".to_string()
-                        } else {
-                            format!("Enriching {}...", p.current_system)
-                        };
-                        rebuild_result.set(Some(msg));
-                    }
-                    RebuildPhase::Complete => {
-                        rebuild_result.set(Some(format!(
-                            "Rebuild complete ({}s)",
-                            p.elapsed_secs,
-                        )));
-                        rebuilding.set(false);
-                        stats.refetch();
-                        coverage.refetch();
-                        es_clone.close();
-                        REBUILD_ES.with(|cell| {
-                            cell.borrow_mut().take();
-                        });
-                    }
-                    RebuildPhase::Failed => {
-                        rebuild_result.set(Some(format!(
-                            "Rebuild failed: {}",
-                            p.error.as_deref().unwrap_or("unknown error"),
-                        )));
-                        rebuilding.set(false);
-                        stats.refetch();
-                        coverage.refetch();
-                        es_clone.close();
-                        REBUILD_ES.with(|cell| {
-                            cell.borrow_mut().take();
-                        });
-                    }
+                    // Close SSE.
+                    es_clone.close();
+                    ACTIVITY_ES.with(|cell| {
+                        cell.borrow_mut().take();
+                    });
+                } else {
+                    activity.set(act);
                 }
             });
 
@@ -828,12 +546,11 @@ fn watch_rebuild_progress(
 
         // When the server closes the stream (idle timeout), close our side
         // to prevent EventSource auto-reconnect spam.
-        // Also clear the rebuilding flag so buttons re-enable.
         let es_err = es.clone();
         let on_error = Closure::<dyn Fn()>::new(move || {
             es_err.close();
-            rebuilding.set(false);
-            REBUILD_ES.with(|cell| {
+            activity.set(Activity::Idle);
+            ACTIVITY_ES.with(|cell| {
                 cell.borrow_mut().take();
             });
         });
@@ -844,7 +561,7 @@ fn watch_rebuild_progress(
 
 /// Displays real-time import progress.
 #[component]
-fn ImportProgressDisplay(progress: RwSignal<Option<server_fns::ImportProgress>>) -> impl IntoView {
+fn ImportProgressDisplay(progress: Memo<Option<server_fns::ImportProgress>>) -> impl IntoView {
     let i18n = use_i18n();
 
     view! {
@@ -889,7 +606,7 @@ fn ImportProgressDisplay(progress: RwSignal<Option<server_fns::ImportProgress>>)
 /// Displays thumbnail update progress.
 #[component]
 fn ThumbnailProgressDisplay(
-    progress: RwSignal<Option<server_fns::ThumbnailProgress>>,
+    progress: Memo<Option<server_fns::ThumbnailProgress>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
 
@@ -903,7 +620,7 @@ fn ThumbnailProgressDisplay(
                             ThumbnailPhase::Indexing => {
                                 if p.step_total > 0 {
                                     format!(
-                                        "{} {}/{} {}",
+                                        "{} {}/{} done — {}",
                                         t(locale, "metadata.thumbnail_phase_indexing"),
                                         p.step_done,
                                         p.step_total,
@@ -958,25 +675,51 @@ fn ThumbnailProgressDisplay(
 }
 
 /// Data Management section with main and advanced actions.
-///
-/// Main actions (always visible):
-/// - Rebuild Game Library
-/// - Cleanup Orphaned Images
-///
-/// Advanced actions (collapsed by default, destructive/costly):
-/// - Clear Downloaded Images (re-download is very costly)
-/// - Clear Metadata
-/// - Clear Thumbnail Index
 #[component]
 fn DataManagementSection(
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
-    rebuilding: RwSignal<bool>,
-    rebuild_result: RwSignal<Option<String>>,
-    any_busy: Memo<bool>,
+    activity: RwSignal<Activity>,
+    result_message: RwSignal<Option<String>>,
+    is_busy: Memo<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let show_advanced = RwSignal::new(false);
+
+    // Rebuild state
+    let rebuilding = Memo::new(move |_| matches!(activity.get(), Activity::Rebuild { .. }));
+    let rebuild_display = Memo::new(move |_| match activity.get() {
+        Activity::Rebuild { progress } => {
+            match progress.phase {
+                RebuildPhase::Scanning => {
+                    if progress.systems_total > 0 {
+                        Some(format!(
+                            "Scanning {}... ({}/{})",
+                            progress.current_system, progress.systems_done, progress.systems_total,
+                        ))
+                    } else if progress.current_system.is_empty() {
+                        Some("Scanning...".to_string())
+                    } else {
+                        Some(format!("Scanning {}...", progress.current_system))
+                    }
+                }
+                RebuildPhase::Enriching => {
+                    if progress.systems_total > 0 {
+                        Some(format!(
+                            "Enriching {}... ({}/{})",
+                            progress.current_system, progress.systems_done, progress.systems_total,
+                        ))
+                    } else if progress.current_system.is_empty() {
+                        Some("Enriching...".to_string())
+                    } else {
+                        Some(format!("Enriching {}...", progress.current_system))
+                    }
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    });
 
     // Rebuild Game Library
     let confirming_rebuild = RwSignal::new(false);
@@ -1002,27 +745,41 @@ fn DataManagementSection(
     let metadata_result = RwSignal::new(Option::<String>::None);
 
     let on_rebuild = Callback::new(move |_: leptos::ev::MouseEvent| {
-        if any_busy.get() {
+        if is_busy.get() {
             return;
         }
-        rebuilding.set(true);
-        rebuild_result.set(None);
+        result_message.set(None);
         confirming_rebuild.set(false);
         leptos::task::spawn_local(async move {
             match server_fns::rebuild_game_library().await {
                 Ok(()) => {
-                    watch_rebuild_progress(rebuilding, rebuild_result, stats, coverage);
+                    // The server has claimed Activity::Rebuild. Fetch it to set local state,
+                    // then start watching.
+                    if let Ok(act) = server_fns::get_activity().await {
+                        activity.set(act);
+                    }
+                    // We need to start watching even if get_activity returned Idle
+                    // (the rebuild might already be done by the time we check).
+                    // watch_activity handles Idle gracefully.
+                    watch_activity(
+                        activity,
+                        result_message,
+                        RwSignal::new(false), // no cancelling for rebuild
+                        stats,
+                        coverage,
+                        Resource::new_blocking(|| (), |_| server_fns::get_thumbnail_data_source()),
+                        Resource::new_blocking(|| (), |_| server_fns::get_image_stats()),
+                    );
                 }
                 Err(e) => {
-                    rebuild_result.set(Some(format!("Error: {e}")));
-                    rebuilding.set(false);
+                    result_message.set(Some(format!("Error: {e}")));
                 }
             }
         });
     });
 
     let on_clear_images = Callback::new(move |_: leptos::ev::MouseEvent| {
-        if any_busy.get() {
+        if is_busy.get() {
             return;
         }
         clearing_images.set(true);
@@ -1044,7 +801,7 @@ fn DataManagementSection(
     });
 
     let on_cleanup_orphans = Callback::new(move |_: leptos::ev::MouseEvent| {
-        if any_busy.get() {
+        if is_busy.get() {
             return;
         }
         cleaning_orphans.set(true);
@@ -1067,7 +824,7 @@ fn DataManagementSection(
     });
 
     let on_clear_index = Callback::new(move |_: leptos::ev::MouseEvent| {
-        if any_busy.get() {
+        if is_busy.get() {
             return;
         }
         clearing_index.set(true);
@@ -1089,7 +846,7 @@ fn DataManagementSection(
     });
 
     let on_clear_metadata = Callback::new(move |_: leptos::ev::MouseEvent| {
-        if any_busy.get() {
+        if is_busy.get() {
             return;
         }
         clearing_metadata.set(true);
@@ -1120,12 +877,13 @@ fn DataManagementSection(
                 <ClearActionCard
                     confirming=confirming_rebuild
                     clearing=rebuilding
-                    result=rebuild_result
+                    result=result_message
                     label_key="metadata.rebuild_game_library"
                     clearing_key="metadata.rebuilding_game_library"
                     confirm_key="metadata.confirm_rebuild_game_library"
                     on_confirm=on_rebuild
-                    disabled=any_busy
+                    disabled=is_busy
+                    progress_text=rebuild_display
                 />
                 <ClearActionCard
                     confirming=confirming_orphans
@@ -1135,7 +893,7 @@ fn DataManagementSection(
                     clearing_key="metadata.cleaning_orphans"
                     confirm_key="metadata.confirm_cleanup_orphans"
                     on_confirm=on_cleanup_orphans
-                    disabled=any_busy
+                    disabled=is_busy
                 />
             </div>
 
@@ -1159,7 +917,7 @@ fn DataManagementSection(
                         clearing_key="metadata.clearing_images"
                         confirm_key="metadata.confirm_clear_images"
                         on_confirm=on_clear_images
-                        disabled=any_busy
+                        disabled=is_busy
                     />
                     <ClearActionCard
                         confirming=confirming_metadata
@@ -1169,7 +927,7 @@ fn DataManagementSection(
                         clearing_key="metadata.clearing_metadata"
                         confirm_key="metadata.confirm_clear_metadata"
                         on_confirm=on_clear_metadata
-                        disabled=any_busy
+                        disabled=is_busy
                     />
                     <ClearActionCard
                         confirming=confirming_index
@@ -1179,7 +937,7 @@ fn DataManagementSection(
                         clearing_key="metadata.clearing_index"
                         confirm_key="metadata.confirm_clear_index"
                         on_confirm=on_clear_index
-                        disabled=any_busy
+                        disabled=is_busy
                     />
                 </div>
             </Show>
@@ -1191,13 +949,15 @@ fn DataManagementSection(
 #[component]
 fn ClearActionCard(
     confirming: RwSignal<bool>,
-    clearing: RwSignal<bool>,
+    #[prop(into)] clearing: Signal<bool>,
     result: RwSignal<Option<String>>,
     #[prop(into)] label_key: &'static str,
     #[prop(into)] clearing_key: &'static str,
     #[prop(into)] confirm_key: &'static str,
     on_confirm: Callback<leptos::ev::MouseEvent>,
     #[prop(optional)] disabled: Option<Memo<bool>>,
+    /// Live progress text shown while the operation runs (e.g., rebuild per-system progress).
+    #[prop(optional)] progress_text: Option<Memo<Option<String>>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let externally_disabled = move || disabled.is_some_and(|d| d.get());
@@ -1233,6 +993,9 @@ fn ClearActionCard(
                     </button>
                 </div>
             </Show>
+            {move || progress_text.and_then(|pt| pt.get()).map(|text| view! {
+                <p class="manage-action-progress">{text}</p>
+            })}
             <Show when=move || result.read().is_some()>
                 <p class="manage-action-result">{move || result.get().unwrap_or_default()}</p>
             </Show>

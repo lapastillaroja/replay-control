@@ -1,3 +1,4 @@
+pub mod activity;
 pub(crate) mod background;
 pub(crate) mod cache;
 pub(crate) mod core_api;
@@ -8,6 +9,7 @@ pub mod roms;
 pub mod system_info;
 pub mod upload;
 
+pub use activity::{Activity, ActivityGuard, MaintenanceKind, StartupPhase};
 pub use background::BackgroundManager;
 pub use cache::GameLibrary;
 pub use import::{ImportPipeline, ThumbnailPipeline};
@@ -405,14 +407,9 @@ pub struct AppState {
     pub thumbnails: Arc<ThumbnailPipeline>,
     /// Track in-flight on-demand thumbnail downloads to avoid duplicates.
     pub pending_downloads: Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
-    /// Unified busy flag: true when any background operation is running.
-    busy: Arc<std::sync::atomic::AtomicBool>,
-    /// Human-readable label for the current background operation (empty = idle).
-    pub(crate) busy_label: Arc<std::sync::RwLock<String>>,
-    /// Scanning indicator: true only during Phase 2 (game library populate).
-    scanning: Arc<std::sync::atomic::AtomicBool>,
-    /// Rebuild progress: set during game library rebuild, cleared when done.
-    rebuild_progress: Arc<std::sync::RwLock<Option<crate::server_fns::RebuildProgress>>>,
+    /// Unified activity state: at most one activity at a time.
+    /// Replaces `busy`, `busy_label`, `scanning`, and `rebuild_progress`.
+    pub(crate) activity: Arc<std::sync::RwLock<Activity>>,
 }
 
 /// Opener for metadata DB.
@@ -489,12 +486,10 @@ impl AppState {
         tracing::info!("User data DB ready at {}", ud_path.display());
         let user_data_pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;
 
-        // Unified busy flag shared across all background operations.
-        let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let scanning = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
 
-        let import = Arc::new(ImportPipeline::new(busy.clone()));
-        let thumbnails = Arc::new(ThumbnailPipeline::new(busy.clone()));
+        let import = Arc::new(ImportPipeline::new());
+        let thumbnails = Arc::new(ThumbnailPipeline::new());
 
         // Read skin preference from `.replay-control/settings.cfg` before
         // `storage` is moved into the Arc below.
@@ -506,7 +501,7 @@ impl AppState {
             config_path,
             cache: Arc::new(GameLibrary::new(
                 metadata_pool.clone(),
-                scanning.clone(),
+                activity.clone(),
             )),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(initial_skin)),
@@ -515,10 +510,7 @@ impl AppState {
             import,
             thumbnails,
             pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
-            busy,
-            busy_label: Arc::new(std::sync::RwLock::new(String::new())),
-            scanning,
-            rebuild_progress: Arc::new(std::sync::RwLock::new(None)),
+            activity,
         })
     }
 
@@ -634,51 +626,6 @@ impl AppState {
         }
     }
 
-    /// Check if any background operation is running.
-    pub fn is_busy(&self) -> bool {
-        self.busy.load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    /// Atomically claim the busy slot. Returns true if successfully claimed.
-    pub fn claim_busy(&self) -> bool {
-        !self.busy.swap(true, std::sync::atomic::Ordering::SeqCst)
-    }
-
-    /// Get a clone of the busy flag Arc (for passing to background tasks).
-    pub fn busy_flag(&self) -> Arc<std::sync::atomic::AtomicBool> {
-        self.busy.clone()
-    }
-
-    /// Check if the game library scan (Phase 2) is in progress.
-    pub fn is_scanning(&self) -> bool {
-        self.scanning.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Set the human-readable label for the current background operation.
-    pub fn set_busy_label(&self, label: &str) {
-        *self.busy_label.write().expect("busy_label lock") = label.to_string();
-    }
-
-    /// Get the current busy label (empty if idle).
-    pub fn get_busy_label(&self) -> String {
-        self.busy_label.read().expect("busy_label lock").clone()
-    }
-
-    /// Get current rebuild progress (clone).
-    pub fn rebuild_progress(&self) -> Option<crate::server_fns::RebuildProgress> {
-        self.rebuild_progress
-            .read()
-            .expect("rebuild_progress lock")
-            .clone()
-    }
-
-    /// Set rebuild progress.
-    pub fn set_rebuild_progress(&self, progress: Option<crate::server_fns::RebuildProgress>) {
-        *self
-            .rebuild_progress
-            .write()
-            .expect("rebuild_progress lock") = progress;
-    }
 }
 
 /// Build the application router with API routes, server function handler,

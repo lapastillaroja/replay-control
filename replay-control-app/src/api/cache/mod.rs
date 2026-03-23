@@ -100,16 +100,15 @@ pub struct GameLibrary {
     pub(super) images: std::sync::RwLock<HashMap<String, Arc<ImageIndex>>>,
     /// Metadata DB pool for L2 persistent cache.
     pub(super) db: DbPool,
-    /// Scanning indicator (same Arc as AppState.scanning).
-    /// True only during Phase 2 game library populate.
-    /// Used by get_roms() to return empty during startup scan.
-    pub(crate) scanning: Arc<std::sync::atomic::AtomicBool>,
+    /// Shared activity state. Used by get_roms() to check if startup scanning
+    /// is in progress (suppresses L3 filesystem scans during Phase 2).
+    activity: Arc<std::sync::RwLock<super::activity::Activity>>,
 }
 
 impl GameLibrary {
     pub(crate) fn new(
         db: DbPool,
-        scanning: Arc<std::sync::atomic::AtomicBool>,
+        activity: Arc<std::sync::RwLock<super::activity::Activity>>,
     ) -> Self {
         Self {
             systems: std::sync::RwLock::new(None),
@@ -118,7 +117,7 @@ impl GameLibrary {
             recents: std::sync::RwLock::new(None),
             images: std::sync::RwLock::new(HashMap::new()),
             db,
-            scanning,
+            activity,
         }
     }
 
@@ -263,11 +262,22 @@ impl GameLibrary {
         }
 
         // During startup scanning (Phase 2), return empty — the pipeline will populate.
-        // Only `scanning` blocks here, not `busy` — busy is also set during thumbnail
-        // update and import, which should NOT prevent ROM lookups.
-        if self.scanning.load(std::sync::atomic::Ordering::Acquire) {
-            tracing::debug!("get_roms({system}): returning empty (startup scan in progress)");
-            return Ok(Arc::new(Vec::new()));
+        // Only Startup { Scanning } blocks here, not other activities — thumbnail
+        // update and import should NOT prevent ROM lookups.
+        {
+            let is_scanning = self.activity.read().is_ok_and(|act| {
+                matches!(
+                    *act,
+                    super::activity::Activity::Startup {
+                        phase: super::activity::StartupPhase::Scanning,
+                        ..
+                    }
+                )
+            });
+            if is_scanning {
+                tracing::debug!("get_roms({system}): returning empty (startup scan in progress)");
+                return Ok(Arc::new(Vec::new()));
+            }
         }
 
         // L3: full filesystem scan (user-triggered, outside warmup).
@@ -525,14 +535,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scanning_flag_blocks_l3_scan() {
-        let scanning = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    fn startup_scanning_blocks_l3_scan() {
+        use crate::api::activity::{Activity, StartupPhase};
+
+        let activity = Arc::new(std::sync::RwLock::new(Activity::Startup {
+            phase: StartupPhase::Scanning,
+            system: String::new(),
+        }));
         // Create a dummy DbPool with no connection (closed).
         let db = DbPool::new_closed("test");
-        let cache = GameLibrary::new(db, scanning.clone());
-
-        // Set scanning (simulates Phase 2 startup scan).
-        scanning.store(true, std::sync::atomic::Ordering::SeqCst);
+        let cache = GameLibrary::new(db, activity.clone());
 
         let tmp = std::env::temp_dir().join(format!(
             "replay-cache-test-{}-{:?}",
@@ -546,7 +558,7 @@ mod tests {
             replay_control_core::storage::StorageKind::Sd,
         );
 
-        // get_roms should return empty during scanning.
+        // get_roms should return empty during startup scanning.
         let result = cache.get_roms(
             &storage,
             "test_system",
@@ -555,44 +567,39 @@ mod tests {
         );
         assert!(result.unwrap().is_empty());
 
-        scanning.store(false, std::sync::atomic::Ordering::SeqCst);
+        // Set to Idle — should allow L3 scans again.
+        *activity.write().unwrap() = Activity::Idle;
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    /// Warmup flag is cleared by RAII guard even on panic.
+    /// ActivityGuard is cleared on drop.
     /// This validates the guard pattern used in BackgroundManager::run_pipeline.
     #[test]
-    fn warmup_flag_cleared_by_guard_on_drop() {
-        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    fn activity_guard_resets_to_idle_on_drop() {
+        use crate::api::activity::{Activity, StartupPhase};
 
-        // Simulate what run_pipeline does: set flag, create guard, then drop.
-        flag.store(true, std::sync::atomic::Ordering::SeqCst);
-        assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
+        let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
 
         {
-            let flag_clone = flag.clone();
-            // This is the same Guard pattern from background.rs.
-            struct Guard<F: FnOnce()>(Option<F>);
-            impl<F: FnOnce()> Guard<F> {
-                fn new(f: F) -> Self {
-                    Self(Some(f))
-                }
-            }
-            impl<F: FnOnce()> Drop for Guard<F> {
-                fn drop(&mut self) {
-                    if let Some(f) = self.0.take() {
-                        f();
-                    }
-                }
-            }
-            let _guard = Guard::new(move || {
-                flag_clone.store(false, std::sync::atomic::Ordering::SeqCst);
-            });
-            // Guard is alive here -- flag should still be true.
-            assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
+            // Simulate what run_pipeline does: set startup, then drop guard.
+            *activity.write().unwrap() = Activity::Startup {
+                phase: StartupPhase::Scanning,
+                system: String::new(),
+            };
+            assert!(matches!(
+                *activity.read().unwrap(),
+                Activity::Startup { .. }
+            ));
+
+            let _guard = crate::api::activity::ActivityGuard::new_for_test(activity.clone());
+            // Guard is alive — activity should still be Startup.
+            assert!(matches!(
+                *activity.read().unwrap(),
+                Activity::Startup { .. }
+            ));
         }
-        // Guard dropped -- flag should be false.
-        assert!(!flag.load(std::sync::atomic::Ordering::SeqCst));
+        // Guard dropped — activity should be Idle.
+        assert!(matches!(*activity.read().unwrap(), Activity::Idle));
     }
 
     /// Per-batch DB locking: verify that the DB Mutex is released between

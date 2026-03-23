@@ -96,7 +96,7 @@ pub enum ImportState {
 }
 
 /// Mirror of `replay_control_core::metadata_db::ImportProgress` for WASM.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ImportProgress {
     pub state: ImportState,
     pub processed: usize,
@@ -158,4 +158,137 @@ pub struct VideoEntry {
     pub from_recommendation: bool,
     pub tag: Option<String>,
     pub rom_filename: String,
+}
+
+// ── Activity types (WASM mirrors) ──────────────────────────────────
+
+/// Client-side mirror of the unified Activity enum.
+/// Matches the server's `api::activity::Activity` but without `CancellationToken`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum Activity {
+    Idle,
+    Startup { phase: StartupPhase, system: String },
+    Import { progress: ImportProgress },
+    ThumbnailUpdate { progress: ThumbnailProgress },
+    Rebuild { progress: RebuildProgress },
+    Maintenance { kind: MaintenanceKind },
+}
+
+impl Activity {
+    /// Check if this activity represents a terminal (completed/failed/cancelled) state.
+    pub fn is_terminal(&self) -> bool {
+        match self {
+            Self::Import { progress } => matches!(
+                progress.state,
+                ImportState::Complete | ImportState::Failed
+            ),
+            Self::ThumbnailUpdate { progress } => matches!(
+                progress.phase,
+                ThumbnailPhase::Complete | ThumbnailPhase::Failed | ThumbnailPhase::Cancelled
+            ),
+            Self::Rebuild { progress } => matches!(
+                progress.phase,
+                RebuildPhase::Complete | RebuildPhase::Failed
+            ),
+            _ => false,
+        }
+    }
+
+    /// Extract a human-readable terminal message from a completed activity.
+    pub fn terminal_message(&self) -> String {
+        match self {
+            Self::Import { progress } => match progress.state {
+                ImportState::Complete => format!(
+                    "Import complete: {} matched, {} inserted ({}s)",
+                    progress.matched, progress.inserted, progress.elapsed_secs,
+                ),
+                ImportState::Failed => format!(
+                    "Import failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
+            Self::ThumbnailUpdate { progress } => match progress.phase {
+                ThumbnailPhase::Complete => format!(
+                    "Complete: {} indexed, {} downloaded ({}s)",
+                    progress.entries_indexed, progress.downloaded, progress.elapsed_secs,
+                ),
+                ThumbnailPhase::Cancelled => format!(
+                    "Cancelled after {}s ({} downloaded)",
+                    progress.elapsed_secs, progress.downloaded,
+                ),
+                ThumbnailPhase::Failed => format!(
+                    "Failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
+            Self::Rebuild { progress } => match progress.phase {
+                RebuildPhase::Complete => format!(
+                    "Rebuild complete ({}s)",
+                    progress.elapsed_secs,
+                ),
+                RebuildPhase::Failed => format!(
+                    "Rebuild failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StartupPhase {
+    Scanning,
+    RebuildingIndex,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MaintenanceKind {
+    ClearMetadata,
+    ClearImages,
+    ClearThumbnailIndex,
+    CleanupOrphans,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ThumbnailPhase {
+    Indexing,
+    Downloading,
+    Complete,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThumbnailProgress {
+    pub phase: ThumbnailPhase,
+    pub current_label: String,
+    pub step_done: usize,
+    pub step_total: usize,
+    pub downloaded: usize,
+    pub entries_indexed: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RebuildPhase {
+    Scanning,
+    Enriching,
+    Complete,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RebuildProgress {
+    pub phase: RebuildPhase,
+    pub current_system: String,
+    pub systems_done: usize,
+    pub systems_total: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
 }

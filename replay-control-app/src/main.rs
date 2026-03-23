@@ -292,15 +292,14 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SetSkinSync>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveHostname>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::IsMetadataBusy>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBusyLabel>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetActivity>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportLaunchboxMetadata>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RegenerateMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadMetadata>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImportProgress>();
+        // GetImportProgress removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemCoverage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
@@ -333,8 +332,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::UpdateThumbnails>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelThumbnailUpdate>(
         );
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetThumbnailProgress>(
-        );
+        // GetThumbnailProgress removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetThumbnailDataSource>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearThumbnailIndex>();
@@ -344,10 +342,10 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SetBoxartOverride>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ResetBoxartOverride>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRelatedGames>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRebuildProgress>();
+        // GetRebuildProgress removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::IsScanning>();
+        // IsScanning removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameDocuments>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLocalManuals>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameManuals>();
@@ -490,81 +488,23 @@ mod ssr {
             },
         );
 
-        // SSE endpoints for real-time progress (metadata import + thumbnail update).
-        let metadata_sse_state = app_state.clone();
-        let metadata_sse_handler = axum::routing::get(move || {
-            let state = metadata_sse_state.clone();
-            async move {
-                let import = state.import.clone();
-                sse_progress_stream(move || {
-                    let progress = import.progress();
-                    let is_active = progress.as_ref().is_some_and(|p| {
-                        use replay_control_app::server_fns::ImportState;
-                        matches!(
-                            p.state,
-                            ImportState::Downloading
-                                | ImportState::BuildingIndex
-                                | ImportState::Parsing
-                        )
-                    });
-                    let json = match &progress {
-                        Some(p) => serde_json::to_string(p).unwrap_or_default(),
-                        None => "null".to_string(),
-                    };
-                    (json, is_active)
-                })
-            }
-        });
-
-        let rebuild_sse_state = app_state.clone();
-        let rebuild_sse_handler = axum::routing::get(move || {
-            let state = rebuild_sse_state.clone();
+        // Unified SSE endpoint for activity progress.
+        let sse_state = app_state.clone();
+        let activity_sse_handler = axum::routing::get(move || {
+            let state = sse_state.clone();
             async move {
                 sse_progress_stream(move || {
-                    let progress = state.rebuild_progress();
-                    let is_active = progress.as_ref().is_some_and(|p| {
-                        use replay_control_app::server_fns::RebuildPhase;
-                        matches!(
-                            p.phase,
-                            RebuildPhase::Scanning | RebuildPhase::Enriching
-                        )
-                    });
-                    let json = match &progress {
-                        Some(p) => serde_json::to_string(p).unwrap_or_default(),
-                        None => "null".to_string(),
-                    };
-                    (json, is_active)
-                })
-            }
-        });
-
-        let thumbnail_sse_state = app_state.clone();
-        let thumbnail_sse_handler = axum::routing::get(move || {
-            let state = thumbnail_sse_state.clone();
-            async move {
-                let thumbnails = state.thumbnails.clone();
-                sse_progress_stream(move || {
-                    let progress = thumbnails.progress();
-                    let is_active = progress.as_ref().is_some_and(|p| {
-                        use replay_control_app::server_fns::ThumbnailPhase;
-                        matches!(
-                            p.phase,
-                            ThumbnailPhase::Indexing | ThumbnailPhase::Downloading
-                        )
-                    });
-                    let json = match &progress {
-                        Some(p) => serde_json::to_string(p).unwrap_or_default(),
-                        None => "null".to_string(),
-                    };
+                    let activity = state.activity();
+                    let is_active =
+                        !matches!(activity, replay_control_app::api::Activity::Idle);
+                    let json = serde_json::to_string(&activity).unwrap_or_default();
                     (json, is_active)
                 })
             }
         });
 
         let app = api::build_router(app_state, leptos_options)
-            .route("/sse/metadata-progress", metadata_sse_handler)
-            .route("/sse/thumbnail-progress", thumbnail_sse_handler)
-            .route("/sse/rebuild-progress", rebuild_sse_handler)
+            .route("/sse/activity", activity_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/manuals/*path", manuals_handler)
             .route("/rom-docs/*path", rom_docs_handler)

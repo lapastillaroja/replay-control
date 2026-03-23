@@ -1,29 +1,13 @@
 use replay_control_core::metadata_db::MetadataDb;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use super::AppState;
+use super::activity::{Activity, StartupPhase};
 use super::cache::dir_mtime;
+use super::import::ImportPipeline;
 
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
-
-/// Simple RAII guard that runs a closure on drop.
-mod guard {
-    pub struct Guard<F: FnOnce()>(Option<F>);
-    impl<F: FnOnce()> Guard<F> {
-        pub fn new(f: F) -> Self {
-            Self(Some(f))
-        }
-    }
-    impl<F: FnOnce()> Drop for Guard<F> {
-        fn drop(&mut self) {
-            if let Some(f) = self.0.take() {
-                f();
-            }
-        }
-    }
-}
 
 /// Orchestrates the ordered background startup pipeline and long-running watchers.
 ///
@@ -62,32 +46,40 @@ impl BackgroundManager {
         std::thread::sleep(Duration::from_secs(2));
 
         // Phase 1: Auto-import (if launchbox XML exists + DB empty).
-        // Import claims/releases the busy flag on its own.
+        // Import claims/releases its own Activity::Import via try_start_activity.
         Self::phase_auto_import(state);
 
-        // Wait for auto-import to finish (check progress state, not busy flag).
-        while state.import.has_active_progress() {
+        // Wait for auto-import to finish (check activity state).
+        while ImportPipeline::has_active_import(state) {
             std::thread::sleep(Duration::from_millis(500));
         }
 
-        // Phase 2+3: Set busy for populate + thumbnail rebuild.
-        // Cleared on drop via guard, even on panic.
+        // Phase 2+3: Claim Activity::Startup for populate + thumbnail rebuild.
+        // Guard drops → Idle on completion or panic.
         {
-            state.busy.store(true, Ordering::SeqCst);
-            let busy_flag = state.busy.clone();
-            let busy_label = state.busy_label.clone();
-            let _busy_guard = guard::Guard::new(move || {
-                busy_flag.store(false, Ordering::SeqCst);
-                *busy_label.write().expect("busy_label lock") = String::new();
-            });
+            let _guard = match state.try_start_activity(Activity::Startup {
+                phase: StartupPhase::Scanning,
+                system: String::new(),
+            }) {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::warn!("Could not start startup pipeline: {e}");
+                    return;
+                }
+            };
 
-            state.set_busy_label("Scanning game library...");
             Self::phase_cache_verification(state);
             // Checkpoint after Phase 2 writes (game_library inserts/updates).
             state.metadata_pool.checkpoint();
 
-            state.set_busy_label("Rebuilding thumbnail index...");
+            state.update_activity(|act| {
+                if let Activity::Startup { phase, .. } = act {
+                    *phase = StartupPhase::RebuildingIndex;
+                }
+            });
             Self::phase_auto_rebuild_thumbnail_index(state);
+
+            // _guard drops → Idle
         }
     }
 
@@ -145,10 +137,8 @@ impl BackgroundManager {
 
         if cached_meta.is_empty() {
             // Fresh DB -- pre-populate L2 for all systems with games.
-            // Set scanning flag for UI banner.
-            state.cache.scanning.store(true, Ordering::SeqCst);
+            // Activity is already Startup { phase: Scanning } (set by run_pipeline).
             Self::populate_all_systems(state, &storage, region_pref, region_secondary);
-            state.cache.scanning.store(false, Ordering::SeqCst);
             return;
         }
 
@@ -399,38 +389,66 @@ impl AppState {
     /// does a full populate first (scan ROMs + enrich). Otherwise just enriches
     /// existing entries with updated box art URLs and ratings.
     pub fn spawn_cache_enrichment(&self) {
-        self.spawn_cache_enrichment_inner(None);
-    }
-
-    /// Like `spawn_cache_enrichment`, but clears an `AtomicBool` flag when the
-    /// background work completes. Used by `rebuild_game_library` to signal that
-    /// the metadata operation slot is free again.
-    pub fn spawn_cache_enrichment_with_flag(
-        &self,
-        flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    ) {
-        self.spawn_cache_enrichment_inner(Some(flag));
-    }
-
-    fn spawn_cache_enrichment_inner(
-        &self,
-        done_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-    ) {
         let state = self.clone();
-        // Track whether this was triggered as a rebuild (has progress set).
-        let is_rebuild = state.rebuild_progress().is_some_and(|p| {
-            matches!(
-                p.phase,
-                crate::server_fns::RebuildPhase::Scanning
-                    | crate::server_fns::RebuildPhase::Enriching
-            )
+        tokio::task::spawn_blocking(move || {
+            let storage = state.storage();
+            let region_pref = state.region_preference();
+            let region_secondary = state.region_preference_secondary();
+
+            // Check if game library is empty -- if so, populate before enriching.
+            let is_empty = state
+                .cache
+                .with_db_read(&storage, |conn| {
+                    MetadataDb::load_all_system_meta(conn)
+                        .map(|m| m.is_empty())
+                        .unwrap_or(true)
+                })
+                .unwrap_or(true);
+
+            if is_empty {
+                tracing::info!("Post-import: game library is empty, running full populate");
+                BackgroundManager::populate_all_systems(
+                    &state,
+                    &storage,
+                    region_pref,
+                    region_secondary,
+                );
+            }
+
+            // Enrichment phase: update box art URLs and ratings for all systems.
+            let systems = state.cache.get_systems(&storage);
+            let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
+
+            if !with_games.is_empty() {
+                tracing::info!(
+                    "Post-import enrichment: updating {} system(s)",
+                    with_games.len()
+                );
+                let enrich_start = std::time::Instant::now();
+                for sys in &with_games {
+                    state.cache.enrich_system_cache(&state, &sys.folder_name);
+                }
+                tracing::info!(
+                    "Post-import enrichment: done in {:.1}s",
+                    enrich_start.elapsed().as_secs_f64()
+                );
+            }
         });
+    }
+
+    /// Run cache enrichment as part of a rebuild operation (with an ActivityGuard).
+    /// Updates `Activity::Rebuild` progress as it goes. The guard drops → Idle on completion.
+    pub fn spawn_rebuild_enrichment(
+        &self,
+        guard: super::activity::ActivityGuard,
+    ) {
+        use super::activity::RebuildPhase;
+
+        let state = self.clone();
         let start = std::time::Instant::now();
 
         tokio::task::spawn_blocking(move || {
-            // Use catch_unwind to guarantee the done_flag is cleared even if
-            // anything in the enrichment pipeline panics. Without this, a panic
-            // leaves the busy flag stuck forever.
+            // Use catch_unwind to guarantee the guard drops even if enrichment panics.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let storage = state.storage();
                 let region_pref = state.region_preference();
@@ -447,18 +465,13 @@ impl AppState {
                     .unwrap_or(true);
 
                 if is_empty {
-                    tracing::info!("Post-import: game library is empty, running full populate");
-                    if is_rebuild {
-                        use crate::server_fns::{RebuildPhase, RebuildProgress};
-                        state.set_rebuild_progress(Some(RebuildProgress {
-                            phase: RebuildPhase::Scanning,
-                            current_system: String::new(),
-                            systems_done: 0,
-                            systems_total: 0,
-                            elapsed_secs: start.elapsed().as_secs(),
-                            error: None,
-                        }));
-                    }
+                    tracing::info!("Rebuild: game library is empty, running full populate");
+                    state.update_activity(|act| {
+                        if let Activity::Rebuild { progress } = act {
+                            progress.phase = RebuildPhase::Scanning;
+                            progress.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    });
                     BackgroundManager::populate_all_systems(
                         &state,
                         &storage,
@@ -472,56 +485,49 @@ impl AppState {
                 let with_games: Vec<_> =
                     systems.into_iter().filter(|s| s.game_count > 0).collect();
 
-                if is_rebuild {
-                    use crate::server_fns::{RebuildPhase, RebuildProgress};
-                    state.set_rebuild_progress(Some(RebuildProgress {
-                        phase: RebuildPhase::Enriching,
-                        current_system: String::new(),
-                        systems_done: 0,
-                        systems_total: with_games.len(),
-                        elapsed_secs: start.elapsed().as_secs(),
-                        error: None,
-                    }));
-                }
+                state.update_activity(|act| {
+                    if let Activity::Rebuild { progress } = act {
+                        progress.phase = RebuildPhase::Enriching;
+                        progress.current_system = String::new();
+                        progress.systems_done = 0;
+                        progress.systems_total = with_games.len();
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                    }
+                });
 
                 if !with_games.is_empty() {
                     tracing::info!(
-                        "Post-import enrichment: updating {} system(s)",
+                        "Rebuild enrichment: updating {} system(s)",
                         with_games.len()
                     );
                     let enrich_start = std::time::Instant::now();
                     for (i, sys) in with_games.iter().enumerate() {
-                        if is_rebuild {
-                            use crate::server_fns::{RebuildPhase, RebuildProgress};
-                            state.set_rebuild_progress(Some(RebuildProgress {
-                                phase: RebuildPhase::Enriching,
-                                current_system: sys.display_name.clone(),
-                                systems_done: i,
-                                systems_total: with_games.len(),
-                                elapsed_secs: start.elapsed().as_secs(),
-                                error: None,
-                            }));
-                        }
+                        state.update_activity(|act| {
+                            if let Activity::Rebuild { progress } = act {
+                                progress.current_system = sys.display_name.clone();
+                                progress.systems_done = i;
+                                progress.elapsed_secs = start.elapsed().as_secs();
+                            }
+                        });
                         state.cache.enrich_system_cache(&state, &sys.folder_name);
                     }
                     tracing::info!(
-                        "Post-import enrichment: done in {:.1}s",
+                        "Rebuild enrichment: done in {:.1}s",
                         enrich_start.elapsed().as_secs_f64()
                     );
                 }
 
-                // Mark rebuild complete.
-                if is_rebuild {
-                    use crate::server_fns::{RebuildPhase, RebuildProgress};
-                    state.set_rebuild_progress(Some(RebuildProgress {
-                        phase: RebuildPhase::Complete,
-                        current_system: String::new(),
-                        systems_done: with_games.len(),
-                        systems_total: with_games.len(),
-                        elapsed_secs: start.elapsed().as_secs(),
-                        error: None,
-                    }));
-                }
+                // Mark rebuild complete (terminal state).
+                state.update_activity(|act| {
+                    if let Activity::Rebuild { progress } = act {
+                        progress.phase = RebuildPhase::Complete;
+                        progress.current_system = String::new();
+                        progress.systems_done = with_games.len();
+                        progress.systems_total = with_games.len();
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                        progress.error = None;
+                    }
+                });
             }));
 
             if let Err(panic) = &result {
@@ -530,34 +536,20 @@ impl AppState {
                     .map(|s| s.as_str())
                     .or_else(|| panic.downcast_ref::<&str>().copied())
                     .unwrap_or("unknown panic");
-                tracing::error!("Cache enrichment panicked: {msg}");
+                tracing::error!("Rebuild enrichment panicked: {msg}");
 
-                if is_rebuild {
-                    use crate::server_fns::{RebuildPhase, RebuildProgress};
-                    state.set_rebuild_progress(Some(RebuildProgress {
-                        phase: RebuildPhase::Failed,
-                        current_system: String::new(),
-                        systems_done: 0,
-                        systems_total: 0,
-                        elapsed_secs: start.elapsed().as_secs(),
-                        error: Some(format!("Internal error: {msg}")),
-                    }));
-                }
+                state.update_activity(|act| {
+                    if let Activity::Rebuild { progress } = act {
+                        progress.phase = RebuildPhase::Failed;
+                        progress.current_system = String::new();
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                        progress.error = Some(format!("Internal error: {msg}"));
+                    }
+                });
             }
 
-            // Always clear the busy flag, even after a panic.
-            if let Some(flag) = done_flag {
-                flag.store(false, Ordering::SeqCst);
-                tracing::debug!("Cache enrichment: cleared busy flag");
-            }
-
-            // Clear rebuild progress after a delay so the SSE client has time
-            // to read the final Complete/Failed status before we reset to None.
-            // The SSE stream polls every 200ms and closes after 5 idle ticks (1s).
-            if is_rebuild {
-                std::thread::sleep(Duration::from_secs(3));
-                state.set_rebuild_progress(None);
-            }
+            // guard drops here → Idle
+            drop(guard);
         });
     }
 
@@ -854,8 +846,8 @@ impl AppState {
                     }
                 }
 
-                // Skip if startup warmup or a metadata operation is running.
-                if state.is_busy() {
+                // Skip if any activity is running (startup, import, etc.).
+                if !state.is_idle() {
                     tracing::debug!(
                         "Background operation in progress, skipping ROM watcher rescan"
                     );

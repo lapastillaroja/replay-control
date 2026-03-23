@@ -1,16 +1,11 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use replay_control_core::metadata_db::MetadataDb;
 
+use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
 use super::AppState;
-
-/// Acquire a read lock, panicking on poison with a standard message.
-fn read_lock<'a, T>(lock: &'a RwLock<T>, label: &str) -> RwLockReadGuard<'a, T> {
-    lock.read()
-        .unwrap_or_else(|e| panic!("{label} read lock poisoned: {e}"))
-}
 
 /// Acquire a write lock, panicking on poison with a standard message.
 fn write_lock<'a, T>(lock: &'a RwLock<T>, label: &str) -> RwLockWriteGuard<'a, T> {
@@ -22,70 +17,31 @@ fn write_lock<'a, T>(lock: &'a RwLock<T>, label: &str) -> RwLockWriteGuard<'a, T
 
 /// Manages metadata imports (LaunchBox XML → metadata DB).
 ///
-/// The `busy` flag provides mutual exclusion between import and thumbnail
-/// operations (they share the same flag) **and** serves as a UI indicator.
-pub struct ImportPipeline {
-    /// Shared flag: true while any metadata DB operation is running.
-    /// Shared with `ThumbnailPipeline` for mutual exclusion.
-    busy: Arc<AtomicBool>,
-    progress: Arc<RwLock<Option<replay_control_core::metadata_db::ImportProgress>>>,
-}
+/// No longer owns its own busy flag or progress -- those live in
+/// `AppState.activity` as `Activity::Import { progress }`.
+#[derive(Default)]
+pub struct ImportPipeline;
 
 impl ImportPipeline {
-    pub fn new(busy: Arc<AtomicBool>) -> Self {
-        Self {
-            busy,
-            progress: Arc::new(RwLock::new(None)),
-        }
+    pub fn new() -> Self {
+        Self
     }
 
-    /// Acquire a read lock on import progress.
-    fn read_progress(
-        &self,
-    ) -> RwLockReadGuard<'_, Option<replay_control_core::metadata_db::ImportProgress>> {
-        read_lock(&self.progress, "import_progress")
-    }
-
-    /// Acquire a write lock on import progress.
-    fn write_progress(
-        &self,
-    ) -> RwLockWriteGuard<'_, Option<replay_control_core::metadata_db::ImportProgress>> {
-        write_lock(&self.progress, "import_progress")
-    }
-
-    /// Check if the shared busy flag is set.
-    /// Convenience accessor — reads the same Arc as AppState.is_busy().
-    pub fn is_busy(&self) -> bool {
-        self.busy.load(Ordering::Acquire)
-    }
-
-    /// Atomically claim the shared busy flag. Returns `true` if successfully claimed.
-    #[cfg(test)]
-    pub(crate) fn claim_busy(&self) -> bool {
-        !self.busy.swap(true, Ordering::SeqCst)
-    }
-
-    /// Get a clone of the shared busy flag Arc.
-    #[cfg(test)]
-    pub(crate) fn busy_flag(&self) -> Arc<AtomicBool> {
-        self.busy.clone()
-    }
-
-    /// Check if an import is actively running (has in-progress state).
+    /// Check if an import is actively running by inspecting the activity.
     /// Used by the startup pipeline to wait for auto-import completion.
-    pub fn has_active_progress(&self) -> bool {
+    pub fn has_active_import(state: &AppState) -> bool {
         use replay_control_core::metadata_db::ImportState;
-        self.read_progress().as_ref().is_some_and(|p| {
-            matches!(
-                p.state,
-                ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
-            )
-        })
-    }
-
-    /// Get current import progress (clone).
-    pub fn progress(&self) -> Option<replay_control_core::metadata_db::ImportProgress> {
-        self.read_progress().clone()
+        matches!(
+            state.activity(),
+            Activity::Import {
+                progress: replay_control_core::metadata_db::ImportProgress {
+                    state: ImportState::Downloading
+                        | ImportState::BuildingIndex
+                        | ImportState::Parsing,
+                    ..
+                },
+            }
+        )
     }
 
     /// Start a background metadata import from a LaunchBox XML file.
@@ -108,45 +64,25 @@ impl ImportPipeline {
     ) -> bool {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
-        // Atomically claim the operation slot.
-        if self.busy.swap(true, Ordering::SeqCst) {
-            return false;
-        }
-        state.set_busy_label("Importing metadata...");
-
-        // Check if already running (shouldn't happen with the atomic guard, but be safe).
-        {
-            let guard = self.read_progress();
-            if let Some(ref p) = *guard
-                && matches!(
-                    p.state,
-                    ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
-                )
-            {
-                self.busy.store(false, Ordering::SeqCst);
-                return false;
-            }
-        }
-
-        // Set initial progress.
-        {
-            let mut guard = self.write_progress();
-            *guard = Some(ImportProgress {
+        // Atomically claim the operation slot via Activity.
+        let guard = match state.try_start_activity(Activity::Import {
+            progress: ImportProgress {
                 state: ImportState::BuildingIndex,
                 processed: 0,
                 matched: 0,
                 inserted: 0,
                 elapsed_secs: 0,
                 error: None,
-            });
-        }
+            },
+        }) {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
 
         let state = state.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            state
-                .import
-                .run_import_blocking(&state, xml_path, start, skip_enrichment);
+            Self::run_import_blocking(&state, xml_path, start, skip_enrichment, guard);
         });
 
         true
@@ -156,6 +92,12 @@ impl ImportPipeline {
     /// Returns an error message if the XML file is not found.
     pub fn regenerate_metadata(&self, state: &AppState) -> Result<(), String> {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;
+
+        // Check if another activity is running BEFORE clearing the DB.
+        // Otherwise we'd wipe metadata but fail to re-import.
+        if !state.is_idle() {
+            return Err("Another operation is already running".to_string());
+        }
 
         // Clear existing metadata.
         if let Some(result) = state.metadata_pool.write(|conn| MetadataDb::clear(conn)) {
@@ -193,37 +135,20 @@ impl ImportPipeline {
     pub fn start_metadata_download(&self, state: &AppState) -> bool {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
 
-        // Atomically claim the operation slot.
-        if self.busy.swap(true, Ordering::SeqCst) {
-            return false;
-        }
-
-        // Check if already running (shouldn't happen with the atomic guard, but be safe).
-        {
-            let guard = self.read_progress();
-            if let Some(ref p) = *guard
-                && matches!(
-                    p.state,
-                    ImportState::Downloading | ImportState::BuildingIndex | ImportState::Parsing
-                )
-            {
-                self.busy.store(false, Ordering::SeqCst);
-                return false;
-            }
-        }
-
-        // Set initial progress to Downloading.
-        {
-            let mut guard = self.write_progress();
-            *guard = Some(ImportProgress {
+        // Atomically claim the operation slot via Activity.
+        let guard = match state.try_start_activity(Activity::Import {
+            progress: ImportProgress {
                 state: ImportState::Downloading,
                 processed: 0,
                 matched: 0,
                 inserted: 0,
                 elapsed_secs: 0,
                 error: None,
-            });
-        }
+            },
+        }) {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
 
         let state = state.clone();
         tokio::task::spawn_blocking(move || {
@@ -235,13 +160,14 @@ impl ImportPipeline {
             let xml_path = match replay_control_core::launchbox::download_metadata(&rc_dir) {
                 Ok(path) => path,
                 Err(e) => {
-                    let mut guard = write_lock(&state.import.progress, "import_progress");
-                    if let Some(ref mut p) = *guard {
-                        p.state = ImportState::Failed;
-                        p.error = Some(format!("Download failed: {e}"));
-                        p.elapsed_secs = start.elapsed().as_secs();
-                    }
-                    state.import.busy.store(false, Ordering::SeqCst);
+                    state.update_activity(|act| {
+                        if let Activity::Import { progress } = act {
+                            progress.state = ImportState::Failed;
+                            progress.error = Some(format!("Download failed: {e}"));
+                            progress.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    });
+                    // Guard drops here → Idle
                     return;
                 }
             };
@@ -252,46 +178,41 @@ impl ImportPipeline {
             }
 
             // Update elapsed before starting import.
-            {
-                let mut guard = write_lock(&state.import.progress, "import_progress");
-                if let Some(ref mut p) = *guard {
-                    p.elapsed_secs = start.elapsed().as_secs();
+            state.update_activity(|act| {
+                if let Activity::Import { progress } = act {
+                    progress.elapsed_secs = start.elapsed().as_secs();
                 }
-            }
+            });
 
-            // Now run the import (this updates import_progress internally).
-            state
-                .import
-                .run_import_blocking(&state, xml_path, start, false);
+            // Now run the import (this updates activity internally).
+            Self::run_import_blocking(&state, xml_path, start, false, guard);
         });
 
         true
     }
 
     /// Run the metadata import synchronously (called from spawn_blocking).
-    /// Separated from start_import to allow reuse from start_metadata_download.
     ///
     /// DB locking is per-batch: the lock is acquired for each ~500-entry batch
     /// flush and then released, giving other threads millisecond-scale gaps to
     /// read the DB between batches.
     fn run_import_blocking(
-        &self,
         state: &AppState,
         xml_path: PathBuf,
         start: std::time::Instant,
         skip_enrichment: bool,
+        _guard: ActivityGuard,
     ) {
-        use replay_control_core::metadata_db::{ImportProgress, ImportState};
+        use replay_control_core::metadata_db::{ImportState};
 
         // Build ROM index (no DB needed).
         let storage_root = state.storage().root.clone();
-        {
-            let mut guard = self.write_progress();
-            if let Some(ref mut p) = *guard {
-                p.state = ImportState::BuildingIndex;
-                p.elapsed_secs = start.elapsed().as_secs();
+        state.update_activity(|act| {
+            if let Activity::Import { progress } = act {
+                progress.state = ImportState::BuildingIndex;
+                progress.elapsed_secs = start.elapsed().as_secs();
             }
-        }
+        });
 
         let rom_index = replay_control_core::launchbox::build_rom_index(&storage_root);
 
@@ -300,64 +221,61 @@ impl ImportPipeline {
             let db_available = state.metadata_pool.read(|_conn| true).unwrap_or(false);
             if !db_available {
                 tracing::error!("Metadata DB unavailable at import start (pool closed)");
-                let mut guard = self.write_progress();
-                if let Some(ref mut p) = *guard {
-                    p.state = ImportState::Failed;
-                    p.error = Some("Metadata DB unavailable".to_string());
-                    p.elapsed_secs = start.elapsed().as_secs();
-                }
-                self.busy.store(false, Ordering::SeqCst);
+                state.update_activity(|act| {
+                    if let Activity::Import { progress } = act {
+                        progress.state = ImportState::Failed;
+                        progress.error = Some("Metadata DB unavailable".to_string());
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                    }
+                });
+                // _guard drops → Idle
                 return;
             }
         }
 
         // Update progress to Parsing.
-        {
-            let mut guard = self.write_progress();
-            if let Some(ref mut p) = *guard {
-                p.state = ImportState::Parsing;
-                p.elapsed_secs = start.elapsed().as_secs();
+        state.update_activity(|act| {
+            if let Activity::Import { progress } = act {
+                progress.state = ImportState::Parsing;
+                progress.elapsed_secs = start.elapsed().as_secs();
             }
-        }
+        });
 
         // Per-batch flush closure: acquires a write connection from the pool,
         // calls bulk_upsert, then releases the connection.
-        // The core crate calls this for each ~500-entry batch, keeping
-        // the DB connection held only for the duration of the SQL transaction.
         let pool_ref = state.metadata_pool.clone();
         let flush_batch = |batch: &[(
             String,
             String,
             replay_control_core::metadata_db::GameMetadata,
         )]| {
-            pool_ref.write(|db| {
-                MetadataDb::bulk_upsert(db, batch)
-            }).ok_or_else(|| {
-                replay_control_core::error::Error::Other(
-                    "Metadata DB unavailable during import".to_string(),
-                )
-            })?
+            pool_ref
+                .write(|db| MetadataDb::bulk_upsert(db, batch))
+                .ok_or_else(|| {
+                    replay_control_core::error::Error::Other(
+                        "Metadata DB unavailable during import".to_string(),
+                    )
+                })?
         };
 
-        let progress_ref = self.progress.clone();
+        let activity_lock = state.activity.clone();
         let start_ref = start;
         let result = replay_control_core::launchbox::import_launchbox(
             &xml_path,
             &rom_index,
             |processed, matched, inserted| {
-                let mut guard = write_lock(&progress_ref, "import_progress");
-                if let Some(ref mut p) = *guard {
-                    p.processed = processed;
-                    p.matched = matched;
-                    p.inserted = inserted;
-                    p.elapsed_secs = start_ref.elapsed().as_secs();
+                let mut guard = write_lock(&activity_lock, "activity");
+                if let Activity::Import { progress } = &mut *guard {
+                    progress.processed = processed;
+                    progress.matched = matched;
+                    progress.inserted = inserted;
+                    progress.elapsed_secs = start_ref.elapsed().as_secs();
                 }
             },
             flush_batch,
         );
 
-        // Checkpoint WAL after the heavy batch writes so readers don't
-        // have to traverse a large WAL and the file stays bounded.
+        // Checkpoint WAL after the heavy batch writes.
         state.metadata_pool.checkpoint();
 
         // Invalidate image cache so updated metadata paths are picked up.
@@ -369,7 +287,6 @@ impl ImportPipeline {
         };
 
         // Import LaunchBox alternate names into game_alias table.
-        // Acquires its own per-operation DB lock.
         if let Some(pr) = parse_result {
             tracing::debug!(
                 "Starting LaunchBox alias import ({} alternates, {} game names)",
@@ -380,29 +297,26 @@ impl ImportPipeline {
             tracing::debug!("LaunchBox alias import complete");
         }
 
-        // Update final progress.
-        {
-            let mut guard = self.write_progress();
-            match result {
-                Ok((stats, _)) => {
-                    *guard = Some(ImportProgress {
-                        state: ImportState::Complete,
-                        processed: stats.total_source,
-                        matched: stats.matched,
-                        inserted: stats.inserted,
-                        elapsed_secs: start.elapsed().as_secs(),
-                        error: None,
-                    });
-                }
-                Err(e) => {
-                    if let Some(ref mut p) = *guard {
-                        p.state = ImportState::Failed;
-                        p.error = Some(e.to_string());
-                        p.elapsed_secs = start.elapsed().as_secs();
+        // Update final progress (terminal state).
+        state.update_activity(|act| {
+            if let Activity::Import { progress } = act {
+                match &result {
+                    Ok((stats, _)) => {
+                        progress.state = ImportState::Complete;
+                        progress.processed = stats.total_source;
+                        progress.matched = stats.matched;
+                        progress.inserted = stats.inserted;
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                        progress.error = None;
+                    }
+                    Err(e) => {
+                        progress.state = ImportState::Failed;
+                        progress.error = Some(e.to_string());
+                        progress.elapsed_secs = start.elapsed().as_secs();
                     }
                 }
             }
-        }
+        });
 
         // Re-enrich game library with freshly imported data.
         // Skip during startup auto-import: the pipeline handles populate/enrichment
@@ -411,10 +325,7 @@ impl ImportPipeline {
             state.spawn_cache_enrichment();
         }
 
-        // Clear busy flag, label, and progress.
-        self.busy.store(false, Ordering::SeqCst);
-        state.set_busy_label("");
-        *self.write_progress() = None;
+        // _guard drops here → Idle
     }
 
     /// Import LaunchBox alternate names into the `game_alias` table.
@@ -432,23 +343,25 @@ impl ImportPipeline {
 
         // Read base_titles from DB via pool.
         tracing::debug!("LaunchBox aliases: loading base_titles from game_library...");
-        let base_titles: std::collections::HashMap<String, Vec<String>> = match state.metadata_pool.read(|conn| {
-            let systems = MetadataDb::active_systems(conn).unwrap_or_default();
-            let mut map: std::collections::HashMap<String, Vec<String>> =
-                std::collections::HashMap::new();
-            for system in &systems {
-                if let Ok(entries) = MetadataDb::load_system_entries(conn, system) {
-                    for entry in entries {
-                        if !entry.base_title.is_empty() {
-                            map.entry(entry.base_title.clone())
-                                .or_default()
-                                .push(system.clone());
+        let base_titles: std::collections::HashMap<String, Vec<String>> = match state
+            .metadata_pool
+            .read(|conn| {
+                let systems = MetadataDb::active_systems(conn).unwrap_or_default();
+                let mut map: std::collections::HashMap<String, Vec<String>> =
+                    std::collections::HashMap::new();
+                for system in &systems {
+                    if let Ok(entries) = MetadataDb::load_system_entries(conn, system) {
+                        for entry in entries {
+                            if !entry.base_title.is_empty() {
+                                map.entry(entry.base_title.clone())
+                                    .or_default()
+                                    .push(system.clone());
+                            }
                         }
                     }
                 }
-            }
-            map
-        }) {
+                map
+            }) {
             Some(map) => map,
             None => {
                 tracing::warn!("LaunchBox aliases: DB unavailable for reading base_titles");
@@ -470,9 +383,10 @@ impl ImportPipeline {
 
         // Write aliases to DB via pool.
         let count = aliases.len();
-        if let Some(result) = state.metadata_pool.write(|db| {
-            MetadataDb::bulk_insert_aliases(db, &aliases)
-        }) {
+        if let Some(result) = state
+            .metadata_pool
+            .write(|db| MetadataDb::bulk_insert_aliases(db, &aliases))
+        {
             match result {
                 Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
                 Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
@@ -487,80 +401,23 @@ impl ImportPipeline {
 
 /// Manages the two-phase thumbnail pipeline (index + download).
 ///
-/// Shares the `busy` flag with `ImportPipeline` for mutual exclusion.
-pub struct ThumbnailPipeline {
-    /// Shared flag: true while any metadata DB operation is running.
-    /// Shared with `ImportPipeline` for mutual exclusion.
-    busy: Arc<AtomicBool>,
-    progress: Arc<RwLock<Option<crate::server_fns::ThumbnailProgress>>>,
-    cancel: Arc<AtomicBool>,
-}
+/// No longer owns its own busy flag, progress, or cancel --
+/// those live in `AppState.activity` as `Activity::ThumbnailUpdate { progress, cancel }`.
+#[derive(Default)]
+pub struct ThumbnailPipeline;
 
 impl ThumbnailPipeline {
-    pub fn new(busy: Arc<AtomicBool>) -> Self {
-        Self {
-            busy,
-            progress: Arc::new(RwLock::new(None)),
-            cancel: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    /// Acquire a read lock on thumbnail progress.
-    fn read_progress(&self) -> RwLockReadGuard<'_, Option<crate::server_fns::ThumbnailProgress>> {
-        read_lock(&self.progress, "thumbnail_progress")
-    }
-
-    /// Acquire a write lock on thumbnail progress.
-    fn write_progress(
-        &self,
-    ) -> RwLockWriteGuard<'_, Option<crate::server_fns::ThumbnailProgress>> {
-        write_lock(&self.progress, "thumbnail_progress")
-    }
-
-    /// Get current thumbnail pipeline progress (clone).
-    pub fn progress(&self) -> Option<crate::server_fns::ThumbnailProgress> {
-        self.read_progress().clone()
-    }
-
-    /// Request cancellation of the current thumbnail update.
-    pub fn request_cancel(&self) {
-        self.cancel.store(true, Ordering::Relaxed);
-    }
-
-    /// Check if a thumbnail update is already running.
-    fn is_thumbnail_update_running(&self) -> bool {
-        use crate::server_fns::ThumbnailPhase;
-        let guard = self.read_progress();
-        guard.as_ref().is_some_and(|p| {
-            matches!(
-                p.phase,
-                ThumbnailPhase::Indexing | ThumbnailPhase::Downloading
-            )
-        })
+    pub fn new() -> Self {
+        Self
     }
 
     /// Start the two-phase thumbnail pipeline in the background.
     /// Returns `false` if another metadata operation is already running.
     pub fn start_thumbnail_update(&self, state: &AppState) -> bool {
-        // Atomically claim the operation slot.
-        if self.busy.swap(true, Ordering::SeqCst) {
-            return false;
-        }
-        state.set_busy_label("Updating thumbnails...");
+        let cancel = Arc::new(AtomicBool::new(false));
 
-        if self.is_thumbnail_update_running() {
-            self.busy.store(false, Ordering::SeqCst);
-            return false;
-        }
-
-        use crate::server_fns::{ThumbnailPhase, ThumbnailProgress};
-
-        self.cancel.store(false, Ordering::Relaxed);
-
-        // Write initial progress before spawning.
-        {
-            let mut guard = self.write_progress();
-            *guard = Some(ThumbnailProgress {
+        let guard = match state.try_start_activity(Activity::ThumbnailUpdate {
+            progress: ThumbnailProgress {
                 phase: ThumbnailPhase::Indexing,
                 current_label: String::new(),
                 step_done: 0,
@@ -569,28 +426,29 @@ impl ThumbnailPipeline {
                 entries_indexed: 0,
                 elapsed_secs: 0,
                 error: None,
-            });
-        }
+            },
+            cancel: cancel.clone(),
+        }) {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
 
         let state = state.clone();
         tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            state
-                .thumbnails
-                .run_thumbnail_update_blocking(&state, start);
+            Self::run_thumbnail_update_blocking(&state, start, cancel, guard);
         });
 
         true
     }
 
     /// Run the two-phase thumbnail pipeline (blocking, called from spawn_blocking).
-    ///
-    /// DB locking is per-operation: the lock is acquired for each discrete DB
-    /// call (manifest import, per-system download, per-system image path
-    /// update) and released between them. This gives other threads access to
-    /// the DB during the long download phase.
-    fn run_thumbnail_update_blocking(&self, state: &AppState, start: std::time::Instant) {
-        use crate::server_fns::{ThumbnailPhase, ThumbnailProgress};
+    fn run_thumbnail_update_blocking(
+        state: &AppState,
+        start: std::time::Instant,
+        cancel: Arc<AtomicBool>,
+        _guard: ActivityGuard,
+    ) {
         use replay_control_core::thumbnail_manifest;
         use replay_control_core::thumbnails::ALL_THUMBNAIL_KINDS;
 
@@ -603,51 +461,51 @@ impl ThumbnailPipeline {
                 tracing::error!(
                     "Metadata DB unavailable at thumbnail update start (pool closed)"
                 );
-                let mut guard = self.write_progress();
-                if let Some(ref mut p) = *guard {
-                    p.phase = ThumbnailPhase::Failed;
-                    p.error = Some("Metadata DB unavailable".to_string());
-                    p.elapsed_secs = start.elapsed().as_secs();
-                }
-                self.busy.store(false, Ordering::SeqCst);
+                state.update_activity(|act| {
+                    if let Activity::ThumbnailUpdate { progress, .. } = act {
+                        progress.phase = ThumbnailPhase::Failed;
+                        progress.error = Some("Metadata DB unavailable".to_string());
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                    }
+                });
                 return;
             }
         }
 
         // ── Phase 1: Index refresh ──────────────────────────────────
-        // Lock DB for the manifest import (per-repo network + DB writes).
-        // Released after this phase so the download phase doesn't block readers.
-
-        let progress_ref = self.progress.clone();
-        let cancel_ref = &self.cancel;
+        let activity_lock = state.activity.clone();
 
         // Read GitHub API key from settings (if configured).
         let api_key = replay_control_core::settings::read_github_api_key(&storage_root);
 
         let index_result = {
-            let cancel_flag = cancel_ref.clone();
+            let cancel_flag = cancel.clone();
             let api_key_owned = api_key.clone();
-            state.metadata_pool.write(|db| {
-                thumbnail_manifest::import_all_manifests(
-                    db,
-                    &|repos_done, repos_total, current_repo| {
-                        let mut guard = write_lock(&progress_ref, "thumbnail_progress");
-                        if let Some(ref mut p) = *guard {
-                            p.phase = ThumbnailPhase::Indexing;
-                            p.step_done = repos_done;
-                            p.step_total = repos_total;
-                            p.current_label = current_repo.to_string();
-                            p.elapsed_secs = start.elapsed().as_secs();
-                        }
-                    },
-                    &cancel_flag,
-                    api_key_owned.as_deref(),
-                )
-            })
-            .unwrap_or_else(|| Err(replay_control_core::error::Error::Other(
-                "Metadata DB unavailable during thumbnail index".to_string(),
-            )))
-            // Pool connection returned here — released between phases.
+            let activity_ref = activity_lock.clone();
+            state
+                .metadata_pool
+                .write(|db| {
+                    thumbnail_manifest::import_all_manifests(
+                        db,
+                        &|repos_done, repos_total, current_repo| {
+                            let mut guard = write_lock(&activity_ref, "activity");
+                            if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
+                                progress.phase = ThumbnailPhase::Indexing;
+                                progress.step_done = repos_done;
+                                progress.step_total = repos_total;
+                                progress.current_label = current_repo.to_string();
+                                progress.elapsed_secs = start.elapsed().as_secs();
+                            }
+                        },
+                        &cancel_flag,
+                        api_key_owned.as_deref(),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    Err(replay_control_core::error::Error::Other(
+                        "Metadata DB unavailable during thumbnail index".to_string(),
+                    ))
+                })
         };
 
         let index_stats = match index_result {
@@ -683,34 +541,33 @@ impl ThumbnailPipeline {
                                 .unwrap_or("unknown"),
                         )
                     };
-                    let mut guard = self.write_progress();
-                    if let Some(ref mut p) = *guard {
-                        p.phase = ThumbnailPhase::Failed;
-                        p.error = Some(msg);
-                        p.elapsed_secs = start.elapsed().as_secs();
-                    }
-                    self.busy.store(false, Ordering::SeqCst);
+                    state.update_activity(|act| {
+                        if let Activity::ThumbnailUpdate { progress, .. } = act {
+                            progress.phase = ThumbnailPhase::Failed;
+                            progress.error = Some(msg);
+                            progress.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    });
                     return;
                 }
 
                 // Update progress with index results.
-                {
-                    let mut guard = self.write_progress();
-                    if let Some(ref mut p) = *guard {
-                        p.entries_indexed = stats.total_entries;
-                        p.elapsed_secs = start.elapsed().as_secs();
+                state.update_activity(|act| {
+                    if let Activity::ThumbnailUpdate { progress, .. } = act {
+                        progress.entries_indexed = stats.total_entries;
+                        progress.elapsed_secs = start.elapsed().as_secs();
                     }
-                }
+                });
                 stats
             }
             Err(e) => {
-                let mut guard = self.write_progress();
-                if let Some(ref mut p) = *guard {
-                    p.phase = ThumbnailPhase::Failed;
-                    p.error = Some(format!("Index failed: {e}"));
-                    p.elapsed_secs = start.elapsed().as_secs();
-                }
-                self.busy.store(false, Ordering::SeqCst);
+                state.update_activity(|act| {
+                    if let Activity::ThumbnailUpdate { progress, .. } = act {
+                        progress.phase = ThumbnailPhase::Failed;
+                        progress.error = Some(format!("Index failed: {e}"));
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                    }
+                });
                 return;
             }
         };
@@ -719,30 +576,26 @@ impl ThumbnailPipeline {
         state.metadata_pool.checkpoint();
 
         // Check cancellation between phases.
-        if cancel_ref.load(Ordering::Relaxed) {
-            let mut guard = self.write_progress();
-            if let Some(ref mut p) = *guard {
-                p.phase = ThumbnailPhase::Cancelled;
-                p.elapsed_secs = start.elapsed().as_secs();
-            }
-            self.busy.store(false, Ordering::SeqCst);
+        if cancel.load(Ordering::Relaxed) {
+            state.update_activity(|act| {
+                if let Activity::ThumbnailUpdate { progress, .. } = act {
+                    progress.phase = ThumbnailPhase::Cancelled;
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                }
+            });
             return;
         }
 
         // ── Phase 2: Download images ────────────────────────────────
-        // DB lock is acquired per-system for download + image path update,
-        // then released between systems.
-
-        {
-            let mut guard = self.write_progress();
-            if let Some(ref mut p) = *guard {
-                p.phase = ThumbnailPhase::Downloading;
-                p.step_done = 0;
-                p.step_total = 0;
-                p.downloaded = 0;
-                p.elapsed_secs = start.elapsed().as_secs();
+        state.update_activity(|act| {
+            if let Activity::ThumbnailUpdate { progress, .. } = act {
+                progress.phase = ThumbnailPhase::Downloading;
+                progress.step_done = 0;
+                progress.step_total = 0;
+                progress.downloaded = 0;
+                progress.elapsed_secs = start.elapsed().as_secs();
             }
-        }
+        });
 
         // Collect systems that have ROMs and a thumbnail repo.
         let storage = state.storage();
@@ -761,7 +614,7 @@ impl ThumbnailPipeline {
         let mut total_failed = 0usize;
 
         for (i, system) in supported.iter().enumerate() {
-            if cancel_ref.load(Ordering::Relaxed) {
+            if cancel.load(Ordering::Relaxed) {
                 break;
             }
 
@@ -770,24 +623,24 @@ impl ThumbnailPipeline {
                 .unwrap_or_else(|| system.to_string());
 
             // Update progress for this system.
-            {
-                let mut guard = self.write_progress();
-                if let Some(ref mut p) = *guard {
-                    p.current_label = system_display.clone();
-                    p.step_done = i;
-                    p.step_total = total_systems;
-                    p.elapsed_secs = start.elapsed().as_secs();
+            state.update_activity(|act| {
+                if let Activity::ThumbnailUpdate { progress, .. } = act {
+                    progress.current_label = system_display.clone();
+                    progress.step_done = i;
+                    progress.step_total = total_systems;
+                    progress.elapsed_secs = start.elapsed().as_secs();
                 }
-            }
+            });
 
-            let progress_ref = self.progress.clone();
+            let activity_ref = activity_lock.clone();
 
             for kind in ALL_THUMBNAIL_KINDS {
-                if cancel_ref.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::Relaxed) {
                     break;
                 }
                 let prev_downloaded = total_downloaded;
-                let cancel_flag = cancel_ref.clone();
+                let cancel_flag = cancel.clone();
+                let activity_ref2 = activity_ref.clone();
                 if let Some(result) = state.metadata_pool.read(|conn| {
                     thumbnail_manifest::download_system_thumbnails(
                         conn,
@@ -795,15 +648,15 @@ impl ThumbnailPipeline {
                         system,
                         *kind,
                         &|processed, total, downloaded| {
-                            let mut guard = write_lock(&progress_ref, "thumbnail_progress");
-                            if let Some(ref mut p) = *guard {
-                                p.step_done = i;
-                                p.step_total = total_systems;
-                                p.downloaded = prev_downloaded + downloaded;
-                                p.elapsed_secs = start.elapsed().as_secs();
+                            let mut guard = write_lock(&activity_ref2, "activity");
+                            if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
+                                progress.step_done = i;
+                                progress.step_total = total_systems;
+                                progress.downloaded = prev_downloaded + downloaded;
+                                progress.elapsed_secs = start.elapsed().as_secs();
                                 if total > 0 {
                                     let display_n = (processed + 1).min(total);
-                                    p.current_label =
+                                    progress.current_label =
                                         format!("{system_display}: {display_n}/{total}");
                                 }
                             }
@@ -822,7 +675,6 @@ impl ThumbnailPipeline {
                         }
                     }
                 }
-                // Pool connection returned here — released between kinds.
             }
 
             // Lock DB for image path update, then release.
@@ -832,32 +684,29 @@ impl ThumbnailPipeline {
         // Invalidate the image cache so new thumbnails are picked up.
         state.cache.invalidate_images();
 
-        let cancelled = cancel_ref.load(Ordering::Relaxed);
+        let cancelled = cancel.load(Ordering::Relaxed);
 
         // Re-enrich game library with freshly downloaded box art.
         if !cancelled {
             state.spawn_cache_enrichment();
         }
 
-        // Set final progress.
-        {
-            let mut guard = self.write_progress();
-            if cancelled {
-                if let Some(ref mut p) = *guard {
-                    p.phase = ThumbnailPhase::Cancelled;
-                    p.downloaded = total_downloaded;
-                    p.elapsed_secs = start.elapsed().as_secs();
-                }
-            } else {
-                *guard = Some(ThumbnailProgress {
-                    phase: ThumbnailPhase::Complete,
-                    current_label: String::new(),
-                    step_done: total_systems,
-                    step_total: total_systems,
-                    downloaded: total_downloaded,
-                    entries_indexed: index_stats.total_entries,
-                    elapsed_secs: start.elapsed().as_secs(),
-                    error: {
+        // Set final progress (terminal state).
+        state.update_activity(|act| {
+            if let Activity::ThumbnailUpdate { progress, .. } = act {
+                if cancelled {
+                    progress.phase = ThumbnailPhase::Cancelled;
+                    progress.downloaded = total_downloaded;
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                } else {
+                    progress.phase = ThumbnailPhase::Complete;
+                    progress.current_label = String::new();
+                    progress.step_done = total_systems;
+                    progress.step_total = total_systems;
+                    progress.downloaded = total_downloaded;
+                    progress.entries_indexed = index_stats.total_entries;
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                    progress.error = {
                         let mut parts = Vec::new();
                         if !index_stats.errors.is_empty() {
                             parts.push(format!(
@@ -873,23 +722,15 @@ impl ThumbnailPipeline {
                         } else {
                             Some(parts.join("; "))
                         }
-                    },
-                });
+                    };
+                }
             }
-        }
+        });
 
-        // Clear busy flag, label, and progress.
-        self.busy.store(false, Ordering::SeqCst);
-        state.set_busy_label("");
-        *self.write_progress() = None;
+        // _guard drops here → Idle
     }
 
     /// Scan the media directory for a system and update game_metadata image paths.
-    /// Uses fuzzy matching (base title + version-stripped) to bridge naming gaps
-    /// between ROM filenames and libretro-thumbnails manifest names.
-    ///
-    /// Acquires/releases the DB lock internally for each operation (read filenames,
-    /// then write updates).
     fn update_image_paths_from_disk(
         state: &AppState,
         storage_root: &std::path::Path,
@@ -956,9 +797,9 @@ impl ThumbnailPipeline {
 
         // Write image path updates to DB via pool.
         if !updates.is_empty()
-            && let Some(Err(e)) = state.metadata_pool.write(|db| {
-                MetadataDb::bulk_update_image_paths(db, &updates)
-            })
+            && let Some(Err(e)) = state
+                .metadata_pool
+                .write(|db| MetadataDb::bulk_update_image_paths(db, &updates))
         {
             tracing::warn!("Failed to update image paths for {system}: {e}");
         }
@@ -968,143 +809,10 @@ impl ThumbnailPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicBool;
 
     #[test]
-    fn import_and_thumbnail_share_busy_flag() {
-        let busy = Arc::new(AtomicBool::new(false));
-        let import = ImportPipeline::new(busy.clone());
-        let thumbnails = ThumbnailPipeline::new(busy.clone());
-
-        assert!(!import.is_busy());
-
-        // Simulate import claiming the slot.
-        busy.store(true, Ordering::SeqCst);
-        assert!(import.is_busy());
-        // Thumbnail pipeline should also see it as busy (mutual exclusion).
-        assert!(thumbnails.progress().is_none());
-        // The busy flag is shared.
-        busy.store(false, Ordering::SeqCst);
-        assert!(!import.is_busy());
+    fn pipelines_create_without_panicking() {
+        let _import = ImportPipeline::new();
+        let _thumbnails = ThumbnailPipeline::new();
     }
-
-    #[test]
-    fn import_progress_initially_none() {
-        let busy = Arc::new(AtomicBool::new(false));
-        let import = ImportPipeline::new(busy);
-        assert!(import.progress().is_none());
-    }
-
-    #[test]
-    fn thumbnail_progress_initially_none() {
-        let busy = Arc::new(AtomicBool::new(false));
-        let thumbnails = ThumbnailPipeline::new(busy);
-        assert!(thumbnails.progress().is_none());
-    }
-
-    #[test]
-    fn thumbnail_cancel_initially_false() {
-        let busy = Arc::new(AtomicBool::new(false));
-        let thumbnails = ThumbnailPipeline::new(busy);
-        // Requesting cancel should not panic.
-        thumbnails.request_cancel();
-    }
-
-    #[test]
-    fn mutual_exclusion_prevents_concurrent_operations() {
-        let busy = Arc::new(AtomicBool::new(false));
-        let _import = ImportPipeline::new(busy.clone());
-        let _thumbnails = ThumbnailPipeline::new(busy.clone());
-
-        // First swap claims the slot.
-        assert!(!busy.swap(true, Ordering::SeqCst));
-        // Second swap detects it's already claimed.
-        assert!(busy.swap(true, Ordering::SeqCst));
-        // Release.
-        busy.store(false, Ordering::SeqCst);
-        // Now claiming works again.
-        assert!(!busy.swap(true, Ordering::SeqCst));
-    }
-
-    #[test]
-    fn claim_busy_returns_true_when_free() {
-        let busy = Arc::new(AtomicBool::new(false));
-        let import = ImportPipeline::new(busy.clone());
-
-        // First claim succeeds.
-        assert!(import.claim_busy());
-        assert!(import.is_busy());
-
-        // Second claim fails (already held).
-        assert!(!import.claim_busy());
-
-        // Release via busy_flag.
-        import.busy_flag().store(false, Ordering::SeqCst);
-        assert!(!import.is_busy());
-
-        // Can claim again.
-        assert!(import.claim_busy());
-    }
-
-    /// Busy flag lifecycle: starts false, claim sets true, release sets false.
-    /// Verifies that mutual exclusion works between import and thumbnail pipelines.
-    #[test]
-    fn busy_flag_lifecycle_import_blocks_thumbnail() {
-        let busy = Arc::new(AtomicBool::new(false));
-        let import = ImportPipeline::new(busy.clone());
-        let thumbnails = ThumbnailPipeline::new(busy.clone());
-
-        // Initially not busy.
-        assert!(!import.is_busy());
-
-        // Import claims the slot.
-        assert!(import.claim_busy());
-        assert!(import.is_busy());
-
-        // Thumbnail cannot claim while import holds the flag.
-        assert!(busy.swap(true, Ordering::SeqCst)); // already true
-
-        // Release.
-        import.busy_flag().store(false, Ordering::SeqCst);
-        assert!(!import.is_busy());
-
-        // Now thumbnail can claim.
-        assert!(!busy.swap(true, Ordering::SeqCst)); // was false, now true
-        assert!(import.is_busy()); // shared flag is true
-        let _ = thumbnails; // suppress unused warning
-    }
-
-    /// Busy flag lifecycle: claim_busy is the atomic gatekeeper, not just store(true).
-    /// Two threads racing claim_busy: only one succeeds.
-    #[test]
-    fn busy_flag_atomic_claim_race() {
-        use std::sync::Barrier;
-
-        let busy = Arc::new(AtomicBool::new(false));
-        let barrier = Arc::new(Barrier::new(2));
-        let wins = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-
-        let handles: Vec<_> = (0..2)
-            .map(|_| {
-                let busy = busy.clone();
-                let barrier = barrier.clone();
-                let wins = wins.clone();
-                let import = ImportPipeline::new(busy);
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    if import.claim_busy() {
-                        wins.fetch_add(1, Ordering::SeqCst);
-                    }
-                })
-            })
-            .collect();
-
-        for h in handles {
-            h.join().unwrap();
-        }
-
-        // Exactly one thread should have won the claim.
-        assert_eq!(wins.load(Ordering::SeqCst), 1);
-    }
-
 }

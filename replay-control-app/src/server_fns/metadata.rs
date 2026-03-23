@@ -2,6 +2,18 @@ use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::metadata_db::MetadataDb;
 
+// Re-export progress types from the activity module (SSR) or types module (WASM).
+#[cfg(feature = "ssr")]
+pub use crate::api::activity::{
+    Activity, MaintenanceKind, RebuildPhase, RebuildProgress, StartupPhase, ThumbnailPhase,
+    ThumbnailProgress,
+};
+#[cfg(not(feature = "ssr"))]
+pub use crate::types::{
+    Activity, MaintenanceKind, RebuildPhase, RebuildProgress, StartupPhase, ThumbnailPhase,
+    ThumbnailProgress,
+};
+
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::{ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage};
 #[cfg(feature = "ssr")]
@@ -9,28 +21,27 @@ pub use replay_control_core::metadata_db::{
     ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage,
 };
 
-/// Phase of the game library rebuild operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RebuildPhase {
-    /// Scanning ROM directories and populating game library.
-    Scanning,
-    /// Enriching game entries with metadata, box art URLs, ratings.
-    Enriching,
-    /// Rebuild completed successfully.
-    Complete,
-    /// Rebuild failed.
-    Failed,
+/// Create an `Activity::ThumbnailUpdate` for client-side placeholder use.
+/// Handles the difference between SSR (has `cancel` field) and WASM (no `cancel` field).
+#[cfg(feature = "ssr")]
+pub fn make_thumbnail_update_activity(progress: ThumbnailProgress) -> Activity {
+    Activity::ThumbnailUpdate {
+        progress,
+        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    }
 }
 
-/// Progress for the game library rebuild operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RebuildProgress {
-    pub phase: RebuildPhase,
-    pub current_system: String,
-    pub systems_done: usize,
-    pub systems_total: usize,
-    pub elapsed_secs: u64,
-    pub error: Option<String>,
+#[cfg(not(feature = "ssr"))]
+pub fn make_thumbnail_update_activity(progress: ThumbnailProgress) -> Activity {
+    Activity::ThumbnailUpdate { progress }
+}
+
+/// Get current activity (replaces is_metadata_busy, get_busy_label, is_scanning,
+/// get_import_progress, get_thumbnail_progress, get_rebuild_progress).
+#[server(prefix = "/sfn")]
+pub async fn get_activity() -> Result<Activity, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(state.activity())
 }
 
 /// Get metadata coverage stats.
@@ -51,7 +62,7 @@ pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
 }
 
 /// Start a background metadata import from a LaunchBox metadata XML file.
-/// Returns immediately; poll `get_import_progress` for status.
+/// Returns immediately; poll `get_activity` for status.
 #[server(prefix = "/sfn")]
 pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -69,13 +80,6 @@ pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnE
 
     tracing::info!("Started LaunchBox import from {xml_path}");
     Ok(())
-}
-
-/// Get current import progress (None if no import has been started).
-#[server(prefix = "/sfn")]
-pub async fn get_import_progress() -> Result<Option<ImportProgress>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    Ok(state.import.progress())
 }
 
 /// Get per-system metadata coverage stats.
@@ -106,10 +110,6 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         .map(|s| {
             let with_metadata = meta_map.remove(&s.folder_name).unwrap_or(0);
             let with_thumbnail = thumb_map.remove(&s.folder_name).unwrap_or(0);
-            // Cap at total_games to prevent >100% display. This can happen transiently
-            // when game_library hasn't been populated yet (before warmup completes) and
-            // entries_per_system falls back to counting all game_metadata rows, which
-            // may include disc files filtered out by M3U dedup in the filesystem scan.
             SystemCoverage {
                 system: s.folder_name,
                 display_name: s.display_name,
@@ -154,6 +154,13 @@ pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+
+    let _guard = state
+        .try_start_activity(crate::api::Activity::Maintenance {
+            kind: crate::api::MaintenanceKind::ClearMetadata,
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
     state.metadata_pool.write(|conn| {
         MetadataDb::clear(conn)
     })
@@ -162,11 +169,12 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 
     // Checkpoint WAL after the DELETE + VACUUM.
     state.metadata_pool.checkpoint();
+    // _guard drops → Idle
     Ok(())
 }
 
 /// Clear metadata DB and trigger re-import from launchbox-metadata.xml.
-/// The import runs in the background; poll `get_import_progress` for status.
+/// The import runs in the background; poll `get_activity` for status.
 #[server(prefix = "/sfn")]
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -176,33 +184,8 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
         .map_err(ServerFnError::new)
 }
 
-/// Check if a metadata operation is currently running (import or thumbnail update)
-/// or if the background startup pipeline is still warming up.
-/// Used by the UI to show a degraded-mode banner.
-#[server(prefix = "/sfn")]
-pub async fn is_metadata_busy() -> Result<bool, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    Ok(state.is_busy())
-}
-
-/// Get a human-readable label for the current background operation.
-/// Empty string if idle.
-#[server(prefix = "/sfn")]
-pub async fn get_busy_label() -> Result<String, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    Ok(state.get_busy_label())
-}
-
-/// Check if the background game library scan (warmup) is in progress.
-/// Used by the home page to show a "Scanning games..." message.
-#[server(prefix = "/sfn")]
-pub async fn is_scanning() -> Result<bool, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    Ok(state.is_scanning())
-}
-
 /// Download LaunchBox metadata from the internet, extract, and import.
-/// The entire process runs in the background; poll `get_import_progress` for status.
+/// The entire process runs in the background; poll `get_activity` for status.
 #[server(prefix = "/sfn")]
 pub async fn download_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -214,46 +197,31 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
     Ok(())
 }
 
-/// Get current rebuild progress (None if no rebuild has been started).
-#[server(prefix = "/sfn")]
-pub async fn get_rebuild_progress() -> Result<Option<RebuildProgress>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    Ok(state.rebuild_progress())
-}
-
 /// Rebuild the game library: clears game_library tables and triggers a full
-/// rescan + enrichment from disk. Use when baked-in data changes or to force
-/// a fresh scan of all systems.
-///
-/// Claims the shared busy flag so the UI shows a busy banner and concurrent
-/// import/thumbnail operations are blocked while the rebuild runs in the
-/// background. The flag is cleared when the background enrichment task
-/// completes (or on error/panic).
+/// rescan + enrichment from disk.
 #[server(prefix = "/sfn")]
 pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
+    use crate::api::activity::{RebuildPhase, RebuildProgress};
+
     let state = expect_context::<crate::api::AppState>();
 
-    // Atomically claim the shared busy flag (same one used by import + thumbnails).
-    if !state.claim_busy() {
-        return Err(ServerFnError::new(
-            "Another metadata operation is already running",
-        ));
-    }
-
-    // Set initial rebuild progress.
-    state.set_rebuild_progress(Some(RebuildProgress {
-        phase: RebuildPhase::Scanning,
-        current_system: String::new(),
-        systems_done: 0,
-        systems_total: 0,
-        elapsed_secs: 0,
-        error: None,
-    }));
+    let guard = state
+        .try_start_activity(crate::api::Activity::Rebuild {
+            progress: RebuildProgress {
+                phase: RebuildPhase::Scanning,
+                current_system: String::new(),
+                systems_done: 0,
+                systems_total: 0,
+                elapsed_secs: 0,
+                error: None,
+            },
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Clear L1+L2 cache.
     state.cache.invalidate();
 
-    // Rebuild in background; the busy flag is cleared when done (or on panic).
-    state.spawn_cache_enrichment_with_flag(state.busy_flag());
+    // Rebuild in background; the guard drops → Idle when done (or on panic).
+    state.spawn_rebuild_enrichment(guard);
     Ok(())
 }

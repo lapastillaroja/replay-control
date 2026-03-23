@@ -1,12 +1,11 @@
 use leptos::prelude::*;
 
 use crate::i18n::{t, use_i18n};
-use crate::server_fns;
+use crate::server_fns::{self, Activity};
 
-/// A thin banner shown at the top of the page when a metadata operation
-/// (import or thumbnail update) is running, or when the background game
-/// library scan (warmup) is in progress. Polls every ~3 seconds and
-/// auto-hides when the operation finishes.
+/// A thin banner shown at the top of the page when any activity is running
+/// (import, thumbnail update, rebuild, startup scan, maintenance).
+/// Polls every ~3 seconds and auto-hides when the activity returns to Idle.
 #[component]
 pub fn MetadataBusyBanner() -> impl IntoView {
     let i18n = use_i18n();
@@ -37,19 +36,78 @@ pub fn MetadataBusyBanner() -> impl IntoView {
 
     // LocalResource avoids the hydration mismatch warning: this is a
     // client-only runtime status check, not SSR-rendered content.
-    let busy = LocalResource::new(move || {
+    let activity_res = LocalResource::new(move || {
         // Re-run whenever the tick signal changes (every ~3s on the client).
         let _ = tick.get();
-        async move { server_fns::is_metadata_busy().await.unwrap_or(false) }
+        async move { server_fns::get_activity().await.unwrap_or(Activity::Idle) }
     });
 
-    let label = LocalResource::new(move || {
-        let _ = tick.get();
-        async move { server_fns::get_busy_label().await.unwrap_or_default() }
-    });
+    let is_busy = move || {
+        activity_res
+            .get()
+            .is_some_and(|v| !matches!(*v, Activity::Idle))
+    };
 
-    let is_busy = move || busy.get().map(|v| *v).unwrap_or(false);
-    let busy_label = move || label.get().map(|v| (*v).clone()).unwrap_or_default();
+    let busy_label = move || {
+        let act = match activity_res.get() {
+            Some(v) => (*v).clone(),
+            None => return String::new(),
+        };
+        match act {
+            Activity::Idle => String::new(),
+            Activity::Startup { phase, system } => {
+                use server_fns::StartupPhase;
+                match phase {
+                    StartupPhase::Scanning => {
+                        if system.is_empty() {
+                            "Scanning game library...".to_string()
+                        } else {
+                            format!("Scanning game library ({system})...")
+                        }
+                    }
+                    StartupPhase::RebuildingIndex => {
+                        "Rebuilding thumbnail index...".to_string()
+                    }
+                }
+            }
+            Activity::Import { progress } => {
+                use server_fns::ImportState;
+                match progress.state {
+                    ImportState::Downloading => "Downloading metadata...".to_string(),
+                    ImportState::BuildingIndex => "Building ROM index...".to_string(),
+                    ImportState::Parsing => {
+                        format!("Importing metadata ({} matched)...", progress.matched)
+                    }
+                    _ => "Importing metadata...".to_string(),
+                }
+            }
+            Activity::ThumbnailUpdate { progress, .. } => {
+                if progress.current_label.is_empty() {
+                    "Updating thumbnails...".to_string()
+                } else {
+                    format!("Updating thumbnails ({})...", progress.current_label)
+                }
+            }
+            Activity::Rebuild { progress } => {
+                if progress.current_system.is_empty() {
+                    "Rebuilding library...".to_string()
+                } else {
+                    format!("Rebuilding library ({})...", progress.current_system)
+                }
+            }
+            Activity::Maintenance { kind } => {
+                use server_fns::MaintenanceKind;
+                match kind {
+                    MaintenanceKind::ClearMetadata => "Clearing metadata...".to_string(),
+                    MaintenanceKind::ClearImages => "Clearing images...".to_string(),
+                    MaintenanceKind::ClearThumbnailIndex => {
+                        "Clearing thumbnail index...".to_string()
+                    }
+                    MaintenanceKind::CleanupOrphans => "Cleaning up orphaned images...".to_string(),
+                }
+            }
+        }
+    };
 
     view! {
         <Show when=move || is_busy() fallback=|| ()>

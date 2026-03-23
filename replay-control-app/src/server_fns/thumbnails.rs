@@ -2,36 +2,6 @@ use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::metadata_db::MetadataDb;
 
-/// Progress for the two-phase thumbnail pipeline (index + download).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ThumbnailProgress {
-    pub phase: ThumbnailPhase,
-    /// Display name of the current repo/system being processed.
-    pub current_label: String,
-    /// For index phase: repos done. For download phase: ROMs processed.
-    pub step_done: usize,
-    /// For index phase: total repos. For download phase: total ROMs.
-    pub step_total: usize,
-    /// Running count of images downloaded (download phase).
-    pub downloaded: usize,
-    /// Running count of index entries (index phase).
-    pub entries_indexed: usize,
-    pub elapsed_secs: u64,
-    pub error: Option<String>,
-}
-
-/// Phase of the thumbnail pipeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ThumbnailPhase {
-    /// Fetching file listings from GitHub API.
-    Indexing,
-    /// Downloading images from raw.githubusercontent.com.
-    Downloading,
-    Complete,
-    Failed,
-    Cancelled,
-}
-
 /// Data source info for the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataSourceSummary {
@@ -61,15 +31,8 @@ pub async fn update_thumbnails() -> Result<(), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn cancel_thumbnail_update() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state.thumbnails.request_cancel();
+    state.request_cancel();
     Ok(())
-}
-
-/// Get current thumbnail pipeline progress.
-#[server(prefix = "/sfn")]
-pub async fn get_thumbnail_progress() -> Result<Option<ThumbnailProgress>, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    Ok(state.thumbnails.progress())
 }
 
 /// Get data source info for the "Thumbnails (libretro)" section.
@@ -125,9 +88,19 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
 #[server(prefix = "/sfn")]
 pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+
+    let _guard = state
+        .try_start_activity(crate::api::Activity::Maintenance {
+            kind: crate::api::MaintenanceKind::ClearThumbnailIndex,
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
     state.metadata_pool.write(|conn| {
         MetadataDb::clear_thumbnail_index(conn)
     })
     .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // _guard drops → Idle
+    Ok(())
 }

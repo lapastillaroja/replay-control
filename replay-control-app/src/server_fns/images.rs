@@ -19,9 +19,19 @@ pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn clear_images() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
+
+    let _guard = state
+        .try_start_activity(crate::api::Activity::Maintenance {
+            kind: crate::api::MaintenanceKind::ClearImages,
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
     let storage = state.storage();
     replay_control_core::thumbnails::clear_media(&storage.root)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // _guard drops → Idle
+    Ok(())
 }
 
 /// Cleanup orphaned images: delete metadata rows and thumbnail files for ROMs
@@ -32,12 +42,11 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
 pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    // Guard: refuse to run during rebuild/import/thumbnail update.
-    if state.is_busy() {
-        return Err(ServerFnError::new(
-            "Cannot cleanup while a metadata operation is running",
-        ));
-    }
+    let _guard = state
+        .try_start_activity(crate::api::Activity::Maintenance {
+            kind: crate::api::MaintenanceKind::CleanupOrphans,
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let storage = state.storage();
 
@@ -52,5 +61,6 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
         (meta_del, files_del, freed)
     }).unwrap_or((0, 0, 0));
 
+    // _guard drops → Idle
     Ok((metadata_deleted, files_deleted, bytes_freed))
 }
