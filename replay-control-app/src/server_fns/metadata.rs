@@ -9,6 +9,30 @@ pub use replay_control_core::metadata_db::{
     ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage,
 };
 
+/// Phase of the game library rebuild operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RebuildPhase {
+    /// Scanning ROM directories and populating game library.
+    Scanning,
+    /// Enriching game entries with metadata, box art URLs, ratings.
+    Enriching,
+    /// Rebuild completed successfully.
+    Complete,
+    /// Rebuild failed.
+    Failed,
+}
+
+/// Progress for the game library rebuild operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RebuildProgress {
+    pub phase: RebuildPhase,
+    pub current_system: String,
+    pub systems_done: usize,
+    pub systems_total: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
 /// Get metadata coverage stats.
 /// Returns empty stats when the DB is unavailable (e.g., during import).
 #[server(prefix = "/sfn")]
@@ -190,6 +214,13 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
     Ok(())
 }
 
+/// Get current rebuild progress (None if no rebuild has been started).
+#[server(prefix = "/sfn")]
+pub async fn get_rebuild_progress() -> Result<Option<RebuildProgress>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(state.rebuild_progress())
+}
+
 /// Rebuild the game library: clears game_library tables and triggers a full
 /// rescan + enrichment from disk. Use when baked-in data changes or to force
 /// a fresh scan of all systems.
@@ -208,6 +239,16 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
             "Another metadata operation is already running",
         ));
     }
+
+    // Set initial rebuild progress.
+    state.set_rebuild_progress(Some(RebuildProgress {
+        phase: RebuildPhase::Scanning,
+        current_system: String::new(),
+        systems_done: 0,
+        systems_total: 0,
+        elapsed_secs: 0,
+        error: None,
+    }));
 
     // Clear L1+L2 cache.
     state.cache.invalidate();

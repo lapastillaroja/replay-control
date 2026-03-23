@@ -411,6 +411,8 @@ pub struct AppState {
     pub(crate) busy_label: Arc<std::sync::RwLock<String>>,
     /// Scanning indicator: true only during Phase 2 (game library populate).
     scanning: Arc<std::sync::atomic::AtomicBool>,
+    /// Rebuild progress: set during game library rebuild, cleared when done.
+    rebuild_progress: Arc<std::sync::RwLock<Option<crate::server_fns::RebuildProgress>>>,
 }
 
 /// Opener for metadata DB.
@@ -516,6 +518,7 @@ impl AppState {
             busy,
             busy_label: Arc::new(std::sync::RwLock::new(String::new())),
             scanning,
+            rebuild_progress: Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -659,6 +662,22 @@ impl AppState {
     /// Get the current busy label (empty if idle).
     pub fn get_busy_label(&self) -> String {
         self.busy_label.read().expect("busy_label lock").clone()
+    }
+
+    /// Get current rebuild progress (clone).
+    pub fn rebuild_progress(&self) -> Option<crate::server_fns::RebuildProgress> {
+        self.rebuild_progress
+            .read()
+            .expect("rebuild_progress lock")
+            .clone()
+    }
+
+    /// Set rebuild progress.
+    pub fn set_rebuild_progress(&self, progress: Option<crate::server_fns::RebuildProgress>) {
+        *self
+            .rebuild_progress
+            .write()
+            .expect("rebuild_progress lock") = progress;
     }
 }
 

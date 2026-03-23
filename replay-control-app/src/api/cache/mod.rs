@@ -102,6 +102,7 @@ pub struct GameLibrary {
     pub(super) db: DbPool,
     /// Scanning indicator (same Arc as AppState.scanning).
     /// True only during Phase 2 game library populate.
+    /// Used by get_roms() to return empty during startup scan.
     pub(crate) scanning: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -524,15 +525,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn busy_flag_blocks_l3_scan() {
-        let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    fn scanning_flag_blocks_l3_scan() {
         let scanning = Arc::new(std::sync::atomic::AtomicBool::new(false));
         // Create a dummy DbPool with no connection (closed).
         let db = DbPool::new_closed("test");
-        let cache = GameLibrary::new(db, busy.clone(), scanning);
+        let cache = GameLibrary::new(db, scanning.clone());
 
-        // Set busy.
-        busy.store(true, std::sync::atomic::Ordering::SeqCst);
+        // Set scanning (simulates Phase 2 startup scan).
+        scanning.store(true, std::sync::atomic::Ordering::SeqCst);
 
         let tmp = std::env::temp_dir().join(format!(
             "replay-cache-test-{}-{:?}",
@@ -546,7 +546,7 @@ mod tests {
             replay_control_core::storage::StorageKind::Sd,
         );
 
-        // get_roms should return empty during busy.
+        // get_roms should return empty during scanning.
         let result = cache.get_roms(
             &storage,
             "test_system",
@@ -555,7 +555,7 @@ mod tests {
         );
         assert!(result.unwrap().is_empty());
 
-        busy.store(false, std::sync::atomic::Ordering::SeqCst);
+        scanning.store(false, std::sync::atomic::Ordering::SeqCst);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

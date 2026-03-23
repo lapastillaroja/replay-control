@@ -4,7 +4,7 @@ use server_fn::ServerFnError;
 
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
-use crate::server_fns::{self, ImportState, ThumbnailPhase};
+use crate::server_fns::{self, ImportState, RebuildPhase, ThumbnailPhase};
 use crate::util::{format_number, format_size};
 
 #[component]
@@ -27,10 +27,11 @@ pub fn MetadataPage() -> impl IntoView {
     let thumb_message = RwSignal::new(Option::<String>::None);
     let thumb_cancelling = RwSignal::new(false);
 
-    // Rebuild state (owned here so all sections can see it)
+    // Rebuild state (owned here so on-mount resume can drive it)
     let rebuilding = RwSignal::new(false);
+    let rebuild_result = RwSignal::new(Option::<String>::None);
 
-    // Unified busy signal: any long-running background operation in progress.
+    // Unified busy signal — disables all action buttons reactively.
     let any_busy = Memo::new(move |_| {
         importing.get() || thumb_updating.get() || rebuilding.get()
     });
@@ -41,6 +42,7 @@ pub fn MetadataPage() -> impl IntoView {
         on_cleanup(move || {
             close_metadata_sse();
             close_thumbnail_sse();
+            close_rebuild_sse();
         });
     }
 
@@ -119,6 +121,36 @@ pub fn MetadataPage() -> impl IntoView {
         });
     });
 
+    Effect::new(move || {
+        leptos::task::spawn_local(async move {
+            if let Ok(Some(p)) = server_fns::get_rebuild_progress().await {
+                match p.phase {
+                    RebuildPhase::Scanning | RebuildPhase::Enriching => {
+                        rebuilding.set(true);
+                        watch_rebuild_progress(
+                            rebuilding,
+                            rebuild_result,
+                            stats,
+                            coverage,
+                        );
+                    }
+                    RebuildPhase::Complete => {
+                        rebuild_result.set(Some(format!(
+                            "Rebuild complete ({}s)",
+                            p.elapsed_secs,
+                        )));
+                    }
+                    RebuildPhase::Failed => {
+                        rebuild_result.set(Some(format!(
+                            "Rebuild failed: {}",
+                            p.error.as_deref().unwrap_or("unknown error"),
+                        )));
+                    }
+                }
+            }
+        });
+    });
+
     let on_download = move |_| {
         if any_busy.get() {
             return;
@@ -146,17 +178,17 @@ pub fn MetadataPage() -> impl IntoView {
         thumb_updating.set(true);
         thumb_cancelling.set(false);
         thumb_message.set(None);
-        thumb_progress.set(Some(server_fns::ThumbnailProgress {
-            phase: ThumbnailPhase::Indexing,
-            current_label: String::new(),
-            step_done: 0,
-            step_total: 0,
-            downloaded: 0,
-            entries_indexed: 0,
-            elapsed_secs: 0,
-            error: None,
-        }));
         leptos::task::spawn_local(async move {
+            thumb_progress.set(Some(server_fns::ThumbnailProgress {
+                phase: ThumbnailPhase::Indexing,
+                current_label: String::new(),
+                step_done: 0,
+                step_total: 0,
+                downloaded: 0,
+                entries_indexed: 0,
+                elapsed_secs: 0,
+                error: None,
+            }));
             match server_fns::update_thumbnails().await {
                 Ok(()) => {
                     watch_thumbnail_progress(
@@ -440,7 +472,7 @@ pub fn MetadataPage() -> impl IntoView {
             </section>
 
             // ── Data Management ───────────────────────────────────────
-            <DataManagementSection stats coverage rebuilding any_busy />
+            <DataManagementSection stats coverage rebuilding rebuild_result any_busy />
 
             // ── Attribution ───────────────────────────────────────────
             <section class="section">
@@ -461,6 +493,7 @@ pub fn MetadataPage() -> impl IntoView {
 thread_local! {
     static METADATA_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
     static THUMBNAIL_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
+    static REBUILD_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -481,6 +514,15 @@ fn close_thumbnail_sse() {
     });
 }
 
+#[cfg(target_arch = "wasm32")]
+fn close_rebuild_sse() {
+    REBUILD_ES.with(|cell| {
+        if let Some(es) = cell.borrow_mut().take() {
+            es.close();
+        }
+    });
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 fn close_metadata_sse() {}
@@ -488,6 +530,10 @@ fn close_metadata_sse() {}
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 fn close_thumbnail_sse() {}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+fn close_rebuild_sse() {}
 
 /// Watches metadata import progress via SSE.
 #[allow(unused_variables, unreachable_code)]
@@ -560,8 +606,9 @@ fn watch_metadata_progress(
         es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         on_message.forget();
 
-        // When the server closes the stream or an error occurs, close our side
-        // and clear the importing flag to re-enable buttons.
+        // When the server closes the stream (idle timeout), close our side
+        // to prevent EventSource auto-reconnect spam.
+        // Also clear the importing flag so buttons re-enable.
         let es_err = es.clone();
         let on_error = Closure::<dyn Fn()>::new(move || {
             es_err.close();
@@ -664,8 +711,9 @@ fn watch_thumbnail_progress(
         es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         on_message.forget();
 
-        // When the server closes the stream or an error occurs, close our side
-        // and clear the updating flag to re-enable buttons.
+        // When the server closes the stream (idle timeout), close our side
+        // to prevent EventSource auto-reconnect spam.
+        // Also clear the updating flag so buttons re-enable.
         let es_err = es.clone();
         let on_error = Closure::<dyn Fn()>::new(move || {
             es_err.close();
@@ -679,48 +727,118 @@ fn watch_thumbnail_progress(
     }
 }
 
-/// Polls `is_metadata_busy()` every 2 seconds until the rebuild completes.
-/// On completion, shows a success message and refetches stats/coverage.
+/// Watches rebuild progress via SSE.
 #[allow(unused_variables, unreachable_code)]
-async fn poll_rebuild_completion(
+fn watch_rebuild_progress(
     rebuilding: RwSignal<bool>,
     rebuild_result: RwSignal<Option<String>>,
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
-    i18n: crate::i18n::I18nContext,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     return;
 
     #[cfg(target_arch = "wasm32")]
     {
-        loop {
-            gloo_timers::future::TimeoutFuture::new(2_000).await;
-            match server_fns::is_metadata_busy().await {
-                Ok(true) => {
-                    // Still running, keep polling.
+        use wasm_bindgen::prelude::*;
+
+        // Close any existing rebuild SSE connection before opening a new one.
+        close_rebuild_sse();
+
+        let es = match web_sys::EventSource::new("/sse/rebuild-progress") {
+            Ok(es) => es,
+            Err(_) => return,
+        };
+
+        // Track this connection so on_cleanup or a future call can close it.
+        REBUILD_ES.with(|cell| {
+            *cell.borrow_mut() = Some(es.clone());
+        });
+
+        let es_clone = es.clone();
+        let on_message =
+            Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+                let data = event.data().as_string().unwrap_or_default();
+                if data == "null" || data.is_empty() {
+                    return;
                 }
-                Ok(false) => {
-                    // Rebuild complete.
-                    rebuild_result.set(Some(
-                        t(i18n.locale.get(), "metadata.game_library_rebuilt").to_string(),
-                    ));
-                    rebuilding.set(false);
-                    stats.refetch();
-                    coverage.refetch();
-                    break;
+                let p: server_fns::RebuildProgress = match serde_json::from_str(&data) {
+                    Ok(p) => p,
+                    Err(_) => return,
+                };
+
+                match p.phase {
+                    RebuildPhase::Scanning => {
+                        let msg = if p.systems_total > 0 {
+                            format!(
+                                "Scanning {}... ({}/{})",
+                                p.current_system, p.systems_done, p.systems_total,
+                            )
+                        } else if p.current_system.is_empty() {
+                            "Scanning...".to_string()
+                        } else {
+                            format!("Scanning {}...", p.current_system)
+                        };
+                        rebuild_result.set(Some(msg));
+                    }
+                    RebuildPhase::Enriching => {
+                        let msg = if p.systems_total > 0 {
+                            format!(
+                                "Enriching {}... ({}/{})",
+                                p.current_system, p.systems_done, p.systems_total,
+                            )
+                        } else if p.current_system.is_empty() {
+                            "Enriching...".to_string()
+                        } else {
+                            format!("Enriching {}...", p.current_system)
+                        };
+                        rebuild_result.set(Some(msg));
+                    }
+                    RebuildPhase::Complete => {
+                        rebuild_result.set(Some(format!(
+                            "Rebuild complete ({}s)",
+                            p.elapsed_secs,
+                        )));
+                        rebuilding.set(false);
+                        stats.refetch();
+                        coverage.refetch();
+                        es_clone.close();
+                        REBUILD_ES.with(|cell| {
+                            cell.borrow_mut().take();
+                        });
+                    }
+                    RebuildPhase::Failed => {
+                        rebuild_result.set(Some(format!(
+                            "Rebuild failed: {}",
+                            p.error.as_deref().unwrap_or("unknown error"),
+                        )));
+                        rebuilding.set(false);
+                        stats.refetch();
+                        coverage.refetch();
+                        es_clone.close();
+                        REBUILD_ES.with(|cell| {
+                            cell.borrow_mut().take();
+                        });
+                    }
                 }
-                Err(_) => {
-                    // Server error — stop polling, show generic success
-                    // since the rebuild was accepted.
-                    rebuild_result.set(Some(
-                        t(i18n.locale.get(), "metadata.game_library_rebuilt").to_string(),
-                    ));
-                    rebuilding.set(false);
-                    break;
-                }
-            }
-        }
+            });
+
+        es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+        on_message.forget();
+
+        // When the server closes the stream (idle timeout), close our side
+        // to prevent EventSource auto-reconnect spam.
+        // Also clear the rebuilding flag so buttons re-enable.
+        let es_err = es.clone();
+        let on_error = Closure::<dyn Fn()>::new(move || {
+            es_err.close();
+            rebuilding.set(false);
+            REBUILD_ES.with(|cell| {
+                cell.borrow_mut().take();
+            });
+        });
+        es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+        on_error.forget();
     }
 }
 
@@ -854,6 +972,7 @@ fn DataManagementSection(
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
     rebuilding: RwSignal<bool>,
+    rebuild_result: RwSignal<Option<String>>,
     any_busy: Memo<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
@@ -861,7 +980,6 @@ fn DataManagementSection(
 
     // Rebuild Game Library
     let confirming_rebuild = RwSignal::new(false);
-    let rebuild_result = RwSignal::new(Option::<String>::None);
 
     // Clear Downloaded Images
     let confirming_images = RwSignal::new(false);
@@ -887,16 +1005,13 @@ fn DataManagementSection(
         if any_busy.get() {
             return;
         }
-        confirming_rebuild.set(false);
         rebuilding.set(true);
         rebuild_result.set(None);
+        confirming_rebuild.set(false);
         leptos::task::spawn_local(async move {
             match server_fns::rebuild_game_library().await {
                 Ok(()) => {
-                    // The rebuild runs in the background. Poll is_metadata_busy()
-                    // every 2 seconds until it completes.
-                    poll_rebuild_completion(rebuilding, rebuild_result, stats, coverage, i18n)
-                        .await;
+                    watch_rebuild_progress(rebuilding, rebuild_result, stats, coverage);
                 }
                 Err(e) => {
                     rebuild_result.set(Some(format!("Error: {e}")));
@@ -907,6 +1022,9 @@ fn DataManagementSection(
     });
 
     let on_clear_images = Callback::new(move |_: leptos::ev::MouseEvent| {
+        if any_busy.get() {
+            return;
+        }
         clearing_images.set(true);
         images_result.set(None);
         leptos::task::spawn_local(async move {
@@ -926,6 +1044,9 @@ fn DataManagementSection(
     });
 
     let on_cleanup_orphans = Callback::new(move |_: leptos::ev::MouseEvent| {
+        if any_busy.get() {
+            return;
+        }
         cleaning_orphans.set(true);
         orphans_result.set(None);
         leptos::task::spawn_local(async move {
@@ -946,6 +1067,9 @@ fn DataManagementSection(
     });
 
     let on_clear_index = Callback::new(move |_: leptos::ev::MouseEvent| {
+        if any_busy.get() {
+            return;
+        }
         clearing_index.set(true);
         index_result.set(None);
         leptos::task::spawn_local(async move {
@@ -965,6 +1089,9 @@ fn DataManagementSection(
     });
 
     let on_clear_metadata = Callback::new(move |_: leptos::ev::MouseEvent| {
+        if any_busy.get() {
+            return;
+        }
         clearing_metadata.set(true);
         metadata_result.set(None);
         leptos::task::spawn_local(async move {
@@ -1061,9 +1188,6 @@ fn DataManagementSection(
 }
 
 /// Reusable card for a destructive action with confirmation.
-///
-/// The optional `disabled` signal allows the parent to block the initial button
-/// (e.g., when a long-running operation is active elsewhere on the page).
 #[component]
 fn ClearActionCard(
     confirming: RwSignal<bool>,
@@ -1073,10 +1197,10 @@ fn ClearActionCard(
     #[prop(into)] clearing_key: &'static str,
     #[prop(into)] confirm_key: &'static str,
     on_confirm: Callback<leptos::ev::MouseEvent>,
-    #[prop(optional, into)] disabled: Option<Memo<bool>>,
+    #[prop(optional)] disabled: Option<Memo<bool>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
-    let externally_disabled = move || disabled.map_or(false, |d| d.get());
+    let externally_disabled = move || disabled.is_some_and(|d| d.get());
 
     view! {
         <div class="manage-action-card">

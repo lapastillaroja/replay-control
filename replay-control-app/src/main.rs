@@ -344,6 +344,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SetBoxartOverride>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ResetBoxartOverride>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRelatedGames>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRebuildProgress>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::IsScanning>();
@@ -515,6 +516,28 @@ mod ssr {
             }
         });
 
+        let rebuild_sse_state = app_state.clone();
+        let rebuild_sse_handler = axum::routing::get(move || {
+            let state = rebuild_sse_state.clone();
+            async move {
+                sse_progress_stream(move || {
+                    let progress = state.rebuild_progress();
+                    let is_active = progress.as_ref().is_some_and(|p| {
+                        use replay_control_app::server_fns::RebuildPhase;
+                        matches!(
+                            p.phase,
+                            RebuildPhase::Scanning | RebuildPhase::Enriching
+                        )
+                    });
+                    let json = match &progress {
+                        Some(p) => serde_json::to_string(p).unwrap_or_default(),
+                        None => "null".to_string(),
+                    };
+                    (json, is_active)
+                })
+            }
+        });
+
         let thumbnail_sse_state = app_state.clone();
         let thumbnail_sse_handler = axum::routing::get(move || {
             let state = thumbnail_sse_state.clone();
@@ -541,6 +564,7 @@ mod ssr {
         let app = api::build_router(app_state, leptos_options)
             .route("/sse/metadata-progress", metadata_sse_handler)
             .route("/sse/thumbnail-progress", thumbnail_sse_handler)
+            .route("/sse/rebuild-progress", rebuild_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/manuals/*path", manuals_handler)
             .route("/rom-docs/*path", rom_docs_handler)

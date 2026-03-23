@@ -417,6 +417,16 @@ impl AppState {
         done_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     ) {
         let state = self.clone();
+        // Track whether this was triggered as a rebuild (has progress set).
+        let is_rebuild = state.rebuild_progress().is_some_and(|p| {
+            matches!(
+                p.phase,
+                crate::server_fns::RebuildPhase::Scanning
+                    | crate::server_fns::RebuildPhase::Enriching
+            )
+        });
+        let start = std::time::Instant::now();
+
         tokio::task::spawn_blocking(move || {
             // Use catch_unwind to guarantee the done_flag is cleared even if
             // anything in the enrichment pipeline panics. Without this, a panic
@@ -438,43 +448,115 @@ impl AppState {
 
                 if is_empty {
                     tracing::info!("Post-import: game library is empty, running full populate");
+                    if is_rebuild {
+                        use crate::server_fns::{RebuildPhase, RebuildProgress};
+                        state.set_rebuild_progress(Some(RebuildProgress {
+                            phase: RebuildPhase::Scanning,
+                            current_system: String::new(),
+                            systems_done: 0,
+                            systems_total: 0,
+                            elapsed_secs: start.elapsed().as_secs(),
+                            error: None,
+                        }));
+                    }
                     BackgroundManager::populate_all_systems(
                         &state,
                         &storage,
                         region_pref,
                         region_secondary,
                     );
-                } else {
-                    let systems = state.cache.get_systems(&storage);
-                    let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
+                }
+
+                // Enrichment phase: update box art URLs and ratings for all systems.
+                let systems = state.cache.get_systems(&storage);
+                let with_games: Vec<_> =
+                    systems.into_iter().filter(|s| s.game_count > 0).collect();
+
+                if is_rebuild {
+                    use crate::server_fns::{RebuildPhase, RebuildProgress};
+                    state.set_rebuild_progress(Some(RebuildProgress {
+                        phase: RebuildPhase::Enriching,
+                        current_system: String::new(),
+                        systems_done: 0,
+                        systems_total: with_games.len(),
+                        elapsed_secs: start.elapsed().as_secs(),
+                        error: None,
+                    }));
+                }
+
+                if !with_games.is_empty() {
                     tracing::info!(
                         "Post-import enrichment: updating {} system(s)",
                         with_games.len()
                     );
-                    let start = std::time::Instant::now();
-                    for sys in &with_games {
+                    let enrich_start = std::time::Instant::now();
+                    for (i, sys) in with_games.iter().enumerate() {
+                        if is_rebuild {
+                            use crate::server_fns::{RebuildPhase, RebuildProgress};
+                            state.set_rebuild_progress(Some(RebuildProgress {
+                                phase: RebuildPhase::Enriching,
+                                current_system: sys.display_name.clone(),
+                                systems_done: i,
+                                systems_total: with_games.len(),
+                                elapsed_secs: start.elapsed().as_secs(),
+                                error: None,
+                            }));
+                        }
                         state.cache.enrich_system_cache(&state, &sys.folder_name);
                     }
                     tracing::info!(
                         "Post-import enrichment: done in {:.1}s",
-                        start.elapsed().as_secs_f64()
+                        enrich_start.elapsed().as_secs_f64()
                     );
+                }
+
+                // Mark rebuild complete.
+                if is_rebuild {
+                    use crate::server_fns::{RebuildPhase, RebuildProgress};
+                    state.set_rebuild_progress(Some(RebuildProgress {
+                        phase: RebuildPhase::Complete,
+                        current_system: String::new(),
+                        systems_done: with_games.len(),
+                        systems_total: with_games.len(),
+                        elapsed_secs: start.elapsed().as_secs(),
+                        error: None,
+                    }));
                 }
             }));
 
-            if let Err(panic) = result {
+            if let Err(panic) = &result {
                 let msg = panic
                     .downcast_ref::<String>()
                     .map(|s| s.as_str())
                     .or_else(|| panic.downcast_ref::<&str>().copied())
                     .unwrap_or("unknown panic");
                 tracing::error!("Cache enrichment panicked: {msg}");
+
+                if is_rebuild {
+                    use crate::server_fns::{RebuildPhase, RebuildProgress};
+                    state.set_rebuild_progress(Some(RebuildProgress {
+                        phase: RebuildPhase::Failed,
+                        current_system: String::new(),
+                        systems_done: 0,
+                        systems_total: 0,
+                        elapsed_secs: start.elapsed().as_secs(),
+                        error: Some(format!("Internal error: {msg}")),
+                    }));
+                }
             }
 
             // Always clear the busy flag, even after a panic.
             if let Some(flag) = done_flag {
                 flag.store(false, Ordering::SeqCst);
                 tracing::debug!("Cache enrichment: cleared busy flag");
+            }
+
+            // Clear rebuild progress after a delay so the SSE client has time
+            // to read the final Complete/Failed status before we reset to None.
+            // The SSE stream polls every 200ms and closes after 5 idle ticks (1s).
+            if is_rebuild {
+                std::thread::sleep(Duration::from_secs(3));
+                state.set_rebuild_progress(None);
             }
         });
     }
