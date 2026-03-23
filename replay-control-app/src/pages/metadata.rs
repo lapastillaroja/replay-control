@@ -27,6 +27,14 @@ pub fn MetadataPage() -> impl IntoView {
     let thumb_message = RwSignal::new(Option::<String>::None);
     let thumb_cancelling = RwSignal::new(false);
 
+    // Rebuild state (owned here so all sections can see it)
+    let rebuilding = RwSignal::new(false);
+
+    // Unified busy signal: any long-running background operation in progress.
+    let any_busy = Memo::new(move |_| {
+        importing.get() || thumb_updating.get() || rebuilding.get()
+    });
+
     // Close any leaked EventSource connections when this component unmounts.
     #[cfg(target_arch = "wasm32")]
     {
@@ -112,19 +120,13 @@ pub fn MetadataPage() -> impl IntoView {
     });
 
     let on_download = move |_| {
-        if importing.get() || thumb_updating.get() {
+        if any_busy.get() {
             return;
         }
+        importing.set(true);
+        import_message.set(None);
+        progress.set(None);
         leptos::task::spawn_local(async move {
-            if let Ok(busy) = server_fns::is_metadata_busy().await {
-                if busy {
-                    import_message.set(Some("Another operation is already running".to_string()));
-                    return;
-                }
-            }
-            importing.set(true);
-            import_message.set(None);
-            progress.set(None);
             match server_fns::download_metadata().await {
                 Ok(()) => {
                     watch_metadata_progress(importing, progress, import_message, stats, coverage);
@@ -138,32 +140,23 @@ pub fn MetadataPage() -> impl IntoView {
     };
 
     let on_thumb_update = move |_| {
-        if thumb_updating.get() || importing.get() {
+        if any_busy.get() {
             return;
         }
-        // Check server-side busy state before showing progress UI.
-        // Prevents "Fetching index..." flash followed by error when
-        // another operation (e.g., LaunchBox import) is already running.
+        thumb_updating.set(true);
+        thumb_cancelling.set(false);
+        thumb_message.set(None);
+        thumb_progress.set(Some(server_fns::ThumbnailProgress {
+            phase: ThumbnailPhase::Indexing,
+            current_label: String::new(),
+            step_done: 0,
+            step_total: 0,
+            downloaded: 0,
+            entries_indexed: 0,
+            elapsed_secs: 0,
+            error: None,
+        }));
         leptos::task::spawn_local(async move {
-            if let Ok(busy) = server_fns::is_metadata_busy().await {
-                if busy {
-                    thumb_message.set(Some("Another operation is already running".to_string()));
-                    return;
-                }
-            }
-            thumb_updating.set(true);
-            thumb_cancelling.set(false);
-            thumb_message.set(None);
-            thumb_progress.set(Some(server_fns::ThumbnailProgress {
-                phase: ThumbnailPhase::Indexing,
-                current_label: String::new(),
-                step_done: 0,
-                step_total: 0,
-                downloaded: 0,
-                entries_indexed: 0,
-                elapsed_secs: 0,
-                error: None,
-            }));
             match server_fns::update_thumbnails().await {
                 Ok(()) => {
                     watch_thumbnail_progress(
@@ -331,7 +324,7 @@ pub fn MetadataPage() -> impl IntoView {
                         <button
                             class="metadata-download-btn"
                             on:click=on_download
-                            disabled=move || importing.get() || thumb_updating.get()
+                            disabled=move || any_busy.get()
                         >
                             {move || if importing.get() {
                                 t(i18n.locale.get(), "metadata.downloading_metadata")
@@ -415,7 +408,7 @@ pub fn MetadataPage() -> impl IntoView {
                         <button
                             class="metadata-download-btn"
                             on:click=on_thumb_update
-                            disabled=move || thumb_updating.get() || importing.get()
+                            disabled=move || any_busy.get()
                         >
                             {move || if thumb_updating.get() {
                                 t(i18n.locale.get(), "metadata.thumbnail_updating")
@@ -447,7 +440,7 @@ pub fn MetadataPage() -> impl IntoView {
             </section>
 
             // ── Data Management ───────────────────────────────────────
-            <DataManagementSection stats coverage />
+            <DataManagementSection stats coverage rebuilding any_busy />
 
             // ── Attribution ───────────────────────────────────────────
             <section class="section">
@@ -567,11 +560,12 @@ fn watch_metadata_progress(
         es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         on_message.forget();
 
-        // When the server closes the stream (idle timeout), close our side
-        // to prevent EventSource auto-reconnect spam.
+        // When the server closes the stream or an error occurs, close our side
+        // and clear the importing flag to re-enable buttons.
         let es_err = es.clone();
         let on_error = Closure::<dyn Fn()>::new(move || {
             es_err.close();
+            importing.set(false);
             METADATA_ES.with(|cell| {
                 cell.borrow_mut().take();
             });
@@ -670,11 +664,12 @@ fn watch_thumbnail_progress(
         es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
         on_message.forget();
 
-        // When the server closes the stream (idle timeout), close our side
-        // to prevent EventSource auto-reconnect spam.
+        // When the server closes the stream or an error occurs, close our side
+        // and clear the updating flag to re-enable buttons.
         let es_err = es.clone();
         let on_error = Closure::<dyn Fn()>::new(move || {
             es_err.close();
+            updating.set(false);
             THUMBNAIL_ES.with(|cell| {
                 cell.borrow_mut().take();
             });
@@ -858,13 +853,14 @@ fn ThumbnailProgressDisplay(
 fn DataManagementSection(
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
+    rebuilding: RwSignal<bool>,
+    any_busy: Memo<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let show_advanced = RwSignal::new(false);
 
     // Rebuild Game Library
     let confirming_rebuild = RwSignal::new(false);
-    let rebuilding = RwSignal::new(false);
     let rebuild_result = RwSignal::new(Option::<String>::None);
 
     // Clear Downloaded Images
@@ -888,9 +884,12 @@ fn DataManagementSection(
     let metadata_result = RwSignal::new(Option::<String>::None);
 
     let on_rebuild = Callback::new(move |_: leptos::ev::MouseEvent| {
+        if any_busy.get() {
+            return;
+        }
+        confirming_rebuild.set(false);
         rebuilding.set(true);
         rebuild_result.set(None);
-        confirming_rebuild.set(false);
         leptos::task::spawn_local(async move {
             match server_fns::rebuild_game_library().await {
                 Ok(()) => {
@@ -999,6 +998,7 @@ fn DataManagementSection(
                     clearing_key="metadata.rebuilding_game_library"
                     confirm_key="metadata.confirm_rebuild_game_library"
                     on_confirm=on_rebuild
+                    disabled=any_busy
                 />
                 <ClearActionCard
                     confirming=confirming_orphans
@@ -1008,6 +1008,7 @@ fn DataManagementSection(
                     clearing_key="metadata.cleaning_orphans"
                     confirm_key="metadata.confirm_cleanup_orphans"
                     on_confirm=on_cleanup_orphans
+                    disabled=any_busy
                 />
             </div>
 
@@ -1031,6 +1032,7 @@ fn DataManagementSection(
                         clearing_key="metadata.clearing_images"
                         confirm_key="metadata.confirm_clear_images"
                         on_confirm=on_clear_images
+                        disabled=any_busy
                     />
                     <ClearActionCard
                         confirming=confirming_metadata
@@ -1040,6 +1042,7 @@ fn DataManagementSection(
                         clearing_key="metadata.clearing_metadata"
                         confirm_key="metadata.confirm_clear_metadata"
                         on_confirm=on_clear_metadata
+                        disabled=any_busy
                     />
                     <ClearActionCard
                         confirming=confirming_index
@@ -1049,6 +1052,7 @@ fn DataManagementSection(
                         clearing_key="metadata.clearing_index"
                         confirm_key="metadata.confirm_clear_index"
                         on_confirm=on_clear_index
+                        disabled=any_busy
                     />
                 </div>
             </Show>
@@ -1057,6 +1061,9 @@ fn DataManagementSection(
 }
 
 /// Reusable card for a destructive action with confirmation.
+///
+/// The optional `disabled` signal allows the parent to block the initial button
+/// (e.g., when a long-running operation is active elsewhere on the page).
 #[component]
 fn ClearActionCard(
     confirming: RwSignal<bool>,
@@ -1066,8 +1073,10 @@ fn ClearActionCard(
     #[prop(into)] clearing_key: &'static str,
     #[prop(into)] confirm_key: &'static str,
     on_confirm: Callback<leptos::ev::MouseEvent>,
+    #[prop(optional, into)] disabled: Option<Memo<bool>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let externally_disabled = move || disabled.map_or(false, |d| d.get());
 
     view! {
         <div class="manage-action-card">
@@ -1076,6 +1085,7 @@ fn ClearActionCard(
                     <button
                         class="game-action-btn game-action-delete"
                         on:click=move |_| confirming.set(true)
+                        disabled=externally_disabled
                     >
                         {move || t(i18n.locale.get(), label_key)}
                     </button>
@@ -1086,7 +1096,7 @@ fn ClearActionCard(
                     <button
                         class="game-action-btn game-action-delete-confirm"
                         on:click=move |ev| on_confirm.run(ev)
-                        disabled=move || clearing.get()
+                        disabled=move || clearing.get() || externally_disabled()
                     >
                         {move || if clearing.get() {
                             t(i18n.locale.get(), clearing_key)

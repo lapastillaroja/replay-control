@@ -100,9 +100,6 @@ pub struct GameLibrary {
     pub(super) images: std::sync::RwLock<HashMap<String, Arc<ImageIndex>>>,
     /// Metadata DB pool for L2 persistent cache.
     pub(super) db: DbPool,
-    /// Unified busy flag (same Arc as AppState.busy).
-    /// When set, get_roms() returns empty instead of blocking on L3 scan.
-    busy: Arc<std::sync::atomic::AtomicBool>,
     /// Scanning indicator (same Arc as AppState.scanning).
     /// True only during Phase 2 game library populate.
     pub(crate) scanning: Arc<std::sync::atomic::AtomicBool>,
@@ -111,7 +108,6 @@ pub struct GameLibrary {
 impl GameLibrary {
     pub(crate) fn new(
         db: DbPool,
-        busy: Arc<std::sync::atomic::AtomicBool>,
         scanning: Arc<std::sync::atomic::AtomicBool>,
     ) -> Self {
         Self {
@@ -121,7 +117,6 @@ impl GameLibrary {
             recents: std::sync::RwLock::new(None),
             images: std::sync::RwLock::new(HashMap::new()),
             db,
-            busy,
             scanning,
         }
     }

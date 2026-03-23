@@ -143,9 +143,14 @@
     transition: all 0.2s;
 }
 
-.game-action-btn:hover {
+.game-action-btn:hover:not(:disabled) {
     border-color: var(--accent);
     background: var(--surface-hover);
+}
+
+.game-action-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
 }
 
 .game-action-icon {

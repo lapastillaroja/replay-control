@@ -504,7 +504,6 @@ impl AppState {
             config_path,
             cache: Arc::new(GameLibrary::new(
                 metadata_pool.clone(),
-                busy.clone(),
                 scanning.clone(),
             )),
             storage_path_override,
