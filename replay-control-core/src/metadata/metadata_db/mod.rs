@@ -63,7 +63,7 @@ pub enum ImportState {
 }
 
 /// Progress of an ongoing metadata import.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ImportProgress {
     pub state: ImportState,
     pub processed: usize,

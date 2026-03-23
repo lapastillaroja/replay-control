@@ -57,10 +57,10 @@ pub fn supports_wal(path: &std::path::Path) -> bool {
         let mount_point = parts[1];
         let fs_type = parts[2];
 
-        if path_str.starts_with(mount_point) {
-            if best_match.is_none() || mount_point.len() > best_match.unwrap().0.len() {
-                best_match = Some((mount_point, fs_type));
-            }
+        if path_str.starts_with(mount_point)
+            && (best_match.is_none() || mount_point.len() > best_match.unwrap().0.len())
+        {
+            best_match = Some((mount_point, fs_type));
         }
     }
 
