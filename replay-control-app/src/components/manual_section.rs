@@ -243,7 +243,7 @@ fn DocumentLink(
         _ => "\u{1F4CE}",     // paperclip
     };
 
-    let size_display = format_file_size(doc.size_bytes);
+    let size_display = crate::util::format_size(doc.size_bytes);
     let label = doc.label.clone();
     let ext_upper = doc.extension.to_uppercase();
 
@@ -286,7 +286,7 @@ where
     F: Fn(String) + Clone + Send + Sync + 'static,
 {
     let i18n = use_i18n();
-    let size_display = format_file_size(manual.size_bytes);
+    let size_display = crate::util::format_size(manual.size_bytes);
     let label = manual.label.clone();
     let lang_display = manual
         .language
@@ -438,7 +438,7 @@ where
             parts.push(lang.clone());
         }
         if let Some(size) = rec.size_bytes {
-            parts.push(format_file_size(size));
+            parts.push(crate::util::format_size(size));
         }
         parts.join(" \u{00B7} ")
     };
@@ -481,13 +481,3 @@ where
     }
 }
 
-/// Format a file size in human-readable form.
-fn format_file_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
-}

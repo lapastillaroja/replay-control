@@ -86,16 +86,16 @@ pub fn RomList(system: String) -> impl IntoView {
                 filters_initialized.set_value(true);
                 return;
             }
-            update_filter_url(
-                sys.get_value(),
-                hh,
-                ht,
-                hb,
-                hc,
-                mp,
-                &g,
-                &debounced_search.get_untracked(),
-            );
+            update_filter_url(FilterUrlParams {
+                system: sys.get_value(),
+                hide_hacks: hh,
+                hide_translations: ht,
+                hide_betas: hb,
+                hide_clones: hc,
+                multiplayer_only: mp,
+                genre: &g,
+                search: &debounced_search.get_untracked(),
+            });
         });
     }
 
@@ -306,48 +306,52 @@ pub fn RomList(system: String) -> impl IntoView {
     }
 }
 
-/// Update the URL query params for the ROM list page (replace, no navigation).
-/// Keeps all filter state in sync with the URL.
+/// Parameters for updating the URL query string with current filter state.
 #[cfg(feature = "hydrate")]
-#[allow(clippy::too_many_arguments)]
-fn update_filter_url(
+struct FilterUrlParams<'a> {
     system: String,
     hide_hacks: bool,
     hide_translations: bool,
     hide_betas: bool,
     hide_clones: bool,
     multiplayer_only: bool,
-    genre: &str,
-    search: &str,
-) {
+    genre: &'a str,
+    search: &'a str,
+}
+
+/// Update the URL query params for the ROM list page (replace, no navigation).
+/// Keeps all filter state in sync with the URL.
+#[cfg(feature = "hydrate")]
+fn update_filter_url(p: FilterUrlParams<'_>) {
     if let Some(window) = web_sys::window() {
         let mut params = Vec::new();
-        if !search.is_empty() {
-            params.push(format!("search={}", urlencoding::encode(search)));
+        if !p.search.is_empty() {
+            params.push(format!("search={}", urlencoding::encode(p.search)));
         }
-        if hide_hacks {
+        if p.hide_hacks {
             params.push("hide_hacks=true".to_string());
         }
-        if hide_translations {
+        if p.hide_translations {
             params.push("hide_translations=true".to_string());
         }
-        if hide_betas {
+        if p.hide_betas {
             params.push("hide_betas=true".to_string());
         }
-        if hide_clones {
+        if p.hide_clones {
             params.push("hide_clones=true".to_string());
         }
-        if multiplayer_only {
+        if p.multiplayer_only {
             params.push("multiplayer=true".to_string());
         }
-        if !genre.is_empty() {
-            params.push(format!("genre={}", urlencoding::encode(genre)));
+        if !p.genre.is_empty() {
+            params.push(format!("genre={}", urlencoding::encode(p.genre)));
         }
         let qs = if params.is_empty() {
             String::new()
         } else {
             format!("?{}", params.join("&"))
         };
+        let system = &p.system;
         let url = format!("/games/{system}{qs}");
         let _ = window
             .history()

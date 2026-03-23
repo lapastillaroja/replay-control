@@ -76,6 +76,15 @@ pub struct DeveloperGamesFilter<'a> {
     pub min_rating: Option<f64>,
 }
 
+/// Pagination and region parameters for paginated queries.
+#[derive(Debug)]
+pub struct PaginationParams<'a> {
+    pub offset: usize,
+    pub limit: usize,
+    pub region_pref: &'a str,
+    pub region_secondary: &'a str,
+}
+
 impl MetadataDb {
     /// Get all distinct `box_art_url` values from `game_library` for a given system.
     ///
@@ -510,6 +519,29 @@ impl MetadataDb {
         Ok(())
     }
 
+    /// Delete the `game_library` entry for a specific ROM.
+    pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
+        let _ = conn.execute(
+            "DELETE FROM game_library WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
+    }
+
+    /// Rename a ROM in the `game_library` table.
+    pub fn rename_for_rom(
+        conn: &Connection,
+        system: &str,
+        old_filename: &str,
+        new_filename: &str,
+    ) {
+        if let Err(e) = conn.execute(
+            "UPDATE game_library SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            params![system, old_filename, new_filename],
+        ) {
+            tracing::warn!("Failed to update game_library: {e}");
+        }
+    }
+
     /// Fetch current genres from `game_library` for a single system.
     pub fn system_rom_genres(
         conn: &Connection,
@@ -691,15 +723,11 @@ impl MetadataDb {
     }
 
     /// Paginated game list for a developer, optionally filtered by system and content filters.
-    #[allow(clippy::too_many_arguments)]
     pub fn developer_games_paginated(
         conn: &Connection,
         developer: &str,
         system_filter: Option<&str>,
-        offset: usize,
-        limit: usize,
-        region_pref: &str,
-        region_secondary: &str,
+        page: &PaginationParams<'_>,
         filters: &DeveloperGamesFilter,
     ) -> Result<(Vec<GameEntry>, bool, usize)> {
         let mut wb = WhereBuilder::new();
@@ -741,7 +769,7 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Count developer_games_paginated: {e}")))?;
 
         // ── Fetch query ──
-        let fetch_limit = limit + 1;
+        let fetch_limit = page.limit + 1;
         let (fetch_where, filter_refs) = wb.build(5);
         let fetch_sql = format!(
             "WITH deduped AS (
@@ -766,10 +794,10 @@ impl MetadataDb {
             LIMIT ?3 OFFSET ?4"
         );
 
-        let region_pref_box: Box<dyn rusqlite::types::ToSql> = Box::new(region_pref.to_string());
-        let region_secondary_box: Box<dyn rusqlite::types::ToSql> = Box::new(region_secondary.to_string());
+        let region_pref_box: Box<dyn rusqlite::types::ToSql> = Box::new(page.region_pref.to_string());
+        let region_secondary_box: Box<dyn rusqlite::types::ToSql> = Box::new(page.region_secondary.to_string());
         let limit_box: Box<dyn rusqlite::types::ToSql> = Box::new(fetch_limit as i64);
-        let offset_box: Box<dyn rusqlite::types::ToSql> = Box::new(offset as i64);
+        let offset_box: Box<dyn rusqlite::types::ToSql> = Box::new(page.offset as i64);
 
         let mut fetch_refs: Vec<&dyn rusqlite::types::ToSql> = vec![
             region_pref_box.as_ref(),
@@ -787,8 +815,8 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Query developer_games_paginated: {e}")))?;
         let mut entries: Vec<GameEntry> = rows.flatten().collect();
 
-        let has_more = entries.len() > limit;
-        entries.truncate(limit);
+        let has_more = entries.len() > page.limit;
+        entries.truncate(page.limit);
 
         Ok((entries, has_more, total))
     }
@@ -1126,7 +1154,7 @@ mod tests {
             make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", Some("RPG"), None),
         ], None).unwrap();
         let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, 0, 50, "us", "", &filters).unwrap();
+        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
         assert_eq!(total, 2);
         assert_eq!(entries.len(), 2);
         assert!(!has_more);
@@ -1141,7 +1169,7 @@ mod tests {
             make_dev_entry("snes", "SF2.sfc", "Capcom", "Street Fighter II", "us", Some("Fighting"), None),
         ], None).unwrap();
         let filters = super::DeveloperGamesFilter { genre: "Action", ..Default::default() };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, 0, 50, "us", "", &filters).unwrap();
+        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Mega Man X");
@@ -1158,7 +1186,7 @@ mod tests {
             make_dev_entry("gba", "MegaManZero.gba", "Capcom", "Mega Man Zero", "us", Some("Action"), None),
         ], None).unwrap();
         let filters = super::DeveloperGamesFilter { genre: "Action", ..Default::default() };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", Some("snes"), 0, 50, "us", "", &filters).unwrap();
+        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", Some("snes"), &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Mega Man X");
@@ -1173,7 +1201,7 @@ mod tests {
             make_dev_entry("snes", "SF2-eu.sfc", "Capcom", "Street Fighter II", "europe", None, None),
         ], None).unwrap();
         let filters = super::DeveloperGamesFilter::default();
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, 0, 50, "us", "europe", &filters).unwrap();
+        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "europe" }, &filters).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].region, "us");
@@ -1187,7 +1215,7 @@ mod tests {
             make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", None, None),
         ], None).unwrap();
         let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, 100, 50, "us", "", &filters).unwrap();
+        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 100, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
         assert_eq!(total, 2);
         assert!(entries.is_empty());
         assert!(!has_more);
@@ -1202,11 +1230,11 @@ mod tests {
             make_dev_entry("snes", "C.sfc", "Capcom", "Game C", "us", None, None),
         ], None).unwrap();
         let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, 0, 2, "us", "", &filters).unwrap();
+        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 2, region_pref: "us", region_secondary: "" }, &filters).unwrap();
         assert_eq!(entries.len(), 2);
         assert!(has_more);
         assert_eq!(total, 3);
-        let (entries, has_more, _) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, 2, 2, "us", "", &filters).unwrap();
+        let (entries, has_more, _) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 2, limit: 2, region_pref: "us", region_secondary: "" }, &filters).unwrap();
         assert_eq!(entries.len(), 1);
         assert!(!has_more);
     }
@@ -1220,7 +1248,7 @@ mod tests {
             make_dev_entry_clone("snes", "SF2-clone.sfc", "Capcom", "Street Fighter II Clone"),
         ], None).unwrap();
         let filters = super::DeveloperGamesFilter { hide_hacks: true, hide_clones: true, ..Default::default() };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, 0, 50, "us", "", &filters).unwrap();
+        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Street Fighter II");
@@ -1234,7 +1262,7 @@ mod tests {
             make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", None, None),
         ], None).unwrap();
         let filters = super::DeveloperGamesFilter { multiplayer_only: true, ..Default::default() };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, 0, 50, "us", "", &filters).unwrap();
+        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Street Fighter II");

@@ -295,4 +295,37 @@ impl UserDataDb {
             .map_err(|e| Error::Other(format!("Failed to remove game_video: {e}")))?;
         Ok(())
     }
+
+    /// Delete all user data entries for a ROM (box art overrides + videos).
+    pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
+        let _ = conn.execute(
+            "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
+        let _ = conn.execute(
+            "DELETE FROM game_videos WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
+    }
+
+    /// Rename a ROM across all user data tables (box art overrides + videos).
+    pub fn rename_for_rom(
+        conn: &Connection,
+        system: &str,
+        old_filename: &str,
+        new_filename: &str,
+    ) {
+        if let Err(e) = conn.execute(
+            "UPDATE box_art_overrides SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            params![system, old_filename, new_filename],
+        ) {
+            tracing::warn!("Failed to update box_art_overrides: {e}");
+        }
+        if let Err(e) = conn.execute(
+            "UPDATE game_videos SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            params![system, old_filename, new_filename],
+        ) {
+            tracing::warn!("Failed to update game_videos: {e}");
+        }
+    }
 }

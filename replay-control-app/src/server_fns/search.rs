@@ -393,6 +393,16 @@ struct SearchFilters {
     genre: String,
 }
 
+/// Pre-loaded per-system lookup tables used during filtering and scoring.
+#[cfg(feature = "ssr")]
+struct SystemLookups<'a> {
+    genre_groups: &'a std::collections::HashMap<String, String>,
+    base_titles: &'a std::collections::HashMap<String, String>,
+    ratings: &'a std::collections::HashMap<String, f64>,
+    players: &'a std::collections::HashMap<String, u8>,
+    alias_base_titles: Option<&'a std::collections::HashSet<String>>,
+}
+
 /// Filter and score ROMs for a single system.
 ///
 /// Applies tier filters, clone filter, genre filter, multiplayer filter,
@@ -406,11 +416,7 @@ fn filter_and_score_roms<'a>(
     q: &str,
     region_pref: replay_control_core::rom_tags::RegionPreference,
     region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
-    system_genre_groups: &std::collections::HashMap<String, String>,
-    system_base_titles: &std::collections::HashMap<String, String>,
-    system_ratings: &std::collections::HashMap<String, f64>,
-    system_players: &std::collections::HashMap<String, u8>,
-    alias_base_titles: Option<&std::collections::HashSet<String>>,
+    lookups: &SystemLookups<'_>,
 ) -> Vec<(u32, &'a RomEntry)> {
     use replay_control_core::rom_tags;
 
@@ -448,7 +454,7 @@ fn filter_and_score_roms<'a>(
             if filters.genre.is_empty() {
                 return true;
             }
-            system_genre_groups
+            lookups.genre_groups
                 .get(&r.game.rom_filename)
                 .is_some_and(|gg| gg.eq_ignore_ascii_case(&filters.genre))
         })
@@ -456,13 +462,13 @@ fn filter_and_score_roms<'a>(
             if !filters.multiplayer_only {
                 return true;
             }
-            system_players
+            lookups.players
                 .get(&r.game.rom_filename)
                 .is_some_and(|&p| p >= 2)
         })
         .filter(|r| {
             if let Some(threshold) = filters.min_rating {
-                system_ratings
+                lookups.ratings
                     .get(&r.game.rom_filename)
                     .is_some_and(|&rating| rating >= threshold as f64)
             } else {
@@ -499,8 +505,8 @@ fn filter_and_score_roms<'a>(
                 // Alias expansion: if this ROM's base_title was found via alias search,
                 // give it a minimum score so it appears in results.
                 if score == 0
-                    && let Some(system_aliases) = alias_base_titles
-                    && let Some(bt) = system_base_titles.get(&r.game.rom_filename)
+                    && let Some(system_aliases) = lookups.alias_base_titles
+                    && let Some(bt) = lookups.base_titles.get(&r.game.rom_filename)
                     && system_aliases.contains(bt)
                 {
                     score = 350;
@@ -559,6 +565,8 @@ fn build_search_results(
         .collect()
 }
 
+// clippy::too_many_arguments — Leptos server functions require flat parameter lists
+// for serialization; wrapping in a struct is not supported by the #[server] macro.
 #[allow(clippy::too_many_arguments)]
 #[server(prefix = "/sfn")]
 pub async fn global_search(
@@ -686,11 +694,13 @@ pub async fn global_search(
             &q,
             region_pref,
             region_secondary,
-            &system_genre_groups,
-            &system_base_titles,
-            &system_ratings,
-            &system_players,
-            alias_base_titles.get(&sys.folder_name),
+            &SystemLookups {
+                genre_groups: &system_genre_groups,
+                base_titles: &system_base_titles,
+                ratings: &system_ratings,
+                players: &system_players,
+                alias_base_titles: alias_base_titles.get(&sys.folder_name),
+            },
         );
 
         if scored.is_empty() {
@@ -926,6 +936,8 @@ pub async fn get_developer_genres(
 }
 
 /// Get paginated game list for a developer, with optional system and content filters.
+// clippy::too_many_arguments — Leptos server functions require flat parameter lists
+// for serialization; wrapping in a struct is not supported by the #[server] macro.
 #[allow(clippy::too_many_arguments)]
 #[server(prefix = "/sfn")]
 pub async fn get_developer_games(
@@ -973,10 +985,12 @@ pub async fn get_developer_games(
                 conn,
                 &developer,
                 system_filter,
-                offset,
-                limit,
-                region_str,
-                region_secondary_str,
+                &replay_control_core::metadata_db::PaginationParams {
+                    offset,
+                    limit,
+                    region_pref: region_str,
+                    region_secondary: region_secondary_str,
+                },
                 &filters,
             )
             .unwrap_or((Vec::new(), false, 0));
