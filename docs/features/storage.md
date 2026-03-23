@@ -6,12 +6,12 @@ How storage detection, filesystem watching, and the config boundary work.
 
 `StorageLocation::detect()` reads `storage_mode` from `replay.cfg` and resolves the storage root:
 
-| Mode | Path | Filesystem | Notes |
-|------|------|------------|-------|
-| `sd` | `/media/sd` | ext4 on SD card | Default |
-| `usb` | `/media/usb` | ext4/exFAT on USB | Most common for large collections |
-| `nvme` | `/media/nvme` | ext4 on NVMe | Pi 5 PCIe support |
-| `nfs` | `/media/nfs` | NFS v4 mount | Network share from desktop/NAS |
+| Mode | Path | Filesystem | SQLite Journal | Notes |
+|------|------|------------|---------------|-------|
+| `sd` | `/media/sd` | ext4 on SD card | WAL | Default |
+| `usb` | `/media/usb` | ext4 or exFAT on USB | WAL (ext4) or DELETE (exFAT) | Most common for large collections |
+| `nvme` | `/media/nvme` | ext4 on NVMe | WAL | Pi 5 PCIe support |
+| `nfs` | `/media/nfs` | NFS v4 mount | DELETE (nolock VFS) | Network share from desktop/NAS |
 
 The `--storage-path` CLI flag bypasses detection entirely (used for local development).
 
@@ -19,7 +19,7 @@ The `--storage-path` CLI flag bypasses detection entirely (used for local develo
 
 `StorageKind` enum (`Sd`, `Usb`, `Nvme`, `Nfs`) affects behavior:
 
-- **`is_local()` = true** (Sd, Usb, Nvme): inotify filesystem watcher enabled, SQLite WAL mode for concurrent reads
+- **`is_local()` = true** (Sd, Usb, Nvme): inotify filesystem watcher enabled. SQLite journal mode depends on the filesystem (detected via `/proc/mounts`): WAL mode on POSIX-capable filesystems (ext4, btrfs, xfs, f2fs, tmpfs) for concurrent reads; DELETE mode on exFAT/FAT32 (WAL's shared memory doesn't work reliably on these filesystems).
 - **`is_local()` = false** (Nfs): No filesystem watcher, SQLite uses `nolock` VFS with DELETE journal mode (NFS does not support file locking)
 
 ## Config File Watcher
@@ -63,7 +63,7 @@ Key files:
 - `settings.cfg` -- App-specific settings (region preference, secondary region, text size)
 - `media/` -- Downloaded box art, screenshot, and title screen images
 
-Database access uses a `deadpool-sqlite` connection pool (`DbPool`) with separate read and write pools. On local storage (WAL mode), multiple concurrent read connections are allowed alongside a single write connection. On NFS (`nolock` VFS), pools are limited to 1 connection each. A `metadata_operation_in_progress` busy flag prevents race conditions between background operations (import, thumbnail download, enrichment).
+Database access uses a `deadpool-sqlite` connection pool (`DbPool`) with separate read and write pools. The SQLite journal mode is chosen based on the filesystem (detected via `/proc/mounts`): WAL mode on POSIX-capable filesystems (ext4, btrfs, xfs, f2fs, tmpfs) allows multiple concurrent read connections alongside a single write connection. DELETE mode is used on exFAT/FAT32 USB drives (WAL shared memory doesn't work reliably) and NFS (`nolock` VFS), with pools limited to 1 read + 1 write connection. A `scanning` flag prevents race conditions between background operations (import, thumbnail download, enrichment).
 
 ## Key Source Files
 

@@ -105,7 +105,7 @@ Accessible from the More page, organized into Preferences, Game Data, and System
 
 - Auto-detects storage mode from RePlayOS config: SD card, USB, NVMe (Pi 5), or NFS
 - Config file watcher with automatic cache invalidation on storage changes
-- Filesystem-aware SQLite locking: WAL mode on local storage, nolock+DELETE on NFS
+- Filesystem-aware SQLite journal mode: WAL on POSIX-capable filesystems (ext4, btrfs, xfs), DELETE on exFAT/FAT32/NFS
 - App data stored in `.replay-control/` on the ROM storage device, separate from RePlayOS config. [Detail](storage.md)
 
 ## Libretro Core — Recently Played Viewer

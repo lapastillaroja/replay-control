@@ -32,7 +32,7 @@ Long-lived documents that describe how things are built, specifications, and ben
 | [performance-benchmarks.md](reference/performance-benchmarks.md) | Before/after measurements |
 | [compile-time-analysis.md](reference/compile-time-analysis.md) | Rust compile time breakdown |
 | [integration-testing-analysis.md](reference/integration-testing-analysis.md) | Integration testing approach |
-| [background-tasks.md](reference/background-tasks.md) | Background task system design (formal design not adopted) |
+| [server-lifecycle.md](reference/server-lifecycle.md) | Server startup, background pipeline, connection pools |
 | [binary-distribution.md](reference/binary-distribution.md) | Binary distribution via GitHub |
 | [deployment.md](reference/deployment.md) | Deployment on RePlayOS (build, install, service) |
 | [replay-control-folder.md](reference/replay-control-folder.md) | .replay-control/ directory structure |
