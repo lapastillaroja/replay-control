@@ -28,8 +28,16 @@ use deadpool_sync::SyncWrapper;
 /// proper WAL/nolock/PRAGMA configuration instead of plain `Connection::open()`.
 struct SqliteManager {
     db_path: PathBuf,
+    /// Whether the storage is local (SD/USB/NVMe) or remote (NFS).
+    /// Determines journal mode (WAL vs DELETE) and available PRAGMAs.
     is_local: bool,
     label: String,
+    /// Whether this manager creates write-pool connections.
+    /// Write connections disable WAL auto-checkpoint for manual control.
+    /// Read connections set `query_only = ON` for safety.
+    is_write: bool,
+    /// Throttle `PRAGMA optimize` to at most once per hour.
+    last_optimize: std::sync::Arc<std::sync::Mutex<std::time::Instant>>,
 }
 
 impl std::fmt::Debug for SqliteManager {
@@ -38,6 +46,7 @@ impl std::fmt::Debug for SqliteManager {
             .field("db_path", &self.db_path)
             .field("is_local", &self.is_local)
             .field("label", &self.label)
+            .field("is_write", &self.is_write)
             .finish()
     }
 }
@@ -49,16 +58,36 @@ impl managed::Manager for SqliteManager {
     async fn create(&self) -> Result<SyncWrapper<rusqlite::Connection>, Self::Error> {
         let db_path = self.db_path.clone();
         let is_local = self.is_local;
+        let is_write = self.is_write;
         let label = self.label.clone();
 
         SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
-            replay_control_core::db_common::open_connection(&db_path, &label, is_local)
-                .map_err(|e| {
-                    rusqlite::Error::SqliteFailure(
-                        rusqlite::ffi::Error::new(1),
-                        Some(e.to_string()),
-                    )
-                })
+            let conn =
+                replay_control_core::db_common::open_connection(&db_path, &label, is_local)
+                    .map_err(|e| {
+                        rusqlite::Error::SqliteFailure(
+                            rusqlite::ffi::Error::new(1),
+                            Some(e.to_string()),
+                        )
+                    })?;
+
+            // Per-role PRAGMAs (on top of the base PRAGMAs from open_connection):
+            // Check actual journal mode — exFAT USB is "local" but uses DELETE, not WAL.
+            let is_wal = is_write && conn
+                .query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))
+                .map(|m| m == "wal")
+                .unwrap_or(false);
+            if is_wal {
+                // Disable automatic WAL checkpoints so we can checkpoint
+                // manually after heavy writes (import, thumbnail rebuild).
+                conn.execute_batch("PRAGMA wal_autocheckpoint = 0;")?;
+            }
+            if !is_write {
+                // Read connections should never modify data (defense-in-depth).
+                conn.execute_batch("PRAGMA query_only = ON;")?;
+            }
+
+            Ok(conn)
         })
         .await
     }
@@ -74,6 +103,36 @@ impl managed::Manager for SqliteManager {
         if conn.is_mutex_poisoned() {
             return Err(RecycleError::message("mutex poisoned"));
         }
+
+        // Run PRAGMA optimize at most once per hour to keep query planner
+        // statistics fresh without adding overhead to every pool return.
+        let should_optimize = self
+            .last_optimize
+            .lock()
+            .ok()
+            .is_some_and(|last| last.elapsed() > std::time::Duration::from_secs(3600));
+
+        if should_optimize {
+            let result = conn
+                .interact(|conn| {
+                    conn.execute_batch("PRAGMA analysis_limit = 400; PRAGMA optimize;")
+                })
+                .await;
+            match result {
+                Ok(Ok(())) => {
+                    if let Ok(mut last) = self.last_optimize.lock() {
+                        *last = std::time::Instant::now();
+                    }
+                }
+                Ok(Err(e)) => {
+                    tracing::debug!("PRAGMA optimize failed: {e}");
+                }
+                Err(e) => {
+                    tracing::debug!("PRAGMA optimize interact failed: {e}");
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -114,6 +173,7 @@ pub struct DbPool {
 fn build_pool(
     db_path: &std::path::Path,
     is_local: bool,
+    is_write: bool,
     label: &str,
     max_size: usize,
 ) -> Result<SqlitePool, Box<dyn std::error::Error>> {
@@ -121,6 +181,8 @@ fn build_pool(
         db_path: db_path.to_path_buf(),
         is_local,
         label: label.to_string(),
+        is_write,
+        last_optimize: std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
     };
     let pool = managed::Pool::builder(mgr)
         .max_size(max_size)
@@ -139,8 +201,20 @@ impl DbPool {
         opener: fn(&std::path::Path, bool) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let read_size = if is_local { 3 } else { 1 };
-        let read_pool = build_pool(&db_path, is_local, &format!("{label}_read"), read_size)?;
-        let write_pool = build_pool(&db_path, is_local, &format!("{label}_write"), 1)?;
+        let read_pool = build_pool(&db_path, is_local, false, &format!("{label}_read"), read_size)?;
+        let write_pool = build_pool(&db_path, is_local, true, &format!("{label}_write"), 1)?;
+
+        // Warm one read + one write connection eagerly. If this fails, the DB
+        // is inaccessible and there is no point starting the server.
+        drop(
+            Self::blocking_get(&read_pool)
+                .ok_or_else(|| format!("{label}: failed to warm read connection"))?,
+        );
+        drop(
+            Self::blocking_get(&write_pool)
+                .ok_or_else(|| format!("{label}: failed to warm write connection"))?,
+        );
+        // Remaining read connections (2 more on local) created lazily on demand.
 
         Ok(Self {
             read_pool: Arc::new(std::sync::RwLock::new(Some(read_pool))),
@@ -213,14 +287,14 @@ impl DbPool {
         match (self.opener)(storage_root, is_local) {
             Ok((_conn, path)) => {
                 let read_size = if is_local { 3 } else { 1 };
-                let new_read = match build_pool(&path, is_local, &format!("{}_read", self.label), read_size) {
+                let new_read = match build_pool(&path, is_local, false, &format!("{}_read", self.label), read_size) {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::debug!("Could not rebuild {} read pool: {e}", self.label);
                         return false;
                     }
                 };
-                let new_write = match build_pool(&path, is_local, &format!("{}_write", self.label), 1) {
+                let new_write = match build_pool(&path, is_local, true, &format!("{}_write", self.label), 1) {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::debug!("Could not rebuild {} write pool: {e}", self.label);
@@ -244,6 +318,17 @@ impl DbPool {
                 false
             }
         }
+    }
+
+    /// Run a passive WAL checkpoint on the write connection.
+    ///
+    /// PASSIVE mode does not block readers. Call after heavy write operations
+    /// (import, thumbnail rebuild, metadata clear) to fold the WAL back into
+    /// the main database file and prevent unbounded WAL growth.
+    pub fn checkpoint(&self) {
+        self.write(|conn| {
+            let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);");
+        });
     }
 
     /// Get the current DB file path.

@@ -20,23 +20,38 @@ use crate::error::{Error, Result};
 ///   ensures crash safety even on exFAT (which lacks a filesystem journal).
 ///
 /// Falls back to the other strategy if the primary one fails.
+///
+/// The `is_local` hint from StorageKind is combined with an actual filesystem
+/// check: WAL mode is only used if the filesystem supports POSIX locking
+/// (ext4, btrfs, xfs, etc.). Filesystems like exFAT/FAT32 get DELETE journal
+/// mode even on local USB storage, because WAL's shared memory doesn't work
+/// reliably on them (causes SQLITE_IOERR_SHORT_READ).
 pub fn open_connection(db_path: &Path, label: &str, is_local: bool) -> Result<Connection> {
     recover_stale_wal(db_path);
 
-    if is_local {
-        // Local filesystem: prefer WAL (crash-safe), fall back to nolock.
+    // Determine the DB's parent directory for filesystem detection.
+    let db_dir = db_path.parent().unwrap_or(db_path);
+    let use_wal = is_local && crate::storage::supports_wal(db_dir);
+
+    if !use_wal && is_local {
+        tracing::info!(
+            "{label}: filesystem does not support WAL (exFAT/FAT32?), using DELETE journal"
+        );
+    }
+
+    if use_wal {
+        // POSIX-capable filesystem: prefer WAL (concurrent reads), fall back to nolock.
         match open_wal(db_path, label) {
             Ok(conn) => Ok(conn),
             Err(e) => {
                 tracing::info!(
-                    "{label}: WAL open failed ({e}), falling back to nolock mode \
-                     (possible NFS mount misdetected as local)"
+                    "{label}: WAL open failed ({e}), falling back to nolock mode"
                 );
                 open_nolock(db_path, label)
             }
         }
     } else {
-        // NFS: prefer nolock (NFS-compatible), fall back to WAL.
+        // Non-POSIX filesystem or NFS: prefer nolock, fall back to WAL.
         match open_nolock(db_path, label) {
             Ok(conn) => Ok(conn),
             Err(_) => {
@@ -127,7 +142,11 @@ fn open_nolock(db_path: &Path, label: &str) -> Result<Connection> {
     conn.execute_batch(
         "PRAGMA journal_mode = DELETE;
          PRAGMA synchronous = NORMAL;
-         PRAGMA cache_size = -8000;",
+         PRAGMA cache_size = -8000;
+         PRAGMA busy_timeout = 5000;
+         -- Enforce referential integrity (no-op today, ready for future use)
+         PRAGMA foreign_keys = ON;",
+        // mmap_size intentionally left at default (0) — not safe on NFS.
     )
     .map_err(|e| Error::Other(format!("{label}: failed to set pragmas: {e}")))?;
     Ok(conn)
@@ -139,7 +158,16 @@ fn open_wal(db_path: &Path, label: &str) -> Result<Connection> {
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
-         PRAGMA cache_size = -8000;",
+         PRAGMA cache_size = -8000;
+         PRAGMA busy_timeout = 5000;
+         -- Cap WAL file at 64 MB after checkpoint (prevents unbounded growth on USB)
+         PRAGMA journal_size_limit = 67108864;
+         -- Enforce referential integrity (no-op today, ready for future use)
+         PRAGMA foreign_keys = ON;",
+         // mmap_size intentionally omitted — causes stale reads when the same
+         // process does heavy writes through a separate connection (e.g.,
+         // thumbnail index rebuild writes 46K rows, read connections see
+         // corrupted mmap'd pages and return SQLITE_IOERR).
     )
     .map_err(|e| Error::Other(format!("{label}: failed to set pragmas: {e}")))?;
     Ok(conn)

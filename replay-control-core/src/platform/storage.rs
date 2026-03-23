@@ -30,6 +30,49 @@ impl StorageKind {
     }
 }
 
+/// Check whether a path is on a filesystem that supports POSIX locking
+/// and shared memory (required for SQLite WAL mode).
+///
+/// Returns `true` for ext4, btrfs, xfs, etc.
+/// Returns `false` for exfat, vfat/fat32, nfs, and unknown filesystems.
+///
+/// WAL mode requires the `-shm` (shared memory) file to be mmap'd by
+/// multiple connections. Filesystems like exFAT don't support this
+/// reliably, causing SQLITE_IOERR_SHORT_READ (522).
+pub fn supports_wal(path: &std::path::Path) -> bool {
+    // Read /proc/mounts to find the filesystem type for this path.
+    let Ok(mounts) = std::fs::read_to_string("/proc/mounts") else {
+        return false; // Can't determine — assume unsafe
+    };
+
+    // Find the longest mount point that's a prefix of our path.
+    let path_str = path.to_string_lossy();
+    let mut best_match: Option<(&str, &str)> = None; // (mount_point, fs_type)
+
+    for line in mounts.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let mount_point = parts[1];
+        let fs_type = parts[2];
+
+        if path_str.starts_with(mount_point) {
+            if best_match.is_none() || mount_point.len() > best_match.unwrap().0.len() {
+                best_match = Some((mount_point, fs_type));
+            }
+        }
+    }
+
+    match best_match {
+        Some((_, fs_type)) => matches!(
+            fs_type,
+            "ext2" | "ext3" | "ext4" | "btrfs" | "xfs" | "f2fs" | "tmpfs"
+        ),
+        None => false,
+    }
+}
+
 /// Directory name for Replay Control data on ROM storage.
 pub const RC_DIR: &str = ".replay-control";
 /// Filename for app-specific user settings.
