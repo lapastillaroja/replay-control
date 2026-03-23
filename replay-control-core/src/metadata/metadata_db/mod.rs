@@ -249,19 +249,19 @@ impl MetadataDb {
     /// Opens the metadata DB with strategy appropriate for the filesystem.
     /// Runs table init, probes for corruption, auto-recreates if corrupt.
     /// Returns a raw `Connection` — the caller (or pool manager) owns it.
-    pub fn open(storage_root: &Path, is_local: bool) -> Result<(Connection, PathBuf)> {
+    pub fn open(storage_root: &Path) -> Result<(Connection, PathBuf)> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(METADATA_DB_FILE);
 
-        let conn = crate::db_common::open_connection(&db_path, "metadata.db", is_local)?;
+        let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
         Self::init_tables(&conn)?;
 
         if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
             tracing::warn!("Metadata DB corrupt ({detail}), deleting and recreating");
             drop(conn);
             crate::db_common::delete_db_files(&db_path);
-            let conn = crate::db_common::open_connection(&db_path, "metadata.db", is_local)?;
+            let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
             Self::init_tables(&conn)?;
             return Ok((conn, db_path));
         }
@@ -480,7 +480,7 @@ mod tests {
     /// Returns a mutable `Connection` so tests can call both read and write methods.
     pub(crate) fn open_temp_db() -> (Connection, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let (conn, _path) = MetadataDb::open(dir.path(), true).unwrap();
+        let (conn, _path) = MetadataDb::open(dir.path()).unwrap();
         (conn, dir)
     }
 

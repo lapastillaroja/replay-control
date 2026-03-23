@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use deadpool_sqlite::rusqlite;
 use replay_control_core::config::ReplayConfig;
+use replay_control_core::db_common::JournalMode;
 use replay_control_core::storage::{StorageKind, StorageLocation};
 
 // ── Custom deadpool Manager ───────────────────────────────────────
@@ -28,12 +29,12 @@ use deadpool_sync::SyncWrapper;
 /// proper WAL/nolock/PRAGMA configuration instead of plain `Connection::open()`.
 struct SqliteManager {
     db_path: PathBuf,
-    /// Whether the storage is local (SD/USB/NVMe) or remote (NFS).
-    /// Determines journal mode (WAL vs DELETE) and available PRAGMAs.
-    is_local: bool,
     label: String,
+    /// Actual journal mode determined at pool creation by querying the DB.
+    /// Controls WAL-specific PRAGMAs (autocheckpoint on write connections).
+    journal_mode: JournalMode,
     /// Whether this manager creates write-pool connections.
-    /// Write connections disable WAL auto-checkpoint for manual control.
+    /// Write + WAL connections disable auto-checkpoint for manual control.
     /// Read connections set `query_only = ON` for safety.
     is_write: bool,
     /// Throttle `PRAGMA optimize` to at most once per hour.
@@ -44,7 +45,7 @@ impl std::fmt::Debug for SqliteManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SqliteManager")
             .field("db_path", &self.db_path)
-            .field("is_local", &self.is_local)
+            .field("journal_mode", &self.journal_mode)
             .field("label", &self.label)
             .field("is_write", &self.is_write)
             .finish()
@@ -57,13 +58,13 @@ impl managed::Manager for SqliteManager {
 
     async fn create(&self) -> Result<SyncWrapper<rusqlite::Connection>, Self::Error> {
         let db_path = self.db_path.clone();
-        let is_local = self.is_local;
         let is_write = self.is_write;
+        let is_wal = self.journal_mode == JournalMode::Wal;
         let label = self.label.clone();
 
         SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
             let conn =
-                replay_control_core::db_common::open_connection(&db_path, &label, is_local)
+                replay_control_core::db_common::open_connection(&db_path, &label)
                     .map_err(|e| {
                         rusqlite::Error::SqliteFailure(
                             rusqlite::ffi::Error::new(1),
@@ -72,12 +73,7 @@ impl managed::Manager for SqliteManager {
                     })?;
 
             // Per-role PRAGMAs (on top of the base PRAGMAs from open_connection):
-            // Check actual journal mode — exFAT USB is "local" but uses DELETE, not WAL.
-            let is_wal = is_write && conn
-                .query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))
-                .map(|m| m == "wal")
-                .unwrap_or(false);
-            if is_wal {
+            if is_write && is_wal {
                 // Disable automatic WAL checkpoints so we can checkpoint
                 // manually after heavy writes (import, thumbnail rebuild).
                 conn.execute_batch("PRAGMA wal_autocheckpoint = 0;")?;
@@ -147,7 +143,7 @@ type SqlitePool = managed::Pool<SqliteManager>;
 /// Uses `deadpool` for true concurrent reads (WAL mode allows multiple readers)
 /// with separate read and write pools.
 ///
-/// - **Read pool**: `max_size=3` for local storage (concurrent WAL reads), `1` for NFS
+/// - **Read pool**: `max_size=3` for WAL mode (concurrent readers), `1` for DELETE mode
 /// - **Write pool**: `max_size=1` (SQLite serialises writes)
 ///
 /// Provides synchronous `read()` / `write()` helpers. Under the hood, each call
@@ -166,21 +162,21 @@ pub struct DbPool {
     label: &'static str,
     /// Opener function for creating additional connections (used by `reopen()`
     /// to verify the DB is accessible before rebuilding pools).
-    opener: fn(&std::path::Path, bool) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+    opener: fn(&std::path::Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
 }
 
 /// Build a deadpool `SqlitePool` with the given size.
 fn build_pool(
     db_path: &std::path::Path,
-    is_local: bool,
+    journal_mode: JournalMode,
     is_write: bool,
     label: &str,
     max_size: usize,
 ) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     let mgr = SqliteManager {
         db_path: db_path.to_path_buf(),
-        is_local,
         label: label.to_string(),
+        journal_mode,
         is_write,
         last_optimize: std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
     };
@@ -191,18 +187,41 @@ fn build_pool(
     Ok(pool)
 }
 
+/// Query the actual journal mode from an open connection.
+fn query_journal_mode(conn: &rusqlite::Connection) -> JournalMode {
+    conn.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))
+        .map(|m| {
+            if m == "wal" {
+                JournalMode::Wal
+            } else {
+                JournalMode::Delete
+            }
+        })
+        .unwrap_or(JournalMode::Delete)
+}
+
 impl DbPool {
     /// Create a new pool. Opens the DB eagerly (via `opener`) to fail fast at
-    /// startup, then builds read and write pools backed by the custom manager.
+    /// startup, then queries the actual journal mode to size pools correctly.
     fn new(
         db_path: PathBuf,
-        is_local: bool,
         label: &'static str,
-        opener: fn(&std::path::Path, bool) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+        opener: fn(&std::path::Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let read_size = if is_local { 3 } else { 1 };
-        let read_pool = build_pool(&db_path, is_local, false, &format!("{label}_read"), read_size)?;
-        let write_pool = build_pool(&db_path, is_local, true, &format!("{label}_write"), 1)?;
+        // Open a warmup connection to detect the actual journal mode.
+        // open_connection() picks WAL or DELETE based on filesystem capabilities,
+        // so we query the result rather than guessing.
+        let warmup = replay_control_core::db_common::open_connection(&db_path, label)
+            .map_err(|e| format!("{label}: failed to open warmup connection: {e}"))?;
+        let journal_mode = query_journal_mode(&warmup);
+        drop(warmup);
+
+        let read_size = match journal_mode {
+            JournalMode::Wal => 3,
+            JournalMode::Delete => 1,
+        };
+        let read_pool = build_pool(&db_path, journal_mode, false, &format!("{label}_read"), read_size)?;
+        let write_pool = build_pool(&db_path, journal_mode, true, &format!("{label}_write"), 1)?;
 
         // Warm one read + one write connection eagerly. If this fails, the DB
         // is inaccessible and there is no point starting the server.
@@ -214,7 +233,7 @@ impl DbPool {
             Self::blocking_get(&write_pool)
                 .ok_or_else(|| format!("{label}: failed to warm write connection"))?,
         );
-        // Remaining read connections (2 more on local) created lazily on demand.
+        // Remaining read connections (2 more on WAL) created lazily on demand.
 
         Ok(Self {
             read_pool: Arc::new(std::sync::RwLock::new(Some(read_pool))),
@@ -233,7 +252,7 @@ impl DbPool {
             write_pool: Arc::new(std::sync::RwLock::new(None)),
             db_path: Arc::new(std::sync::RwLock::new(PathBuf::new())),
             label,
-            opener: |_, _| Err(replay_control_core::error::Error::Other("test".into())),
+            opener: |_| Err(replay_control_core::error::Error::Other("test".into())),
         }
     }
 
@@ -282,19 +301,25 @@ impl DbPool {
     }
 
     /// Re-open at a new storage root. Rebuilds both pools with fresh connections.
-    pub(crate) fn reopen(&self, storage_root: &std::path::Path, is_local: bool) -> bool {
+    pub(crate) fn reopen(&self, storage_root: &std::path::Path) -> bool {
         // Verify we can open the DB at the new location.
-        match (self.opener)(storage_root, is_local) {
-            Ok((_conn, path)) => {
-                let read_size = if is_local { 3 } else { 1 };
-                let new_read = match build_pool(&path, is_local, false, &format!("{}_read", self.label), read_size) {
+        match (self.opener)(storage_root) {
+            Ok((conn, path)) => {
+                let journal_mode = query_journal_mode(&conn);
+                drop(conn);
+
+                let read_size = match journal_mode {
+                    JournalMode::Wal => 3,
+                    JournalMode::Delete => 1,
+                };
+                let new_read = match build_pool(&path, journal_mode, false, &format!("{}_read", self.label), read_size) {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::debug!("Could not rebuild {} read pool: {e}", self.label);
                         return false;
                     }
                 };
-                let new_write = match build_pool(&path, is_local, true, &format!("{}_write", self.label), 1) {
+                let new_write = match build_pool(&path, journal_mode, true, &format!("{}_write", self.label), 1) {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::debug!("Could not rebuild {} write pool: {e}", self.label);
@@ -391,17 +416,15 @@ pub struct AppState {
 /// Opener for metadata DB.
 fn open_metadata_db(
     storage_root: &std::path::Path,
-    is_local: bool,
 ) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    replay_control_core::metadata_db::MetadataDb::open(storage_root, is_local)
+    replay_control_core::metadata_db::MetadataDb::open(storage_root)
 }
 
 /// Opener for user data DB.
 fn open_user_data_db(
     storage_root: &std::path::Path,
-    is_local: bool,
 ) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    replay_control_core::user_data_db::UserDataDb::open(storage_root, is_local)
+    replay_control_core::user_data_db::UserDataDb::open(storage_root)
 }
 
 impl AppState {
@@ -449,21 +472,20 @@ impl AppState {
 
         // Open DBs eagerly at startup so they're ready for the first request.
         // Fail-fast: if DB creation/open fails here, the service can't function.
-        let is_local = storage.kind.is_local();
 
         // Open the DB files eagerly to create schema + run migrations, then
         // drop the connections. The pool will create its own connections.
         let (_meta_conn, meta_path) =
-            replay_control_core::metadata_db::MetadataDb::open(&storage.root, is_local)
+            replay_control_core::metadata_db::MetadataDb::open(&storage.root)
                 .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
         tracing::info!("Metadata DB ready at {}", meta_path.display());
-        let metadata_pool = DbPool::new(meta_path.clone(), is_local, "metadata_db", open_metadata_db)?;
+        let metadata_pool = DbPool::new(meta_path.clone(), "metadata_db", open_metadata_db)?;
 
         let (_ud_conn, ud_path) =
-            replay_control_core::user_data_db::UserDataDb::open(&storage.root, is_local)
+            replay_control_core::user_data_db::UserDataDb::open(&storage.root)
                 .map_err(|e| format!("Failed to open user data DB: {e}"))?;
         tracing::info!("User data DB ready at {}", ud_path.display());
-        let user_data_pool = DbPool::new(ud_path.clone(), is_local, "user_data_db", open_user_data_db)?;
+        let user_data_pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;
 
         // Unified busy flag shared across all background operations.
         let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -590,9 +612,8 @@ impl AppState {
             self.user_data_pool.close();
             // Re-open at the new storage root.
             let new_storage_ref = self.storage();
-            let new_is_local = new_storage_ref.kind.is_local();
-            self.metadata_pool.reopen(&new_storage_ref.root, new_is_local);
-            self.user_data_pool.reopen(&new_storage_ref.root, new_is_local);
+            self.metadata_pool.reopen(&new_storage_ref.root);
+            self.user_data_pool.reopen(&new_storage_ref.root);
 
             self.cache.invalidate();
         }
