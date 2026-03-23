@@ -73,6 +73,8 @@ impl ImportPipeline {
                 inserted: 0,
                 elapsed_secs: 0,
                 error: None,
+                download_bytes: 0,
+                download_total: None,
             },
         }) {
             Ok(g) => g,
@@ -144,6 +146,8 @@ impl ImportPipeline {
                 inserted: 0,
                 elapsed_secs: 0,
                 error: None,
+                download_bytes: 0,
+                download_total: None,
             },
         }) {
             Ok(g) => g,
@@ -156,8 +160,20 @@ impl ImportPipeline {
             let storage = state.storage();
             let rc_dir = storage.rc_dir();
 
-            // Download and extract.
-            let xml_path = match replay_control_core::launchbox::download_metadata(&rc_dir) {
+            // Download and extract with streaming progress.
+            let activity_lock = state.activity.clone();
+            let start_ref = start;
+            let xml_path = match replay_control_core::launchbox::download_metadata(
+                &rc_dir,
+                |downloaded, total| {
+                    let mut guard = write_lock(&activity_lock, "activity");
+                    if let Activity::Import { progress } = &mut *guard {
+                        progress.download_bytes = downloaded;
+                        progress.download_total = total;
+                        progress.elapsed_secs = start_ref.elapsed().as_secs();
+                    }
+                },
+            ) {
                 Ok(path) => path,
                 Err(e) => {
                     state.update_activity(|act| {

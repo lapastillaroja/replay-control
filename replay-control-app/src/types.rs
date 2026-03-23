@@ -104,6 +104,12 @@ pub struct ImportProgress {
     pub inserted: usize,
     pub elapsed_secs: u64,
     pub error: Option<String>,
+    /// Bytes downloaded so far (only meaningful during `Downloading` state).
+    #[serde(default)]
+    pub download_bytes: u64,
+    /// Total download size in bytes, if known from Content-Length.
+    #[serde(default)]
+    pub download_total: Option<u64>,
 }
 
 /// Per-system metadata coverage.

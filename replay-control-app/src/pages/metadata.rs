@@ -90,6 +90,8 @@ pub fn MetadataPage() -> impl IntoView {
                             inserted: 0,
                             elapsed_secs: 0,
                             error: None,
+                            download_bytes: 0,
+                            download_total: None,
                         },
                     });
                     watch_activity(
@@ -571,7 +573,25 @@ fn ImportProgressDisplay(progress: Memo<Option<server_fns::ImportProgress>>) -> 
                 match progress.get() {
                     Some(p) => {
                         let state_text = match p.state {
-                            ImportState::Downloading => t(locale, "metadata.downloading_file").to_string(),
+                            ImportState::Downloading => {
+                                if p.download_bytes > 0 {
+                                    match p.download_total {
+                                        Some(total) if total > 0 => format!(
+                                            "{} {} / {}",
+                                            t(locale, "metadata.downloading_file"),
+                                            format_size(p.download_bytes),
+                                            format_size(total),
+                                        ),
+                                        _ => format!(
+                                            "{} {}",
+                                            t(locale, "metadata.downloading_file"),
+                                            format_size(p.download_bytes),
+                                        ),
+                                    }
+                                } else {
+                                    t(locale, "metadata.downloading_file").to_string()
+                                }
+                            }
                             ImportState::BuildingIndex => t(locale, "metadata.building_index").to_string(),
                             ImportState::Parsing => format!(
                                 "{} ({} {}, {} {})",

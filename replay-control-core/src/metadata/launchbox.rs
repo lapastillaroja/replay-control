@@ -427,12 +427,37 @@ pub struct LbAlternateName {
 /// The LaunchBox metadata download URL.
 const METADATA_URL: &str = "https://gamesdb.launchbox-app.com/Metadata.zip";
 
+/// HEAD request to get Content-Length. Returns `None` on failure.
+fn get_content_length(url: &str) -> Option<u64> {
+    let output = std::process::Command::new("curl")
+        .args(["-sI", "--max-time", "5", url])
+        .output()
+        .ok()?;
+    let headers = String::from_utf8_lossy(&output.stdout);
+    for line in headers.lines() {
+        if let Some(val) = line
+            .strip_prefix("content-length:")
+            .or_else(|| line.strip_prefix("Content-Length:"))
+        {
+            return val.trim().parse().ok();
+        }
+    }
+    None
+}
+
 /// Download LaunchBox Metadata.zip and extract to `launchbox-metadata.xml` in the given directory.
 ///
-/// Uses `curl` for download and `unzip` for extraction (available on all targets).
+/// Uses `curl` with streaming stdout for download progress and `unzip` for extraction.
 /// The zip internally contains `Metadata.xml`, which is renamed after extraction.
-/// Returns the path to the extracted XML file.
-pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
+///
+/// `on_progress` is called with `(bytes_downloaded, total_bytes)` during the download.
+/// `total_bytes` is `None` if the server didn't provide Content-Length.
+pub fn download_metadata(
+    dest_dir: &Path,
+    on_progress: impl Fn(u64, Option<u64>),
+) -> Result<std::path::PathBuf> {
+    use std::io::{Read, Write};
+
     use crate::metadata_db::LAUNCHBOX_XML;
 
     std::fs::create_dir_all(dest_dir).map_err(|e| {
@@ -446,20 +471,61 @@ pub fn download_metadata(dest_dir: &Path) -> Result<std::path::PathBuf> {
     let extracted_path = dest_dir.join("Metadata.xml"); // name inside the zip
     let xml_path = dest_dir.join(LAUNCHBOX_XML);
 
-    // Download with curl.
-    tracing::info!("Downloading LaunchBox metadata from {METADATA_URL}");
-    let output = std::process::Command::new("curl")
-        .args(["-fSL", "-o"])
-        .arg(&zip_path)
-        .arg(METADATA_URL)
-        .output()
-        .map_err(|e| Error::Other(format!("Failed to run curl: {e}")))?;
+    // Step 1: Get Content-Length via HEAD request.
+    let total_bytes = get_content_length(METADATA_URL);
+    tracing::info!(
+        "Downloading LaunchBox metadata from {METADATA_URL} (size: {})",
+        total_bytes.map_or("unknown".to_string(), |n| format!("{n} bytes")),
+    );
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Clean up partial download.
+    // Step 2: Stream download with piped stdout.
+    let mut child = std::process::Command::new("curl")
+        .args(["-fsSL", "-o", "-", METADATA_URL])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| Error::Other(format!("Failed to spawn curl: {e}")))?;
+
+    let stdout = child.stdout.take().expect("piped stdout");
+    let mut reader = std::io::BufReader::with_capacity(64 * 1024, stdout);
+    let mut file =
+        std::fs::File::create(&zip_path).map_err(|e| Error::io(&zip_path, e))?;
+
+    let mut downloaded: u64 = 0;
+    let mut buf = [0u8; 64 * 1024];
+    on_progress(0, total_bytes);
+
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| Error::Other(format!("Read error during download: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buf[..n])
+            .map_err(|e| Error::io(&zip_path, e))?;
+        downloaded += n as u64;
+        on_progress(downloaded, total_bytes);
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| Error::Other(format!("curl wait failed: {e}")))?;
+    if !status.success() {
         let _ = std::fs::remove_file(&zip_path);
-        return Err(Error::Other(format!("Download failed: {stderr}")));
+        // Try to read stderr for error details.
+        let stderr_msg = child
+            .stderr
+            .as_mut()
+            .and_then(|s| {
+                let mut buf = String::new();
+                s.read_to_string(&mut buf).ok().map(|_| buf)
+            })
+            .unwrap_or_default();
+        return Err(Error::Other(format!(
+            "Download failed (curl exit {}): {stderr_msg}",
+            status.code().unwrap_or(-1),
+        )));
     }
 
     // Extract Metadata.xml from the zip (upstream filename inside the archive).
