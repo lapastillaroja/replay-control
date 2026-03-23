@@ -309,7 +309,8 @@ impl MetadataDb {
                     PRIMARY KEY (repo_name, kind, filename),
                     FOREIGN KEY (repo_name) REFERENCES data_sources(source_name)
                 );
-                CREATE INDEX IF NOT EXISTS idx_thumbidx_repo ON thumbnail_index(repo_name);
+                -- PK (repo_name, kind, filename) already covers repo_name-only lookups,
+                -- so no separate idx_thumbidx_repo index is needed.
 
                 CREATE TABLE IF NOT EXISTS game_library (
                     system TEXT NOT NULL,
@@ -347,6 +348,8 @@ impl MetadataDb {
                     total_size_bytes INTEGER NOT NULL DEFAULT 0
                 );
 
+                -- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,
+                -- developer_genre_groups with system filter
                 CREATE INDEX IF NOT EXISTS idx_game_library_genre
                   ON game_library (system, genre)
                   WHERE genre IS NOT NULL AND genre != '';
@@ -355,13 +358,33 @@ impl MetadataDb {
                   ON game_library (system, genre_group)
                   WHERE genre_group != '';
 
+                -- Covers: series_siblings (WHERE series_key = ?)
                 CREATE INDEX IF NOT EXISTS idx_game_library_series_key
                   ON game_library (series_key)
                   WHERE series_key != '';
 
+                -- Covers: find_developer_matches, games_by_developer,
+                -- developer_games_paginated, developer_systems, developer_genre_groups
                 CREATE INDEX IF NOT EXISTS idx_game_library_developer
                   ON game_library (developer)
                   WHERE developer != '';
+
+                -- Covers: regional_variants, translations, hacks, specials (all filter
+                -- by system + base_title), alias_variants (JOIN on system + base_title),
+                -- wikidata_series_siblings (JOIN gl ON base_title COLLATE NOCASE),
+                -- find_best_rom (WHERE base_title = ? COLLATE NOCASE)
+                CREATE INDEX IF NOT EXISTS idx_game_library_base_title
+                  ON game_library (system, base_title)
+                  WHERE base_title != '';
+
+                -- Covers: data_sources queries by source_type (get_data_source_stats,
+                -- clear_thumbnail_index)
+                CREATE INDEX IF NOT EXISTS idx_data_sources_type
+                  ON data_sources (source_type);
+
+                -- Drop the redundant idx_thumbidx_repo if it exists from older schema.
+                -- The PK (repo_name, kind, filename) already covers repo_name prefix lookups.
+                DROP INDEX IF EXISTS idx_thumbidx_repo;
 
                 CREATE TABLE IF NOT EXISTS game_alias (
                     system TEXT NOT NULL,
@@ -371,8 +394,12 @@ impl MetadataDb {
                     source TEXT NOT NULL,
                     PRIMARY KEY (system, base_title, alias_name)
                 );
+                -- Covers: search_aliases (LIKE on alias_name)
                 CREATE INDEX IF NOT EXISTS idx_game_alias_name
                     ON game_alias(alias_name COLLATE NOCASE);
+                -- Covers: alias_variants, alias_base_titles (WHERE system = ? AND alias_name = ?)
+                CREATE INDEX IF NOT EXISTS idx_game_alias_system_alias
+                    ON game_alias(system, alias_name);
 
                 CREATE TABLE IF NOT EXISTS game_series (
                     system TEXT NOT NULL,
@@ -388,6 +415,11 @@ impl MetadataDb {
                     ON game_series(series_name COLLATE NOCASE);
                 CREATE INDEX IF NOT EXISTS idx_game_series_system
                     ON game_series(system, series_name);
+                -- Covers: game_series neighbor lookups (series_name + series_order),
+                -- max series_order queries
+                CREATE INDEX IF NOT EXISTS idx_game_series_order
+                    ON game_series (series_name, series_order)
+                    WHERE series_order IS NOT NULL;
 
 ",
             )

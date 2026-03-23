@@ -509,11 +509,18 @@ impl MetadataDb {
     }
 
     /// Check if the database has any entries.
+    ///
+    /// Uses `SELECT 1 ... LIMIT 1` instead of `COUNT(*)` for an early-exit
+    /// existence check — avoids scanning the entire table.
     pub fn is_empty(conn: &Connection) -> Result<bool> {
-        let count: usize = conn
-            .query_row("SELECT COUNT(*) FROM game_metadata", [], |row| row.get(0))
-            .map_err(|e| Error::Other(format!("Count query failed: {e}")))?;
-        Ok(count == 0)
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM game_metadata LIMIT 1)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Existence check failed: {e}")))?;
+        Ok(!exists)
     }
 
     /// Count metadata entries *with descriptions* per system, ordered by count descending.
@@ -659,13 +666,19 @@ impl MetadataDb {
     ///
     /// Only deletes for systems that have entries in `game_library` (i.e., the library
     /// has been populated). Returns the number of deleted rows.
+    ///
+    /// Uses `NOT EXISTS` with a correlated subquery instead of `NOT IN` — this is
+    /// more efficient because SQLite can use the PK index on `game_library(system, rom_filename)`
+    /// for each probe, whereas `NOT IN` materializes the entire subquery result set.
     pub fn delete_orphaned_metadata(conn: &Connection) -> Result<usize> {
         let count = conn
             .execute(
                 "DELETE FROM game_metadata
                  WHERE EXISTS (SELECT 1 FROM game_library gl2 WHERE gl2.system = game_metadata.system)
-                   AND (system, rom_filename) NOT IN (
-                       SELECT system, rom_filename FROM game_library
+                   AND NOT EXISTS (
+                       SELECT 1 FROM game_library gl
+                       WHERE gl.system = game_metadata.system
+                         AND gl.rom_filename = game_metadata.rom_filename
                    )",
                 [],
             )
