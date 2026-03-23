@@ -37,7 +37,9 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - **Box art swap** — pick alternate region-variant cover art from the full libretro-thumbnails catalog
 - **Game series** — series name heading with horizontal scroll of series siblings (cross-system). Sequel/prequel breadcrumb navigation (`< Prev | 2 of 5 | Next >`) using Wikidata P155/P156 chains. [Detail](game-series.md)
 - **Related games** — genre-based recommendations shown on the detail page
-- **Actions** — favorite/unfavorite toggle, inline rename, delete with confirmation
+- **Game manuals** — in-folder document detection (PDF, TXT, HTML) and on-demand download from archive.org via RetroKit TSV. Language preferences for manual search. Inline delete for downloaded manuals
+- **Actions** — favorite/unfavorite toggle, inline rename (with extension protection), delete with multi-file confirmation
+- **ROM management** — multi-file delete handles M3U + disc files, CUE + BIN, ScummVM data directories, SBI companions. Rename restrictions prevent broken games (CUE, ScummVM, binary M3U). Delete confirmation shows file count and total size for multi-file ROMs
 - **Variant sections** — regional variants, translations, hacks, specials, arcade versions, and cross-name aliases of the same game shown in dedicated collapsible sections
 
 ## Favorites
@@ -125,6 +127,7 @@ A libretro core (.so) loaded by the RePlayOS frontend on the TV:
 - **Embedded series database** — ~5,345 Wikidata series entries compiled at build time for game franchise identification. [Detail](game-series.md)
 - **ROM filename parser** — extracts title, region, revision, and classification (hack, translation, special) from No-Intro and GoodTools naming conventions. [Detail](rom-organization.md)
 - **CRC32 ROM identification** — hash-based ROM identification for 9 cartridge systems using No-Intro DATs
+- **deadpool-sqlite connection pool** — concurrent read connections (WAL mode) with separate read/write pools for metadata.db and user_data.db
 - **Cross-compilation** — `./build.sh aarch64` produces an ARM binary for Raspberry Pi deployment
 - **REST API** — `/api/core/` endpoints for the libretro core. [Detail](libretro-core.md)
 - **Internationalization** — i18n infrastructure in place with English as the default language

@@ -69,7 +69,7 @@ Each recommended game's box art URL is resolved via the same 5-tier pipeline use
 
 | File | Role |
 |------|------|
-| `replay-control-core/src/metadata/metadata_db.rs` | All recommendation SQL queries |
+| `replay-control-core/src/metadata/metadata_db/` | All recommendation SQL queries (split across sub-modules) |
 | `replay-control-app/src/server_fns/search.rs` | `lookup_genre()` with LaunchBox fallback |
 | `replay-control-app/src/server_fns/related.rs` | Related games, regional variants |
-| `replay-control-app/src/api/cache.rs` | `enrich_system_cache` populates box_art_url and rating |
+| `replay-control-app/src/api/cache/enrichment.rs` | `enrich_system_cache` populates box_art_url and rating |

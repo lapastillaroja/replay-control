@@ -85,17 +85,18 @@ See `docs/features/index.md` for detailed per-page tracking of implemented, plan
 - **Favorites management** — view, add, remove, with hero card, grouped/flat views, optimistic UI
 - **Game detail page** — metadata grid, arcade-specific info, favorite toggle, rename, delete
 - **Game metadata** — SQLite cache with LaunchBox XML import (auto-download + parse), libretro-thumbnails box art import with cancel/stop support, per-system coverage stats, real-time SSE progress
+- **Game launching** — launch games on the RePlayOS device from the web UI with health check and automatic recovery
+- **Game manuals** — in-folder document detection and archive.org on-demand download via RetroKit TSV, with language preferences and inline delete
+- **ROM management** — multi-file delete (M3U + disc files, CUE + BIN, ScummVM data dirs), rename restrictions for complex ROM types (CUE, ScummVM, binary M3U), extension protection in rename UI
 - **Settings pages** — skin/theme sync, Wi-Fi, NFS, hostname, metadata management, system logs viewer
 - **Home page** — last played, recently played, library stats, systems overview
 - **Installation** — `install.sh` supports SSH and SD card deployment methods
 
 ### Not Yet Implemented
 - **Screenshots browser** — browsing and managing RePlayOS screenshots (see `research/investigations/screenshots-analysis.md`)
-- **Game launching** — launching games from the web UI (see `docs/features/game-launching.md`)
 - **Remote control** — triggering actions on RePlayOS from the web UI
 - **Backup & sync** — backup ROM library, save states, config
 - **RetroAchievements integration** — show earned achievements per game
-- **Game manuals viewer** — read game manuals from the web UI
 - **CI/CD pipeline** — automated cross-compilation and GitHub Releases (see `docs/reference/binary-distribution.md`, `docs/reference/deployment.md`)
 
 ---
@@ -119,19 +120,21 @@ See `docs/features/index.md` for detailed per-page tracking of implemented, plan
 - Access via `http://replaypi.local` or Pi's IP address
 
 ### Routes
-- `/` — Home (last played, recents, library stats, systems overview)
-- `/games` — Systems grid (all systems with game counts)
+- `/` — Home (last played, recents, library stats, systems overview, recommendations)
 - `/games/:system` — ROM list for a system (search, favorite toggle, rename, delete)
-- `/games/:system/:filename` — Game detail (metadata, actions, arcade info)
+- `/games/:system/:filename` — Game detail (metadata, actions, manuals, series, screenshots, videos)
 - `/favorites` — Favorites (flat and grouped views)
 - `/favorites/:system` — System-specific favorites
-- `/more` — Settings and system info
+- `/search` — Global cross-system search with filters
+- `/developer/:name` — Developer/manufacturer game list with system filter chips
+- `/more` — Settings and system info (Preferences, Game Data, System sections)
 - `/more/skin` — Skin/theme selection and sync
 - `/more/wifi` — Wi-Fi configuration
 - `/more/nfs` — NFS share settings
 - `/more/hostname` — Hostname configuration
 - `/more/metadata` — Metadata import, coverage, and cache management
 - `/more/logs` — System logs viewer (journalctl)
+- `/more/github` — GitHub repository link
 
 ### Internationalization (i18n)
 - Built-in i18n support with English as default language
@@ -207,9 +210,9 @@ replay/
 ├── replay-control-core/            (library — business logic, native only)
 │   └── src/
 │       ├── platform/       (config, storage, systems)
-│       ├── game/           (arcade_db, game_db, game_ref, rom_tags)
-│       ├── library/        (favorites, recents, roms)
-│       ├── metadata/       (db_common, launchbox, metadata_db, thumbnail_manifest, thumbnails, user_data_db)
+│       ├── game/           (arcade_db, game_db, game_ref, rom_tags, series_db, genre, title_utils)
+│       ├── library/        (favorites, recents, roms, rom_hash)
+│       ├── metadata/       (db_common, launchbox, metadata_db/, thumbnail_manifest, thumbnails, user_data_db, alias_matching, metadata_matching, image_matching)
 │       ├── capture/        (screenshots, video_url, videos)
 │       └── settings/       (settings, skins)
 ├── replay-control-app/             (merged server + frontend)
@@ -218,13 +221,13 @@ replay/
 │   │   ├── main.rs         (server entry, #[cfg(feature = "ssr")])
 │   │   ├── lib.rs          (App component + hydrate entry)
 │   │   ├── i18n.rs         (internationalization)
-│   │   ├── server_fns.rs   (Leptos server functions)
+│   │   ├── server_fns/     (Leptos server functions, 12 domain modules)
 │   │   ├── types.rs        (mirror types for client)
-│   │   ├── api/            (REST API handlers, ssr-only)
+│   │   ├── api/            (AppState, DbPool, cache/, background, import — ssr-only)
 │   │   ├── components/     (shared UI components)
 │   │   └── pages/          (shared page components)
 │   └── style/
-│       └── style.css
+│       └── _01-base.css .. _17-responsive.css  (concatenated at build time)
 ├── dev.sh                  (auto-rebuild dev server)
 └── README.md
 ```
@@ -264,7 +267,7 @@ Output:
 - **Filesystem is the source of truth** for what ROMs exist
 - ROM lists, favorites, and recents are scanned from the filesystem on each request, with in-memory TTL caching
 - **Embedded metadata** — arcade DB (~28K entries) and non-arcade game DB (~34K entries) are compiled into the binary as PHF maps, providing display names, year, genre, developer, and players without any external data
-- **SQLite metadata cache** — `metadata.db` at `<storage>/.replay-control/metadata.db` stores imported text metadata (LaunchBox XML) and image references (libretro-thumbnails). Uses `nolock` VFS fallback for NFS mounts.
+- **SQLite metadata cache** — `metadata.db` at `<storage>/.replay-control/metadata.db` stores imported text metadata (LaunchBox XML) and image references (libretro-thumbnails). Accessed via `deadpool-sqlite` connection pool for concurrent reads (WAL mode on local storage, `nolock` VFS on NFS).
 - **Future: full SQLite cache** — replace filesystem scanning with an indexed database, populated by background scan, updated via inotify
 
 ## How RePlayOS Manages Game Lists

@@ -56,8 +56,9 @@ Region preference lives in the app's own config file (`.replay-control/settings.
 
 | File | Role |
 |------|------|
-| `replay-control-core/src/favorites.rs` | Favorite add/remove/list |
-| `replay-control-core/src/recents.rs` | Recent list/add |
+| `replay-control-core/src/library/favorites.rs` | Favorite add/remove/list |
+| `replay-control-core/src/library/recents.rs` | Recent list/add |
 | `replay-control-core/src/platform/storage.rs` | Settings file, RC_DIR, config boundary |
-| `replay-control-app/src/api/cache.rs` | Favorites/recents caching |
+| `replay-control-app/src/api/cache/favorites.rs` | Favorites caching with mtime invalidation |
+| `replay-control-app/src/api/cache/mod.rs` | Recents caching, CacheEntry |
 | `replay-control-app/src/server_fns/roms.rs` | `launch_game` with recents integration |

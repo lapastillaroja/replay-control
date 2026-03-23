@@ -106,12 +106,12 @@ Server functions return a single `GameInfo` struct regardless of data source. `r
 
 | File | Role |
 |------|------|
-| `replay-control-core/src/arcade_db.rs` | Arcade PHF map + lookup |
-| `replay-control-core/src/game_db.rs` | Console PHF maps + lookup chain |
+| `replay-control-core/src/game/arcade_db.rs` | Arcade PHF map + lookup |
+| `replay-control-core/src/game/game_db.rs` | Console PHF maps + lookup chain |
 | `replay-control-core/src/metadata/launchbox.rs` | LaunchBox XML import, ROM index, title normalization |
 | `replay-control-core/src/metadata/metadata_db/` | SQLite schema, game_metadata, game_library, aliases/series tables |
 | `replay-control-core/src/game/series_db.rs` | Embedded Wikidata series database |
-| `replay-control-core/src/rom_tags.rs` | ROM filename classification and tag extraction |
+| `replay-control-core/src/game/rom_tags.rs` | ROM filename classification and tag extraction |
 | `replay-control-core/build.rs` | Build-time database generation |
 | `replay-control-app/src/server_fns/mod.rs` | `resolve_game_info()` |
 

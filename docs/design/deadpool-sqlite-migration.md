@@ -1,6 +1,6 @@
 # deadpool-sqlite Database Refactoring
 
-## Status: Phases 1-3 Complete (Incremental)
+## Status: Complete
 
 ## Summary
 
@@ -40,37 +40,34 @@ pattern with a `DbPool` abstraction, preparing for full deadpool-sqlite async po
 - Both `ssr` and `hydrate` targets compile
 - All 496 core tests + 100 app tests pass
 
-## Deviations from Plan
+## Original Deviations (All Resolved)
 
-1. **No async pool yet**: `DbPool` currently wraps `Arc<Mutex<Option<Connection>>>`
-   synchronously. The `deadpool-sqlite` dependency is added but the actual async pool
-   with `interact()` is not wired up yet. This is intentional -- the stateless API
-   migration was the critical prerequisite, and switching the pool internals to
-   deadpool is now a small, isolated change.
+The following deviations from the incremental plan existed after Phase 3 and have since
+been resolved in the final implementation:
 
-2. **Compatibility shims remain**: `metadata_db()` and `user_data_db()` methods on
-   AppState return `MutexGuard<Option<Connection>>` for backward compatibility. The
-   import pipeline's per-batch locking pattern (`state.metadata_db.lock()`) still
-   uses direct Mutex access. These can be cleaned up when the deadpool async pool
-   is wired up.
+1. **~~No async pool yet~~**: `DbPool` now uses `deadpool` with a custom `SqliteManager`
+   backed by `SyncWrapper`. Connections are obtained via `block_in_place` + `block_on`.
 
-3. **Single pool (not read/write split)**: The plan called for separate read and write
-   pools. Currently there's one `DbPool` per database. Read/write separation can be
-   added when switching to deadpool internals (different pool sizes for readers vs writer).
+2. **~~Compatibility shims remain~~**: Removed. All callers use `DbPool.read()` /
+   `DbPool.write()` directly.
 
-## Next Steps (Phase 4+)
+3. **~~Single pool~~**: Read/write pool split implemented with separate pool sizes.
 
-1. **Wire up deadpool-sqlite async pool**: Replace `Arc<Mutex<Option<Connection>>>`
-   inside `DbPool` with `deadpool_sqlite::Pool`. Use a custom `Manager` that calls
+## Completed Steps (Phase 4+)
+
+All phases are now complete. The final implementation uses:
+
+1. **deadpool-sqlite async pool** with a custom `SqliteManager` that calls
    `db_common::open_connection()` for proper WAL/nolock setup.
 
-2. **Make `read()`/`write()` async**: Change signatures to return futures. All server
-   function callers are already async, so `.await` can be added naturally.
+2. **Synchronous `block_in_place` + `block_on`** for getting connections from the pool,
+   which works from both tokio multi-thread worker threads and `spawn_blocking` threads.
 
-3. **Remove compatibility shims**: Delete `metadata_db()`, `user_data_db()` methods
-   and the `metadata_db` field from AppState.
+3. **Compatibility shims removed** -- `metadata_db()` and `user_data_db()` methods
+   removed from AppState. Import pipeline uses `DbPool.write()`.
 
-4. **Read/write pool split**: Create separate read pool (max_size=3 for local, 1 for NFS)
-   and write pool (max_size=1). Route `read()` to read pool, `write()` to write pool.
+4. **Read/write pool split** implemented: separate read pool (3 connections for local,
+   1 for NFS) and write pool (1 connection). `DbPool.read()` routes to the read pool,
+   `DbPool.write()` routes to the write pool.
 
-5. **Deploy and test on Pi**: `./dev.sh --pi`
+5. **Deployed and tested on Pi** via `./dev.sh --pi`.

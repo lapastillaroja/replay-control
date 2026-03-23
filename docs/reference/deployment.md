@@ -39,7 +39,7 @@ RePlayOS runs on Raspberry Pi (aarch64). Cross-compilation from an x86_64 host r
 - An aarch64 linker and sysroot (`gcc-aarch64-linux-gnu` or equivalent)
 
 ```
-TARGET=aarch64-unknown-linux-gnu ./build.sh
+./build.sh aarch64
 ```
 
 Only the server binary build step changes. The WASM build and asset copy are identical. The resulting binary lands at `target/aarch64-unknown-linux-gnu/release/replay-control-app`.

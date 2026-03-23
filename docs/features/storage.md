@@ -63,13 +63,13 @@ Key files:
 - `settings.cfg` -- App-specific settings (region preference, secondary region, text size)
 - `media/` -- Downloaded box art, screenshot, and title screen images
 
-Database access uses a single-connection policy with a `Mutex` to prevent concurrent writes. Import operations hold the mutex directly, and a `metadata_operation_in_progress` guard prevents race conditions between operations.
+Database access uses a `deadpool-sqlite` connection pool (`DbPool`) with separate read and write pools. On local storage (WAL mode), multiple concurrent read connections are allowed alongside a single write connection. On NFS (`nolock` VFS), pools are limited to 1 connection each. A `metadata_operation_in_progress` busy flag prevents race conditions between background operations (import, thumbnail download, enrichment).
 
 ## Key Source Files
 
 | File | Role |
 |------|------|
 | `replay-control-core/src/platform/storage.rs` | StorageLocation, StorageKind, detect(), RC_DIR |
-| `replay-control-core/src/config.rs` | ReplayConfig parser |
-| `replay-control-app/src/api/mod.rs` | AppState, refresh_storage() |
+| `replay-control-core/src/platform/config.rs` | ReplayConfig parser |
+| `replay-control-app/src/api/mod.rs` | AppState, DbPool, refresh_storage() |
 | `replay-control-app/src/api/background.rs` | Config watcher, ROM watcher, storage poll |

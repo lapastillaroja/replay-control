@@ -10,15 +10,20 @@ The game library uses a three-tier cache to balance performance with freshness:
 L1 (In-Memory)          L2 (SQLite)              L3 (Filesystem)
 RwLock<HashMap>     game_library table          roms/ directory tree
   ~0ns lookup         ~1ms lookup                ~100ms full scan
-  CacheEntry<Vec>     GameEntry rows             list_roms() + dedup
-  TTL: 300s           mtime-based invalidation   source of truth
+  CacheEntry<Arc<Vec>>  GameEntry rows           list_roms() + dedup
+  mtime-based         mtime-based invalidation   source of truth
+  NFS: 30-min TTL
 ```
 
 ### L1: In-Memory Cache
 
-`GameLibrary.roms` is a `RwLock<HashMap<String, CacheEntry<Vec<RomEntry>>>>` keyed by system folder name. Each `CacheEntry` stores the data, directory mtime at cache time, and a hard TTL (300 seconds).
+`GameLibrary.roms` is a `RwLock<HashMap<String, CacheEntry<Arc<Vec<RomEntry>>>>>` keyed by system folder name. Each `CacheEntry` stores the data, directory mtime at cache time, and an optional hard TTL.
 
-On access via `get_roms()`, if the entry exists and the directory mtime matches and the TTL has not expired, the cached data is returned directly.
+**Local storage** (SD/USB/NVMe): No hard TTL. Freshness is determined purely by mtime comparison (single `stat()` call). inotify watcher + explicit invalidation cover all change scenarios.
+
+**NFS storage**: 30-minute hard TTL (`NFS_CACHE_TTL`) acts as a safety net since inotify cannot detect remote changes. The TTL is lazy (only checked on access, so it won't wake idle disks).
+
+On access via `get_roms()`, if the entry exists and the directory mtime matches (and the TTL has not expired for NFS), the cached data is returned directly.
 
 ### L2: SQLite Persistent Cache
 
@@ -30,7 +35,7 @@ On L1 miss, `load_roms_from_db()` checks the stored mtime against the current di
 
 ### L3: Filesystem Scan
 
-`list_roms()` in `replay-control-core/src/roms.rs` recursively walks the system directory, collects ROM files, applies M3U deduplication, and returns `Vec<RomEntry>`. Results are written through to both L2 and L1 via `save_roms_to_db()`.
+`list_roms()` in `replay-control-core/src/library/roms.rs` recursively walks the system directory, collects ROM files, applies M3U deduplication, and returns `Vec<RomEntry>`. Results are written through to both L2 and L1 via `save_roms_to_db()`.
 
 ## ROM Scanning
 
@@ -86,9 +91,11 @@ On NFS storage, no watcher is set up (inotify does not detect remote changes). T
 
 | File | Role |
 |------|------|
-| `replay-control-app/src/api/cache.rs` | GameLibrary, get_roms, enrich_system_cache, resolve_box_art |
+| `replay-control-app/src/api/cache/mod.rs` | GameLibrary, get_roms, CacheEntry with mtime + NFS TTL |
 | `replay-control-app/src/api/cache/enrichment.rs` | Enrichment pipeline (ratings, developer, genre, series) |
-| `replay-control-core/src/roms.rs` | ROM scanning, M3U dedup, collect_roms_recursive |
+| `replay-control-app/src/api/cache/images.rs` | ImageIndex with mtime-based invalidation |
+| `replay-control-app/src/api/cache/favorites.rs` | FavoritesCache with mtime-based invalidation |
+| `replay-control-core/src/library/roms.rs` | ROM scanning, M3U dedup, collect_roms_recursive, multi-file delete/rename |
 | `replay-control-core/src/metadata/metadata_db/game_library.rs` | game_library/game_library_meta tables, GameEntry |
 | `replay-control-app/src/api/background.rs` | Startup pipeline, filesystem watcher, auto-import |
 | `replay-control-app/src/components/game_list_item.rs` | Unified GameListItem component |

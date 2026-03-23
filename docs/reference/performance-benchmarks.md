@@ -222,7 +222,7 @@ Request → L1 (in-memory HashMap) → L2 (SQLite game_library) → L3 (filesyst
                                      ↑ write-through         ↑ write-through
 ```
 
-- **L1**: Sub-millisecond, invalidated by mtime check (single `stat()`) or 5-min TTL
+- **L1**: Sub-millisecond, invalidated by mtime check (single `stat()`); NFS-only 30-minute hard TTL as safety net
 - **L2**: Persists across restarts, pre-populated on startup via background warmup (1.9s on Pi for 27K ROMs)
 - **L3**: Full filesystem scan, only on first access or stale cache
 
@@ -232,8 +232,8 @@ Request → L1 (in-memory HashMap) → L2 (SQLite game_library) → L3 (filesyst
 |-------|-------------|---------------|
 | Build | `wasm-opt -Oz`, `[profile.wasm-release]` with LTO | `build.sh`, `Cargo.toml` |
 | Network | Pre-compressed `.wasm.gz`, `CompressionLayer` for dynamic gzip | `main.rs` |
-| Cache L1 | In-memory favorites, recents, systems, ROMs with mtime invalidation | `cache.rs` |
-| Cache L1 | Per-system image index (HashMap) for O(1) box art lookups | `cache.rs` |
+| Cache L1 | In-memory favorites, recents, systems, ROMs with mtime invalidation | `cache/` |
+| Cache L1 | Per-system image index (HashMap) for O(1) box art lookups | `cache/` |
 | Cache L2 | SQLite `game_library` + `game_library_meta` with nolock-first NFS support | `metadata_db.rs` |
 | Cache L2 | Background warmup + box art/rating enrichment on startup | `background.rs` |
 | Render | `content-visibility: auto` on `.rom-item` | CSS |

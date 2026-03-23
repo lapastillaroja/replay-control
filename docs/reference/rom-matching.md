@@ -373,14 +373,14 @@ The arcade display-name bridge (using `arcade_db` to translate MAME codenames to
 
 | File | Role |
 |------|------|
-| `replay-control-core/src/arcade_db.rs` | Arcade PHF map + lookup functions |
-| `replay-control-core/src/game_db.rs` | Console PHF maps + lookup chain |
-| `replay-control-core/src/launchbox.rs` | LaunchBox XML import, ROM index building, title normalization |
-| `replay-control-core/src/metadata_db.rs` | SQLite cache for external metadata |
-| `replay-control-core/src/game_ref.rs` | Display name resolution (`GameRef::new`) |
-| `replay-control-core/src/rom_tags.rs` | Tag extraction for display suffixes |
-| `replay-control-core/src/roms.rs` | ROM listing and filesystem scanning |
-| `replay-control-core/src/systems.rs` | System definitions and categories |
+| `replay-control-core/src/game/arcade_db.rs` | Arcade PHF map + lookup functions |
+| `replay-control-core/src/game/game_db.rs` | Console PHF maps + lookup chain |
+| `replay-control-core/src/metadata/launchbox.rs` | LaunchBox XML import, ROM index building, title normalization |
+| `replay-control-core/src/metadata/metadata_db/` | SQLite cache for external metadata (split into sub-modules) |
+| `replay-control-core/src/game/game_ref.rs` | Display name resolution (`GameRef::new`) |
+| `replay-control-core/src/game/rom_tags.rs` | Tag extraction for display suffixes |
+| `replay-control-core/src/library/roms.rs` | ROM listing, filesystem scanning, multi-file delete/rename |
+| `replay-control-core/src/platform/systems.rs` | System definitions and categories |
 | `replay-control-core/build.rs` | Build-time generation of game_db and arcade_db |
 | `replay-control-app/src/server_fns/mod.rs` | `resolve_game_info()` — unified API response |
 | `replay-control-core/src/bin/metadata_report.rs` | Coverage analysis tool |

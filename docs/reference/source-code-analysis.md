@@ -36,7 +36,7 @@ replay/
 - Thumbnail matching from libretro-thumbnails repos (3-tier fuzzy matching)
 - Screenshot discovery by ROM filename prefix
 - Video URL parsing (YouTube, Twitch, Vimeo, Dailymotion)
-- Video storage as JSON
+- Video storage in SQLite (user_data.db)
 - Skin palette definitions (11 built-in themes via CSS custom properties)
 
 **replay-control-app** is a Leptos 0.7 application that compiles in two modes:
@@ -78,18 +78,23 @@ Because server functions are defined in a library crate, Rust's linker strips th
 `AppState` is the central server-side state, held in `Arc`-wrapped fields:
 - `storage: Arc<RwLock<StorageLocation>>` -- hot-swappable storage location
 - `config: Arc<RwLock<ReplayConfig>>` -- replay.cfg contents, re-read on refresh
-- `cache: Arc<GameLibrary>` -- TTL-based filesystem scan cache (30s expiry)
-- `metadata_db: Arc<Mutex<Option<MetadataDb>>>` -- lazily-opened SQLite handle
-- `import_progress / image_import_progress` -- shared progress for background tasks
-- `image_import_cancel: Arc<AtomicBool>` -- cooperative cancellation flag
+- `cache: Arc<GameLibrary>` -- three-tier game library cache (L1 in-memory, L2 SQLite, L3 filesystem)
+- `metadata_pool: DbPool` -- deadpool-backed SQLite connection pool for metadata.db (concurrent reads via WAL)
+- `user_data_pool: DbPool` -- deadpool-backed SQLite connection pool for user_data.db
+- `import: Arc<ImportPipeline>` -- metadata import pipeline
+- `thumbnails: Arc<ThumbnailPipeline>` -- thumbnail index + download pipeline
 - `skin_override: Arc<RwLock<Option<u32>>>` -- app-specific skin override
 - `storage_path_override: Option<PathBuf>` -- CLI override disables auto-detection
 
 ### Background Tasks
 
-Two background tasks run at startup:
-1. **Storage watcher** (`spawn_storage_watcher`): Re-detects storage location every 60 seconds (skipped if `--storage-path` CLI override is set)
-2. **Auto-import** (`spawn_auto_import`): If `launchbox-metadata.xml` exists in the expected location and the metadata DB is empty, automatically triggers a metadata import
+Server startup follows a sequenced pipeline to avoid race conditions:
+1. **Auto-import**: Run any pending metadata imports if `launchbox-metadata.xml` exists and DB is empty
+2. **Populate**: Scan all system directories and populate the game library cache
+3. **Enrich**: Resolve box art, ratings, developer, genre, and series data
+4. **Watchers**: Start filesystem (inotify on local storage) and config (`replay.cfg`) watchers
+
+The server responds immediately during warmup with empty data and a "Scanning game library..." banner (non-blocking startup).
 
 ### Config Boundary
 
@@ -184,7 +189,9 @@ Kept for external tool access (curl, scripts):
 | `arcade_db` | ~28K | MAME | PHF by ROM stem (e.g., "pacman") |
 | `game_db` | ~34K | Screenscraper | PHF by `system~stem`, normalized title fallback, CRC32 fallback, tilde-split fallback |
 
-### Core Library Modules (23 source files)
+### Core Library Modules
+
+> **Note**: The core crate has been reorganized from a flat structure into subdirectories: `platform/` (config, storage, systems), `game/` (arcade_db, game_db, game_ref, rom_tags, series_db, genre, title_utils), `library/` (favorites, recents, roms, rom_hash), `metadata/` (db_common, launchbox, metadata_db/, thumbnail_manifest, thumbnails, user_data_db, alias_matching, metadata_matching, image_matching), `capture/` (screenshots, video_url, videos), `settings/` (settings, skins). The line counts below are from the original snapshot.
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
@@ -204,11 +211,11 @@ Kept for external tool access (curl, scripts):
 | `config.rs` | 213 | replay.cfg parser with comment-preserving write-back |
 | `recents.rs` | 173 | `.rec` file parsing, deduplication |
 | `storage.rs` | 165 | Storage detection (SD/USB/NFS), disk usage via `df` |
-| `user_data_db.rs` | 163 | SQLite for persistent user customizations (box art overrides), NFS nolock fallback |
+| `user_data_db.rs` | 163 | SQLite for persistent user customizations (box art overrides, game videos), NFS nolock fallback |
 | `screenshots.rs` | 145 | Screenshot matching by ROM filename prefix |
 | `launch.rs` | 143 | Game launching via autostart + systemctl with health check |
 | `settings.rs` | 123 | App-specific settings (region preference) with read/write to `.replay-control/settings.cfg` |
-| `videos.rs` | 98 | Video storage as JSON in `.replay-control/videos.json` |
+| `videos.rs` | 98 | Video URL parsing and embed generation |
 | `game_ref.rs` | 82 | Display name resolution from arcade_db/game_db with tag enrichment |
 | `error.rs` | 45 | `thiserror`-based error enum |
 | `lib.rs` | 22 | Module declarations, `metadata` feature gate |
@@ -243,7 +250,7 @@ Kept for external tool access (curl, scripts):
 - Mirror types pattern (`types.rs`) bridges the SSR/hydrate feature boundary
 - `resolve_game_info()` is the single function bridging arcade_db and game_db
 - `enrich_from_metadata_cache()` augments game info with external metadata
-- TTL-based caching (`GameLibrary`) avoids repeated filesystem scans
+- Three-tier caching (`GameLibrary`) with mtime-based invalidation and NFS-only 30-minute hard TTL avoids repeated filesystem scans
 - Cooperative cancellation via `AtomicBool` for long-running imports
 
 **Error Handling**:
@@ -272,7 +279,7 @@ Kept for external tool access (curl, scripts):
 
 ### Areas of Concern
 
-1. **api/mod.rs at 1,439 lines**: Contains `AppState`, `GameLibrary`, background task spawning, storage watcher, auto-import, and the full image import orchestration pipeline. It handles too many concerns.
+1. **~~api/mod.rs at 1,439 lines~~ (Split)**: `api/mod.rs` was split into focused modules: `api/cache/` (GameLibrary with sub-modules for enrichment, images, favorites, aliases, hashing), `api/background.rs` (startup pipeline, watchers, auto-import), `api/import.rs` (image import orchestration). `api/mod.rs` now contains only `AppState`, `DbPool`, and core state management.
 
 2. **game_detail.rs at 1,195 lines**: 8+ sub-components for a single page. The video section alone is substantial. Some of these could be extracted to their own files.
 
@@ -288,7 +295,7 @@ Kept for external tool access (curl, scripts):
 Filesystem scan (core/roms.rs)
   --> RomEntry { game: GameRef, size_bytes, is_m3u, is_favorite, ... }
   --> mark_favorites() enriches is_favorite flag
-  --> GameLibrary (api/mod.rs) caches results for 30s
+  --> GameLibrary (api/cache/) caches with mtime-based invalidation (NFS: 30-min TTL)
   --> get_roms_page() server function:
       - Paginates via offset/PAGE_SIZE (100 items)
       - Calls resolve_game_info() per ROM for display names
@@ -501,17 +508,9 @@ This section documents features and changes added after the initial analysis was
 
 ### High Priority
 
-**1. Split api/mod.rs into focused modules**
+**~~1. Split api/mod.rs into focused modules~~ (Done)**
 
-At 1,439 lines, this file handles AppState, GameLibrary, background tasks, config management, storage detection, metadata DB, and image import orchestration. The image import orchestration alone is hundreds of lines. Proposed split:
-
-```
-api/
-  mod.rs          # AppState definition + new/storage/config methods
-  cache.rs        # GameLibrary with TTL logic
-  background.rs   # spawn_storage_watcher, spawn_auto_import
-  import.rs       # start_import, start_image_import, image import orchestration
-```
+Split into: `api/mod.rs` (AppState, DbPool), `api/cache/` (GameLibrary with sub-modules: `mod.rs`, `enrichment.rs`, `images.rs`, `favorites.rs`, `aliases.rs`, `hashing.rs`), `api/background.rs` (startup pipeline, watchers), `api/import.rs` (import orchestration).
 
 ### Medium Priority
 
@@ -543,7 +542,7 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 
 **8. Search performance**
 
-`global_search()` iterates over all ROMs across all systems on every search request. For large collections (10K+ ROMs), this could benefit from a pre-built search index. However, the GameLibrary already avoids repeated filesystem scans, and the 30s TTL keeps results fresh.
+`global_search()` iterates over all ROMs across all systems on every search request. For large collections (10K+ ROMs), this could benefit from a pre-built search index. However, the GameLibrary already avoids repeated filesystem scans via the three-tier cache with mtime-based invalidation.
 
 ---
 
@@ -556,8 +555,8 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 
 ### Architectural Issues
 
-3. **api/mod.rs monolith** (1,439 lines) -- AppState, caching, background tasks, and import orchestration in one file
-4. **55 register_explicit calls in main.rs** -- Brittle: adding a server function requires remembering to add the registration. Forgetting causes silent runtime failures (function returns 404)
+3. **~~api/mod.rs monolith~~ (Fixed)** -- Split into `api/mod.rs`, `api/cache/`, `api/background.rs`, `api/import.rs`
+4. **81 register_explicit calls in main.rs** -- Brittle: adding a server function requires remembering to add the registration. Forgetting causes silent runtime failures (function returns 404)
 5. **Mirror types in types.rs** -- Every core type used in server function signatures must be duplicated. Adding a field to a core type requires updating the mirror. The compiler does not enforce parity.
 
 ### Missing Features
@@ -568,9 +567,9 @@ The `arcade_db` and `game_db` PHF maps are compiled into the binary (~54K entrie
 
 ### Known Limitations
 
-9. **Metadata import blocks the DB mutex** -- During metadata import, the `metadata_db` Mutex is held by the import task. Other requests needing metadata (ROM list enrichment, search) must wait or get stale data.
+9. **~~Metadata import blocks the DB mutex~~ (Mitigated)** -- The database layer now uses a `deadpool-sqlite` connection pool with concurrent read connections. Import operations use the write pool while reads can proceed in parallel via separate read connections (WAL mode). A `metadata_operation_in_progress` busy flag still prevents conflicting background operations.
 10. **GameLibrary clones entire ROM lists** -- `get_roms()` returns `Vec<RomEntry>` by cloning. For systems with thousands of ROMs, this creates significant allocation pressure on every cache hit.
-11. **SearchShortcut leaks event listener** -- The `Closure::forget()` call in `SearchShortcut` leaks the keydown listener. In a SPA with long sessions, this is a minor memory leak. In practice, only one listener is ever created.
+11. **~~SearchShortcut leaks event listener~~ (Fixed)** -- The `Closure::forget()` pattern was replaced with a single closure in `use_debounce` and proper cleanup in `SearchShortcut`.
 12. **No offline support** -- Despite having a service worker registered, the `sw.js` is minimal and does not implement caching strategies. The PWA works only when connected to the server.
 
 ### Testing Gaps

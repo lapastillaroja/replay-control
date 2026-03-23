@@ -25,7 +25,7 @@ The `data_sources` table tracks per-repo freshness (last indexed commit SHA, tim
 
 ## Matching Pipeline
 
-`resolve_box_art()` in `cache.rs` resolves a ROM filename to a box art URL using a 5-tier fallback:
+`resolve_box_art()` in `cache/images.rs` resolves a ROM filename to a box art URL using a 5-tier fallback:
 
 ### Tier 1: DB Path
 Check `game_metadata.box_art_path` (set during image import). If present, the image was already matched and copied to `media/`.
@@ -90,6 +90,6 @@ libretro-thumbnails repos use symlinks for region variants pointing to the same 
 |------|------|
 | `replay-control-core/src/metadata/thumbnails.rs` | Fuzzy matching, base_title, strip_tags, image import |
 | `replay-control-core/src/metadata/thumbnail_manifest.rs` | Manifest index, on-demand download, GitHub API |
-| `replay-control-app/src/api/cache.rs` | `resolve_box_art()`, `queue_on_demand_download()`, `ImageIndex` |
+| `replay-control-app/src/api/cache/images.rs` | `resolve_box_art()`, `queue_on_demand_download()`, `ImageIndex` |
 | `replay-control-app/src/api/import.rs` | Image import pipeline, SSE progress, `update_image_paths_from_disk` |
-| `replay-control-core/src/user_data_db.rs` | Box art overrides storage |
+| `replay-control-core/src/metadata/user_data_db.rs` | Box art overrides storage |

@@ -8,30 +8,35 @@ reference the original filename become orphaned:
 | Data | Location | Impact |
 |------|----------|--------|
 | User screenshots | `captures/{system}/{old_filename}_*.png` | Screenshots no longer match the renamed ROM |
-| Pinned videos | `.replay-control/videos.json` (key `"{system}/{old_filename}"` becomes orphaned) | Video links lost for the renamed ROM |
+| Pinned videos | `user_data.db` `game_videos` table (keyed by `system + rom_filename`) | Video links lost for the renamed ROM |
 | Favorites | `_favorites/*/{system}@{old_filename}.fav` | RePlayOS manages these — .fav file content has the old path |
 | Recent entries | `_recent/{system}@{old_filename}.rec` | Old path in .rec file |
 | Metadata DB | `.replay-control/metadata.db` | Cached metadata keyed by old filename |
 
 ### Current behavior
-- **Favorites**: The `rename_rom` function in `roms.rs` already updates `.fav`
-  files when renaming (renames the .fav file and updates its content).
+- **Favorites**: Not updated — `.fav` file still references the old filename.
+  RePlayOS won't find the renamed ROM via the old favorite.
 - **Recent entries**: Not updated — old entries become orphaned (acceptable,
   they expire naturally).
 - **User screenshots**: Not updated — orphaned after rename.
-- **Pinned videos**: Not updated — orphaned after rename.
+- **Pinned videos**: Not updated — `game_videos` table in `user_data.db`
+  still references the old filename.
 - **Metadata DB**: Not updated — stale cache entry (re-import would fix).
+- **Box art overrides**: Not updated — `box_art_overrides` table in
+  `user_data.db` still references the old filename.
 
 ### Proposed solution
 When renaming a ROM, cascade the rename to related data:
-1. Rename matching screenshot files in `captures/{system}/`
-2. Update video key in `.replay-control/videos.json` from old to new filename
-3. Update metadata DB entry (or invalidate cache for that ROM)
-4. Recent entries: skip (they expire naturally)
+1. Rename `.fav` file and update its content in `_favorites/`
+2. Rename matching screenshot files in `captures/{system}/`
+3. Update `game_videos` and `box_art_overrides` in `user_data.db`
+4. Update `game_library` entry in `metadata.db` (or invalidate cache)
+5. Recent entries: skip (they expire naturally)
 
-This should be a single `rename_rom_cascade()` function that wraps the existing
-`rename_rom()` and handles all side effects. Failures in side effects should be
-logged but not block the rename.
+This is documented as Phase 3 ("Orphan Data Cascade") in
+`research/investigations/rom-management-analysis.md`. The function should wrap the
+existing `rename_rom()` and handle all side effects. Failures in side effects should
+be logged but not block the rename.
 
 ### Priority
 Medium — affects users who rename ROMs and have screenshots/videos for them.
