@@ -275,7 +275,14 @@ pub fn organize_favorites(
         }
 
         if keep_originals {
+            let mtime = std::fs::metadata(&src).and_then(|m| m.modified()).ok();
             std::fs::copy(&src, &dest).map_err(|e| Error::io(&src, e))?;
+            if let Some(mtime) = mtime {
+                let _ = std::fs::File::options()
+                    .write(true)
+                    .open(&dest)
+                    .and_then(|f| f.set_modified(mtime));
+            }
         } else {
             std::fs::rename(&src, &dest).map_err(|e| Error::io(&src, e))?;
         }
