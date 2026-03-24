@@ -127,21 +127,11 @@ async fn game_detail(
 
     let storage = state.storage();
 
-    // Verify the ROM exists in the library.
-    let all_roms = state
+    // Verify the ROM exists in the library (single-row lookup, no full system load).
+    state
         .cache
-        .get_roms(
-            &storage,
-            &system,
-            state.region_preference(),
-            state.region_preference_secondary(),
-        )
+        .get_single_rom(&storage, &system, &filename)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
-
-    all_roms
-        .iter()
-        .find(|r| r.game.rom_filename == filename)
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Resolve base metadata from baked-in databases (arcade_db / game_db).

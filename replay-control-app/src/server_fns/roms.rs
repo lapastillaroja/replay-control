@@ -369,20 +369,11 @@ pub async fn get_roms_page(
 pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let all_roms = state
-        .cache
-        .get_roms(
-            &storage,
-            &system,
-            state.region_preference(),
-            state.region_preference_secondary(),
-        )
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    let rom = all_roms
-        .iter()
-        .find(|r| r.game.rom_filename == filename)
+    let rom = state
+        .cache
+        .get_single_rom(&storage, &system, &filename)
+        .await
         .ok_or_else(|| ServerFnError::new(format!("ROM not found: {filename}")))?;
 
     let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);

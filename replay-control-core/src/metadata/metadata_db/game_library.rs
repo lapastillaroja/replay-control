@@ -244,6 +244,27 @@ impl MetadataDb {
         Ok(result)
     }
 
+    /// Load a single game entry by system and filename.
+    /// Uses the primary key index for O(1) lookup.
+    pub fn load_single_entry(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Option<GameEntry>> {
+        conn.query_row(
+            "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                    region, developer, genre, genre_group, rating, rating_count, players,
+                    is_clone, is_m3u, is_translation, is_hack, is_special,
+                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+             FROM game_library
+             WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+            Self::row_to_game_entry,
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Query load_single_entry: {e}")))
+    }
+
     /// Save just the system-level metadata (counts, mtime) without replacing game entries.
     /// Used when we know game counts from scan_systems but haven't loaded entries yet.
     pub fn save_system_meta(
