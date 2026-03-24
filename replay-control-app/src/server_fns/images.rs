@@ -7,9 +7,11 @@ use replay_control_core::metadata_db::MetadataDb;
 #[server(prefix = "/sfn")]
 pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let (with_boxart, with_snap) = state.metadata_pool.read(|conn| {
-        MetadataDb::image_stats(conn).unwrap_or((0, 0))
-    }).unwrap_or((0, 0));
+    let (with_boxart, with_snap) = state
+        .metadata_pool
+        .read(|conn| MetadataDb::image_stats(conn).unwrap_or((0, 0)))
+        .await
+        .unwrap_or((0, 0));
     let storage = state.storage();
     let media_size = replay_control_core::thumbnails::media_dir_size(&storage.root);
     Ok((with_boxart, with_snap, media_size))
@@ -52,14 +54,18 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
 
     // 1. Delete orphaned metadata rows.
     // 2. Delete orphaned thumbnail files.
-    let (metadata_deleted, files_deleted, bytes_freed) = state.metadata_pool.write(|conn| {
-        let meta_del = MetadataDb::delete_orphaned_metadata(conn).unwrap_or(0);
-        let (files_del, freed) = replay_control_core::thumbnails::delete_orphaned_thumbnails(
-            &storage.root,
-            conn,
-        ).unwrap_or((0, 0));
-        (meta_del, files_del, freed)
-    }).unwrap_or((0, 0, 0));
+    let storage_root = storage.root.clone();
+    let (metadata_deleted, files_deleted, bytes_freed) = state
+        .metadata_pool
+        .write(move |conn| {
+            let meta_del = MetadataDb::delete_orphaned_metadata(conn).unwrap_or(0);
+            let (files_del, freed) =
+                replay_control_core::thumbnails::delete_orphaned_thumbnails(&storage_root, conn)
+                    .unwrap_or((0, 0));
+            (meta_del, files_del, freed)
+        })
+        .await
+        .unwrap_or((0, 0, 0));
 
     // _guard drops → Idle
     Ok((metadata_deleted, files_deleted, bytes_freed))

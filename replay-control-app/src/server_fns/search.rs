@@ -281,7 +281,13 @@ pub(crate) fn search_score(
 
         match word_score {
             Some((word_base, _)) => {
-                return apply_bonuses(word_base, filename, display_name, region_pref, region_secondary);
+                return apply_bonuses(
+                    word_base,
+                    filename,
+                    display_name,
+                    region_pref,
+                    region_secondary,
+                );
             }
             None => return 0,
         }
@@ -292,7 +298,7 @@ pub(crate) fn search_score(
 
 /// Look up the normalized genre for a ROM on a given system.
 #[cfg(feature = "ssr")]
-pub(crate) fn lookup_genre(system: &str, rom_filename: &str) -> String {
+pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
     use replay_control_core::arcade_db;
     use replay_control_core::game_db;
     use replay_control_core::systems::{self, SystemCategory};
@@ -325,13 +331,22 @@ pub(crate) fn lookup_genre(system: &str, rom_filename: &str) -> String {
 
     // Fallback: check LaunchBox metadata for genre.
     let state = leptos::prelude::expect_context::<crate::api::AppState>();
-    if let Some(genre) = state.metadata_pool.read(|conn| {
-        MetadataDb::lookup(conn, system, rom_filename)
-            .ok()
-            .flatten()
-            .and_then(|meta| meta.genre)
-            .filter(|g| !g.is_empty())
-    }).flatten() {
+    if let Some(genre) = state
+        .metadata_pool
+        .read({
+            let system = system.to_string();
+            let rom_filename = rom_filename.to_string();
+            move |conn| {
+                MetadataDb::lookup(conn, &system, &rom_filename)
+                    .ok()
+                    .flatten()
+                    .and_then(|meta| meta.genre)
+                    .filter(|g| !g.is_empty())
+            }
+        })
+        .await
+        .flatten()
+    {
         return genre;
     }
 
@@ -454,7 +469,8 @@ fn filter_and_score_roms<'a>(
             if filters.genre.is_empty() {
                 return true;
             }
-            lookups.genre_groups
+            lookups
+                .genre_groups
                 .get(&r.game.rom_filename)
                 .is_some_and(|gg| gg.eq_ignore_ascii_case(&filters.genre))
         })
@@ -462,13 +478,15 @@ fn filter_and_score_roms<'a>(
             if !filters.multiplayer_only {
                 return true;
             }
-            lookups.players
+            lookups
+                .players
                 .get(&r.game.rom_filename)
                 .is_some_and(|&p| p >= 2)
         })
         .filter(|r| {
             if let Some(threshold) = filters.min_rating {
-                lookups.ratings
+                lookups
+                    .ratings
                     .get(&r.game.rom_filename)
                     .is_some_and(|&rating| rating >= threshold as f64)
             } else {
@@ -523,7 +541,7 @@ fn filter_and_score_roms<'a>(
 
 /// Build `GlobalSearchResult` entries from the top-scoring ROMs.
 #[cfg(feature = "ssr")]
-fn build_search_results(
+async fn build_search_results(
     state: &crate::api::AppState,
     system: &str,
     top_roms: Vec<RomEntry>,
@@ -531,38 +549,38 @@ fn build_search_results(
     ratings_map: &std::collections::HashMap<String, f64>,
     players_map: &std::collections::HashMap<String, u8>,
 ) -> Vec<GlobalSearchResult> {
-    let image_index = state.cache.get_image_index(state, system);
-    top_roms
-        .into_iter()
-        .map(|rom| {
-            let box_art_url =
-                state
-                    .cache
-                    .resolve_box_art(state, &image_index, system, &rom.game.rom_filename);
-            let genre_str = system_genre_groups
-                .get(&rom.game.rom_filename)
-                .cloned()
-                .unwrap_or_else(|| lookup_genre(system, &rom.game.rom_filename));
-            let rating = ratings_map
-                .get(&rom.game.rom_filename)
-                .filter(|&&r| r > 0.0)
-                .map(|&r| r as f32);
-            GlobalSearchResult {
-                display_name: rom
-                    .game
-                    .display_name
-                    .unwrap_or_else(|| rom.game.rom_filename.clone()),
-                rom_filename: rom.game.rom_filename.clone(),
-                system: system.to_string(),
-                rom_path: rom.game.rom_path,
-                genre: genre_str,
-                is_favorite: rom.is_favorite,
-                box_art_url,
-                rating,
-                players: players_map.get(&rom.game.rom_filename).copied(),
-            }
-        })
-        .collect()
+    let image_index = state.cache.get_image_index(state, system).await;
+    let mut results = Vec::with_capacity(top_roms.len());
+    for rom in top_roms {
+        let box_art_url =
+            state
+                .cache
+                .resolve_box_art(state, &image_index, system, &rom.game.rom_filename);
+        let genre_str = if let Some(genre) = system_genre_groups.get(&rom.game.rom_filename) {
+            genre.clone()
+        } else {
+            lookup_genre(system, &rom.game.rom_filename).await
+        };
+        let rating = ratings_map
+            .get(&rom.game.rom_filename)
+            .filter(|&&r| r > 0.0)
+            .map(|&r| r as f32);
+        results.push(GlobalSearchResult {
+            display_name: rom
+                .game
+                .display_name
+                .unwrap_or_else(|| rom.game.rom_filename.clone()),
+            rom_filename: rom.game.rom_filename.clone(),
+            system: system.to_string(),
+            rom_path: rom.game.rom_path,
+            genre: genre_str,
+            is_favorite: rom.is_favorite,
+            box_art_url,
+            rating,
+            players: players_map.get(&rom.game.rom_filename).copied(),
+        });
+    }
+    results
 }
 
 // clippy::too_many_arguments — Leptos server functions require flat parameter lists
@@ -586,9 +604,13 @@ pub async fn global_search(
     let storage = state.storage();
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
-    let systems = state.cache.get_systems(&storage);
+    let systems = state.cache.get_systems(&storage).await;
     let q = query.to_lowercase();
-    let per_system_limit = if per_system_limit == 0 { 3 } else { per_system_limit };
+    let per_system_limit = if per_system_limit == 0 {
+        3
+    } else {
+        per_system_limit
+    };
 
     let filters = SearchFilters {
         hide_hacks,
@@ -603,14 +625,16 @@ pub async fn global_search(
     // Search aliases for cross-name expansion (e.g., "Bare Knuckle" -> "Streets of Rage").
     let alias_base_titles: std::collections::HashMap<String, std::collections::HashSet<String>> =
         if !q.is_empty() {
+            let q_owned = q.clone();
             let alias_hits: std::collections::HashSet<(String, String)> = state
                 .cache
-                .with_db_read(&storage, |conn| {
-                    MetadataDb::search_aliases(conn, &q)
+                .db_read(move |conn| {
+                    MetadataDb::search_aliases(conn, &q_owned)
                         .unwrap_or_default()
                         .into_iter()
                         .collect()
                 })
+                .await
                 .unwrap_or_default();
             let mut map: std::collections::HashMap<String, std::collections::HashSet<String>> =
                 std::collections::HashMap::new();
@@ -633,45 +657,54 @@ pub async fn global_search(
         let is_arcade = sys_db::find_system(&sys.folder_name)
             .is_some_and(|s| s.category == SystemCategory::Arcade);
 
-        let all_roms =
-            match state
-                .cache
-                .get_roms(&storage, &sys.folder_name, region_pref, region_secondary)
-            {
-                Ok(roms) => roms,
-                Err(_) => continue,
-            };
+        let all_roms = match state
+            .cache
+            .get_roms(&storage, &sys.folder_name, region_pref, region_secondary)
+            .await
+        {
+            Ok(roms) => roms,
+            Err(_) => continue,
+        };
 
         // Batch-load genre groups and base_titles for this system.
         let (system_genre_groups, system_base_titles): (
             std::collections::HashMap<String, String>,
             std::collections::HashMap<String, String>,
-        ) = state
-            .cache
-            .with_db_read(&storage, |conn| {
-                MetadataDb::load_system_entries(conn, &sys.folder_name)
-                    .map(|entries| {
-                        let genres: std::collections::HashMap<String, String> = entries
-                            .iter()
-                            .filter(|e| !e.genre_group.is_empty())
-                            .map(|e| (e.rom_filename.clone(), e.genre_group.clone()))
-                            .collect();
-                        let base_titles: std::collections::HashMap<String, String> = entries
-                            .iter()
-                            .filter(|e| !e.base_title.is_empty())
-                            .map(|e| (e.rom_filename.clone(), e.base_title.clone()))
-                            .collect();
-                        (genres, base_titles)
-                    })
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
+        ) = {
+            let folder_name = sys.folder_name.clone();
+            state
+                .cache
+                .db_read(move |conn| {
+                    MetadataDb::load_system_entries(conn, &folder_name)
+                        .map(|entries| {
+                            let genres: std::collections::HashMap<String, String> = entries
+                                .iter()
+                                .filter(|e| !e.genre_group.is_empty())
+                                .map(|e| (e.rom_filename.clone(), e.genre_group.clone()))
+                                .collect();
+                            let base_titles: std::collections::HashMap<String, String> = entries
+                                .iter()
+                                .filter(|e| !e.base_title.is_empty())
+                                .map(|e| (e.rom_filename.clone(), e.base_title.clone()))
+                                .collect();
+                            (genres, base_titles)
+                        })
+                        .unwrap_or_default()
+                })
+                .await
+                .unwrap_or_default()
+        };
 
         // Batch-load ratings for this system when a minimum rating filter is active.
         let system_ratings = if filters.min_rating.is_some() {
-            state.metadata_pool.read(|conn| {
-                MetadataDb::system_ratings(conn, &sys.folder_name).unwrap_or_default()
-            }).unwrap_or_default()
+            state
+                .metadata_pool
+                .read({
+                    let folder_name = sys.folder_name.clone();
+                    move |conn| MetadataDb::system_ratings(conn, &folder_name).unwrap_or_default()
+                })
+                .await
+                .unwrap_or_default()
         } else {
             std::collections::HashMap::new()
         };
@@ -721,15 +754,19 @@ pub async fn global_search(
 
         // Batch lookup ratings from metadata DB.
         let ratings_map = {
-            let filenames: Vec<&str> = top_roms
+            let filenames: Vec<String> = top_roms
                 .iter()
-                .map(|r| r.game.rom_filename.as_str())
+                .map(|r| r.game.rom_filename.clone())
                 .collect();
             let system_name = sys.folder_name.clone();
-            state.metadata_pool.read(|conn| {
-                MetadataDb::lookup_ratings(conn, &system_name, &filenames)
-                    .unwrap_or_default()
-            }).unwrap_or_default()
+            state
+                .metadata_pool
+                .read(move |conn| {
+                    let refs: Vec<&str> = filenames.iter().map(|s| s.as_str()).collect();
+                    MetadataDb::lookup_ratings(conn, &system_name, &refs).unwrap_or_default()
+                })
+                .await
+                .unwrap_or_default()
         };
 
         // Batch-load player counts for top results.
@@ -752,7 +789,8 @@ pub async fn global_search(
             &system_genre_groups,
             &ratings_map,
             top_players,
-        );
+        )
+        .await;
 
         groups.push(SystemSearchGroup {
             system: sys.folder_name.clone(),
@@ -776,12 +814,12 @@ pub async fn global_search(
 #[server(prefix = "/sfn")]
 pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
 
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
         .cache
-        .with_db_read(&storage, |conn| MetadataDb::all_genre_groups(conn).unwrap_or_default())
+        .db_read(move |conn| MetadataDb::all_genre_groups(conn).unwrap_or_default())
+        .await
         .unwrap_or_default();
 
     Ok(genres)
@@ -791,14 +829,12 @@ pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
 
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
         .cache
-        .with_db_read(&storage, |conn| {
-            MetadataDb::system_genre_groups(conn, &system).unwrap_or_default()
-        })
+        .db_read(move |conn| MetadataDb::system_genre_groups(conn, &system).unwrap_or_default())
+        .await
         .unwrap_or_default();
 
     Ok(genres)
@@ -817,34 +853,46 @@ pub async fn search_by_developer(
     }
 
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
-    let region_str = region_pref.as_str();
-    let region_secondary_str = region_secondary.map(|r| r.as_str()).unwrap_or("");
+    let region_str = region_pref.as_str().to_string();
+    let region_secondary_str = region_secondary
+        .map(|r| r.as_str())
+        .unwrap_or("")
+        .to_string();
     let limit = limit.clamp(1, 30);
 
     // Single DB access: find matching developers, then fetch games for the top match.
-    let db_result = state.cache.with_db_read(&storage, |conn| {
-        let matches = MetadataDb::find_developer_matches(conn, &q).unwrap_or_default();
-        if matches.is_empty() {
-            return None;
-        }
+    let q_owned = q.clone();
+    let db_result = state
+        .cache
+        .db_read(move |conn| {
+            let matches = MetadataDb::find_developer_matches(conn, &q_owned).unwrap_or_default();
+            if matches.is_empty() {
+                return None;
+            }
 
-        let (top_dev, top_count) = &matches[0];
-        let games = MetadataDb::games_by_developer(conn, top_dev, limit, region_str, region_secondary_str)
+            let (top_dev, top_count) = &matches[0];
+            let games = MetadataDb::games_by_developer(
+                conn,
+                top_dev,
+                limit,
+                &region_str,
+                &region_secondary_str,
+            )
             .unwrap_or_default();
 
-        let other_developers: Vec<DeveloperMatch> = matches[1..]
-            .iter()
-            .map(|(name, count)| DeveloperMatch {
-                name: name.clone(),
-                game_count: *count,
-            })
-            .collect();
+            let other_developers: Vec<DeveloperMatch> = matches[1..]
+                .iter()
+                .map(|(name, count)| DeveloperMatch {
+                    name: name.clone(),
+                    game_count: *count,
+                })
+                .collect();
 
-        Some((top_dev.clone(), *top_count, games, other_developers))
-    });
+            Some((top_dev.clone(), *top_count, games, other_developers))
+        })
+        .await;
 
     let Some(Some((developer_name, total_count, game_entries, other_developers))) = db_result
     else {
@@ -855,22 +903,29 @@ pub async fn search_by_developer(
         return Ok(None);
     }
 
+    // Pre-load image indexes for each distinct system (get_image_index is async).
+    let distinct_systems: std::collections::HashSet<String> =
+        game_entries.iter().map(|e| e.system.clone()).collect();
     let mut image_indexes: std::collections::HashMap<
         String,
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
+    for sys in &distinct_systems {
+        let index = state.cache.get_image_index(&state, sys).await;
+        image_indexes.insert(sys.clone(), index);
+    }
     let games: Vec<GlobalSearchResult> = game_entries
         .into_iter()
         .map(|entry| {
-            let index = image_indexes
-                .entry(entry.system.clone())
-                .or_insert_with(|| state.cache.get_image_index(&state, &entry.system));
+            let index = &image_indexes[&entry.system];
             let box_art_url =
                 state
                     .cache
                     .resolve_box_art(&state, index, &entry.system, &entry.rom_filename);
             GlobalSearchResult {
-                display_name: entry.display_name.unwrap_or_else(|| entry.rom_filename.clone()),
+                display_name: entry
+                    .display_name
+                    .unwrap_or_else(|| entry.rom_filename.clone()),
                 system: entry.system,
                 rom_filename: entry.rom_filename,
                 rom_path: entry.rom_path,
@@ -916,20 +971,20 @@ pub async fn get_developer_genres(
     #[server(default)] system: String,
 ) -> Result<Vec<String>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
 
-    let system_filter = if system.is_empty() {
+    let system_filter: Option<String> = if system.is_empty() {
         None
     } else {
-        Some(system.as_str())
+        Some(system)
     };
 
     let genres = state
         .cache
-        .with_db_read(&storage, |conn| {
-            MetadataDb::developer_genre_groups(conn, &developer, system_filter)
+        .db_read(move |conn| {
+            MetadataDb::developer_genre_groups(conn, &developer, system_filter.as_deref())
                 .unwrap_or_default()
         })
+        .await
         .unwrap_or_default();
 
     Ok(genres)
@@ -959,43 +1014,52 @@ pub async fn get_developer_games(
     let storage = state.storage();
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
-    let region_str = region_pref.as_str();
-    let region_secondary_str = region_secondary.map(|r| r.as_str()).unwrap_or("");
+    let region_str = region_pref.as_str().to_string();
+    let region_secondary_str = region_secondary
+        .map(|r| r.as_str())
+        .unwrap_or("")
+        .to_string();
     let limit = limit.clamp(1, 200);
 
-    let system_filter = if system.is_empty() {
+    let system_filter: Option<String> = if system.is_empty() {
         None
     } else {
-        Some(system.as_str())
+        Some(system)
     };
 
-    let filters = DeveloperGamesFilter {
-        hide_hacks,
-        hide_translations,
-        hide_clones,
-        multiplayer_only,
-        genre: &genre,
-        min_rating: min_rating.map(|r| r as f64),
-    };
+    let min_rating_f64 = min_rating.map(|r| r as f64);
 
     // Fetch systems and paginated games in one DB session.
-    let db_result = state.cache.with_db_read(&storage, |conn| {
-        let systems_raw = MetadataDb::developer_systems(conn, &developer).unwrap_or_default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(
+    let developer_owned = developer.clone();
+    let db_result = state
+        .cache
+        .db_read(move |conn| {
+            let systems_raw =
+                MetadataDb::developer_systems(conn, &developer_owned).unwrap_or_default();
+            let filters = DeveloperGamesFilter {
+                hide_hacks,
+                hide_translations,
+                hide_clones,
+                multiplayer_only,
+                genre: &genre,
+                min_rating: min_rating_f64,
+            };
+            let (entries, has_more, total) = MetadataDb::developer_games_paginated(
                 conn,
-                &developer,
-                system_filter,
+                &developer_owned,
+                system_filter.as_deref(),
                 &replay_control_core::metadata_db::PaginationParams {
                     offset,
                     limit,
-                    region_pref: region_str,
-                    region_secondary: region_secondary_str,
+                    region_pref: &region_str,
+                    region_secondary: &region_secondary_str,
                 },
                 &filters,
             )
             .unwrap_or((Vec::new(), false, 0));
-        (systems_raw, entries, has_more, total)
-    });
+            (systems_raw, entries, has_more, total)
+        })
+        .await;
 
     let Some((systems_raw, entries, has_more, total)) = db_result else {
         return Ok(DeveloperPageData {
@@ -1034,17 +1098,22 @@ pub async fn get_developer_games(
             })
             .collect();
 
-    // Convert GameEntry -> RomListEntry with box art resolution and favorites.
+    // Pre-load image indexes for each distinct system (get_image_index is async).
+    let distinct_entry_systems: std::collections::HashSet<&str> =
+        entries.iter().map(|e| e.system.as_str()).collect();
     let mut image_indexes: std::collections::HashMap<
         String,
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
+    for sys in &distinct_entry_systems {
+        let index = state.cache.get_image_index(&state, sys).await;
+        image_indexes.insert(sys.to_string(), index);
+    }
+    // Convert GameEntry -> RomListEntry with box art resolution and favorites.
     let list_entries: Vec<RomListEntry> = entries
         .into_iter()
         .map(|entry| {
-            let index = image_indexes
-                .entry(entry.system.clone())
-                .or_insert_with(|| state.cache.get_image_index(&state, &entry.system));
+            let index = &image_indexes[&entry.system];
             let box_art_url =
                 state
                     .cache
@@ -1695,10 +1764,8 @@ mod tests {
     #[test]
     fn adjacent_pairs_all_adjacent() {
         // "super mario world" in title "super mario world" -> 2 adjacent pairs
-        let pairs = count_adjacent_pairs(
-            &["super", "mario", "world"],
-            &["super", "mario", "world"],
-        );
+        let pairs =
+            count_adjacent_pairs(&["super", "mario", "world"], &["super", "mario", "world"]);
         assert_eq!(pairs, 2);
     }
 
@@ -1718,18 +1785,14 @@ mod tests {
 
     #[test]
     fn exact_word_matches_all() {
-        let count = count_exact_word_matches(
-            &["super", "mario"],
-            &["super", "mario", "world"],
-        );
+        let count = count_exact_word_matches(&["super", "mario"], &["super", "mario", "world"]);
         assert_eq!(count, 2);
     }
 
     #[test]
     fn exact_word_matches_prefix_only() {
         // "mar" is not an exact match for "mario"
-        let count =
-            count_exact_word_matches(&["mar"], &["super", "mario", "world"]);
+        let count = count_exact_word_matches(&["mar"], &["super", "mario", "world"]);
         assert_eq!(count, 0);
     }
 
@@ -1745,7 +1808,10 @@ mod tests {
         assert!(result.is_some());
         let (score, is_filename) = result.unwrap();
         assert!(!is_filename, "Should match display name, not filename");
-        assert!(score >= 400, "Word match in display should be >= 400, got {score}");
+        assert!(
+            score >= 400,
+            "Word match in display should be >= 400, got {score}"
+        );
     }
 
     #[test]
@@ -1758,7 +1824,10 @@ mod tests {
         );
         if let Some((score, is_filename)) = result {
             assert!(is_filename, "Should match filename");
-            assert!(score >= 300, "Word match in filename should be >= 300, got {score}");
+            assert!(
+                score >= 300,
+                "Word match in filename should be >= 300, got {score}"
+            );
         }
     }
 
@@ -1777,20 +1846,8 @@ mod tests {
     #[test]
     fn preferred_region_scores_higher() {
         use RegionPreference::*;
-        let usa_score = search_score(
-            "tetris",
-            "Tetris",
-            "Tetris (USA).nes",
-            Usa,
-            SEC,
-        );
-        let jpn_score = search_score(
-            "tetris",
-            "Tetris",
-            "Tetris (Japan).nes",
-            Usa,
-            SEC,
-        );
+        let usa_score = search_score("tetris", "Tetris", "Tetris (USA).nes", Usa, SEC);
+        let jpn_score = search_score("tetris", "Tetris", "Tetris (Japan).nes", Usa, SEC);
         assert!(
             usa_score > jpn_score,
             "USA ROM ({usa_score}) should score higher than Japan ({jpn_score}) with USA preference"
@@ -1876,7 +1933,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.get_systems(&storage);
+    let systems = state.cache.get_systems(&storage).await;
 
     // Build a weighted list: (system_folder, game_count).
     let weighted: Vec<(String, usize)> = systems
@@ -1890,34 +1947,41 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
     }
 
     let total: usize = weighted.iter().map(|(_, c)| c).sum();
-    let mut rng = rand::rng();
-    let pick = rng.random_range(0..total);
 
-    let mut cumulative = 0;
-    let mut chosen_system = &weighted[0].0;
-    for (sys, count) in &weighted {
-        cumulative += count;
-        if pick < cumulative {
-            chosen_system = sys;
-            break;
+    // Pick system using a block-scoped RNG so it doesn't live across await points
+    // (rand::rng() returns an Rc-based thread-local RNG that isn't Send).
+    let (chosen_system, system_pick) = {
+        let mut rng = rand::rng();
+        let pick = rng.random_range(0..total);
+
+        let mut cumulative = 0;
+        let mut chosen_system = weighted[0].0.clone();
+        for (sys, count) in &weighted {
+            cumulative += count;
+            if pick < cumulative {
+                chosen_system = sys.clone();
+                break;
+            }
         }
-    }
+        (chosen_system, rng.random_range(0..usize::MAX))
+    };
 
     let roms = state
         .cache
         .get_roms(
             &storage,
-            chosen_system,
+            &chosen_system,
             state.region_preference(),
             state.region_preference_secondary(),
         )
+        .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     if roms.is_empty() {
         return Err(ServerFnError::new("No ROMs in selected system"));
     }
 
-    let idx = rng.random_range(0..roms.len());
+    let idx = system_pick % roms.len();
     let rom = &roms[idx];
-    Ok((chosen_system.clone(), rom.game.rom_filename.clone()))
+    Ok((chosen_system, rom.game.rom_filename.clone()))
 }

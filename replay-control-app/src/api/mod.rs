@@ -66,13 +66,12 @@ impl managed::Manager for SqliteManager {
 
         SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
             let conn =
-                replay_control_core::db_common::open_connection(&db_path, &label)
-                    .map_err(|e| {
-                        rusqlite::Error::SqliteFailure(
-                            rusqlite::ffi::Error::new(1),
-                            Some(e.to_string()),
-                        )
-                    })?;
+                replay_control_core::db_common::open_connection(&db_path, &label).map_err(|e| {
+                    rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(1),
+                        Some(e.to_string()),
+                    )
+                })?;
 
             // Per-role PRAGMAs (on top of the base PRAGMAs from open_connection):
             if is_write && is_wal {
@@ -148,9 +147,10 @@ type SqlitePool = managed::Pool<SqliteManager>;
 /// - **Read pool**: `max_size=3` for WAL mode (concurrent readers), `1` for DELETE mode
 /// - **Write pool**: `max_size=1` (SQLite serialises writes)
 ///
-/// Provides synchronous `read()` / `write()` helpers. Under the hood, each call
-/// acquires a connection from the pool, runs the closure via `SyncWrapper::lock()`,
-/// and returns the connection to the pool.
+/// Provides async `read()` / `write()` helpers that use deadpool's native async
+/// API: `pool.get().await` for connection acquisition and `conn.interact()` for
+/// running closures on a blocking thread. This ensures waiting for a connection
+/// never pins a tokio worker thread.
 ///
 /// The pools are wrapped in `Arc<RwLock<>>` so that `close()` / `reopen()` can
 /// swap them across all clones of the same `DbPool`.
@@ -164,7 +164,8 @@ pub struct DbPool {
     label: &'static str,
     /// Opener function for creating additional connections (used by `reopen()`
     /// to verify the DB is accessible before rebuilding pools).
-    opener: fn(&std::path::Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+    opener:
+        fn(&std::path::Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
 }
 
 /// Build a deadpool `SqlitePool` with the given size.
@@ -208,7 +209,9 @@ impl DbPool {
     fn new(
         db_path: PathBuf,
         label: &'static str,
-        opener: fn(&std::path::Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+        opener: fn(
+            &std::path::Path,
+        ) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Open a warmup connection to detect the actual journal mode.
         // open_connection() picks WAL or DELETE based on filesystem capabilities,
@@ -222,17 +225,23 @@ impl DbPool {
             JournalMode::Wal => 3,
             JournalMode::Delete => 1,
         };
-        let read_pool = build_pool(&db_path, journal_mode, false, &format!("{label}_read"), read_size)?;
+        let read_pool = build_pool(
+            &db_path,
+            journal_mode,
+            false,
+            &format!("{label}_read"),
+            read_size,
+        )?;
         let write_pool = build_pool(&db_path, journal_mode, true, &format!("{label}_write"), 1)?;
 
         // Warm one read + one write connection eagerly. If this fails, the DB
         // is inaccessible and there is no point starting the server.
         drop(
-            Self::blocking_get(&read_pool)
+            Self::warmup_get(&read_pool)
                 .ok_or_else(|| format!("{label}: failed to warm read connection"))?,
         );
         drop(
-            Self::blocking_get(&write_pool)
+            Self::warmup_get(&write_pool)
                 .ok_or_else(|| format!("{label}: failed to warm write connection"))?,
         );
         // Remaining read connections (2 more on WAL) created lazily on demand.
@@ -263,32 +272,33 @@ impl DbPool {
     /// Multiple concurrent `read()` calls get different connections (up to
     /// `max_size`), enabling true concurrent reads under WAL mode.
     ///
+    /// Uses deadpool's async API: `pool.get().await` suspends the task without
+    /// pinning a tokio worker, and `interact()` runs the closure via
+    /// `spawn_blocking`. This prevents worker thread starvation when many
+    /// resources compete for a small pool.
+    ///
     /// Returns `None` if the pool is closed (DB unavailable).
-    pub fn read<F, R>(&self, f: F) -> Option<R>
+    pub async fn read<F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(&rusqlite::Connection) -> R,
+        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
     {
-        let pool_guard = self.read_pool.read().ok()?;
-        let pool = pool_guard.as_ref()?;
-        let obj = Self::blocking_get(pool)?;
-        drop(pool_guard); // release RwLock before running the closure
-        let guard = obj.lock().ok()?;
-        Some(f(&guard))
+        let pool = self.read_pool.read().ok()?.as_ref()?.clone();
+        let conn = pool.get().await.ok()?;
+        conn.interact(move |conn| f(conn)).await.ok()
     }
 
     /// Run a mutable closure with the single write connection.
     ///
     /// Returns `None` if the pool is closed (DB unavailable).
-    pub fn write<F, R>(&self, f: F) -> Option<R>
+    pub async fn write<F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(&mut rusqlite::Connection) -> R,
+        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
     {
-        let pool_guard = self.write_pool.read().ok()?;
-        let pool = pool_guard.as_ref()?;
-        let obj = Self::blocking_get(pool)?;
-        drop(pool_guard);
-        let mut guard = obj.lock().ok()?;
-        Some(f(&mut guard))
+        let pool = self.write_pool.read().ok()?.as_ref()?.clone();
+        let conn = pool.get().await.ok()?;
+        conn.interact(f).await.ok()
     }
 
     /// Close the pools (e.g., after storage change).
@@ -314,14 +324,26 @@ impl DbPool {
                     JournalMode::Wal => 3,
                     JournalMode::Delete => 1,
                 };
-                let new_read = match build_pool(&path, journal_mode, false, &format!("{}_read", self.label), read_size) {
+                let new_read = match build_pool(
+                    &path,
+                    journal_mode,
+                    false,
+                    &format!("{}_read", self.label),
+                    read_size,
+                ) {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::debug!("Could not rebuild {} read pool: {e}", self.label);
                         return false;
                     }
                 };
-                let new_write = match build_pool(&path, journal_mode, true, &format!("{}_write", self.label), 1) {
+                let new_write = match build_pool(
+                    &path,
+                    journal_mode,
+                    true,
+                    &format!("{}_write", self.label),
+                    1,
+                ) {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::debug!("Could not rebuild {} write pool: {e}", self.label);
@@ -352,10 +374,11 @@ impl DbPool {
     /// PASSIVE mode does not block readers. Call after heavy write operations
     /// (import, thumbnail rebuild, metadata clear) to fold the WAL back into
     /// the main database file and prevent unbounded WAL growth.
-    pub fn checkpoint(&self) {
+    pub async fn checkpoint(&self) {
         self.write(|conn| {
             let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);");
-        });
+        })
+        .await;
     }
 
     /// Get the current DB file path.
@@ -368,17 +391,12 @@ impl DbPool {
         self.db_path.read().expect("db_path lock poisoned").exists()
     }
 
-    /// Synchronously get a connection from a deadpool pool.
+    /// Synchronously warm a connection from a deadpool pool at startup.
     ///
-    /// Uses `block_in_place` + `block_on` which works from tokio multi-thread
-    /// worker threads and `spawn_blocking` threads. The production runtime is
-    /// always multi-thread (`#[tokio::main]`).
-    ///
-    /// **Note**: Panics on `current_thread` runtime (single-thread `#[tokio::test]`).
-    /// Integration tests must use `#[tokio::test(flavor = "multi_thread")]`.
-    fn blocking_get(
-        pool: &SqlitePool,
-    ) -> Option<managed::Object<SqliteManager>> {
+    /// **Only for use during `DbPool::new()`** — before the server starts
+    /// accepting requests. Production read/write paths use the async API
+    /// (`pool.get().await` + `interact()`).
+    fn warmup_get(pool: &SqlitePool) -> Option<managed::Object<SqliteManager>> {
         let handle = tokio::runtime::Handle::try_current().ok()?;
         let result = tokio::task::block_in_place(|| handle.block_on(pool.get()));
         result.ok()
@@ -499,10 +517,7 @@ impl AppState {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
-            cache: Arc::new(GameLibrary::new(
-                metadata_pool.clone(),
-                activity.clone(),
-            )),
+            cache: Arc::new(GameLibrary::new(metadata_pool.clone(), activity.clone())),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(initial_skin)),
             metadata_pool,
@@ -562,7 +577,7 @@ impl AppState {
 
     /// Re-detect storage from config (unless a CLI override was given).
     /// Returns `true` if the storage location actually changed.
-    pub fn refresh_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
+    pub async fn refresh_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
         // Re-read config from disk so system-level settings (wifi, NFS,
         // system_skin for sync mode, etc.) are picked up on next SSR render.
         let config_path = self.config_file_path();
@@ -609,7 +624,7 @@ impl AppState {
             self.metadata_pool.reopen(&new_storage_ref.root);
             self.user_data_pool.reopen(&new_storage_ref.root);
 
-            self.cache.invalidate();
+            self.cache.invalidate().await;
         }
 
         Ok(changed)
@@ -625,7 +640,6 @@ impl AppState {
             PathBuf::from("/media/sd/config/replay.cfg")
         }
     }
-
 }
 
 /// Build the application router with API routes, server function handler,

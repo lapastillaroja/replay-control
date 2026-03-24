@@ -20,7 +20,7 @@ pub struct RefreshResult {
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let summaries = state.cache.get_systems(&storage);
+    let summaries = state.cache.get_systems(&storage).await;
     let total_favorites = state.cache.get_favorites_count(&storage);
 
     let disk = storage
@@ -76,7 +76,7 @@ fn get_network_ips() -> (Option<String>, Option<String>) {
 #[server(prefix = "/sfn")]
 pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(state.cache.get_systems(&state.storage()))
+    Ok(state.cache.get_systems(&state.storage()).await)
 }
 
 #[server(prefix = "/sfn", endpoint = "/get_recents")]
@@ -93,21 +93,24 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         String,
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
-    let enriched = entries
-        .into_iter()
-        .map(|entry| {
-            let index = image_indexes
-                .entry(entry.game.system.clone())
-                .or_insert_with(|| state.cache.get_image_index(&state, &entry.game.system));
-            let box_art_url = state.cache.resolve_box_art(
-                &state,
-                index,
-                &entry.game.system,
-                &entry.game.rom_filename,
-            );
-            RecentWithArt { entry, box_art_url }
-        })
-        .collect();
+    let mut enriched = Vec::with_capacity(entries.len());
+    for entry in entries {
+        if !image_indexes.contains_key(&entry.game.system) {
+            let index = state
+                .cache
+                .get_image_index(&state, &entry.game.system)
+                .await;
+            image_indexes.insert(entry.game.system.clone(), index);
+        }
+        let index = &image_indexes[&entry.game.system];
+        let box_art_url = state.cache.resolve_box_art(
+            &state,
+            index,
+            &entry.game.system,
+            &entry.game.rom_filename,
+        );
+        enriched.push(RecentWithArt { entry, box_art_url });
+    }
 
     Ok(enriched)
 }
@@ -201,6 +204,7 @@ pub async fn refresh_storage() -> Result<RefreshResult, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let changed = state
         .refresh_storage()
+        .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let storage = state.storage();
     Ok(RefreshResult {

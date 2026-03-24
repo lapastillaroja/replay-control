@@ -34,7 +34,7 @@ impl ImageIndex {
 impl GameLibrary {
     /// Get or build the image index for a system.
     /// The index maps normalized image names to actual paths, enabling O(1) box art lookups.
-    pub fn get_image_index(
+    pub async fn get_image_index(
         &self,
         state: &crate::api::AppState,
         system: &str,
@@ -99,28 +99,31 @@ impl GameLibrary {
         }
 
         // Load user box art overrides first (separate pool, no contention with metadata).
+        let system_owned = system.to_string();
         let user_overrides: HashMap<String, String> = state
             .user_data_pool
-            .read(|conn| UserDataDb::get_system_overrides(conn, system).ok())
+            .read(move |conn| UserDataDb::get_system_overrides(conn, &system_owned).ok())
+            .await
             .flatten()
             .unwrap_or_default();
 
         // Load DB paths and raw manifest data from the pool, then build
         // the manifest fuzzy index outside the closure to avoid holding
         // the pool connection longer than necessary.
+        let system_owned = system.to_string();
         let (mut db_paths, raw_manifest_data) = state
             .metadata_pool
-            .read(|conn| {
-                let paths = MetadataDb::system_box_art_paths(conn, system).unwrap_or_default();
+            .read(move |conn| {
+                let paths =
+                    MetadataDb::system_box_art_paths(conn, &system_owned).unwrap_or_default();
 
                 // Pre-fetch raw manifest data while we have the DB lock.
                 let raw = if let Some(repo_names) =
-                    replay_control_core::thumbnails::thumbnail_repo_names(system)
+                    replay_control_core::thumbnails::thumbnail_repo_names(&system_owned)
                 {
                     let mut repo_data = Vec::new();
                     for display_name in repo_names {
-                        let url_name =
-                            replay_control_core::thumbnails::repo_url_name(display_name);
+                        let url_name = replay_control_core::thumbnails::repo_url_name(display_name);
                         let source_name =
                             replay_control_core::thumbnails::libretro_source_name(display_name);
                         let branch = MetadataDb::get_data_source(conn, &source_name)
@@ -129,11 +132,11 @@ impl GameLibrary {
                             .and_then(|s| s.branch)
                             .unwrap_or_else(|| "master".to_string());
                         let entries = MetadataDb::query_thumbnail_index(
-                                conn,
-                                &source_name,
-                                replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
-                            )
-                            .unwrap_or_default();
+                            conn,
+                            &source_name,
+                            replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
+                        )
+                        .unwrap_or_default();
                         repo_data.push((url_name, branch, entries));
                     }
                     Some(repo_data)
@@ -142,6 +145,7 @@ impl GameLibrary {
                 };
                 (paths, raw)
             })
+            .await
             .unwrap_or_else(|| (HashMap::new(), None));
 
         // Inject user box art overrides (highest priority — overwrites auto-matched paths).
@@ -151,10 +155,9 @@ impl GameLibrary {
 
         // Build manifest fuzzy index from pre-fetched data (no DB lock held).
         let manifest = raw_manifest_data.and_then(|repo_data| {
-            let idx =
-                replay_control_core::thumbnail_manifest::build_manifest_fuzzy_index_from_raw(
-                    &repo_data,
-                );
+            let idx = replay_control_core::thumbnail_manifest::build_manifest_fuzzy_index_from_raw(
+                &repo_data,
+            );
             if idx.exact.is_empty() {
                 None
             } else {

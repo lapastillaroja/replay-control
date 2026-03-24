@@ -48,67 +48,84 @@ pub struct RecommendationData {
 pub async fn get_recommendations(count: usize) -> Result<RecommendationData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.get_systems(&storage);
+    let systems = state.cache.get_systems(&storage).await;
     let count = count.clamp(1, 12);
 
     // Collect favorites from the in-memory cache (no filesystem or DB access).
-    let favorites_info = collect_favorites_info(&state, &storage, &systems);
+    let favorites_info = collect_favorites_info(&state, &storage, &systems).await;
+
+    // Clone favorites_info for use after the DB closure (which consumes it via move).
+    let favorites_info_for_picks = favorites_info.clone();
 
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
-    let region_str = region_pref.as_str();
-    let region_secondary_str = region_secondary.map(|r| r.as_str()).unwrap_or("");
+    let region_str = region_pref.as_str().to_string();
+    let region_secondary_str = region_secondary
+        .map(|r| r.as_str())
+        .unwrap_or("")
+        .to_string();
 
     // Single DB access: run all SQL queries under one Mutex lock.
-    let db_data = state.cache.with_db_read(&storage, |conn| {
-        let random_pool =
-                          MetadataDb::random_cached_roms_diverse(conn, count, region_str, region_secondary_str)
+    let db_data = state
+        .cache
+        .db_read(move |conn| {
+            let random_pool = MetadataDb::random_cached_roms_diverse(
+                conn,
+                count,
+                &region_str,
+                &region_secondary_str,
+            )
             .unwrap_or_default();
-        let genre_counts = MetadataDb::genre_counts(conn).unwrap_or_default();
-        let multiplayer = MetadataDb::multiplayer_count(conn).unwrap_or(0);
-        let top_rated =
-                        MetadataDb::top_rated_cached_roms(conn, count * 3, region_str, region_secondary_str)
+            let genre_counts = MetadataDb::genre_counts(conn).unwrap_or_default();
+            let multiplayer = MetadataDb::multiplayer_count(conn).unwrap_or(0);
+            let top_rated = MetadataDb::top_rated_cached_roms(
+                conn,
+                count * 3,
+                &region_str,
+                &region_secondary_str,
+            )
             .unwrap_or_default();
-        let fav_roms = favorites_info.as_ref().map(|fi| {
-            let exclude: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
-            let top_genre = fi.top_genre.as_deref();
-            let mut roms =
-                           MetadataDb::system_roms_excluding(conn, 
+            let fav_roms = favorites_info.as_ref().map(|fi| {
+                let exclude: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
+                let top_genre = fi.top_genre.as_deref();
+                let mut roms = MetadataDb::system_roms_excluding(
+                    conn,
                     &fi.system,
                     &exclude,
                     top_genre,
                     count,
-                    region_str,
-                    region_secondary_str,
+                    &region_str,
+                    &region_secondary_str,
                 )
                 .unwrap_or_default();
-            // Fill with any genre if not enough genre-matching.
-            if roms.len() < count && top_genre.is_some() {
-                let have: std::collections::HashSet<String> =
-                    roms.iter().map(|r| r.rom_filename.clone()).collect();
-                let more =
-                           MetadataDb::system_roms_excluding(conn, 
+                // Fill with any genre if not enough genre-matching.
+                if roms.len() < count && top_genre.is_some() {
+                    let have: std::collections::HashSet<String> =
+                        roms.iter().map(|r| r.rom_filename.clone()).collect();
+                    let more = MetadataDb::system_roms_excluding(
+                        conn,
                         &fi.system,
                         &exclude,
                         None,
                         count,
-                        region_str,
-                        region_secondary_str,
+                        &region_str,
+                        &region_secondary_str,
                     )
                     .unwrap_or_default();
-                for r in more {
-                    if roms.len() >= count {
-                        break;
-                    }
-                    if !have.contains(&r.rom_filename) {
-                        roms.push(r);
+                    for r in more {
+                        if roms.len() >= count {
+                            break;
+                        }
+                        if !have.contains(&r.rom_filename) {
+                            roms.push(r);
+                        }
                     }
                 }
-            }
-            roms
-        });
-        (random_pool, genre_counts, multiplayer, top_rated, fav_roms)
-    });
+                roms
+            });
+            (random_pool, genre_counts, multiplayer, top_rated, fav_roms)
+        })
+        .await;
 
     let Some((random_pool, genre_counts, multiplayer_count, top_rated_pool, fav_roms)) = db_data
     else {
@@ -132,7 +149,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         .collect();
 
     // --- Favorites picks (pool already randomized by SQL) ---
-    let mut favorites_picks = favorites_info.and_then(|fi| {
+    let mut favorites_picks = favorites_info_for_picks.and_then(|fi| {
         let roms = fav_roms?;
         if roms.is_empty() {
             return None;
@@ -162,12 +179,12 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
 
     // Resolve box art from filesystem (same approach as recents/favorites/games).
     // The pre-cached game_library.box_art_url may be stale or NULL.
-    resolve_box_art_for_picks(&state, &mut random_picks);
+    resolve_box_art_for_picks(&state, &mut random_picks).await;
     if let Some(ref mut fp) = favorites_picks {
-        resolve_box_art_for_picks(&state, &mut fp.picks);
+        resolve_box_art_for_picks(&state, &mut fp.picks).await;
     }
     if let Some(ref mut tr) = top_rated {
-        resolve_box_art_for_picks(&state, tr);
+        resolve_box_art_for_picks(&state, tr).await;
     }
 
     Ok(RecommendationData {
@@ -181,6 +198,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
 
 /// Info about the user's favorites needed for building recommendations.
 #[cfg(feature = "ssr")]
+#[derive(Clone)]
 struct FavoritesInfo {
     system: String,
     system_display: String,
@@ -192,7 +210,7 @@ struct FavoritesInfo {
 /// Randomly picks among systems that have favorites (weighted by sqrt of count)
 /// so the section rotates across systems on each page load.
 #[cfg(feature = "ssr")]
-fn collect_favorites_info(
+async fn collect_favorites_info(
     state: &crate::api::AppState,
     storage: &replay_control_core::storage::StorageLocation,
     systems: &[SystemSummary],
@@ -232,17 +250,21 @@ fn collect_favorites_info(
     // Determine top genre_group from favorites using game_library DB.
     let genre_map: std::collections::HashMap<String, String> = state
         .cache
-        .with_db_read(storage, |conn| {
-            MetadataDb::load_system_entries(conn, chosen_system)
-                .map(|entries| {
-                    entries
-                        .into_iter()
-                        .filter(|e| !e.genre_group.is_empty())
-                        .map(|e| (e.rom_filename, e.genre_group))
-                        .collect()
-                })
-                .unwrap_or_default()
+        .db_read({
+            let chosen_system = chosen_system.to_string();
+            move |conn| {
+                MetadataDb::load_system_entries(conn, &chosen_system)
+                    .map(|entries| {
+                        entries
+                            .into_iter()
+                            .filter(|e| !e.genre_group.is_empty())
+                            .map(|e| (e.rom_filename, e.genre_group))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
         })
+        .await
         .unwrap_or_default();
 
     let mut genre_counts: std::collections::HashMap<String, usize> =
@@ -320,7 +342,7 @@ fn diversify_picks(
 /// Resolve box art URLs from the filesystem for a batch of picks.
 /// Uses the same ImageIndex approach as recents/favorites/games pages.
 #[cfg(feature = "ssr")]
-pub(super) fn resolve_box_art_for_picks(
+pub(super) async fn resolve_box_art_for_picks(
     state: &crate::api::AppState,
     picks: &mut [RecommendedGame],
 ) {
@@ -329,9 +351,11 @@ pub(super) fn resolve_box_art_for_picks(
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
     for game in picks.iter_mut() {
-        let index = image_indexes
-            .entry(game.system.clone())
-            .or_insert_with(|| state.cache.get_image_index(state, &game.system));
+        if !image_indexes.contains_key(&game.system) {
+            let index = state.cache.get_image_index(state, &game.system).await;
+            image_indexes.insert(game.system.clone(), index);
+        }
+        let index = &image_indexes[&game.system];
         if let Some(url) =
             state
                 .cache

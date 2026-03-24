@@ -29,18 +29,27 @@ pub async fn get_game_videos(
 
     // Resolve alias base_titles for cross-name sharing (best-effort).
     let mut all_titles = vec![base_title.clone()];
-    if let Some(aliases) = state.metadata_pool.read(|conn| {
-        MetadataDb::alias_base_titles(conn, &system, &base_title)
-    }) {
+    if let Some(aliases) = state
+        .metadata_pool
+        .read({
+            let system = system.clone();
+            let base_title = base_title.clone();
+            move |conn| MetadataDb::alias_base_titles(conn, &system, &base_title)
+        })
+        .await
+    {
         all_titles.extend(aliases);
     }
 
-    let title_refs: Vec<&str> = all_titles.iter().map(|s| s.as_str()).collect();
-    state.user_data_pool.read(|conn| {
-        UserDataDb::get_game_videos(conn, &system, &title_refs)
-    })
-    .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))
+    state
+        .user_data_pool
+        .read(move |conn| {
+            let title_refs: Vec<&str> = all_titles.iter().map(|s| s.as_str()).collect();
+            UserDataDb::get_game_videos(conn, &system, &title_refs)
+        })
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Add a video to a game (from manual paste or recommendation pin).
@@ -76,11 +85,17 @@ pub async fn add_game_video(
         rom_filename: rom_filename.clone(),
     };
 
-    state.user_data_pool.write(|conn| {
-        UserDataDb::add_game_video(conn, &system, &rom_filename, &base_title, &entry)
-    })
-    .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state
+        .user_data_pool
+        .write({
+            let entry = entry.clone();
+            move |conn| {
+                UserDataDb::add_game_video(conn, &system, &rom_filename, &base_title, &entry)
+            }
+        })
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     Ok(entry)
 }
@@ -93,11 +108,12 @@ pub async fn remove_game_video(
     video_id: String,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    state.user_data_pool.write(|conn| {
-        UserDataDb::remove_game_video(conn, &system, &rom_filename, &video_id)
-    })
-    .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))
+    state
+        .user_data_pool
+        .write(move |conn| UserDataDb::remove_game_video(conn, &system, &rom_filename, &video_id))
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Search for video recommendations via the Piped API.
@@ -222,10 +238,13 @@ pub async fn search_game_videos(
 async fn curl_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
     let output = tokio::process::Command::new("curl")
         .args([
-            "-sSL",                                   // silent, show errors, follow redirects
-            "--connect-timeout", "5",                  // connection timeout
-            "--max-time", &timeout_secs.to_string(),   // total timeout
-            "-H", "Accept: application/json",          // explicit accept header
+            "-sSL", // silent, show errors, follow redirects
+            "--connect-timeout",
+            "5", // connection timeout
+            "--max-time",
+            &timeout_secs.to_string(), // total timeout
+            "-H",
+            "Accept: application/json", // explicit accept header
             url,
         ])
         .output()

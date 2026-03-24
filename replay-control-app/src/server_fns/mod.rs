@@ -1,7 +1,7 @@
 #[cfg(feature = "ssr")]
-use replay_control_core::user_data_db::UserDataDb;
-#[cfg(feature = "ssr")]
 use replay_control_core::metadata_db::MetadataDb;
+#[cfg(feature = "ssr")]
+use replay_control_core::user_data_db::UserDataDb;
 
 mod boxart;
 mod favorites;
@@ -148,7 +148,11 @@ pub use crate::types::{Favorite, GameRef, RecentEntry, RomEntry, SystemSummary};
 /// Resolve full game metadata for any system.
 /// This is the single function that bridges arcade_db and game_db.
 #[cfg(feature = "ssr")]
-pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str) -> GameInfo {
+pub(crate) async fn resolve_game_info(
+    system: &str,
+    rom_filename: &str,
+    rom_path: &str,
+) -> GameInfo {
     use replay_control_core::arcade_db;
     use replay_control_core::game_db;
     use replay_control_core::rom_tags;
@@ -323,20 +327,35 @@ pub(crate) fn resolve_game_info(system: &str, rom_filename: &str, rom_path: &str
     };
 
     // Enrich with external metadata from local cache.
-    enrich_from_metadata_cache(&mut info);
+    enrich_from_metadata_cache(&mut info).await;
 
     info
 }
 
 /// Look up cached external metadata and enrich the GameInfo.
 #[cfg(feature = "ssr")]
-pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
+pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
     let state = leptos::prelude::expect_context::<crate::api::AppState>();
 
+    // Clone strings for use in `move` closures (must be Send + 'static).
+    let system = info.system.clone();
+    let rom_filename = info.rom_filename.clone();
+
     // Check user_data_db for box art override FIRST (highest priority).
-    if let Some(override_path) = state.user_data_pool.read(|conn| {
-        UserDataDb::get_override(conn, &info.system, &info.rom_filename).ok().flatten()
-    }).flatten() {
+    if let Some(override_path) = state
+        .user_data_pool
+        .read({
+            let system = system.clone();
+            let rom_filename = rom_filename.clone();
+            move |conn| {
+                UserDataDb::get_override(conn, &system, &rom_filename)
+                    .ok()
+                    .flatten()
+            }
+        })
+        .await
+        .flatten()
+    {
         let full = state
             .storage()
             .rc_dir()
@@ -348,9 +367,11 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
         }
     }
 
-    if let Some(lookup_result) = state.metadata_pool.read(|conn| {
-        MetadataDb::lookup(conn, &info.system, &info.rom_filename)
-    }) {
+    if let Some(lookup_result) = state
+        .metadata_pool
+        .read(move |conn| MetadataDb::lookup(conn, &system, &rom_filename))
+        .await
+    {
         match lookup_result {
             Ok(Some(meta)) => {
                 info.description = meta.description;
@@ -420,7 +441,7 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
     // arcade MAME codename → display name translation automatically.
     if info.box_art_url.is_none() || info.screenshot_url.is_none() || info.title_url.is_none() {
         if info.box_art_url.is_none() {
-            let image_index = state.cache.get_image_index(&state, &info.system);
+            let image_index = state.cache.get_image_index(&state, &info.system).await;
             if let Some(url) =
                 state
                     .cache
@@ -455,7 +476,7 @@ pub(crate) fn enrich_from_metadata_cache(info: &mut GameInfo) {
 
 /// Resolve a box art URL for a ROM, checking metadata DB first, then filesystem.
 #[cfg(feature = "ssr")]
-pub(crate) fn resolve_box_art_url(
+pub(crate) async fn resolve_box_art_url(
     state: &crate::api::AppState,
     system: &str,
     rom_filename: &str,
@@ -463,9 +484,20 @@ pub(crate) fn resolve_box_art_url(
     let media_base = state.storage().rc_dir().join("media").join(system);
 
     // 0. Check user_data_db for box art override (highest priority).
-    if let Some(override_path) = state.user_data_pool.read(|conn| {
-        UserDataDb::get_override(conn, system, rom_filename).ok().flatten()
-    }).flatten() {
+    if let Some(override_path) = state
+        .user_data_pool
+        .read({
+            let system = system.to_string();
+            let rom_filename = rom_filename.to_string();
+            move |conn| {
+                UserDataDb::get_override(conn, &system, &rom_filename)
+                    .ok()
+                    .flatten()
+            }
+        })
+        .await
+        .flatten()
+    {
         let full = state
             .storage()
             .rc_dir()
@@ -479,9 +511,18 @@ pub(crate) fn resolve_box_art_url(
 
     // 1. Try metadata DB — but validate the file on disk (catches git fake-symlink artifacts).
     //    If the DB path is a fake symlink, try resolving it before falling back to disk scan.
-    if let Some(Some(meta)) = state.metadata_pool.read(|conn| {
-        MetadataDb::lookup(conn, system, rom_filename).ok().flatten()
-    })
+    if let Some(Some(meta)) = state
+        .metadata_pool
+        .read({
+            let system = system.to_string();
+            let rom_filename = rom_filename.to_string();
+            move |conn| {
+                MetadataDb::lookup(conn, &system, &rom_filename)
+                    .ok()
+                    .flatten()
+            }
+        })
+        .await
         && let Some(ref path) = meta.box_art_path
     {
         let full_path = media_base.join(path);

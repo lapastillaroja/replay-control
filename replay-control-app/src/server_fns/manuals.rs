@@ -79,9 +79,15 @@ pub async fn get_local_manuals(
 
     // Resolve alias base_titles for cross-name sharing.
     let mut all_titles = vec![base_title.clone()];
-    if let Some(aliases) = state.metadata_pool.read(|conn| {
-        MetadataDb::alias_base_titles(conn, &system, &base_title)
-    }) {
+    if let Some(aliases) = state
+        .metadata_pool
+        .read({
+            let system = system.clone();
+            let base_title = base_title.clone();
+            move |conn| MetadataDb::alias_base_titles(conn, &system, &base_title)
+        })
+        .await
+    {
         all_titles.extend(aliases);
     }
 
@@ -121,7 +127,9 @@ pub async fn get_local_manuals(
                 .unwrap_or(&filename);
             let file_base = extract_manual_base_title(stem);
 
-            let matches = all_titles.iter().any(|bt| bt.eq_ignore_ascii_case(&file_base));
+            let matches = all_titles
+                .iter()
+                .any(|bt| bt.eq_ignore_ascii_case(&file_base));
 
             if !matches {
                 continue;
@@ -197,7 +205,10 @@ pub async fn search_game_manuals(
                         // Sort by language preference
                         results.sort_by_key(|r| {
                             let lang = r.language.as_deref().unwrap_or("");
-                            replay_control_core::settings::language_match_score(lang, &preferred_langs)
+                            replay_control_core::settings::language_match_score(
+                                lang,
+                                &preferred_langs,
+                            )
                         });
                         tracing::info!(
                             "Manual search: retrokit hit for \"{normalized}\" ({} results)",
@@ -206,7 +217,9 @@ pub async fn search_game_manuals(
                         return Ok(results);
                     }
                 }
-                tracing::info!("Manual search: retrokit miss for \"{normalized}\", trying Archive.org");
+                tracing::info!(
+                    "Manual search: retrokit miss for \"{normalized}\", trying Archive.org"
+                );
             }
             Err(e) => {
                 tracing::warn!("Manual search: retrokit TSV load failed for {folder}: {e}");
@@ -246,10 +259,7 @@ pub async fn search_game_manuals(
                 return Ok(Vec::new());
             }
 
-            tracing::info!(
-                "Manual search: Archive.org returned {} results",
-                docs.len()
-            );
+            tracing::info!("Manual search: Archive.org returned {} results", docs.len());
 
             let mut results = Vec::new();
             for doc in &docs {
@@ -341,7 +351,10 @@ pub async fn download_manual(
         .map_err(|e| ServerFnError::new(format!("Failed to create manuals directory: {e}")))?;
 
     // Download with curl
-    tracing::info!("Downloading manual: {encoded_url} -> {}", target_path.display());
+    tracing::info!(
+        "Downloading manual: {encoded_url} -> {}",
+        target_path.display()
+    );
 
     let output = tokio::process::Command::new("curl")
         .args([
@@ -366,11 +379,10 @@ pub async fn download_manual(
 
     // Verify the downloaded file exists and is not empty (blocking I/O)
     let tp = target_path.clone();
-    let size = tokio::task::spawn_blocking(move || {
-        std::fs::metadata(&tp).map(|m| m.len()).unwrap_or(0)
-    })
-    .await
-    .unwrap_or(0);
+    let size =
+        tokio::task::spawn_blocking(move || std::fs::metadata(&tp).map(|m| m.len()).unwrap_or(0))
+            .await
+            .unwrap_or(0);
 
     if size == 0 {
         let tp = target_path.clone();
@@ -380,10 +392,7 @@ pub async fn download_manual(
 
     tracing::info!("Manual saved: {} ({} bytes)", filename, size);
 
-    let serve_url = format!(
-        "/manuals/{folder}/{}",
-        urlencoding::encode(&filename)
-    );
+    let serve_url = format!("/manuals/{folder}/{}", urlencoding::encode(&filename));
     Ok(serve_url)
 }
 
@@ -401,8 +410,7 @@ pub async fn delete_manual(system: String, filename: String) -> Result<(), Serve
 
     tokio::task::spawn_blocking(move || {
         if target_path.is_file() {
-            std::fs::remove_file(&target_path)
-                .map_err(|e| format!("Failed to delete manual: {e}"))
+            std::fs::remove_file(&target_path).map_err(|e| format!("Failed to delete manual: {e}"))
         } else {
             Err("Manual file not found".to_string())
         }
@@ -445,9 +453,8 @@ async fn load_retrokit_index(
     }
 
     // Fetch TSV
-    let url = format!(
-        "https://archive.org/download/retrokit-manuals/{folder}/{folder}-sources.tsv"
-    );
+    let url =
+        format!("https://archive.org/download/retrokit-manuals/{folder}/{folder}-sources.tsv");
     tracing::info!("Fetching retrokit TSV: {url}");
 
     let output = tokio::process::Command::new("curl")
@@ -465,10 +472,7 @@ async fn load_retrokit_index(
         String::from_utf8(output.stdout).map_err(|e| format!("TSV decode failed: {e}"))?;
 
     let index = replay_control_core::retrokit_manuals::parse_retrokit_tsv(&tsv_data);
-    tracing::info!(
-        "Retrokit TSV loaded: {folder} ({} titles)",
-        index.len()
-    );
+    tracing::info!("Retrokit TSV loaded: {folder} ({} titles)", index.len());
 
     // Store in cache
     {
@@ -567,8 +571,18 @@ fn encode_path_segment(segment: &str) -> String {
         if b.is_ascii_alphanumeric()
             || matches!(
                 b,
-                b'-' | b'_' | b'.' | b'~' | b'!' | b'*' | b':' | b'@' | b'+' | b',' | b';'
-                    | b'=' | b'&'
+                b'-' | b'_'
+                    | b'.'
+                    | b'~'
+                    | b'!'
+                    | b'*'
+                    | b':'
+                    | b'@'
+                    | b'+'
+                    | b','
+                    | b';'
+                    | b'='
+                    | b'&'
             )
         {
             result.push(b as char);
@@ -590,11 +604,7 @@ fn extract_manual_base_title(stem: &str) -> String {
     let s = stem.trim();
     // Strip trailing " (lang)" pattern
     let stripped = if let Some(pos) = s.rfind(" (") {
-        if s.ends_with(')') {
-            &s[..pos]
-        } else {
-            s
-        }
+        if s.ends_with(')') { &s[..pos] } else { s }
     } else {
         s
     };
@@ -637,7 +647,10 @@ fn resolve_svm_game_dir(
         return Some(rel);
     }
     // Fallback: the directory containing the .svm file may BE the game directory
-    svm_path.parent().filter(|p| p.is_dir()).map(|p| p.to_path_buf())
+    svm_path
+        .parent()
+        .filter(|p| p.is_dir())
+        .map(|p| p.to_path_buf())
 }
 
 /// Resolve game directory from an .m3u playlist file.
@@ -705,7 +718,9 @@ mod tests {
     #[test]
     fn encode_url_path_spaces() {
         assert_eq!(
-            encode_url_path("https://archive.org/download/super-baseball-2020-usa/Super Baseball 2020 (USA).pdf"),
+            encode_url_path(
+                "https://archive.org/download/super-baseball-2020-usa/Super Baseball 2020 (USA).pdf"
+            ),
             "https://archive.org/download/super-baseball-2020-usa/Super%20Baseball%202020%20%28USA%29.pdf"
         );
     }
@@ -713,7 +728,9 @@ mod tests {
     #[test]
     fn encode_url_path_zip_embedded() {
         assert_eq!(
-            encode_url_path("https://archive.org/download/exov5_2/Content/XODOSMetadata.zip/Manuals/MS-DOS/10th Frame (1987).pdf"),
+            encode_url_path(
+                "https://archive.org/download/exov5_2/Content/XODOSMetadata.zip/Manuals/MS-DOS/10th Frame (1987).pdf"
+            ),
             "https://archive.org/download/exov5_2/Content/XODOSMetadata.zip/Manuals/MS-DOS/10th%20Frame%20%281987%29.pdf"
         );
     }
@@ -721,7 +738,9 @@ mod tests {
     #[test]
     fn encode_url_path_apostrophe() {
         assert_eq!(
-            encode_url_path("https://archive.org/download/exov5_2/Content/XODOSMetadata.zip/Manuals/MS-DOS/'Nam 1965-1975 (1991).pdf"),
+            encode_url_path(
+                "https://archive.org/download/exov5_2/Content/XODOSMetadata.zip/Manuals/MS-DOS/'Nam 1965-1975 (1991).pdf"
+            ),
             "https://archive.org/download/exov5_2/Content/XODOSMetadata.zip/Manuals/MS-DOS/%27Nam%201965-1975%20%281991%29.pdf"
         );
     }
@@ -740,8 +759,8 @@ mod tests {
 
     #[test]
     fn encode_url_path_ampersand_preserved() {
-        let url = "https://segaretro.org/images/a/aa/The_Adventures_of_Batman_&_Robin_MD_BR_Manual.pdf";
+        let url =
+            "https://segaretro.org/images/a/aa/The_Adventures_of_Batman_&_Robin_MD_BR_Manual.pdf";
         assert_eq!(encode_url_path(url), url);
     }
 }
-

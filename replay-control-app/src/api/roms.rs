@@ -9,7 +9,7 @@ use super::AppState;
 async fn list_systems(
     State(state): State<AppState>,
 ) -> Json<Vec<replay_control_core::roms::SystemSummary>> {
-    Json(state.cache.get_systems(&state.storage()))
+    Json(state.cache.get_systems(&state.storage()).await)
 }
 
 async fn list_system_roms(
@@ -24,6 +24,7 @@ async fn list_system_roms(
             state.region_preference(),
             state.region_preference_secondary(),
         )
+        .await
         .map(|arc| Json(arc.to_vec()))
         .map_err(|_| StatusCode::NOT_FOUND)
 }
@@ -37,29 +38,25 @@ async fn delete_rom(
         &payload.system,
         &payload.relative_path,
     )
-    .map(|_| {
-        state.cache.invalidate();
-        StatusCode::NO_CONTENT
-    })
-    .map_err(|_| StatusCode::NOT_FOUND)
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+    state.cache.invalidate().await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn rename_rom(
     State(state): State<AppState>,
     Json(payload): Json<RenameRomRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    replay_control_core::roms::rename_rom(
+    let new_path = replay_control_core::roms::rename_rom(
         &state.storage(),
         &payload.relative_path,
         &payload.new_filename,
     )
-    .map(|new_path| {
-        state.cache.invalidate();
-        Json(serde_json::json!({
-            "new_path": new_path.display().to_string()
-        }))
-    })
-    .map_err(|_| StatusCode::NOT_FOUND)
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+    state.cache.invalidate().await;
+    Ok(Json(serde_json::json!({
+        "new_path": new_path.display().to_string()
+    })))
 }
 
 async fn find_duplicates(State(state): State<AppState>) -> Json<Vec<DuplicateResponse>> {

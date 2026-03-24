@@ -1,8 +1,8 @@
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
-#[cfg(feature = "ssr")]
 use super::recommendations::{resolve_box_art_for_picks, to_recommended};
 use super::*;
+#[cfg(feature = "ssr")]
+use replay_control_core::metadata_db::MetadataDb;
 
 /// Related games data: regional variants + translations + hacks + specials + series + similar games.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,7 +107,7 @@ pub async fn get_related_games(
 ) -> Result<RelatedGamesData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.get_systems(&storage);
+    let systems = state.cache.get_systems(&storage).await;
 
     // Look up the detail genre from game_library for two-tier similar matching.
     // The detail genre (e.g., "Maze / Shooter") is passed to similar_by_genre(),
@@ -119,93 +119,122 @@ pub async fn get_related_games(
     let region_pref = state.region_preference();
     let region_pref_str = format!("{:?}", region_pref).to_lowercase();
 
+    // Pre-compute genre fallback outside the closure (lookup_genre is async).
+    let genre_fallback = {
+        let g = super::search::lookup_genre(&system, &filename).await;
+        if g.is_empty() { None } else { Some(g) }
+    };
+
+    // Clone owned values for the Send + 'static closure.
+    let system_cl = system.clone();
+    let filename_cl = filename.clone();
+    let region_pref_str_cl = region_pref_str.clone();
+
     // Single DB access for all queries.
-    let db_data = state.cache.with_db_read(&storage, |conn| {
-        let variants = MetadataDb::regional_variants(conn, &system, &filename).unwrap_or_default();
-        let translations_raw = MetadataDb::translations(conn, &system, &filename).unwrap_or_default();
-        let hacks_raw = MetadataDb::hacks(conn, &system, &filename).unwrap_or_default();
-        let specials_raw = MetadataDb::specials(conn, &system, &filename).unwrap_or_default();
+    let db_data = state
+        .cache
+        .db_read(move |conn| {
+            let variants =
+                MetadataDb::regional_variants(conn, &system_cl, &filename_cl).unwrap_or_default();
+            let translations_raw =
+                MetadataDb::translations(conn, &system_cl, &filename_cl).unwrap_or_default();
+            let hacks_raw = MetadataDb::hacks(conn, &system_cl, &filename_cl).unwrap_or_default();
+            let specials_raw =
+                MetadataDb::specials(conn, &system_cl, &filename_cl).unwrap_or_default();
 
-        // Load all entries once — used for current entry lookup and arcade clone siblings.
-        let all_entries = MetadataDb::load_system_entries(conn, &system).unwrap_or_default();
+            // Load all entries once — used for current entry lookup and arcade clone siblings.
+            let all_entries = MetadataDb::load_system_entries(conn, &system_cl).unwrap_or_default();
 
-        // Get the current game's base_title, series_key for relationship queries.
-        let current_entry = all_entries.iter().find(|e| e.rom_filename == filename);
+            // Get the current game's base_title, series_key for relationship queries.
+            let current_entry = all_entries.iter().find(|e| e.rom_filename == filename_cl);
 
-        let base_title = current_entry
-            .map(|e| e.base_title.clone())
-            .unwrap_or_default();
-        let series_key = current_entry
-            .map(|e| e.series_key.clone())
-            .unwrap_or_default();
-        let detail_genre = current_entry
-            .and_then(|e| e.genre.clone().filter(|g| !g.is_empty()))
-            .or_else(|| {
-                let g = super::search::lookup_genre(&system, &filename);
-                if g.is_empty() { None } else { Some(g) }
-            })
-            .unwrap_or_default();
-
-        // Series siblings: prefer Wikidata data (has ordering), fall back to algorithmic series_key.
-        let (series_raw, series_name_raw) = {
-            let wikidata =
-                           MetadataDb::wikidata_series_siblings(conn, &system, &base_title, &region_pref_str, 20)
+            let base_title = current_entry
+                .map(|e| e.base_title.clone())
                 .unwrap_or_default();
-            if !wikidata.is_empty() {
-                // Wikidata series found: use it (entries come with optional order).
-                let sname =
-                            MetadataDb::lookup_series_name(conn, &system, &base_title)
+            let series_key = current_entry
+                .map(|e| e.series_key.clone())
+                .unwrap_or_default();
+            let detail_genre = current_entry
+                .and_then(|e| e.genre.clone().filter(|g| !g.is_empty()))
+                .or_else(|| genre_fallback)
+                .unwrap_or_default();
+
+            // Series siblings: prefer Wikidata data (has ordering), fall back to algorithmic series_key.
+            let (series_raw, series_name_raw) = {
+                let wikidata = MetadataDb::wikidata_series_siblings(
+                    conn,
+                    &system_cl,
+                    &base_title,
+                    &region_pref_str_cl,
+                    20,
+                )
+                .unwrap_or_default();
+                if !wikidata.is_empty() {
+                    // Wikidata series found: use it (entries come with optional order).
+                    let sname = MetadataDb::lookup_series_name(conn, &system_cl, &base_title)
+                        .unwrap_or_default();
+                    let entries: Vec<_> =
+                        wikidata.into_iter().map(|(entry, _order)| entry).collect();
+                    (entries, sname)
+                } else {
+                    // Fall back to algorithmic series_key matching.
+                    let fallback = MetadataDb::series_siblings(
+                        conn,
+                        &series_key,
+                        &base_title,
+                        &region_pref_str_cl,
+                        20,
+                    )
                     .unwrap_or_default();
-                let entries: Vec<_> = wikidata.into_iter().map(|(entry, _order)| entry).collect();
-                (entries, sname)
+                    (fallback, String::new())
+                }
+            };
+
+            // Alias variants: cross-name variants via game_alias table.
+            let alias_raw = MetadataDb::alias_variants(
+                conn,
+                &system_cl,
+                &base_title,
+                &filename_cl,
+                &region_pref_str_cl,
+            )
+            .unwrap_or_default();
+
+            let similar = if detail_genre.is_empty() {
+                Vec::new()
             } else {
-                // Fall back to algorithmic series_key matching.
-                let fallback =
-                               MetadataDb::series_siblings(conn, &series_key, &base_title, &region_pref_str, 20)
+                let limit = if is_arcade { 24 } else { 8 };
+                MetadataDb::similar_by_genre(conn, &system_cl, &detail_genre, &filename_cl, limit)
+                    .unwrap_or_default()
+            };
+
+            // For arcade systems, collect all ROM filenames for clone sibling lookup.
+            let all_system_roms: Vec<String> = if is_arcade {
+                all_entries.iter().map(|e| e.rom_filename.clone()).collect()
+            } else {
+                Vec::new()
+            };
+
+            // Sequel/prequel chain info (Wikidata P155/P156).
+            let sequel_chain =
+                MetadataDb::sequel_info(conn, &system_cl, &base_title, &region_pref_str_cl)
                     .unwrap_or_default();
-                (fallback, String::new())
-            }
-        };
 
-        // Alias variants: cross-name variants via game_alias table.
-        let alias_raw =
-                        MetadataDb::alias_variants(conn, &system, &base_title, &filename, &region_pref_str)
-            .unwrap_or_default();
-
-        let similar = if detail_genre.is_empty() {
-            Vec::new()
-        } else {
-            let limit = if is_arcade { 24 } else { 8 };
-            MetadataDb::similar_by_genre(conn, &system, &detail_genre, &filename, limit)
-                .unwrap_or_default()
-        };
-
-        // For arcade systems, collect all ROM filenames for clone sibling lookup.
-        let all_system_roms: Vec<String> = if is_arcade {
-            all_entries.iter().map(|e| e.rom_filename.clone()).collect()
-        } else {
-            Vec::new()
-        };
-
-        // Sequel/prequel chain info (Wikidata P155/P156).
-        let sequel_chain =
-                           MetadataDb::sequel_info(conn, &system, &base_title, &region_pref_str)
-            .unwrap_or_default();
-
-        (
-            variants,
-            translations_raw,
-            hacks_raw,
-            specials_raw,
-            series_raw,
-            series_name_raw,
-            alias_raw,
-            similar,
-            base_title,
-            all_system_roms,
-            sequel_chain,
-        )
-    });
+            (
+                variants,
+                translations_raw,
+                hacks_raw,
+                specials_raw,
+                series_raw,
+                series_name_raw,
+                alias_raw,
+                similar,
+                base_title,
+                all_system_roms,
+                sequel_chain,
+            )
+        })
+        .await;
 
     let Some((
         variants_raw,
@@ -374,14 +403,14 @@ pub async fn get_related_games(
             Some(game)
         })
         .collect();
-    resolve_box_art_for_picks(&state, &mut alias_variants);
+    resolve_box_art_for_picks(&state, &mut alias_variants).await;
 
     // Build series siblings (other games in the same franchise, cross-system).
     let mut series_siblings: Vec<RecommendedGame> = series_raw
         .iter()
         .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
         .collect();
-    resolve_box_art_for_picks(&state, &mut series_siblings);
+    resolve_box_art_for_picks(&state, &mut series_siblings).await;
 
     // Build similar games. The two-tier similar_by_genre query already orders
     // by exact genre match first (relevance=2) then genre_group (relevance=1),
@@ -393,7 +422,7 @@ pub async fn get_related_games(
         .collect();
 
     // Resolve box art from filesystem.
-    resolve_box_art_for_picks(&state, &mut similar_games);
+    resolve_box_art_for_picks(&state, &mut similar_games).await;
 
     // Build sequel/prequel links.
     let sequel_prev = sequel_chain.follows_title.map(|title| {

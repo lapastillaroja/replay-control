@@ -19,7 +19,7 @@ impl GameLibrary {
     ///    canonical No-Intro name)
     ///
     /// Returns a map of rom_filename -> HashResult for use by save_roms_to_db.
-    pub(super) fn hash_roms_for_system(
+    pub(super) async fn hash_roms_for_system(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -32,8 +32,11 @@ impl GameLibrary {
         }
 
         // Load cached hashes from L2 (database).
+        let system_owned = system.to_string();
         let cached_hashes = self
-            .with_db_read(storage, |conn| MetadataDb::load_cached_hashes(conn, system))
+            .db
+            .read(move |conn| MetadataDb::load_cached_hashes(conn, &system_owned))
+            .await
             .and_then(|r| r.ok())
             .unwrap_or_default();
 
@@ -102,9 +105,9 @@ impl GameLibrary {
 
     /// Write ROM list to SQLite game_library for persistent storage.
     /// Enriches with genre/players from the baked-in game databases during write.
-    pub(super) fn save_roms_to_db(
+    pub(super) async fn save_roms_to_db(
         &self,
-        storage: &StorageLocation,
+        _storage: &StorageLocation,
         system: &str,
         roms: &[RomEntry],
         system_dir: &Path,
@@ -135,8 +138,7 @@ impl GameLibrary {
                 // Also extract developer (manufacturer for arcade, empty for console — enriched later).
                 let (genre, genre_group, players_lookup, is_clone, base_title, developer) =
                     if is_arcade {
-                        let arcade_stem =
-                            rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+                        let arcade_stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
                         match arcade_db::lookup_arcade_game(arcade_stem) {
                             Some(info) => {
                                 // Skip BIOS entries — they're not playable games
@@ -161,9 +163,7 @@ impl GameLibrary {
                                     group,
                                     Some(info.players),
                                     info.is_clone,
-                                    replay_control_core::title_utils::base_title(
-                                        info.display_name,
-                                    ),
+                                    replay_control_core::title_utils::base_title(info.display_name),
                                     dev,
                                 )
                             }
@@ -193,9 +193,7 @@ impl GameLibrary {
                             .display_name
                             .as_deref()
                             .map(replay_control_core::title_utils::base_title)
-                            .unwrap_or_else(|| {
-                                replay_control_core::title_utils::base_title(stem)
-                            });
+                            .unwrap_or_else(|| replay_control_core::title_utils::base_title(stem));
                         match game {
                             Some(g) => {
                                 // genre = raw genre from game_db (e.g., "Shoot'em Up")
@@ -205,9 +203,8 @@ impl GameLibrary {
                                     Some(g.genre.to_string())
                                 };
                                 // genre_group = normalized (e.g., "Shooter")
-                                let group =
-                                    replay_control_core::genre::normalize_genre(g.genre)
-                                        .to_string();
+                                let group = replay_control_core::genre::normalize_genre(g.genre)
+                                    .to_string();
                                 (
                                     detail,
                                     group,
@@ -273,18 +270,28 @@ impl GameLibrary {
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
             cached_roms.len()
         );
-        let result = self.with_db_mut(storage, |conn| {
-            MetadataDb::save_system_entries(conn, system, &cached_roms, mtime_secs)
-        });
+        let system_owned = system.to_string();
+        let cached_roms_for_db = cached_roms.clone();
+        let result = self
+            .db
+            .write(move |conn| {
+                MetadataDb::save_system_entries(
+                    conn,
+                    &system_owned,
+                    &cached_roms_for_db,
+                    mtime_secs,
+                )
+            })
+            .await;
         match result {
             Some(Ok(())) => {
                 tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len());
 
                 // Populate TGDB aliases from embedded build-time data.
-                self.populate_tgdb_aliases(storage, system, &cached_roms);
+                self.populate_tgdb_aliases(system, &cached_roms).await;
 
                 // Populate game_series from embedded Wikidata data.
-                self.populate_wikidata_series(storage, system, &cached_roms);
+                self.populate_wikidata_series(system, &cached_roms).await;
             }
             Some(Err(e)) => tracing::warn!("L2 write-through: {system} FAILED: {e}"),
             None => tracing::warn!("L2 write-through: {system} skipped (DB unavailable)"),

@@ -1,5 +1,4 @@
 use replay_control_core::metadata_db::MetadataDb;
-use replay_control_core::storage::StorageLocation;
 use replay_control_core::title_utils::fuzzy_match_key;
 
 use super::GameLibrary;
@@ -9,9 +8,8 @@ impl GameLibrary {
     ///
     /// Builds lookup maps from library entries, delegates the matching to
     /// `replay_control_core::alias_matching`, then persists results.
-    pub(super) fn populate_tgdb_aliases(
+    pub(super) async fn populate_tgdb_aliases(
         &self,
-        storage: &StorageLocation,
         system: &str,
         roms: &[replay_control_core::metadata_db::GameEntry],
     ) {
@@ -40,7 +38,11 @@ impl GameLibrary {
         }
 
         let count = aliases.len();
-        let result = self.with_db_mut(storage, |conn| MetadataDb::bulk_insert_aliases(conn, &aliases));
+        let system = system.to_owned();
+        let result = self
+            .db
+            .write(move |conn| MetadataDb::bulk_insert_aliases(conn, &aliases))
+            .await;
         match result {
             Some(Ok(n)) => {
                 tracing::debug!("TGDB aliases for {system}: {n}/{count} inserted")
@@ -54,9 +56,8 @@ impl GameLibrary {
     ///
     /// Delegates the matching to `replay_control_core::alias_matching`,
     /// then persists results.
-    pub(super) fn populate_wikidata_series(
+    pub(super) async fn populate_wikidata_series(
         &self,
-        storage: &StorageLocation,
         system: &str,
         roms: &[replay_control_core::metadata_db::GameEntry],
     ) {
@@ -69,7 +70,11 @@ impl GameLibrary {
         }
 
         let count = series_entries.len();
-        let result = self.with_db_mut(storage, |conn| MetadataDb::bulk_insert_series(conn, &series_entries));
+        let system = system.to_owned();
+        let result = self
+            .db
+            .write(move |conn| MetadataDb::bulk_insert_series(conn, &series_entries))
+            .await;
         match result {
             Some(Ok(n)) => {
                 tracing::debug!("Wikidata series for {system}: {n}/{count} inserted")

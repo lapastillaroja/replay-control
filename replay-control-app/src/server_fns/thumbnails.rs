@@ -41,9 +41,11 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
     let state = expect_context::<crate::api::AppState>();
     // Gracefully return defaults when the DB is temporarily unavailable
     // (e.g., during a metadata import or thumbnail update operation).
-    let Some(stats) = state.metadata_pool.read(|conn| {
-        MetadataDb::get_data_source_stats(conn, "libretro-thumbnails")
-    }) else {
+    let Some(stats) = state
+        .metadata_pool
+        .read(|conn| MetadataDb::get_data_source_stats(conn, "libretro-thumbnails"))
+        .await
+    else {
         return Ok(DataSourceSummary {
             entry_count: 0,
             repo_count: 0,
@@ -95,11 +97,12 @@ pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    state.metadata_pool.write(|conn| {
-        MetadataDb::clear_thumbnail_index(conn)
-    })
-    .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state
+        .metadata_pool
+        .write(|conn| MetadataDb::clear_thumbnail_index(conn))
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // _guard drops → Idle
     Ok(())

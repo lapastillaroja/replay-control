@@ -324,7 +324,7 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     replay_control_core::settings::write_region_preference(&storage.root, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     // Invalidate cache so ROM lists are re-sorted with the new preference.
-    state.cache.invalidate();
+    state.cache.invalidate().await;
     Ok(())
 }
 
@@ -350,7 +350,7 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
     };
     replay_control_core::settings::write_region_preference_secondary(&storage.root, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    state.cache.invalidate();
+    state.cache.invalidate().await;
     Ok(())
 }
 
@@ -360,10 +360,10 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
 pub async fn get_language_preference() -> Result<(String, String), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let primary = replay_control_core::settings::read_language_primary(&storage.root)
-        .unwrap_or_default();
-    let secondary = replay_control_core::settings::read_language_secondary(&storage.root)
-        .unwrap_or_default();
+    let primary =
+        replay_control_core::settings::read_language_primary(&storage.root).unwrap_or_default();
+    let secondary =
+        replay_control_core::settings::read_language_secondary(&storage.root).unwrap_or_default();
     Ok((primary, secondary))
 }
 

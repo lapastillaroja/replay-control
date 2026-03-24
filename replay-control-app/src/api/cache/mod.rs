@@ -123,25 +123,27 @@ impl GameLibrary {
 
     /// Run a read-only closure with the metadata DB connection.
     /// Returns None if the DB is unavailable.
-    pub fn with_db_read<F, R>(&self, _storage: &StorageLocation, f: F) -> Option<R>
+    pub async fn db_read<F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(&rusqlite::Connection) -> R,
+        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
     {
-        self.db.read(f)
+        self.db.read(f).await
     }
 
     /// Run a write closure with the metadata DB connection.
     /// Returns None if the DB is unavailable.
-    pub(super) fn with_db_mut<F, R>(&self, _storage: &StorageLocation, f: F) -> Option<R>
+    pub async fn db_write<F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(&mut rusqlite::Connection) -> R,
+        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
     {
-        self.db.write(f)
+        self.db.write(f).await
     }
 
     /// Get cached systems or scan and cache.
     /// L1 (in-memory) → L2 (SQLite game_library_meta) → L3 (filesystem scan).
-    pub fn get_systems(&self, storage: &StorageLocation) -> Vec<SystemSummary> {
+    pub async fn get_systems(&self, storage: &StorageLocation) -> Vec<SystemSummary> {
         let roms_dir = storage.roms_dir();
 
         // L1: Try in-memory cache.
@@ -154,7 +156,7 @@ impl GameLibrary {
 
         // L2: Try SQLite game_library_meta (reconstructs SystemSummary from cached metadata).
         let is_local = storage.kind.is_local();
-        if let Some(summaries) = self.load_systems_from_db(storage)
+        if let Some(summaries) = self.load_systems_from_db(storage).await
             && !summaries.is_empty()
         {
             // Store in L1.
@@ -171,16 +173,16 @@ impl GameLibrary {
         }
 
         // Write-through to L2 (background-safe: no lock held on L1).
-        self.save_systems_to_db(storage, &summaries);
+        self.save_systems_to_db(storage, &summaries).await;
 
         summaries
     }
 
     /// Try to reconstruct SystemSummary list from SQLite game_library_meta.
-    fn load_systems_from_db(&self, storage: &StorageLocation) -> Option<Vec<SystemSummary>> {
+    async fn load_systems_from_db(&self, _storage: &StorageLocation) -> Option<Vec<SystemSummary>> {
         use replay_control_core::systems;
 
-        let cached_meta = self.with_db_read(storage, MetadataDb::load_all_system_meta)?;
+        let cached_meta = self.db.read(MetadataDb::load_all_system_meta).await?;
         let cached_meta = cached_meta.ok()?;
 
         if cached_meta.is_empty() {
@@ -221,35 +223,38 @@ impl GameLibrary {
     }
 
     /// Write system summaries to SQLite game_library_meta.
-    fn save_systems_to_db(&self, storage: &StorageLocation, summaries: &[SystemSummary]) {
+    async fn save_systems_to_db(&self, storage: &StorageLocation, summaries: &[SystemSummary]) {
         let roms_dir = storage.roms_dir();
-        self.with_db_mut(storage, |conn| {
-            for summary in summaries {
-                if summary.game_count == 0 {
-                    continue;
+        let summaries: Vec<_> = summaries.to_vec();
+        self.db
+            .write(move |conn| {
+                for summary in &summaries {
+                    if summary.game_count == 0 {
+                        continue;
+                    }
+                    let system_dir = roms_dir.join(&summary.folder_name);
+                    let mtime_secs = dir_mtime(&system_dir).and_then(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .ok()
+                            .map(|d| d.as_secs() as i64)
+                    });
+                    let _ = MetadataDb::save_system_meta(
+                        conn,
+                        &summary.folder_name,
+                        mtime_secs,
+                        summary.game_count,
+                        summary.total_size_bytes,
+                    );
                 }
-                let system_dir = roms_dir.join(&summary.folder_name);
-                let mtime_secs = dir_mtime(&system_dir).and_then(|t| {
-                    t.duration_since(std::time::UNIX_EPOCH)
-                        .ok()
-                        .map(|d| d.as_secs() as i64)
-                });
-                let _ = MetadataDb::save_system_meta(
-                    conn,
-                    &summary.folder_name,
-                    mtime_secs,
-                    summary.game_count,
-                    summary.total_size_bytes,
-                );
-            }
-        });
+            })
+            .await;
     }
 
     /// Get cached ROM list for a system.
     /// Checks L1 (in-memory) → L2 (SQLite game_library).
     /// If neither has data and warmup is in progress, returns empty.
     /// Otherwise falls through to a full L3 filesystem scan.
-    pub fn get_roms(
+    pub async fn get_roms(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -257,7 +262,7 @@ impl GameLibrary {
         region_secondary: Option<RegionPreference>,
     ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
         // L1/L2: try cached data.
-        if let Some(roms) = self.get_roms_cached(storage, system) {
+        if let Some(roms) = self.get_roms_cached(storage, system).await {
             return Ok(roms);
         }
 
@@ -282,11 +287,12 @@ impl GameLibrary {
 
         // L3: full filesystem scan (user-triggered, outside warmup).
         self.scan_and_cache_system(storage, system, region_pref, region_secondary)
+            .await
     }
 
     /// Try L1 (in-memory) then L2 (SQLite) for cached ROM data.
     /// Returns None if neither has fresh data.
-    fn get_roms_cached(
+    async fn get_roms_cached(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -303,7 +309,7 @@ impl GameLibrary {
         }
 
         // L2: SQLite game_library.
-        if let Some(roms) = self.load_roms_from_db(storage, system, &system_dir) {
+        if let Some(roms) = self.load_roms_from_db(storage, system, &system_dir).await {
             let arc = Arc::new(roms);
             if let Ok(mut guard) = self.roms.write() {
                 guard.insert(
@@ -319,7 +325,7 @@ impl GameLibrary {
 
     /// Scan a system from filesystem and populate L1+L2 cache.
     /// Called by the background pipeline during warmup and by get_roms() outside warmup.
-    pub fn scan_and_cache_system(
+    pub async fn scan_and_cache_system(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -336,34 +342,38 @@ impl GameLibrary {
 
         // Hash-and-identify step: for hash-eligible systems, compute CRC32 hashes
         // and look up canonical names in the embedded No-Intro DAT data.
-        let hash_results = self.hash_roms_for_system(storage, system, &mut roms);
+        let hash_results = self.hash_roms_for_system(storage, system, &mut roms).await;
 
         let arc = Arc::new(roms);
 
         if let Ok(mut guard) = self.roms.write() {
             guard.insert(
-                key.clone(),
+                key,
                 CacheEntry::new(Arc::clone(&arc), &system_dir, storage.kind.is_local()),
             );
         }
 
         // Write-through to L2.
-        self.save_roms_to_db(storage, system, &arc, &system_dir, &hash_results);
+        self.save_roms_to_db(storage, system, &arc, &system_dir, &hash_results)
+            .await;
 
         Ok(arc)
     }
 
     /// Try to load ROMs from SQLite game_library, validating via mtime.
-    fn load_roms_from_db(
+    async fn load_roms_from_db(
         &self,
-        storage: &StorageLocation,
+        _storage: &StorageLocation,
         system: &str,
         system_dir: &Path,
     ) -> Option<Vec<RomEntry>> {
         use replay_control_core::metadata_db::SystemMeta;
 
+        let sys = system.to_string();
         let meta: SystemMeta = self
-            .with_db_read(storage, |conn| MetadataDb::load_system_meta(conn, system))?
+            .db
+            .read(move |conn| MetadataDb::load_system_meta(conn, &sys))
+            .await?
             .ok()??;
 
         // No cached ROMs? Skip L2.
@@ -395,8 +405,11 @@ impl GameLibrary {
         }
 
         // Load ROMs from DB.
+        let sys = system.to_string();
         let cached_roms = self
-            .with_db_read(storage, |conn| MetadataDb::load_system_entries(conn, system))?
+            .db
+            .read(move |conn| MetadataDb::load_system_entries(conn, &sys))
+            .await?
             .ok()?;
 
         if cached_roms.is_empty() && meta.rom_count > 0 {
@@ -463,7 +476,7 @@ impl GameLibrary {
 
     /// Invalidate all caches (after delete, rename, upload).
     /// Clears both L1 (in-memory) and L2 (SQLite game_library).
-    pub fn invalidate(&self) {
+    pub async fn invalidate(&self) {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
         }
@@ -480,24 +493,28 @@ impl GameLibrary {
             guard.clear();
         }
         // L2: Clear SQLite game_library.
-        self.db.write(|conn| {
-            let _ = MetadataDb::clear_all_game_library(conn);
-        });
+        self.db
+            .write(|conn| {
+                let _ = MetadataDb::clear_all_game_library(conn);
+            })
+            .await;
     }
 
     /// Invalidate cache for a specific system.
     /// Clears both L1 (in-memory) and L2 (SQLite game_library) for the system.
-    pub fn invalidate_system(&self, system: &str) {
+    pub async fn invalidate_system(&self, system: String) {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
         }
         if let Ok(mut guard) = self.roms.write() {
-            guard.remove(system);
+            guard.remove(&system);
         }
         // L2: Clear SQLite game_library for this system.
-        self.db.write(|conn| {
-            let _ = MetadataDb::clear_system_game_library(conn, system);
-        });
+        self.db
+            .write(move |conn| {
+                let _ = MetadataDb::clear_system_game_library(conn, &system);
+            })
+            .await;
     }
 
     /// Invalidate only the favorites cache (after add/remove favorite).
@@ -534,8 +551,8 @@ impl GameLibrary {
 mod tests {
     use super::*;
 
-    #[test]
-    fn startup_scanning_blocks_l3_scan() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn startup_scanning_blocks_l3_scan() {
         use crate::api::activity::{Activity, StartupPhase};
 
         let activity = Arc::new(std::sync::RwLock::new(Activity::Startup {
@@ -559,12 +576,14 @@ mod tests {
         );
 
         // get_roms should return empty during startup scanning.
-        let result = cache.get_roms(
-            &storage,
-            "test_system",
-            replay_control_core::rom_tags::RegionPreference::Usa,
-            None,
-        );
+        let result = cache
+            .get_roms(
+                &storage,
+                "test_system",
+                replay_control_core::rom_tags::RegionPreference::Usa,
+                None,
+            )
+            .await;
         assert!(result.unwrap().is_empty());
 
         // Set to Idle — should allow L3 scans again.

@@ -24,19 +24,26 @@ pub async fn get_boxart_variants(
     let storage = state.storage();
 
     // Resolve the current active box art URL first.
-    let active_url = crate::server_fns::resolve_box_art_url(&state, &system, &rom_filename);
+    let active_url = crate::server_fns::resolve_box_art_url(&state, &system, &rom_filename).await;
 
     // Gracefully return empty when the DB is temporarily unavailable
     // (e.g., during a metadata import or thumbnail update operation).
-    let Some(core_variants) = state.metadata_pool.read(|conn| {
-        replay_control_core::thumbnail_manifest::find_boxart_variants(
-            conn,
-            &system,
-            &rom_filename,
-            &storage.root,
-            active_url.as_deref(),
-        )
-    }) else {
+    let storage_root = storage.root.clone();
+    let Some(core_variants) = state
+        .metadata_pool
+        .read({
+            move |conn| {
+                replay_control_core::thumbnail_manifest::find_boxart_variants(
+                    conn,
+                    &system,
+                    &rom_filename,
+                    &storage_root,
+                    active_url.as_deref(),
+                )
+            }
+        })
+        .await
+    else {
         return Ok(Vec::new());
     };
 
@@ -74,46 +81,50 @@ pub async fn set_boxart_override(
             .ok_or_else(|| ServerFnError::new(format!("No thumbnail repo for {system}")))?;
 
         let variant_fn = variant_filename.clone();
-        state.metadata_pool.read(|conn| {
-            for display_name in repo_names {
-                let url_name = replay_control_core::thumbnails::repo_url_name(display_name);
-                let source_name = replay_control_core::thumbnails::libretro_source_name(display_name);
+        state
+            .metadata_pool
+            .read(move |conn| {
+                for display_name in repo_names {
+                    let url_name = replay_control_core::thumbnails::repo_url_name(display_name);
+                    let source_name =
+                        replay_control_core::thumbnails::libretro_source_name(display_name);
 
-                let branch = MetadataDb::get_data_source(conn, &source_name)
-                    .ok()
-                    .flatten()
-                    .and_then(|s| s.branch)
-                    .unwrap_or_else(|| "master".to_string());
+                    let branch = MetadataDb::get_data_source(conn, &source_name)
+                        .ok()
+                        .flatten()
+                        .and_then(|s| s.branch)
+                        .unwrap_or_else(|| "master".to_string());
 
-                let entries = MetadataDb::query_thumbnail_index(
+                    let entries = MetadataDb::query_thumbnail_index(
                         conn,
                         &source_name,
                         replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
                     )
                     .unwrap_or_default();
 
-                if entries.iter().any(|e| e.filename == variant_fn) {
-                    return Some(thumbnail_manifest::ManifestMatch {
-                        filename: variant_fn.clone(),
-                        is_symlink: entries
-                            .iter()
-                            .find(|e| e.filename == variant_fn)
-                            .and_then(|e| e.symlink_target.as_ref())
-                            .is_some(),
-                        repo_url_name: url_name,
-                        branch,
-                    });
+                    if entries.iter().any(|e| e.filename == variant_fn) {
+                        return Some(thumbnail_manifest::ManifestMatch {
+                            filename: variant_fn.clone(),
+                            is_symlink: entries
+                                .iter()
+                                .find(|e| e.filename == variant_fn)
+                                .and_then(|e| e.symlink_target.as_ref())
+                                .is_some(),
+                            repo_url_name: url_name,
+                            branch,
+                        });
+                    }
                 }
-            }
-            None
-        })
-        .flatten()
-        .ok_or_else(|| {
-            ServerFnError::new(format!(
-                "Variant '{}' not found in thumbnail index",
-                variant_filename
-            ))
-        })?
+                None
+            })
+            .await
+            .flatten()
+            .ok_or_else(|| {
+                ServerFnError::new(format!(
+                    "Variant '{}' not found in thumbnail index",
+                    variant_filename
+                ))
+            })?
     };
 
     // Check if already downloaded; if not, download it.
@@ -152,11 +163,16 @@ pub async fn set_boxart_override(
     // Persist the override in user_data.db.
     let boxart_dir = ThumbnailKind::Boxart.media_dir();
     let override_path = format!("{boxart_dir}/{variant_filename}.png");
-    state.user_data_pool.write(|conn| {
-        UserDataDb::set_override(conn, &system, &rom_filename, &override_path)
-    })
-    .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state
+        .user_data_pool
+        .write({
+            let system = system.clone();
+            let rom_filename = rom_filename.clone();
+            move |conn| UserDataDb::set_override(conn, &system, &rom_filename, &override_path)
+        })
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Invalidate the image cache for this system.
     state.cache.invalidate_system_images(&system);
@@ -173,14 +189,16 @@ pub async fn reset_boxart_override(
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    state.user_data_pool.write(|conn| {
-        UserDataDb::remove_override(conn, &system, &rom_filename)
-    })
-    .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let system_for_invalidate = system.clone();
+    state
+        .user_data_pool
+        .write(move |conn| UserDataDb::remove_override(conn, &system, &rom_filename))
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Invalidate the image cache for this system.
-    state.cache.invalidate_system_images(&system);
+    state.cache.invalidate_system_images(&system_for_invalidate);
 
     Ok(())
 }

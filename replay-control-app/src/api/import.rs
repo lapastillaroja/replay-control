@@ -4,8 +4,8 @@ use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 use replay_control_core::metadata_db::MetadataDb;
 
-use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
 use super::AppState;
+use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
 
 /// Acquire a write lock, panicking on poison with a standard message.
 fn write_lock<'a, T>(lock: &'a RwLock<T>, label: &str) -> RwLockWriteGuard<'a, T> {
@@ -82,9 +82,9 @@ impl ImportPipeline {
         };
 
         let state = state.clone();
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let start = std::time::Instant::now();
-            Self::run_import_blocking(&state, xml_path, start, skip_enrichment, guard);
+            Self::run_import(&state, xml_path, start, skip_enrichment, guard).await;
         });
 
         true
@@ -92,7 +92,7 @@ impl ImportPipeline {
 
     /// Clear metadata DB and re-import from `launchbox-metadata.xml` if present.
     /// Returns an error message if the XML file is not found.
-    pub fn regenerate_metadata(&self, state: &AppState) -> Result<(), String> {
+    pub async fn regenerate_metadata(&self, state: &AppState) -> Result<(), String> {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;
 
         // Check if another activity is running BEFORE clearing the DB.
@@ -102,7 +102,11 @@ impl ImportPipeline {
         }
 
         // Clear existing metadata.
-        if let Some(result) = state.metadata_pool.write(|conn| MetadataDb::clear(conn)) {
+        if let Some(result) = state
+            .metadata_pool
+            .write(|conn| MetadataDb::clear(conn))
+            .await
+        {
             result.map_err(|e| e.to_string())?;
         }
 
@@ -132,7 +136,7 @@ impl ImportPipeline {
     }
 
     /// Download LaunchBox Metadata.zip, extract, clear DB, and re-import.
-    /// Runs entirely in a background thread. Returns false if another metadata
+    /// Runs entirely in a background task. Returns false if another metadata
     /// operation is already running.
     pub fn start_metadata_download(&self, state: &AppState) -> bool {
         use replay_control_core::metadata_db::{ImportProgress, ImportState};
@@ -155,27 +159,35 @@ impl ImportPipeline {
         };
 
         let state = state.clone();
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let start = std::time::Instant::now();
             let storage = state.storage();
             let rc_dir = storage.rc_dir();
 
             // Download and extract with streaming progress.
+            // download_metadata is blocking I/O — run in spawn_blocking.
             let activity_lock = state.activity.clone();
-            let start_ref = start;
-            let xml_path = match replay_control_core::launchbox::download_metadata(
-                &rc_dir,
-                |downloaded, total| {
-                    let mut guard = write_lock(&activity_lock, "activity");
-                    if let Activity::Import { progress } = &mut *guard {
-                        progress.download_bytes = downloaded;
-                        progress.download_total = total;
-                        progress.elapsed_secs = start_ref.elapsed().as_secs();
-                    }
-                },
-            ) {
-                Ok(path) => path,
-                Err(e) => {
+            let rc_dir_owned = rc_dir.to_path_buf();
+            let xml_path = match tokio::task::spawn_blocking({
+                move || {
+                    let start = start;
+                    replay_control_core::launchbox::download_metadata(
+                        &rc_dir_owned,
+                        |downloaded, total| {
+                            let mut guard = write_lock(&activity_lock, "activity");
+                            if let Activity::Import { progress } = &mut *guard {
+                                progress.download_bytes = downloaded;
+                                progress.download_total = total;
+                                progress.elapsed_secs = start.elapsed().as_secs();
+                            }
+                        },
+                    )
+                }
+            })
+            .await
+            {
+                Ok(Ok(path)) => path,
+                Ok(Err(e)) => {
                     state.update_activity(|act| {
                         if let Activity::Import { progress } = act {
                             progress.state = ImportState::Failed;
@@ -186,10 +198,24 @@ impl ImportPipeline {
                     // Guard drops here → Idle
                     return;
                 }
+                Err(e) => {
+                    state.update_activity(|act| {
+                        if let Activity::Import { progress } = act {
+                            progress.state = ImportState::Failed;
+                            progress.error = Some(format!("Download task panicked: {e}"));
+                            progress.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    });
+                    return;
+                }
             };
 
             // Clear existing metadata before re-import.
-            if let Some(Err(e)) = state.metadata_pool.write(|conn| MetadataDb::clear(conn)) {
+            if let Some(Err(e)) = state
+                .metadata_pool
+                .write(|conn| MetadataDb::clear(conn))
+                .await
+            {
                 tracing::warn!("Failed to clear metadata DB before re-import: {e}");
             }
 
@@ -201,25 +227,25 @@ impl ImportPipeline {
             });
 
             // Now run the import (this updates activity internally).
-            Self::run_import_blocking(&state, xml_path, start, false, guard);
+            Self::run_import(&state, xml_path, start, false, guard).await;
         });
 
         true
     }
 
-    /// Run the metadata import synchronously (called from spawn_blocking).
+    /// Run the metadata import asynchronously.
     ///
     /// DB locking is per-batch: the lock is acquired for each ~500-entry batch
     /// flush and then released, giving other threads millisecond-scale gaps to
     /// read the DB between batches.
-    fn run_import_blocking(
+    async fn run_import(
         state: &AppState,
         xml_path: PathBuf,
         start: std::time::Instant,
         skip_enrichment: bool,
         _guard: ActivityGuard,
     ) {
-        use replay_control_core::metadata_db::{ImportState};
+        use replay_control_core::metadata_db::ImportState;
 
         // Build ROM index (no DB needed).
         let storage_root = state.storage().root.clone();
@@ -234,7 +260,11 @@ impl ImportPipeline {
 
         // Verify DB is available before starting the parse.
         {
-            let db_available = state.metadata_pool.read(|_conn| true).unwrap_or(false);
+            let db_available = state
+                .metadata_pool
+                .read(|_conn| true)
+                .await
+                .unwrap_or(false);
             if !db_available {
                 tracing::error!("Metadata DB unavailable at import start (pool closed)");
                 state.update_activity(|act| {
@@ -257,42 +287,50 @@ impl ImportPipeline {
             }
         });
 
-        // Per-batch flush closure: acquires a write connection from the pool,
-        // calls bulk_upsert, then releases the connection.
+        // The sync XML parser (import_launchbox) and its flush_batch callback
+        // run in spawn_blocking since they are CPU-bound and use block_on to
+        // bridge into the async pool API.
         let pool_ref = state.metadata_pool.clone();
-        let flush_batch = |batch: &[(
-            String,
-            String,
-            replay_control_core::metadata_db::GameMetadata,
-        )]| {
-            pool_ref
-                .write(|db| MetadataDb::bulk_upsert(db, batch))
-                .ok_or_else(|| {
-                    replay_control_core::error::Error::Other(
-                        "Metadata DB unavailable during import".to_string(),
-                    )
-                })?
-        };
-
         let activity_lock = state.activity.clone();
         let start_ref = start;
-        let result = replay_control_core::launchbox::import_launchbox(
-            &xml_path,
-            &rom_index,
-            |processed, matched, inserted| {
-                let mut guard = write_lock(&activity_lock, "activity");
-                if let Activity::Import { progress } = &mut *guard {
-                    progress.processed = processed;
-                    progress.matched = matched;
-                    progress.inserted = inserted;
-                    progress.elapsed_secs = start_ref.elapsed().as_secs();
-                }
-            },
-            flush_batch,
-        );
+        let xml_path_owned = xml_path.to_path_buf();
+        let result = tokio::task::spawn_blocking(move || {
+            let handle = tokio::runtime::Handle::current();
+            let flush_batch = |batch: &[(
+                String,
+                String,
+                replay_control_core::metadata_db::GameMetadata,
+            )]| {
+                let batch = batch.to_vec();
+                handle
+                    .block_on(pool_ref.write(move |db| MetadataDb::bulk_upsert(db, &batch)))
+                    .ok_or_else(|| {
+                        replay_control_core::error::Error::Other(
+                            "Metadata DB unavailable during import".to_string(),
+                        )
+                    })?
+            };
+
+            replay_control_core::launchbox::import_launchbox(
+                &xml_path_owned,
+                &rom_index,
+                |processed, matched, inserted| {
+                    let mut guard = write_lock(&activity_lock, "activity");
+                    if let Activity::Import { progress } = &mut *guard {
+                        progress.processed = processed;
+                        progress.matched = matched;
+                        progress.inserted = inserted;
+                        progress.elapsed_secs = start_ref.elapsed().as_secs();
+                    }
+                },
+                flush_batch,
+            )
+        })
+        .await
+        .unwrap_or_else(|e| Err(replay_control_core::error::Error::Other(e.to_string())));
 
         // Checkpoint WAL after the heavy batch writes.
-        state.metadata_pool.checkpoint();
+        state.metadata_pool.checkpoint().await;
 
         // Invalidate image cache so updated metadata paths are picked up.
         state.cache.invalidate_images();
@@ -309,7 +347,7 @@ impl ImportPipeline {
                 pr.alternate_names.len(),
                 pr.game_names.len()
             );
-            Self::import_launchbox_aliases(state, pr);
+            Self::import_launchbox_aliases(state, pr).await;
             tracing::debug!("LaunchBox alias import complete");
         }
 
@@ -349,7 +387,7 @@ impl ImportPipeline {
     /// Uses the `ParseResult` from the single-pass XML parse — no re-reading.
     /// Acquires/releases the DB lock per-operation (read base_titles, then
     /// write aliases) so other threads can access the DB between operations.
-    fn import_launchbox_aliases(
+    async fn import_launchbox_aliases(
         state: &AppState,
         parse_result: &replay_control_core::launchbox::ParseResult,
     ) {
@@ -377,7 +415,9 @@ impl ImportPipeline {
                     }
                 }
                 map
-            }) {
+            })
+            .await
+        {
             Some(map) => map,
             None => {
                 tracing::warn!("LaunchBox aliases: DB unavailable for reading base_titles");
@@ -401,7 +441,8 @@ impl ImportPipeline {
         let count = aliases.len();
         if let Some(result) = state
             .metadata_pool
-            .write(|db| MetadataDb::bulk_insert_aliases(db, &aliases))
+            .write(move |db| MetadataDb::bulk_insert_aliases(db, &aliases))
+            .await
         {
             match result {
                 Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
@@ -450,16 +491,16 @@ impl ThumbnailPipeline {
         };
 
         let state = state.clone();
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let start = std::time::Instant::now();
-            Self::run_thumbnail_update_blocking(&state, start, cancel, guard);
+            Self::run_thumbnail_update(&state, start, cancel, guard).await;
         });
 
         true
     }
 
-    /// Run the two-phase thumbnail pipeline (blocking, called from spawn_blocking).
-    fn run_thumbnail_update_blocking(
+    /// Run the two-phase thumbnail pipeline asynchronously.
+    async fn run_thumbnail_update(
         state: &AppState,
         start: std::time::Instant,
         cancel: Arc<AtomicBool>,
@@ -472,11 +513,13 @@ impl ThumbnailPipeline {
 
         // Verify DB is available before starting.
         {
-            let db_available = state.metadata_pool.read(|_conn| true).unwrap_or(false);
+            let db_available = state
+                .metadata_pool
+                .read(|_conn| true)
+                .await
+                .unwrap_or(false);
             if !db_available {
-                tracing::error!(
-                    "Metadata DB unavailable at thumbnail update start (pool closed)"
-                );
+                tracing::error!("Metadata DB unavailable at thumbnail update start (pool closed)");
                 state.update_activity(|act| {
                     if let Activity::ThumbnailUpdate { progress, .. } = act {
                         progress.phase = ThumbnailPhase::Failed;
@@ -500,7 +543,7 @@ impl ThumbnailPipeline {
             let activity_ref = activity_lock.clone();
             state
                 .metadata_pool
-                .write(|db| {
+                .write(move |db| {
                     thumbnail_manifest::import_all_manifests(
                         db,
                         &|repos_done, repos_total, current_repo| {
@@ -517,6 +560,7 @@ impl ThumbnailPipeline {
                         api_key_owned.as_deref(),
                     )
                 })
+                .await
                 .unwrap_or_else(|| {
                     Err(replay_control_core::error::Error::Other(
                         "Metadata DB unavailable during thumbnail index".to_string(),
@@ -589,7 +633,7 @@ impl ThumbnailPipeline {
         };
 
         // Checkpoint WAL after the index phase's bulk writes.
-        state.metadata_pool.checkpoint();
+        state.metadata_pool.checkpoint().await;
 
         // Check cancellation between phases.
         if cancel.load(Ordering::Relaxed) {
@@ -615,7 +659,7 @@ impl ThumbnailPipeline {
 
         // Collect systems that have ROMs and a thumbnail repo.
         let storage = state.storage();
-        let systems = state.cache.get_systems(&storage);
+        let systems = state.cache.get_systems(&storage).await;
         let supported: Vec<String> = systems
             .into_iter()
             .filter(|s| s.game_count > 0)
@@ -657,29 +701,36 @@ impl ThumbnailPipeline {
                 let prev_downloaded = total_downloaded;
                 let cancel_flag = cancel.clone();
                 let activity_ref2 = activity_ref.clone();
-                if let Some(result) = state.metadata_pool.read(|conn| {
-                    thumbnail_manifest::download_system_thumbnails(
-                        conn,
-                        &storage_root,
-                        system,
-                        *kind,
-                        &|processed, total, downloaded| {
-                            let mut guard = write_lock(&activity_ref2, "activity");
-                            if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
-                                progress.step_done = i;
-                                progress.step_total = total_systems;
-                                progress.downloaded = prev_downloaded + downloaded;
-                                progress.elapsed_secs = start.elapsed().as_secs();
-                                if total > 0 {
-                                    let display_n = (processed + 1).min(total);
-                                    progress.current_label =
-                                        format!("{system_display}: {display_n}/{total}");
+                let system_display_owned = system_display.clone();
+                let storage_root = storage_root.clone();
+                let system_owned = system.clone();
+                if let Some(result) = state
+                    .metadata_pool
+                    .read(move |conn| {
+                        thumbnail_manifest::download_system_thumbnails(
+                            conn,
+                            &storage_root,
+                            &system_owned,
+                            *kind,
+                            &|processed, total, downloaded| {
+                                let mut guard = write_lock(&activity_ref2, "activity");
+                                if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
+                                    progress.step_done = i;
+                                    progress.step_total = total_systems;
+                                    progress.downloaded = prev_downloaded + downloaded;
+                                    progress.elapsed_secs = start.elapsed().as_secs();
+                                    if total > 0 {
+                                        let display_n = (processed + 1).min(total);
+                                        progress.current_label =
+                                            format!("{system_display_owned}: {display_n}/{total}");
+                                    }
                                 }
-                            }
-                        },
-                        &cancel_flag,
-                    )
-                }) {
+                            },
+                            &cancel_flag,
+                        )
+                    })
+                    .await
+                {
                     match result {
                         Ok(stats) => {
                             total_downloaded += stats.downloaded;
@@ -694,7 +745,7 @@ impl ThumbnailPipeline {
             }
 
             // Lock DB for image path update, then release.
-            Self::update_image_paths_from_disk(state, &storage_root, system);
+            Self::update_image_paths_from_disk(state, &storage_root, system).await;
         }
 
         // Invalidate the image cache so new thumbnails are picked up.
@@ -747,7 +798,7 @@ impl ThumbnailPipeline {
     }
 
     /// Scan the media directory for a system and update game_metadata image paths.
-    fn update_image_paths_from_disk(
+    async fn update_image_paths_from_disk(
         state: &AppState,
         storage_root: &std::path::Path,
         system: &str,
@@ -755,9 +806,14 @@ impl ThumbnailPipeline {
         use replay_control_core::image_matching::{build_dir_index, find_best_match};
 
         // Read visible filenames from DB via pool.
-        let rom_filenames = match state.metadata_pool.read(|conn| {
-            MetadataDb::visible_filenames(conn, system).unwrap_or_default()
-        }) {
+        let system_owned = system.to_string();
+        let rom_filenames = match state
+            .metadata_pool
+            .read(move |conn| {
+                MetadataDb::visible_filenames(conn, &system_owned).unwrap_or_default()
+            })
+            .await
+        {
             Some(filenames) => filenames,
             None => return,
         };
@@ -815,7 +871,8 @@ impl ThumbnailPipeline {
         if !updates.is_empty()
             && let Some(Err(e)) = state
                 .metadata_pool
-                .write(|db| MetadataDb::bulk_update_image_paths(db, &updates))
+                .write(move |db| MetadataDb::bulk_update_image_paths(db, &updates))
+                .await
         {
             tracing::warn!("Failed to update image paths for {system}: {e}");
         }

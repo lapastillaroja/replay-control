@@ -12,76 +12,65 @@ impl GameLibrary {
     /// Also auto-matches new ROMs (those without metadata) against existing
     /// LaunchBox entries by normalized title. Matched metadata is persisted
     /// so future lookups hit directly without re-matching.
-    pub fn enrich_system_cache(&self, state: &crate::api::AppState, system: &str) {
-        let storage = state.storage();
-        let index = self.get_image_index(state, system);
+    pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
+        let index = self.get_image_index(state, &system).await;
 
-        // Load ratings from game_metadata table (from LaunchBox import).
-        let ratings: HashMap<String, f64> = state
+        // Load ratings, genres, players, rating counts, and developers from
+        // game_metadata table (from LaunchBox import) in a single read call.
+        let sys = system.clone();
+        let (ratings, lb_genres, lb_players, lb_rating_counts, lb_developers): (
+            HashMap<String, f64>,
+            HashMap<String, String>,
+            HashMap<String, u8>,
+            HashMap<String, u32>,
+            HashMap<String, String>,
+        ) = state
             .metadata_pool
-            .read(|conn| MetadataDb::system_ratings(conn, system).ok())
-            .flatten()
+            .read(move |conn| {
+                let ratings = MetadataDb::system_ratings(conn, &sys)
+                    .ok()
+                    .unwrap_or_default();
+                let genres = MetadataDb::system_metadata_genres(conn, &sys)
+                    .ok()
+                    .unwrap_or_default();
+                let players = MetadataDb::system_metadata_players(conn, &sys)
+                    .ok()
+                    .unwrap_or_default();
+                let rating_counts = MetadataDb::system_metadata_rating_counts(conn, &sys)
+                    .ok()
+                    .unwrap_or_default();
+                let developers = MetadataDb::system_metadata_developers(conn, &sys)
+                    .ok()
+                    .unwrap_or_default();
+                (ratings, genres, players, rating_counts, developers)
+            })
+            .await
             .unwrap_or_default();
 
-        // Load genres from game_metadata table (from LaunchBox import).
-        // Used to fill empty game_library.genre entries.
-        let lb_genres: HashMap<String, String> = state
-            .metadata_pool
-            .read(|conn| MetadataDb::system_metadata_genres(conn, system).ok())
-            .flatten()
-            .unwrap_or_default();
-
-        // Load player counts from game_metadata table (from LaunchBox import).
-        // Used to fill empty game_library.players entries as a fallback.
-        let lb_players: HashMap<String, u8> = state
-            .metadata_pool
-            .read(|conn| MetadataDb::system_metadata_players(conn, system).ok())
-            .flatten()
-            .unwrap_or_default();
-
-        // Load rating counts from game_metadata table (from LaunchBox import).
-        // Used to propagate vote counts to game_library for weighted scoring.
-        let lb_rating_counts: HashMap<String, u32> = state
-            .metadata_pool
-            .read(|conn| MetadataDb::system_metadata_rating_counts(conn, system).ok())
-            .flatten()
-            .unwrap_or_default();
-
-        // Load developers from game_metadata table (from LaunchBox import).
-        // Used to fill empty game_library.developer entries as a fallback.
-        let lb_developers: HashMap<String, String> = state
-            .metadata_pool
-            .read(|conn| MetadataDb::system_metadata_developers(conn, system).ok())
-            .flatten()
-            .unwrap_or_default();
-
-        // Load current game_library genres from L2 to know which are already set.
-        let existing_genres: HashSet<String> = self
-            .with_db_read(&storage, |conn| {
-                MetadataDb::system_rom_genres(conn, system)
+        // Load current game_library genres, players, and developers from L2
+        // to know which are already set, in a single read call.
+        let sys = system.clone();
+        let (existing_genres, existing_players, existing_developers): (
+            HashSet<String>,
+            HashSet<String>,
+            HashSet<String>,
+        ) = self
+            .db
+            .read(move |conn| {
+                let genres = MetadataDb::system_rom_genres(conn, &sys)
                     .map(|map| map.into_keys().collect())
-                    .unwrap_or_default()
+                    .unwrap_or_default();
+                let players = MetadataDb::system_rom_players(conn, &sys).unwrap_or_default();
+                let developers = MetadataDb::system_rom_developers(conn, &sys).unwrap_or_default();
+                (genres, players, developers)
             })
-            .unwrap_or_default();
-
-        // Load current game_library players from L2 to know which already have player data.
-        let existing_players: HashSet<String> = self
-            .with_db_read(&storage, |conn| {
-                MetadataDb::system_rom_players(conn, system).unwrap_or_default()
-            })
-            .unwrap_or_default();
-
-        // Load current game_library developers from L2 to know which already have developer data.
-        let existing_developers: HashSet<String> = self
-            .with_db_read(&storage, |conn| {
-                MetadataDb::system_rom_developers(conn, system).unwrap_or_default()
-            })
+            .await
             .unwrap_or_default();
 
         // Auto-match new ROMs: build a normalized-title index from existing
         // game_metadata entries so ROMs added after the last import can inherit
         // metadata from entries that share the same normalized title.
-        let auto_matched_ratings = self.auto_match_metadata(state, system);
+        let auto_matched_ratings = self.auto_match_metadata(state, &system).await;
 
         // Merge auto-matched ratings into the main ratings map.
         let mut all_ratings = ratings;
@@ -92,7 +81,7 @@ impl GameLibrary {
         // Read current ROMs from L1 cache to get filenames.
         let rom_filenames: Vec<String> = if let Ok(guard) = self.roms.read() {
             guard
-                .get(system)
+                .get(&system)
                 .map(|entry| {
                     entry
                         .data
@@ -114,7 +103,7 @@ impl GameLibrary {
         let enrichments: Vec<replay_control_core::metadata_db::BoxArtGenreRating> = rom_filenames
             .iter()
             .filter_map(|filename| {
-                let art = self.resolve_box_art(state, &index, system, filename);
+                let art = self.resolve_box_art(state, &index, &system, filename);
                 let rating = all_ratings.get(filename).map(|&r| r as f32);
                 let rating_count = lb_rating_counts.get(filename).copied();
                 let genre = if !existing_genres.contains(filename) {
@@ -154,8 +143,7 @@ impl GameLibrary {
             .filter(|f| !existing_developers.contains(*f))
             .filter_map(|f| {
                 lb_developers.get(f).map(|dev| {
-                    let normalized =
-                        replay_control_core::developer::normalize_developer(dev);
+                    let normalized = replay_control_core::developer::normalize_developer(dev);
                     (f.clone(), normalized)
                 })
             })
@@ -164,14 +152,15 @@ impl GameLibrary {
 
         if !developer_updates.is_empty() {
             let dev_count = developer_updates.len();
-            self.with_db_mut(&storage, |conn| {
-                if let Err(e) = MetadataDb::update_developers(conn, system, &developer_updates) {
-                    tracing::warn!("Developer enrichment failed for {system}: {e}");
-                }
-            });
-            tracing::debug!(
-                "L2 enrichment: {system} — {dev_count} ROMs updated with developer"
-            );
+            let sys = system.clone();
+            self.db
+                .write(move |conn| {
+                    if let Err(e) = MetadataDb::update_developers(conn, &sys, &developer_updates) {
+                        tracing::warn!("Developer enrichment failed for {sys}: {e}");
+                    }
+                })
+                .await;
+            tracing::debug!("L2 enrichment: {system} — {dev_count} ROMs updated with developer");
         }
 
         if enrichments.is_empty() {
@@ -179,14 +168,9 @@ impl GameLibrary {
         }
 
         let count = enrichments.len();
-        // Use targeted SQL update for box_art_url, genre, and rating.
-        self.with_db_mut(&storage, |conn| {
-            if let Err(e) = MetadataDb::update_box_art_genre_rating(conn, system, &enrichments) {
-                tracing::warn!("Enrichment failed for {system}: {e}");
-            }
-        });
 
-        // Also update L1 cache entries.
+        // Update L1 cache entries before the final DB write so `system` can be
+        // moved into the last closure without an extra clone.
         // Build a HashMap for O(1) lookup instead of O(n*m) nested scan.
         let enrichment_map: HashMap<&str, &replay_control_core::metadata_db::BoxArtGenreRating> =
             enrichments
@@ -195,7 +179,7 @@ impl GameLibrary {
                 .collect();
 
         if let Ok(mut guard) = self.roms.write()
-            && let Some(entry) = guard.get_mut(system)
+            && let Some(entry) = guard.get_mut(&*system)
         {
             let roms = std::sync::Arc::make_mut(&mut entry.data);
             for rom in roms {
@@ -218,25 +202,38 @@ impl GameLibrary {
         tracing::debug!(
             "L2 enrichment: {system} — {count} ROMs updated with box art/genre/players/ratings"
         );
+
+        // Use targeted SQL update for box_art_url, genre, and rating.
+        // This is the last use of `system` — move it into the closure.
+        let enrichments_for_db = enrichments.clone();
+        self.db
+            .write(move |conn| {
+                if let Err(e) =
+                    MetadataDb::update_box_art_genre_rating(conn, &system, &enrichments_for_db)
+                {
+                    tracing::warn!("Enrichment failed for {system}: {e}");
+                }
+            })
+            .await;
     }
 
     /// Auto-match new ROMs against existing LaunchBox metadata by normalized title.
     ///
     /// Delegates the pure matching logic to `replay_control_core::metadata_matching`,
     /// then persists results and returns a map of `rom_filename -> rating`.
-    fn auto_match_metadata(
+    async fn auto_match_metadata(
         &self,
         state: &crate::api::AppState,
         system: &str,
     ) -> HashMap<String, f64> {
         use replay_control_core::metadata_matching;
 
-        let storage = state.storage();
-
         // Gather inputs: existing metadata from DB.
+        let sys = system.to_string();
         let all_metadata = state
             .metadata_pool
-            .read(|conn| MetadataDb::system_metadata_all(conn, system).ok())
+            .read(move |conn| MetadataDb::system_metadata_all(conn, &sys).ok())
+            .await
             .flatten()
             .unwrap_or_default();
 
@@ -282,11 +279,14 @@ impl GameLibrary {
 
         // Persist new matches to game_metadata.
         let count = new_entries.len();
-        self.with_db_mut(&storage, |conn| {
-            if let Err(e) = MetadataDb::bulk_upsert(conn, &new_entries) {
-                tracing::warn!("Auto-match metadata persist failed for {system}: {e}");
-            }
-        });
+        let sys = system.to_string();
+        self.db
+            .write(move |conn| {
+                if let Err(e) = MetadataDb::bulk_upsert(conn, &new_entries) {
+                    tracing::warn!("Auto-match metadata persist failed for {sys}: {e}");
+                }
+            })
+            .await;
         tracing::info!("Auto-matched {count} new ROM(s) to existing metadata for {system}");
 
         matched_ratings

@@ -11,7 +11,7 @@ const STORAGE_CHECK_INTERVAL: u64 = 60;
 
 /// Orchestrates the ordered background startup pipeline and long-running watchers.
 ///
-/// Pipeline phases (sequential, blocking):
+/// Pipeline phases (sequential, async):
 ///   1. Auto-import — if a LaunchBox XML file exists and the DB is empty
 ///   2. Cache populate/verify — scan all systems, enrich box art + ratings
 ///   3. Auto-rebuild thumbnail index — if data_sources exist but index is empty (data loss)
@@ -22,17 +22,10 @@ pub struct BackgroundManager;
 impl BackgroundManager {
     /// Start the ordered background pipeline.
     pub fn start(state: AppState) {
-        // Spawn the ordered pipeline in a blocking thread.
+        // Spawn the ordered pipeline as an async task.
         let pipeline_state = state.clone();
         tokio::spawn(async move {
-            let result = tokio::task::spawn_blocking(move || {
-                Self::run_pipeline(&pipeline_state);
-            })
-            .await;
-
-            if let Err(e) = result {
-                tracing::warn!("Background startup pipeline failed: {e}");
-            }
+            Self::run_pipeline(&pipeline_state).await;
         });
 
         // Start watchers immediately (they're independent of the pipeline).
@@ -40,18 +33,18 @@ impl BackgroundManager {
         state.spawn_rom_watcher();
     }
 
-    /// Run the ordered startup pipeline (blocking).
-    fn run_pipeline(state: &AppState) {
+    /// Run the ordered startup pipeline (async).
+    async fn run_pipeline(state: &AppState) {
         // Brief delay to let the server start accepting requests.
-        std::thread::sleep(Duration::from_secs(2));
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
         // Phase 1: Auto-import (if launchbox XML exists + DB empty).
         // Import claims/releases its own Activity::Import via try_start_activity.
-        Self::phase_auto_import(state);
+        Self::phase_auto_import(state).await;
 
         // Wait for auto-import to finish (check activity state).
         while ImportPipeline::has_active_import(state) {
-            std::thread::sleep(Duration::from_millis(500));
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
         // Phase 2+3: Claim Activity::Startup for populate + thumbnail rebuild.
@@ -68,23 +61,23 @@ impl BackgroundManager {
                 }
             };
 
-            Self::phase_cache_verification(state);
+            Self::phase_cache_verification(state).await;
             // Checkpoint after Phase 2 writes (game_library inserts/updates).
-            state.metadata_pool.checkpoint();
+            state.metadata_pool.checkpoint().await;
 
             state.update_activity(|act| {
                 if let Activity::Startup { phase, .. } = act {
                     *phase = StartupPhase::RebuildingIndex;
                 }
             });
-            Self::phase_auto_rebuild_thumbnail_index(state);
+            Self::phase_auto_rebuild_thumbnail_index(state).await;
 
             // _guard drops → Idle
         }
     }
 
     /// Phase 1: Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
-    fn phase_auto_import(state: &AppState) {
+    async fn phase_auto_import(state: &AppState) {
         use replay_control_core::metadata_db::LAUNCHBOX_XML;
 
         let storage = state.storage();
@@ -111,9 +104,11 @@ impl BackgroundManager {
             return;
         }
 
-        let should_import = state.metadata_pool.read(|conn| {
-            MetadataDb::is_empty(conn).unwrap_or(false)
-        }).unwrap_or(false);
+        let should_import = state
+            .metadata_pool
+            .read(|conn| MetadataDb::is_empty(conn).unwrap_or(false))
+            .await
+            .unwrap_or(false);
 
         if should_import {
             tracing::info!("Auto-importing metadata from {}", xml_path.display());
@@ -122,23 +117,25 @@ impl BackgroundManager {
     }
 
     /// Phase 2: Verify L2 cache freshness on startup and pre-populate if empty.
-    fn phase_cache_verification(state: &AppState) {
+    async fn phase_cache_verification(state: &AppState) {
         let storage = state.storage();
         let roms_dir = storage.roms_dir();
         let region_pref = state.region_preference();
         let region_secondary = state.region_preference_secondary();
 
         // Load all cached system metadata from L2.
-        let cached_meta = state.metadata_pool.read(|conn| {
-            MetadataDb::load_all_system_meta(conn).ok()
-        }).flatten();
+        let cached_meta = state
+            .metadata_pool
+            .read(|conn| MetadataDb::load_all_system_meta(conn).ok())
+            .await
+            .flatten();
 
         let cached_meta = cached_meta.unwrap_or_default();
 
         if cached_meta.is_empty() {
             // Fresh DB -- pre-populate L2 for all systems with games.
             // Activity is already Startup { phase: Scanning } (set by run_pipeline).
-            Self::populate_all_systems(state, &storage, region_pref, region_secondary);
+            Self::populate_all_systems(state, &storage, region_pref, region_secondary).await;
             return;
         }
 
@@ -159,13 +156,11 @@ impl BackgroundManager {
 
             if is_stale {
                 tracing::info!("Background re-scan: {} (mtime changed)", meta.system);
-                let _ = state.cache.scan_and_cache_system(
-                    &storage,
-                    &meta.system,
-                    region_pref,
-                    region_secondary,
-                );
-                state.cache.enrich_system_cache(state, &meta.system);
+                let _ = state
+                    .cache
+                    .scan_and_cache_system(&storage, &meta.system, region_pref, region_secondary)
+                    .await;
+                state.cache.enrich_system_cache(state, meta.system.clone()).await;
                 stale_count += 1;
             }
         }
@@ -175,7 +170,7 @@ impl BackgroundManager {
                 "Background cache verification: re-scanned {stale_count} stale system(s)"
             );
             // Also refresh the systems list since counts may have changed.
-            let _ = state.cache.get_systems(&storage);
+            let _ = state.cache.get_systems(&storage).await;
         } else {
             tracing::debug!(
                 "Background cache verification: all {} system(s) fresh",
@@ -193,13 +188,18 @@ impl BackgroundManager {
     ///
     /// Skips when both tables are empty (first-time setup — user hasn't configured
     /// thumbnails yet) to avoid wasting time on GitHub API calls when offline.
-    fn phase_auto_rebuild_thumbnail_index(state: &AppState) {
+    async fn phase_auto_rebuild_thumbnail_index(state: &AppState) {
         // Check data_sources for libretro-thumbnails entries and thumbnail_index emptiness.
-        let (has_sources, index_empty) = match state.metadata_pool.read(|conn| {
-            let stats = MetadataDb::get_data_source_stats(conn, "libretro-thumbnails").ok()?;
-            let index_count: i64 = MetadataDb::thumbnail_index_count(conn).unwrap_or(0);
-            Some((stats.repo_count > 0, index_count == 0))
-        }).flatten() {
+        let (has_sources, index_empty) = match state
+            .metadata_pool
+            .read(|conn| {
+                let stats = MetadataDb::get_data_source_stats(conn, "libretro-thumbnails").ok()?;
+                let index_count: i64 = MetadataDb::thumbnail_index_count(conn).unwrap_or(0);
+                Some((stats.repo_count > 0, index_count == 0))
+            })
+            .await
+            .flatten()
+        {
             Some(result) => result,
             None => return, // DB unavailable
         };
@@ -269,48 +269,58 @@ impl BackgroundManager {
         }
 
         // Now write all collected data to the DB in a single write() call.
-        let write_result = state.metadata_pool.write(|db| {
-            let mut w_total_entries = 0usize;
-            let mut w_total_repos = 0usize;
+        let write_result = state
+            .metadata_pool
+            .write(move |db| {
+                let mut w_total_entries = 0usize;
+                let mut w_total_repos = 0usize;
 
-            for data in &system_data {
-                let repo_display = data.repo_names[0];
-                let source_name = replay_control_core::thumbnails::libretro_source_name(repo_display);
-                let branch = replay_control_core::thumbnail_manifest::default_branch(repo_display);
-                let entry_count = data.entries.len();
+                for data in &system_data {
+                    let repo_display = data.repo_names[0];
+                    let source_name =
+                        replay_control_core::thumbnails::libretro_source_name(repo_display);
+                    let branch =
+                        replay_control_core::thumbnail_manifest::default_branch(repo_display);
+                    let entry_count = data.entries.len();
 
-                let _ = MetadataDb::upsert_data_source(db,
-                    &source_name,
-                    "libretro-thumbnails",
-                    "disk-rebuild",
-                    branch,
-                    entry_count,
-                );
-
-                match MetadataDb::bulk_insert_thumbnail_index(db, &source_name, &data.entries) {
-                    Ok(_) => w_total_entries += entry_count,
-                    Err(e) => tracing::warn!("Failed to insert disk-based index for {}: {e}", data.system_str),
-                }
-
-                // Register additional repos for multi-repo systems (e.g., arcade_dc → Naomi + Naomi 2).
-                for extra_repo in &data.repo_names[1..] {
-                    let extra_source =
-                        replay_control_core::thumbnails::libretro_source_name(extra_repo);
-                    let extra_branch =
-                        replay_control_core::thumbnail_manifest::default_branch(extra_repo);
-                    let _ = MetadataDb::upsert_data_source(db,
-                        &extra_source,
+                    let _ = MetadataDb::upsert_data_source(
+                        db,
+                        &source_name,
                         "libretro-thumbnails",
                         "disk-rebuild",
-                        extra_branch,
-                        0,
+                        branch,
+                        entry_count,
                     );
-                }
-                w_total_repos += data.repo_names.len();
-            }
 
-            (w_total_entries, w_total_repos)
-        });
+                    match MetadataDb::bulk_insert_thumbnail_index(db, &source_name, &data.entries) {
+                        Ok(_) => w_total_entries += entry_count,
+                        Err(e) => tracing::warn!(
+                            "Failed to insert disk-based index for {}: {e}",
+                            data.system_str
+                        ),
+                    }
+
+                    // Register additional repos for multi-repo systems (e.g., arcade_dc → Naomi + Naomi 2).
+                    for extra_repo in &data.repo_names[1..] {
+                        let extra_source =
+                            replay_control_core::thumbnails::libretro_source_name(extra_repo);
+                        let extra_branch =
+                            replay_control_core::thumbnail_manifest::default_branch(extra_repo);
+                        let _ = MetadataDb::upsert_data_source(
+                            db,
+                            &extra_source,
+                            "libretro-thumbnails",
+                            "disk-rebuild",
+                            extra_branch,
+                            0,
+                        );
+                    }
+                    w_total_repos += data.repo_names.len();
+                }
+
+                (w_total_entries, w_total_repos)
+            })
+            .await;
 
         let Some((total_entries, total_repos)) = write_result else {
             return; // DB unavailable
@@ -318,7 +328,7 @@ impl BackgroundManager {
 
         if total_entries > 0 {
             // Checkpoint WAL after the bulk thumbnail index writes.
-            state.metadata_pool.checkpoint();
+            state.metadata_pool.checkpoint().await;
             tracing::info!(
                 "Thumbnail index rebuilt from disk: {total_entries} entries across {total_repos} repos"
             );
@@ -328,13 +338,13 @@ impl BackgroundManager {
     /// Pre-populate L2 cache for all systems that have games.
     /// Called on startup when the game library is empty (fresh DB or after clear).
     /// After populating ROMs, enriches box art URLs and ratings.
-    pub(crate) fn populate_all_systems(
+    pub(crate) async fn populate_all_systems(
         state: &AppState,
         storage: &replay_control_core::storage::StorageLocation,
         region_pref: replay_control_core::rom_tags::RegionPreference,
         region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
     ) {
-        let systems = state.cache.get_systems(storage);
+        let systems = state.cache.get_systems(storage).await;
         let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
         tracing::info!(
             "L2 warmup: populating {} system(s) with games",
@@ -344,12 +354,11 @@ impl BackgroundManager {
         let start = std::time::Instant::now();
         let mut total_roms = 0usize;
         for sys in &with_games {
-            match state.cache.scan_and_cache_system(
-                storage,
-                &sys.folder_name,
-                region_pref,
-                region_secondary,
-            ) {
+            match state
+                .cache
+                .scan_and_cache_system(storage, &sys.folder_name, region_pref, region_secondary)
+                .await
+            {
                 Ok(roms) => {
                     tracing::debug!("L2 warmup: {} — {} ROMs", sys.folder_name, roms.len());
                     total_roms += roms.len();
@@ -367,7 +376,10 @@ impl BackgroundManager {
 
         // Enrich box art URLs and ratings for all systems.
         for sys in &with_games {
-            state.cache.enrich_system_cache(state, &sys.folder_name);
+            state
+                .cache
+                .enrich_system_cache(state, sys.folder_name.clone())
+                .await;
         }
 
         tracing::info!(
@@ -390,7 +402,7 @@ impl AppState {
     /// existing entries with updated box art URLs and ratings.
     pub fn spawn_cache_enrichment(&self) {
         let state = self.clone();
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let storage = state.storage();
             let region_pref = state.region_preference();
             let region_secondary = state.region_preference_secondary();
@@ -398,11 +410,12 @@ impl AppState {
             // Check if game library is empty -- if so, populate before enriching.
             let is_empty = state
                 .cache
-                .with_db_read(&storage, |conn| {
+                .db_read(|conn| {
                     MetadataDb::load_all_system_meta(conn)
                         .map(|m| m.is_empty())
                         .unwrap_or(true)
                 })
+                .await
                 .unwrap_or(true);
 
             if is_empty {
@@ -412,11 +425,12 @@ impl AppState {
                     &storage,
                     region_pref,
                     region_secondary,
-                );
+                )
+                .await;
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
-            let systems = state.cache.get_systems(&storage);
+            let systems = state.cache.get_systems(&storage).await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
             if !with_games.is_empty() {
@@ -426,7 +440,10 @@ impl AppState {
                 );
                 let enrich_start = std::time::Instant::now();
                 for sys in &with_games {
-                    state.cache.enrich_system_cache(&state, &sys.folder_name);
+                    state
+                        .cache
+                        .enrich_system_cache(&state, sys.folder_name.clone())
+                        .await;
                 }
                 tracing::info!(
                     "Post-import enrichment: done in {:.1}s",
@@ -438,115 +455,95 @@ impl AppState {
 
     /// Run cache enrichment as part of a rebuild operation (with an ActivityGuard).
     /// Updates `Activity::Rebuild` progress as it goes. The guard drops → Idle on completion.
-    pub fn spawn_rebuild_enrichment(
-        &self,
-        guard: super::activity::ActivityGuard,
-    ) {
+    pub fn spawn_rebuild_enrichment(&self, guard: super::activity::ActivityGuard) {
         use super::activity::RebuildPhase;
 
         let state = self.clone();
         let start = std::time::Instant::now();
 
-        tokio::task::spawn_blocking(move || {
-            // Use catch_unwind to guarantee the guard drops even if enrichment panics.
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let storage = state.storage();
-                let region_pref = state.region_preference();
-                let region_secondary = state.region_preference_secondary();
+        tokio::spawn(async move {
+            let storage = state.storage();
+            let region_pref = state.region_preference();
+            let region_secondary = state.region_preference_secondary();
 
-                // Check if game library is empty -- if so, populate before enriching.
-                let is_empty = state
-                    .cache
-                    .with_db_read(&storage, |conn| {
-                        MetadataDb::load_all_system_meta(conn)
-                            .map(|m| m.is_empty())
-                            .unwrap_or(true)
-                    })
-                    .unwrap_or(true);
+            // Check if game library is empty -- if so, populate before enriching.
+            let is_empty = state
+                .cache
+                .db_read(|conn| {
+                    MetadataDb::load_all_system_meta(conn)
+                        .map(|m| m.is_empty())
+                        .unwrap_or(true)
+                })
+                .await
+                .unwrap_or(true);
 
-                if is_empty {
-                    tracing::info!("Rebuild: game library is empty, running full populate");
+            if is_empty {
+                tracing::info!("Rebuild: game library is empty, running full populate");
+                state.update_activity(|act| {
+                    if let Activity::Rebuild { progress } = act {
+                        progress.phase = RebuildPhase::Scanning;
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                    }
+                });
+                BackgroundManager::populate_all_systems(
+                    &state,
+                    &storage,
+                    region_pref,
+                    region_secondary,
+                )
+                .await;
+            }
+
+            // Enrichment phase: update box art URLs and ratings for all systems.
+            let systems = state.cache.get_systems(&storage).await;
+            let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
+
+            state.update_activity(|act| {
+                if let Activity::Rebuild { progress } = act {
+                    progress.phase = RebuildPhase::Enriching;
+                    progress.current_system = String::new();
+                    progress.systems_done = 0;
+                    progress.systems_total = with_games.len();
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                }
+            });
+
+            if !with_games.is_empty() {
+                tracing::info!(
+                    "Rebuild enrichment: updating {} system(s)",
+                    with_games.len()
+                );
+                let enrich_start = std::time::Instant::now();
+                for (i, sys) in with_games.iter().enumerate() {
                     state.update_activity(|act| {
                         if let Activity::Rebuild { progress } = act {
-                            progress.phase = RebuildPhase::Scanning;
+                            progress.current_system = sys.display_name.clone();
+                            progress.systems_done = i;
                             progress.elapsed_secs = start.elapsed().as_secs();
                         }
                     });
-                    BackgroundManager::populate_all_systems(
-                        &state,
-                        &storage,
-                        region_pref,
-                        region_secondary,
-                    );
+                    state
+                        .cache
+                        .enrich_system_cache(&state, sys.folder_name.clone())
+                        .await;
                 }
-
-                // Enrichment phase: update box art URLs and ratings for all systems.
-                let systems = state.cache.get_systems(&storage);
-                let with_games: Vec<_> =
-                    systems.into_iter().filter(|s| s.game_count > 0).collect();
-
-                state.update_activity(|act| {
-                    if let Activity::Rebuild { progress } = act {
-                        progress.phase = RebuildPhase::Enriching;
-                        progress.current_system = String::new();
-                        progress.systems_done = 0;
-                        progress.systems_total = with_games.len();
-                        progress.elapsed_secs = start.elapsed().as_secs();
-                    }
-                });
-
-                if !with_games.is_empty() {
-                    tracing::info!(
-                        "Rebuild enrichment: updating {} system(s)",
-                        with_games.len()
-                    );
-                    let enrich_start = std::time::Instant::now();
-                    for (i, sys) in with_games.iter().enumerate() {
-                        state.update_activity(|act| {
-                            if let Activity::Rebuild { progress } = act {
-                                progress.current_system = sys.display_name.clone();
-                                progress.systems_done = i;
-                                progress.elapsed_secs = start.elapsed().as_secs();
-                            }
-                        });
-                        state.cache.enrich_system_cache(&state, &sys.folder_name);
-                    }
-                    tracing::info!(
-                        "Rebuild enrichment: done in {:.1}s",
-                        enrich_start.elapsed().as_secs_f64()
-                    );
-                }
-
-                // Mark rebuild complete (terminal state).
-                state.update_activity(|act| {
-                    if let Activity::Rebuild { progress } = act {
-                        progress.phase = RebuildPhase::Complete;
-                        progress.current_system = String::new();
-                        progress.systems_done = with_games.len();
-                        progress.systems_total = with_games.len();
-                        progress.elapsed_secs = start.elapsed().as_secs();
-                        progress.error = None;
-                    }
-                });
-            }));
-
-            if let Err(panic) = &result {
-                let msg = panic
-                    .downcast_ref::<String>()
-                    .map(|s| s.as_str())
-                    .or_else(|| panic.downcast_ref::<&str>().copied())
-                    .unwrap_or("unknown panic");
-                tracing::error!("Rebuild enrichment panicked: {msg}");
-
-                state.update_activity(|act| {
-                    if let Activity::Rebuild { progress } = act {
-                        progress.phase = RebuildPhase::Failed;
-                        progress.current_system = String::new();
-                        progress.elapsed_secs = start.elapsed().as_secs();
-                        progress.error = Some(format!("Internal error: {msg}"));
-                    }
-                });
+                tracing::info!(
+                    "Rebuild enrichment: done in {:.1}s",
+                    enrich_start.elapsed().as_secs_f64()
+                );
             }
+
+            // Mark rebuild complete (terminal state).
+            state.update_activity(|act| {
+                if let Activity::Rebuild { progress } = act {
+                    progress.phase = RebuildPhase::Complete;
+                    progress.current_system = String::new();
+                    progress.systems_done = with_games.len();
+                    progress.systems_total = with_games.len();
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                    progress.error = None;
+                }
+            });
 
             // guard drops here → Idle
             drop(guard);
@@ -585,7 +582,7 @@ impl AppState {
             interval.tick().await;
             loop {
                 interval.tick().await;
-                match state.refresh_storage() {
+                match state.refresh_storage().await {
                     Ok(true) => tracing::info!("Background storage re-detection: storage changed"),
                     Ok(false) => {}
                     Err(e) => tracing::warn!("Background storage re-detection failed: {e}"),
@@ -696,7 +693,7 @@ impl AppState {
                 }
 
                 tracing::info!("Config file changed, refreshing storage");
-                match state.refresh_storage() {
+                match state.refresh_storage().await {
                     Ok(true) => tracing::info!("Storage updated after config change"),
                     Ok(false) => tracing::debug!("Config changed but storage unchanged"),
                     Err(e) => tracing::warn!("Failed to refresh storage after config change: {e}"),
@@ -854,63 +851,63 @@ impl AppState {
                     continue;
                 }
 
-                // Run the rescan in a blocking thread to avoid blocking the
-                // async event loop.
-                let state_clone = state.clone();
-                let affected = affected_systems.clone();
-                let _ = tokio::task::spawn_blocking(move || {
-                    let storage = state_clone.storage();
-                    let region_pref = state_clone.region_preference();
-                    let region_secondary = state_clone.region_preference_secondary();
+                // Run the rescan as an async task.
+                let storage = state.storage();
+                let region_pref = state.region_preference();
+                let region_secondary = state.region_preference_secondary();
 
-                    // Invalidate L1+L2 for each affected system so get_roms
-                    // does a fresh L3 filesystem scan.
-                    for system in &affected {
-                        state_clone.cache.invalidate_system(system);
+                // Invalidate L1+L2 for each affected system so get_roms
+                // does a fresh L3 filesystem scan.
+                for system in &affected_systems {
+                    state.cache.invalidate_system(system.clone()).await;
+                }
+
+                // Re-scan each affected system.
+                if !affected_systems.is_empty() {
+                    tracing::info!(
+                        "ROM watcher: re-scanning {} system(s): {}",
+                        affected_systems.len(),
+                        affected_systems
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                    for system in &affected_systems {
+                        let _ = state
+                            .cache
+                            .scan_and_cache_system(&storage, system, region_pref, region_secondary)
+                            .await;
+                        state.cache.enrich_system_cache(&state, system.clone()).await;
                     }
+                }
 
-                    // Re-scan each affected system.
-                    if !affected.is_empty() {
-                        tracing::info!(
-                            "ROM watcher: re-scanning {} system(s): {}",
-                            affected.len(),
-                            affected.iter().cloned().collect::<Vec<_>>().join(", ")
-                        );
-                        for system in &affected {
-                            let _ = state_clone.cache.scan_and_cache_system(
-                                &storage,
-                                system,
-                                region_pref,
-                                region_secondary,
-                            );
-                            state_clone.cache.enrich_system_cache(&state_clone, system);
-                        }
-                    }
-
-                    // If the roms/ directory itself changed (new subdirectory
-                    // created or removed), refresh the systems list to discover
-                    // new systems and update game counts.
-                    if roms_dir_changed {
-                        tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
-                        let systems = state_clone.cache.get_systems(&storage);
-                        for sys in &systems {
-                            if sys.game_count > 0 && !affected.contains(&sys.folder_name) {
-                                let _ = state_clone.cache.scan_and_cache_system(
+                // If the roms/ directory itself changed (new subdirectory
+                // created or removed), refresh the systems list to discover
+                // new systems and update game counts.
+                if roms_dir_changed {
+                    tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
+                    let systems = state.cache.get_systems(&storage).await;
+                    for sys in &systems {
+                        if sys.game_count > 0 && !affected_systems.contains(&sys.folder_name) {
+                            let _ = state
+                                .cache
+                                .scan_and_cache_system(
                                     &storage,
                                     &sys.folder_name,
                                     region_pref,
                                     region_secondary,
-                                );
-                                state_clone
-                                    .cache
-                                    .enrich_system_cache(&state_clone, &sys.folder_name);
-                            }
+                                )
+                                .await;
+                            state
+                                .cache
+                                .enrich_system_cache(&state, sys.folder_name.clone())
+                                .await;
                         }
-                    } else if !affected.is_empty() {
-                        let _ = state_clone.cache.get_systems(&storage);
                     }
-                })
-                .await;
+                } else if !affected_systems.is_empty() {
+                    let _ = state.cache.get_systems(&storage).await;
+                }
             }
         });
 

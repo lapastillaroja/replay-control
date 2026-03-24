@@ -4,10 +4,10 @@
 //! have stable, hash-free URLs that the core can call reliably.
 
 use axum::extract::{Path, State};
-use replay_control_core::metadata_db::MetadataDb;
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
+use replay_control_core::metadata_db::MetadataDb;
 use serde::Serialize;
 
 use super::AppState;
@@ -53,30 +53,30 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
 
-    let result = entries
-        .into_iter()
-        .map(|entry| {
-            let index = image_indexes
-                .entry(entry.game.system.clone())
-                .or_insert_with(|| state.cache.get_image_index(&state, &entry.game.system));
-            let box_art_url = state.cache.resolve_box_art(
-                &state,
-                index,
-                &entry.game.system,
-                &entry.game.rom_filename,
-            );
-            CoreGameEntry {
-                system: entry.game.system,
-                system_display: entry.game.system_display,
-                rom_filename: entry.game.rom_filename.clone(),
-                display_name: entry
-                    .game
-                    .display_name
-                    .unwrap_or(entry.game.rom_filename),
-                box_art_url,
-            }
-        })
-        .collect();
+    let mut result = Vec::with_capacity(entries.len());
+    for entry in entries {
+        if !image_indexes.contains_key(&entry.game.system) {
+            let index = state
+                .cache
+                .get_image_index(&state, &entry.game.system)
+                .await;
+            image_indexes.insert(entry.game.system.clone(), index);
+        }
+        let index = image_indexes.get(&entry.game.system).unwrap();
+        let box_art_url = state.cache.resolve_box_art(
+            &state,
+            index,
+            &entry.game.system,
+            &entry.game.rom_filename,
+        );
+        result.push(CoreGameEntry {
+            system: entry.game.system,
+            system_display: entry.game.system_display,
+            rom_filename: entry.game.rom_filename.clone(),
+            display_name: entry.game.display_name.unwrap_or(entry.game.rom_filename),
+            box_art_url,
+        });
+    }
 
     Ok(Json(result))
 }
@@ -92,30 +92,25 @@ async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEnt
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
 
-    let result = favs
-        .into_iter()
-        .map(|fav| {
-            let index = image_indexes
-                .entry(fav.game.system.clone())
-                .or_insert_with(|| state.cache.get_image_index(&state, &fav.game.system));
-            let box_art_url = state.cache.resolve_box_art(
-                &state,
-                index,
-                &fav.game.system,
-                &fav.game.rom_filename,
-            );
-            CoreGameEntry {
-                system: fav.game.system,
-                system_display: fav.game.system_display,
-                rom_filename: fav.game.rom_filename.clone(),
-                display_name: fav
-                    .game
-                    .display_name
-                    .unwrap_or(fav.game.rom_filename),
-                box_art_url,
-            }
-        })
-        .collect();
+    let mut result = Vec::with_capacity(favs.len());
+    for fav in favs {
+        if !image_indexes.contains_key(&fav.game.system) {
+            let index = state.cache.get_image_index(&state, &fav.game.system).await;
+            image_indexes.insert(fav.game.system.clone(), index);
+        }
+        let index = image_indexes.get(&fav.game.system).unwrap();
+        let box_art_url =
+            state
+                .cache
+                .resolve_box_art(&state, index, &fav.game.system, &fav.game.rom_filename);
+        result.push(CoreGameEntry {
+            system: fav.game.system,
+            system_display: fav.game.system_display,
+            rom_filename: fav.game.rom_filename.clone(),
+            display_name: fav.game.display_name.unwrap_or(fav.game.rom_filename),
+            box_art_url,
+        });
+    }
 
     Ok(Json(result))
 }
@@ -141,6 +136,7 @@ async fn game_detail(
             state.region_preference(),
             state.region_preference_secondary(),
         )
+        .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
     all_roms
@@ -170,10 +166,20 @@ async fn game_detail(
                 info.players,
                 None,
             ),
-            None => (filename.clone(), String::new(), String::new(), String::new(), 0, None),
+            None => (
+                filename.clone(),
+                String::new(),
+                String::new(),
+                String::new(),
+                0,
+                None,
+            ),
         }
     } else {
-        let stem = filename.rfind('.').map(|i| &filename[..i]).unwrap_or(&filename);
+        let stem = filename
+            .rfind('.')
+            .map(|i| &filename[..i])
+            .unwrap_or(&filename);
         let entry = game_db::lookup_game(&system, stem);
         let game = entry.map(|e| e.game);
         let region = entry.map(|e| e.region).unwrap_or("");
@@ -183,7 +189,10 @@ async fn game_detail(
         } else if let Some(dn) = game_db::game_display_name(&system, &filename) {
             rom_tags::display_name_with_tags(dn, &filename)
         } else {
-            let stem = filename.rfind('.').map(|i| &filename[..i]).unwrap_or(&filename);
+            let stem = filename
+                .rfind('.')
+                .map(|i| &filename[..i])
+                .unwrap_or(&filename);
             let base = stem
                 .find(" (")
                 .or_else(|| stem.find(" ["))
@@ -201,18 +210,33 @@ async fn game_detail(
         (
             display_name,
             game_meta
-                .map(|g| if g.year > 0 { g.year.to_string() } else { String::new() })
+                .map(|g| {
+                    if g.year > 0 {
+                        g.year.to_string()
+                    } else {
+                        String::new()
+                    }
+                })
                 .unwrap_or_default(),
             game_meta
                 .map(|g| {
-                    if g.genre.is_empty() { g.normalized_genre } else { g.genre }.to_string()
+                    if g.genre.is_empty() {
+                        g.normalized_genre
+                    } else {
+                        g.genre
+                    }
+                    .to_string()
                 })
                 .unwrap_or_default(),
             game_meta
                 .map(|g| g.developer.to_string())
                 .unwrap_or_default(),
             game_meta.map(|g| g.players).unwrap_or(0),
-            if region.is_empty() { None } else { Some(region.to_string()) },
+            if region.is_empty() {
+                None
+            } else {
+                Some(region.to_string())
+            },
         )
     };
 
@@ -220,9 +244,13 @@ async fn game_detail(
     let (mut description, mut rating, mut publisher, mut enriched_genre, mut enriched_developer) =
         (None, None, None, String::new(), String::new());
 
-    if let Some(Ok(Some(meta))) = state.metadata_pool.read(|conn| {
-        MetadataDb::lookup(conn, &system, &filename)
-    }) {
+    let system_owned = system.clone();
+    let filename_owned = filename.clone();
+    if let Some(Ok(Some(meta))) = state
+        .metadata_pool
+        .read(move |conn| MetadataDb::lookup(conn, &system_owned, &filename_owned))
+        .await
+    {
         description = meta.description;
         rating = meta.rating.map(|r| r as f32);
         publisher = meta.publisher;

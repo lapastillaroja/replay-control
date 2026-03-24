@@ -50,9 +50,11 @@ pub async fn get_activity() -> Result<Activity, ServerFnError> {
 pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let db_path = state.metadata_pool.db_path();
-    let Some(result) = state.metadata_pool.read(|conn| {
-        MetadataDb::stats(conn, &db_path)
-    }) else {
+    let Some(result) = state
+        .metadata_pool
+        .read(move |conn| MetadataDb::stats(conn, &db_path))
+        .await
+    else {
         return Ok(MetadataStats::default());
     };
     result.map_err(|e| {
@@ -89,15 +91,19 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 
     // Get metadata entries and thumbnail counts per system from DB.
     // Return empty data when DB is unavailable (e.g., during import).
-    let (entries_per_system, thumbnails_per_system) = state.metadata_pool.read(|conn| {
-        let entries = MetadataDb::entries_per_system(conn).unwrap_or_default();
-        let thumbnails = MetadataDb::thumbnails_per_system(conn).unwrap_or_default();
-        (entries, thumbnails)
-    }).unwrap_or_default();
+    let (entries_per_system, thumbnails_per_system) = state
+        .metadata_pool
+        .read(|conn| {
+            let entries = MetadataDb::entries_per_system(conn).unwrap_or_default();
+            let thumbnails = MetadataDb::thumbnails_per_system(conn).unwrap_or_default();
+            (entries, thumbnails)
+        })
+        .await
+        .unwrap_or_default();
 
     // Get total games per system from game library.
     let storage = state.storage();
-    let systems = state.cache.get_systems(&storage);
+    let systems = state.cache.get_systems(&storage).await;
 
     let mut meta_map: std::collections::HashMap<String, usize> =
         entries_per_system.into_iter().collect();
@@ -161,14 +167,15 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    state.metadata_pool.write(|conn| {
-        MetadataDb::clear(conn)
-    })
-    .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state
+        .metadata_pool
+        .write(|conn| MetadataDb::clear(conn))
+        .await
+        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Checkpoint WAL after the DELETE + VACUUM.
-    state.metadata_pool.checkpoint();
+    state.metadata_pool.checkpoint().await;
     // _guard drops → Idle
     Ok(())
 }
@@ -181,6 +188,7 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     state
         .import
         .regenerate_metadata(&state)
+        .await
         .map_err(ServerFnError::new)
 }
 
@@ -219,7 +227,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Clear L1+L2 cache.
-    state.cache.invalidate();
+    state.cache.invalidate().await;
 
     // Rebuild in background; the guard drops → Idle when done (or on panic).
     state.spawn_rebuild_enrichment(guard);

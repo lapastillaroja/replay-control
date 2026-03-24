@@ -20,7 +20,7 @@ struct SystemInfo {
 
 async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
     let storage = state.storage();
-    let summaries = state.cache.get_systems(&storage);
+    let summaries = state.cache.get_systems(&storage).await;
     let favorites = replay_control_core::favorites::list_favorites(&storage).unwrap_or_default();
 
     let disk = storage

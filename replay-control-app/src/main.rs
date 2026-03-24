@@ -39,7 +39,9 @@ mod ssr {
     /// The stream auto-closes after 5 consecutive idle ticks (1s of inactivity).
     fn sse_progress_stream<F>(
         poll_fn: F,
-    ) -> axum::response::sse::Sse<impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>
+    ) -> axum::response::sse::Sse<
+        impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+    >
     where
         F: Fn() -> (String, bool) + Send + 'static,
     {
@@ -82,10 +84,7 @@ mod ssr {
     /// - `.svm` files: reads the file to find the ScummVM game directory
     /// - `.m3u` playlists: looks for a sibling directory or follows .svm references
     /// - Directories: serves directly from the ROM path
-    async fn serve_rom_doc(
-        state: api::AppState,
-        path: String,
-    ) -> axum::response::Response {
+    async fn serve_rom_doc(state: api::AppState, path: String) -> axum::response::Response {
         use axum::http::StatusCode;
         use axum::response::IntoResponse;
 
@@ -357,7 +356,6 @@ mod ssr {
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetPreferredLanguages>(
         );
-
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
             .site_root(cli.site_root.clone())
@@ -495,8 +493,7 @@ mod ssr {
             async move {
                 sse_progress_stream(move || {
                     let activity = state.activity();
-                    let is_active =
-                        !matches!(activity, replay_control_app::api::Activity::Idle);
+                    let is_active = !matches!(activity, replay_control_app::api::Activity::Idle);
                     let json = serde_json::to_string(&activity).unwrap_or_default();
                     (json, is_active)
                 })
