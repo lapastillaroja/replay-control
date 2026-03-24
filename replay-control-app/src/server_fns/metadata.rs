@@ -249,7 +249,11 @@ pub struct CorruptionStatus {
 pub async fn get_corruption_status() -> Result<CorruptionStatus, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let (metadata_corrupt, user_data_corrupt) = state.is_db_corrupt();
-    let backup_exists = state.user_data_pool.db_path().with_extension("db.bak").exists();
+    let backup_exists = state
+        .user_data_pool
+        .db_path()
+        .with_extension("db.bak")
+        .exists();
     Ok(CorruptionStatus {
         metadata_corrupt,
         user_data_corrupt,
@@ -276,7 +280,9 @@ pub async fn rebuild_corrupt_metadata() -> Result<(), ServerFnError> {
     // Reopen at the current storage root — creates fresh schema.
     let storage = state.storage();
     if !state.metadata_pool.reopen(&storage.root) {
-        return Err(ServerFnError::new("Failed to reopen metadata DB after rebuild"));
+        return Err(ServerFnError::new(
+            "Failed to reopen metadata DB after rebuild",
+        ));
     }
     // Invalidate cache so stale data doesn't persist.
     state.cache.invalidate().await;
@@ -301,7 +307,9 @@ pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
     replay_control_core::db_common::delete_db_files(&db_path);
     let storage = state.storage();
     if !state.user_data_pool.reopen(&storage.root) {
-        return Err(ServerFnError::new("Failed to reopen user data DB after repair"));
+        return Err(ServerFnError::new(
+            "Failed to reopen user data DB after repair",
+        ));
     }
     Ok(())
 }
@@ -321,7 +329,10 @@ pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
         return Err(ServerFnError::new("No backup file found"));
     }
 
-    tracing::info!("Restoring user data DB from backup at {}", backup_path.display());
+    tracing::info!(
+        "Restoring user data DB from backup at {}",
+        backup_path.display()
+    );
 
     // Close pool, copy backup over the DB, reopen.
     state.user_data_pool.close();
@@ -335,7 +346,9 @@ pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
         tracing::warn!("Restored user_data.db backup is also corrupt, creating fresh DB");
         replay_control_core::db_common::delete_db_files(&db_path);
         if !state.user_data_pool.reopen(&storage.root) {
-            return Err(ServerFnError::new("Failed to reopen user data DB after restore"));
+            return Err(ServerFnError::new(
+                "Failed to reopen user data DB after restore",
+            ));
         }
     }
     Ok(())

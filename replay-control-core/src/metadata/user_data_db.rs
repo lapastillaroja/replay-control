@@ -67,13 +67,12 @@ impl UserDataDb {
         let conn = crate::db_common::open_connection(&db_path, "user_data.db")?;
         Self::init_tables(&conn)?;
 
-        let is_corrupt =
-            if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
-                tracing::warn!("User data DB corrupt ({detail})");
-                true
-            } else {
-                false
-            };
+        let is_corrupt = if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
+            tracing::warn!("User data DB corrupt ({detail})");
+            true
+        } else {
+            false
+        };
 
         Ok((conn, db_path, is_corrupt))
     }

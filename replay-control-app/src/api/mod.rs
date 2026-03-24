@@ -15,8 +15,8 @@ pub use cache::GameLibrary;
 pub use import::{ImportPipeline, ThumbnailPipeline};
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use deadpool_sqlite::rusqlite;
 use replay_control_core::config::ReplayConfig;
@@ -497,8 +497,7 @@ fn open_metadata_db(
 fn open_user_data_db(
     storage_root: &std::path::Path,
 ) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    let (conn, path, _corrupt) =
-        replay_control_core::user_data_db::UserDataDb::open(storage_root)?;
+    let (conn, path, _corrupt) = replay_control_core::user_data_db::UserDataDb::open(storage_root)?;
     Ok((conn, path))
 }
 
