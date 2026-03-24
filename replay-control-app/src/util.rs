@@ -148,9 +148,21 @@ pub fn base64_decode(s: &str) -> Result<Vec<u8>, &'static str> {
 
     for chunk in bytes.chunks(4) {
         let a = decode_char(chunk[0])? as u32;
-        let b = if chunk.len() > 1 { decode_char(chunk[1])? as u32 } else { 0 };
-        let c = if chunk.len() > 2 { decode_char(chunk[2])? as u32 } else { 0 };
-        let d = if chunk.len() > 3 { decode_char(chunk[3])? as u32 } else { 0 };
+        let b = if chunk.len() > 1 {
+            decode_char(chunk[1])? as u32
+        } else {
+            0
+        };
+        let c = if chunk.len() > 2 {
+            decode_char(chunk[2])? as u32
+        } else {
+            0
+        };
+        let d = if chunk.len() > 3 {
+            decode_char(chunk[3])? as u32
+        } else {
+            0
+        };
         let n = (a << 18) | (b << 12) | (c << 6) | d;
 
         result.push((n >> 16) as u8);

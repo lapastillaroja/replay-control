@@ -16,16 +16,11 @@ pub fn GameListItem(
     /// Show the system name (e.g., for cross-system lists like developer page).
     #[prop(default = false)]
     show_system: bool,
-    #[prop(default = true)]
-    show_favorite: bool,
-    #[prop(default = false)]
-    is_favorite: bool,
-    #[prop(default = None)]
-    genre: Option<String>,
-    #[prop(default = None)]
-    rating: Option<f32>,
-    #[prop(default = None)]
-    driver_status: Option<String>,
+    #[prop(default = true)] show_favorite: bool,
+    #[prop(default = false)] is_favorite: bool,
+    #[prop(default = None)] genre: Option<String>,
+    #[prop(default = None)] rating: Option<f32>,
+    #[prop(default = None)] driver_status: Option<String>,
     /// Pre-resolved system display name. When provided, avoids a server-side lookup.
     #[prop(default = None)]
     system_display: Option<String>,

@@ -65,9 +65,7 @@ pub fn MetadataBusyBanner() -> impl IntoView {
                             format!("Scanning game library ({system})...")
                         }
                     }
-                    StartupPhase::RebuildingIndex => {
-                        "Rebuilding thumbnail index...".to_string()
-                    }
+                    StartupPhase::RebuildingIndex => "Rebuilding thumbnail index...".to_string(),
                 }
             }
             Activity::Import { progress } => {

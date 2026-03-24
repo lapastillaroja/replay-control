@@ -47,7 +47,10 @@ pub fn use_debounced<T: Clone + PartialEq + Send + Sync + 'static>(
                         debounced.set(val);
                     }
                 });
-                let func: web_sys::js_sys::Function = cb.as_ref().unchecked_ref::<web_sys::js_sys::Function>().clone();
+                let func: web_sys::js_sys::Function = cb
+                    .as_ref()
+                    .unchecked_ref::<web_sys::js_sys::Function>()
+                    .clone();
                 js_fn.set_value(Some(func));
                 cb.forget(); // Leak once, not per keystroke.
                 callback_created.set_value(true);
@@ -56,10 +59,7 @@ pub fn use_debounced<T: Clone + PartialEq + Send + Sync + 'static>(
             if let Some(func) = js_fn.get_value()
                 && let Some(window) = web_sys::window()
                 && let Ok(handle) =
-                    window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                        &func,
-                        delay_ms,
-                    )
+                    window.set_timeout_with_callback_and_timeout_and_arguments_0(&func, delay_ms)
             {
                 timer_handle.set_value(Some(handle));
             }

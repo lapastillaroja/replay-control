@@ -6,17 +6,14 @@ use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
 use crate::hooks::{use_debounced, use_infinite_scroll};
 use crate::i18n::{t, use_i18n};
-use crate::server_fns::{self, DeveloperSystem, RomListEntry, PAGE_SIZE};
+use crate::server_fns::{self, DeveloperSystem, PAGE_SIZE, RomListEntry};
 
 /// `/developer/:name` — Game list for a specific developer with system filter chips.
 #[component]
 pub fn DeveloperPage() -> impl IntoView {
     let i18n = use_i18n();
     let params = use_params_map();
-    let developer = params
-        .read_untracked()
-        .get("name")
-        .unwrap_or_default();
+    let developer = params.read_untracked().get("name").unwrap_or_default();
 
     let dev = StoredValue::new(developer.clone());
 
@@ -62,9 +59,7 @@ pub fn DeveloperPage() -> impl IntoView {
             )
         },
         move |(developer, system, hh, ht, hc, gf, mp, mr)| {
-            server_fns::get_developer_games(
-                developer, system, 0, PAGE_SIZE, hh, ht, hc, mp, gf, mr,
-            )
+            server_fns::get_developer_games(developer, system, 0, PAGE_SIZE, hh, ht, hc, mp, gf, mr)
         },
     );
 
@@ -300,6 +295,6 @@ fn SystemFilterChips(
                 }
             }).collect::<Vec<_>>()}
         </div>
-    }.into_any()
+    }
+    .into_any()
 }
-

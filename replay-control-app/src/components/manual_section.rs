@@ -236,11 +236,11 @@ fn DocumentLink(
     rom_filename: StoredValue<String>,
 ) -> impl IntoView {
     let icon = match doc.extension.as_str() {
-        "pdf" => "\u{1F4C4}", // page facing up
-        "txt" => "\u{1F4DD}", // memo
+        "pdf" => "\u{1F4C4}",                          // page facing up
+        "txt" => "\u{1F4DD}",                          // memo
         "jpg" | "jpeg" | "png" | "gif" => "\u{1F5BC}", // framed picture
-        "html" | "htm" => "\u{1F310}", // globe with meridians
-        _ => "\u{1F4CE}",     // paperclip
+        "html" | "htm" => "\u{1F310}",                 // globe with meridians
+        _ => "\u{1F4CE}",                              // paperclip
     };
 
     let size_display = crate::util::format_size(doc.size_bytes);
@@ -248,9 +248,9 @@ fn DocumentLink(
     let ext_upper = doc.extension.to_uppercase();
 
     // Build the URL using base64-encoded ROM filename for path safety
-    let encoded_rom = StoredValue::new(
-        crate::util::base64_encode(rom_filename.get_value().as_bytes()),
-    );
+    let encoded_rom = StoredValue::new(crate::util::base64_encode(
+        rom_filename.get_value().as_bytes(),
+    ));
     let encoded_path = StoredValue::new(urlencoding::encode(&doc.relative_path).to_string());
     let sys = system;
 
@@ -480,4 +480,3 @@ where
         </div>
     }
 }
-

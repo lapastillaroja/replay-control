@@ -365,8 +365,7 @@ where
 fn FavItem<F>(
     fav: crate::server_fns::Favorite,
     box_art_url: Option<String>,
-    #[prop(default = None)]
-    genre: Option<String>,
+    #[prop(default = None)] genre: Option<String>,
     show_system: bool,
     confirm_remove: RwSignal<Option<String>>,
     remove_fav: F,

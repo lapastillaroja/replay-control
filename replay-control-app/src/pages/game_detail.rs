@@ -765,7 +765,6 @@ fn GameDeleteAction(
     }
 }
 
-
 /// Related games section: regional variants and "More Like This" (genre-based).
 /// Loads lazily via its own Resource so it never blocks the main page render.
 #[component]

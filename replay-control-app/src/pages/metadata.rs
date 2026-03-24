@@ -35,12 +35,9 @@ pub fn MetadataPage() -> impl IntoView {
     // Derived helpers.
     let is_busy = Memo::new(move |_| !matches!(activity.get(), Activity::Idle));
     let is_importing = Memo::new(move |_| matches!(activity.get(), Activity::Import { .. }));
-    let is_thumb_updating = Memo::new(move |_| {
-        matches!(activity.get(), Activity::ThumbnailUpdate { .. })
-    });
-    let can_cancel = Memo::new(move |_| {
-        matches!(activity.get(), Activity::ThumbnailUpdate { .. })
-    });
+    let is_thumb_updating =
+        Memo::new(move |_| matches!(activity.get(), Activity::ThumbnailUpdate { .. }));
+    let can_cancel = Memo::new(move |_| matches!(activity.get(), Activity::ThumbnailUpdate { .. }));
 
     // Thumbnail cancel UI state (local, not derived from server).
     let thumb_cancelling = RwSignal::new(false);
@@ -709,35 +706,33 @@ fn DataManagementSection(
     // Rebuild state
     let rebuilding = Memo::new(move |_| matches!(activity.get(), Activity::Rebuild { .. }));
     let rebuild_display = Memo::new(move |_| match activity.get() {
-        Activity::Rebuild { progress } => {
-            match progress.phase {
-                RebuildPhase::Scanning => {
-                    if progress.systems_total > 0 {
-                        Some(format!(
-                            "Scanning {}... ({}/{})",
-                            progress.current_system, progress.systems_done, progress.systems_total,
-                        ))
-                    } else if progress.current_system.is_empty() {
-                        Some("Scanning...".to_string())
-                    } else {
-                        Some(format!("Scanning {}...", progress.current_system))
-                    }
+        Activity::Rebuild { progress } => match progress.phase {
+            RebuildPhase::Scanning => {
+                if progress.systems_total > 0 {
+                    Some(format!(
+                        "Scanning {}... ({}/{})",
+                        progress.current_system, progress.systems_done, progress.systems_total,
+                    ))
+                } else if progress.current_system.is_empty() {
+                    Some("Scanning...".to_string())
+                } else {
+                    Some(format!("Scanning {}...", progress.current_system))
                 }
-                RebuildPhase::Enriching => {
-                    if progress.systems_total > 0 {
-                        Some(format!(
-                            "Enriching {}... ({}/{})",
-                            progress.current_system, progress.systems_done, progress.systems_total,
-                        ))
-                    } else if progress.current_system.is_empty() {
-                        Some("Enriching...".to_string())
-                    } else {
-                        Some(format!("Enriching {}...", progress.current_system))
-                    }
-                }
-                _ => None,
             }
-        }
+            RebuildPhase::Enriching => {
+                if progress.systems_total > 0 {
+                    Some(format!(
+                        "Enriching {}... ({}/{})",
+                        progress.current_system, progress.systems_done, progress.systems_total,
+                    ))
+                } else if progress.current_system.is_empty() {
+                    Some("Enriching...".to_string())
+                } else {
+                    Some(format!("Enriching {}...", progress.current_system))
+                }
+            }
+            _ => None,
+        },
         _ => None,
     });
 
@@ -977,7 +972,8 @@ fn ClearActionCard(
     on_confirm: Callback<leptos::ev::MouseEvent>,
     #[prop(optional)] disabled: Option<Memo<bool>>,
     /// Live progress text shown while the operation runs (e.g., rebuild per-system progress).
-    #[prop(optional)] progress_text: Option<Memo<Option<String>>>,
+    #[prop(optional)]
+    progress_text: Option<Memo<Option<String>>>,
 ) -> impl IntoView {
     let i18n = use_i18n();
     let externally_disabled = move || disabled.is_some_and(|d| d.get());

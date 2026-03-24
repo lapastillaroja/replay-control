@@ -16,10 +16,7 @@ pub enum Activity {
 
     /// Startup pipeline (Phases 2+3: cache verify/populate + thumbnail index rebuild).
     /// Phase 1 (auto-import) uses the Import variant instead.
-    Startup {
-        phase: StartupPhase,
-        system: String,
-    },
+    Startup { phase: StartupPhase, system: String },
 
     /// Metadata import (LaunchBox XML parse or download + parse).
     Import { progress: ImportProgress },
@@ -50,10 +47,9 @@ impl Activity {
     pub fn is_terminal(&self) -> bool {
         use replay_control_core::metadata_db::ImportState;
         match self {
-            Self::Import { progress } => matches!(
-                progress.state,
-                ImportState::Complete | ImportState::Failed
-            ),
+            Self::Import { progress } => {
+                matches!(progress.state, ImportState::Complete | ImportState::Failed)
+            }
             Self::ThumbnailUpdate { progress, .. } => matches!(
                 progress.phase,
                 ThumbnailPhase::Complete | ThumbnailPhase::Failed | ThumbnailPhase::Cancelled
@@ -98,10 +94,7 @@ impl Activity {
                 _ => String::new(),
             },
             Self::Rebuild { progress } => match progress.phase {
-                RebuildPhase::Complete => format!(
-                    "Rebuild complete ({}s)",
-                    progress.elapsed_secs,
-                ),
+                RebuildPhase::Complete => format!("Rebuild complete ({}s)", progress.elapsed_secs,),
                 RebuildPhase::Failed => format!(
                     "Rebuild failed: {}",
                     progress.error.as_deref().unwrap_or("unknown error"),

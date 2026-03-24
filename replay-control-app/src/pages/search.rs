@@ -477,10 +477,7 @@ fn DeveloperBlock(
         data.total_count
     );
 
-    let see_all_href = format!(
-        "/developer/{}",
-        urlencoding::encode(&data.developer_name)
-    );
+    let see_all_href = format!("/developer/{}", urlencoding::encode(&data.developer_name));
 
     let has_other_developers = !data.other_developers.is_empty();
 
@@ -515,11 +512,7 @@ fn OtherDevelopersList(
     query: String,
     locale: crate::i18n::Locale,
 ) -> impl IntoView {
-    let heading = format!(
-        "{} \"{}\"",
-        t(locale, "search.other_developers"),
-        query,
-    );
+    let heading = format!("{} \"{}\"", t(locale, "search.other_developers"), query,);
 
     view! {
         <section class="developer-match-list">

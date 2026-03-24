@@ -185,10 +185,9 @@ impl Activity {
     /// Check if this activity represents a terminal (completed/failed/cancelled) state.
     pub fn is_terminal(&self) -> bool {
         match self {
-            Self::Import { progress } => matches!(
-                progress.state,
-                ImportState::Complete | ImportState::Failed
-            ),
+            Self::Import { progress } => {
+                matches!(progress.state, ImportState::Complete | ImportState::Failed)
+            }
             Self::ThumbnailUpdate { progress } => matches!(
                 progress.phase,
                 ThumbnailPhase::Complete | ThumbnailPhase::Failed | ThumbnailPhase::Cancelled
@@ -231,10 +230,7 @@ impl Activity {
                 _ => String::new(),
             },
             Self::Rebuild { progress } => match progress.phase {
-                RebuildPhase::Complete => format!(
-                    "Rebuild complete ({}s)",
-                    progress.elapsed_secs,
-                ),
+                RebuildPhase::Complete => format!("Rebuild complete ({}s)", progress.elapsed_secs,),
                 RebuildPhase::Failed => format!(
                     "Rebuild failed: {}",
                     progress.error.as_deref().unwrap_or("unknown error"),
