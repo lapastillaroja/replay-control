@@ -4,6 +4,15 @@ use replay_control_core::metadata_db::MetadataDb;
 
 use super::GameLibrary;
 
+/// Batched metadata from LaunchBox import (ratings, genres, players, rating counts, developers).
+type LaunchBoxMetadata = (
+    HashMap<String, f64>,
+    HashMap<String, String>,
+    HashMap<String, u8>,
+    HashMap<String, u32>,
+    HashMap<String, String>,
+);
+
 impl GameLibrary {
     /// Enrich box_art_url (and rating) for all entries in a system's game library.
     /// Uses the image index for box art and game_metadata for ratings.
@@ -18,13 +27,8 @@ impl GameLibrary {
         // Load ratings, genres, players, rating counts, and developers from
         // game_metadata table (from LaunchBox import) in a single read call.
         let sys = system.clone();
-        let (ratings, lb_genres, lb_players, lb_rating_counts, lb_developers): (
-            HashMap<String, f64>,
-            HashMap<String, String>,
-            HashMap<String, u8>,
-            HashMap<String, u32>,
-            HashMap<String, String>,
-        ) = state
+        let (ratings, lb_genres, lb_players, lb_rating_counts, lb_developers): LaunchBoxMetadata =
+            state
             .metadata_pool
             .read(move |conn| {
                 let ratings = MetadataDb::system_ratings(conn, &sys)

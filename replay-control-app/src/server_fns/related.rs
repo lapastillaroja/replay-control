@@ -156,7 +156,7 @@ pub async fn get_related_games(
                 .unwrap_or_default();
             let detail_genre = current_entry
                 .and_then(|e| e.genre.clone().filter(|g| !g.is_empty()))
-                .or_else(|| genre_fallback)
+                .or(genre_fallback)
                 .unwrap_or_default();
 
             // Series siblings: prefer Wikidata data (has ordering), fall back to algorithmic series_key.
