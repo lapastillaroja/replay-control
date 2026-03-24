@@ -185,6 +185,8 @@ fn build_pool(
     };
     let pool = managed::Pool::builder(mgr)
         .max_size(max_size)
+        .wait_timeout(Some(std::time::Duration::from_secs(10)))
+        .runtime(deadpool_sqlite::Runtime::Tokio1)
         .build()
         .map_err(|e| format!("{label}: failed to build pool: {e}"))?;
     Ok(pool)
@@ -223,7 +225,7 @@ impl DbPool {
 
         let read_size = match journal_mode {
             JournalMode::Wal => 3,
-            JournalMode::Delete => 1,
+            JournalMode::Delete => 3, // DELETE mode supports concurrent readers when no writer is active
         };
         let read_pool = build_pool(
             &db_path,
