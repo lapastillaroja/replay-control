@@ -59,7 +59,11 @@ impl MetadataDb {
     }
 
     /// Get random cached ROMs with box art from a specific system.
-    pub fn random_cached_roms(conn: &Connection, system: &str, count: usize) -> Result<Vec<GameEntry>> {
+    pub fn random_cached_roms(
+        conn: &Connection,
+        system: &str,
+        count: usize,
+    ) -> Result<Vec<GameEntry>> {
         let sql = format!(
             "SELECT {GAME_ENTRY_COLS}
              FROM game_library
@@ -149,7 +153,10 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1).map(|v| v as usize)?,
+                ))
             })
             .map_err(|e| Error::Other(format!("Query genre_counts: {e}")))?;
 
@@ -159,11 +166,11 @@ impl MetadataDb {
     /// Count multiplayer games (players >= 2) across the entire library.
     pub fn multiplayer_count(conn: &Connection) -> Result<usize> {
         conn.query_row(
-                "SELECT COUNT(*) FROM game_library WHERE players IS NOT NULL AND players >= 2",
-                [],
-                |row| row.get::<_, i64>(0).map(|v| v as usize),
-            )
-            .map_err(|e| Error::Other(format!("Query multiplayer_count: {e}")))
+            "SELECT COUNT(*) FROM game_library WHERE players IS NOT NULL AND players >= 2",
+            [],
+            |row| row.get::<_, i64>(0).map(|v| v as usize),
+        )
+        .map_err(|e| Error::Other(format!("Query multiplayer_count: {e}")))
     }
 
     /// Get all distinct genre groups across the entire game library.
@@ -424,15 +431,14 @@ mod tests {
         special.rating = Some(4.5);
         special.is_special = true;
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[normal, special], None)
-            .unwrap();
+        MetadataDb::save_system_entries(&mut conn, "snes", &[normal, special], None).unwrap();
 
         let random = MetadataDb::random_cached_roms(&conn, "snes", 10).unwrap();
         assert_eq!(random.len(), 1);
         assert_eq!(random[0].rom_filename, "Mario (USA).sfc");
 
-        let similar = MetadataDb::similar_by_genre(&conn, "snes", "Platform", "Other.sfc", 10)
-            .unwrap();
+        let similar =
+            MetadataDb::similar_by_genre(&conn, "snes", "Platform", "Other.sfc", 10).unwrap();
         assert_eq!(similar.len(), 1);
         assert_eq!(similar[0].rom_filename, "Mario (USA).sfc");
     }
@@ -455,8 +461,7 @@ mod tests {
         classic.rating = Some(4.7);
         classic.rating_count = Some(50);
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[obscure, classic], None)
-            .unwrap();
+        MetadataDb::save_system_entries(&mut conn, "snes", &[obscure, classic], None).unwrap();
 
         let top = MetadataDb::top_rated_cached_roms(&conn, 2, "usa", "").unwrap();
         assert_eq!(top.len(), 2);

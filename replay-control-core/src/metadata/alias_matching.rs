@@ -628,9 +628,14 @@ mod tests {
         assert_eq!(ms6.unwrap().system, "arcade_dc");
 
         // Metal Slug X is on arcade but Wikidata only maps it to sony_psx.
-        let entries = vec![make_entry("arcade_fbneo", "metal slug x - super vehicle-001")];
+        let entries = vec![make_entry(
+            "arcade_fbneo",
+            "metal slug x - super vehicle-001",
+        )];
         let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
-        let msx = result.iter().find(|s| s.base_title == "metal slug x - super vehicle-001");
+        let msx = result
+            .iter()
+            .find(|s| s.base_title == "metal slug x - super vehicle-001");
         assert!(
             msx.is_some(),
             "Metal Slug X on arcade should match sony_psx Wikidata entry via subtitle stripping. Got: {:?}",

@@ -80,12 +80,7 @@ const CORPORATE_SUFFIXES: &[&str] = &[
 //
 // Removed from the end of the string after corporate suffixes are stripped.
 
-const REGIONAL_QUALIFIERS: &[&str] = &[
-    " America",
-    " Japan",
-    " Europe",
-    " do Brasil",
-];
+const REGIONAL_QUALIFIERS: &[&str] = &[" America", " Japan", " Europe", " do Brasil"];
 
 // ── Division patterns ───────────────────────────────────────────────────
 //
@@ -94,24 +89,8 @@ const REGIONAL_QUALIFIERS: &[&str] = &[
 // E.g., "Sega AM2" -> "Sega", "Nintendo R&D1" -> "Nintendo".
 
 const DIVISION_SUFFIXES: &[&str] = &[
-    " AM1",
-    " AM2",
-    " AM3",
-    " AM4",
-    " AM5",
-    " CS1",
-    " CS2",
-    " CS3",
-    " R&D 1",
-    " R&D 2",
-    " R&D 3",
-    " R&D 4",
-    " R&D1",
-    " R&D2",
-    " R&D3",
-    " R&D4",
-    " EAD",
-    " SPD",
+    " AM1", " AM2", " AM3", " AM4", " AM5", " CS1", " CS2", " CS3", " R&D 1", " R&D 2", " R&D 3",
+    " R&D 4", " R&D1", " R&D2", " R&D3", " R&D4", " EAD", " SPD",
 ];
 
 // ── Noise strings ───────────────────────────────────────────────────────
@@ -312,7 +291,10 @@ mod tests {
         assert_eq!(normalize_developer("Konami (Centuri license)"), "Konami");
         assert_eq!(normalize_developer("Cave (Capcom license)"), "Cave");
         assert_eq!(normalize_developer("Cave (Jaleco license)"), "Cave");
-        assert_eq!(normalize_developer("Sega (Stern Electronics license)"), "Sega");
+        assert_eq!(
+            normalize_developer("Sega (Stern Electronics license)"),
+            "Sega"
+        );
         assert_eq!(normalize_developer("Irem (Taito license)"), "Irem");
         assert_eq!(normalize_developer("SNK (Centuri license)"), "SNK");
         assert_eq!(normalize_developer("Namco (Atari license)"), "Namco");
@@ -323,7 +305,10 @@ mod tests {
 
     #[test]
     fn bracket_prefixed_developer() {
-        assert_eq!(normalize_developer("[Toaplan] Taito Corporation"), "Toaplan");
+        assert_eq!(
+            normalize_developer("[Toaplan] Taito Corporation"),
+            "Toaplan"
+        );
         assert_eq!(
             normalize_developer("[Toaplan] Taito America Corporation"),
             "Toaplan"
@@ -368,7 +353,10 @@ mod tests {
             normalize_developer("Konami Computer Entertainment Kobe"),
             "Konami"
         );
-        assert_eq!(normalize_developer("Konami Digital Entertainment"), "Konami");
+        assert_eq!(
+            normalize_developer("Konami Digital Entertainment"),
+            "Konami"
+        );
     }
 
     // ── Step 4: Regional qualifier stripping ──
@@ -376,10 +364,7 @@ mod tests {
     #[test]
     fn regional_qualifiers() {
         assert_eq!(normalize_developer("Sega of America"), "Sega");
-        assert_eq!(
-            normalize_developer("Taito America Corporation"),
-            "Taito"
-        );
+        assert_eq!(normalize_developer("Taito America Corporation"), "Taito");
         assert_eq!(normalize_developer("Taito America Corp"), "Taito");
         assert_eq!(normalize_developer("Taito America Corp."), "Taito");
         assert_eq!(normalize_developer("Taito Corporation Japan"), "Taito");
@@ -399,7 +384,10 @@ mod tests {
         assert_eq!(normalize_developer("Eolith / SNK"), "Eolith");
         assert_eq!(normalize_developer("Sega / Banpresto"), "Sega");
         assert_eq!(normalize_developer("Sega / Westone"), "Sega");
-        assert_eq!(normalize_developer("Amusement Vision / Sega"), "Amusement Vision");
+        assert_eq!(
+            normalize_developer("Amusement Vision / Sega"),
+            "Amusement Vision"
+        );
         assert_eq!(normalize_developer("Toaplan / Taito"), "Toaplan");
     }
 
@@ -422,15 +410,9 @@ mod tests {
     #[test]
     fn suffix_after_slash_split() {
         // "Taito Corporation/Warashi" -> split -> "Taito Corporation" -> strip -> "Taito"
-        assert_eq!(
-            normalize_developer("Taito Corporation/Warashi"),
-            "Taito"
-        );
+        assert_eq!(normalize_developer("Taito Corporation/Warashi"), "Taito");
         // "Kaneko / Taito Corporation" -> split -> "Kaneko"
-        assert_eq!(
-            normalize_developer("Kaneko / Taito Corporation"),
-            "Kaneko"
-        );
+        assert_eq!(normalize_developer("Kaneko / Taito Corporation"), "Kaneko");
     }
 
     // ── Division collapse ──
@@ -471,10 +453,7 @@ mod tests {
 
     #[test]
     fn override_cave_publisher_variants() {
-        assert_eq!(
-            normalize_developer("Victor / Cave / Capcom"),
-            "Cave"
-        );
+        assert_eq!(normalize_developer("Victor / Cave / Capcom"), "Cave");
         assert_eq!(
             normalize_developer("Capcom / Cave / Victor Interactive Software"),
             "Cave"

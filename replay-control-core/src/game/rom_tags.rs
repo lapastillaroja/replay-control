@@ -823,8 +823,22 @@ fn is_language_code(s: &str) -> bool {
 fn is_tosec_country_code(tag: &str) -> bool {
     matches!(
         tag,
-        "US" | "GB" | "JP" | "DE" | "FR" | "ES" | "IT" | "NL" | "SE" | "PT" | "AU" | "BR"
-            | "KR" | "TW" | "CN" | "RU" | "EU"
+        "US" | "GB"
+            | "JP"
+            | "DE"
+            | "FR"
+            | "ES"
+            | "IT"
+            | "NL"
+            | "SE"
+            | "PT"
+            | "AU"
+            | "BR"
+            | "KR"
+            | "TW"
+            | "CN"
+            | "RU"
+            | "EU"
     )
 }
 

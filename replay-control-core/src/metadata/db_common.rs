@@ -161,10 +161,10 @@ fn open_wal(db_path: &Path, label: &str) -> Result<Connection> {
          PRAGMA journal_size_limit = 67108864;
          -- Enforce referential integrity (no-op today, ready for future use)
          PRAGMA foreign_keys = ON;",
-         // mmap_size intentionally omitted — causes stale reads when the same
-         // process does heavy writes through a separate connection (e.g.,
-         // thumbnail index rebuild writes 46K rows, read connections see
-         // corrupted mmap'd pages and return SQLITE_IOERR).
+        // mmap_size intentionally omitted — causes stale reads when the same
+        // process does heavy writes through a separate connection (e.g.,
+        // thumbnail index rebuild writes 46K rows, read connections see
+        // corrupted mmap'd pages and return SQLITE_IOERR).
     )
     .map_err(|e| Error::Other(format!("{label}: failed to set pragmas: {e}")))?;
     Ok(conn)

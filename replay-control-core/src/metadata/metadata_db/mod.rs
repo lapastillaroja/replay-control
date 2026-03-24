@@ -278,7 +278,7 @@ impl MetadataDb {
     /// Create all tables if they don't exist.
     pub fn init_tables(conn: &Connection) -> Result<()> {
         conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS game_metadata (
+            "CREATE TABLE IF NOT EXISTS game_metadata (
                     system TEXT NOT NULL,
                     rom_filename TEXT NOT NULL,
                     description TEXT,
@@ -428,8 +428,8 @@ impl MetadataDb {
                     WHERE series_order IS NOT NULL;
 
 ",
-            )
-            .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
+        )
+        .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
 
         Ok(())
     }
@@ -454,8 +454,14 @@ impl MetadataDb {
             genre: row.get(8)?,
             genre_group: row.get::<_, String>(9).unwrap_or_default(),
             rating: row.get(10)?,
-            rating_count: row.get::<_, Option<i64>>(11).unwrap_or_default().map(|c| c as u32),
-            players: row.get::<_, Option<i32>>(12).unwrap_or_default().map(|p| p as u8),
+            rating_count: row
+                .get::<_, Option<i64>>(11)
+                .unwrap_or_default()
+                .map(|c| c as u32),
+            players: row
+                .get::<_, Option<i32>>(12)
+                .unwrap_or_default()
+                .map(|p| p as u8),
             is_clone: row.get(13).unwrap_or_default(),
             is_m3u: row.get(14).unwrap_or_default(),
             is_translation: row.get(15).unwrap_or_default(),
@@ -463,8 +469,14 @@ impl MetadataDb {
             is_special: row.get(17).unwrap_or_default(),
             box_art_url: row.get(18).unwrap_or_default(),
             driver_status: row.get(19).unwrap_or_default(),
-            size_bytes: row.get::<_, Option<i64>>(20).unwrap_or_default().unwrap_or(0) as u64,
-            crc32: row.get::<_, Option<i64>>(21).unwrap_or_default().map(|c| c as u32),
+            size_bytes: row
+                .get::<_, Option<i64>>(20)
+                .unwrap_or_default()
+                .unwrap_or(0) as u64,
+            crc32: row
+                .get::<_, Option<i64>>(21)
+                .unwrap_or_default()
+                .map(|c| c as u32),
             hash_mtime: row.get(22).unwrap_or_default(),
             hash_matched_name: row.get(23).unwrap_or_default(),
         })

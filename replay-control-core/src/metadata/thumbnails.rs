@@ -17,8 +17,11 @@ pub enum ThumbnailKind {
 }
 
 /// All thumbnail kinds, for iteration.
-pub const ALL_THUMBNAIL_KINDS: &[ThumbnailKind] =
-    &[ThumbnailKind::Boxart, ThumbnailKind::Snap, ThumbnailKind::Title];
+pub const ALL_THUMBNAIL_KINDS: &[ThumbnailKind] = &[
+    ThumbnailKind::Boxart,
+    ThumbnailKind::Snap,
+    ThumbnailKind::Title,
+];
 
 impl ThumbnailKind {
     /// Subdirectory name in the libretro-thumbnails repo.
@@ -457,10 +460,11 @@ pub fn find_orphaned_thumbnails(
         // image paths. URLs look like `/media/sega_smd/boxart/Sonic.png`, so we strip
         // the `/media/<system>/` prefix to get `boxart/Sonic.png`.
         let prefix = format!("/media/{system}/");
-        let referenced: HashSet<String> = crate::metadata_db::MetadataDb::active_box_art_urls(conn, system)?
-            .into_iter()
-            .filter_map(|url| url.strip_prefix(&prefix).map(|s| s.to_string()))
-            .collect();
+        let referenced: HashSet<String> =
+            crate::metadata_db::MetadataDb::active_box_art_urls(conn, system)?
+                .into_iter()
+                .filter_map(|url| url.strip_prefix(&prefix).map(|s| s.to_string()))
+                .collect();
 
         // Safety: skip systems where enrichment hasn't run yet.
         // If game_library has entries but no box_art_url is set, enrichment is still

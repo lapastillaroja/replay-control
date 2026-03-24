@@ -78,7 +78,7 @@ impl UserDataDb {
     /// Create all tables if they don't exist.
     pub fn init_tables(conn: &Connection) -> Result<()> {
         conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS box_art_overrides (
+            "CREATE TABLE IF NOT EXISTS box_art_overrides (
                     system TEXT NOT NULL,
                     rom_filename TEXT NOT NULL,
                     override_path TEXT NOT NULL,
@@ -106,21 +106,25 @@ impl UserDataDb {
 
                 CREATE INDEX IF NOT EXISTS idx_game_videos_base_title
                     ON game_videos (system, base_title);",
-            )
-            .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
+        )
+        .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
         Ok(())
     }
 
     /// Get the override path for a single ROM, if one exists.
-    pub fn get_override(conn: &Connection, system: &str, rom_filename: &str) -> Result<Option<String>> {
+    pub fn get_override(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Option<String>> {
         conn.query_row(
-                "SELECT override_path FROM box_art_overrides
+            "SELECT override_path FROM box_art_overrides
                  WHERE system = ?1 AND rom_filename = ?2",
-                params![system, rom_filename],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| Error::Other(format!("Failed to query box_art_overrides: {e}")))
+            params![system, rom_filename],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Failed to query box_art_overrides: {e}")))
     }
 
     /// Set (insert or replace) a box art override.
@@ -136,26 +140,29 @@ impl UserDataDb {
             .as_secs() as i64;
 
         conn.execute(
-                "INSERT OR REPLACE INTO box_art_overrides (system, rom_filename, override_path, set_at)
+            "INSERT OR REPLACE INTO box_art_overrides (system, rom_filename, override_path, set_at)
                  VALUES (?1, ?2, ?3, ?4)",
-                params![system, rom_filename, override_path, now],
-            )
-            .map_err(|e| Error::Other(format!("Failed to set box_art_override: {e}")))?;
+            params![system, rom_filename, override_path, now],
+        )
+        .map_err(|e| Error::Other(format!("Failed to set box_art_override: {e}")))?;
         Ok(())
     }
 
     /// Remove a box art override (revert to default).
     pub fn remove_override(conn: &Connection, system: &str, rom_filename: &str) -> Result<()> {
         conn.execute(
-                "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
-                params![system, rom_filename],
-            )
-            .map_err(|e| Error::Other(format!("Failed to remove box_art_override: {e}")))?;
+            "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        )
+        .map_err(|e| Error::Other(format!("Failed to remove box_art_override: {e}")))?;
         Ok(())
     }
 
     /// Get all overrides for a system. Returns rom_filename -> override_path.
-    pub fn get_system_overrides(conn: &Connection, system: &str) -> Result<HashMap<String, String>> {
+    pub fn get_system_overrides(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<HashMap<String, String>> {
         let mut stmt = conn
             .prepare("SELECT rom_filename, override_path FROM box_art_overrides WHERE system = ?1")
             .map_err(|e| Error::Other(format!("Failed to prepare system overrides query: {e}")))?;
@@ -288,11 +295,11 @@ impl UserDataDb {
         video_id: &str,
     ) -> Result<()> {
         conn.execute(
-                "DELETE FROM game_videos
+            "DELETE FROM game_videos
                  WHERE system = ?1 AND rom_filename = ?2 AND video_id = ?3",
-                params![system, rom_filename, video_id],
-            )
-            .map_err(|e| Error::Other(format!("Failed to remove game_video: {e}")))?;
+            params![system, rom_filename, video_id],
+        )
+        .map_err(|e| Error::Other(format!("Failed to remove game_video: {e}")))?;
         Ok(())
     }
 
@@ -309,12 +316,7 @@ impl UserDataDb {
     }
 
     /// Rename a ROM across all user data tables (box art overrides + videos).
-    pub fn rename_for_rom(
-        conn: &Connection,
-        system: &str,
-        old_filename: &str,
-        new_filename: &str,
-    ) {
+    pub fn rename_for_rom(conn: &Connection, system: &str, old_filename: &str, new_filename: &str) {
         if let Err(e) = conn.execute(
             "UPDATE box_art_overrides SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
             params![system, old_filename, new_filename],

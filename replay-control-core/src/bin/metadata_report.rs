@@ -29,7 +29,8 @@ fn main() {
         eprintln!("ROM index: {} entries", rom_index.len());
 
         eprintln!("Opening metadata DB...");
-        let (mut conn, _db_path) = MetadataDb::open(&storage.root).expect("Failed to open metadata DB");
+        let (mut conn, _db_path) =
+            MetadataDb::open(&storage.root).expect("Failed to open metadata DB");
 
         eprintln!("Importing LaunchBox XML from {}...", xml_path.display());
         let (stats, _parse_result) = launchbox::import_launchbox(

@@ -91,7 +91,11 @@ pub fn scan_game_documents(game_dir: &Path) -> Vec<GameDocument> {
     }
 
     // Sort: by category first, then by filename
-    docs.sort_by(|a, b| a.category.cmp(&b.category).then_with(|| a.label.cmp(&b.label)));
+    docs.sort_by(|a, b| {
+        a.category
+            .cmp(&b.category)
+            .then_with(|| a.label.cmp(&b.label))
+    });
 
     docs
 }
@@ -113,11 +117,7 @@ fn scan_directory(dir: &Path, root: &Path, docs: &mut Vec<GameDocument>) {
             None => continue,
         };
 
-        let ext = filename
-            .rsplit('.')
-            .next()
-            .unwrap_or("")
-            .to_lowercase();
+        let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
 
         // Check if this extension is a document type
         if !DOC_EXTENSIONS.contains(&ext.as_str()) {
@@ -256,10 +256,7 @@ mod tests {
 
     #[test]
     fn categorize_readme() {
-        assert_eq!(
-            categorize("readme.txt", "txt"),
-            DocumentCategory::Reference
-        );
+        assert_eq!(categorize("readme.txt", "txt"), DocumentCategory::Reference);
     }
 
     #[test]

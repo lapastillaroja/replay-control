@@ -488,8 +488,7 @@ pub fn download_metadata(
 
     let stdout = child.stdout.take().expect("piped stdout");
     let mut reader = std::io::BufReader::with_capacity(64 * 1024, stdout);
-    let mut file =
-        std::fs::File::create(&zip_path).map_err(|e| Error::io(&zip_path, e))?;
+    let mut file = std::fs::File::create(&zip_path).map_err(|e| Error::io(&zip_path, e))?;
 
     let mut downloaded: u64 = 0;
     let mut buf = [0u8; 64 * 1024];

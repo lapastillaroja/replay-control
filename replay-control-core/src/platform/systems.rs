@@ -113,7 +113,10 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Commodore Amiga",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
-        extensions: &["adf", "hdf", "ipf", "lha", "adz", "dms", "fdi", "raw", "hdz", "slave", "info", "uae", "m3u"],
+        extensions: &[
+            "adf", "hdf", "ipf", "lha", "adz", "dms", "fdi", "raw", "hdz", "slave", "info", "uae",
+            "m3u",
+        ],
         launchbox_platforms: &["Commodore Amiga"],
     },
     System {
@@ -129,7 +132,10 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Commodore 64",
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
-        extensions: &["d64", "t64", "tap", "prg", "crt", "d71", "d80", "d81", "d82", "g64", "g41", "x64", "p00", "bin", "gz", "d6z", "d8z", "g6z", "g4z", "x6z", "cmd", "m3u", "vfl", "vs"],
+        extensions: &[
+            "d64", "t64", "tap", "prg", "crt", "d71", "d80", "d81", "d82", "g64", "g41", "x64",
+            "p00", "bin", "gz", "d6z", "d8z", "g6z", "g4z", "x6z", "cmd", "m3u", "vfl", "vs",
+        ],
         launchbox_platforms: &["Commodore 64"],
     },
     System {
@@ -137,7 +143,9 @@ pub static SYSTEMS: &[System] = &[
         display_name: "IBM PC (DOS)",
         manufacturer: "IBM",
         category: SystemCategory::Computer,
-        extensions: &["zip", "exe", "com", "bat", "dosz", "iso", "cue", "img", "m3u", "m3u8"],
+        extensions: &[
+            "zip", "exe", "com", "bat", "dosz", "iso", "cue", "img", "m3u", "m3u8",
+        ],
         launchbox_platforms: &["MS-DOS"],
     },
     System {
@@ -145,7 +153,9 @@ pub static SYSTEMS: &[System] = &[
         display_name: "MSX",
         manufacturer: "Microsoft",
         category: SystemCategory::Computer,
-        extensions: &["rom", "mx1", "mx2", "dsk", "ri", "col", "sg", "sc", "sf", "cas", "m3u"],
+        extensions: &[
+            "rom", "mx1", "mx2", "dsk", "ri", "col", "sg", "sc", "sf", "cas", "m3u",
+        ],
         launchbox_platforms: &["Microsoft MSX", "Microsoft MSX2"],
     },
     System {
@@ -313,7 +323,9 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Sharp X68000",
         manufacturer: "Sharp",
         category: SystemCategory::Computer,
-        extensions: &["dim", "hdf", "m3u", "img", "d88", "88d", "hdm", "dup", "2hd", "xdf", "cmd"],
+        extensions: &[
+            "dim", "hdf", "m3u", "img", "d88", "88d", "hdm", "dup", "2hd", "xdf", "cmd",
+        ],
         launchbox_platforms: &["Sharp X68000"],
     },
     System {
@@ -321,7 +333,9 @@ pub static SYSTEMS: &[System] = &[
         display_name: "ZX Spectrum",
         manufacturer: "Sinclair",
         category: SystemCategory::Computer,
-        extensions: &["tzx", "tap", "z80", "sna", "rzx", "scl", "trd", "dsk", "dck", "szx"],
+        extensions: &[
+            "tzx", "tap", "z80", "sna", "rzx", "scl", "trd", "dsk", "dck", "szx",
+        ],
         launchbox_platforms: &["Sinclair ZX Spectrum"],
     },
     System {
@@ -353,7 +367,9 @@ pub static SYSTEMS: &[System] = &[
         display_name: "PlayStation",
         manufacturer: "Sony",
         category: SystemCategory::Console,
-        extensions: &["chd", "cue", "bin", "img", "pbp", "m3u", "exe", "psexe", "iso", "ecm", "mds", "psf"],
+        extensions: &[
+            "chd", "cue", "bin", "img", "pbp", "m3u", "exe", "psexe", "iso", "ecm", "mds", "psf",
+        ],
         launchbox_platforms: &["Sony Playstation"],
     },
     System {
@@ -361,7 +377,12 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Alpha Player",
         manufacturer: "RePlayOS",
         category: SystemCategory::Utility,
-        extensions: &["mkv", "avi", "mp4", "mp3", "flac", "ogg", "f4v", "f4f", "3gp", "ogm", "flv", "m4a", "webm", "3g2", "mov", "wmv", "mpg", "mpeg", "vob", "asf", "divx", "m2p", "m2ts", "ps", "ts", "mxf", "wma", "wav", "s3m", "it", "xm", "mod", "ay", "gbs", "gym", "hes", "kss", "nsf", "nsfe", "sap", "spc", "vgm", "vgz"],
+        extensions: &[
+            "mkv", "avi", "mp4", "mp3", "flac", "ogg", "f4v", "f4f", "3gp", "ogm", "flv", "m4a",
+            "webm", "3g2", "mov", "wmv", "mpg", "mpeg", "vob", "asf", "divx", "m2p", "m2ts", "ps",
+            "ts", "mxf", "wma", "wav", "s3m", "it", "xm", "mod", "ay", "gbs", "gym", "hes", "kss",
+            "nsf", "nsfe", "sap", "spc", "vgm", "vgz",
+        ],
         launchbox_platforms: &[],
     },
 ];

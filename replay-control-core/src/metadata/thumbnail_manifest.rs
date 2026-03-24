@@ -435,8 +435,8 @@ pub fn build_manifest_fuzzy_index(
             .and_then(|s| s.branch)
             .unwrap_or_else(|| "master".to_string());
 
-        let entries = MetadataDb::query_thumbnail_index(conn, &source_name, kind)
-            .unwrap_or_default();
+        let entries =
+            MetadataDb::query_thumbnail_index(conn, &source_name, kind).unwrap_or_default();
 
         for entry in entries {
             let m = ManifestMatch {
@@ -826,8 +826,9 @@ pub fn find_boxart_variants(
             .and_then(|s| s.branch)
             .unwrap_or_else(|| "master".to_string());
 
-        let entries = MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
-            .unwrap_or_default();
+        let entries =
+            MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
+                .unwrap_or_default();
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
@@ -929,8 +930,9 @@ pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str
     for display_name in repo_names {
         let source_name = thumbnails::libretro_source_name(display_name);
 
-        let entries = MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
-            .unwrap_or_default();
+        let entries =
+            MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
+                .unwrap_or_default();
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();

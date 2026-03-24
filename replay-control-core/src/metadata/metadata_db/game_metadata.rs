@@ -10,7 +10,11 @@ use super::{GameMetadata, ImagePathUpdate, MetadataDb, MetadataStats};
 
 impl MetadataDb {
     /// Look up cached metadata for a specific game.
-    pub fn lookup(conn: &Connection, system: &str, rom_filename: &str) -> Result<Option<GameMetadata>> {
+    pub fn lookup(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Option<GameMetadata>> {
         let result = conn
             .query_row(
                 "SELECT description, rating, rating_count, publisher, developer, genre, players, release_year,
@@ -109,7 +113,10 @@ impl MetadataDb {
     /// Fetch all ratings for a single system in one query.
     /// Returns a map of rom_filename -> rating for entries with a non-null rating.
     /// More efficient than `lookup_ratings()` when filtering all ROMs in a system.
-    pub fn system_ratings(conn: &Connection, system: &str) -> Result<std::collections::HashMap<String, f64>> {
+    pub fn system_ratings(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, f64>> {
         use std::collections::HashMap;
 
         let mut stmt = conn
@@ -150,10 +157,7 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map(params![system], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)? as u32,
-                ))
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u32))
             })
             .map_err(|e| Error::Other(format!("System metadata rating_counts query: {e}")))?;
 
@@ -283,7 +287,10 @@ impl MetadataDb {
     /// Fetch all metadata entries for a system.
     /// Returns a vec of `(rom_filename, GameMetadata)`.
     /// Used for normalized-title matching when enriching new ROMs.
-    pub fn system_metadata_all(conn: &Connection, system: &str) -> Result<Vec<(String, GameMetadata)>> {
+    pub fn system_metadata_all(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<Vec<(String, GameMetadata)>> {
         let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, description, rating, rating_count, publisher, developer, genre, players,
@@ -325,7 +332,12 @@ impl MetadataDb {
     }
 
     /// Insert or update metadata for a game.
-    pub fn upsert(conn: &Connection, system: &str, rom_filename: &str, meta: &GameMetadata) -> Result<()> {
+    pub fn upsert(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        meta: &GameMetadata,
+    ) -> Result<()> {
         conn.execute(
                 "INSERT INTO game_metadata (system, rom_filename, description, rating, rating_count, publisher, developer,
                     genre, players, release_year, cooperative, source, fetched_at)
@@ -363,7 +375,10 @@ impl MetadataDb {
     }
 
     /// Bulk insert/update metadata within a single transaction.
-    pub fn bulk_upsert(conn: &mut Connection, entries: &[(String, String, GameMetadata)]) -> Result<usize> {
+    pub fn bulk_upsert(
+        conn: &mut Connection,
+        entries: &[(String, String, GameMetadata)],
+    ) -> Result<usize> {
         let tx = conn
             .transaction()
             .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
@@ -419,7 +434,9 @@ impl MetadataDb {
     /// Get coverage statistics.
     pub fn stats(conn: &Connection, db_path: &Path) -> Result<MetadataStats> {
         let total_entries: usize = conn
-            .query_row("SELECT COUNT(*) FROM game_metadata", [], |row| row.get::<_, i64>(0).map(|v| v as usize))
+            .query_row("SELECT COUNT(*) FROM game_metadata", [], |row| {
+                row.get::<_, i64>(0).map(|v| v as usize)
+            })
             .map_err(|e| Error::Other(format!("Stats query failed: {e:?}")))?;
 
         let with_description: usize = conn
@@ -438,9 +455,7 @@ impl MetadataDb {
             )
             .map_err(|e| Error::Other(format!("Stats query failed: {e:?}")))?;
 
-        let db_size_bytes = std::fs::metadata(db_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let db_size_bytes = std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0);
 
         let last_updated_text = conn
             .query_row(
@@ -477,7 +492,9 @@ impl MetadataDb {
     }
 
     /// Get all ratings as a map of `(system, rom_filename) -> rating`.
-    pub fn all_ratings(conn: &Connection) -> Result<std::collections::HashMap<(String, String), f64>> {
+    pub fn all_ratings(
+        conn: &Connection,
+    ) -> Result<std::collections::HashMap<(String, String), f64>> {
         let mut stmt = conn
             .prepare(
                 "SELECT system, rom_filename, rating FROM game_metadata WHERE rating IS NOT NULL",
@@ -548,7 +565,10 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1).map(|v| v as usize)?,
+                ))
             })
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -695,23 +715,26 @@ mod tests {
     #[test]
     fn entries_per_system_no_game_library_returns_all() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::bulk_upsert(&mut conn, &[
-            (
-                "sega_smd".into(),
-                "Sonic.md".into(),
-                make_metadata_with_desc("Sonic game", None),
-            ),
-            (
-                "sega_smd".into(),
-                "Streets.md".into(),
-                make_metadata_with_desc("Streets game", None),
-            ),
-            (
-                "snes".into(),
-                "Mario.sfc".into(),
-                make_metadata_with_desc("Mario game", None),
-            ),
-        ])
+        MetadataDb::bulk_upsert(
+            &mut conn,
+            &[
+                (
+                    "sega_smd".into(),
+                    "Sonic.md".into(),
+                    make_metadata_with_desc("Sonic game", None),
+                ),
+                (
+                    "sega_smd".into(),
+                    "Streets.md".into(),
+                    make_metadata_with_desc("Streets game", None),
+                ),
+                (
+                    "snes".into(),
+                    "Mario.sfc".into(),
+                    make_metadata_with_desc("Mario game", None),
+                ),
+            ],
+        )
         .unwrap();
 
         let counts = MetadataDb::entries_per_system(&conn).unwrap();
@@ -724,28 +747,31 @@ mod tests {
     fn entries_per_system_with_game_library_deduplicates_m3u() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(&mut conn, &[
-            (
-                "sega_cd".into(),
-                "Game.m3u".into(),
-                make_metadata_with_desc("Game desc", None),
-            ),
-            (
-                "sega_cd".into(),
-                "Game (Disc 1).cue".into(),
-                make_metadata_with_desc("Game disc 1", None),
-            ),
-            (
-                "sega_cd".into(),
-                "Game (Disc 2).cue".into(),
-                make_metadata_with_desc("Game disc 2", None),
-            ),
-            (
-                "snes".into(),
-                "Mario.sfc".into(),
-                make_metadata_with_desc("Mario desc", None),
-            ),
-        ])
+        MetadataDb::bulk_upsert(
+            &mut conn,
+            &[
+                (
+                    "sega_cd".into(),
+                    "Game.m3u".into(),
+                    make_metadata_with_desc("Game desc", None),
+                ),
+                (
+                    "sega_cd".into(),
+                    "Game (Disc 1).cue".into(),
+                    make_metadata_with_desc("Game disc 1", None),
+                ),
+                (
+                    "sega_cd".into(),
+                    "Game (Disc 2).cue".into(),
+                    make_metadata_with_desc("Game disc 2", None),
+                ),
+                (
+                    "snes".into(),
+                    "Mario.sfc".into(),
+                    make_metadata_with_desc("Mario desc", None),
+                ),
+            ],
+        )
         .unwrap();
 
         MetadataDb::save_system_entries(
@@ -755,8 +781,13 @@ mod tests {
             None,
         )
         .unwrap();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[make_game_entry("snes", "Mario.sfc", false)], None)
-            .unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_game_entry("snes", "Mario.sfc", false)],
+            None,
+        )
+        .unwrap();
 
         let counts = MetadataDb::entries_per_system(&conn).unwrap();
         let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
@@ -770,28 +801,31 @@ mod tests {
     fn entries_per_system_mixed_cached_and_uncached_systems() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(&mut conn, &[
-            (
-                "sega_cd".into(),
-                "Game.m3u".into(),
-                make_metadata_with_desc("Game desc", None),
-            ),
-            (
-                "sega_cd".into(),
-                "Game (Disc 1).cue".into(),
-                make_metadata_with_desc("Disc 1 desc", None),
-            ),
-            (
-                "snes".into(),
-                "Mario.sfc".into(),
-                make_metadata_with_desc("Mario desc", None),
-            ),
-            (
-                "snes".into(),
-                "Zelda.sfc".into(),
-                make_metadata_with_desc("Zelda desc", None),
-            ),
-        ])
+        MetadataDb::bulk_upsert(
+            &mut conn,
+            &[
+                (
+                    "sega_cd".into(),
+                    "Game.m3u".into(),
+                    make_metadata_with_desc("Game desc", None),
+                ),
+                (
+                    "sega_cd".into(),
+                    "Game (Disc 1).cue".into(),
+                    make_metadata_with_desc("Disc 1 desc", None),
+                ),
+                (
+                    "snes".into(),
+                    "Mario.sfc".into(),
+                    make_metadata_with_desc("Mario desc", None),
+                ),
+                (
+                    "snes".into(),
+                    "Zelda.sfc".into(),
+                    make_metadata_with_desc("Zelda desc", None),
+                ),
+            ],
+        )
         .unwrap();
 
         MetadataDb::save_system_entries(
@@ -817,30 +851,36 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
 
         // Insert metadata with descriptions for 2 games.
-        MetadataDb::bulk_upsert(&mut conn, &[
-            (
-                "snes".into(),
-                "Mario.sfc".into(),
-                make_metadata_with_desc("Mario game", None),
-            ),
-            (
-                "snes".into(),
-                "Zelda.sfc".into(),
-                make_metadata_with_desc("Zelda game", None),
-            ),
-        ])
+        MetadataDb::bulk_upsert(
+            &mut conn,
+            &[
+                (
+                    "snes".into(),
+                    "Mario.sfc".into(),
+                    make_metadata_with_desc("Mario game", None),
+                ),
+                (
+                    "snes".into(),
+                    "Zelda.sfc".into(),
+                    make_metadata_with_desc("Zelda game", None),
+                ),
+            ],
+        )
         .unwrap();
 
         // Insert a thumbnail-only row (no description) via bulk_update_image_paths.
         // This simulates what happens when thumbnails are downloaded for a game
         // that has no LaunchBox metadata entry.
-        MetadataDb::bulk_update_image_paths(&mut conn, &[super::super::ImagePathUpdate {
-            system: "snes".into(),
-            rom_filename: "Metroid.sfc".into(),
-            box_art_path: Some("boxart/Metroid.png".into()),
-            screenshot_path: None,
-            title_path: None,
-        }])
+        MetadataDb::bulk_update_image_paths(
+            &mut conn,
+            &[super::super::ImagePathUpdate {
+                system: "snes".into(),
+                rom_filename: "Metroid.sfc".into(),
+                box_art_path: Some("boxart/Metroid.png".into()),
+                screenshot_path: None,
+                title_path: None,
+            }],
+        )
         .unwrap();
 
         // Populate game_library with 3 games.
@@ -868,15 +908,18 @@ mod tests {
     fn entries_per_system_no_description_not_counted() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(&mut conn, &[
-            (
-                "snes".into(),
-                "Mario.sfc".into(),
-                make_metadata_with_desc("Mario game", None),
-            ),
-            // This entry has rating but no description.
-            ("snes".into(), "Zelda.sfc".into(), make_metadata(None)),
-        ])
+        MetadataDb::bulk_upsert(
+            &mut conn,
+            &[
+                (
+                    "snes".into(),
+                    "Mario.sfc".into(),
+                    make_metadata_with_desc("Mario game", None),
+                ),
+                // This entry has rating but no description.
+                ("snes".into(), "Zelda.sfc".into(), make_metadata(None)),
+            ],
+        )
         .unwrap();
 
         let counts = MetadataDb::entries_per_system(&conn).unwrap();
@@ -889,18 +932,21 @@ mod tests {
     fn entries_per_system_empty_description_not_counted() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(&mut conn, &[
-            (
-                "snes".into(),
-                "Mario.sfc".into(),
-                make_metadata_with_desc("Mario game", None),
-            ),
-            (
-                "snes".into(),
-                "Zelda.sfc".into(),
-                make_metadata_with_desc("", None),
-            ),
-        ])
+        MetadataDb::bulk_upsert(
+            &mut conn,
+            &[
+                (
+                    "snes".into(),
+                    "Mario.sfc".into(),
+                    make_metadata_with_desc("Mario game", None),
+                ),
+                (
+                    "snes".into(),
+                    "Zelda.sfc".into(),
+                    make_metadata_with_desc("", None),
+                ),
+            ],
+        )
         .unwrap();
 
         let counts = MetadataDb::entries_per_system(&conn).unwrap();

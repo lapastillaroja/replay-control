@@ -85,7 +85,11 @@ impl MetadataDb {
 
     /// Find hacks of a game: other ROMs sharing the same base_title that are hacks.
     /// Returns (rom_filename, display_name) pairs sorted by display_name.
-    pub fn hacks(conn: &Connection, system: &str, rom_filename: &str) -> Result<Vec<(String, Option<String>)>> {
+    pub fn hacks(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
         let mut stmt = conn
             .prepare(
                 "SELECT rom_filename, display_name FROM game_library
@@ -286,8 +290,13 @@ mod tests {
         special.region = "usa".into();
         special.is_special = true;
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[original, europe, clone, special], None)
-            .unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[original, europe, clone, special],
+            None,
+        )
+        .unwrap();
 
         let variants = MetadataDb::regional_variants(&conn, "snes", "Game (USA).sfc").unwrap();
         assert_eq!(variants.len(), 2);

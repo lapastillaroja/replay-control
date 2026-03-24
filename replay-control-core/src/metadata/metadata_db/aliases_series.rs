@@ -74,8 +74,7 @@ impl MetadataDb {
         if let Ok(mut stmt) = conn.prepare(
             "SELECT DISTINCT alias_name FROM game_alias
              WHERE system = ?1 AND base_title = ?2 COLLATE NOCASE",
-        )
-            && let Ok(rows) = stmt.query_map(params![system, base_title], |row| row.get(0))
+        ) && let Ok(rows) = stmt.query_map(params![system, base_title], |row| row.get(0))
         {
             for name in rows.flatten() {
                 let name: String = name;
@@ -89,8 +88,7 @@ impl MetadataDb {
         if let Ok(mut stmt) = conn.prepare(
             "SELECT DISTINCT base_title FROM game_alias
              WHERE system = ?1 AND alias_name = ?2 COLLATE NOCASE",
-        )
-            && let Ok(rows) = stmt.query_map(params![system, base_title], |row| row.get(0))
+        ) && let Ok(rows) = stmt.query_map(params![system, base_title], |row| row.get(0))
         {
             for bt in rows.flatten() {
                 let bt: String = bt;
@@ -224,21 +222,21 @@ impl MetadataDb {
     /// Check if a game has Wikidata series data in the `game_series` table.
     pub fn has_wikidata_series(conn: &Connection, system: &str, base_title: &str) -> bool {
         conn.query_row(
-                "SELECT 1 FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
-                params![system, base_title],
-                |_| Ok(()),
-            )
-            .is_ok()
+            "SELECT 1 FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
+            params![system, base_title],
+            |_| Ok(()),
+        )
+        .is_ok()
     }
 
     /// Get the series name for a game from the `game_series` table.
     pub fn lookup_series_name(conn: &Connection, system: &str, base_title: &str) -> Option<String> {
         conn.query_row(
-                "SELECT series_name FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
-                params![system, base_title],
-                |row| row.get(0),
-            )
-            .ok()
+            "SELECT series_name FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
+            params![system, base_title],
+            |row| row.get(0),
+        )
+        .ok()
     }
 
     /// Get sequel/prequel chain info for a game.
@@ -287,13 +285,13 @@ impl MetadataDb {
         // Step 2: Get max series_order for "N of M" position display.
         let series_max_order = if series_order.is_some() {
             conn.query_row(
-                    "SELECT MAX(series_order) FROM game_series
+                "SELECT MAX(series_order) FROM game_series
                      WHERE series_name = ?1 AND series_order IS NOT NULL",
-                    params![series_name],
-                    |row| row.get::<_, Option<i32>>(0),
-                )
-                .ok()
-                .flatten()
+                params![series_name],
+                |row| row.get::<_, Option<i32>>(0),
+            )
+            .ok()
+            .flatten()
         } else {
             None
         };
@@ -318,8 +316,10 @@ impl MetadataDb {
         } else if let Some(order) = series_order {
             // Fallback: synthesize prev/next from series_order (N-1, N+1).
             // Search across all systems for the adjacent ordinals.
-            let prev = Self::find_series_neighbor(conn, &series_name, order - 1, system, region_pref);
-            let next = Self::find_series_neighbor(conn, &series_name, order + 1, system, region_pref);
+            let prev =
+                Self::find_series_neighbor(conn, &series_name, order - 1, system, region_pref);
+            let next =
+                Self::find_series_neighbor(conn, &series_name, order + 1, system, region_pref);
 
             if prev.is_none() && next.is_none() {
                 return Ok(SequelChainInfo::default());
@@ -390,7 +390,7 @@ impl MetadataDb {
         region_pref: &str,
     ) -> Option<GameEntry> {
         conn.query_row(
-                "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+            "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
@@ -401,10 +401,10 @@ impl MetadataDb {
                      CASE WHEN system = ?2 THEN 0 ELSE 1 END,
                      CASE WHEN region = ?3 THEN 0 WHEN region = 'world' THEN 1 ELSE 2 END
                  LIMIT 1",
-                params![base_title, preferred_system, region_pref],
-                Self::row_to_game_entry,
-            )
-            .ok()
+            params![base_title, preferred_system, region_pref],
+            Self::row_to_game_entry,
+        )
+        .ok()
     }
 
     /// Clear all game series data.
@@ -434,8 +434,8 @@ pub struct SequelChainInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::*;
     use super::super::SeriesInsert;
+    use super::super::tests::*;
 
     #[test]
     fn series_siblings_excludes_current_game() {
@@ -449,46 +449,65 @@ mod tests {
         let mut ff2 = make_game_entry("nintendo_snes", "Final Fight 2 (USA).sfc", false);
         ff2.base_title = "final fight 2".into();
 
-        super::super::MetadataDb::save_system_entries(&mut conn, "arcade_fbneo", &[ff_arcade], None)
-            .unwrap();
-        super::super::MetadataDb::save_system_entries(&mut conn, "nintendo_snes", &[ff_snes, ff2], None)
-            .unwrap();
+        super::super::MetadataDb::save_system_entries(
+            &mut conn,
+            "arcade_fbneo",
+            &[ff_arcade],
+            None,
+        )
+        .unwrap();
+        super::super::MetadataDb::save_system_entries(
+            &mut conn,
+            "nintendo_snes",
+            &[ff_snes, ff2],
+            None,
+        )
+        .unwrap();
 
         // Populate game_series for all three games.
-        super::super::MetadataDb::bulk_insert_series(&mut conn, &[
-            SeriesInsert {
-                system: "arcade_fbneo".into(),
-                base_title: "final fight".into(),
-                series_name: "Final Fight".into(),
-                series_order: Some(1),
-                source: "wikidata".into(),
-                follows_base_title: None,
-                followed_by_base_title: None,
-            },
-            SeriesInsert {
-                system: "nintendo_snes".into(),
-                base_title: "final fight".into(),
-                series_name: "Final Fight".into(),
-                series_order: Some(1),
-                source: "wikidata".into(),
-                follows_base_title: None,
-                followed_by_base_title: None,
-            },
-            SeriesInsert {
-                system: "nintendo_snes".into(),
-                base_title: "final fight 2".into(),
-                series_name: "Final Fight".into(),
-                series_order: Some(2),
-                source: "wikidata".into(),
-                follows_base_title: None,
-                followed_by_base_title: None,
-            },
-        ])
+        super::super::MetadataDb::bulk_insert_series(
+            &mut conn,
+            &[
+                SeriesInsert {
+                    system: "arcade_fbneo".into(),
+                    base_title: "final fight".into(),
+                    series_name: "Final Fight".into(),
+                    series_order: Some(1),
+                    source: "wikidata".into(),
+                    follows_base_title: None,
+                    followed_by_base_title: None,
+                },
+                SeriesInsert {
+                    system: "nintendo_snes".into(),
+                    base_title: "final fight".into(),
+                    series_name: "Final Fight".into(),
+                    series_order: Some(1),
+                    source: "wikidata".into(),
+                    follows_base_title: None,
+                    followed_by_base_title: None,
+                },
+                SeriesInsert {
+                    system: "nintendo_snes".into(),
+                    base_title: "final fight 2".into(),
+                    series_name: "Final Fight".into(),
+                    series_order: Some(2),
+                    source: "wikidata".into(),
+                    follows_base_title: None,
+                    followed_by_base_title: None,
+                },
+            ],
+        )
         .unwrap();
 
         // Query siblings for arcade Final Fight.
-        let siblings = super::super::MetadataDb::wikidata_series_siblings(&conn, "arcade_fbneo", "final fight", "usa", 20)
-            .unwrap();
+        let siblings = super::super::MetadataDb::wikidata_series_siblings(
+            &conn,
+            "arcade_fbneo",
+            "final fight",
+            "usa",
+            20,
+        )
+        .unwrap();
 
         let sibling_titles: Vec<&str> = siblings
             .iter()

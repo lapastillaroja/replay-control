@@ -34,39 +34,39 @@ impl MetadataDb {
     /// Look up a single data source.
     pub fn get_data_source(conn: &Connection, source_name: &str) -> Result<Option<DataSourceInfo>> {
         conn.query_row(
-                "SELECT source_name, source_type, version_hash, imported_at, entry_count, branch
+            "SELECT source_name, source_type, version_hash, imported_at, entry_count, branch
                  FROM data_sources WHERE source_name = ?1",
-                params![source_name],
-                |row| {
-                    Ok(DataSourceInfo {
-                        source_name: row.get(0)?,
-                        source_type: row.get(1)?,
-                        version_hash: row.get(2)?,
-                        imported_at: row.get(3)?,
-                        entry_count: row.get::<_, i64>(4)? as usize,
-                        branch: row.get(5)?,
-                    })
-                },
-            )
-            .optional()
-            .map_err(|e| Error::Other(format!("get_data_source failed: {e}")))
+            params![source_name],
+            |row| {
+                Ok(DataSourceInfo {
+                    source_name: row.get(0)?,
+                    source_type: row.get(1)?,
+                    version_hash: row.get(2)?,
+                    imported_at: row.get(3)?,
+                    entry_count: row.get::<_, i64>(4)? as usize,
+                    branch: row.get(5)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("get_data_source failed: {e}")))
     }
 
     /// Get aggregate stats for a source type (e.g., "libretro-thumbnails").
     pub fn get_data_source_stats(conn: &Connection, source_type: &str) -> Result<DataSourceStats> {
         conn.query_row(
-                "SELECT COUNT(*), COALESCE(SUM(entry_count), 0), MIN(imported_at)
+            "SELECT COUNT(*), COALESCE(SUM(entry_count), 0), MIN(imported_at)
                  FROM data_sources WHERE source_type = ?1",
-                params![source_type],
-                |row| {
-                    Ok(DataSourceStats {
-                        repo_count: row.get::<_, i64>(0)? as usize,
-                        total_entries: row.get::<_, i64>(1)? as usize,
-                        oldest_imported_at: row.get(2)?,
-                    })
-                },
-            )
-            .map_err(|e| Error::Other(format!("get_data_source_stats failed: {e:?}")))
+            params![source_type],
+            |row| {
+                Ok(DataSourceStats {
+                    repo_count: row.get::<_, i64>(0)? as usize,
+                    total_entries: row.get::<_, i64>(1)? as usize,
+                    oldest_imported_at: row.get(2)?,
+                })
+            },
+        )
+        .map_err(|e| Error::Other(format!("get_data_source_stats failed: {e:?}")))
     }
 
     /// Count total rows in the thumbnail_index table.
@@ -163,10 +163,10 @@ impl MetadataDb {
         conn.execute("DELETE FROM thumbnail_index", [])
             .map_err(|e| Error::Other(format!("Clear thumbnail_index failed: {e}")))?;
         conn.execute(
-                "DELETE FROM data_sources WHERE source_type = 'libretro-thumbnails'",
-                [],
-            )
-            .map_err(|e| Error::Other(format!("Clear libretro data_sources failed: {e}")))?;
+            "DELETE FROM data_sources WHERE source_type = 'libretro-thumbnails'",
+            [],
+        )
+        .map_err(|e| Error::Other(format!("Clear libretro data_sources failed: {e}")))?;
         Ok(())
     }
 }

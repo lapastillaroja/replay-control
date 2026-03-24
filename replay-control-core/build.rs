@@ -863,9 +863,7 @@ fn parse_nplayers_ini(path: &Path) -> HashMap<String, u8> {
             continue;
         }
 
-        if in_nplayers_section
-            && let Some((rom_name, value)) = trimmed.split_once('=')
-        {
+        if in_nplayers_section && let Some((rom_name, value)) = trimmed.split_once('=') {
             let rom_name = rom_name.trim();
             let value = value.trim();
 

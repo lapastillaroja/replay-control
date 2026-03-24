@@ -270,10 +270,7 @@ pub fn preferred_languages(
 /// - 1: exact match on secondary language
 /// - 2: English fallback (if not already primary/secondary)
 /// - 3: other language
-pub fn language_match_score(
-    manual_languages: &str,
-    preferred: &[String],
-) -> u8 {
+pub fn language_match_score(manual_languages: &str, preferred: &[String]) -> u8 {
     // Parse comma-separated language codes (e.g., "en-gb,de,es,fr,it")
     let manual_langs: Vec<&str> = manual_languages
         .split(',')
@@ -634,6 +631,9 @@ mod tests {
     #[test]
     fn language_match_score_multi_lang() {
         let prefs = vec!["fr".to_string(), "en".to_string()];
-        assert_eq!(language_match_score("en-gb,de,es,fi,fr,it,nl,sv", &prefs), 0);
+        assert_eq!(
+            language_match_score("en-gb,de,es,fi,fr,it,nl,sv", &prefs),
+            0
+        );
     }
 }
