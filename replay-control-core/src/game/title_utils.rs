@@ -55,6 +55,7 @@ pub fn strip_version(name: &str) -> &str {
 /// parenthesized content (e.g., Neo Geo `(NGM-055 ~ NGH-055)`).
 pub fn base_title(name: &str) -> String {
     let stripped = strip_tags(name);
+    let stripped = strip_version(stripped);
     let s = stripped
         .rsplit_once(" ~ ")
         .map(|(_, r)| r)

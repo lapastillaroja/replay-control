@@ -4,6 +4,7 @@ use crate::arcade_db;
 use crate::game_db;
 use crate::rom_tags;
 use crate::systems::{self, SystemCategory};
+use crate::title_utils;
 
 /// A reference to a game — the common identity shared across ROM listings,
 /// favorites, and recents.
@@ -97,6 +98,8 @@ impl GameRef {
                     // "4th Unit Act 2, The" → "The 4th Unit Act 2"
                     let uninverted = uninvert_article(name);
                     let name = uninverted.as_deref().unwrap_or(name);
+                    // Strip TOSEC/GDI version strings: "Game v1.001" → "Game"
+                    let name = title_utils::strip_version(name);
                     Some(rom_tags::display_name_with_tags(name, &rom_filename))
                 })
         };

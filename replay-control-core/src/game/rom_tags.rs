@@ -323,6 +323,17 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
 
 /// Map a region tag to a sort priority.
 fn region_to_priority(tag: &str) -> RegionPriority {
+    // Check TOSEC two-letter country codes first
+    match tag {
+        "US" => return RegionPriority::Usa,
+        "EU" | "GB" => return RegionPriority::Europe,
+        "JP" => return RegionPriority::Japan,
+        _ => {}
+    }
+    // TOSEC codes for minor regions
+    if is_tosec_country_code(tag) {
+        return RegionPriority::Other;
+    }
     let lower = tag.to_lowercase();
     let parts: Vec<&str> = lower.split(',').map(|s| s.trim()).collect();
     let first = parts.first().copied().unwrap_or("");
@@ -689,6 +700,10 @@ fn normalize_language(lang: &str) -> String {
 /// - `(UEBK)` -> "USA, Europe, Brazil, Korea"
 /// - `(JUEBK)` -> "Japan, USA, Europe, Brazil, Korea"
 fn normalize_region(region: &str) -> String {
+    // Check TOSEC two-letter country codes first (before per-character expansion)
+    if let Some(expanded) = expand_tosec_country_code(region) {
+        return expanded.to_string();
+    }
     // Check if it's a compact GoodTools-style region code (all uppercase letters, <= 5 chars)
     if region.len() <= 5 && region.chars().all(|c| c.is_ascii_uppercase()) {
         let expanded = expand_region_code(region);
@@ -746,6 +761,11 @@ fn looks_like_region(tag: &str) -> bool {
         "canada",
     ];
 
+    // TOSEC two-letter country codes (ALL UPPERCASE only to avoid language code conflicts)
+    if is_tosec_country_code(tag) {
+        return true;
+    }
+
     // Single-letter/compact codes: U, E, J, W, B, UE, JU, EB, etc.
     if tag.len() <= 5 && tag.chars().all(|c| "JUEBKW".contains(c)) {
         return true;
@@ -794,6 +814,43 @@ fn is_language_code(s: &str) -> bool {
             | "ar"
             | "pt-br"
     )
+}
+
+/// Check if a tag is a TOSEC two-letter country code (ALL UPPERCASE only).
+///
+/// Only matches exact two-letter uppercase codes to avoid conflicts with
+/// mixed-case language codes like "en", "fr", "de".
+fn is_tosec_country_code(tag: &str) -> bool {
+    matches!(
+        tag,
+        "US" | "GB" | "JP" | "DE" | "FR" | "ES" | "IT" | "NL" | "SE" | "PT" | "AU" | "BR"
+            | "KR" | "TW" | "CN" | "RU" | "EU"
+    )
+}
+
+/// Expand a TOSEC two-letter country code to a full region name.
+/// Returns `None` if the code is not a recognized TOSEC country code.
+fn expand_tosec_country_code(code: &str) -> Option<&'static str> {
+    match code {
+        "US" => Some("USA"),
+        "GB" => Some("UK"),
+        "JP" => Some("Japan"),
+        "DE" => Some("Germany"),
+        "FR" => Some("France"),
+        "ES" => Some("Spain"),
+        "IT" => Some("Italy"),
+        "NL" => Some("Netherlands"),
+        "SE" => Some("Sweden"),
+        "PT" => Some("Portugal"),
+        "AU" => Some("Australia"),
+        "BR" => Some("Brazil"),
+        "KR" => Some("Korea"),
+        "TW" => Some("Taiwan"),
+        "CN" => Some("China"),
+        "RU" => Some("Russia"),
+        "EU" => Some("Europe"),
+        _ => None,
+    }
 }
 
 /// Check if a parenthesized tag is noise that should be skipped.
