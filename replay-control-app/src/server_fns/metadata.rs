@@ -233,3 +233,110 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     state.spawn_rebuild_enrichment(guard);
     Ok(())
 }
+
+// ── Corruption status & recovery ──────────────────────────────────
+
+/// Corruption status for both databases.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CorruptionStatus {
+    pub metadata_corrupt: bool,
+    pub user_data_corrupt: bool,
+    pub user_data_backup_exists: bool,
+}
+
+/// Check if either database is flagged as corrupt.
+#[server(prefix = "/sfn")]
+pub async fn get_corruption_status() -> Result<CorruptionStatus, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let (metadata_corrupt, user_data_corrupt) = state.is_db_corrupt();
+    let backup_exists = state.user_data_pool.db_path().with_extension("db.bak").exists();
+    Ok(CorruptionStatus {
+        metadata_corrupt,
+        user_data_corrupt,
+        user_data_backup_exists: backup_exists,
+    })
+}
+
+/// Rebuild a corrupt metadata database: close, delete, reopen, trigger pipeline.
+/// Metadata is a rebuildable cache — no data loss.
+#[server(prefix = "/sfn")]
+pub async fn rebuild_corrupt_metadata() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.metadata_pool.is_corrupt() {
+        return Err(ServerFnError::new("Metadata database is not corrupt"));
+    }
+
+    let db_path = state.metadata_pool.db_path();
+    tracing::info!("Rebuilding corrupt metadata DB at {}", db_path.display());
+
+    // Close pool (already closed by mark_corrupt, but be safe).
+    state.metadata_pool.close();
+    // Delete the corrupt DB files.
+    replay_control_core::db_common::delete_db_files(&db_path);
+    // Reopen at the current storage root — creates fresh schema.
+    let storage = state.storage();
+    if !state.metadata_pool.reopen(&storage.root) {
+        return Err(ServerFnError::new("Failed to reopen metadata DB after rebuild"));
+    }
+    // Invalidate cache so stale data doesn't persist.
+    state.cache.invalidate().await;
+    // Trigger background re-import if XML exists.
+    let _ = state.import.regenerate_metadata(&state).await;
+    Ok(())
+}
+
+/// Repair a corrupt user_data database: close, delete, reopen with fresh schema.
+/// Warning: box art overrides and saved videos will be lost.
+#[server(prefix = "/sfn")]
+pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.user_data_pool.is_corrupt() {
+        return Err(ServerFnError::new("User data database is not corrupt"));
+    }
+
+    let db_path = state.user_data_pool.db_path();
+    tracing::info!("Repairing corrupt user data DB at {}", db_path.display());
+
+    state.user_data_pool.close();
+    replay_control_core::db_common::delete_db_files(&db_path);
+    let storage = state.storage();
+    if !state.user_data_pool.reopen(&storage.root) {
+        return Err(ServerFnError::new("Failed to reopen user data DB after repair"));
+    }
+    Ok(())
+}
+
+/// Restore user_data.db from the startup backup.
+/// Falls back to repair (fresh DB) if the backup is also corrupt.
+#[server(prefix = "/sfn")]
+pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    if !state.user_data_pool.is_corrupt() {
+        return Err(ServerFnError::new("User data database is not corrupt"));
+    }
+
+    let db_path = state.user_data_pool.db_path();
+    let backup_path = db_path.with_extension("db.bak");
+    if !backup_path.exists() {
+        return Err(ServerFnError::new("No backup file found"));
+    }
+
+    tracing::info!("Restoring user data DB from backup at {}", backup_path.display());
+
+    // Close pool, copy backup over the DB, reopen.
+    state.user_data_pool.close();
+    replay_control_core::db_common::delete_db_files(&db_path);
+    std::fs::copy(&backup_path, &db_path)
+        .map_err(|e| ServerFnError::new(format!("Failed to copy backup: {e}")))?;
+
+    let storage = state.storage();
+    if !state.user_data_pool.reopen(&storage.root) {
+        // Restored copy is also corrupt — fall back to fresh DB.
+        tracing::warn!("Restored user_data.db backup is also corrupt, creating fresh DB");
+        replay_control_core::db_common::delete_db_files(&db_path);
+        if !state.user_data_pool.reopen(&storage.root) {
+            return Err(ServerFnError::new("Failed to reopen user data DB after restore"));
+        }
+    }
+    Ok(())
+}

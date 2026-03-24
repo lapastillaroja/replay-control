@@ -53,9 +53,13 @@ impl UserDataDb {
     /// Open (or create) the user data database at `<storage_root>/.replay-control/user_data.db`.
     ///
     /// Uses the shared nolock->WAL open strategy (see `db_common`), runs table
-    /// init, then probes all tables for corruption — auto-recreates if corrupt.
-    /// Returns a raw `Connection` — the caller (or pool manager) owns it.
-    pub fn open(storage_root: &Path) -> Result<(Connection, PathBuf)> {
+    /// init, then probes all tables for corruption.
+    ///
+    /// Returns `(connection, path, is_corrupt)`. When corrupt, the connection
+    /// is still usable (it opened successfully) but queries on corrupt tables
+    /// will fail. The caller decides whether to delete/restore — user data
+    /// should never be silently destroyed.
+    pub fn open(storage_root: &Path) -> Result<(Connection, PathBuf, bool)> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(USER_DATA_DB_FILE);
@@ -63,16 +67,15 @@ impl UserDataDb {
         let conn = crate::db_common::open_connection(&db_path, "user_data.db")?;
         Self::init_tables(&conn)?;
 
-        if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
-            tracing::warn!("User data DB corrupt ({detail}), deleting and recreating");
-            drop(conn);
-            crate::db_common::delete_db_files(&db_path);
-            let conn = crate::db_common::open_connection(&db_path, "user_data.db")?;
-            Self::init_tables(&conn)?;
-            return Ok((conn, db_path));
-        }
+        let is_corrupt =
+            if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
+                tracing::warn!("User data DB corrupt ({detail})");
+                true
+            } else {
+                false
+            };
 
-        Ok((conn, db_path))
+        Ok((conn, db_path, is_corrupt))
     }
 
     /// Create all tables if they don't exist.

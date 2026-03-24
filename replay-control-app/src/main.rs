@@ -344,6 +344,13 @@ mod ssr {
         // GetRebuildProgress removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetCorruptionStatus>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildCorruptMetadata>(
+        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RepairCorruptUserData>(
+        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RestoreUserDataBackup>(
+        );
         // IsScanning removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameDocuments>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLocalManuals>();

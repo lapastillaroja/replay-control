@@ -15,6 +15,7 @@ use leptos::prelude::*;
 use leptos_router::components::{A, Route, Router, Routes};
 use leptos_router::path;
 
+use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
 use i18n::{provide_i18n, t, use_i18n};
@@ -103,6 +104,7 @@ pub fn App() -> impl IntoView {
                     </div>
                 </header>
 
+                <CorruptionBanner />
                 <MetadataBusyBanner />
 
                 <main class="content">

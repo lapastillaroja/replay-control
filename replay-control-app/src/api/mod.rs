@@ -15,6 +15,7 @@ pub use cache::GameLibrary;
 pub use import::{ImportPipeline, ThumbnailPipeline};
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use deadpool_sqlite::rusqlite;
@@ -166,6 +167,10 @@ pub struct DbPool {
     /// to verify the DB is accessible before rebuilding pools).
     opener:
         fn(&std::path::Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+    /// Set when a query returns SQLITE_CORRUPT (error code 11).
+    /// Once set, the pool is closed and all reads/writes return None until
+    /// the DB is rebuilt/repaired and the flag is cleared.
+    corrupt: Arc<AtomicBool>,
 }
 
 /// Build a deadpool `SqlitePool` with the given size.
@@ -254,6 +259,7 @@ impl DbPool {
             db_path: Arc::new(std::sync::RwLock::new(db_path)),
             label,
             opener,
+            corrupt: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -266,6 +272,7 @@ impl DbPool {
             db_path: Arc::new(std::sync::RwLock::new(PathBuf::new())),
             label,
             opener: |_| Err(replay_control_core::error::Error::Other("test".into())),
+            corrupt: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -287,7 +294,25 @@ impl DbPool {
     {
         let pool = self.read_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
-        conn.interact(move |conn| f(conn)).await.ok()
+        let corrupt_flag = self.corrupt.clone();
+        let result = conn
+            .interact(move |conn| {
+                let result = f(conn);
+                // SAFETY: sqlite3_errcode reads the error code of the most recent
+                // API call on this connection. It's a single integer read from the
+                // db handle struct — no side effects, no memory issues.
+                let rc = unsafe { rusqlite::ffi::sqlite3_errcode(conn.handle()) };
+                if rc == rusqlite::ffi::SQLITE_CORRUPT {
+                    corrupt_flag.store(true, Ordering::Relaxed);
+                }
+                result
+            })
+            .await
+            .ok();
+        if self.is_corrupt() {
+            self.close();
+        }
+        result
     }
 
     /// Run a mutable closure with the single write connection.
@@ -300,7 +325,22 @@ impl DbPool {
     {
         let pool = self.write_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
-        conn.interact(f).await.ok()
+        let corrupt_flag = self.corrupt.clone();
+        let result = conn
+            .interact(move |conn| {
+                let result = f(conn);
+                let rc = unsafe { rusqlite::ffi::sqlite3_errcode(conn.handle()) };
+                if rc == rusqlite::ffi::SQLITE_CORRUPT {
+                    corrupt_flag.store(true, Ordering::Relaxed);
+                }
+                result
+            })
+            .await
+            .ok();
+        if self.is_corrupt() {
+            self.close();
+        }
+        result
     }
 
     /// Close the pools (e.g., after storage change).
@@ -362,6 +402,7 @@ impl DbPool {
                 if let Ok(mut guard) = self.db_path.write() {
                     *guard = path;
                 }
+                self.corrupt.store(false, Ordering::Relaxed);
                 true
             }
             Err(e) => {
@@ -369,6 +410,19 @@ impl DbPool {
                 false
             }
         }
+    }
+
+    /// Check if the DB has been flagged as corrupt.
+    pub fn is_corrupt(&self) -> bool {
+        self.corrupt.load(Ordering::Relaxed)
+    }
+
+    /// Flag the DB as corrupt and close all connections.
+    /// Idempotent: safe to call from multiple threads simultaneously.
+    pub(crate) fn mark_corrupt(&self) {
+        tracing::error!("{}: database flagged as corrupt", self.label);
+        self.corrupt.store(true, Ordering::Relaxed);
+        self.close();
     }
 
     /// Run a passive WAL checkpoint on the write connection.
@@ -443,7 +497,9 @@ fn open_metadata_db(
 fn open_user_data_db(
     storage_root: &std::path::Path,
 ) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    replay_control_core::user_data_db::UserDataDb::open(storage_root)
+    let (conn, path, _corrupt) =
+        replay_control_core::user_data_db::UserDataDb::open(storage_root)?;
+    Ok((conn, path))
 }
 
 impl AppState {
@@ -500,11 +556,27 @@ impl AppState {
         tracing::info!("Metadata DB ready at {}", meta_path.display());
         let metadata_pool = DbPool::new(meta_path.clone(), "metadata_db", open_metadata_db)?;
 
-        let (_ud_conn, ud_path) =
+        let (_ud_conn, ud_path, ud_corrupt) =
             replay_control_core::user_data_db::UserDataDb::open(&storage.root)
                 .map_err(|e| format!("Failed to open user data DB: {e}"))?;
         tracing::info!("User data DB ready at {}", ud_path.display());
         let user_data_pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;
+
+        if ud_corrupt {
+            // Mark the pool as corrupt so the banner shows immediately.
+            // Don't backup — the file is damaged. The user can restore
+            // from a previous backup or repair (fresh schema, loses data).
+            tracing::warn!("User data DB is corrupt — marking pool, awaiting user action");
+            user_data_pool.mark_corrupt();
+        } else {
+            // Back up user_data.db while it's known-healthy. This enables
+            // restore-from-backup if corruption occurs at runtime.
+            let backup_path = ud_path.with_extension("db.bak");
+            match std::fs::copy(&ud_path, &backup_path) {
+                Ok(_) => tracing::info!("User data backup saved to {}", backup_path.display()),
+                Err(e) => tracing::debug!("Could not back up user_data.db: {e}"),
+            }
+        }
 
         let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
 
@@ -535,6 +607,15 @@ impl AppState {
     /// Panics only if the lock is poisoned (program bug).
     pub fn storage(&self) -> StorageLocation {
         self.storage.read().expect("storage lock poisoned").clone()
+    }
+
+    /// Check if either database has been flagged as corrupt.
+    /// Returns `(metadata_corrupt, user_data_corrupt)`.
+    pub fn is_db_corrupt(&self) -> (bool, bool) {
+        (
+            self.metadata_pool.is_corrupt(),
+            self.user_data_pool.is_corrupt(),
+        )
     }
 
     /// Get the user's region preference from `.replay-control/settings.cfg`.

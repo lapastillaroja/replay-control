@@ -30,3 +30,50 @@
 @keyframes metadata-busy-spin {
     to { transform: rotate(360deg); }
 }
+
+/* ================================================================
+   Corruption Banner — shown when a database is flagged as corrupt
+   ================================================================ */
+
+.corruption-banner {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 8px 16px;
+    background: #7f1d1d;
+    color: #fecaca;
+    font-size: 0.8rem;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.corruption-banner-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.corruption-banner-btn {
+    padding: 3px 10px;
+    border: 1px solid #fecaca;
+    border-radius: 4px;
+    background: transparent;
+    color: #fecaca;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.corruption-banner-btn:hover {
+    background: rgba(254, 202, 202, 0.15);
+}
+
+.corruption-banner-btn-danger {
+    border-color: #f87171;
+    color: #f87171;
+}
+
+.corruption-banner-btn-danger:hover {
+    background: rgba(248, 113, 113, 0.15);
+}
