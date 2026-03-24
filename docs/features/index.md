@@ -17,11 +17,11 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 ## Game Library
 
 - **Systems grid** — all known systems with display name, manufacturer, game count, and total size; empty systems shown dimmed
-- **System ROM list** with search (debounced), infinite scroll, and pagination (100 per page)
+- **System ROM list** with search (debounced), infinite scroll, and SQL-level pagination (100 per page via `LIMIT`/`OFFSET`)
 - **Per-ROM actions** — favorite toggle, inline rename, delete with confirmation
 - **ROM metadata** — filename, path, file size (Mbit/Kbit for cartridge systems, MB/GB for disc-based), extension badge, box art thumbnail
 - **Arcade display names** — embedded database of ~15K playable arcade entries (MAME, FBNeo, Flycast/Naomi/Atomiswave) maps codenames to human-readable titles across the entire app. Non-playable machines (slot machines, gambling, etc.) filtered at build time.
-- **M3U multi-disc handling** — individual disc files are hidden when an M3U playlist exists; sizes are aggregated into the playlist entry
+- **M3U multi-disc handling** — individual disc files are hidden when an M3U playlist exists; sizes are aggregated into the playlist entry. Auto-generates M3U playlists for TOSEC-named multi-part games at scan time
 - **Filesystem watching** — on local storage (SD/USB/NVMe), inotify detects new, changed, or deleted ROMs and updates the library automatically
 - **Unified GameListItem** — consistent game rendering component across all list views (ROM lists, search results, developer pages, series siblings, recommendations) with box art, badges, and favorite toggle
 - **Sequenced startup** — server responds immediately during warmup with empty data and a "Scanning game library..." banner; background pipeline runs auto-import, populate, enrich, and watchers in order. [Detail](game-library.md)
@@ -50,6 +50,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - **By System** cards with per-system count and latest favorite
 - **All Favorites** with flat list and grouped-by-system views (toggle)
 - **Remove confirmation** — star click shows "Remove?" before acting; optimistic UI
+- **Organize by developer** — favorites can be organized into subfolders by developer/manufacturer, with algorithmic normalization of MAME manufacturer strings (licensing info, regional suffixes, corporate names, joint ventures)
 
 ## Global Search
 
@@ -106,6 +107,7 @@ Accessible from the More page, organized into Preferences, Game Data, and System
 - Auto-detects storage mode from RePlayOS config: SD card, USB, NVMe (Pi 5), or NFS
 - Config file watcher with automatic cache invalidation on storage changes
 - Filesystem-aware SQLite journal mode: WAL on POSIX-capable filesystems (ext4, btrfs, xfs), DELETE on exFAT/FAT32/NFS
+- Runtime corruption detection — `SQLITE_CORRUPT` errors trigger a recovery banner; metadata.db can be rebuilt, user_data.db can be restored from automatic startup backup
 - App data stored in `.replay-control/` on the ROM storage device, separate from RePlayOS config. [Detail](storage.md)
 
 ## Libretro Core — Recently Played Viewer
@@ -127,7 +129,7 @@ A libretro core (.so) loaded by the RePlayOS frontend on the TV:
 - **Embedded series database** — ~5,345 Wikidata series entries compiled at build time for game franchise identification. [Detail](game-series.md)
 - **ROM filename parser** — extracts title, region, revision, and classification (hack, translation, special) from No-Intro and GoodTools naming conventions. [Detail](rom-organization.md)
 - **CRC32 ROM identification** — hash-based ROM identification for 9 cartridge systems using No-Intro DATs
-- **deadpool-sqlite connection pool** — concurrent read connections (WAL mode) with separate read/write pools for metadata.db and user_data.db
+- **deadpool-sqlite connection pool** — async `pool.get().await` + `conn.interact().await` API, 3 concurrent read connections + 1 write per DB (both WAL and DELETE modes), 10-second pool wait timeout
 - **Cross-compilation** — `./build.sh aarch64` produces an ARM binary for Raspberry Pi deployment
 - **REST API** — `/api/core/` endpoints for the libretro core. [Detail](libretro-core.md)
 - **Internationalization** — i18n infrastructure in place with English as the default language

@@ -92,7 +92,7 @@ Server functions return a single `GameInfo` struct regardless of data source. `r
 
 ## ROM Tag Parsing
 
-`rom_tags.rs` classifies ROMs by parsing filename tags:
+`rom_tags.rs` classifies ROMs by parsing filename tags. Supports No-Intro, GoodTools, and TOSEC naming conventions. TOSEC version strings and country codes are recognized for display name improvement and thumbnail matching.
 
 | Tier | Examples | Effect |
 |------|----------|--------|

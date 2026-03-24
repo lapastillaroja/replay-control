@@ -33,6 +33,8 @@ The `game_library_meta` table tracks per-system metadata: `system`, `rom_count`,
 
 On L1 miss, `load_roms_from_db()` checks the stored mtime against the current directory mtime. Match = serve from L2. Mismatch = fall through to L3.
 
+System ROM list pages use SQL-level pagination (`LIMIT`/`OFFSET`) directly against `game_library` instead of loading all rows into memory. Game detail pages use a single-row primary key lookup (`system` + `rom_filename`) instead of loading the entire system, reducing cold-cache latency from ~15 seconds to under 1 millisecond for large systems.
+
 ### L3: Filesystem Scan
 
 `list_roms()` in `replay-control-core/src/library/roms.rs` recursively walks the system directory, collects ROM files, applies M3U deduplication, and returns `Vec<RomEntry>`. Results are written through to both L2 and L1 via `save_roms_to_db()`.

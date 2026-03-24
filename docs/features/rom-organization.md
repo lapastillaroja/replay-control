@@ -20,6 +20,9 @@ Favorites are `.fav` marker files in `roms/_favorites/`:
 - Remove confirmation (star click shows "Remove?" before acting)
 - `is_favorite` flag on `RomEntry` for SSR-ready display
 
+### Organization
+Favorites can be organized into subfolders using configurable criteria (up to 2 levels of nesting). Available criteria: System, Genre, Players, Alphabetical, Developer. The Developer criterion uses `normalize_developer()` to handle MAME manufacturer string variations (licensing info, regional suffixes, corporate names, joint ventures). Console games use the `game_library.developer` field from LaunchBox enrichment. Organize can copy (keeping originals at root for RePlayOS compatibility) or move files. `flatten_favorites()` reverses the organization.
+
 ## Recents
 
 ### File Format

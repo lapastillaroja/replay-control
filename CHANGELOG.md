@@ -4,6 +4,29 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## 2026-03-24
+
+### Performance
+- perf: async DB pool API (`pool.get().await` + `conn.interact()`) — fixes tokio worker starvation hang that deadlocked the app on game detail pages for large systems (`cf96bf5`)
+- perf: pool timeout (10s) + 3 DELETE mode read connections — 3x throughput improvement for Homepage (6.5 → 20.6 req/s at c=5), light endpoints reach 1100+ req/s under mixed load (`6f9df97`)
+- perf: single-row DB lookup for game detail pages — 15s → <1ms cold cache by fetching one GameEntry by PK instead of loading all ROMs for the system (`c5d6797`)
+- perf: SQL-level pagination for system ROM list — `LIMIT`/`OFFSET` in SQLite instead of loading all rows into memory (`f4f778f`)
+
+### Features
+- feat: TOSEC version stripping + country code recognition — improves display names and thumbnail matching for TOSEC-named ROM sets (`18bfe9f`)
+- feat: auto-generate M3U playlists for multi-part TOSEC games — detects `(Disc N of M)` / `(Disk N of M)` patterns, groups siblings, writes M3U files at scan time (`7895689`)
+- feat: runtime SQLite corruption detection with recovery UI — error-triggered `SQLITE_CORRUPT` detection, per-DB corrupt flag, full-page banner with Rebuild (metadata.db) or Restore/Repair (user_data.db) options (`1f6aa8c`)
+- feat: user_data.db backup at startup — copies healthy DB to `.bak` before background pipeline runs; corruption recovery offers restore from backup (`1f6aa8c`)
+- feat: organize favorites by developer — new `Developer` criterion in favorites organize, with `normalize_developer()` handling MAME manufacturer variations (licensing, regional suffixes, joint ventures) (`643bf31`)
+
+### Code Quality
+- fix: resolve all clippy warnings across crates (`f002a9a`)
+
+### Documentation
+- docs: add research documents for implemented features — async DB access hang analysis, M3U/TOSEC support investigation, corruption detection design, favorites-by-developer plan, DB pool load test results (`46d11f1`)
+
+---
+
 ## 2026-03-23
 
 ### Performance

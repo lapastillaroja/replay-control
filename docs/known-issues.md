@@ -1,5 +1,17 @@
 # Known Issues & TODOs
 
+## ~~Tokio Worker Starvation on Game Detail~~ (RESOLVED)
+
+**Fixed in `cf96bf5`, `6f9df97`, `c5d6797` (2026-03-24).** Opening game detail pages
+for large systems (e.g., Amstrad CPC with 4213 ROMs) caused a permanent app hang.
+The `DbPool` synchronous API (`block_in_place` + `block_on`) pinned tokio worker
+threads while waiting for connections, and 10+ SSR resources competing for 1 DELETE
+mode connection exhausted all workers. Fixed by switching to the proper async API
+(`pool.get().await` + `conn.interact().await`), increasing DELETE mode readers from
+1 to 3, adding a 10-second pool timeout, and replacing full-system L2 loads with
+single-row primary key lookups for game detail. See
+`research/investigations/amstrad-cpc-hang.md` for the full analysis.
+
 ## ~~ROM Rename Side Effects~~ (RESOLVED)
 
 **Fixed in `445abc9` (2026-03-23).** ROM rename and delete now cascade to all

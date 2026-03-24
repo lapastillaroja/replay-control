@@ -60,14 +60,18 @@ All phases are now complete. The final implementation uses:
 1. **deadpool-sqlite async pool** with a custom `SqliteManager` that calls
    `db_common::open_connection()` for proper WAL/nolock setup.
 
-2. **Synchronous `block_in_place` + `block_on`** for getting connections from the pool,
-   which works from both tokio multi-thread worker threads and `spawn_blocking` threads.
+2. **Async `pool.get().await` + `conn.interact(f).await`** — the proper deadpool async
+   API. `pool.get().await` suspends the task without pinning a tokio worker thread.
+   `conn.interact(f).await` runs the closure via `spawn_blocking` internally. This
+   replaced the earlier synchronous `block_in_place(block_on(pool.get()))` + `obj.lock()`
+   approach which caused tokio worker starvation (see `research/investigations/amstrad-cpc-hang.md`).
 
 3. **Compatibility shims removed** -- `metadata_db()` and `user_data_db()` methods
    removed from AppState. Import pipeline uses `DbPool.write()`.
 
-4. **Read/write pool split** implemented: separate read pool (3 connections for local,
-   1 for NFS) and write pool (1 connection). `DbPool.read()` routes to the read pool,
-   `DbPool.write()` routes to the write pool.
+4. **Read/write pool split** implemented: separate read pool (3 connections for local
+   WAL mode, 3 for DELETE mode) and write pool (1 connection). `DbPool.read()` routes
+   to the read pool, `DbPool.write()` routes to the write pool. Pool wait timeout is
+   10 seconds.
 
 5. **Deployed and tested on Pi** via `./dev.sh --pi`.

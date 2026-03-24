@@ -21,8 +21,9 @@ Process start (systemd)
 │  4. Build connection pools                  │
 │     ├─ detect filesystem via /proc/mounts   │
 │     ├─ metadata: 3 read + 1 write (WAL)     │
-│     │           1 read + 1 write (DELETE)   │
-│     └─ userdata: same                       │
+│     │           3 read + 1 write (DELETE)   │
+│     ├─ userdata: same                       │
+│     └─ pool wait timeout: 10 seconds        │
 │  5. Warm pools (1 read + 1 write each)      │
 │     └─ fail fast if DB inaccessible         │
 │  6. Create GameLibrary cache                │
@@ -134,6 +135,7 @@ POSIX-capable filesystem (ext4, etc.) get WAL mode with concurrent readers.
 | synchronous | NORMAL | NORMAL |
 | cache_size | 8 MB | 8 MB |
 | busy_timeout | 5 seconds | 5 seconds |
+| pool_wait_timeout | 10 seconds | 10 seconds |
 | journal_size_limit | 64 MB | 64 MB |
 | foreign_keys | ON | ON |
 | query_only | ON | — |
@@ -145,28 +147,36 @@ thumbnail rebuild) don't trigger checkpoints mid-write. Explicit
 
 ### DELETE Mode (exFAT, FAT32, NFS)
 
-| Setting | Read Pool (1 conn) | Write Pool (1 conn) |
+| Setting | Read Pool (3 conns) | Write Pool (1 conn) |
 |---------|-------------------|-------------------|
 | journal_mode | DELETE (nolock VFS for NFS) | DELETE (nolock VFS for NFS) |
 | synchronous | NORMAL | NORMAL |
 | cache_size | 8 MB | 8 MB |
 | busy_timeout | 5 seconds | 5 seconds |
+| pool_wait_timeout | 10 seconds | 10 seconds |
 | foreign_keys | ON | ON |
 | query_only | ON | — |
 
 DELETE mode is used for filesystems that lack reliable POSIX locking or shared
-memory support. Only 1 read connection (no concurrent readers with DELETE
-journal). No WAL-specific settings (journal_size_limit, wal_autocheckpoint).
+memory support. 3 read connections are used — SQLite DELETE mode supports
+concurrent readers when no writer is active. No WAL-specific settings
+(journal_size_limit, wal_autocheckpoint).
 
 ### Connection Lifecycle
 
 - **Creation**: `SqliteManager::create()` opens a connection via
   `db_common::open_connection()`, then applies per-role PRAGMAs.
+- **Access**: `DbPool::read()` and `DbPool::write()` are async —
+  `pool.get().await` suspends without pinning a tokio worker, then
+  `conn.interact(f).await` runs the closure via `spawn_blocking`.
 - **Reuse**: Deadpool returns connections to the pool after each `read()`/`write()`.
 - **Recycle**: `SqliteManager::recycle()` checks for mutex poisoning and
   runs `PRAGMA optimize` at most once per hour.
 - **Warmup**: `DbPool::new()` eagerly creates 1 read + 1 write connection
   at startup. Fails fast if the DB is inaccessible.
+- **Corruption detection**: If any query returns `SQLITE_CORRUPT` (error code 11),
+  the pool is flagged as corrupt and closed. A full-page banner offers Rebuild
+  (metadata.db) or Restore from backup / Repair (user_data.db).
 
 ---
 
@@ -188,9 +198,9 @@ journal). No WAL-specific settings (journal_size_limit, wal_autocheckpoint).
 ```
 
 The write pool has 1 connection — SQLite serializes writes regardless of
-how many connections exist. On WAL-mode filesystems (ext4, etc.), the read
-pool has 3 connections for concurrent page loads. On DELETE-mode filesystems
-(exFAT, NFS), the read pool has 1 connection (no concurrent readers).
+how many connections exist. Both WAL-mode and DELETE-mode filesystems use
+3 read connections for concurrent page loads (SQLite DELETE mode supports
+concurrent readers when no writer is active).
 
 The `busy` AtomicBool provides mutual exclusion for user-triggered operations
 (import, thumbnail update, rebuild). Each operation claims the flag atomically
@@ -224,7 +234,10 @@ already running" if busy.
 | Scenario | Behavior |
 |----------|----------|
 | DB inaccessible at startup | Fail fast — process exits, systemd restarts |
+| DB corrupt at startup | `probe_tables()` detects corruption; metadata.db is deleted and recreated; user_data.db backup is preserved if available |
+| DB corrupt at runtime | `SQLITE_CORRUPT` error triggers corrupt flag, pool closes; full-page banner offers Rebuild (metadata.db) or Restore/Repair (user_data.db) |
 | DB error during request | Server function returns error to client; logged server-side via `tracing::warn!` with full details |
+| Pool wait timeout | After 10 seconds waiting for a connection, the request fails gracefully instead of blocking indefinitely |
 | USB unplugged | `refresh_storage()` detects change, closes pools, reopens at new location |
 | NFS unreachable | Queries timeout after busy_timeout (5s); NFS TTL (30 min) prevents constant retries |
 | Import fails mid-batch | Error logged, progress shows "Failed", scanning flag cleared |
