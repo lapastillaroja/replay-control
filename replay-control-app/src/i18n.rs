@@ -107,6 +107,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "organize.players" => "By Players",
         "organize.rating" => "By Rating",
         "organize.alphabetical" => "Alphabetical",
+        "organize.developer" => "By Developer",
         "organize.keep_originals" => "Keep originals at root",
         "organize.keep_hint" => "Maintains compatibility with ReplayOS UI",
         "organize.apply" => "Organize",

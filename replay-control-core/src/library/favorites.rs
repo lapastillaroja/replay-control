@@ -197,6 +197,7 @@ pub enum OrganizeCriteria {
     Players,
     Rating,
     Alphabetical,
+    Developer,
 }
 
 /// Result of an organize or flatten operation.
@@ -385,6 +386,33 @@ fn criteria_folder_raw(
                 Some(r) if r >= 1.5 => "\u{2605}\u{2605}".to_string(),
                 Some(r) if r >= 0.5 => "\u{2605}".to_string(),
                 _ => "Not Rated".to_string(),
+            }
+        }
+        OrganizeCriteria::Developer => {
+            let raw_developer = if is_arcade {
+                let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+                crate::arcade_db::lookup_arcade_game(stem)
+                    .map(|info| info.manufacturer)
+                    .unwrap_or("")
+            } else {
+                let stem = rom_filename
+                    .rfind('.')
+                    .map(|i| &rom_filename[..i])
+                    .unwrap_or(rom_filename);
+                game_db::lookup_game(system, stem)
+                    .map(|e| e.game.developer)
+                    .or_else(|| {
+                        let normalized = game_db::normalize_filename(stem);
+                        game_db::lookup_by_normalized_title(system, &normalized)
+                            .map(|g| g.developer)
+                    })
+                    .unwrap_or("")
+            };
+            let developer = crate::developer::normalize_developer(raw_developer);
+            if developer.is_empty() {
+                "Unknown".to_string()
+            } else {
+                developer
             }
         }
         OrganizeCriteria::Alphabetical => {

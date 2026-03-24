@@ -10,6 +10,7 @@ pub enum OrganizeCriteria {
     Players,
     Rating,
     Alphabetical,
+    Developer,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
