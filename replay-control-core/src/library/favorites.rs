@@ -49,14 +49,9 @@ pub fn list_favorites(storage: &StorageLocation) -> Result<Vec<Favorite>> {
         .map(|(_, f)| f)
         .collect();
 
-    favorites.sort_by(|a, b| {
-        a.game.system.cmp(&b.game.system).then(
-            a.game
-                .rom_filename
-                .to_lowercase()
-                .cmp(&b.game.rom_filename.to_lowercase()),
-        )
-    });
+    // Sort by date added (newest first) so the favorites page shows
+    // the most recently favorited games at the top, regardless of subfolder.
+    favorites.sort_by(|a, b| b.date_added.cmp(&a.date_added));
 
     Ok(favorites)
 }
@@ -139,6 +134,38 @@ pub fn remove_favorite(
     }
 
     std::fs::remove_file(&fav_path).map_err(|e| Error::io(&fav_path, e))
+}
+
+/// Remove a .fav file from all locations (root + all subfolders, recursively).
+/// Used when the caller doesn't know which subfolder the file is in.
+/// Returns the number of files removed.
+pub fn remove_favorite_everywhere(storage: &StorageLocation, fav_filename: &str) -> Result<usize> {
+    let favs_dir = storage.favorites_dir();
+    let mut removed = 0;
+
+    fn walk(dir: &Path, fav_filename: &str, removed: &mut usize) -> Result<()> {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return Ok(()),
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, fav_filename, removed)?;
+            } else if entry.file_name().to_string_lossy() == fav_filename {
+                std::fs::remove_file(&path).map_err(|e| Error::io(&path, e))?;
+                *removed += 1;
+            }
+        }
+        Ok(())
+    }
+
+    walk(&favs_dir, fav_filename, &mut removed)?;
+
+    if removed == 0 {
+        return Err(Error::RomNotFound(favs_dir.join(fav_filename)));
+    }
+    Ok(removed)
 }
 
 /// Organize favorites by system: move all .fav files from root into

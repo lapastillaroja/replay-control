@@ -101,12 +101,23 @@ pub async fn remove_favorite(
     subfolder: Option<String>,
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::favorites::remove_favorite(
-        &state.storage(),
-        &filename,
-        subfolder.as_deref(),
-    )
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let storage = state.storage();
+
+    match &subfolder {
+        Some(s) if !s.is_empty() => {
+            // Caller knows the subfolder — remove from that specific location.
+            replay_control_core::favorites::remove_favorite(&storage, &filename, Some(s))
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+        }
+        _ => {
+            // Caller doesn't know the subfolder (e.g., game detail page).
+            // Remove from all locations (root + all subfolders) since the
+            // same .fav may exist in multiple places after reorganization.
+            replay_control_core::favorites::remove_favorite_everywhere(&storage, &filename)
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+        }
+    }
+
     state.cache.invalidate_favorites();
     Ok(())
 }
