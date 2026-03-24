@@ -47,6 +47,11 @@ impl BackgroundManager {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
+        // Phase 1.5: Auto-generate M3U playlists for multi-part TOSEC games.
+        // Runs before cache populate so that list_roms() sees the M3U files
+        // and apply_m3u_dedup() can hide the individual disc/side files.
+        Self::phase_generate_m3u(state).await;
+
         // Phase 2+3: Claim Activity::Startup for populate + thumbnail rebuild.
         // Guard drops → Idle on completion or panic.
         {
@@ -116,6 +121,24 @@ impl BackgroundManager {
         }
     }
 
+    /// Phase 1.5: Auto-generate M3U playlists for multi-part TOSEC games.
+    ///
+    /// Scans all system directories for files with `(Side A/B)`, `(Disk N of M)`,
+    /// or `(Disc N)` patterns and generates `.m3u` playlists so that
+    /// `apply_m3u_dedup()` can deduplicate them during the ROM scan.
+    async fn phase_generate_m3u(state: &AppState) {
+        let storage = state.storage();
+        let count = tokio::task::spawn_blocking(move || {
+            replay_control_core::roms::generate_all_m3u_playlists(&storage)
+        })
+        .await
+        .unwrap_or(0);
+
+        if count > 0 {
+            tracing::info!("Auto-generated {count} M3U playlist(s) for multi-part games");
+        }
+    }
+
     /// Phase 2: Verify L2 cache freshness on startup and pre-populate if empty.
     async fn phase_cache_verification(state: &AppState) {
         let storage = state.storage();
@@ -160,7 +183,10 @@ impl BackgroundManager {
                     .cache
                     .scan_and_cache_system(&storage, &meta.system, region_pref, region_secondary)
                     .await;
-                state.cache.enrich_system_cache(state, meta.system.clone()).await;
+                state
+                    .cache
+                    .enrich_system_cache(state, meta.system.clone())
+                    .await;
                 stale_count += 1;
             }
         }
@@ -878,7 +904,10 @@ impl AppState {
                             .cache
                             .scan_and_cache_system(&storage, system, region_pref, region_secondary)
                             .await;
-                        state.cache.enrich_system_cache(&state, system.clone()).await;
+                        state
+                            .cache
+                            .enrich_system_cache(&state, system.clone())
+                            .await;
                     }
                 }
 

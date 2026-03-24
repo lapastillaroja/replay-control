@@ -261,9 +261,7 @@ pub fn list_rom_group(
     let mut group = Vec::new();
 
     // Always include the primary file.
-    let primary_size = std::fs::metadata(&full_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let primary_size = std::fs::metadata(&full_path).map(|m| m.len()).unwrap_or(0);
     group.push(GroupedFile {
         path: full_path.clone(),
         size_bytes: primary_size,
@@ -310,9 +308,7 @@ pub fn list_rom_group(
                 // from the raw M3U lines.
                 let disc_path = parent_dir.join(ref_name);
                 if disc_path.exists() && disc_path.is_file() {
-                    let size = std::fs::metadata(&disc_path)
-                        .map(|m| m.len())
-                        .unwrap_or(0);
+                    let size = std::fs::metadata(&disc_path).map(|m| m.len()).unwrap_or(0);
                     group.push(GroupedFile {
                         path: disc_path,
                         size_bytes: size,
@@ -331,9 +327,8 @@ pub fn list_rom_group(
                                 resolve_m3u_reference(&normalized, parent_dir, &storage.roms_dir())
                         {
                             if resolved.is_file() {
-                                let size = std::fs::metadata(&resolved)
-                                    .map(|m| m.len())
-                                    .unwrap_or(0);
+                                let size =
+                                    std::fs::metadata(&resolved).map(|m| m.len()).unwrap_or(0);
                                 group.push(GroupedFile {
                                     path: resolved,
                                     size_bytes: size,
@@ -365,9 +360,7 @@ pub fn list_rom_group(
         for bin_name in &bin_files {
             let bin_path = parent_dir.join(bin_name);
             if bin_path.exists() && bin_path.is_file() {
-                let size = std::fs::metadata(&bin_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
+                let size = std::fs::metadata(&bin_path).map(|m| m.len()).unwrap_or(0);
                 group.push(GroupedFile {
                     path: bin_path,
                     size_bytes: size,
@@ -415,9 +408,9 @@ pub fn delete_rom_group(
 
     // Delete files first, then directories (in reverse order so children
     // are deleted before parents).
-    let (dirs, files): (Vec<_>, Vec<_>) = group.into_iter().partition(|g| {
-        g.kind == FileKind::DataDir || g.path.is_dir()
-    });
+    let (dirs, files): (Vec<_>, Vec<_>) = group
+        .into_iter()
+        .partition(|g| g.kind == FileKind::DataDir || g.path.is_dir());
 
     for file in &files {
         match std::fs::remove_file(&file.path) {
@@ -536,7 +529,9 @@ pub fn check_rename_allowed(
     if ext == "m3u" && is_binary_m3u(&full_path) {
         return (
             false,
-            Some("Rename is not available — this playlist contains embedded disc data.".to_string()),
+            Some(
+                "Rename is not available — this playlist contains embedded disc data.".to_string(),
+            ),
         );
     }
 
@@ -583,11 +578,7 @@ fn parse_m3u_raw_lines(m3u_path: &Path) -> Vec<String> {
 /// Handles:
 /// - Absolute paths with `/roms/` prefix (Pi-side paths)
 /// - Relative paths (resolved from the M3U's parent directory)
-fn resolve_m3u_reference(
-    line: &str,
-    m3u_parent: &Path,
-    roms_root: &Path,
-) -> Option<PathBuf> {
+fn resolve_m3u_reference(line: &str, m3u_parent: &Path, roms_root: &Path) -> Option<PathBuf> {
     let normalized = line.replace('\\', "/");
 
     // Try resolving via /roms/ prefix (absolute Pi-side paths).
@@ -689,9 +680,7 @@ fn add_sbi_companion(rom_path: &Path, group: &mut Vec<GroupedFile>) {
     {
         let sbi_path = parent.join(format!("{stem}.sbi"));
         if sbi_path.exists() && sbi_path.is_file() {
-            let size = std::fs::metadata(&sbi_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let size = std::fs::metadata(&sbi_path).map(|m| m.len()).unwrap_or(0);
             group.push(GroupedFile {
                 path: sbi_path,
                 size_bytes: size,
@@ -706,19 +695,13 @@ fn add_sbi_companion(rom_path: &Path, group: &mut Vec<GroupedFile>) {
 /// In arcade_dc, games like `ikaruga.zip` have companion CHD files
 /// named like `gdl-0010.chd` or `gds-0009a.chd`.
 /// We look up known companion CHDs using the arcade_db.
-fn add_arcade_dc_companion_chds(
-    _rom_path: &Path,
-    parent_dir: &Path,
-    group: &mut Vec<GroupedFile>,
-) {
+fn add_arcade_dc_companion_chds(_rom_path: &Path, parent_dir: &Path, group: &mut Vec<GroupedFile>) {
     // Scan for any gdl-*.chd or gds-*.chd files in the same directory.
     // These are always companion files, never standalone games.
     if let Ok(entries) = std::fs::read_dir(parent_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_lowercase();
-            if name.ends_with(".chd")
-                && (name.starts_with("gdl-") || name.starts_with("gds-"))
-            {
+            if name.ends_with(".chd") && (name.starts_with("gdl-") || name.starts_with("gds-")) {
                 let path = entry.path();
                 let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
                 group.push(GroupedFile {
@@ -774,14 +757,16 @@ fn cleanup_empty_parents(dir: &Path, stop_at: &Path) {
     }
 }
 
-/// Parse `(Disc N)` or `(Disk N)` pattern from a filename.
+/// Parse `(Disc N)`, `(Disk N)`, or `(Side X)` pattern from a filename.
 ///
 /// Returns `(base_with_ext, disc_number)` where `base_with_ext` is the
-/// filename with the disc indicator removed but extension preserved,
+/// filename with the disc/side indicator removed but extension preserved,
 /// used for matching siblings.
+///
+/// Side letters are mapped to numbers: A=1, B=2, C=3, etc.
 fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
-    // Match patterns like "(Disc 1)", "(Disk 2)", "(Disc 1 of 4)" etc.
-    // Case-insensitive.
+    // Match patterns like "(Disc 1)", "(Disk 2)", "(Disc 1 of 4)",
+    // "(Side A)", "(Side B)" etc. Case-insensitive.
     let lower = filename.to_lowercase();
 
     // Find the disc/disk pattern.
@@ -808,7 +793,142 @@ fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
         }
     }
 
+    // Match "(Side A)", "(Side B)", etc. Map letter to number (A=1, B=2, ...).
+    if let Some(start) = lower.find("(side ")
+        && let Some(end) = lower[start..].find(')')
+    {
+        let inner = &lower[start + 6..start + end];
+        let letter = inner.trim().chars().next()?;
+        if letter.is_ascii_alphabetic() {
+            let side_num = (letter as u32) - ('a' as u32) + 1;
+
+            let base = format!(
+                "{}{}",
+                &filename[..start].trim_end(),
+                &filename[start + end + 1..]
+            );
+
+            return Some((base.trim().to_string(), side_num));
+        }
+    }
+
     None
+}
+
+/// Auto-generate `.m3u` playlists for multi-part TOSEC games in a system directory.
+///
+/// Scans ROM files for disc/side patterns (`(Disc N)`, `(Disk N of M)`,
+/// `(Side A)`/`(Side B)`, etc.), groups them by base name, and writes an
+/// `.m3u` playlist for each group with 2+ files. Skips groups that already
+/// have an `.m3u` file on disk.
+///
+/// Returns the number of M3U files created.
+pub fn generate_m3u_playlists(system_dir: &Path) -> usize {
+    if !system_dir.exists() {
+        return 0;
+    }
+
+    let entries = match std::fs::read_dir(system_dir) {
+        Ok(e) => e,
+        Err(_) => return 0,
+    };
+
+    // Collect all ROM files and their disc patterns.
+    // Key: base name (with extension), Value: sorted list of (number, original filename).
+    let mut groups: HashMap<String, Vec<(u32, String)>> = HashMap::new();
+    let mut existing_m3u: HashSet<String> = HashSet::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+
+        let filename = entry.file_name().to_string_lossy().to_string();
+
+        // Track existing M3U files so we can skip groups that already have one.
+        if let Some(ext) = path.extension()
+            && ext.eq_ignore_ascii_case("m3u")
+        {
+            existing_m3u.insert(filename.clone());
+            continue;
+        }
+
+        if let Some((base, num)) = parse_disc_pattern(&filename) {
+            groups.entry(base).or_default().push((num, filename));
+        }
+    }
+
+    let mut created = 0;
+
+    for (base, mut members) in groups {
+        // Only generate for groups with 2+ parts.
+        if members.len() < 2 {
+            continue;
+        }
+
+        // Derive the M3U filename from the base name: replace the ROM
+        // extension with `.m3u`.
+        let m3u_name = match base.rfind('.') {
+            Some(dot) => format!("{}.m3u", &base[..dot]),
+            None => format!("{base}.m3u"),
+        };
+
+        // Skip if an M3U already exists for this group.
+        if existing_m3u.contains(&m3u_name) {
+            continue;
+        }
+
+        // Sort by disc/side number for correct playback order.
+        members.sort_by_key(|(num, _)| *num);
+
+        // Build M3U content: one filename per line.
+        let content: String = members
+            .iter()
+            .map(|(_, name)| name.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let m3u_path = system_dir.join(&m3u_name);
+        match std::fs::write(&m3u_path, format!("{content}\n")) {
+            Ok(()) => {
+                tracing::info!("Generated M3U: {m3u_name} ({} entries)", members.len());
+                created += 1;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to write {}: {e}", m3u_path.display());
+            }
+        }
+    }
+
+    created
+}
+
+/// Generate M3U playlists for all systems that have ROM files.
+///
+/// Iterates over all visible systems, scans each system directory for
+/// multi-part TOSEC games, and auto-generates `.m3u` playlists where needed.
+///
+/// Returns the total number of M3U files created across all systems.
+pub fn generate_all_m3u_playlists(storage: &StorageLocation) -> usize {
+    let roms_dir = storage.roms_dir();
+    let mut total = 0;
+
+    for system in systems::visible_systems() {
+        let system_dir = roms_dir.join(system.folder_name);
+        if system_dir.exists() {
+            let count = generate_m3u_playlists(&system_dir);
+            if count > 0 {
+                tracing::info!(
+                    "Generated {count} M3U playlist(s) for {}",
+                    system.folder_name
+                );
+                total += count;
+            }
+        }
+    }
+
+    total
 }
 
 /// Detect duplicate ROMs across all systems by file size + name similarity.
@@ -1822,8 +1942,7 @@ mod tests {
 
     #[test]
     fn parse_disc_pattern_disk_variant() {
-        let (base, num) =
-            parse_disc_pattern("Game (1989)(System Sacom)(Disk 2 of 4).dim").unwrap();
+        let (base, num) = parse_disc_pattern("Game (1989)(System Sacom)(Disk 2 of 4).dim").unwrap();
         assert_eq!(num, 2);
         assert_eq!(base, "Game (1989)(System Sacom).dim");
     }
@@ -1831,6 +1950,167 @@ mod tests {
     #[test]
     fn parse_disc_pattern_no_match() {
         assert!(parse_disc_pattern("Sonic The Hedgehog (USA).md").is_none());
+    }
+
+    #[test]
+    fn parse_disc_pattern_side_a() {
+        let (base, num) = parse_disc_pattern("Arkanoid (1987)(Imagine)(GB)(Side A).dsk").unwrap();
+        assert_eq!(num, 1);
+        assert_eq!(base, "Arkanoid (1987)(Imagine)(GB).dsk");
+    }
+
+    #[test]
+    fn parse_disc_pattern_side_b() {
+        let (base, num) = parse_disc_pattern("Arkanoid (1987)(Imagine)(GB)(Side B).dsk").unwrap();
+        assert_eq!(num, 2);
+        assert_eq!(base, "Arkanoid (1987)(Imagine)(GB).dsk");
+    }
+
+    #[test]
+    fn parse_disc_pattern_side_c() {
+        let (base, num) = parse_disc_pattern("Game (1990)(Publisher)(Side C).dsk").unwrap();
+        assert_eq!(num, 3);
+        assert_eq!(base, "Game (1990)(Publisher).dsk");
+    }
+
+    // --- generate_m3u_playlists ---
+
+    #[test]
+    fn generate_m3u_for_side_a_b() {
+        let tmp = tempdir();
+        let cpc_dir = tmp.join("roms/amstrad_cpc");
+        fs::create_dir_all(&cpc_dir).unwrap();
+
+        fs::write(
+            cpc_dir.join("Arkanoid (1987)(Imagine)(GB)(Side A).dsk"),
+            &[0u8; 100],
+        )
+        .unwrap();
+        fs::write(
+            cpc_dir.join("Arkanoid (1987)(Imagine)(GB)(Side B).dsk"),
+            &[0u8; 100],
+        )
+        .unwrap();
+        fs::write(cpc_dir.join("Commando (1985)(Elite)(GB).dsk"), &[0u8; 100]).unwrap();
+
+        let count = generate_m3u_playlists(&cpc_dir);
+        assert_eq!(count, 1);
+
+        let m3u_path = cpc_dir.join("Arkanoid (1987)(Imagine)(GB).m3u");
+        assert!(m3u_path.exists(), "M3U file should exist");
+
+        let content = fs::read_to_string(&m3u_path).unwrap();
+        let lines: Vec<&str> = content.trim().lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], "Arkanoid (1987)(Imagine)(GB)(Side A).dsk");
+        assert_eq!(lines[1], "Arkanoid (1987)(Imagine)(GB)(Side B).dsk");
+    }
+
+    #[test]
+    fn generate_m3u_for_disk_n_of_m() {
+        let tmp = tempdir();
+        let x68k_dir = tmp.join("roms/sharp_x68k");
+        fs::create_dir_all(&x68k_dir).unwrap();
+
+        fs::write(
+            x68k_dir.join("Game (1990)(Pub)(Disk 1 of 3).dim"),
+            &[0u8; 100],
+        )
+        .unwrap();
+        fs::write(
+            x68k_dir.join("Game (1990)(Pub)(Disk 2 of 3).dim"),
+            &[0u8; 100],
+        )
+        .unwrap();
+        fs::write(
+            x68k_dir.join("Game (1990)(Pub)(Disk 3 of 3).dim"),
+            &[0u8; 100],
+        )
+        .unwrap();
+
+        let count = generate_m3u_playlists(&x68k_dir);
+        assert_eq!(count, 1);
+
+        let m3u_path = x68k_dir.join("Game (1990)(Pub).m3u");
+        assert!(m3u_path.exists(), "M3U file should exist");
+
+        let content = fs::read_to_string(&m3u_path).unwrap();
+        let lines: Vec<&str> = content.trim().lines().collect();
+        assert_eq!(lines.len(), 3);
+        // Verify they're in disk order
+        assert!(lines[0].contains("Disk 1"));
+        assert!(lines[1].contains("Disk 2"));
+        assert!(lines[2].contains("Disk 3"));
+    }
+
+    #[test]
+    fn generate_m3u_skips_existing() {
+        let tmp = tempdir();
+        let dir = tmp.join("roms/sony_psx");
+        fs::create_dir_all(&dir).unwrap();
+
+        // Pre-existing M3U
+        fs::write(
+            dir.join("Game (USA).m3u"),
+            "Game (USA) (Disc 1).chd\nGame (USA) (Disc 2).chd\n",
+        )
+        .unwrap();
+        fs::write(dir.join("Game (USA) (Disc 1).chd"), &[0u8; 100]).unwrap();
+        fs::write(dir.join("Game (USA) (Disc 2).chd"), &[0u8; 100]).unwrap();
+
+        let count = generate_m3u_playlists(&dir);
+        assert_eq!(count, 0, "Should not generate M3U when one already exists");
+    }
+
+    #[test]
+    fn generate_m3u_skips_single_disc() {
+        let tmp = tempdir();
+        let dir = tmp.join("roms/sega_dc");
+        fs::create_dir_all(&dir).unwrap();
+
+        // Only one disc file — no M3U needed
+        fs::write(dir.join("Game (Disc 1).chd"), &[0u8; 100]).unwrap();
+
+        let count = generate_m3u_playlists(&dir);
+        assert_eq!(count, 0, "Should not generate M3U for a single disc");
+    }
+
+    #[test]
+    fn generate_m3u_nonexistent_dir() {
+        let count = generate_m3u_playlists(Path::new("/nonexistent/path"));
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn generate_m3u_multiple_groups() {
+        let tmp = tempdir();
+        let dir = tmp.join("roms/amstrad_cpc");
+        fs::create_dir_all(&dir).unwrap();
+
+        // Group 1: Arkanoid (Side A/B)
+        fs::write(
+            dir.join("Arkanoid (1987)(Imagine)(GB)(Side A).dsk"),
+            &[0u8; 10],
+        )
+        .unwrap();
+        fs::write(
+            dir.join("Arkanoid (1987)(Imagine)(GB)(Side B).dsk"),
+            &[0u8; 10],
+        )
+        .unwrap();
+
+        // Group 2: Gryzor (Side A/B)
+        fs::write(dir.join("Gryzor (1987)(Ocean)(GB)(Side A).dsk"), &[0u8; 10]).unwrap();
+        fs::write(dir.join("Gryzor (1987)(Ocean)(GB)(Side B).dsk"), &[0u8; 10]).unwrap();
+
+        // Standalone game (no M3U needed)
+        fs::write(dir.join("Commando (1985)(Elite)(GB).dsk"), &[0u8; 10]).unwrap();
+
+        let count = generate_m3u_playlists(&dir);
+        assert_eq!(count, 2);
+
+        assert!(dir.join("Arkanoid (1987)(Imagine)(GB).m3u").exists());
+        assert!(dir.join("Gryzor (1987)(Ocean)(GB).m3u").exists());
     }
 
     // --- detect_disc_set ---
@@ -1908,10 +2188,7 @@ mod tests {
             group.iter().filter(|g| g.kind == FileKind::Primary).count(),
             1
         );
-        assert_eq!(
-            group.iter().filter(|g| g.kind == FileKind::Disc).count(),
-            3
-        );
+        assert_eq!(group.iter().filter(|g| g.kind == FileKind::Disc).count(), 3);
         let total_size: u64 = group.iter().map(|g| g.size_bytes).sum();
         assert!(total_size > 1800); // At least the disc file sizes
     }
@@ -1948,8 +2225,7 @@ mod tests {
         fs::write(saturn_dir.join("GAME.BIN"), &[0u8; 1000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let group =
-            list_rom_group(&storage, "sega_st", "roms/sega_st/Game/Game.cue").unwrap();
+        let group = list_rom_group(&storage, "sega_st", "roms/sega_st/Game/Game.cue").unwrap();
 
         assert_eq!(group.len(), 2);
         assert!(group.iter().any(|g| g.kind == FileKind::Primary));
@@ -1992,12 +2268,7 @@ mod tests {
         fs::write(game_dir.join("DATA.PAK"), &[0u8; 5000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let group = list_rom_group(
-            &storage,
-            "scummvm",
-            "roms/scummvm/Cool Game (CD).m3u",
-        )
-        .unwrap();
+        let group = list_rom_group(&storage, "scummvm", "roms/scummvm/Cool Game (CD).m3u").unwrap();
 
         // Primary M3U + DataDir
         assert_eq!(group.len(), 2);
@@ -2042,8 +2313,7 @@ mod tests {
         fs::write(psx_dir.join("Game (Disc 2).chd"), &[0u8; 600]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let report =
-            delete_rom_group(&storage, "sony_psx", "roms/sony_psx/Game.m3u").unwrap();
+        let report = delete_rom_group(&storage, "sony_psx", "roms/sony_psx/Game.m3u").unwrap();
 
         assert!(report.errors.is_empty());
         assert!(!psx_dir.join("Game.m3u").exists());
@@ -2057,16 +2327,11 @@ mod tests {
         let saturn_dir = tmp.join("roms/sega_st/Game");
         fs::create_dir_all(&saturn_dir).unwrap();
 
-        fs::write(
-            saturn_dir.join("Game.cue"),
-            "FILE \"GAME.BIN\" BINARY\n",
-        )
-        .unwrap();
+        fs::write(saturn_dir.join("Game.cue"), "FILE \"GAME.BIN\" BINARY\n").unwrap();
         fs::write(saturn_dir.join("GAME.BIN"), &[0u8; 1000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let report =
-            delete_rom_group(&storage, "sega_st", "roms/sega_st/Game/Game.cue").unwrap();
+        let report = delete_rom_group(&storage, "sega_st", "roms/sega_st/Game/Game.cue").unwrap();
 
         assert!(report.errors.is_empty());
         assert!(!saturn_dir.join("Game.cue").exists());
@@ -2091,12 +2356,7 @@ mod tests {
         fs::write(game_dir.join("DATA.PAK"), &[0u8; 5000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let report = delete_rom_group(
-            &storage,
-            "scummvm",
-            "roms/scummvm/Cool Game.m3u",
-        )
-        .unwrap();
+        let report = delete_rom_group(&storage, "scummvm", "roms/scummvm/Cool Game.m3u").unwrap();
 
         assert!(report.errors.is_empty());
         assert!(!scummvm_dir.join("Cool Game.m3u").exists());
@@ -2127,8 +2387,7 @@ mod tests {
         fs::write(dir.join("Game.cue"), "FILE \"G.BIN\" BINARY\n").unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let (allowed, reason) =
-            check_rename_allowed(&storage, "sega_st", "roms/sega_st/Game.cue");
+        let (allowed, reason) = check_rename_allowed(&storage, "sega_st", "roms/sega_st/Game.cue");
         assert!(!allowed);
         assert!(reason.is_some());
     }
@@ -2141,8 +2400,7 @@ mod tests {
         fs::write(dir.join("Game.m3u"), "/path/to/Game.svm\n").unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let (allowed, reason) =
-            check_rename_allowed(&storage, "scummvm", "roms/scummvm/Game.m3u");
+        let (allowed, reason) = check_rename_allowed(&storage, "scummvm", "roms/scummvm/Game.m3u");
         assert!(!allowed);
         assert!(reason.is_some());
     }
@@ -2172,8 +2430,7 @@ mod tests {
         fs::write(dir.join("Game.m3u"), "Game (Disc 1).chd\n").unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let (allowed, _) =
-            check_rename_allowed(&storage, "sony_psx", "roms/sony_psx/Game.m3u");
+        let (allowed, _) = check_rename_allowed(&storage, "sony_psx", "roms/sony_psx/Game.m3u");
         assert!(allowed);
     }
 }
