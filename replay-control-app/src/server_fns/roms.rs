@@ -113,6 +113,128 @@ pub async fn get_roms_page(
     let storage = state.storage();
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
+
+    // Fast path: when no filters or search are active, try SQL-level pagination
+    // directly from L1 or L2 cache. This avoids loading all ROMs into memory
+    // on cold L1 cache (significant for systems with 3000+ ROMs).
+    let has_filters = hide_hacks
+        || hide_translations
+        || hide_betas
+        || hide_clones
+        || !genre.is_empty()
+        || multiplayer_only
+        || min_rating.is_some();
+    if !has_filters
+        && search.is_empty()
+        && let Some((mut roms, total)) = state
+            .cache
+            .get_roms_page_direct(&storage, &system, offset, limit)
+            .await
+    {
+        let has_more = offset + roms.len() < total;
+
+        // Overlay favorites.
+        let fav_set = state.cache.get_favorites_set(&storage, &system);
+        for rom in &mut roms {
+            rom.is_favorite = fav_set.contains(&rom.game.rom_filename);
+        }
+
+        // Populate box art URLs.
+        let image_index = state.cache.get_image_index(&state, &system).await;
+        for rom in &mut roms {
+            rom.box_art_url =
+                state
+                    .cache
+                    .resolve_box_art(&state, &image_index, &system, &rom.game.rom_filename);
+        }
+
+        // Populate driver status for arcade systems.
+        if is_arcade {
+            use replay_control_core::arcade_db;
+            for rom in &mut roms {
+                let stem = rom
+                    .game
+                    .rom_filename
+                    .strip_suffix(".zip")
+                    .unwrap_or(&rom.game.rom_filename);
+                if let Some(info) = arcade_db::lookup_arcade_game(stem) {
+                    let status = match info.status {
+                        arcade_db::DriverStatus::Working => "Working",
+                        arcade_db::DriverStatus::Imperfect => "Imperfect",
+                        arcade_db::DriverStatus::Preliminary => "Preliminary",
+                        arcade_db::DriverStatus::Unknown => "Unknown",
+                    };
+                    rom.driver_status = Some(status.to_string());
+                }
+            }
+        }
+
+        // Populate players.
+        {
+            let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
+            let players = system_player_counts(&system, &filenames);
+            for rom in &mut roms {
+                if let Some(&p) = players.get(&rom.game.rom_filename) {
+                    rom.players = Some(p);
+                }
+            }
+        }
+
+        // Populate ratings from metadata DB.
+        {
+            let filenames: Vec<String> = roms.iter().map(|r| r.game.rom_filename.clone()).collect();
+            if let Some(Ok(ratings)) = state
+                .metadata_pool
+                .read({
+                    let system = system.clone();
+                    move |conn| {
+                        let refs: Vec<&str> = filenames.iter().map(|s| s.as_str()).collect();
+                        MetadataDb::lookup_ratings(conn, &system, &refs)
+                    }
+                })
+                .await
+            {
+                for rom in &mut roms {
+                    if let Some(&rating) = ratings.get(&rom.game.rom_filename)
+                        && rating > 0.0
+                    {
+                        rom.rating = Some(rating as f32);
+                    }
+                }
+            }
+        }
+
+        let list_entries: Vec<RomListEntry> = roms
+            .into_iter()
+            .map(|rom| RomListEntry {
+                display_name: rom
+                    .game
+                    .display_name
+                    .unwrap_or_else(|| rom.game.rom_filename.clone()),
+                system: rom.game.system,
+                rom_filename: rom.game.rom_filename,
+                rom_path: rom.game.rom_path,
+                size_bytes: rom.size_bytes,
+                is_m3u: rom.is_m3u,
+                is_favorite: rom.is_favorite,
+                box_art_url: rom.box_art_url,
+                driver_status: rom.driver_status,
+                rating: rom.rating,
+                players: rom.players,
+                genre: String::new(),
+            })
+            .collect();
+
+        return Ok(RomPage {
+            roms: list_entries,
+            total,
+            has_more,
+            system_display,
+            is_arcade,
+        });
+    }
+
+    // Full path: load all ROMs and filter/search in memory.
     let all_roms = state
         .cache
         .get_roms(&storage, &system, region_pref, region_secondary)

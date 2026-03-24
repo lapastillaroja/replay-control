@@ -129,7 +129,10 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1).map(|v| v as usize)?,
+                ))
             })
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
 
@@ -244,6 +247,52 @@ impl MetadataDb {
         Ok(result)
     }
 
+    /// Count game entries for a system.
+    pub fn count_system_entries(conn: &Connection, system: &str) -> Result<usize> {
+        conn.query_row(
+            "SELECT COUNT(*) FROM game_library WHERE system = ?1",
+            params![system],
+            |row| row.get::<_, i64>(0).map(|v| v as usize),
+        )
+        .map_err(|e| Error::Other(format!("Query count_system_entries: {e}")))
+    }
+
+    /// Load a page of game entries for a system, sorted by display name (case-insensitive).
+    ///
+    /// Same columns as `load_system_entries` but with `ORDER BY` + `LIMIT`/`OFFSET`
+    /// for SQL-level pagination. Used as a fast-path when the L1 cache is cold.
+    pub fn load_system_entries_page(
+        conn: &Connection,
+        system: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<GameEntry>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                        region, developer, genre, genre_group, rating, rating_count, players,
+                        is_clone, is_m3u, is_translation, is_hack, is_special,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+                 FROM game_library WHERE system = ?1
+                 ORDER BY COALESCE(display_name, rom_filename) COLLATE NOCASE
+                 LIMIT ?2 OFFSET ?3",
+            )
+            .map_err(|e| Error::Other(format!("Prepare load_system_entries_page: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![system, limit as i64, offset as i64],
+                Self::row_to_game_entry,
+            )
+            .map_err(|e| Error::Other(format!("Query load_system_entries_page: {e}")))?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row.map_err(|e| Error::Other(format!("Row read failed: {e}")))?);
+        }
+        Ok(result)
+    }
+
     /// Load a single game entry by system and filename.
     /// Uses the primary key index for O(1) lookup.
     pub fn load_single_entry(
@@ -292,21 +341,21 @@ impl MetadataDb {
     /// Load library metadata for a single system.
     pub fn load_system_meta(conn: &Connection, system: &str) -> Result<Option<SystemMeta>> {
         conn.query_row(
-                "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes
+            "SELECT system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes
                  FROM game_library_meta WHERE system = ?1",
-                params![system],
-                |row| {
-                    Ok(SystemMeta {
-                        system: row.get(0)?,
-                        dir_mtime_secs: row.get(1)?,
-                        scanned_at: row.get(2)?,
-                        rom_count: row.get::<_, i64>(3)? as usize,
-                        total_size_bytes: row.get::<_, i64>(4)? as u64,
-                    })
-                },
-            )
-            .optional()
-            .map_err(|e| Error::Other(format!("Query load_system_meta: {e}")))
+            params![system],
+            |row| {
+                Ok(SystemMeta {
+                    system: row.get(0)?,
+                    dir_mtime_secs: row.get(1)?,
+                    scanned_at: row.get(2)?,
+                    rom_count: row.get::<_, i64>(3)? as usize,
+                    total_size_bytes: row.get::<_, i64>(4)? as u64,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Query load_system_meta: {e}")))
     }
 
     /// Load library metadata for all systems.
@@ -508,15 +557,15 @@ impl MetadataDb {
     /// Clear the game_library and game_library_meta for a specific system.
     pub fn clear_system_game_library(conn: &Connection, system: &str) -> Result<()> {
         conn.execute(
-                "DELETE FROM game_library WHERE system = ?1",
-                params![system],
-            )
-            .map_err(|e| Error::Other(format!("Clear system game_library: {e}")))?;
+            "DELETE FROM game_library WHERE system = ?1",
+            params![system],
+        )
+        .map_err(|e| Error::Other(format!("Clear system game_library: {e}")))?;
         conn.execute(
-                "DELETE FROM game_library_meta WHERE system = ?1",
-                params![system],
-            )
-            .map_err(|e| Error::Other(format!("Clear system game_library_meta: {e}")))?;
+            "DELETE FROM game_library_meta WHERE system = ?1",
+            params![system],
+        )
+        .map_err(|e| Error::Other(format!("Clear system game_library_meta: {e}")))?;
         Ok(())
     }
 
@@ -549,12 +598,7 @@ impl MetadataDb {
     }
 
     /// Rename a ROM in the `game_library` table.
-    pub fn rename_for_rom(
-        conn: &Connection,
-        system: &str,
-        old_filename: &str,
-        new_filename: &str,
-    ) {
+    pub fn rename_for_rom(conn: &Connection, system: &str, old_filename: &str, new_filename: &str) {
         if let Err(e) = conn.execute(
             "UPDATE game_library SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
             params![system, old_filename, new_filename],
@@ -591,7 +635,10 @@ impl MetadataDb {
     }
 
     /// Fetch current developers from `game_library` for a single system.
-    pub fn system_rom_developers(conn: &Connection, system: &str) -> Result<std::collections::HashSet<String>> {
+    pub fn system_rom_developers(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<std::collections::HashSet<String>> {
         use std::collections::HashSet;
 
         let mut stmt = conn
@@ -643,7 +690,10 @@ impl MetadataDb {
     }
 
     /// Fetch current player counts from `game_library` for a single system.
-    pub fn system_rom_players(conn: &Connection, system: &str) -> Result<std::collections::HashSet<String>> {
+    pub fn system_rom_players(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<std::collections::HashSet<String>> {
         use std::collections::HashSet;
 
         let mut stmt = conn
@@ -686,7 +736,10 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map(params![q], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1).map(|v| v as usize)?,
+                ))
             })
             .map_err(|e| Error::Other(format!("Query find_developer_matches: {e}")))?;
 
@@ -786,7 +839,9 @@ impl MetadataDb {
             )"
         );
         let total: usize = conn
-            .query_row(&count_sql, count_refs.as_slice(), |row| row.get::<_, i64>(0).map(|v| v as usize))
+            .query_row(&count_sql, count_refs.as_slice(), |row| {
+                row.get::<_, i64>(0).map(|v| v as usize)
+            })
             .map_err(|e| Error::Other(format!("Count developer_games_paginated: {e}")))?;
 
         // ── Fetch query ──
@@ -815,8 +870,10 @@ impl MetadataDb {
             LIMIT ?3 OFFSET ?4"
         );
 
-        let region_pref_box: Box<dyn rusqlite::types::ToSql> = Box::new(page.region_pref.to_string());
-        let region_secondary_box: Box<dyn rusqlite::types::ToSql> = Box::new(page.region_secondary.to_string());
+        let region_pref_box: Box<dyn rusqlite::types::ToSql> =
+            Box::new(page.region_pref.to_string());
+        let region_secondary_box: Box<dyn rusqlite::types::ToSql> =
+            Box::new(page.region_secondary.to_string());
         let limit_box: Box<dyn rusqlite::types::ToSql> = Box::new(fetch_limit as i64);
         let offset_box: Box<dyn rusqlite::types::ToSql> = Box::new(page.offset as i64);
 
@@ -897,7 +954,10 @@ impl MetadataDb {
 
         let rows = stmt
             .query_map(params![developer], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1).map(|v| v as usize)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1).map(|v| v as usize)?,
+                ))
             })
             .map_err(|e| Error::Other(format!("Query developer_systems: {e}")))?;
 
@@ -914,11 +974,14 @@ mod tests {
     fn genre_enrichment_fills_empty_genre_from_launchbox() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(&mut conn, &[(
-            "sega_smd".into(),
-            "Sonic.md".into(),
-            make_metadata_with_genre("Platform"),
-        )])
+        MetadataDb::bulk_upsert(
+            &mut conn,
+            &[(
+                "sega_smd".into(),
+                "Sonic.md".into(),
+                make_metadata_with_genre("Platform"),
+            )],
+        )
         .unwrap();
 
         MetadataDb::save_system_entries(
@@ -1021,8 +1084,14 @@ mod tests {
 
         let roms = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
         let sonic = roms.iter().find(|r| r.rom_filename == "Sonic.md").unwrap();
-        let streets = roms.iter().find(|r| r.rom_filename == "Streets.md").unwrap();
-        let columns = roms.iter().find(|r| r.rom_filename == "Columns.md").unwrap();
+        let streets = roms
+            .iter()
+            .find(|r| r.rom_filename == "Streets.md")
+            .unwrap();
+        let columns = roms
+            .iter()
+            .find(|r| r.rom_filename == "Columns.md")
+            .unwrap();
 
         assert_eq!(sonic.genre.as_deref(), Some("Shooter"));
         assert_eq!(streets.genre.as_deref(), Some("Beat'em Up"));
@@ -1064,7 +1133,8 @@ mod tests {
         let gba_game3 = make_game_entry("gba", "NoArt.gba", false);
 
         MetadataDb::save_system_entries(&mut conn, "snes", &[snes_game], None).unwrap();
-        MetadataDb::save_system_entries(&mut conn, "gba", &[gba_game1, gba_game2, gba_game3], None).unwrap();
+        MetadataDb::save_system_entries(&mut conn, "gba", &[gba_game1, gba_game2, gba_game3], None)
+            .unwrap();
 
         let thumbs = MetadataDb::thumbnails_per_system(&conn).unwrap();
         let snes = thumbs.iter().find(|(s, _)| s == "snes").unwrap();
@@ -1073,7 +1143,12 @@ mod tests {
         assert_eq!(gba.1, 2);
     }
 
-    fn make_game_entry_with_developer(system: &str, filename: &str, developer: &str, base_title: &str) -> super::super::GameEntry {
+    fn make_game_entry_with_developer(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+    ) -> super::super::GameEntry {
         super::super::GameEntry {
             developer: developer.into(),
             base_title: base_title.into(),
@@ -1090,10 +1165,30 @@ mod tests {
             &[
                 make_game_entry_with_developer("arcade_fbneo", "kof97.zip", "SNK", "KOF 97"),
                 make_game_entry_with_developer("arcade_fbneo", "kof98.zip", "SNK", "KOF 98"),
-                make_game_entry_with_developer("arcade_fbneo", "fatfury2.zip", "SNK", "Fatal Fury 2"),
-                make_game_entry_with_developer("arcade_fbneo", "samsho5.zip", "SNK Playmore", "Samurai Shodown V"),
-                make_game_entry_with_developer("arcade_fbneo", "samsho6.zip", "SNK Playmore", "Samurai Shodown VI"),
-                make_game_entry_with_developer("arcade_fbneo", "svc.zip", "Capcom / SNK", "SVC Chaos"),
+                make_game_entry_with_developer(
+                    "arcade_fbneo",
+                    "fatfury2.zip",
+                    "SNK",
+                    "Fatal Fury 2",
+                ),
+                make_game_entry_with_developer(
+                    "arcade_fbneo",
+                    "samsho5.zip",
+                    "SNK Playmore",
+                    "Samurai Shodown V",
+                ),
+                make_game_entry_with_developer(
+                    "arcade_fbneo",
+                    "samsho6.zip",
+                    "SNK Playmore",
+                    "Samurai Shodown VI",
+                ),
+                make_game_entry_with_developer(
+                    "arcade_fbneo",
+                    "svc.zip",
+                    "Capcom / SNK",
+                    "SVC Chaos",
+                ),
             ],
             None,
         )
@@ -1115,7 +1210,12 @@ mod tests {
         MetadataDb::save_system_entries(
             &mut conn,
             "snes",
-            &[make_game_entry_with_developer("snes", "Mario.sfc", "Nintendo", "Mario")],
+            &[make_game_entry_with_developer(
+                "snes",
+                "Mario.sfc",
+                "Nintendo",
+                "Mario",
+            )],
             None,
         )
         .unwrap();
@@ -1142,8 +1242,18 @@ mod tests {
         assert_eq!(matches[0].1, 2);
     }
 
-    fn make_dev_entry(system: &str, filename: &str, developer: &str, base_title: &str, region: &str, genre: Option<&str>, box_art: Option<&str>) -> super::super::GameEntry {
-        let genre_group = genre.map(|g| crate::genre::normalize_genre(g).to_string()).unwrap_or_default();
+    fn make_dev_entry(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+        region: &str,
+        genre: Option<&str>,
+        box_art: Option<&str>,
+    ) -> super::super::GameEntry {
+        let genre_group = genre
+            .map(|g| crate::genre::normalize_genre(g).to_string())
+            .unwrap_or_default();
         super::super::GameEntry {
             developer: developer.into(),
             base_title: base_title.into(),
@@ -1155,27 +1265,86 @@ mod tests {
         }
     }
 
-    fn make_dev_entry_clone(system: &str, filename: &str, developer: &str, base_title: &str) -> super::super::GameEntry {
-        super::super::GameEntry { is_clone: true, ..make_dev_entry(system, filename, developer, base_title, "", None, None) }
+    fn make_dev_entry_clone(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+    ) -> super::super::GameEntry {
+        super::super::GameEntry {
+            is_clone: true,
+            ..make_dev_entry(system, filename, developer, base_title, "", None, None)
+        }
     }
 
-    fn make_dev_entry_hack(system: &str, filename: &str, developer: &str, base_title: &str) -> super::super::GameEntry {
-        super::super::GameEntry { is_hack: true, ..make_dev_entry(system, filename, developer, base_title, "", None, None) }
+    fn make_dev_entry_hack(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+    ) -> super::super::GameEntry {
+        super::super::GameEntry {
+            is_hack: true,
+            ..make_dev_entry(system, filename, developer, base_title, "", None, None)
+        }
     }
 
-    fn make_dev_entry_multiplayer(system: &str, filename: &str, developer: &str, base_title: &str, players: u8) -> super::super::GameEntry {
-        super::super::GameEntry { players: Some(players), ..make_dev_entry(system, filename, developer, base_title, "", None, None) }
+    fn make_dev_entry_multiplayer(
+        system: &str,
+        filename: &str,
+        developer: &str,
+        base_title: &str,
+        players: u8,
+    ) -> super::super::GameEntry {
+        super::super::GameEntry {
+            players: Some(players),
+            ..make_dev_entry(system, filename, developer, base_title, "", None, None)
+        }
     }
 
     #[test]
     fn developer_games_paginated_empty_genre_returns_all() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", Some("Action"), None),
-            make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", Some("RPG"), None),
-        ], None).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "MegaManX.sfc",
+                    "Capcom",
+                    "Mega Man X",
+                    "us",
+                    Some("Action"),
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "BoF.sfc",
+                    "Capcom",
+                    "Breath of Fire",
+                    "us",
+                    Some("RPG"),
+                    None,
+                ),
+            ],
+            None,
+        )
+        .unwrap();
         let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
+        let (entries, has_more, total) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            None,
+            &super::PaginationParams {
+                offset: 0,
+                limit: 50,
+                region_pref: "us",
+                region_secondary: "",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(total, 2);
         assert_eq!(entries.len(), 2);
         assert!(!has_more);
@@ -1184,13 +1353,58 @@ mod tests {
     #[test]
     fn developer_games_paginated_specific_genre() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", Some("Action"), None),
-            make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", Some("RPG"), None),
-            make_dev_entry("snes", "SF2.sfc", "Capcom", "Street Fighter II", "us", Some("Fighting"), None),
-        ], None).unwrap();
-        let filters = super::DeveloperGamesFilter { genre: "Action", ..Default::default() };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "MegaManX.sfc",
+                    "Capcom",
+                    "Mega Man X",
+                    "us",
+                    Some("Action"),
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "BoF.sfc",
+                    "Capcom",
+                    "Breath of Fire",
+                    "us",
+                    Some("RPG"),
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "SF2.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "us",
+                    Some("Fighting"),
+                    None,
+                ),
+            ],
+            None,
+        )
+        .unwrap();
+        let filters = super::DeveloperGamesFilter {
+            genre: "Action",
+            ..Default::default()
+        };
+        let (entries, _, total) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            None,
+            &super::PaginationParams {
+                offset: 0,
+                limit: 50,
+                region_pref: "us",
+                region_secondary: "",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Mega Man X");
@@ -1199,15 +1413,64 @@ mod tests {
     #[test]
     fn developer_games_paginated_system_and_genre_combined() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", Some("Action"), None),
-            make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", Some("RPG"), None),
-        ], None).unwrap();
-        MetadataDb::save_system_entries(&mut conn, "gba", &[
-            make_dev_entry("gba", "MegaManZero.gba", "Capcom", "Mega Man Zero", "us", Some("Action"), None),
-        ], None).unwrap();
-        let filters = super::DeveloperGamesFilter { genre: "Action", ..Default::default() };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", Some("snes"), &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "MegaManX.sfc",
+                    "Capcom",
+                    "Mega Man X",
+                    "us",
+                    Some("Action"),
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "BoF.sfc",
+                    "Capcom",
+                    "Breath of Fire",
+                    "us",
+                    Some("RPG"),
+                    None,
+                ),
+            ],
+            None,
+        )
+        .unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "gba",
+            &[make_dev_entry(
+                "gba",
+                "MegaManZero.gba",
+                "Capcom",
+                "Mega Man Zero",
+                "us",
+                Some("Action"),
+                None,
+            )],
+            None,
+        )
+        .unwrap();
+        let filters = super::DeveloperGamesFilter {
+            genre: "Action",
+            ..Default::default()
+        };
+        let (entries, _, total) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            Some("snes"),
+            &super::PaginationParams {
+                offset: 0,
+                limit: 50,
+                region_pref: "us",
+                region_secondary: "",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Mega Man X");
@@ -1216,13 +1479,55 @@ mod tests {
     #[test]
     fn developer_games_paginated_region_dedup_prefers_user_region() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "SF2-us.sfc", "Capcom", "Street Fighter II", "us", None, None),
-            make_dev_entry("snes", "SF2-jp.sfc", "Capcom", "Street Fighter II", "japan", None, None),
-            make_dev_entry("snes", "SF2-eu.sfc", "Capcom", "Street Fighter II", "europe", None, None),
-        ], None).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "SF2-us.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "us",
+                    None,
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "SF2-jp.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "japan",
+                    None,
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "SF2-eu.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "europe",
+                    None,
+                    None,
+                ),
+            ],
+            None,
+        )
+        .unwrap();
         let filters = super::DeveloperGamesFilter::default();
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "europe" }, &filters).unwrap();
+        let (entries, _, total) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            None,
+            &super::PaginationParams {
+                offset: 0,
+                limit: 50,
+                region_pref: "us",
+                region_secondary: "europe",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].region, "us");
@@ -1231,12 +1536,46 @@ mod tests {
     #[test]
     fn developer_games_paginated_offset_beyond_total() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", None, None),
-            make_dev_entry("snes", "BoF.sfc", "Capcom", "Breath of Fire", "us", None, None),
-        ], None).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "MegaManX.sfc",
+                    "Capcom",
+                    "Mega Man X",
+                    "us",
+                    None,
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "BoF.sfc",
+                    "Capcom",
+                    "Breath of Fire",
+                    "us",
+                    None,
+                    None,
+                ),
+            ],
+            None,
+        )
+        .unwrap();
         let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 100, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
+        let (entries, has_more, total) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            None,
+            &super::PaginationParams {
+                offset: 100,
+                limit: 50,
+                region_pref: "us",
+                region_secondary: "",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(total, 2);
         assert!(entries.is_empty());
         assert!(!has_more);
@@ -1245,17 +1584,47 @@ mod tests {
     #[test]
     fn developer_games_paginated_has_more_with_limit_plus_one() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "A.sfc", "Capcom", "Game A", "us", None, None),
-            make_dev_entry("snes", "B.sfc", "Capcom", "Game B", "us", None, None),
-            make_dev_entry("snes", "C.sfc", "Capcom", "Game C", "us", None, None),
-        ], None).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry("snes", "A.sfc", "Capcom", "Game A", "us", None, None),
+                make_dev_entry("snes", "B.sfc", "Capcom", "Game B", "us", None, None),
+                make_dev_entry("snes", "C.sfc", "Capcom", "Game C", "us", None, None),
+            ],
+            None,
+        )
+        .unwrap();
         let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 2, region_pref: "us", region_secondary: "" }, &filters).unwrap();
+        let (entries, has_more, total) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            None,
+            &super::PaginationParams {
+                offset: 0,
+                limit: 2,
+                region_pref: "us",
+                region_secondary: "",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(entries.len(), 2);
         assert!(has_more);
         assert_eq!(total, 3);
-        let (entries, has_more, _) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 2, limit: 2, region_pref: "us", region_secondary: "" }, &filters).unwrap();
+        let (entries, has_more, _) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            None,
+            &super::PaginationParams {
+                offset: 2,
+                limit: 2,
+                region_pref: "us",
+                region_secondary: "",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(entries.len(), 1);
         assert!(!has_more);
     }
@@ -1263,13 +1632,43 @@ mod tests {
     #[test]
     fn developer_games_paginated_hide_hacks_and_clones() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "SF2.sfc", "Capcom", "Street Fighter II", "us", None, None),
-            make_dev_entry_hack("snes", "SF2-hack.sfc", "Capcom", "Street Fighter II Hack"),
-            make_dev_entry_clone("snes", "SF2-clone.sfc", "Capcom", "Street Fighter II Clone"),
-        ], None).unwrap();
-        let filters = super::DeveloperGamesFilter { hide_hacks: true, hide_clones: true, ..Default::default() };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "SF2.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "us",
+                    None,
+                    None,
+                ),
+                make_dev_entry_hack("snes", "SF2-hack.sfc", "Capcom", "Street Fighter II Hack"),
+                make_dev_entry_clone("snes", "SF2-clone.sfc", "Capcom", "Street Fighter II Clone"),
+            ],
+            None,
+        )
+        .unwrap();
+        let filters = super::DeveloperGamesFilter {
+            hide_hacks: true,
+            hide_clones: true,
+            ..Default::default()
+        };
+        let (entries, _, total) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            None,
+            &super::PaginationParams {
+                offset: 0,
+                limit: 50,
+                region_pref: "us",
+                region_secondary: "",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Street Fighter II");
@@ -1278,12 +1677,41 @@ mod tests {
     #[test]
     fn developer_games_paginated_multiplayer_only() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry_multiplayer("snes", "SF2.sfc", "Capcom", "Street Fighter II", 2),
-            make_dev_entry("snes", "MegaManX.sfc", "Capcom", "Mega Man X", "us", None, None),
-        ], None).unwrap();
-        let filters = super::DeveloperGamesFilter { multiplayer_only: true, ..Default::default() };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(&conn, "Capcom", None, &super::PaginationParams { offset: 0, limit: 50, region_pref: "us", region_secondary: "" }, &filters).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry_multiplayer("snes", "SF2.sfc", "Capcom", "Street Fighter II", 2),
+                make_dev_entry(
+                    "snes",
+                    "MegaManX.sfc",
+                    "Capcom",
+                    "Mega Man X",
+                    "us",
+                    None,
+                    None,
+                ),
+            ],
+            None,
+        )
+        .unwrap();
+        let filters = super::DeveloperGamesFilter {
+            multiplayer_only: true,
+            ..Default::default()
+        };
+        let (entries, _, total) = MetadataDb::developer_games_paginated(
+            &conn,
+            "Capcom",
+            None,
+            &super::PaginationParams {
+                offset: 0,
+                limit: 50,
+                region_pref: "us",
+                region_secondary: "",
+            },
+            &filters,
+        )
+        .unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Street Fighter II");
@@ -1292,8 +1720,36 @@ mod tests {
     #[test]
     fn games_by_developer_deduplicates_across_systems() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[make_dev_entry("snes", "SF2-snes.sfc", "Capcom", "Street Fighter II", "us", None, None)], None).unwrap();
-        MetadataDb::save_system_entries(&mut conn, "sega_smd", &[make_dev_entry("sega_smd", "SF2-md.md", "Capcom", "Street Fighter II", "us", None, None)], None).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_dev_entry(
+                "snes",
+                "SF2-snes.sfc",
+                "Capcom",
+                "Street Fighter II",
+                "us",
+                None,
+                None,
+            )],
+            None,
+        )
+        .unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "sega_smd",
+            &[make_dev_entry(
+                "sega_smd",
+                "SF2-md.md",
+                "Capcom",
+                "Street Fighter II",
+                "us",
+                None,
+                None,
+            )],
+            None,
+        )
+        .unwrap();
         let results = MetadataDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
         assert_eq!(results.len(), 1);
     }
@@ -1301,10 +1757,32 @@ mod tests {
     #[test]
     fn games_by_developer_prefers_entry_with_box_art() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "SF2-noart.sfc", "Capcom", "Street Fighter II", "us", None, None),
-            make_dev_entry("snes", "SF2-art.sfc", "Capcom", "Street Fighter II", "us", None, Some("/img/sf2.png")),
-        ], None).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "SF2-noart.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "us",
+                    None,
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "SF2-art.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "us",
+                    None,
+                    Some("/img/sf2.png"),
+                ),
+            ],
+            None,
+        )
+        .unwrap();
         let results = MetadataDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].box_art_url.as_deref(), Some("/img/sf2.png"));
@@ -1313,11 +1791,25 @@ mod tests {
     #[test]
     fn games_by_developer_excludes_clones_and_hacks() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "SF2.sfc", "Capcom", "Street Fighter II", "us", None, None),
-            make_dev_entry_hack("snes", "SF2-hack.sfc", "Capcom", "SF2 Hack"),
-            make_dev_entry_clone("snes", "SF2-clone.sfc", "Capcom", "SF2 Clone"),
-        ], None).unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "SF2.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "us",
+                    None,
+                    None,
+                ),
+                make_dev_entry_hack("snes", "SF2-hack.sfc", "Capcom", "SF2 Hack"),
+                make_dev_entry_clone("snes", "SF2-clone.sfc", "Capcom", "SF2 Clone"),
+            ],
+            None,
+        )
+        .unwrap();
         let results = MetadataDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].base_title, "Street Fighter II");
@@ -1326,12 +1818,142 @@ mod tests {
     #[test]
     fn games_by_developer_prefers_user_region() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[
-            make_dev_entry("snes", "SF2-jp.sfc", "Capcom", "Street Fighter II", "japan", None, None),
-            make_dev_entry("snes", "SF2-eu.sfc", "Capcom", "Street Fighter II", "europe", None, None),
-        ], None).unwrap();
-        let results = MetadataDb::games_by_developer(&conn, "Capcom", 50, "europe", "japan").unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_dev_entry(
+                    "snes",
+                    "SF2-jp.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "japan",
+                    None,
+                    None,
+                ),
+                make_dev_entry(
+                    "snes",
+                    "SF2-eu.sfc",
+                    "Capcom",
+                    "Street Fighter II",
+                    "europe",
+                    None,
+                    None,
+                ),
+            ],
+            None,
+        )
+        .unwrap();
+        let results =
+            MetadataDb::games_by_developer(&conn, "Capcom", 50, "europe", "japan").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].region, "europe");
+    }
+
+    // ── count_system_entries + load_system_entries_page ───────────────
+
+    #[test]
+    fn count_system_entries_empty() {
+        let (mut conn, _dir) = open_temp_db();
+        let count = MetadataDb::count_system_entries(&conn, "snes").unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn count_system_entries_returns_correct_count() {
+        let (mut conn, _dir) = open_temp_db();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_game_entry("snes", "Mario.sfc", false),
+                make_game_entry("snes", "Zelda.sfc", false),
+                make_game_entry("snes", "Metroid.sfc", false),
+            ],
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(MetadataDb::count_system_entries(&conn, "snes").unwrap(), 3);
+        // Different system should return 0.
+        assert_eq!(MetadataDb::count_system_entries(&conn, "gba").unwrap(), 0);
+    }
+
+    #[test]
+    fn load_system_entries_page_returns_correct_page() {
+        let (mut conn, _dir) = open_temp_db();
+
+        // Insert entries with explicit display names for predictable sort order.
+        let entries: Vec<super::super::GameEntry> = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"]
+            .iter()
+            .map(|name| super::super::GameEntry {
+                display_name: Some(name.to_string()),
+                ..make_game_entry("snes", &format!("{name}.sfc"), false)
+            })
+            .collect();
+        MetadataDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
+
+        // First page: offset=0, limit=2 → Alpha, Bravo
+        let page1 = MetadataDb::load_system_entries_page(&conn, "snes", 0, 2).unwrap();
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page1[0].display_name.as_deref(), Some("Alpha"));
+        assert_eq!(page1[1].display_name.as_deref(), Some("Bravo"));
+
+        // Second page: offset=2, limit=2 → Charlie, Delta
+        let page2 = MetadataDb::load_system_entries_page(&conn, "snes", 2, 2).unwrap();
+        assert_eq!(page2.len(), 2);
+        assert_eq!(page2[0].display_name.as_deref(), Some("Charlie"));
+        assert_eq!(page2[1].display_name.as_deref(), Some("Delta"));
+
+        // Third page: offset=4, limit=2 → Echo (partial page)
+        let page3 = MetadataDb::load_system_entries_page(&conn, "snes", 4, 2).unwrap();
+        assert_eq!(page3.len(), 1);
+        assert_eq!(page3[0].display_name.as_deref(), Some("Echo"));
+
+        // Beyond range: offset=5, limit=2 → empty
+        let page4 = MetadataDb::load_system_entries_page(&conn, "snes", 5, 2).unwrap();
+        assert!(page4.is_empty());
+    }
+
+    #[test]
+    fn load_system_entries_page_case_insensitive_sort() {
+        let (mut conn, _dir) = open_temp_db();
+
+        // Mixed case: should sort case-insensitively.
+        let entries: Vec<super::super::GameEntry> = ["zebra", "Alpha", "BRAVO"]
+            .iter()
+            .map(|name| super::super::GameEntry {
+                display_name: Some(name.to_string()),
+                ..make_game_entry("snes", &format!("{name}.sfc"), false)
+            })
+            .collect();
+        MetadataDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
+
+        let page = MetadataDb::load_system_entries_page(&conn, "snes", 0, 10).unwrap();
+        assert_eq!(page.len(), 3);
+        assert_eq!(page[0].display_name.as_deref(), Some("Alpha"));
+        assert_eq!(page[1].display_name.as_deref(), Some("BRAVO"));
+        assert_eq!(page[2].display_name.as_deref(), Some("zebra"));
+    }
+
+    #[test]
+    fn load_system_entries_page_falls_back_to_filename_when_no_display_name() {
+        let (mut conn, _dir) = open_temp_db();
+
+        // Entry without display_name should sort by rom_filename.
+        let entries = vec![
+            super::super::GameEntry {
+                display_name: Some("Zelda".to_string()),
+                ..make_game_entry("snes", "zelda.sfc", false)
+            },
+            make_game_entry("snes", "alpha.sfc", false), // No display_name → uses filename
+        ];
+        MetadataDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
+
+        let page = MetadataDb::load_system_entries_page(&conn, "snes", 0, 10).unwrap();
+        assert_eq!(page.len(), 2);
+        // "alpha.sfc" < "Zelda" case-insensitively
+        assert_eq!(page[0].rom_filename, "alpha.sfc");
+        assert_eq!(page[1].display_name.as_deref(), Some("Zelda"));
     }
 }
