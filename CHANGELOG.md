@@ -19,11 +19,18 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - feat: user_data.db backup at startup — copies healthy DB to `.bak` before background pipeline runs; corruption recovery offers restore from backup (`1f6aa8c`)
 - feat: organize favorites by developer — new `Developer` criterion in favorites organize, with `normalize_developer()` handling MAME manufacturer variations (licensing, regional suffixes, joint ventures) (`643bf31`)
 
+### Bug Fixes
+- fix: unfavorite from any page when favorites are organized into subfolders — recursive search removes `.fav` from all locations (`5531966`)
+- fix: favorites sorted by date added (newest first) instead of system+filename, consistent across subfolders (`5531966`)
+- fix: preserve file mtime when copying favorites during reorganization — prevents "Latest Added" showing incorrect results (`bfde961`)
+- fix: use `read_untracked()` for system display name in favorites page — fixes reactive tracking warning on WASM hydration (`f0ccd94`)
+- fix: startup no longer silently deletes corrupt user_data.db — flags pool and shows recovery banner instead (`1f6aa8c`)
+
 ### Code Quality
 - fix: resolve all clippy warnings across crates (`f002a9a`)
 
 ### Documentation
-- docs: add research documents for implemented features — async DB access hang analysis, M3U/TOSEC support investigation, corruption detection design, favorites-by-developer plan, DB pool load test results (`46d11f1`)
+- docs: update changelog, feature docs, design docs, and known issues for 2026-03-24 changes (`5f48f0d`)
 
 ---
 
