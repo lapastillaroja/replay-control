@@ -651,9 +651,9 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
     let favorites = RwSignal::new(favs);
     let confirm_remove = RwSignal::new(Option::<String>::None);
 
-    // Derive the system display name from the first favorite.
+    // Derive the system display name from the first favorite (one-time read).
     let system_display = favorites
-        .read()
+        .read_untracked()
         .first()
         .map(|f| f.fav.game.system_display.clone())
         .unwrap_or_default();
