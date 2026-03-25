@@ -247,6 +247,13 @@ pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
     // When setting a skin manually, disable sync and store the override.
     let mut guard = state.skin_override.write().expect("skin lock poisoned");
     *guard = Some(index);
+    drop(guard);
+
+    let skin_css = replay_control_core::skins::theme_css(index);
+    let _ = state.config_tx.send(crate::api::ConfigEvent::SkinChanged {
+        skin_index: index,
+        skin_css,
+    });
     Ok(())
 }
 
@@ -269,6 +276,13 @@ pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
         let mut guard = state.skin_override.write().expect("skin lock poisoned");
         *guard = Some(current);
     }
+
+    let effective = state.effective_skin();
+    let skin_css = replay_control_core::skins::theme_css(effective);
+    let _ = state.config_tx.send(crate::api::ConfigEvent::SkinChanged {
+        skin_index: effective,
+        skin_css,
+    });
     Ok(())
 }
 

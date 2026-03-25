@@ -95,7 +95,7 @@ Accessible from the More page, organized into Preferences, Game Data, and System
 
 - **Region preference** — primary and secondary preferred ROM region (USA, Europe, Japan, World); affects sort order, search scoring, and recommendation dedup
 - **Text size** — normal/large toggle with rem-based scaling
-- **Skin/theme sync** — browse and apply RePlayOS skins; optionally sync the app's color scheme to the active skin
+- **Skin/theme sync** — browse and apply RePlayOS skins; optionally sync the app's color scheme to the active skin. Skin changes push instantly to all connected browsers via broadcast SSE (`/sse/config`)
 - **Hostname** — view and change the Pi's hostname and mDNS address
 - **Wi-Fi** — view and edit Wi-Fi settings (SSID, password, country, mode)
 - **NFS share** — view and edit NFS v4 share configuration
@@ -105,7 +105,7 @@ Accessible from the More page, organized into Preferences, Game Data, and System
 ## Storage
 
 - Auto-detects storage mode from RePlayOS config: SD card, USB, NVMe (Pi 5), or NFS
-- Config file watcher with automatic cache invalidation on storage changes
+- Config file watcher with automatic cache invalidation on storage changes; storage changes push via broadcast SSE to trigger client reload
 - Filesystem-aware SQLite journal mode: WAL on POSIX-capable filesystems (ext4, btrfs, xfs), DELETE on exFAT/FAT32/NFS
 - Runtime corruption detection — `SQLITE_CORRUPT` errors trigger a recovery banner; metadata.db can be rebuilt, user_data.db can be restored from automatic startup backup
 - App data stored in `.replay-control/` on the ROM storage device, separate from RePlayOS config. [Detail](storage.md)

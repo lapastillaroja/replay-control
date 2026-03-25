@@ -88,6 +88,7 @@ pub fn App() -> impl IntoView {
 
     view! {
         <Router>
+            <SseConfigListener />
             <SearchShortcut />
             <div class="app">
                 <header class="top-bar">
@@ -130,6 +131,141 @@ pub fn App() -> impl IntoView {
                 <BottomNav />
             </div>
         </Router>
+    }
+}
+
+/// SSE listener for config changes (skin, storage).
+///
+/// Connects to `/sse/config` on hydration. This is a broadcast-based endpoint
+/// (no polling) — the server pushes events only when skin or storage actually
+/// changes.
+///
+/// Handles:
+/// - `init`: records current skin/storage state from server
+/// - `SkinChanged`: updates the `<style id="skin-theme">` element in-place
+/// - `StorageChanged`: reloads the page so all data is re-fetched
+#[component]
+fn SseConfigListener() -> impl IntoView {
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::prelude::*;
+
+        // Track the last skin index to avoid unnecessary CSS updates on init.
+        // u32::MAX means "not yet initialized". These are internal tracking
+        // signals — nothing subscribes to them reactively.
+        let last_skin = RwSignal::new(u32::MAX);
+        // Track the last storage kind to detect real transitions.
+        let last_storage_kind = RwSignal::new(String::new());
+
+        Effect::new(move || {
+            let es = match web_sys::EventSource::new("/sse/config") {
+                Ok(es) => es,
+                Err(_) => return,
+            };
+
+            let es_ref = es.clone();
+            let on_message = Closure::<dyn Fn(web_sys::MessageEvent)>::new(
+                move |event: web_sys::MessageEvent| {
+                    let data = event.data().as_string().unwrap_or_default();
+                    if data.is_empty() {
+                        return;
+                    }
+
+                    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&data) else {
+                        return;
+                    };
+
+                    let event_type = payload
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default();
+
+                    match event_type {
+                        "init" => {
+                            // Record initial state from server.
+                            if let Some(idx) = payload.get("skin_index").and_then(|v| v.as_u64()) {
+                                last_skin.set(idx as u32);
+                            }
+                            if let Some(kind) =
+                                payload.get("storage_kind").and_then(|v| v.as_str())
+                            {
+                                last_storage_kind.set(kind.to_string());
+                            }
+                        }
+                        "SkinChanged" => {
+                            if let Some(idx) = payload.get("skin_index").and_then(|v| v.as_u64()) {
+                                let idx = idx as u32;
+                                let prev = last_skin.get_untracked();
+                                if prev != idx {
+                                    // Update the <style id="skin-theme"> element.
+                                    if let Some(doc) =
+                                        web_sys::window().and_then(|w| w.document())
+                                    {
+                                        if let Some(style_el) =
+                                            doc.get_element_by_id("skin-theme")
+                                        {
+                                            let css = payload
+                                                .get("skin_css")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("");
+                                            style_el.set_text_content(Some(css));
+                                        }
+                                        // Update the theme-color meta tag.
+                                        if let Ok(Some(meta)) =
+                                            doc.query_selector("meta[name='theme-color']")
+                                        {
+                                            let bg = payload
+                                                .get("skin_css")
+                                                .and_then(|v| v.as_str())
+                                                .and_then(|css| {
+                                                    css.find("--bg:")
+                                                        .map(|i| &css[i + 5..])
+                                                        .and_then(|s| {
+                                                            s.find(';').map(|j| s[..j].trim())
+                                                        })
+                                                })
+                                                .unwrap_or("#1a1a2e");
+                                            let _ = meta.set_attribute("content", bg);
+                                        }
+                                    }
+                                    last_skin.set(idx);
+                                }
+                            }
+                        }
+                        "StorageChanged" => {
+                            if let Some(new_kind) =
+                                payload.get("storage_kind").and_then(|v| v.as_str())
+                            {
+                                let prev = last_storage_kind.get_untracked();
+                                if !prev.is_empty() && prev != new_kind {
+                                    // Storage changed — reload to re-fetch all data.
+                                    if let Some(window) = web_sys::window() {
+                                        let _ = window.location().reload();
+                                    }
+                                }
+                                last_storage_kind.set(new_kind.to_string());
+                            }
+                        }
+                        _ => {}
+                    }
+                },
+            );
+
+            es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+            on_message.forget();
+
+            // On error (server restart, network issue) just close.
+            // EventSource auto-reconnects by default; closing prevents
+            // rapid reconnect loops if the server is truly down.
+            let on_error = Closure::<dyn Fn()>::new(move || {
+                es_ref.close();
+            });
+            es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
+            on_error.forget();
+
+            // Keep the EventSource alive for the app lifetime (this component
+            // is mounted at the App root and never unmounts).
+        });
     }
 }
 

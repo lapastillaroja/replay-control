@@ -77,6 +77,50 @@ mod ssr {
         )
     }
 
+    /// Broadcast-based SSE stream for config change notifications.
+    ///
+    /// Unlike the polling-based `/sse/activity`, this stream is event-driven:
+    /// it sends an initial state snapshot, then waits on a broadcast channel
+    /// for skin or storage change events. No polling loop.
+    fn sse_config_stream(
+        state: api::AppState,
+    ) -> axum::response::sse::Sse<
+        impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+    > {
+        use axum::response::sse::{Event, KeepAlive, Sse};
+        use std::convert::Infallible;
+
+        let mut rx = state.config_tx.subscribe();
+        let stream = async_stream::stream! {
+            // Send initial state so the client has current values on connect.
+            let skin = state.effective_skin();
+            let skin_css = replay_control_core::skins::theme_css(skin);
+            let storage = state.storage();
+            let storage_kind = format!("{:?}", storage.kind).to_lowercase();
+            yield Ok::<_, Infallible>(Event::default().data(serde_json::json!({
+                "type": "init",
+                "skin_index": skin,
+                "skin_css": skin_css,
+                "storage_kind": storage_kind,
+            }).to_string()));
+
+            // Then wait for broadcast events (no polling).
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if let Ok(json) = serde_json::to_string(&event) {
+                            yield Ok::<_, Infallible>(Event::default().data(json));
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        };
+
+        Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(30)))
+    }
+
     /// Serve in-folder documents (PDFs, text files, images) from a game's ROM directory.
     ///
     /// URL format: `/rom-docs/<system>/<base64_rom_filename>/<relative_doc_path>`
@@ -494,7 +538,7 @@ mod ssr {
             },
         );
 
-        // Unified SSE endpoint for activity progress.
+        // SSE endpoint for activity progress (polling-based, metadata page only).
         let sse_state = app_state.clone();
         let activity_sse_handler = axum::routing::get(move || {
             let state = sse_state.clone();
@@ -508,8 +552,16 @@ mod ssr {
             }
         });
 
+        // SSE endpoint for config changes (broadcast-based, always open from app shell).
+        let config_sse_state = app_state.clone();
+        let config_sse_handler = axum::routing::get(move || {
+            let state = config_sse_state.clone();
+            async move { sse_config_stream(state) }
+        });
+
         let app = api::build_router(app_state, leptos_options)
             .route("/sse/activity", activity_sse_handler)
+            .route("/sse/config", config_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/manuals/*path", manuals_handler)
             .route("/rom-docs/*path", rom_docs_handler)

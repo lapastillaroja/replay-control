@@ -459,6 +459,14 @@ impl DbPool {
     }
 }
 
+/// Config change events pushed to clients via the `/sse/config` broadcast channel.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "type")]
+pub enum ConfigEvent {
+    SkinChanged { skin_index: u32, skin_css: Option<String> },
+    StorageChanged { storage_kind: String },
+}
+
 /// Shared application state.
 #[derive(Clone)]
 pub struct AppState {
@@ -484,6 +492,8 @@ pub struct AppState {
     /// Unified activity state: at most one activity at a time.
     /// Replaces `busy`, `busy_label`, `scanning`, and `rebuild_progress`.
     pub(crate) activity: Arc<std::sync::RwLock<Activity>>,
+    /// Broadcast channel for config change notifications (skin, storage).
+    pub config_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
 }
 
 /// Opener for metadata DB.
@@ -586,6 +596,8 @@ impl AppState {
         // `storage` is moved into the Arc below.
         let initial_skin = replay_control_core::settings::read_skin(&storage.root);
 
+        let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
+
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
@@ -599,6 +611,7 @@ impl AppState {
             thumbnails,
             pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
             activity,
+            config_tx,
         })
     }
 
@@ -707,6 +720,11 @@ impl AppState {
             self.user_data_pool.reopen(&new_storage_ref.root);
 
             self.cache.invalidate().await;
+
+            let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();
+            let _ = self.config_tx.send(ConfigEvent::StorageChanged {
+                storage_kind: kind,
+            });
         }
 
         Ok(changed)
