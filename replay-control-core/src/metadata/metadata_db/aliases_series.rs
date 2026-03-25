@@ -389,6 +389,9 @@ impl MetadataDb {
         preferred_system: &str,
         region_pref: &str,
     ) -> Option<GameEntry> {
+        // Try exact base_title match, preferring non-clones.
+        // Falls back to clones if no original exists (common for arcade games
+        // where the Wikidata title matches a regional clone, not the parent ROM).
         conn.query_row(
             "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
@@ -396,8 +399,9 @@ impl MetadataDb {
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
                  FROM game_library
                  WHERE base_title = ?1 COLLATE NOCASE
-                   AND is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
+                   AND is_translation = 0 AND is_hack = 0 AND is_special = 0
                  ORDER BY
+                     is_clone ASC,
                      CASE WHEN system = ?2 THEN 0 ELSE 1 END,
                      CASE WHEN region = ?3 THEN 0 WHEN region = 'world' THEN 1 ELSE 2 END
                  LIMIT 1",
