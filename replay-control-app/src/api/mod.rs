@@ -494,6 +494,8 @@ pub struct AppState {
     pub(crate) activity: Arc<std::sync::RwLock<Activity>>,
     /// Broadcast channel for config change notifications (skin, storage).
     pub config_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
+    /// Broadcast channel for activity state changes (import, thumbnail, rebuild).
+    pub activity_tx: tokio::sync::broadcast::Sender<Activity>,
 }
 
 /// Opener for metadata DB.
@@ -597,6 +599,7 @@ impl AppState {
         let initial_skin = replay_control_core::settings::read_skin(&storage.root);
 
         let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
+        let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
 
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
@@ -612,6 +615,7 @@ impl AppState {
             pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
             activity,
             config_tx,
+            activity_tx,
         })
     }
 

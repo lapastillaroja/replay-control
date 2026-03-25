@@ -167,6 +167,7 @@ impl ImportPipeline {
             // Download and extract with streaming progress.
             // download_metadata is blocking I/O — run in spawn_blocking.
             let activity_lock = state.activity.clone();
+            let activity_tx = state.activity_tx.clone();
             let rc_dir_owned = rc_dir.to_path_buf();
             let xml_path = match tokio::task::spawn_blocking({
                 move || {
@@ -180,6 +181,9 @@ impl ImportPipeline {
                                 progress.download_total = total;
                                 progress.elapsed_secs = start.elapsed().as_secs();
                             }
+                            let activity = guard.clone();
+                            drop(guard);
+                            let _ = activity_tx.send(activity);
                         },
                     )
                 }
@@ -292,6 +296,7 @@ impl ImportPipeline {
         // bridge into the async pool API.
         let pool_ref = state.metadata_pool.clone();
         let activity_lock = state.activity.clone();
+        let activity_tx = state.activity_tx.clone();
         let start_ref = start;
         let xml_path_owned = xml_path.to_path_buf();
         let result = tokio::task::spawn_blocking(move || {
@@ -322,6 +327,9 @@ impl ImportPipeline {
                         progress.inserted = inserted;
                         progress.elapsed_secs = start_ref.elapsed().as_secs();
                     }
+                    let activity = guard.clone();
+                    drop(guard);
+                    let _ = activity_tx.send(activity);
                 },
                 flush_batch,
             )
@@ -541,6 +549,7 @@ impl ThumbnailPipeline {
             let cancel_flag = cancel.clone();
             let api_key_owned = api_key.clone();
             let activity_ref = activity_lock.clone();
+            let activity_tx = state.activity_tx.clone();
             state
                 .metadata_pool
                 .write(move |db| {
@@ -555,6 +564,9 @@ impl ThumbnailPipeline {
                                 progress.current_label = current_repo.to_string();
                                 progress.elapsed_secs = start.elapsed().as_secs();
                             }
+                            let activity = guard.clone();
+                            drop(guard);
+                            let _ = activity_tx.send(activity);
                         },
                         &cancel_flag,
                         api_key_owned.as_deref(),
@@ -701,6 +713,7 @@ impl ThumbnailPipeline {
                 let prev_downloaded = total_downloaded;
                 let cancel_flag = cancel.clone();
                 let activity_ref2 = activity_ref.clone();
+                let activity_tx = state.activity_tx.clone();
                 let system_display_owned = system_display.clone();
                 let storage_root = storage_root.clone();
                 let system_owned = system.clone();
@@ -725,6 +738,9 @@ impl ThumbnailPipeline {
                                             format!("{system_display_owned}: {display_n}/{total}");
                                     }
                                 }
+                                let activity = guard.clone();
+                                drop(guard);
+                                let _ = activity_tx.send(activity);
                             },
                             &cancel_flag,
                         )

@@ -180,19 +180,24 @@ pub struct RebuildProgress {
 /// Panic-safe: if the operation panics, the guard still cleans up.
 pub struct ActivityGuard {
     state: Arc<RwLock<Activity>>,
+    activity_tx: tokio::sync::broadcast::Sender<Activity>,
 }
 
 impl ActivityGuard {
-    /// Update the activity in-place through the guard.
+    /// Update the activity in-place through the guard and broadcast the change.
     pub fn update<F: FnOnce(&mut Activity)>(&self, f: F) {
         let mut guard = self.state.write().expect("activity lock");
         f(&mut guard);
+        let activity = guard.clone();
+        drop(guard);
+        let _ = self.activity_tx.send(activity);
     }
 }
 
 impl Drop for ActivityGuard {
     fn drop(&mut self) {
         *self.state.write().expect("activity lock") = Activity::Idle;
+        let _ = self.activity_tx.send(Activity::Idle);
     }
 }
 
@@ -200,7 +205,11 @@ impl Drop for ActivityGuard {
 impl ActivityGuard {
     /// Create a guard for testing (not through try_start_activity).
     pub fn new_for_test(state: Arc<RwLock<Activity>>) -> Self {
-        Self { state }
+        let (tx, _) = tokio::sync::broadcast::channel(1);
+        Self {
+            state,
+            activity_tx: tx,
+        }
     }
 }
 
@@ -213,8 +222,12 @@ impl super::AppState {
             return Err("Another operation is already running");
         }
         *state = initial;
+        let activity = state.clone();
+        drop(state);
+        let _ = self.activity_tx.send(activity);
         Ok(ActivityGuard {
             state: self.activity.clone(),
+            activity_tx: self.activity_tx.clone(),
         })
     }
 
@@ -223,10 +236,19 @@ impl super::AppState {
         self.activity.read().expect("activity lock").clone()
     }
 
-    /// Update the activity in-place.
+    /// Broadcast the current activity state to all SSE listeners.
+    pub fn broadcast_activity(&self) {
+        let activity = self.activity();
+        let _ = self.activity_tx.send(activity);
+    }
+
+    /// Update the activity in-place and broadcast the change.
     pub fn update_activity<F: FnOnce(&mut Activity)>(&self, f: F) {
         let mut guard = self.activity.write().expect("activity lock");
         f(&mut guard);
+        let activity = guard.clone();
+        drop(guard);
+        let _ = self.activity_tx.send(activity);
     }
 
     /// Check if idle (replaces is_busy -- inverted sense).

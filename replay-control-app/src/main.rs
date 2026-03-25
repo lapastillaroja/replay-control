@@ -34,47 +34,45 @@ mod ssr {
         site_root: String,
     }
 
-    /// Build an SSE stream that polls a progress function every 200ms.
+    /// Broadcast-based SSE stream for activity state changes.
     ///
-    /// The `poll_fn` closure returns `(json_string, is_active)` on each tick.
-    /// The stream auto-closes after 5 consecutive idle ticks (1s of inactivity).
-    fn sse_progress_stream<F>(
-        poll_fn: F,
+    /// Sends an initial state snapshot, then waits on the activity broadcast
+    /// channel for updates. No polling loop — events are pushed whenever the
+    /// activity state changes (import progress, thumbnail download, etc.).
+    fn sse_activity_stream(
+        state: api::AppState,
     ) -> axum::response::sse::Sse<
         impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
-    >
-    where
-        F: Fn() -> (String, bool) + Send + 'static,
-    {
-        use axum::response::sse::{Event, Sse};
+    > {
+        use axum::response::sse::{Event, KeepAlive, Sse};
         use std::convert::Infallible;
-        use tokio_stream::StreamExt;
 
-        let idle_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let mut rx = state.activity_tx.subscribe();
+        let stream = async_stream::stream! {
+            // Send initial state so the client has current values on connect.
+            let activity = state.activity();
+            let json = serde_json::to_string(&activity).unwrap_or_default();
+            yield Ok::<_, Infallible>(Event::default().data(json));
 
-        let stream = tokio_stream::wrappers::IntervalStream::new(tokio::time::interval(
-            std::time::Duration::from_millis(200),
-        ))
-        .map({
-            let idle_count = idle_count.clone();
-            move |_| {
-                let (json, is_active) = poll_fn();
-                if is_active {
-                    idle_count.store(0, std::sync::atomic::Ordering::Relaxed);
-                } else {
-                    idle_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // Wait for broadcast events (no polling).
+            loop {
+                match rx.recv().await {
+                    Ok(activity) => {
+                        let json = serde_json::to_string(&activity).unwrap_or_default();
+                        yield Ok::<_, Infallible>(Event::default().data(json));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        // Missed some events — send current state to catch up.
+                        let activity = state.activity();
+                        let json = serde_json::to_string(&activity).unwrap_or_default();
+                        yield Ok::<_, Infallible>(Event::default().data(json));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
-                Ok::<_, Infallible>(Event::default().data(json))
             }
-        })
-        .take_while({
-            let idle_count = idle_count.clone();
-            move |_| idle_count.load(std::sync::atomic::Ordering::Relaxed) <= 5
-        });
+        };
 
-        Sse::new(stream).keep_alive(
-            axum::response::sse::KeepAlive::new().interval(std::time::Duration::from_secs(15)),
-        )
+        Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
     }
 
     /// Broadcast-based SSE stream for config change notifications.
@@ -538,18 +536,11 @@ mod ssr {
             },
         );
 
-        // SSE endpoint for activity progress (polling-based, metadata page only).
+        // SSE endpoint for activity progress (broadcast-based, metadata page only).
         let sse_state = app_state.clone();
         let activity_sse_handler = axum::routing::get(move || {
             let state = sse_state.clone();
-            async move {
-                sse_progress_stream(move || {
-                    let activity = state.activity();
-                    let is_active = !matches!(activity, replay_control_app::api::Activity::Idle);
-                    let json = serde_json::to_string(&activity).unwrap_or_default();
-                    (json, is_active)
-                })
-            }
+            async move { sse_activity_stream(state) }
         });
 
         // SSE endpoint for config changes (broadcast-based, always open from app shell).
