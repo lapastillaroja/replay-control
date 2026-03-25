@@ -20,7 +20,7 @@ pub fn read_region_preference(storage_root: &Path) -> RegionPreference {
         Ok(c) => c,
         Err(_) => return RegionPreference::default(),
     };
-    let value = config.get("region_preference").unwrap_or("usa");
+    let value = config.get("region_preference").unwrap_or("world");
     RegionPreference::from_str_value(value)
 }
 
