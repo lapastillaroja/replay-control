@@ -2232,7 +2232,7 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
 
     let file = File::open(&series_path).unwrap();
     let reader = BufReader::new(file);
-    let entries: Vec<WikidataSeriesEntry> = serde_json::from_reader(reader).unwrap_or_else(|e| {
+    let mut entries: Vec<WikidataSeriesEntry> = serde_json::from_reader(reader).unwrap_or_else(|e| {
         println!("cargo:warning=Series DB: Failed to parse series.json: {e}");
         Vec::new()
     });
@@ -2241,6 +2241,98 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
         println!("cargo:warning=Series DB: No entries in series.json, generating empty series DB");
         write_empty_series_db(&mut out);
         return;
+    }
+
+    // Reverse-link pass: fill in missing bidirectional sequel/prequel links.
+    // If entry A has followed_by = "B" but entry B has no follows, set B.follows = A.
+    // Uses normalized titles for matching (case-insensitive, cross-system).
+    {
+        use std::collections::HashMap;
+
+        // Map normalized_title -> index for O(1) lookup.
+        let norm_to_idx: HashMap<String, Vec<usize>> = {
+            let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+            for (i, entry) in entries.iter().enumerate() {
+                let norm = normalize_title_for_wikidata(&entry.game_title);
+                if !norm.is_empty() {
+                    map.entry(norm).or_default().push(i);
+                }
+            }
+            map
+        };
+
+        let mut reverse_filled = 0usize;
+        let mut series_propagated = 0usize;
+
+        // Collect fixes first, then apply (avoid borrow conflict).
+        let mut fixes: Vec<(usize, Option<String>, Option<String>, Option<String>)> = Vec::new();
+
+        for i in 0..entries.len() {
+            let entry = &entries[i];
+            let entry_norm = normalize_title_for_wikidata(&entry.game_title);
+
+            // If A has followed_by = "B", find B and fill B.follows = A's title.
+            if let Some(ref followed_by) = entry.followed_by {
+                let target_norm = normalize_title_for_wikidata(followed_by);
+                if let Some(indices) = norm_to_idx.get(&target_norm) {
+                    for &j in indices {
+                        if entries[j].follows.is_none() || entries[j].follows.as_ref().is_some_and(|s| s.is_empty()) {
+                            fixes.push((j, Some(entry.game_title.clone()), None, None));
+                        }
+                    }
+                }
+            }
+
+            // If A has follows = "B", find B and fill B.followed_by = A's title.
+            if let Some(ref follows) = entry.follows {
+                let target_norm = normalize_title_for_wikidata(follows);
+                if let Some(indices) = norm_to_idx.get(&target_norm) {
+                    for &j in indices {
+                        if entries[j].followed_by.is_none() || entries[j].followed_by.as_ref().is_some_and(|s| s.is_empty()) {
+                            fixes.push((j, None, Some(entry.game_title.clone()), None));
+                        }
+                    }
+                }
+            }
+
+            // Propagate series_name to entries with sequel links but no series name.
+            if let Some(ref series) = entry.series_name {
+                if !series.is_empty() {
+                    for target in [&entry.follows, &entry.followed_by] {
+                        if let Some(t) = target {
+                            let target_norm = normalize_title_for_wikidata(t);
+                            if let Some(indices) = norm_to_idx.get(&target_norm) {
+                                for &j in indices {
+                                    if entries[j].series_name.is_none() || entries[j].series_name.as_ref().is_some_and(|s| s.is_empty()) {
+                                        fixes.push((j, None, None, Some(series.clone())));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply fixes.
+        for (idx, follows_fix, followed_by_fix, series_fix) in fixes {
+            if let Some(f) = follows_fix {
+                entries[idx].follows = Some(f);
+                reverse_filled += 1;
+            }
+            if let Some(f) = followed_by_fix {
+                entries[idx].followed_by = Some(f);
+                reverse_filled += 1;
+            }
+            if let Some(s) = series_fix {
+                entries[idx].series_name = Some(s);
+                series_propagated += 1;
+            }
+        }
+
+        if reverse_filled > 0 || series_propagated > 0 {
+            println!("cargo:warning=Series DB: Reverse-link pass: {reverse_filled} links filled, {series_propagated} series names propagated");
+        }
     }
 
     // Build the static data array.
