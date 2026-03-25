@@ -111,6 +111,10 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         );
         enriched.push(RecentWithArt { entry, box_art_url });
     }
+    // The homepage only displays 1 hero + 10 scroll = 11 entries.
+    // Cap at 15 to avoid serialising the full list (~95 entries, ~39KB).
+    enriched.truncate(15);
+
 
     Ok(enriched)
 }
