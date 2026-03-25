@@ -106,6 +106,7 @@ native scroll restoration doesn't work because the content is async-loaded.
    re-fetch on back navigation
 4. **Virtualized list** — only render visible items (overkill for current scale)
 
-### Priority
-Low — the UX impact is noticeable but not blocking. Users can scroll back manually.
-Infinite scroll means the list is usually short on initial load.
+### Decision
+Won't fix. The complexity of a PageCache solution doesn't justify the minor UX
+inconvenience. Users can scroll back quickly. See
+`research/investigations/scroll-restoration-analysis.md`.
