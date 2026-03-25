@@ -12,11 +12,11 @@ use crate::util::format_size_short;
 #[component]
 pub fn HomePage() -> impl IntoView {
     let i18n = use_i18n();
-    let info = Resource::new_blocking(|| (), |_| server_fns::get_info());
-    let recents = Resource::new_blocking(|| (), |_| server_fns::get_recents());
-    let systems = Resource::new_blocking(|| (), |_| server_fns::get_systems());
+    let info = Resource::new(|| (), |_| server_fns::get_info());
+    let recents = Resource::new(|| (), |_| server_fns::get_recents());
+    let systems = Resource::new(|| (), |_| server_fns::get_systems());
 
-    let recommendations = Resource::new_blocking(|| (), |_| server_fns::get_recommendations(6));
+    let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations(6));
     view! {
         <div class="page home-page">
             <section class="section home-search-section">
