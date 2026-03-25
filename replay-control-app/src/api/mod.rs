@@ -777,7 +777,10 @@ pub fn build_router(
             "/style.css",
             axum::routing::get(|| async {
                 (
-                    [("content-type", "text/css")],
+                    [
+                        ("content-type", "text/css"),
+                        ("cache-control", "public, max-age=3600"),
+                    ],
                     include_str!(concat!(env!("OUT_DIR"), "/style.css")),
                 )
             }),

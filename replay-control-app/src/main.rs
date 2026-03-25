@@ -7,6 +7,7 @@ mod ssr {
     use tower_http::compression::CompressionLayer;
     use tower_http::cors::CorsLayer;
     use tower_http::services::ServeDir;
+    use tower_http::set_header::SetResponseHeaderLayer;
 
     use replay_control_app::api;
 
@@ -515,14 +516,30 @@ mod ssr {
             .route("/media/*path", media_handler)
             .nest_service(
                 "/pkg",
-                ServeDir::new(format!("{site_root}/pkg")).precompressed_gzip(),
+                tower::ServiceBuilder::new()
+                    .layer(SetResponseHeaderLayer::overriding(
+                        http::header::CACHE_CONTROL,
+                        http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+                    ))
+                    .service(ServeDir::new(format!("{site_root}/pkg")).precompressed_gzip()),
             )
-            .nest_service("/icons", ServeDir::new(format!("{site_root}/icons")))
+            .nest_service(
+                "/icons",
+                tower::ServiceBuilder::new()
+                    .layer(SetResponseHeaderLayer::overriding(
+                        http::header::CACHE_CONTROL,
+                        http::HeaderValue::from_static("public, max-age=86400"),
+                    ))
+                    .service(ServeDir::new(format!("{site_root}/icons"))),
+            )
             .route(
                 "/manifest.json",
                 axum::routing::get(|| async {
                     (
-                        [("content-type", "application/manifest+json")],
+                        [
+                            ("content-type", "application/manifest+json"),
+                            ("cache-control", "public, max-age=3600"),
+                        ],
                         include_str!("../static/manifest.json"),
                     )
                 }),
@@ -531,7 +548,10 @@ mod ssr {
                 "/sw.js",
                 axum::routing::get(|| async {
                     (
-                        [("content-type", "application/javascript")],
+                        [
+                            ("content-type", "application/javascript"),
+                            ("cache-control", "public, max-age=3600"),
+                        ],
                         include_str!("../static/sw.js"),
                     )
                 }),
@@ -540,7 +560,10 @@ mod ssr {
                 "/ptr-init.js",
                 axum::routing::get(|| async {
                     (
-                        [("content-type", "application/javascript")],
+                        [
+                            ("content-type", "application/javascript"),
+                            ("cache-control", "public, max-age=3600"),
+                        ],
                         include_str!("../static/ptr-init.js"),
                     )
                 }),
@@ -549,7 +572,10 @@ mod ssr {
                 "/pulltorefresh.min.js",
                 axum::routing::get(|| async {
                     (
-                        [("content-type", "application/javascript")],
+                        [
+                            ("content-type", "application/javascript"),
+                            ("cache-control", "public, max-age=3600"),
+                        ],
                         include_str!("../static/pulltorefresh.min.js"),
                     )
                 }),
