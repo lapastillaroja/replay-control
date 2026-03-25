@@ -21,7 +21,10 @@ GIT_SUBJECT=$(git -C "$REPO_ROOT" log -1 --format='%s' 2>/dev/null || echo "unkn
 # Endpoints to test
 declare -a EP_LABELS=(
     "Homepage (heavy SSR)"
-    "Search (heavy DB)"
+    "Search: mario (common)"
+    "Search: sonic (common)"
+    "Search: street fighter (multi-word)"
+    "Search: a (broad)"
     "SNES games (light)"
     "Megadrive games (light)"
     "Game detail (light)"
@@ -29,6 +32,9 @@ declare -a EP_LABELS=(
 declare -a EP_PATHS=(
     "/"
     "/search?q=mario"
+    "/search?q=sonic"
+    "/search?q=street+fighter"
+    "/search?q=a"
     "/games/snes"
     "/games/megadrive"
     "/games/snes/Super%20Mario%20World%20(USA).sfc"

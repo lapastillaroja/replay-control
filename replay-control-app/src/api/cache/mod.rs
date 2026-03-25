@@ -605,6 +605,41 @@ impl GameLibrary {
         Ok(entries)
     }
 
+    /// Search the game library using SQL-level pre-filtering on the `search_text` column.
+    ///
+    /// Delegates to `MetadataDb::search_game_library()` via the read pool.
+    /// Returns matching `GameEntry` rows (all systems) for the caller to score and rank.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn db_search(
+        &self,
+        query_words: Vec<String>,
+        hide_hacks: bool,
+        hide_translations: bool,
+        hide_betas: bool,
+        hide_clones: bool,
+        genre: String,
+        multiplayer_only: bool,
+        min_rating: Option<f64>,
+    ) -> Vec<replay_control_core::metadata_db::GameEntry> {
+        self.db
+            .read(move |conn| {
+                MetadataDb::search_game_library(
+                    conn,
+                    &query_words,
+                    hide_hacks,
+                    hide_translations,
+                    hide_betas,
+                    hide_clones,
+                    &genre,
+                    multiplayer_only,
+                    min_rating,
+                )
+                .unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default()
+    }
+
     /// Invalidate all caches (after delete, rename, upload).
     /// Clears both L1 (in-memory) and L2 (SQLite game_library).
     pub async fn invalidate(&self) {

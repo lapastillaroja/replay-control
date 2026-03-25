@@ -327,6 +327,7 @@ impl MetadataDb {
                     series_key TEXT NOT NULL DEFAULT '',
                     region TEXT NOT NULL DEFAULT '',
                     developer TEXT NOT NULL DEFAULT '',
+                    search_text TEXT NOT NULL DEFAULT '',
                     genre TEXT,
                     genre_group TEXT NOT NULL DEFAULT '',
                     rating REAL,
@@ -431,6 +432,7 @@ impl MetadataDb {
         )
         .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
 
+        // ── Schema migrations for existing databases ──────────────────
         Ok(())
     }
 
