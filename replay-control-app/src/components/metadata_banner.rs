@@ -89,6 +89,16 @@ pub fn MetadataBusyBanner() -> impl IntoView {
             Activity::Rebuild { progress } => {
                 if progress.current_system.is_empty() {
                     "Rebuilding library...".to_string()
+                } else if progress.systems_total > 0 {
+                    let phase = match progress.phase {
+                        server_fns::RebuildPhase::Scanning => "Scanning",
+                        server_fns::RebuildPhase::Enriching => "Enriching",
+                        _ => "Rebuilding",
+                    };
+                    format!(
+                        "{} {} ({}/{})...",
+                        phase, progress.current_system, progress.systems_done + 1, progress.systems_total
+                    )
                 } else {
                     format!("Rebuilding library ({})...", progress.current_system)
                 }
