@@ -380,6 +380,11 @@ impl BackgroundManager {
         let start = std::time::Instant::now();
         let mut total_roms = 0usize;
         for sys in &with_games {
+            state.update_activity(|act| {
+                if let Activity::Startup { system, .. } = act {
+                    *system = sys.display_name.clone();
+                }
+            });
             match state
                 .cache
                 .scan_and_cache_system(storage, &sys.folder_name, region_pref, region_secondary)
@@ -402,6 +407,11 @@ impl BackgroundManager {
 
         // Enrich box art URLs and ratings for all systems.
         for sys in &with_games {
+            state.update_activity(|act| {
+                if let Activity::Startup { system, .. } = act {
+                    *system = format!("{} (enriching)", sys.display_name);
+                }
+            });
             state
                 .cache
                 .enrich_system_cache(state, sys.folder_name.clone())
