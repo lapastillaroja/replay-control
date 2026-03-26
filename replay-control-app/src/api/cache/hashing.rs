@@ -367,18 +367,14 @@ impl GameLibrary {
 /// 3. Full date (if same year but different dates)
 /// 4. Bracket descriptors (game-specific tags like [joystick], [experimental])
 ///
-/// Only non-clone entries are disambiguated. Clone entries keep their original
-/// display name since they're typically hidden by the clone filter.
+/// Disambiguate entries that share the same display name by appending
+/// distinguishing metadata (year, publisher, date, bracket descriptors).
 fn disambiguate_display_names(entries: &mut [replay_control_core::metadata_db::GameEntry]) {
     use replay_control_core::rom_tags;
 
-    // Group non-clone entries by display_name to find duplicates.
-    // We need indices because we'll mutate the entries.
+    // Group ALL entries by display_name to find duplicates.
     let mut display_groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, entry) in entries.iter().enumerate() {
-        if entry.is_clone {
-            continue;
-        }
         let display = entry
             .display_name
             .as_deref()
