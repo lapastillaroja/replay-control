@@ -2232,10 +2232,11 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
 
     let file = File::open(&series_path).unwrap();
     let reader = BufReader::new(file);
-    let mut entries: Vec<WikidataSeriesEntry> = serde_json::from_reader(reader).unwrap_or_else(|e| {
-        println!("cargo:warning=Series DB: Failed to parse series.json: {e}");
-        Vec::new()
-    });
+    let mut entries: Vec<WikidataSeriesEntry> =
+        serde_json::from_reader(reader).unwrap_or_else(|e| {
+            println!("cargo:warning=Series DB: Failed to parse series.json: {e}");
+            Vec::new()
+        });
 
     if entries.is_empty() {
         println!("cargo:warning=Series DB: No entries in series.json, generating empty series DB");
@@ -2265,18 +2266,21 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
         let mut series_propagated = 0usize;
 
         // Collect fixes first, then apply (avoid borrow conflict).
-        let mut fixes: Vec<(usize, Option<String>, Option<String>, Option<String>)> = Vec::new();
+        // (index, follows_fix, followed_by_fix, series_name_fix)
+        type Fix = (usize, Option<String>, Option<String>, Option<String>);
+        let mut fixes: Vec<Fix> = Vec::new();
 
         for i in 0..entries.len() {
             let entry = &entries[i];
-            let entry_norm = normalize_title_for_wikidata(&entry.game_title);
 
             // If A has followed_by = "B", find B and fill B.follows = A's title.
             if let Some(ref followed_by) = entry.followed_by {
                 let target_norm = normalize_title_for_wikidata(followed_by);
                 if let Some(indices) = norm_to_idx.get(&target_norm) {
                     for &j in indices {
-                        if entries[j].follows.is_none() || entries[j].follows.as_ref().is_some_and(|s| s.is_empty()) {
+                        if entries[j].follows.is_none()
+                            || entries[j].follows.as_ref().is_some_and(|s| s.is_empty())
+                        {
                             fixes.push((j, Some(entry.game_title.clone()), None, None));
                         }
                     }
@@ -2288,7 +2292,12 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
                 let target_norm = normalize_title_for_wikidata(follows);
                 if let Some(indices) = norm_to_idx.get(&target_norm) {
                     for &j in indices {
-                        if entries[j].followed_by.is_none() || entries[j].followed_by.as_ref().is_some_and(|s| s.is_empty()) {
+                        if entries[j].followed_by.is_none()
+                            || entries[j]
+                                .followed_by
+                                .as_ref()
+                                .is_some_and(|s| s.is_empty())
+                        {
                             fixes.push((j, None, Some(entry.game_title.clone()), None));
                         }
                     }
@@ -2296,17 +2305,20 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
             }
 
             // Propagate series_name to entries with sequel links but no series name.
-            if let Some(ref series) = entry.series_name {
-                if !series.is_empty() {
-                    for target in [&entry.follows, &entry.followed_by] {
-                        if let Some(t) = target {
-                            let target_norm = normalize_title_for_wikidata(t);
-                            if let Some(indices) = norm_to_idx.get(&target_norm) {
-                                for &j in indices {
-                                    if entries[j].series_name.is_none() || entries[j].series_name.as_ref().is_some_and(|s| s.is_empty()) {
-                                        fixes.push((j, None, None, Some(series.clone())));
-                                    }
-                                }
+            if let Some(ref series) = entry.series_name
+                && !series.is_empty()
+            {
+                for target in [&entry.follows, &entry.followed_by].into_iter().flatten() {
+                    let target_norm = normalize_title_for_wikidata(target);
+                    if let Some(indices) = norm_to_idx.get(&target_norm) {
+                        for &j in indices {
+                            if entries[j].series_name.is_none()
+                                || entries[j]
+                                    .series_name
+                                    .as_ref()
+                                    .is_some_and(|s| s.is_empty())
+                            {
+                                fixes.push((j, None, None, Some(series.clone())));
                             }
                         }
                     }
@@ -2331,7 +2343,9 @@ fn generate_series_db(out_dir: &str, sources_dir: &Path) {
         }
 
         if reverse_filled > 0 || series_propagated > 0 {
-            println!("cargo:warning=Series DB: Reverse-link pass: {reverse_filled} links filled, {series_propagated} series names propagated");
+            println!(
+                "cargo:warning=Series DB: Reverse-link pass: {reverse_filled} links filled, {series_propagated} series names propagated"
+            );
         }
     }
 

@@ -196,7 +196,8 @@ impl MetadataDb {
                 SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        release_year
                 FROM deduped WHERE rn = 1
                 ORDER BY display_name",
             )

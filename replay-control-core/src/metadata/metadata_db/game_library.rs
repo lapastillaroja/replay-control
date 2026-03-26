@@ -8,17 +8,32 @@ use super::{GameEntry, MetadataDb, SystemMeta, unix_now};
 
 /// Build the pre-computed, lowercased search index value for a game_library row.
 ///
-/// Format: `"{display_lower}|{rom_filename_lower}|{base_title_lower}"`.
-/// All three fields are lowercased and joined by `|`.
+/// Format: `"{display}|{rom_filename}|{base_title}[|{developer}][|{year}]"`.
+/// All fields are lowercased and joined by `|`.
 /// Computed at insert time so search queries only need `LIKE` on a single column.
-fn build_search_text(display_name: Option<&str>, rom_filename: &str, base_title: &str) -> String {
+fn build_search_text(
+    display_name: Option<&str>,
+    rom_filename: &str,
+    base_title: &str,
+    developer: &str,
+    release_year: Option<u16>,
+) -> String {
     let display = display_name.unwrap_or(rom_filename);
-    format!(
+    let mut text = format!(
         "{}|{}|{}",
         display.to_lowercase(),
         rom_filename.to_lowercase(),
         base_title.to_lowercase()
-    )
+    );
+    if !developer.is_empty() {
+        text.push('|');
+        text.push_str(&developer.to_lowercase());
+    }
+    if let Some(year) = release_year {
+        text.push('|');
+        text.push_str(&year.to_string());
+    }
+    text
 }
 
 /// Helper for building dynamic SQL WHERE clauses with parameterized values.
@@ -182,9 +197,10 @@ impl MetadataDb {
                      base_title, series_key, region, developer, search_text,
                      genre, genre_group, rating, rating_count, players,
                      is_clone, is_m3u, is_translation, is_hack, is_special,
-                     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name)
+                     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                     release_year)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                             ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
+                             ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -193,6 +209,8 @@ impl MetadataDb {
                     rom.display_name.as_deref(),
                     &rom.rom_filename,
                     &rom.base_title,
+                    &rom.developer,
+                    rom.release_year,
                 );
                 stmt.execute(params![
                     &rom.system,
@@ -220,6 +238,7 @@ impl MetadataDb {
                     rom.crc32.map(|c| c as i64),
                     rom.hash_mtime,
                     &rom.hash_matched_name,
+                    rom.release_year.map(|y| y as i32),
                 ])
                 .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
             }
@@ -253,7 +272,8 @@ impl MetadataDb {
                 "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        release_year
                  FROM game_library WHERE system = ?1",
             )
             .map_err(|e| Error::Other(format!("Prepare load_system_entries: {e}")))?;
@@ -294,7 +314,8 @@ impl MetadataDb {
                 "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        release_year
                  FROM game_library WHERE system = ?1
                  ORDER BY COALESCE(display_name, rom_filename) COLLATE NOCASE
                  LIMIT ?2 OFFSET ?3",
@@ -326,7 +347,8 @@ impl MetadataDb {
             "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                     region, developer, genre, genre_group, rating, rating_count, players,
                     is_clone, is_m3u, is_translation, is_hack, is_special,
-                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                    release_year
              FROM game_library
              WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
@@ -715,6 +737,61 @@ impl MetadataDb {
         Ok(())
     }
 
+    /// Fetch filenames that already have a `release_year` in `game_library` for a system.
+    pub fn system_rom_release_years(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<std::collections::HashSet<String>> {
+        use std::collections::HashSet;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename FROM game_library
+                 WHERE system = ?1 AND release_year IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_rom_release_years: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("System rom release_years query: {e}")))?;
+
+        let mut set = HashSet::new();
+        for row in rows.flatten() {
+            set.insert(row);
+        }
+        Ok(set)
+    }
+
+    /// Batch update `release_year` for entries in game_library.
+    pub fn update_release_years(
+        conn: &mut Connection,
+        system: &str,
+        years: &[(String, u16)],
+    ) -> Result<()> {
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE game_library SET release_year = ?2
+                     WHERE system = ?3 AND rom_filename = ?1
+                       AND release_year IS NULL",
+                )
+                .map_err(|e| Error::Other(format!("Prepare release_year update: {e}")))?;
+
+            for (filename, year) in years {
+                stmt.execute(params![filename, *year as i32, system])
+                    .map_err(|e| Error::Other(format!("Update release_year: {e}")))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(())
+    }
+
     /// Fetch current player counts from `game_library` for a single system.
     pub fn system_rom_players(
         conn: &Connection,
@@ -805,7 +882,8 @@ impl MetadataDb {
                 SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        release_year
                 FROM deduped WHERE rn = 1
                 ORDER BY box_art_url IS NULL, RANDOM()
                 LIMIT ?4",
@@ -890,7 +968,8 @@ impl MetadataDb {
             SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                     region, developer, genre, genre_group, rating, rating_count, players,
                     is_clone, is_m3u, is_translation, is_hack, is_special,
-                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                    release_year
             FROM deduped WHERE rn = 1
             ORDER BY display_name COLLATE NOCASE
             LIMIT ?3 OFFSET ?4"
@@ -1064,7 +1143,8 @@ impl MetadataDb {
             "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
                     region, developer, genre, genre_group, rating, rating_count, players,
                     is_clone, is_m3u, is_translation, is_hack, is_special,
-                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                    release_year
              FROM game_library
              {where_sql}"
         );
@@ -1074,8 +1154,10 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Prepare search_game_library: {e}")))?;
 
         // Build parameter references for rusqlite.
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+            .iter()
+            .map(|v| v as &dyn rusqlite::types::ToSql)
+            .collect();
 
         let rows = stmt
             .query_map(param_refs.as_slice(), Self::row_to_game_entry)
@@ -2085,26 +2167,63 @@ mod tests {
 
     #[test]
     fn build_search_text_with_display_name() {
-        let text = super::build_search_text(Some("Super Mario World"), "Super Mario World (USA).sfc", "Super Mario World");
-        assert_eq!(text, "super mario world|super mario world (usa).sfc|super mario world");
+        let text = super::build_search_text(
+            Some("Super Mario World"),
+            "Super Mario World (USA).sfc",
+            "Super Mario World",
+            "",
+            None,
+        );
+        assert_eq!(
+            text,
+            "super mario world|super mario world (usa).sfc|super mario world"
+        );
     }
 
     #[test]
     fn build_search_text_without_display_name_falls_back_to_filename() {
-        let text = super::build_search_text(None, "sonic.md", "Sonic");
+        let text = super::build_search_text(None, "sonic.md", "Sonic", "", None);
         assert_eq!(text, "sonic.md|sonic.md|sonic");
     }
 
     #[test]
     fn build_search_text_lowercases_all_fields() {
-        let text = super::build_search_text(Some("Sonic The Hedgehog"), "Sonic The Hedgehog (USA).md", "Sonic The Hedgehog");
-        assert!(text.chars().all(|c| !c.is_uppercase() || !c.is_ascii_alphabetic()));
+        let text = super::build_search_text(
+            Some("Sonic The Hedgehog"),
+            "Sonic The Hedgehog (USA).md",
+            "Sonic The Hedgehog",
+            "",
+            None,
+        );
+        assert!(
+            text.chars()
+                .all(|c| !c.is_uppercase() || !c.is_ascii_alphabetic())
+        );
     }
 
     #[test]
     fn build_search_text_empty_base_title() {
-        let text = super::build_search_text(Some("Game"), "game.rom", "");
+        let text = super::build_search_text(Some("Game"), "game.rom", "", "", None);
         assert_eq!(text, "game|game.rom|");
+    }
+
+    #[test]
+    fn build_search_text_with_developer() {
+        let text = super::build_search_text(Some("Game"), "game.rom", "game", "Imagine", None);
+        assert_eq!(text, "game|game.rom|game|imagine");
+    }
+
+    #[test]
+    fn build_search_text_with_year() {
+        let text = super::build_search_text(Some("Game"), "game.rom", "game", "", Some(1987));
+        assert_eq!(text, "game|game.rom|game|1987");
+    }
+
+    #[test]
+    fn build_search_text_with_developer_and_year() {
+        let text =
+            super::build_search_text(Some("Game"), "game.rom", "game", "Imagine", Some(1987));
+        assert_eq!(text, "game|game.rom|game|imagine|1987");
     }
 
     // ── search_game_library tests ──────────────────────────────────────
@@ -2146,16 +2265,14 @@ mod tests {
                 ..make_game_entry("snes", "Zelda - A Link to the Past (T-Es).sfc", false)
             },
         ];
-        let smd_entries = vec![
-            super::super::GameEntry {
-                display_name: Some("Sonic the Hedgehog".to_string()),
-                base_title: "Sonic the Hedgehog".to_string(),
-                genre_group: "Platform".to_string(),
-                players: Some(1),
-                rating: Some(4.2),
-                ..make_game_entry("sega_smd", "Sonic the Hedgehog (USA).md", false)
-            },
-        ];
+        let smd_entries = vec![super::super::GameEntry {
+            display_name: Some("Sonic the Hedgehog".to_string()),
+            base_title: "Sonic the Hedgehog".to_string(),
+            genre_group: "Platform".to_string(),
+            players: Some(1),
+            rating: Some(4.2),
+            ..make_game_entry("sega_smd", "Sonic the Hedgehog (USA).md", false)
+        }];
         // save_system_entries replaces all entries for a system, so batch per system.
         MetadataDb::save_system_entries(&mut *conn, "snes", &snes_entries, None).unwrap();
         MetadataDb::save_system_entries(&mut *conn, "sega_smd", &smd_entries, None).unwrap();
@@ -2169,8 +2286,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["sonic".to_string()],
-            false, false, false, false, "", false, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].rom_filename, "Sonic the Hedgehog (USA).md");
     }
@@ -2183,8 +2307,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["super".to_string(), "mario".to_string()],
-            false, false, false, false, "", false, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         // Should find both "Super Mario World" and "Super Mario Kart"
         assert_eq!(results.len(), 2);
         let filenames: Vec<&str> = results.iter().map(|r| r.rom_filename.as_str()).collect();
@@ -2200,8 +2331,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["mario".to_string()],
-            false, false, false, false, "", false, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         // "mario" appears in both Super Mario entries
         assert_eq!(results.len(), 2);
     }
@@ -2214,8 +2352,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["street".to_string()],
-            true, false, false, false, "", false, None,
-        ).unwrap();
+            true,
+            false,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         // "Street Fighter II Turbo (Hack)" should be filtered out
         assert!(results.is_empty());
     }
@@ -2228,8 +2373,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["zelda".to_string()],
-            false, true, false, false, "", false, None,
-        ).unwrap();
+            false,
+            true,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         // Zelda translation should be filtered out
         assert!(results.is_empty());
     }
@@ -2242,8 +2394,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["super".to_string()],
-            false, false, false, false, "Racing", false, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "Racing",
+            false,
+            None,
+        )
+        .unwrap();
         // Only Super Mario Kart should match (genre = Racing)
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].rom_filename, "Super Mario Kart (USA).sfc");
@@ -2257,8 +2416,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &[],
-            false, false, false, false, "Platform", true, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "Platform",
+            true,
+            None,
+        )
+        .unwrap();
         // Only Super Mario World (platform + 2 players). Sonic is platform but 1 player.
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].rom_filename, "Super Mario World (USA).sfc");
@@ -2272,8 +2438,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &[],
-            false, false, false, false, "", false, Some(4.5),
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            Some(4.5),
+        )
+        .unwrap();
         // Only entries with rating >= 4.5
         for r in &results {
             assert!(r.rating.unwrap() >= 4.5);
@@ -2288,8 +2461,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &[],
-            false, false, false, false, "", false, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         // Should return all entries (no text filter)
         assert!(results.len() >= 4);
     }
@@ -2303,8 +2483,15 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["hedgehog".to_string()],
-            false, false, false, false, "", false, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].system, "sega_smd");
     }
@@ -2318,15 +2505,29 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["%".to_string()],
-            false, false, false, false, "", false, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         assert!(results.is_empty());
 
         let results = MetadataDb::search_game_library(
             &conn,
             &["_".to_string()],
-            false, false, false, false, "", false, None,
-        ).unwrap();
+            false,
+            false,
+            false,
+            false,
+            "",
+            false,
+            None,
+        )
+        .unwrap();
         assert!(results.is_empty());
     }
 }

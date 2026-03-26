@@ -241,7 +241,12 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
             is_hack = true;
             continue;
         }
-        if lower == "beta" || lower.starts_with("beta ") {
+        if lower == "beta"
+            || lower.starts_with("beta ")
+            || lower == "alpha"
+            || lower == "preview"
+            || lower == "pre-release"
+        {
             is_beta = true;
             continue;
         }
@@ -437,7 +442,12 @@ pub fn extract_tags(filename: &str) -> String {
             is_hack = true;
             continue;
         }
-        if lower == "beta" || lower.starts_with("beta ") {
+        if lower == "beta"
+            || lower.starts_with("beta ")
+            || lower == "alpha"
+            || lower == "preview"
+            || lower == "pre-release"
+        {
             is_beta = true;
             continue;
         }
@@ -867,6 +877,155 @@ fn expand_tosec_country_code(code: &str) -> Option<&'static str> {
     }
 }
 
+/// Try to parse a TOSEC year from a parenthesized tag.
+///
+/// Recognizes:
+/// - Exact 4-digit year: `1987`, `2001` (range 1970-2030)
+/// - TOSEC date: `1987-03-15`, `1987-03` — extracts just the year
+/// - Unknown/wildcard years: `19xx`, `199x`, `198x` — returns `None`
+fn parse_year_tag(tag: &str) -> Option<u16> {
+    let lower = tag.to_lowercase();
+
+    // TOSEC full date: YYYY-MM-DD
+    if tag.len() == 10
+        && tag.as_bytes().get(4) == Some(&b'-')
+        && tag.as_bytes().get(7) == Some(&b'-')
+    {
+        let year_str = &tag[..4];
+        if year_str.chars().all(|c| c.is_ascii_digit()) {
+            let y: u16 = year_str.parse().ok()?;
+            if (1970..=2030).contains(&y) {
+                return Some(y);
+            }
+        }
+        return None;
+    }
+
+    // TOSEC partial date: YYYY-MM
+    if tag.len() == 7 && tag.as_bytes().get(4) == Some(&b'-') {
+        let year_str = &tag[..4];
+        if year_str.chars().all(|c| c.is_ascii_digit()) {
+            let y: u16 = year_str.parse().ok()?;
+            if (1970..=2030).contains(&y) {
+                return Some(y);
+            }
+        }
+        return None;
+    }
+
+    // Must be exactly 4 characters for remaining patterns
+    if tag.len() != 4 {
+        return None;
+    }
+
+    // Skip wildcard years: 19xx, 199x, 198x, etc.
+    if lower.ends_with("xx") || lower.ends_with('x') {
+        return None;
+    }
+
+    // Exact 4-digit year
+    if tag.chars().all(|c| c.is_ascii_digit()) {
+        let y: u16 = tag.parse().ok()?;
+        if (1970..=2030).contains(&y) {
+            return Some(y);
+        }
+    }
+
+    None
+}
+
+/// Structured metadata extracted from TOSEC-style filename tags.
+///
+/// Used by the scan pipeline to populate `GameEntry` fields that aren't
+/// available from baked-in game databases.
+#[derive(Debug, Clone, Default)]
+pub struct TosecMetadata {
+    /// Release year extracted from the first parenthesized tag.
+    pub year: Option<u16>,
+    /// Publisher extracted from the second parenthesized tag (after a year).
+    pub publisher: Option<String>,
+    /// Disc/Side label for multi-part games (e.g., "Side A", "Disk 1 of 3").
+    pub disc_label: Option<String>,
+}
+
+/// Extract structured TOSEC metadata from a ROM filename.
+///
+/// TOSEC convention: `Title (Year)(Publisher)(Country)(Media)...`
+///
+/// This uses positional logic: the first paren tag is checked for a year,
+/// the second (after a year) for a publisher. Publisher extraction only
+/// triggers when a year was found, preventing false positives on No-Intro
+/// filenames where the first tag is a region.
+pub fn extract_tosec_metadata(filename: &str) -> TosecMetadata {
+    let stem = filename
+        .rfind('.')
+        .map(|i| &filename[..i])
+        .unwrap_or(filename);
+
+    let mut meta = TosecMetadata::default();
+    let mut tag_index = 0u32;
+    let mut found_year = false;
+
+    for tag in ParenTags::new(stem) {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        tag_index += 1;
+        let lower = trimmed.to_lowercase();
+
+        // First tag: check for year (TOSEC naming convention)
+        if tag_index == 1
+            && let Some(year) = parse_year_tag(trimmed)
+        {
+            meta.year = Some(year);
+            found_year = true;
+            continue;
+        }
+
+        // Second tag after a year: publisher (TOSEC naming convention)
+        if tag_index == 2
+            && found_year
+            && trimmed != "-"
+            && !trimmed.is_empty()
+            && !is_noise_tag(&lower)
+            && !looks_like_region(trimmed)
+        {
+            meta.publisher = Some(trimmed.to_string());
+            continue;
+        }
+
+        // Disc/Side labels
+        if lower.starts_with("side ") || lower.starts_with("disc ") || lower.starts_with("disk ") {
+            meta.disc_label = Some(trimmed.to_string());
+        }
+    }
+
+    meta
+}
+
+/// Extract a disc/side label from a ROM filename.
+///
+/// Returns the label text if the filename contains a disc/side pattern:
+/// - `(Side A)` -> "Side A"
+/// - `(Disk 1 of 3)` -> "Disk 1 of 3"
+/// - `(Disc 2)` -> "Disc 2"
+pub fn extract_disc_label(filename: &str) -> Option<String> {
+    let stem = filename
+        .rfind('.')
+        .map(|i| &filename[..i])
+        .unwrap_or(filename);
+
+    for tag in ParenTags::new(stem) {
+        let trimmed = tag.trim();
+        let lower = trimmed.to_lowercase();
+        if lower.starts_with("side ") || lower.starts_with("disc ") || lower.starts_with("disk ") {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
 /// Check if a parenthesized tag is noise that should be skipped.
 fn is_noise_tag(lower: &str) -> bool {
     // Language-only tags: (En), (Ja), (En,Fr,De), etc.
@@ -906,6 +1065,15 @@ fn is_noise_tag(lower: &str) -> bool {
             | "nintendo super system"
             | "mame snes bootleg"
             | "unknown"
+            // TOSEC copyright status tags
+            | "cw" // Copyrighted Freeware
+            | "fw" // Freeware
+            | "gw" // GNU/GPL
+            | "sw" // Shareware
+            // TOSEC development status tags (not already handled as status indicators)
+            | "alpha"
+            | "preview"
+            | "pre-release"
     )
 }
 
@@ -1840,5 +2008,207 @@ mod tests {
     fn classify_hack_not_special() {
         let (_, _, is_special) = classify("Game (Hack).sfc");
         assert!(!is_special, "Hack should NOT be is_special");
+    }
+
+    // ==========================================
+    // parse_year_tag() tests
+    // ==========================================
+
+    #[test]
+    fn year_exact_4digit() {
+        assert_eq!(parse_year_tag("1987"), Some(1987));
+        assert_eq!(parse_year_tag("2001"), Some(2001));
+        assert_eq!(parse_year_tag("1970"), Some(1970));
+        assert_eq!(parse_year_tag("2030"), Some(2030));
+    }
+
+    #[test]
+    fn year_out_of_range() {
+        assert_eq!(parse_year_tag("1969"), None);
+        assert_eq!(parse_year_tag("2031"), None);
+        assert_eq!(parse_year_tag("1800"), None);
+    }
+
+    #[test]
+    fn year_tosec_date_full() {
+        assert_eq!(parse_year_tag("1987-03-15"), Some(1987));
+        assert_eq!(parse_year_tag("2001-12-25"), Some(2001));
+    }
+
+    #[test]
+    fn year_tosec_date_partial() {
+        assert_eq!(parse_year_tag("1987-03"), Some(1987));
+        assert_eq!(parse_year_tag("2001-12"), Some(2001));
+    }
+
+    #[test]
+    fn year_wildcard_skip() {
+        assert_eq!(parse_year_tag("19xx"), None);
+        assert_eq!(parse_year_tag("199x"), None);
+        assert_eq!(parse_year_tag("198x"), None);
+    }
+
+    #[test]
+    fn year_non_year_strings() {
+        assert_eq!(parse_year_tag("USA"), None);
+        assert_eq!(parse_year_tag("Rev 1"), None);
+        assert_eq!(parse_year_tag("v1.02"), None);
+        assert_eq!(parse_year_tag("Imagine"), None);
+    }
+
+    // ==========================================
+    // extract_tosec_metadata() tests
+    // ==========================================
+
+    #[test]
+    fn tosec_year_publisher_region() {
+        let meta = extract_tosec_metadata("Arkanoid (1987)(Imagine)(GB)(Side A).dsk");
+        assert_eq!(meta.year, Some(1987));
+        assert_eq!(meta.publisher.as_deref(), Some("Imagine"));
+        assert_eq!(meta.disc_label.as_deref(), Some("Side A"));
+    }
+
+    #[test]
+    fn tosec_year_publisher_no_side() {
+        let meta = extract_tosec_metadata("Commando (1985)(Elite)(GB).dsk");
+        assert_eq!(meta.year, Some(1985));
+        assert_eq!(meta.publisher.as_deref(), Some("Elite"));
+        assert!(meta.disc_label.is_none());
+    }
+
+    #[test]
+    fn tosec_no_year_no_publisher() {
+        // No-Intro style: first tag is region, not year — no publisher extraction
+        let meta = extract_tosec_metadata("Super Mario World (USA).sfc");
+        assert!(meta.year.is_none());
+        assert!(meta.publisher.is_none());
+    }
+
+    #[test]
+    fn tosec_year_with_date() {
+        let meta = extract_tosec_metadata("Game (1987-03-15)(Publisher)(JP).rom");
+        assert_eq!(meta.year, Some(1987));
+        assert_eq!(meta.publisher.as_deref(), Some("Publisher"));
+    }
+
+    #[test]
+    fn tosec_year_partial_date() {
+        let meta = extract_tosec_metadata("Game (1987-03)(Publisher)(JP).rom");
+        assert_eq!(meta.year, Some(1987));
+        assert_eq!(meta.publisher.as_deref(), Some("Publisher"));
+    }
+
+    #[test]
+    fn tosec_unknown_publisher_dash() {
+        // TOSEC uses (-) for unknown publisher
+        let meta = extract_tosec_metadata("Game (1987)(-)(JP).rom");
+        assert_eq!(meta.year, Some(1987));
+        assert!(meta.publisher.is_none());
+    }
+
+    #[test]
+    fn tosec_publisher_is_region_skip() {
+        // When second tag is a region, don't extract as publisher
+        let meta = extract_tosec_metadata("Game (1987)(JP).rom");
+        assert_eq!(meta.year, Some(1987));
+        assert!(meta.publisher.is_none());
+    }
+
+    #[test]
+    fn tosec_disk_label() {
+        let meta = extract_tosec_metadata("Game (1989)(System Sacom)(Disk 1 of 5).dim");
+        assert_eq!(meta.year, Some(1989));
+        assert_eq!(meta.publisher.as_deref(), Some("System Sacom"));
+        assert_eq!(meta.disc_label.as_deref(), Some("Disk 1 of 5"));
+    }
+
+    #[test]
+    fn tosec_disc_label() {
+        let meta = extract_tosec_metadata("Panzer Dragoon Saga (USA) (Disc 2).chd");
+        // No year in first tag (USA is first), so no publisher extraction
+        assert!(meta.year.is_none());
+        assert_eq!(meta.disc_label.as_deref(), Some("Disc 2"));
+    }
+
+    #[test]
+    fn tosec_wildcard_year_no_extract() {
+        let meta = extract_tosec_metadata("Game (19xx)(Publisher)(JP).rom");
+        assert!(meta.year.is_none());
+        // No year found, so publisher extraction doesn't trigger
+        assert!(meta.publisher.is_none());
+    }
+
+    // ==========================================
+    // TOSEC noise tag tests
+    // ==========================================
+
+    #[test]
+    fn noise_tosec_copyright_tags() {
+        assert!(is_noise_tag("cw"));
+        assert!(is_noise_tag("fw"));
+        assert!(is_noise_tag("gw"));
+        assert!(is_noise_tag("sw"));
+    }
+
+    #[test]
+    fn noise_tosec_devstatus_tags() {
+        assert!(is_noise_tag("alpha"));
+        assert!(is_noise_tag("preview"));
+        assert!(is_noise_tag("pre-release"));
+    }
+
+    // ==========================================
+    // classify() with TOSEC pre-release status
+    // ==========================================
+
+    // ==========================================
+    // extract_disc_label() tests
+    // ==========================================
+
+    #[test]
+    fn disc_label_side_a() {
+        assert_eq!(
+            extract_disc_label("Arkanoid (1987)(Imagine)(GB)(Side A).dsk"),
+            Some("Side A".to_string())
+        );
+    }
+
+    #[test]
+    fn disc_label_disk_1_of_5() {
+        assert_eq!(
+            extract_disc_label("Game (1989)(System Sacom)(Disk 1 of 5).dim"),
+            Some("Disk 1 of 5".to_string())
+        );
+    }
+
+    #[test]
+    fn disc_label_disc_2() {
+        assert_eq!(
+            extract_disc_label("Panzer Dragoon Saga (USA) (Disc 2).chd"),
+            Some("Disc 2".to_string())
+        );
+    }
+
+    #[test]
+    fn disc_label_none() {
+        assert!(extract_disc_label("Super Mario World (USA).sfc").is_none());
+    }
+
+    #[test]
+    fn classify_alpha_prerelease() {
+        let (tier, _, _) = classify("Game (alpha).dsk");
+        assert_eq!(tier, RomTier::PreRelease);
+    }
+
+    #[test]
+    fn classify_preview_prerelease() {
+        let (tier, _, _) = classify("Game (preview).dsk");
+        assert_eq!(tier, RomTier::PreRelease);
+    }
+
+    #[test]
+    fn classify_pre_release_prerelease() {
+        let (tier, _, _) = classify("Game (pre-release).dsk");
+        assert_eq!(tier, RomTier::PreRelease);
     }
 }

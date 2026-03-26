@@ -167,6 +167,9 @@ pub struct GameEntry {
     /// For arcade: populated from arcade_db manufacturer at scan time.
     /// For console: populated from game_metadata.developer via enrichment.
     pub developer: String,
+    /// Release year extracted from TOSEC filename tags or baked-in game_db.
+    /// Enrichment may upgrade with LaunchBox release_year.
+    pub release_year: Option<u16>,
 }
 
 /// Full enrichment update for a ROM in game_library (including driver_status).
@@ -344,6 +347,7 @@ impl MetadataDb {
                     crc32 INTEGER,
                     hash_mtime INTEGER,
                     hash_matched_name TEXT,
+                    release_year INTEGER,
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -433,6 +437,10 @@ impl MetadataDb {
         .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
 
         // ── Schema migrations for existing databases ──────────────────
+
+        // Add release_year column to game_library (added for TOSEC tag parsing).
+        let _ = conn.execute_batch("ALTER TABLE game_library ADD COLUMN release_year INTEGER");
+
         Ok(())
     }
 
@@ -442,7 +450,8 @@ impl MetadataDb {
     ///   system, rom_filename, rom_path, display_name, base_title, series_key,
     ///   region, developer, genre, genre_group, rating, rating_count, players,
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
-    ///   driver_status, size_bytes, crc32, hash_mtime, hash_matched_name
+    ///   driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+    ///   release_year
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
             system: row.get(0)?,
@@ -481,6 +490,10 @@ impl MetadataDb {
                 .map(|c| c as u32),
             hash_mtime: row.get(22).unwrap_or_default(),
             hash_matched_name: row.get(23).unwrap_or_default(),
+            release_year: row
+                .get::<_, Option<i32>>(24)
+                .unwrap_or_default()
+                .map(|y| y as u16),
         })
     }
 }
@@ -564,6 +577,7 @@ mod tests {
             hash_matched_name: None,
             series_key: String::new(),
             developer: String::new(),
+            release_year: None,
         }
     }
 

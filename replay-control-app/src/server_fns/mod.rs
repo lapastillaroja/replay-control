@@ -278,21 +278,44 @@ pub(crate) async fn resolve_game_info(
             game_db::lookup_by_normalized_title(system, &normalized)
         });
 
+        // Extract TOSEC metadata as fallback for year/developer when game_db has none.
+        let tosec = rom_tags::extract_tosec_metadata(rom_filename);
+
+        let db_year = game_meta
+            .map(|g| {
+                if g.year > 0 {
+                    g.year.to_string()
+                } else {
+                    String::new()
+                }
+            })
+            .unwrap_or_default();
+        let year = if db_year.is_empty() {
+            tosec.year.map(|y| y.to_string()).unwrap_or_default()
+        } else {
+            db_year
+        };
+
+        let db_developer = game_meta
+            .map(|g| g.developer.to_string())
+            .unwrap_or_default();
+        let developer = if db_developer.is_empty() {
+            tosec
+                .publisher
+                .as_deref()
+                .map(replay_control_core::developer::normalize_developer)
+                .unwrap_or_default()
+        } else {
+            db_developer
+        };
+
         GameInfo {
             system: system.to_string(),
             system_display,
             rom_filename: rom_filename.to_string(),
             rom_path: rom_path.to_string(),
             display_name,
-            year: game_meta
-                .map(|g| {
-                    if g.year > 0 {
-                        g.year.to_string()
-                    } else {
-                        String::new()
-                    }
-                })
-                .unwrap_or_default(),
+            year,
             genre: game_meta
                 .map(|g| {
                     if g.genre.is_empty() {
@@ -303,9 +326,7 @@ pub(crate) async fn resolve_game_info(
                     .to_string()
                 })
                 .unwrap_or_default(),
-            developer: game_meta
-                .map(|g| g.developer.to_string())
-                .unwrap_or_default(),
+            developer,
             players: game_meta.map(|g| g.players).unwrap_or(0),
             rotation: None,
             driver_status: None,
@@ -381,6 +402,12 @@ pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
                 }
                 if info.developer.is_empty() && meta.developer.is_some() {
                     info.developer = meta.developer.unwrap_or_default();
+                }
+                // Use LaunchBox release_year as fallback when baked-in DB has none.
+                if info.year.is_empty()
+                    && let Some(year) = meta.release_year
+                {
+                    info.year = year.to_string();
                 }
                 // Use LaunchBox genre as fallback when baked-in DB has none.
                 if info.genre.is_empty() && meta.genre.is_some() {

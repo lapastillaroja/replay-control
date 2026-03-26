@@ -463,8 +463,13 @@ impl DbPool {
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "type")]
 pub enum ConfigEvent {
-    SkinChanged { skin_index: u32, skin_css: Option<String> },
-    StorageChanged { storage_kind: String },
+    SkinChanged {
+        skin_index: u32,
+        skin_css: Option<String>,
+    },
+    StorageChanged {
+        storage_kind: String,
+    },
 }
 
 /// Shared application state.
@@ -726,9 +731,9 @@ impl AppState {
             self.cache.invalidate().await;
 
             let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();
-            let _ = self.config_tx.send(ConfigEvent::StorageChanged {
-                storage_kind: kind,
-            });
+            let _ = self
+                .config_tx
+                .send(ConfigEvent::StorageChanged { storage_kind: kind });
         }
 
         Ok(changed)

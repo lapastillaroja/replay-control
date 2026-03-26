@@ -4,13 +4,14 @@ use replay_control_core::metadata_db::MetadataDb;
 
 use super::GameLibrary;
 
-/// Batched metadata from LaunchBox import (ratings, genres, players, rating counts, developers).
+/// Batched metadata from LaunchBox import (ratings, genres, players, rating counts, developers, release years).
 type LaunchBoxMetadata = (
     HashMap<String, f64>,
     HashMap<String, String>,
     HashMap<String, u8>,
     HashMap<String, u32>,
     HashMap<String, String>,
+    HashMap<String, u16>,
 );
 
 impl GameLibrary {
@@ -27,7 +28,7 @@ impl GameLibrary {
         // Load ratings, genres, players, rating counts, and developers from
         // game_metadata table (from LaunchBox import) in a single read call.
         let sys = system.clone();
-        let (ratings, lb_genres, lb_players, lb_rating_counts, lb_developers): LaunchBoxMetadata =
+        let (ratings, lb_genres, lb_players, lb_rating_counts, lb_developers, lb_release_years): LaunchBoxMetadata =
             state
             .metadata_pool
             .read(move |conn| {
@@ -46,15 +47,19 @@ impl GameLibrary {
                 let developers = MetadataDb::system_metadata_developers(conn, &sys)
                     .ok()
                     .unwrap_or_default();
-                (ratings, genres, players, rating_counts, developers)
+                let release_years = MetadataDb::system_metadata_release_years(conn, &sys)
+                    .ok()
+                    .unwrap_or_default();
+                (ratings, genres, players, rating_counts, developers, release_years)
             })
             .await
             .unwrap_or_default();
 
-        // Load current game_library genres, players, and developers from L2
+        // Load current game_library genres, players, developers, and release_years from L2
         // to know which are already set, in a single read call.
         let sys = system.clone();
-        let (existing_genres, existing_players, existing_developers): (
+        let (existing_genres, existing_players, existing_developers, existing_years): (
+            HashSet<String>,
             HashSet<String>,
             HashSet<String>,
             HashSet<String>,
@@ -66,7 +71,8 @@ impl GameLibrary {
                     .unwrap_or_default();
                 let players = MetadataDb::system_rom_players(conn, &sys).unwrap_or_default();
                 let developers = MetadataDb::system_rom_developers(conn, &sys).unwrap_or_default();
-                (genres, players, developers)
+                let years = MetadataDb::system_rom_release_years(conn, &sys).unwrap_or_default();
+                (genres, players, developers, years)
             })
             .await
             .unwrap_or_default();
@@ -165,6 +171,28 @@ impl GameLibrary {
                 })
                 .await;
             tracing::debug!("L2 enrichment: {system} — {dev_count} ROMs updated with developer");
+        }
+
+        // Enrich release_year from LaunchBox metadata for ROMs that don't already have one.
+        let year_updates: Vec<(String, u16)> = rom_filenames
+            .iter()
+            .filter(|f| !existing_years.contains(*f))
+            .filter_map(|f| lb_release_years.get(f).map(|&year| (f.clone(), year)))
+            .collect();
+
+        if !year_updates.is_empty() {
+            let year_count = year_updates.len();
+            let sys = system.clone();
+            self.db
+                .write(move |conn| {
+                    if let Err(e) = MetadataDb::update_release_years(conn, &sys, &year_updates) {
+                        tracing::warn!("Release year enrichment failed for {sys}: {e}");
+                    }
+                })
+                .await;
+            tracing::debug!(
+                "L2 enrichment: {system} — {year_count} ROMs updated with release_year"
+            );
         }
 
         if enrichments.is_empty() {

@@ -115,7 +115,6 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     // Cap at 15 to avoid serialising the full list (~95 entries, ~39KB).
     enriched.truncate(15);
 
-
     Ok(enriched)
 }
 

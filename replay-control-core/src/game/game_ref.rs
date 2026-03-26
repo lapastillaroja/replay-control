@@ -83,7 +83,17 @@ impl GameRef {
             // Fall back to deriving a clean name from the filename for systems
             // without game DB coverage (e.g., ibm_pc, commodore_ami) or unknown systems.
             game_db::game_display_name(system, &rom_filename)
-                .map(|name| rom_tags::display_name_with_tags(name, &rom_filename))
+                .map(|name| {
+                    let mut display = rom_tags::display_name_with_tags(name, &rom_filename);
+                    // Append disc/side label for multi-part games (Option A:
+                    // always include — M3U dedup hides duplicates anyway).
+                    if let Some(label) = rom_tags::extract_disc_label(&rom_filename) {
+                        display.push_str(" [");
+                        display.push_str(&label);
+                        display.push(']');
+                    }
+                    display
+                })
                 .or_else(|| {
                     let stem = rom_filename
                         .rfind('.')
@@ -100,7 +110,14 @@ impl GameRef {
                     let name = uninverted.as_deref().unwrap_or(name);
                     // Strip TOSEC/GDI version strings: "Game v1.001" → "Game"
                     let name = title_utils::strip_version(name);
-                    Some(rom_tags::display_name_with_tags(name, &rom_filename))
+                    let mut display = rom_tags::display_name_with_tags(name, &rom_filename);
+                    // Append disc/side label for multi-part games (Option A).
+                    if let Some(label) = rom_tags::extract_disc_label(&rom_filename) {
+                        display.push_str(" [");
+                        display.push_str(&label);
+                        display.push(']');
+                    }
+                    Some(display)
                 })
         };
 
@@ -216,7 +233,11 @@ mod tests {
         );
         // strip_filename_tags removes "(1990)..." part, leaving "Emerald Dragon, The"
         // uninvert_article turns it into "The Emerald Dragon"
-        assert_eq!(game_ref.display_name.as_deref(), Some("The Emerald Dragon"));
+        // disc label appended in brackets
+        assert_eq!(
+            game_ref.display_name.as_deref(),
+            Some("The Emerald Dragon [Disk 1 of 5]")
+        );
     }
 
     #[test]
@@ -228,5 +249,28 @@ mod tests {
             "/roms/sharp_x68k/Alshark.m3u".to_string(),
         );
         assert_eq!(game_ref.display_name.as_deref(), Some("Alshark"));
+    }
+
+    #[test]
+    fn display_name_side_a() {
+        let game_ref = GameRef::new(
+            "amstrad_cpc",
+            "Arkanoid (1987)(Imagine)(GB)(Side A).dsk".to_string(),
+            "/roms/amstrad_cpc/Arkanoid (1987)(Imagine)(GB)(Side A).dsk".to_string(),
+        );
+        assert_eq!(
+            game_ref.display_name.as_deref(),
+            Some("Arkanoid (UK) [Side A]")
+        );
+    }
+
+    #[test]
+    fn display_name_no_disc_label() {
+        let game_ref = GameRef::new(
+            "amstrad_cpc",
+            "Commando (1985)(Elite)(GB).dsk".to_string(),
+            "/roms/amstrad_cpc/Commando (1985)(Elite)(GB).dsk".to_string(),
+        );
+        assert_eq!(game_ref.display_name.as_deref(), Some("Commando (UK)"));
     }
 }

@@ -483,10 +483,7 @@ pub async fn global_search(
     let mut scored: Vec<(u32, GameEntry)> = candidates
         .into_iter()
         .filter_map(|entry| {
-            let display = entry
-                .display_name
-                .as_deref()
-                .unwrap_or(&entry.rom_filename);
+            let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
 
             if q.is_empty() {
                 // Filter-only mode (genre/multiplayer with no text query).
@@ -512,7 +509,11 @@ pub async fn global_search(
                 score = 350;
             }
 
-            if score > 0 { Some((score, entry)) } else { None }
+            if score > 0 {
+                Some((score, entry))
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -555,12 +556,10 @@ pub async fn global_search(
         let top_results: Vec<GlobalSearchResult> = top_entries
             .into_iter()
             .map(|entry| {
-                let box_art_url = state.cache.resolve_box_art(
-                    &state,
-                    &image_index,
-                    &system,
-                    &entry.rom_filename,
-                );
+                let box_art_url =
+                    state
+                        .cache
+                        .resolve_box_art(&state, &image_index, &system, &entry.rom_filename);
                 let is_favorite = fav_set.contains(&entry.rom_filename);
                 GlobalSearchResult {
                     display_name: entry

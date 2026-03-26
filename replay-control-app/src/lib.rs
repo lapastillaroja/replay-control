@@ -186,8 +186,7 @@ fn SseConfigListener() -> impl IntoView {
                             if let Some(idx) = payload.get("skin_index").and_then(|v| v.as_u64()) {
                                 last_skin.set(idx as u32);
                             }
-                            if let Some(kind) =
-                                payload.get("storage_kind").and_then(|v| v.as_str())
+                            if let Some(kind) = payload.get("storage_kind").and_then(|v| v.as_str())
                             {
                                 last_storage_kind.set(kind.to_string());
                             }
@@ -198,11 +197,9 @@ fn SseConfigListener() -> impl IntoView {
                                 let prev = last_skin.get_untracked();
                                 if prev != idx {
                                     // Update the <style id="skin-theme"> element.
-                                    if let Some(doc) =
-                                        web_sys::window().and_then(|w| w.document())
+                                    if let Some(doc) = web_sys::window().and_then(|w| w.document())
                                     {
-                                        if let Some(style_el) =
-                                            doc.get_element_by_id("skin-theme")
+                                        if let Some(style_el) = doc.get_element_by_id("skin-theme")
                                         {
                                             let css = payload
                                                 .get("skin_css")
