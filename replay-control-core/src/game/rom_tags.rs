@@ -16,9 +16,11 @@
 /// - Hack/Aftermarket indicators
 /// - Beta/Proto/Demo indicators
 /// - Unlicensed indicator
+/// - TOSEC bracket dump flags: [a] Alternate, [h] Hack, [cr] Cracked, [t] Trained,
+///   [f] Fixed, [o] Overdump, [b] Bad Dump, [p] Pirate
 ///
 /// Tags NOT shown (noise for end users):
-/// - Dump info: [!], [b1], [h1], [o1], [f1], [c], etc.
+/// - Verified dump markers: [!]
 /// - Version dates: [2017-03-28]
 /// - Hacker credits in brackets: [T-Spa1.0v_Wave] -> shown as "ES" not the full tag
 /// - Language codes already in the region: (En,Fr,De) merged with region
@@ -408,6 +410,12 @@ pub fn extract_tags(filename: &str) -> String {
     let mut is_unlicensed = false;
     let mut is_aftermarket = false;
     let mut is_pirate = false;
+    let mut is_alternate = false;
+    let mut is_cracked = false;
+    let mut is_trained = false;
+    let mut is_fixed = false;
+    let mut is_overdump = false;
+    let mut is_bad_dump = false;
 
     // Extract all parenthesized tags: (...)
     for tag in ParenTags::new(stem) {
@@ -518,24 +526,17 @@ pub fn extract_tags(filename: &str) -> String {
             continue;
         }
 
-        // TOSEC standard bracket flags — classify and set appropriate status flags.
-        // Only hack-type flags get a display suffix; dump quality flags (alternate,
-        // bad, overdump, fixed) are handled by tier classification in classify()
-        // and clone filtering, not shown in the display name.
+        // TOSEC standard bracket flags — classify and set display label flags.
         if let Some(flag) = classify_tosec_bracket(trimmed) {
             match flag {
-                TosecBracketFlag::Hack | TosecBracketFlag::Trained | TosecBracketFlag::Cracked => {
-                    is_hack = true;
-                }
-                TosecBracketFlag::Pirate => {
-                    is_pirate = true;
-                }
-                TosecBracketFlag::Alternate
-                | TosecBracketFlag::Fixed
-                | TosecBracketFlag::Overdump
-                | TosecBracketFlag::BadDump => {
-                    // No display suffix — handled by clone/tier filtering
-                }
+                TosecBracketFlag::Hack => is_hack = true,
+                TosecBracketFlag::Trained => is_trained = true,
+                TosecBracketFlag::Cracked => is_cracked = true,
+                TosecBracketFlag::Pirate => is_pirate = true,
+                TosecBracketFlag::Alternate => is_alternate = true,
+                TosecBracketFlag::Fixed => is_fixed = true,
+                TosecBracketFlag::Overdump => is_overdump = true,
+                TosecBracketFlag::BadDump => is_bad_dump = true,
             }
             continue;
         }
@@ -567,6 +568,24 @@ pub fn extract_tags(filename: &str) -> String {
 
     if is_hack {
         parts.push("Hack".to_string());
+    }
+    if is_cracked {
+        parts.push("Cracked".to_string());
+    }
+    if is_trained {
+        parts.push("Trained".to_string());
+    }
+    if is_alternate {
+        parts.push("Alternate".to_string());
+    }
+    if is_fixed {
+        parts.push("Fixed".to_string());
+    }
+    if is_overdump {
+        parts.push("Overdump".to_string());
+    }
+    if is_bad_dump {
+        parts.push("Bad Dump".to_string());
     }
     if is_beta {
         parts.push("Beta".to_string());
@@ -1582,8 +1601,8 @@ mod tests {
     }
 
     #[test]
-    fn dump_bad_ignored() {
-        assert_eq!(extract_tags("Game (USA) [b1].sfc"), "USA");
+    fn dump_bad_shown() {
+        assert_eq!(extract_tags("Game (USA) [b1].sfc"), "USA, Bad Dump");
     }
 
     #[test]
@@ -1813,27 +1832,127 @@ mod tests {
 
     #[test]
     fn extract_tags_tosec_trained() {
-        assert_eq!(extract_tags("Game (1987)(Publisher) [t].dsk"), "Hack");
+        assert_eq!(extract_tags("Game (1987)(Publisher) [t].dsk"), "Trained");
     }
 
     #[test]
     fn extract_tags_tosec_cracked() {
         assert_eq!(
             extract_tags("Game (1987)(Publisher) [cr Cracker].dsk"),
+            "Cracked"
+        );
+    }
+
+    #[test]
+    fn extract_tags_tosec_alternate() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [a].dsk"), "Alternate");
+    }
+
+    #[test]
+    fn extract_tags_tosec_baddump() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [b].dsk"), "Bad Dump");
+    }
+
+    // --- extract_tags: TOSEC bracket flag display labels (comprehensive) ---
+
+    #[test]
+    fn extract_tags_tosec_alternate_a2() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [a2].dsk"), "Alternate");
+    }
+
+    #[test]
+    fn extract_tags_tosec_alternate_a3() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [a3].dsk"), "Alternate");
+    }
+
+    #[test]
+    fn extract_tags_tosec_hack_bare() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [h].dsk"), "Hack");
+    }
+
+    #[test]
+    fn extract_tags_tosec_hack_named() {
+        assert_eq!(
+            extract_tags("Game (1987)(Publisher) [h Cool Hack].dsk"),
             "Hack"
         );
     }
 
     #[test]
-    fn extract_tags_tosec_alternate_no_display() {
-        // [a] does not add a display tag
-        assert_eq!(extract_tags("Game (1987)(Publisher) [a].dsk"), "");
+    fn extract_tags_tosec_cracked_bare() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [cr].dsk"), "Cracked");
     }
 
     #[test]
-    fn extract_tags_tosec_baddump_no_display() {
-        // [b] does not add a display tag (handled by tier, not display)
-        assert_eq!(extract_tags("Game (1987)(Publisher) [b].dsk"), "");
+    fn extract_tags_tosec_cracked_cr1() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [cr1].dsk"), "Cracked");
+    }
+
+    #[test]
+    fn extract_tags_tosec_trained_t1() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [t1].dsk"), "Trained");
+    }
+
+    #[test]
+    fn extract_tags_tosec_trained_plus2() {
+        assert_eq!(
+            extract_tags("Game (1987)(Publisher) [t +2].dsk"),
+            "Trained"
+        );
+    }
+
+    #[test]
+    fn extract_tags_tosec_fixed() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [f].dsk"), "Fixed");
+    }
+
+    #[test]
+    fn extract_tags_tosec_fixed_f1() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [f1].dsk"), "Fixed");
+    }
+
+    #[test]
+    fn extract_tags_tosec_overdump() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [o].dsk"), "Overdump");
+    }
+
+    #[test]
+    fn extract_tags_tosec_overdump_o1() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [o1].dsk"), "Overdump");
+    }
+
+    #[test]
+    fn extract_tags_tosec_baddump_b1() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [b1].dsk"), "Bad Dump");
+    }
+
+    #[test]
+    fn extract_tags_tosec_pirate() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [p].dsk"), "Pirate");
+    }
+
+    #[test]
+    fn extract_tags_tosec_pirate_p1() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [p1].dsk"), "Pirate");
+    }
+
+    #[test]
+    fn extract_tags_tosec_alternate_with_region() {
+        // Real TOSEC filename pattern: region + bracket flag
+        assert_eq!(
+            extract_tags("007 - A View to a Kill (1985)(Domark)(GB) [a].dsk"),
+            "UK, Alternate"
+        );
+    }
+
+    #[test]
+    fn extract_tags_tosec_no_intro_hack_bracket_ignored() {
+        // No-Intro style [Hack by hosiza] should NOT match TOSEC bracket flags
+        // (starts with "ha" not "h ")
+        assert_eq!(
+            extract_tags("Game (USA) [Hack by hosiza].sfc"),
+            "USA"
+        );
     }
 
     // --- has_tosec_bracket_flag ---

@@ -386,7 +386,7 @@ fn disambiguate_display_names(entries: &mut [replay_control_core::metadata_db::G
     }
 
     // For each group with duplicates, compute disambiguation suffixes.
-    for (_display, indices) in &display_groups {
+    for indices in display_groups.values() {
         if indices.len() <= 1 {
             continue;
         }
@@ -431,8 +431,8 @@ fn disambiguate_display_names(entries: &mut [replay_control_core::metadata_db::G
             let mut suffix_parts: Vec<String> = Vec::new();
 
             // Priority 1: Publisher
-            if has_different_publishers {
-                if let Some(ref publisher) = tosec.publisher {
+            if has_different_publishers
+                && let Some(ref publisher) = tosec.publisher {
                     // Use the already-normalized developer from the entry, or fall back to raw publisher.
                     let dev = &entries[idx].developer;
                     if !dev.is_empty() {
@@ -441,21 +441,19 @@ fn disambiguate_display_names(entries: &mut [replay_control_core::metadata_db::G
                         suffix_parts.push(publisher.clone());
                     }
                 }
-            }
 
             // Priority 2/3: Date-based disambiguation.
             // Use the most specific date that disambiguates:
             // - If all entries have different years, just show the year
             // - If some entries share a year (but differ by full date), show the full date
-            if has_different_dates {
-                if let Some(ref date) = tosec.date {
+            if has_different_dates
+                && let Some(ref date) = tosec.date {
                     if use_full_dates {
                         suffix_parts.push(date.clone());
                     } else if let Some(year) = tosec.year {
                         suffix_parts.push(year.to_string());
                     }
                 }
-            }
 
             // Priority 4: Bracket descriptors
             if !descriptors.is_empty() {
