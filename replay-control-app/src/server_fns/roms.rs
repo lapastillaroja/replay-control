@@ -265,6 +265,22 @@ pub async fn get_roms_page(
         std::collections::HashMap::new()
     };
 
+    // Batch-load clone filenames for hide_clones filtering (all systems).
+    let clone_filenames: std::collections::HashSet<String> = if hide_clones {
+        state
+            .cache
+            .db_read({
+                let system = system.clone();
+                move |conn| {
+                    MetadataDb::load_clone_filenames(conn, &system).unwrap_or_default()
+                }
+            })
+            .await
+            .unwrap_or_default()
+    } else {
+        std::collections::HashSet::new()
+    };
+
     // Batch-load player counts for multiplayer filtering.
     let player_counts = if multiplayer_only {
         let filenames: Vec<&str> = all_roms
@@ -292,16 +308,23 @@ pub async fn get_roms_page(
                     return false;
                 }
             }
-            if hide_clones && is_arcade {
-                use replay_control_core::arcade_db;
-                let stem = r
-                    .game
-                    .rom_filename
-                    .strip_suffix(".zip")
-                    .unwrap_or(&r.game.rom_filename);
-                if let Some(info) = arcade_db::lookup_arcade_game(stem)
-                    && info.is_clone
-                {
+            if hide_clones {
+                // Check arcade_db for arcade systems (baked-in, fast).
+                if is_arcade {
+                    use replay_control_core::arcade_db;
+                    let stem = r
+                        .game
+                        .rom_filename
+                        .strip_suffix(".zip")
+                        .unwrap_or(&r.game.rom_filename);
+                    if let Some(info) = arcade_db::lookup_arcade_game(stem)
+                        && info.is_clone
+                    {
+                        return false;
+                    }
+                }
+                // Check DB-level is_clone for all systems (covers TOSEC bracket flags).
+                if clone_filenames.contains(&r.game.rom_filename) {
                     return false;
                 }
             }

@@ -299,6 +299,28 @@ impl MetadataDb {
         .map_err(|e| Error::Other(format!("Query count_system_entries: {e}")))
     }
 
+    /// Load the set of rom_filenames that are marked as clones for a system.
+    ///
+    /// Lightweight alternative to `load_system_entries` when only `is_clone` is needed.
+    pub fn load_clone_filenames(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<std::collections::HashSet<String>> {
+        let mut stmt = conn
+            .prepare("SELECT rom_filename FROM game_library WHERE system = ?1 AND is_clone = 1")
+            .map_err(|e| Error::Other(format!("Prepare load_clone_filenames: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query load_clone_filenames: {e}")))?;
+
+        let mut result = std::collections::HashSet::new();
+        for row in rows {
+            result.insert(row.map_err(|e| Error::Other(format!("Row read failed: {e}")))?);
+        }
+        Ok(result)
+    }
+
     /// Load a page of game entries for a system, sorted by display name (case-insensitive).
     ///
     /// Same columns as `load_system_entries` but with `ORDER BY` + `LIMIT`/`OFFSET`

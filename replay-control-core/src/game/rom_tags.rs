@@ -288,10 +288,24 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
         }
     }
 
-    // Check bracketed translation tags too
+    // Check bracketed tags: translations and TOSEC dump flags
     for tag in BracketTags::new(stem) {
-        if parse_translation_bracket(tag.trim()).is_some() {
+        let trimmed = tag.trim();
+        if parse_translation_bracket(trimmed).is_some() {
             has_translation = true;
+            continue;
+        }
+        // TOSEC standard bracket flags (case-insensitive, with optional suffix)
+        if let Some(flag) = classify_tosec_bracket(trimmed) {
+            match flag {
+                TosecBracketFlag::Hack => is_hack = true,
+                TosecBracketFlag::Pirate => is_pirate = true,
+                TosecBracketFlag::Alternate | TosecBracketFlag::Fixed | TosecBracketFlag::Overdump => {
+                    has_revision = true;
+                }
+                TosecBracketFlag::BadDump => is_pirate = true,
+                TosecBracketFlag::Trained | TosecBracketFlag::Cracked => is_hack = true,
+            }
         }
     }
 
@@ -504,9 +518,29 @@ pub fn extract_tags(filename: &str) -> String {
             continue;
         }
 
-        // Skip dump info: [!], [b1], [b], [h1], [o1], [f1], [c], [p1], etc.
-        // Skip dates: [2017-03-28]
-        // These are all noise for the user.
+        // TOSEC standard bracket flags — classify and set appropriate status flags.
+        // Only hack-type flags get a display suffix; dump quality flags (alternate,
+        // bad, overdump, fixed) are handled by tier classification in classify()
+        // and clone filtering, not shown in the display name.
+        if let Some(flag) = classify_tosec_bracket(trimmed) {
+            match flag {
+                TosecBracketFlag::Hack | TosecBracketFlag::Trained | TosecBracketFlag::Cracked => {
+                    is_hack = true;
+                }
+                TosecBracketFlag::Pirate => {
+                    is_pirate = true;
+                }
+                TosecBracketFlag::Alternate
+                | TosecBracketFlag::Fixed
+                | TosecBracketFlag::Overdump
+                | TosecBracketFlag::BadDump => {
+                    // No display suffix — handled by clone/tier filtering
+                }
+            }
+            continue;
+        }
+
+        // Skip dates: [2017-03-28], verified dumps: [!]
     }
 
     // Build the suffix parts
@@ -557,6 +591,152 @@ pub fn extract_tags(filename: &str) -> String {
     }
 
     parts.join(", ")
+}
+
+/// TOSEC standard square-bracket dump flag classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TosecBracketFlag {
+    /// `[a]`, `[a2]`, etc. — alternate dump
+    Alternate,
+    /// `[h]`, `[h Hack Name]` — hack
+    Hack,
+    /// `[cr]`, `[cr Cracker]` — cracked (copy protection removed)
+    Cracked,
+    /// `[t]`, `[t1]`, `[t +2]` — trained/trainer
+    Trained,
+    /// `[f]`, `[f1]` — fixed for emulator compatibility
+    Fixed,
+    /// `[o]`, `[o1]` — overdump
+    Overdump,
+    /// `[b]`, `[b1]` — bad dump
+    BadDump,
+    /// `[p]`, `[p1]` — pirate
+    Pirate,
+}
+
+/// Classify a TOSEC square-bracket flag into a known dump flag.
+///
+/// Recognizes patterns like `[a]`, `[a2]`, `[h Hack Name]`, `[cr Cracker]`,
+/// `[t +2]`, `[f1]`, `[o1]`, `[b]`, `[p1]`.
+///
+/// Returns `None` for unknown bracket tags (game-specific flags like
+/// `[joystick]`, `[experimental]`, etc.).
+fn classify_tosec_bracket(tag: &str) -> Option<TosecBracketFlag> {
+    let lower = tag.to_lowercase();
+
+    // [!] = verified good dump — not a flag, skip
+    if lower == "!" {
+        return None;
+    }
+
+    // Check single-letter flags with optional numeric suffix or space-separated content
+    // Pattern: flag letter(s) followed by optional digit(s) or space + description
+    if lower == "b" || lower.starts_with("b ") || starts_with_flag(&lower, "b") {
+        return Some(TosecBracketFlag::BadDump);
+    }
+    if lower == "a" || starts_with_flag(&lower, "a") {
+        return Some(TosecBracketFlag::Alternate);
+    }
+    if lower == "h" || lower.starts_with("h ") {
+        return Some(TosecBracketFlag::Hack);
+    }
+    if lower == "cr" || lower.starts_with("cr ") || starts_with_flag(&lower, "cr") {
+        return Some(TosecBracketFlag::Cracked);
+    }
+    if lower == "t" || lower.starts_with("t ") || lower.starts_with("t+") || starts_with_flag(&lower, "t") {
+        // Avoid matching translation tags [T-xxx] and [T+xxx] — those are handled by
+        // parse_translation_bracket() which runs first.
+        // But [t] (lowercase, no + or -) is a trainer flag.
+        // [t +2] is "trainer with 2 cheats".
+        // Since parse_translation_bracket checks for T+ and T- (case-insensitive),
+        // if we got here, it wasn't matched as a translation.
+        return Some(TosecBracketFlag::Trained);
+    }
+    if lower == "f" || starts_with_flag(&lower, "f") {
+        return Some(TosecBracketFlag::Fixed);
+    }
+    if lower == "o" || starts_with_flag(&lower, "o") {
+        return Some(TosecBracketFlag::Overdump);
+    }
+    if lower == "p" || lower.starts_with("p ") || starts_with_flag(&lower, "p") {
+        return Some(TosecBracketFlag::Pirate);
+    }
+
+    None
+}
+
+/// Check if a lowercase string starts with a flag prefix followed by a digit.
+/// E.g., `starts_with_flag("a2", "a")` → true, `starts_with_flag("apple", "a")` → false.
+fn starts_with_flag(lower: &str, prefix: &str) -> bool {
+    lower.starts_with(prefix)
+        && lower.len() > prefix.len()
+        && lower.as_bytes()[prefix.len()].is_ascii_digit()
+}
+
+/// Check if a ROM filename has any known TOSEC bracket dump flag.
+///
+/// Returns `true` if the filename contains `[a]`, `[a2]`, `[h]`, `[cr]`,
+/// `[t]`, `[f]`, `[o]`, `[b]`, or `[p]` bracket tags.
+///
+/// Used by the clone inference pipeline to determine if a ROM is a
+/// variant that should be marked as a clone when a clean sibling exists.
+pub fn has_tosec_bracket_flag(filename: &str) -> bool {
+    let stem = filename
+        .rfind('.')
+        .map(|i| &filename[..i])
+        .unwrap_or(filename);
+
+    for tag in BracketTags::new(stem) {
+        let trimmed = tag.trim();
+        // Skip translation tags — those are not dump quality flags
+        if parse_translation_bracket(trimmed).is_some() {
+            continue;
+        }
+        if classify_tosec_bracket(trimmed).is_some() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Extract non-standard bracket tag content from a TOSEC filename for disambiguation.
+///
+/// Returns the content of bracket tags that are NOT standard TOSEC dump flags
+/// and NOT translation tags. These are game-specific descriptors like
+/// `[joystick]`, `[experimental]`, `[full]`, etc.
+///
+/// Used to disambiguate display names when multiple non-clone entries share
+/// the same base display name.
+pub fn extract_bracket_descriptors(filename: &str) -> Vec<String> {
+    let stem = filename
+        .rfind('.')
+        .map(|i| &filename[..i])
+        .unwrap_or(filename);
+
+    let mut descriptors = Vec::new();
+    for tag in BracketTags::new(stem) {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() || trimmed == "!" {
+            continue;
+        }
+        // Skip translation tags
+        if parse_translation_bracket(trimmed).is_some() {
+            continue;
+        }
+        // Skip standard dump flags
+        if classify_tosec_bracket(trimmed).is_some() {
+            continue;
+        }
+        // Skip dates like [2017-03-28]
+        if trimmed.len() == 10
+            && trimmed.as_bytes().get(4) == Some(&b'-')
+            && trimmed.as_bytes().get(7) == Some(&b'-')
+        {
+            continue;
+        }
+        descriptors.push(trimmed.to_string());
+    }
+    descriptors
 }
 
 /// Format the final display name with optional tag suffix.
@@ -942,6 +1122,9 @@ fn parse_year_tag(tag: &str) -> Option<u16> {
 pub struct TosecMetadata {
     /// Release year extracted from the first parenthesized tag.
     pub year: Option<u16>,
+    /// Full date string from the first parenthesized tag (e.g., "2017-08-15", "2017-08", "2017").
+    /// More precise than `year` — used for disambiguating display names.
+    pub date: Option<String>,
     /// Publisher extracted from the second parenthesized tag (after a year).
     pub publisher: Option<String>,
     /// Disc/Side label for multi-part games (e.g., "Side A", "Disk 1 of 3").
@@ -974,11 +1157,13 @@ pub fn extract_tosec_metadata(filename: &str) -> TosecMetadata {
         tag_index += 1;
         let lower = trimmed.to_lowercase();
 
-        // First tag: check for year (TOSEC naming convention)
+        // First tag: check for year/date (TOSEC naming convention)
         if tag_index == 1
             && let Some(year) = parse_year_tag(trimmed)
         {
             meta.year = Some(year);
+            // Store the full date string for disambiguation (e.g., "2017-08-15", "2017-08", "2017")
+            meta.date = Some(trimmed.to_string());
             found_year = true;
             continue;
         }
@@ -1534,6 +1719,187 @@ mod tests {
         // Version tags like (v1.1) are currently treated as noise
         // since they're not common enough to warrant special handling
         assert_eq!(extract_tags("Game (USA) (v1.1).sfc"), "USA");
+    }
+
+    // --- TOSEC bracket flag classification ---
+
+    #[test]
+    fn tosec_bracket_alternate() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [a].dsk");
+        assert_eq!(tier, RomTier::Revision);
+    }
+
+    #[test]
+    fn tosec_bracket_alternate2() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [a2].dsk");
+        assert_eq!(tier, RomTier::Revision);
+    }
+
+    #[test]
+    fn tosec_bracket_hack() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [h Hack Name].dsk");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    #[test]
+    fn tosec_bracket_hack_bare() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [h].dsk");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    #[test]
+    fn tosec_bracket_cracked() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [cr Cracker].dsk");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    #[test]
+    fn tosec_bracket_cracked_bare() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [cr].dsk");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    #[test]
+    fn tosec_bracket_trained() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [t].dsk");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    #[test]
+    fn tosec_bracket_trained_plus() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [t +2].dsk");
+        assert_eq!(tier, RomTier::Hack);
+    }
+
+    #[test]
+    fn tosec_bracket_fixed() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [f].dsk");
+        assert_eq!(tier, RomTier::Revision);
+    }
+
+    #[test]
+    fn tosec_bracket_overdump() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [o].dsk");
+        assert_eq!(tier, RomTier::Revision);
+    }
+
+    #[test]
+    fn tosec_bracket_baddump() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [b].dsk");
+        assert_eq!(tier, RomTier::Pirate);
+    }
+
+    #[test]
+    fn tosec_bracket_pirate() {
+        let (tier, _, _) = classify("Game (1987)(Publisher) [p].dsk");
+        assert_eq!(tier, RomTier::Pirate);
+    }
+
+    #[test]
+    fn tosec_bracket_verified_unchanged() {
+        // [!] is not a flag — it's a verified good dump
+        let (tier, _, _) = classify("Game (USA) [!].sfc");
+        assert_eq!(tier, RomTier::Original);
+    }
+
+    #[test]
+    fn tosec_bracket_unknown_tag_ignored() {
+        // Custom bracket tags like [joystick] are not TOSEC dump flags
+        let (tier, _, _) = classify("Game (1987)(Publisher) [joystick].dsk");
+        assert_eq!(tier, RomTier::Original);
+    }
+
+    // --- extract_tags for TOSEC bracket flags ---
+
+    #[test]
+    fn extract_tags_tosec_trained() {
+        assert_eq!(extract_tags("Game (1987)(Publisher) [t].dsk"), "Hack");
+    }
+
+    #[test]
+    fn extract_tags_tosec_cracked() {
+        assert_eq!(
+            extract_tags("Game (1987)(Publisher) [cr Cracker].dsk"),
+            "Hack"
+        );
+    }
+
+    #[test]
+    fn extract_tags_tosec_alternate_no_display() {
+        // [a] does not add a display tag
+        assert_eq!(extract_tags("Game (1987)(Publisher) [a].dsk"), "");
+    }
+
+    #[test]
+    fn extract_tags_tosec_baddump_no_display() {
+        // [b] does not add a display tag (handled by tier, not display)
+        assert_eq!(extract_tags("Game (1987)(Publisher) [b].dsk"), "");
+    }
+
+    // --- has_tosec_bracket_flag ---
+
+    #[test]
+    fn has_bracket_flag_alternate() {
+        assert!(has_tosec_bracket_flag("Game (1987)(Publisher) [a].dsk"));
+    }
+
+    #[test]
+    fn has_bracket_flag_trained() {
+        assert!(has_tosec_bracket_flag("Game (1987)(Publisher) [t].dsk"));
+    }
+
+    #[test]
+    fn has_bracket_flag_no_flags() {
+        assert!(!has_tosec_bracket_flag("Game (1987)(Publisher).dsk"));
+    }
+
+    #[test]
+    fn has_bracket_flag_translation_not_flag() {
+        assert!(!has_tosec_bracket_flag("Game (E) [T-Spa1.0v_Wave].md"));
+    }
+
+    #[test]
+    fn has_bracket_flag_custom_not_flag() {
+        assert!(!has_tosec_bracket_flag("Game (1987)(Publisher) [joystick].dsk"));
+    }
+
+    #[test]
+    fn has_bracket_flag_verified_not_flag() {
+        assert!(!has_tosec_bracket_flag("Game (USA) [!].sfc"));
+    }
+
+    // --- extract_bracket_descriptors ---
+
+    #[test]
+    fn bracket_descriptors_custom() {
+        let descs = extract_bracket_descriptors("Game (2017-08)(Publisher) [joystick].dsk");
+        assert_eq!(descs, vec!["joystick"]);
+    }
+
+    #[test]
+    fn bracket_descriptors_multiple() {
+        let descs =
+            extract_bracket_descriptors("Game (2017-08)(Publisher) [experimental] [slow].dsk");
+        assert_eq!(descs, vec!["experimental", "slow"]);
+    }
+
+    #[test]
+    fn bracket_descriptors_skip_standard_flags() {
+        let descs =
+            extract_bracket_descriptors("Game (2017-08)(Publisher) [a] [joystick].dsk");
+        assert_eq!(descs, vec!["joystick"]);
+    }
+
+    #[test]
+    fn bracket_descriptors_skip_dates() {
+        let descs = extract_bracket_descriptors("Game (USA) [2017-03-28].sfc");
+        assert!(descs.is_empty());
+    }
+
+    #[test]
+    fn bracket_descriptors_empty_for_clean() {
+        let descs = extract_bracket_descriptors("Game (1987)(Publisher).dsk");
+        assert!(descs.is_empty());
     }
 
     // ==========================================

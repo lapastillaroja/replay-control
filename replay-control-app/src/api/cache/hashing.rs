@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use replay_control_core::roms::RomEntry;
@@ -125,7 +125,7 @@ impl GameLibrary {
 
         let is_arcade = systems::is_arcade_system(system);
 
-        let cached_roms: Vec<GameEntry> = roms
+        let mut cached_roms: Vec<GameEntry> = roms
             .iter()
             .filter_map(|r| {
                 let rom_filename = &r.game.rom_filename;
@@ -294,6 +294,33 @@ impl GameLibrary {
             })
             .collect();
 
+        // Phase 2: Infer is_clone for TOSEC bracket-tagged entries.
+        // For non-arcade systems, entries with TOSEC bracket flags ([a], [t], [cr], etc.)
+        // are marked as clones when a clean sibling (same base_title, no bracket flags) exists.
+        if !is_arcade {
+            // Collect base_titles that have at least one clean (non-bracket-flagged) entry.
+            let clean_base_titles: HashSet<String> = cached_roms
+                .iter()
+                .filter(|e| !replay_control_core::rom_tags::has_tosec_bracket_flag(&e.rom_filename))
+                .map(|e| e.base_title.clone())
+                .collect();
+
+            // Mark bracket-flagged entries as clones if a clean sibling exists.
+            for entry in &mut cached_roms {
+                if !entry.is_clone
+                    && replay_control_core::rom_tags::has_tosec_bracket_flag(&entry.rom_filename)
+                    && clean_base_titles.contains(&entry.base_title)
+                {
+                    entry.is_clone = true;
+                }
+            }
+        }
+
+        // Phase 3: Disambiguate display names for non-clone entries that share
+        // the same display name. Appends year, publisher, date, or bracket
+        // descriptors to make entries distinguishable.
+        disambiguate_display_names(&mut cached_roms);
+
         tracing::debug!(
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
             cached_roms.len()
@@ -323,6 +350,144 @@ impl GameLibrary {
             }
             Some(Err(e)) => tracing::warn!("L2 write-through: {system} FAILED: {e}"),
             None => tracing::warn!("L2 write-through: {system} skipped (DB unavailable)"),
+        }
+    }
+}
+
+/// Disambiguate display names for entries that share the same display name.
+///
+/// After clone inference, remaining non-clone entries may still have identical
+/// display names (e.g., multiple clean builds of "Cross Chase" with different dates,
+/// or "Barbarian" from different publishers). This function appends distinguishing
+/// suffixes to make them unique.
+///
+/// Disambiguation priority:
+/// 1. Publisher (if different publishers exist in the group)
+/// 2. Year (if different years exist)
+/// 3. Full date (if same year but different dates)
+/// 4. Bracket descriptors (game-specific tags like [joystick], [experimental])
+///
+/// Only non-clone entries are disambiguated. Clone entries keep their original
+/// display name since they're typically hidden by the clone filter.
+fn disambiguate_display_names(entries: &mut [replay_control_core::metadata_db::GameEntry]) {
+    use replay_control_core::rom_tags;
+
+    // Group non-clone entries by display_name to find duplicates.
+    // We need indices because we'll mutate the entries.
+    let mut display_groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, entry) in entries.iter().enumerate() {
+        if entry.is_clone {
+            continue;
+        }
+        let display = entry
+            .display_name
+            .as_deref()
+            .unwrap_or(&entry.rom_filename);
+        display_groups
+            .entry(display.to_string())
+            .or_default()
+            .push(i);
+    }
+
+    // For each group with duplicates, compute disambiguation suffixes.
+    for (_display, indices) in &display_groups {
+        if indices.len() <= 1 {
+            continue;
+        }
+
+        // Extract TOSEC metadata for each entry in the group.
+        let metadata: Vec<(
+            rom_tags::TosecMetadata,
+            Vec<String>,
+        )> = indices
+            .iter()
+            .map(|&i| {
+                let tosec = rom_tags::extract_tosec_metadata(&entries[i].rom_filename);
+                let descriptors = rom_tags::extract_bracket_descriptors(&entries[i].rom_filename);
+                (tosec, descriptors)
+            })
+            .collect();
+
+        // Determine which fields vary across the group.
+        let publishers: HashSet<Option<&str>> = metadata
+            .iter()
+            .map(|(m, _)| m.publisher.as_deref())
+            .collect();
+        let dates: HashSet<Option<&str>> = metadata.iter().map(|(m, _)| m.date.as_deref()).collect();
+        let has_different_publishers = publishers.len() > 1;
+        let has_different_dates = dates.len() > 1;
+
+        // Check if showing just the year would cause collisions within this group.
+        // If any two entries share the same year, we need full dates.
+        let use_full_dates = if has_different_dates {
+            let mut year_counts: HashMap<Option<u16>, usize> = HashMap::new();
+            for (m, _) in &metadata {
+                *year_counts.entry(m.year).or_insert(0) += 1;
+            }
+            year_counts.values().any(|&c| c > 1)
+        } else {
+            false
+        };
+
+        // Build suffix for each entry.
+        for (j, &idx) in indices.iter().enumerate() {
+            let (tosec, descriptors) = &metadata[j];
+            let mut suffix_parts: Vec<String> = Vec::new();
+
+            // Priority 1: Publisher
+            if has_different_publishers {
+                if let Some(ref publisher) = tosec.publisher {
+                    // Use the already-normalized developer from the entry, or fall back to raw publisher.
+                    let dev = &entries[idx].developer;
+                    if !dev.is_empty() {
+                        suffix_parts.push(dev.clone());
+                    } else {
+                        suffix_parts.push(publisher.clone());
+                    }
+                }
+            }
+
+            // Priority 2/3: Date-based disambiguation.
+            // Use the most specific date that disambiguates:
+            // - If all entries have different years, just show the year
+            // - If some entries share a year (but differ by full date), show the full date
+            if has_different_dates {
+                if let Some(ref date) = tosec.date {
+                    if use_full_dates {
+                        suffix_parts.push(date.clone());
+                    } else if let Some(year) = tosec.year {
+                        suffix_parts.push(year.to_string());
+                    }
+                }
+            }
+
+            // Priority 4: Bracket descriptors
+            if !descriptors.is_empty() {
+                suffix_parts.extend(descriptors.iter().cloned());
+            }
+
+            // Apply suffix if we have something to add.
+            if !suffix_parts.is_empty() {
+                let suffix = suffix_parts.join(", ");
+                let current = entries[idx]
+                    .display_name
+                    .as_deref()
+                    .unwrap_or(&entries[idx].rom_filename);
+
+                // Check if the current display name already has a parenthesized suffix.
+                // If so, insert the disambiguation info before the closing paren.
+                // E.g., "Game (USA)" → "Game (USA, 2017)" not "Game (USA) (2017)".
+                let new_display = if let Some(paren_start) = current.rfind('(')
+                    && current.ends_with(')')
+                {
+                    let before = &current[..paren_start];
+                    let existing = &current[paren_start + 1..current.len() - 1];
+                    format!("{before}({existing}, {suffix})")
+                } else {
+                    format!("{current} ({suffix})")
+                };
+                entries[idx].display_name = Some(new_display);
+            }
         }
     }
 }
