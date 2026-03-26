@@ -562,7 +562,7 @@ mod ssr {
                 tower::ServiceBuilder::new()
                     .layer(SetResponseHeaderLayer::overriding(
                         http::header::CACHE_CONTROL,
-                        http::HeaderValue::from_static("public, max-age=31536000, immutable"),
+                        http::HeaderValue::from_static("public, max-age=3600"),
                     ))
                     .service(ServeDir::new(format!("{site_root}/pkg")).precompressed_gzip()),
             )
