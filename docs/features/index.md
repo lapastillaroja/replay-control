@@ -9,7 +9,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 ## Home Page
 
 - **Last Played** hero card with the most recently launched game
-- **Recently Played** horizontal scroll of the last ~10 played games
+- **Recently Played** horizontal scroll of the last ~11 played games (query limited to 15 entries for performance)
 - **Library stats** — total games, systems with games, total favorites, disk usage
 - **Systems overview** — grid of systems that have games, with game count and link to ROM list
 - **Recommendations** — curated blocks including random picks (genre-diverse), top-rated (weighted by vote count), multiplayer, favorites-based suggestions, and top genres. Recommendations are deduplicated by game title, respect region preference, and exclude clones, hacks, translations, and special ROMs. [Detail](recommendations.md)
@@ -21,7 +21,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - **Per-ROM actions** — favorite toggle, inline rename, delete with confirmation
 - **ROM metadata** — filename, path, file size (Mbit/Kbit for cartridge systems, MB/GB for disc-based), extension badge, box art thumbnail
 - **Arcade display names** — embedded database of ~15K playable arcade entries (MAME, FBNeo, Flycast/Naomi/Atomiswave) maps codenames to human-readable titles across the entire app. Non-playable machines (slot machines, gambling, etc.) filtered at build time.
-- **M3U multi-disc handling** — individual disc files are hidden when an M3U playlist exists; sizes are aggregated into the playlist entry. Auto-generates M3U playlists for TOSEC-named multi-part games at scan time
+- **M3U multi-disc handling** — individual disc files are hidden when an M3U playlist exists; sizes are aggregated into the playlist entry. Auto-generates M3U playlists for TOSEC-named multi-part games (Side A/B, Disk N of M) at scan time
 - **Filesystem watching** — on local storage (SD/USB/NVMe), inotify detects new, changed, or deleted ROMs and updates the library automatically
 - **Unified GameListItem** — consistent game rendering component across all list views (ROM lists, search results, developer pages, series siblings, recommendations) with box art, badges, and favorite toggle
 - **Sequenced startup** — server responds immediately during warmup with empty data and a "Scanning game library..." banner; background pipeline runs auto-import, populate, enrich, and watchers in order. [Detail](game-library.md)
@@ -35,12 +35,14 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - **User screenshots** — displays screenshots captured on RePlayOS, matched by ROM filename. Gallery view with fullscreen lightbox and keyboard navigation
 - **Videos** — paste YouTube/Twitch/Vimeo/Dailymotion URLs or search for trailers, gameplay, and 1CC videos via Invidious/Piped. Pin results to saved videos. Privacy-respecting embeds (`youtube-nocookie.com`). Videos are shared across regional variants via `base_title`, with alias resolution for cross-name sharing
 - **Box art swap** — pick alternate region-variant cover art from the full libretro-thumbnails catalog
-- **Game series** — series name heading with horizontal scroll of series siblings (cross-system). Sequel/prequel breadcrumb navigation (`< Prev | 2 of 5 | Next >`) using Wikidata P155/P156 chains. [Detail](game-series.md)
+- **Game series** — series name heading with horizontal scroll of series siblings (cross-system). Sequel/prequel breadcrumb navigation (`< Prev | 2 of 5 | Next >`) using Wikidata P155/P156 chains with bidirectional link filling at build time. Clone ROMs used as fallback when non-clone targets are unavailable. [Detail](game-series.md)
+- **Alternate versions** — other versions of the same game shown as chip links (clones, region variants with different tags)
+- **Also available on** — cross-system section showing the same game (`base_title` match) on other systems in the library
 - **Related games** — genre-based recommendations shown on the detail page
 - **Game manuals** — in-folder document detection (PDF, TXT, HTML) and on-demand download from archive.org via RetroKit TSV. Language preferences for manual search. Inline delete for downloaded manuals
 - **Actions** — favorite/unfavorite toggle, inline rename (with extension protection), delete with multi-file confirmation
 - **ROM management** — multi-file delete handles M3U + disc files, CUE + BIN, ScummVM data directories, SBI companions. Rename restrictions prevent broken games (CUE, ScummVM, binary M3U). Delete confirmation shows file count and total size for multi-file ROMs
-- **Variant sections** — regional variants, translations, hacks, specials, arcade versions, and cross-name aliases of the same game shown in dedicated collapsible sections
+- **Variant sections** — regional variants, translations, hacks, specials, arcade versions, and cross-name aliases shown in dedicated collapsible sections
 
 ## Favorites
 
@@ -51,10 +53,14 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - **All Favorites** with flat list and grouped-by-system views (toggle)
 - **Remove confirmation** — star click shows "Remove?" before acting; optimistic UI
 - **Organize by developer** — favorites can be organized into subfolders by developer/manufacturer, with algorithmic normalization of MAME manufacturer strings (licensing info, regional suffixes, corporate names, joint ventures)
+- **Sorted by date added** — favorites list sorted by newest first, consistent across subfolders
+- **Recursive unfavorite** — removing a favorite searches all subfolders, not just the root
 
 ## Global Search
 
 - Cross-system search accessible from the nav bar, home page, or `/` keyboard shortcut
+- **Parallel search** across systems via `tokio::spawn` for faster results
+- **SQL pre-filtered search** — `search_text` column enables database-level filtering before in-memory scoring (220ms to 16ms)
 - Word-level fuzzy matching against both filenames and display names
 - Region preference bonus, hack/translation penalties in scoring
 - Filters: genre, driver status (arcade), favorites only, minimum rating
@@ -93,9 +99,9 @@ Accessible from More > Game Data.
 
 Accessible from the More page, organized into Preferences, Game Data, and System sections.
 
-- **Region preference** — primary and secondary preferred ROM region (USA, Europe, Japan, World); affects sort order, search scoring, and recommendation dedup
+- **Region preference** — primary and secondary preferred ROM region (USA, Europe, Japan, World); affects sort order, search scoring, and recommendation dedup. Default: World
 - **Text size** — normal/large toggle with rem-based scaling
-- **Skin/theme sync** — browse and apply RePlayOS skins; optionally sync the app's color scheme to the active skin. Skin changes push instantly to all connected browsers via broadcast SSE (`/sse/config`)
+- **Skin/theme sync** — browse and apply RePlayOS skins; optionally sync the app's color scheme to the active skin. Skin and storage changes push instantly to all connected browsers via broadcast SSE (`/sse/config`)
 - **Hostname** — view and change the Pi's hostname and mDNS address
 - **Wi-Fi** — view and edit Wi-Fi settings (SSID, password, country, mode)
 - **NFS share** — view and edit NFS v4 share configuration
@@ -105,9 +111,10 @@ Accessible from the More page, organized into Preferences, Game Data, and System
 ## Storage
 
 - Auto-detects storage mode from RePlayOS config: SD card, USB, NVMe (Pi 5), or NFS
-- Config file watcher with automatic cache invalidation on storage changes; storage changes push via broadcast SSE to trigger client reload
+- Config file watcher with automatic cache invalidation on storage changes; storage changes push via broadcast SSE (`/sse/config`) to trigger client reload
 - Filesystem-aware SQLite journal mode: WAL on POSIX-capable filesystems (ext4, btrfs, xfs), DELETE on exFAT/FAT32/NFS
-- Runtime corruption detection — `SQLITE_CORRUPT` errors trigger a recovery banner; metadata.db can be rebuilt, user_data.db can be restored from automatic startup backup
+- Runtime corruption detection — `sqlite3_errcode` checked after every query; `SQLITE_CORRUPT` triggers a recovery banner with phase, system name, and progress count. metadata.db can be rebuilt, user_data.db can be restored from automatic startup backup
+- **Cache-Control headers** for static assets — `pkg/` assets use 1-hour cache (no content hash in filenames); other static assets use standard caching
 - App data stored in `.replay-control/` on the ROM storage device, separate from RePlayOS config. [Detail](storage.md)
 
 ## Libretro Core — Recently Played Viewer
@@ -127,9 +134,10 @@ A libretro core (.so) loaded by the RePlayOS frontend on the TV:
 - **Three-tier game library cache** — in-memory (L1), SQLite (L2), filesystem (L3) for fast page loads with automatic freshness. [Detail](game-library.md)
 - **Embedded game databases** — ~34K console ROMs (No-Intro + TheGamesDB + libretro-database) and ~15K playable arcade entries (MAME + FBNeo + Flycast) compiled via PHF maps for zero-cost lookups
 - **Embedded series database** — ~5,345 Wikidata series entries compiled at build time for game franchise identification. [Detail](game-series.md)
-- **ROM filename parser** — extracts title, region, revision, and classification (hack, translation, special) from No-Intro and GoodTools naming conventions. [Detail](rom-organization.md)
+- **ROM filename parser** — extracts title, region, revision, and classification (hack, translation, special) from No-Intro, GoodTools, and TOSEC naming conventions. TOSEC support includes structured tag parsing (year, publisher, side/disk), 17 country code mappings, bracket flag classification ([a] Alternate, [h] Hack, [cr] Cracked, etc.) with display labels, language codes, and format suffix disambiguation. [Detail](rom-organization.md), [Detail](metadata.md)
 - **CRC32 ROM identification** — hash-based ROM identification for 9 cartridge systems using No-Intro DATs
-- **deadpool-sqlite connection pool** — async `pool.get().await` + `conn.interact().await` API, 3 concurrent read connections + 1 write per DB (both WAL and DELETE modes), 10-second pool wait timeout
+- **deadpool-sqlite connection pool** — async `pool.get().await` + `conn.interact().await` API prevents tokio worker starvation; 3 concurrent read connections + 1 write per DB (both WAL and DELETE modes), 10-second pool wait timeout
+- **Broadcast SSE** — `/sse/config` pushes skin and storage changes to all connected browsers; activity SSE uses broadcast instead of polling
 - **Cross-compilation** — `./build.sh aarch64` produces an ARM binary for Raspberry Pi deployment
 - **REST API** — `/api/core/` endpoints for the libretro core. [Detail](libretro-core.md)
 - **Internationalization** — i18n infrastructure in place with English as the default language

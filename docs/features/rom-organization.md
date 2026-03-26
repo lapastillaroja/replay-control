@@ -11,17 +11,19 @@ Favorites are `.fav` marker files in `roms/_favorites/`:
 
 ### Operations
 - `add_favorite()`: Creates the `.fav` file and `_favorites/` directory
-- `remove_favorite()`: Deletes the `.fav` file
+- `remove_favorite()`: Deletes the `.fav` file; uses recursive search across all subfolders to find the `.fav` file regardless of organize structure
 - Cache: In-memory L1 with mtime-based invalidation (no L2 SQLite for favorites)
 
 ### UI
 - Favorite toggle on ROM list items and game detail page (optimistic UI)
 - Favorites page with hero card, recently added, per-system cards, flat/grouped views
+- Favorites sorted by `date_added` (file mtime), newest first — consistent across subfolders
 - Remove confirmation (star click shows "Remove?" before acting)
 - `is_favorite` flag on `RomEntry` for SSR-ready display
+- `read_untracked()` used for system display name to avoid reactive tracking warnings on WASM hydration
 
 ### Organization
-Favorites can be organized into subfolders using configurable criteria (up to 2 levels of nesting). Available criteria: System, Genre, Players, Alphabetical, Developer. The Developer criterion uses `normalize_developer()` to handle MAME manufacturer string variations (licensing info, regional suffixes, corporate names, joint ventures). Console games use the `game_library.developer` field from LaunchBox enrichment. Organize can copy (keeping originals at root for RePlayOS compatibility) or move files. `flatten_favorites()` reverses the organization.
+Favorites can be organized into subfolders using configurable criteria (up to 2 levels of nesting). Available criteria: System, Genre, Players, Alphabetical, Developer. The Developer criterion uses `normalize_developer()` to handle MAME manufacturer string variations (licensing info, regional suffixes, corporate names, joint ventures). Console games use the `game_library.developer` field from LaunchBox enrichment. Organize can copy (keeping originals at root for RePlayOS compatibility) or move files, preserving file mtime during copy to maintain correct "Latest Added" ordering. `flatten_favorites()` reverses the organization.
 
 ## Recents
 
@@ -40,10 +42,11 @@ When launched via a favorite, RePlayOS creates `.fav.rec` extension files. The a
 - `.fav` suffix stripped from recently played entries
 - Deduplication when both `.rec` and `.fav.rec` exist for the same game
 - Sorted by mtime descending (most recent first)
+- Query limited to 15 entries for homepage performance (homepage only displays ~11)
 
 ## Region Preference
 
-Stored in `.replay-control/settings.cfg` as `region_preference = "usa"` (default). A secondary region preference is also supported, providing a two-tier sort: Primary > Secondary > World > others.
+Stored in `.replay-control/settings.cfg` as `region_preference = "world"` (default changed from USA to World). A secondary region preference is also supported, providing a two-tier sort: Primary > Secondary > World > others.
 
 Options: `usa`, `europe`, `japan`, `world`.
 

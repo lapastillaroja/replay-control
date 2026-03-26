@@ -102,6 +102,34 @@ Server functions return a single `GameInfo` struct regardless of data source. `r
 | Special | `(FastRom)`, `(Unl)`, `(Homebrew)`, `(Beta)`, `(Pirate)` | Excluded from recommendations |
 | Revision | `(Rev 1)`, `(Rev A)` | Shown as variant, included in recommendations |
 
+### TOSEC Structured Tag Parsing
+
+TOSEC filenames follow a structured convention: `Title (year)(publisher)(media)(country)(language)(other)[flags]`. The parser extracts:
+
+- **Year**: `(1988)`, `(19xx)` — displayed in metadata
+- **Publisher**: `(Ocean)`, `(Amstrad)` — used for developer/manufacturer display
+- **Side/Disk**: `(Side A)`, `(Disk 1 of 3)`, `(Tape 1 of 2)`, `(Part 1 of 3)` — triggers M3U auto-generation for multi-part grouping
+- **Country codes**: 17 recognized TOSEC country codes mapped to regions — US, GB, JP, DE, FR, ES, IT, NL, SE, AU, BR, KR, CN, TW, CA, PT, DK
+- **Language codes**: `(fr)`, `(es)`, `(en)` — displayed in display names and used for region field
+- **Format suffix**: `[DSK]`, `[CDT]` — added to display names when ambiguous (same title in multiple formats)
+
+### TOSEC Bracket Flag Classification
+
+Square bracket flags in TOSEC filenames are classified and given human-readable display labels:
+
+| Flag | Meaning | Display Label |
+|------|---------|---------------|
+| `[a]`, `[a2]` | Alternate dump | "Alternate", "Alternate 2" |
+| `[h]`, `[h1]` | Hack | "Hack" |
+| `[cr]` | Cracked | "Cracked" |
+| `[t]`, `[t1]` | Trained | "Trained", "Trained 1" |
+| `[f]` | Fixed | "Fixed" |
+| `[o]` | Overdump | "Overdump" |
+| `[b]` | Bad dump | "Bad Dump" |
+| `[!]` | Verified good | (not displayed) |
+
+Numbered flags (e.g., `[a2]`, `[t3]`) show the number in their label ("Alternate 2", "Trained 3"). These labels appear in display names alongside version/country information to disambiguate otherwise identical titles.
+
 ## Key Source Files
 
 | File | Role |

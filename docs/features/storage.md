@@ -28,7 +28,14 @@ The `--storage-path` CLI flag bypasses detection entirely (used for local develo
 1. **inotify** via `notify` crate: instant notification on config file changes
 2. **60-second poll**: fallback timer that re-reads config and re-detects storage
 
-On config change, `refresh_storage()` re-reads `replay.cfg`, re-detects storage, and invalidates caches if the storage root or kind changed.
+On config change, `refresh_storage()` re-reads `replay.cfg`, re-detects storage, and invalidates caches if the storage root or kind changed. Storage changes are pushed to all connected browsers via broadcast SSE (`/sse/config`) to trigger client reload.
+
+## Broadcast SSE
+
+The app uses broadcast Server-Sent Events for real-time push notifications:
+
+- **`/sse/config`** — pushes skin changes and storage changes to all connected browsers. Skin changes update the app's color scheme instantly; storage changes trigger a full client reload.
+- **Activity SSE** — converted from polling to broadcast; background operations (scanning, importing) push progress updates to connected clients instead of clients polling for status.
 
 ## ROM Directory Watcher
 

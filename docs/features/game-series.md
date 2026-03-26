@@ -56,6 +56,8 @@ A breadcrumb-style navigation bar shows the play order within the series:
 ```
 
 - **Prev/Next** links use Wikidata P155/P156 chains when available, with P1545 ordinal fallback
+- **Bidirectional link filling** at build time: `build.rs` runs a reverse-link pass that ensures if game A has P156 (followed by B), then B gets P155 (follows A) even if Wikidata only has one direction
+- **Clone ROM fallback**: sequel link targets prefer non-clone ROMs, but fall back to clone entries when the non-clone version is not in the library
 - Games in the user's library are linked to their detail page; games not in the library show the title without a link
 - The "N of M" counter shows position using Wikidata ordinals
 

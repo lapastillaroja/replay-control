@@ -4,6 +4,51 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## 2026-03-27
+
+### Features
+- feat: alternate versions section on game detail page — clones and regional variants shown as chip links (`c2f36b9`)
+- feat: "Also Available On" cross-system section on game detail page — matches same `base_title` across other systems (`c2f36b9`)
+- feat: show TOSEC bracket flag labels in display names — [a] Alternate, [h] Hack, [cr] Cracked, etc. with numbered variants ("Alternate 2", "Trained 3") (`9c9ab13`)
+- feat: TOSEC bracket flag classification and duplicate disambiguation — square bracket flags parsed into structured types, used to distinguish otherwise identical display names (`5a34821`)
+- feat: TOSEC structured tag parsing — year, publisher, side/disk extraction from TOSEC filenames (`0c4ade8`)
+- feat: resolve 95% of TOSEC CPC duplicate display names — version stripping, country codes, bracket flags, format suffix disambiguation (`800515c`)
+
+### Performance
+- perf: SQL pre-filter with `search_text` column — search latency 220ms to 14ms (`f79d950`)
+- perf: parallelize global search across systems via `tokio::spawn` (`c660635`)
+- perf: add Cache-Control headers for static assets (`edaf1df`)
+- perf: limit `get_recents` to 15 entries (homepage only shows 11) (`88756b1`)
+
+### Bug Fixes
+- fix: default region preference to World instead of USA (`659de9e`)
+- fix: fill bidirectional sequel links at build time — reverse-link pass ensures both P155 and P156 are populated (`dbb0b9e`)
+- fix: allow clone ROMs as sequel link targets, prefer non-clones (`7c60167`)
+- fix: include clone entries in display name disambiguation (`4305d64`)
+- fix: use 1h cache for pkg assets — no content hash in filenames, immutable was incorrect (`6c61ee8`)
+- fix: show system display name in startup scanning banner (`b48d376`)
+- fix: show phase, system, and progress count in rebuild banner (`4dd239c`)
+- fix: EU region correctly maps to "Europe" (was "Europe, USA") (`18bfe9f`)
+
+### Refactoring
+- refactor: convert activity SSE from polling to broadcast (`598277d`)
+- feat: broadcast SSE for skin and storage change notifications (`eb3912d`)
+
+### Documentation
+- docs: game detail variant improvements design (`cc5070f`)
+- docs: CPC game detail variant coverage analysis (`2852873`)
+- docs: TOSEC variant display analysis (`354de38`)
+- docs: Discover section redesign with rotating spotlights (`481122d`)
+- docs: brainstorm 15 recommendation ideas with priority assessment (`388bdd4`)
+- docs: verify TOSEC changes don't break No-Intro parsing (`efce37d`)
+- docs: TOSEC structured tag parsing design (`09b1d1a`)
+- docs: NFS graceful startup v2 design (`3e08d32`)
+- docs: mark sequel/prequel chains as implemented (`83aa121`)
+- docs: update load test results, close http-client eval (`bed6c25`)
+- docs: TOSEC duplicate analysis and NFS startup v1 (`9f95e48`)
+
+---
+
 ## 2026-03-24
 
 ### Performance

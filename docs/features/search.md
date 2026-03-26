@@ -9,10 +9,11 @@ Global search is a cross-system search accessible from the top bar icon, the hom
 ## Search Flow
 
 1. User types a query (debounced 300ms)
-2. Server loads all ROMs from L1/L2 cache across all systems
-3. Each ROM is scored against the query
-4. Results are filtered by optional criteria (genre, driver status, favorites-only)
-5. Top results are returned sorted by score, paginated
+2. Server runs search in parallel across systems via `tokio::spawn`
+3. Each system's ROMs are pre-filtered at the SQL level using the `search_text` column (concatenated lowercase filename + display name), reducing the candidate set before in-memory scoring (220ms to 16ms for typical queries)
+4. Each ROM is scored against the query
+5. Results are filtered by optional criteria (genre, driver status, favorites-only)
+6. Top results are returned sorted by score, paginated
 
 ## Scoring Algorithm
 
