@@ -769,8 +769,8 @@ fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
     // "(Side A)", "(Side B)" etc. Case-insensitive.
     let lower = filename.to_lowercase();
 
-    // Find the disc/disk pattern.
-    let patterns = ["(disc ", "(disk "];
+    // Find the disc/disk/tape/part pattern.
+    let patterns = ["(disc ", "(disk ", "(tape ", "(part "];
     for pattern in &patterns {
         if let Some(start) = lower.find(pattern) {
             // Find the closing parenthesis.
@@ -1971,6 +1971,38 @@ mod tests {
         let (base, num) = parse_disc_pattern("Game (1990)(Publisher)(Side C).dsk").unwrap();
         assert_eq!(num, 3);
         assert_eq!(base, "Game (1990)(Publisher).dsk");
+    }
+
+    #[test]
+    fn parse_disc_pattern_tape() {
+        let (base, num) =
+            parse_disc_pattern("UROK (2019)(RetroWorks)(es)(Tape 1 of 3).cdt").unwrap();
+        assert_eq!(num, 1);
+        assert_eq!(base, "UROK (2019)(RetroWorks)(es).cdt");
+    }
+
+    #[test]
+    fn parse_disc_pattern_tape_2() {
+        let (base, num) =
+            parse_disc_pattern("UROK (2019)(RetroWorks)(es)(Tape 2 of 3).cdt").unwrap();
+        assert_eq!(num, 2);
+        assert_eq!(base, "UROK (2019)(RetroWorks)(es).cdt");
+    }
+
+    #[test]
+    fn parse_disc_pattern_part() {
+        let (base, num) =
+            parse_disc_pattern("Cero Absoluto (2016)(ESP Soft)(es)(Part 1 of 2).cdt").unwrap();
+        assert_eq!(num, 1);
+        assert_eq!(base, "Cero Absoluto (2016)(ESP Soft)(es).cdt");
+    }
+
+    #[test]
+    fn parse_disc_pattern_part_2() {
+        let (base, num) =
+            parse_disc_pattern("Cero Absoluto (2016)(ESP Soft)(es)(Part 2 of 2).cdt").unwrap();
+        assert_eq!(num, 2);
+        assert_eq!(base, "Cero Absoluto (2016)(ESP Soft)(es).cdt");
     }
 
     // --- generate_m3u_playlists ---

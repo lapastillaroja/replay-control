@@ -284,9 +284,13 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
             has_60hz = true;
             continue;
         }
-        if !is_noise_tag(&lower) && looks_like_region(trimmed) {
+        // Check region before noise: uppercase TOSEC country codes like (ES), (FR)
+        // overlap with language codes after lowercasing, but are regions when uppercase.
+        if looks_like_region(trimmed) {
             has_region = true;
             region_priority = region_to_priority(trimmed);
+        } else if is_noise_tag(&lower) {
+            continue;
         }
     }
 
@@ -400,6 +404,7 @@ pub fn extract_tags(filename: &str) -> String {
     let mut region: Option<String> = None;
     let mut revision: Option<String> = None;
     let mut translation: Option<String> = None;
+    let mut tosec_language: Option<String> = None;
     let mut patch_60hz = false;
     let mut patch_fastrom = false;
     let mut is_hack = false;
@@ -410,9 +415,9 @@ pub fn extract_tags(filename: &str) -> String {
     let mut is_unlicensed = false;
     let mut is_aftermarket = false;
     let mut is_pirate = false;
-    let mut is_alternate = false;
-    let mut is_cracked = false;
-    let mut is_trained = false;
+    let mut alternate_num: Option<Option<u8>> = None; // None=not set, Some(None)=[a], Some(Some(2))=[a2]
+    let mut cracked_num: Option<Option<u8>> = None;
+    let mut trained_num: Option<Option<u8>> = None;
     let mut is_fixed = false;
     let mut is_overdump = false;
     let mut is_bad_dump = false;
@@ -498,15 +503,27 @@ pub fn extract_tags(filename: &str) -> String {
             continue;
         }
 
-        // Skip non-region noise: Virtual Console, Switch Online, language-only
-        // codes like (En), (Ja), (En,Fr,De), NP, BS, etc.
-        if is_noise_tag(&lower) {
+        // TOSEC lowercase language codes: (fr), (es), (en), (de), (it), (en-fr), etc.
+        // Only match ALL-LOWERCASE tags to avoid conflicts with No-Intro's (En), (Fr).
+        if tosec_language.is_none()
+            && trimmed == lower  // all-lowercase guard
+            && is_tosec_language_tag(trimmed)
+        {
+            tosec_language = Some(expand_tosec_language(trimmed));
             continue;
         }
 
-        // If we haven't matched anything else, treat as region if it looks like one
+        // Check for region BEFORE noise filtering. Uppercase TOSEC country codes
+        // like (ES), (FR), (DE) overlap with language codes but are regions when
+        // uppercase. Checking region first prevents is_noise_tag from swallowing them.
         if region.is_none() && looks_like_region(trimmed) {
             region = Some(normalize_region(trimmed));
+            continue;
+        }
+
+        // Skip non-region noise: Virtual Console, Switch Online, language-only
+        // codes like (En), (Ja), (En,Fr,De), NP, BS, etc.
+        if is_noise_tag(&lower) {
             continue;
         }
     }
@@ -530,10 +547,16 @@ pub fn extract_tags(filename: &str) -> String {
         if let Some(flag) = classify_tosec_bracket(trimmed) {
             match flag {
                 TosecBracketFlag::Hack => is_hack = true,
-                TosecBracketFlag::Trained => is_trained = true,
-                TosecBracketFlag::Cracked => is_cracked = true,
+                TosecBracketFlag::Trained => {
+                    trained_num = Some(extract_bracket_number(trimmed));
+                }
+                TosecBracketFlag::Cracked => {
+                    cracked_num = Some(extract_bracket_number(trimmed));
+                }
                 TosecBracketFlag::Pirate => is_pirate = true,
-                TosecBracketFlag::Alternate => is_alternate = true,
+                TosecBracketFlag::Alternate => {
+                    alternate_num = Some(extract_bracket_number(trimmed));
+                }
                 TosecBracketFlag::Fixed => is_fixed = true,
                 TosecBracketFlag::Overdump => is_overdump = true,
                 TosecBracketFlag::BadDump => is_bad_dump = true,
@@ -549,6 +572,10 @@ pub fn extract_tags(filename: &str) -> String {
 
     if let Some(r) = region {
         parts.push(r);
+    }
+
+    if let Some(lang) = tosec_language {
+        parts.push(lang);
     }
 
     if let Some(rev) = revision {
@@ -569,14 +596,14 @@ pub fn extract_tags(filename: &str) -> String {
     if is_hack {
         parts.push("Hack".to_string());
     }
-    if is_cracked {
-        parts.push("Cracked".to_string());
+    if let Some(num) = cracked_num {
+        parts.push(format_numbered_label("Cracked", num));
     }
-    if is_trained {
-        parts.push("Trained".to_string());
+    if let Some(num) = trained_num {
+        parts.push(format_numbered_label("Trained", num));
     }
-    if is_alternate {
-        parts.push("Alternate".to_string());
+    if let Some(num) = alternate_num {
+        parts.push(format_numbered_label("Alternate", num));
     }
     if is_fixed {
         parts.push("Fixed".to_string());
@@ -692,6 +719,35 @@ fn starts_with_flag(lower: &str, prefix: &str) -> bool {
         && lower.as_bytes()[prefix.len()].is_ascii_digit()
 }
 
+/// Extract the numeric suffix from a TOSEC bracket tag.
+///
+/// - `"a"` → `None` (no number)
+/// - `"a2"` → `Some(2)`
+/// - `"t +2"` → `Some(2)`
+/// - `"cr3"` → `Some(3)`
+/// - `"t1"` → `Some(1)`
+fn extract_bracket_number(tag: &str) -> Option<u8> {
+    // Find trailing digits in the tag
+    let digits_start = tag.rfind(|c: char| !c.is_ascii_digit());
+    match digits_start {
+        Some(pos) if pos + 1 < tag.len() => {
+            tag[pos + 1..].parse::<u8>().ok()
+        }
+        _ => None,
+    }
+}
+
+/// Format a label with an optional number suffix.
+///
+/// - `("Alternate", None)` → `"Alternate"`
+/// - `("Alternate", Some(2))` → `"Alternate 2"`
+fn format_numbered_label(label: &str, num: Option<u8>) -> String {
+    match num {
+        Some(n) => format!("{label} {n}"),
+        None => label.to_string(),
+    }
+}
+
 /// Check if a ROM filename has any known TOSEC bracket dump flag.
 ///
 /// Returns `true` if the filename contains `[a]`, `[a2]`, `[h]`, `[cr]`,
@@ -756,6 +812,69 @@ pub fn extract_bracket_descriptors(filename: &str) -> Vec<String> {
         descriptors.push(trimmed.to_string());
     }
     descriptors
+}
+
+/// Extract a TOSEC lowercase language code from a filename as a region string.
+///
+/// Returns the lowercase language name (e.g., "french", "spanish", "english")
+/// if the filename contains a TOSEC all-lowercase language code like `(fr)`, `(es)`.
+/// Returns `None` if no TOSEC language code is found or if the filename already
+/// has a region from an uppercase country code.
+///
+/// Used to populate the `region` column for TOSEC entries, enabling the
+/// Regional Variants section on game detail pages.
+pub fn extract_tosec_language_as_region(filename: &str) -> Option<&'static str> {
+    let stem = filename
+        .rfind('.')
+        .map(|i| &filename[..i])
+        .unwrap_or(filename);
+
+    for tag in ParenTags::new(stem) {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Only match ALL-LOWERCASE tags
+        if trimmed != trimmed.to_lowercase() {
+            continue;
+        }
+        if is_tosec_language_tag(trimmed) {
+            return tosec_language_to_region(trimmed);
+        }
+    }
+    None
+}
+
+/// Map a TOSEC language code to a region name for the `region` column.
+fn tosec_language_to_region(tag: &str) -> Option<&'static str> {
+    // For multi-language codes, use the first language
+    let first = tag.split('-').next().unwrap_or(tag);
+    match first {
+        "en" => Some("english"),
+        "fr" => Some("french"),
+        "es" => Some("spanish"),
+        "de" => Some("german"),
+        "it" => Some("italian"),
+        "pt" => Some("portuguese"),
+        "nl" => Some("dutch"),
+        "sv" => Some("swedish"),
+        "da" => Some("danish"),
+        "fi" => Some("finnish"),
+        "no" => Some("norwegian"),
+        "pl" => Some("polish"),
+        "ru" => Some("russian"),
+        "ja" => Some("japanese"),
+        "ko" => Some("korean"),
+        "zh" => Some("chinese"),
+        "hu" => Some("hungarian"),
+        "cs" => Some("czech"),
+        "ro" => Some("romanian"),
+        "tr" => Some("turkish"),
+        "ar" => Some("arabic"),
+        "ca" => Some("catalan"),
+        "el" => Some("greek"),
+        _ => Some("other"),
+    }
 }
 
 /// Format the final display name with optional tag suffix.
@@ -996,6 +1115,37 @@ fn looks_like_region(tag: &str) -> bool {
     false
 }
 
+/// Check if a tag is a TOSEC standalone lowercase language code or multi-language code.
+///
+/// Matches: `"fr"`, `"es"`, `"en"`, `"de"`, `"it"`, `"pt"`, `"nl"`,
+/// and hyphenated multi-language codes: `"en-fr"`, `"en-de-fr"`.
+///
+/// The caller must ensure the original tag is ALL-LOWERCASE before calling this,
+/// to avoid matching No-Intro's capitalized codes like `(En)`, `(Fr)`.
+fn is_tosec_language_tag(tag: &str) -> bool {
+    // Single language code
+    if is_language_code(tag) {
+        return true;
+    }
+    // Multi-language: "en-fr", "en-de-fr", etc.
+    if tag.contains('-') {
+        let parts: Vec<&str> = tag.split('-').collect();
+        if parts.len() >= 2 && parts.iter().all(|p| is_language_code(p)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Expand a TOSEC lowercase language code to an uppercase display string.
+///
+/// - `"fr"` → `"FR"`
+/// - `"en-fr"` → `"EN-FR"`
+/// - `"en-de-fr"` → `"EN-DE-FR"`
+fn expand_tosec_language(tag: &str) -> String {
+    tag.to_uppercase()
+}
+
 /// Check if a string is a language code like "en", "fr", "de", etc.
 fn is_language_code(s: &str) -> bool {
     matches!(
@@ -1048,6 +1198,7 @@ fn is_tosec_country_code(tag: &str) -> bool {
             | "CN"
             | "RU"
             | "EU"
+            | "GR"
     )
 }
 
@@ -1072,6 +1223,7 @@ fn expand_tosec_country_code(code: &str) -> Option<&'static str> {
         "CN" => Some("China"),
         "RU" => Some("Russia"),
         "EU" => Some("Europe"),
+        "GR" => Some("Greece"),
         _ => None,
     }
 }
@@ -1199,8 +1351,13 @@ pub fn extract_tosec_metadata(filename: &str) -> TosecMetadata {
             continue;
         }
 
-        // Disc/Side labels
-        if lower.starts_with("side ") || lower.starts_with("disc ") || lower.starts_with("disk ") {
+        // Disc/Side/Tape/Part labels
+        if lower.starts_with("side ")
+            || lower.starts_with("disc ")
+            || lower.starts_with("disk ")
+            || lower.starts_with("tape ")
+            || lower.starts_with("part ")
+        {
             meta.disc_label = Some(trimmed.to_string());
         }
     }
@@ -1223,7 +1380,12 @@ pub fn extract_disc_label(filename: &str) -> Option<String> {
     for tag in ParenTags::new(stem) {
         let trimmed = tag.trim();
         let lower = trimmed.to_lowercase();
-        if lower.starts_with("side ") || lower.starts_with("disc ") || lower.starts_with("disk ") {
+        if lower.starts_with("side ")
+            || lower.starts_with("disc ")
+            || lower.starts_with("disk ")
+            || lower.starts_with("tape ")
+            || lower.starts_with("part ")
+        {
             return Some(trimmed.to_string());
         }
     }
@@ -1857,12 +2019,12 @@ mod tests {
 
     #[test]
     fn extract_tags_tosec_alternate_a2() {
-        assert_eq!(extract_tags("Game (1987)(Publisher) [a2].dsk"), "Alternate");
+        assert_eq!(extract_tags("Game (1987)(Publisher) [a2].dsk"), "Alternate 2");
     }
 
     #[test]
     fn extract_tags_tosec_alternate_a3() {
-        assert_eq!(extract_tags("Game (1987)(Publisher) [a3].dsk"), "Alternate");
+        assert_eq!(extract_tags("Game (1987)(Publisher) [a3].dsk"), "Alternate 3");
     }
 
     #[test]
@@ -1885,19 +2047,19 @@ mod tests {
 
     #[test]
     fn extract_tags_tosec_cracked_cr1() {
-        assert_eq!(extract_tags("Game (1987)(Publisher) [cr1].dsk"), "Cracked");
+        assert_eq!(extract_tags("Game (1987)(Publisher) [cr1].dsk"), "Cracked 1");
     }
 
     #[test]
     fn extract_tags_tosec_trained_t1() {
-        assert_eq!(extract_tags("Game (1987)(Publisher) [t1].dsk"), "Trained");
+        assert_eq!(extract_tags("Game (1987)(Publisher) [t1].dsk"), "Trained 1");
     }
 
     #[test]
     fn extract_tags_tosec_trained_plus2() {
         assert_eq!(
             extract_tags("Game (1987)(Publisher) [t +2].dsk"),
-            "Trained"
+            "Trained 2"
         );
     }
 
@@ -2695,5 +2857,265 @@ mod tests {
     fn classify_pre_release_prerelease() {
         let (tier, _, _) = classify("Game (pre-release).dsk");
         assert_eq!(tier, RomTier::PreRelease);
+    }
+
+    // ==========================================
+    // Fix 6: GR country code
+    // ==========================================
+
+    #[test]
+    fn country_code_gr() {
+        assert!(is_tosec_country_code("GR"));
+    }
+
+    #[test]
+    fn expand_gr_to_greece() {
+        assert_eq!(expand_tosec_country_code("GR"), Some("Greece"));
+    }
+
+    #[test]
+    fn extract_tags_gr_region() {
+        assert_eq!(
+            extract_tags("Game (1987)(Publisher)(GR).dsk"),
+            "Greece"
+        );
+    }
+
+    #[test]
+    fn classify_gr_region_other() {
+        let (_, region, _) = classify("Game (1987)(Publisher)(GR).dsk");
+        assert_eq!(region, RegionPriority::Other);
+    }
+
+    // ==========================================
+    // Fix 3: Numbered alternate/trained/cracked
+    // ==========================================
+
+    #[test]
+    fn extract_tags_alternate_bare() {
+        // [a] → "Alternate" (no number)
+        assert_eq!(extract_tags("3D Fight (1985)(Loriciels)(fr)[a].dsk"), "FR, Alternate");
+    }
+
+    #[test]
+    fn extract_tags_alternate_a4() {
+        assert_eq!(extract_tags("3D Fight (1985)(Loriciels)(fr)[a4].dsk"), "FR, Alternate 4");
+    }
+
+    #[test]
+    fn extract_tags_alternate_a5() {
+        assert_eq!(extract_tags("3D Fight (1985)(Loriciels)(fr)[a5].dsk"), "FR, Alternate 5");
+    }
+
+    #[test]
+    fn extract_tags_trained_bare() {
+        assert_eq!(extract_tags("Pinball Power (1990)(Pub)[t].dsk"), "Trained");
+    }
+
+    #[test]
+    fn extract_tags_trained_t2() {
+        assert_eq!(extract_tags("Pinball Power (1990)(Pub)[t2].dsk"), "Trained 2");
+    }
+
+    #[test]
+    fn extract_tags_trained_t3() {
+        assert_eq!(extract_tags("Pinball Power (1990)(Pub)[t3].dsk"), "Trained 3");
+    }
+
+    #[test]
+    fn extract_tags_cracked_bare() {
+        assert_eq!(extract_tags("Game (1987)(Pub)[cr].dsk"), "Cracked");
+    }
+
+    #[test]
+    fn extract_tags_cracked_cr2() {
+        assert_eq!(extract_tags("Game (1987)(Pub)[cr2].dsk"), "Cracked 2");
+    }
+
+    // ==========================================
+    // Fix 5: Tape/Part as disc label
+    // ==========================================
+
+    #[test]
+    fn extract_disc_label_tape() {
+        assert_eq!(
+            extract_disc_label("UROK (2019)(RetroWorks)(es)(Tape 1 of 3).cdt"),
+            Some("Tape 1 of 3".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_disc_label_tape_2() {
+        assert_eq!(
+            extract_disc_label("UROK (2019)(RetroWorks)(es)(Tape 2 of 3).cdt"),
+            Some("Tape 2 of 3".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_disc_label_part() {
+        assert_eq!(
+            extract_disc_label("Cero Absoluto (2016)(ESP Soft)(es)(Part 1 of 2).cdt"),
+            Some("Part 1 of 2".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_disc_label_no_tape() {
+        assert_eq!(
+            extract_disc_label("Commando (1985)(Elite)(GB).dsk"),
+            None
+        );
+    }
+
+    #[test]
+    fn tosec_metadata_tape_label() {
+        let meta = extract_tosec_metadata("UROK (2019)(RetroWorks)(es)(Tape 1 of 3).cdt");
+        assert_eq!(meta.disc_label, Some("Tape 1 of 3".to_string()));
+    }
+
+    #[test]
+    fn tosec_metadata_part_label() {
+        let meta = extract_tosec_metadata("Cero Absoluto (2016)(ESP Soft)(es)(Part 1 of 2).cdt");
+        assert_eq!(meta.disc_label, Some("Part 1 of 2".to_string()));
+    }
+
+    // ==========================================
+    // Fix 1+2: TOSEC lowercase language codes
+    // ==========================================
+
+    #[test]
+    fn tosec_language_fr() {
+        assert_eq!(
+            extract_tags("3D Fight (1985)(Loriciels)(fr).dsk"),
+            "FR"
+        );
+    }
+
+    #[test]
+    fn tosec_language_es() {
+        assert_eq!(
+            extract_tags("Arkanoid (1987)(Imagine)(ES)(es).dsk"),
+            "Spain, ES"
+        );
+    }
+
+    #[test]
+    fn tosec_language_en() {
+        assert_eq!(
+            extract_tags("The Key (1987)(Iber Soft)(ES)(en).dsk"),
+            "Spain, EN"
+        );
+    }
+
+    #[test]
+    fn tosec_language_de() {
+        assert_eq!(
+            extract_tags("Game (1990)(Publisher)(de).dsk"),
+            "DE"
+        );
+    }
+
+    #[test]
+    fn tosec_language_it() {
+        assert_eq!(
+            extract_tags("The Key (1987)(Iber Soft)(ES)(it).dsk"),
+            "Spain, IT"
+        );
+    }
+
+    #[test]
+    fn tosec_language_multi_en_fr() {
+        assert_eq!(
+            extract_tags("Game (1990)(Publisher)(en-fr).dsk"),
+            "EN-FR"
+        );
+    }
+
+    #[test]
+    fn tosec_language_multi_en_de_fr() {
+        assert_eq!(
+            extract_tags("Game (1990)(Publisher)(en-de-fr).dsk"),
+            "EN-DE-FR"
+        );
+    }
+
+    #[test]
+    fn nointro_language_not_matched() {
+        // No-Intro uses capitalized (En), (Fr) — should NOT match TOSEC language
+        assert_eq!(extract_tags("Game (En).sfc"), "");
+    }
+
+    #[test]
+    fn nointro_multi_language_not_matched() {
+        // No-Intro (En,Fr,De) — should be swallowed by is_noise_tag
+        assert_eq!(extract_tags("Game (En,Fr,De).sfc"), "");
+    }
+
+    #[test]
+    fn tosec_language_with_alternate() {
+        // Language code + alternate flag
+        assert_eq!(
+            extract_tags("3D Fight (1985)(Loriciels)(fr)[a2].dsk"),
+            "FR, Alternate 2"
+        );
+    }
+
+    #[test]
+    fn tosec_language_region_as_region() {
+        // extract_tosec_language_as_region
+        assert_eq!(
+            extract_tosec_language_as_region("3D Fight (1985)(Loriciels)(fr).dsk"),
+            Some("french")
+        );
+    }
+
+    #[test]
+    fn tosec_language_region_es() {
+        assert_eq!(
+            extract_tosec_language_as_region("Game (1990)(Publisher)(es).dsk"),
+            Some("spanish")
+        );
+    }
+
+    #[test]
+    fn tosec_language_region_de() {
+        assert_eq!(
+            extract_tosec_language_as_region("Game (1990)(Publisher)(de).dsk"),
+            Some("german")
+        );
+    }
+
+    #[test]
+    fn tosec_language_region_none_for_nointro() {
+        // No-Intro capitalized language codes should NOT match
+        assert_eq!(
+            extract_tosec_language_as_region("Game (En).sfc"),
+            None
+        );
+    }
+
+    #[test]
+    fn tosec_language_region_none_for_no_lang() {
+        assert_eq!(
+            extract_tosec_language_as_region("Game (1987)(Publisher).dsk"),
+            None
+        );
+    }
+
+    #[test]
+    fn tosec_language_nl() {
+        assert_eq!(
+            extract_tags("Game (1990)(Publisher)(nl).dsk"),
+            "NL"
+        );
+    }
+
+    #[test]
+    fn tosec_language_pt() {
+        assert_eq!(
+            extract_tags("Game (1990)(Publisher)(pt).dsk"),
+            "PT"
+        );
     }
 }

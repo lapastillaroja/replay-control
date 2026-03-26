@@ -255,7 +255,12 @@ impl GameLibrary {
                     replay_control_core::rom_tags::RegionPriority::Japan => "japan",
                     replay_control_core::rom_tags::RegionPriority::World => "world",
                     replay_control_core::rom_tags::RegionPriority::Other => "other",
-                    replay_control_core::rom_tags::RegionPriority::Unknown => "",
+                    replay_control_core::rom_tags::RegionPriority::Unknown => {
+                        // Fallback: check for TOSEC lowercase language codes
+                        // to populate region for game detail page variants.
+                        replay_control_core::rom_tags::extract_tosec_language_as_region(rom_filename)
+                            .unwrap_or("")
+                    }
                 };
 
                 // Look up hash result for this ROM file.
@@ -482,6 +487,69 @@ fn disambiguate_display_names(entries: &mut [replay_control_core::metadata_db::G
                 };
                 entries[idx].display_name = Some(new_display);
             }
+        }
+    }
+
+    // Second pass: append file format suffix for entries that still share
+    // a display name but differ by file extension.
+    // Only adds format when there is actually a collision — games with
+    // a single format don't get a suffix.
+    disambiguate_by_format(entries);
+}
+
+/// Append file format suffix (e.g., "[DSK]", "[CDT]") to entries that still
+/// share a display name after all other disambiguation, when they differ by
+/// file extension.
+fn disambiguate_by_format(entries: &mut [replay_control_core::metadata_db::GameEntry]) {
+    // Re-group by display_name
+    let mut display_groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, entry) in entries.iter().enumerate() {
+        let display = entry
+            .display_name
+            .as_deref()
+            .unwrap_or(&entry.rom_filename);
+        display_groups
+            .entry(display.to_string())
+            .or_default()
+            .push(i);
+    }
+
+    for indices in display_groups.values() {
+        if indices.len() <= 1 {
+            continue;
+        }
+
+        // Check if entries differ by file extension
+        let extensions: Vec<String> = indices
+            .iter()
+            .map(|&i| {
+                entries[i]
+                    .rom_filename
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_uppercase()
+            })
+            .collect();
+
+        // Only add format suffix if there are at least 2 different extensions
+        let unique_exts: HashSet<&str> = extensions.iter().map(|s| s.as_str()).collect();
+        if unique_exts.len() <= 1 {
+            continue;
+        }
+
+        // Append format suffix to each entry
+        for (j, &idx) in indices.iter().enumerate() {
+            let ext = &extensions[j];
+            if ext.is_empty() {
+                continue;
+            }
+            let current = entries[idx]
+                .display_name
+                .as_deref()
+                .unwrap_or(&entries[idx].rom_filename)
+                .to_string();
+            entries[idx].display_name = Some(format!("{current} [{ext}]"));
         }
     }
 }
