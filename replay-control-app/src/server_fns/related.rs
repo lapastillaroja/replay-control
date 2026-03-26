@@ -15,10 +15,16 @@ pub struct RelatedGamesData {
     pub hacks: Vec<HackVariant>,
     /// Special versions of the same game (FastROM, 60Hz, unlicensed, etc.).
     pub specials: Vec<SpecialVariant>,
+    /// Alternate dumps/versions of the same game (same system, is_clone=1, not hacks).
+    /// Empty for arcade systems (they use arcade_versions instead).
+    pub alternate_versions: Vec<AlternateVersion>,
     /// Arcade clone siblings sharing the same parent ROM. Empty for non-arcade systems.
     pub arcade_versions: Vec<ArcadeVersion>,
     /// Cross-name variants of the same game (e.g., "Bare Knuckle" / "Streets of Rage").
     pub alias_variants: Vec<RecommendedGame>,
+    /// Same game on other systems (cross-system base_title match).
+    /// Empty when series_siblings already covers cross-system entries.
+    pub cross_system: Vec<RecommendedGame>,
     /// Other games in the same series/franchise (cross-system).
     pub series_siblings: Vec<RecommendedGame>,
     /// Series name from Wikidata (e.g., "Streets of Rage"). Empty if using algorithmic fallback.
@@ -87,6 +93,17 @@ pub struct SpecialVariant {
     pub is_current: bool,
 }
 
+/// An alternate version chip (alternate dump, trained, cracked — is_clone=1, not hacks).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlternateVersion {
+    pub rom_filename: String,
+    /// Short label extracted from the filename tags, e.g., "Alternate", "Alternate 2".
+    pub label: String,
+    pub href: String,
+    /// True if this is the current game (for active chip styling).
+    pub is_current: bool,
+}
+
 /// An arcade clone/version chip linking to another version of the same arcade game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArcadeVersion {
@@ -139,6 +156,11 @@ pub async fn get_related_games(
             let translations_raw =
                 MetadataDb::translations(conn, &system_cl, &filename_cl).unwrap_or_default();
             let hacks_raw = MetadataDb::hacks(conn, &system_cl, &filename_cl).unwrap_or_default();
+            let alternates_raw = if !is_arcade {
+                MetadataDb::alternate_versions(conn, &system_cl, &filename_cl).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             let specials_raw =
                 MetadataDb::specials(conn, &system_cl, &filename_cl).unwrap_or_default();
 
@@ -190,6 +212,24 @@ pub async fn get_related_games(
                 }
             };
 
+            // Cross-system availability: same base_title on other systems.
+            // Skip when Wikidata series data exists (it already covers cross-system entries).
+            // Also skip for clones/hacks — only show for primary entries.
+            let is_primary = current_entry
+                .is_none_or(|e| !e.is_clone && !e.is_hack);
+            let cross_system_raw = if series_raw.is_empty() && is_primary {
+                MetadataDb::cross_system_availability(
+                    conn,
+                    &system_cl,
+                    &base_title,
+                    &region_pref_str_cl,
+                    10,
+                )
+                .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
             // Alias variants: cross-name variants via game_alias table.
             let alias_raw = MetadataDb::alias_variants(
                 conn,
@@ -224,10 +264,12 @@ pub async fn get_related_games(
                 variants,
                 translations_raw,
                 hacks_raw,
+                alternates_raw,
                 specials_raw,
                 series_raw,
                 series_name_raw,
                 alias_raw,
+                cross_system_raw,
                 similar,
                 base_title,
                 all_system_roms,
@@ -240,10 +282,12 @@ pub async fn get_related_games(
         variants_raw,
         translations_raw,
         hacks_raw,
+        alternates_raw,
         specials_raw,
         series_raw,
         series_name,
         alias_raw,
+        cross_system_raw,
         similar_pool,
         base_title,
         all_system_roms,
@@ -254,9 +298,11 @@ pub async fn get_related_games(
             regional_variants: Vec::new(),
             translations: Vec::new(),
             hacks: Vec::new(),
+            alternate_versions: Vec::new(),
             specials: Vec::new(),
             arcade_versions: Vec::new(),
             alias_variants: Vec::new(),
+            cross_system: Vec::new(),
             series_siblings: Vec::new(),
             series_name: String::new(),
             similar_games: Vec::new(),
@@ -349,6 +395,27 @@ pub async fn get_related_games(
         })
         .collect();
 
+    // Build alternate versions list (clones that are not hacks).
+    let alternate_versions: Vec<AlternateVersion> = alternates_raw
+        .into_iter()
+        .map(|(rom_fn, display_name)| {
+            let is_current = rom_fn == filename;
+            let href = format!("/games/{}/{}", system, urlencoding::encode(&rom_fn));
+            let tags = replay_control_core::rom_tags::extract_tags(&rom_fn);
+            let label = if tags.is_empty() {
+                display_name.unwrap_or_else(|| rom_fn.clone())
+            } else {
+                tags
+            };
+            AlternateVersion {
+                rom_filename: rom_fn,
+                label,
+                href,
+                is_current,
+            }
+        })
+        .collect();
+
     // Build specials list.
     let specials: Vec<SpecialVariant> = specials_raw
         .into_iter()
@@ -404,6 +471,13 @@ pub async fn get_related_games(
         })
         .collect();
     resolve_box_art_for_picks(&state, &mut alias_variants).await;
+
+    // Build cross-system availability (same game on other systems).
+    let mut cross_system: Vec<RecommendedGame> = cross_system_raw
+        .iter()
+        .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
+        .collect();
+    resolve_box_art_for_picks(&state, &mut cross_system).await;
 
     // Build series siblings (other games in the same franchise, cross-system).
     let mut series_siblings: Vec<RecommendedGame> = series_raw
@@ -479,9 +553,11 @@ pub async fn get_related_games(
         regional_variants,
         translations,
         hacks,
+        alternate_versions,
         specials,
         arcade_versions,
         alias_variants,
+        cross_system,
         series_siblings,
         series_name,
         similar_games,

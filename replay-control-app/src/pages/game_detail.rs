@@ -786,13 +786,15 @@ fn RelatedGamesSection(
                         let has_variants = data.regional_variants.len() > 1;
                         let has_translations = !data.translations.is_empty();
                         let has_hacks = !data.hacks.is_empty();
+                        let has_alternates = !data.alternate_versions.is_empty();
                         let has_specials = !data.specials.is_empty();
                         let has_arcade_versions = !data.arcade_versions.is_empty();
                         let has_aliases = !data.alias_variants.is_empty();
+                        let has_cross_system = !data.cross_system.is_empty();
                         let has_series = !data.series_siblings.is_empty();
                         let has_similar = !data.similar_games.is_empty();
                         let has_sequel_nav = data.sequel_prev.is_some() || data.sequel_next.is_some();
-                        if !has_variants && !has_translations && !has_hacks && !has_specials && !has_arcade_versions && !has_aliases && !has_series && !has_similar && !has_sequel_nav {
+                        if !has_variants && !has_translations && !has_hacks && !has_alternates && !has_specials && !has_arcade_versions && !has_aliases && !has_cross_system && !has_series && !has_similar && !has_sequel_nav {
                             view! { <div /> }.into_any()
                         } else {
                             let variant_chips: Vec<ChipItem> = data.regional_variants.iter().map(|v| {
@@ -802,6 +804,9 @@ fn RelatedGamesSection(
                                 ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
                             }).collect();
                             let hack_chips: Vec<ChipItem> = data.hacks.iter().map(|v| {
+                                ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
+                            }).collect();
+                            let alternate_chips: Vec<ChipItem> = data.alternate_versions.iter().map(|v| {
                                 ChipItem { label: v.label.clone(), href: v.href.clone(), is_current: v.is_current }
                             }).collect();
                             let special_chips: Vec<ChipItem> = data.specials.iter().map(|v| {
@@ -829,6 +834,12 @@ fn RelatedGamesSection(
                                         chips=hack_chips.clone()
                                     />
                                 </Show>
+                                <Show when=move || has_alternates>
+                                    <GameChipRow
+                                        title_key="game_detail.alternate_versions"
+                                        chips=alternate_chips.clone()
+                                    />
+                                </Show>
                                 <Show when=move || has_specials>
                                     <GameChipRow
                                         title_key="game_detail.special_versions"
@@ -839,6 +850,12 @@ fn RelatedGamesSection(
                                     <GameChipRow
                                         title_key="game_detail.arcade_versions"
                                         chips=arcade_version_chips.clone()
+                                    />
+                                </Show>
+                                <Show when=move || has_cross_system>
+                                    <SimilarGamesRow
+                                        games=data.cross_system.clone()
+                                        title_key="game_detail.also_available_on"
                                     />
                                 </Show>
                                 <Show when=move || has_aliases>

@@ -234,6 +234,100 @@ impl MetadataDb {
 
         Ok(rows.flatten().collect())
     }
+    /// Find alternate versions (clones that are not hacks/translations/specials)
+    /// of a game: other ROMs sharing the same base_title with `is_clone = 1`.
+    /// Returns (rom_filename, display_name) pairs sorted by display_name.
+    ///
+    /// Excludes hacks (`is_hack = 0`) since those already appear in the Hacks section.
+    /// Intended for non-arcade systems — arcade systems use the "Arcade Versions" section instead.
+    pub fn alternate_versions(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename, display_name FROM game_library
+                 WHERE system = ?1
+                   AND base_title != ''
+                   AND is_clone = 1
+                   AND is_hack = 0
+                   AND is_translation = 0
+                   AND is_special = 0
+                   AND base_title = (
+                       SELECT base_title FROM game_library
+                       WHERE system = ?1 AND rom_filename = ?2
+                   )
+                 ORDER BY display_name",
+            )
+            .map_err(|e| Error::Other(format!("Prepare alternate_versions: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system, rom_filename], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query alternate_versions: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Find cross-system availability: the same game (by base_title) on other systems.
+    ///
+    /// Returns one entry per system (best region match), excluding clones/hacks/translations/specials.
+    /// Results are ordered with arcade systems first, then by display_name.
+    pub fn cross_system_availability(
+        conn: &Connection,
+        system: &str,
+        base_title: &str,
+        region_pref: &str,
+        limit: usize,
+    ) -> Result<Vec<GameEntry>> {
+        if base_title.is_empty() || base_title.len() <= 1 {
+            return Ok(Vec::new());
+        }
+
+        let mut stmt = conn
+            .prepare(
+                "WITH deduped AS (
+                    SELECT gl.*, ROW_NUMBER() OVER (
+                        PARTITION BY gl.system
+                        ORDER BY CASE
+                            WHEN gl.region = ?3 THEN 0
+                            WHEN gl.region = 'world' THEN 1
+                            ELSE 2
+                        END
+                    ) AS rn
+                    FROM game_library gl
+                    WHERE gl.base_title = ?2
+                      AND gl.system != ?1
+                      AND gl.is_clone = 0
+                      AND gl.is_translation = 0
+                      AND gl.is_hack = 0
+                      AND gl.is_special = 0
+                )
+                SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                        region, developer, genre, genre_group, rating, rating_count, players,
+                        is_clone, is_m3u, is_translation, is_hack, is_special,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        release_year
+                FROM deduped WHERE rn = 1
+                ORDER BY CASE
+                    WHEN system LIKE 'arcade_%' THEN 0
+                    ELSE 1
+                END, display_name
+                LIMIT ?4",
+            )
+            .map_err(|e| Error::Other(format!("Prepare cross_system_availability: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![system, base_title, region_pref, limit as i64],
+                Self::row_to_game_entry,
+            )
+            .map_err(|e| Error::Other(format!("Query cross_system_availability: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
 }
 
 #[cfg(test)]
@@ -306,5 +400,146 @@ mod tests {
         assert!(filenames.contains(&"Game (Europe).sfc"));
         assert!(!filenames.contains(&"Game (Japan).sfc"));
         assert!(!filenames.contains(&"Game (USA) (FastRom).sfc"));
+    }
+
+    #[test]
+    fn alternate_versions_returns_clones_excluding_hacks() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut parent = make_game_entry("cpc", "Game (1990)(Pub).dsk", false);
+        parent.base_title = "game".into();
+        parent.region = "".into();
+
+        let mut alt1 = make_game_entry("cpc", "Game (1990)(Pub)[a].dsk", false);
+        alt1.base_title = "game".into();
+        alt1.is_clone = true;
+        alt1.display_name = Some("Game (Alternate)".into());
+
+        let mut alt2 = make_game_entry("cpc", "Game (1990)(Pub)[a2].dsk", false);
+        alt2.base_title = "game".into();
+        alt2.is_clone = true;
+        alt2.display_name = Some("Game (Alternate 2)".into());
+
+        // Clone that is also a hack — should be excluded
+        let mut hack_clone = make_game_entry("cpc", "Game (1990)(Pub)[a][h].dsk", false);
+        hack_clone.base_title = "game".into();
+        hack_clone.is_clone = true;
+        hack_clone.is_hack = true;
+
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "cpc",
+            &[parent, alt1, alt2, hack_clone],
+            None,
+        )
+        .unwrap();
+
+        let alts =
+            MetadataDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub).dsk").unwrap();
+        assert_eq!(alts.len(), 2);
+        let filenames: Vec<&str> = alts.iter().map(|(f, _)| f.as_str()).collect();
+        assert!(filenames.contains(&"Game (1990)(Pub)[a].dsk"));
+        assert!(filenames.contains(&"Game (1990)(Pub)[a2].dsk"));
+        assert!(!filenames.contains(&"Game (1990)(Pub)[a][h].dsk"));
+    }
+
+    #[test]
+    fn alternate_versions_works_when_viewing_clone() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut parent = make_game_entry("cpc", "Game (1990)(Pub).dsk", false);
+        parent.base_title = "game".into();
+
+        let mut alt = make_game_entry("cpc", "Game (1990)(Pub)[a].dsk", false);
+        alt.base_title = "game".into();
+        alt.is_clone = true;
+        alt.display_name = Some("Game (Alternate)".into());
+
+        MetadataDb::save_system_entries(&mut conn, "cpc", &[parent, alt], None).unwrap();
+
+        // Query from the clone's perspective — should still find the other clone
+        let alts =
+            MetadataDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub)[a].dsk").unwrap();
+        assert_eq!(alts.len(), 1);
+        assert_eq!(alts[0].0, "Game (1990)(Pub)[a].dsk");
+    }
+
+    #[test]
+    fn cross_system_returns_other_systems() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut cpc = make_game_entry("cpc", "Pac-Man (1990)(Pub).dsk", false);
+        cpc.base_title = "pac-man".into();
+        cpc.region = "europe".into();
+
+        let mut smd = make_game_entry("smd", "Pac-Man (USA).md", false);
+        smd.base_title = "pac-man".into();
+        smd.region = "usa".into();
+        smd.display_name = Some("Pac-Man (USA)".into());
+
+        let mut snes = make_game_entry("snes", "Pac-Man (Europe).sfc", false);
+        snes.base_title = "pac-man".into();
+        snes.region = "europe".into();
+        snes.display_name = Some("Pac-Man (Europe)".into());
+
+        // Clone on another system — should be excluded
+        let mut clone = make_game_entry("snes", "Pac-Man (Japan).sfc", false);
+        clone.base_title = "pac-man".into();
+        clone.region = "japan".into();
+        clone.is_clone = true;
+
+        MetadataDb::save_system_entries(&mut conn, "cpc", &[cpc], None).unwrap();
+        MetadataDb::save_system_entries(&mut conn, "smd", &[smd], None).unwrap();
+        MetadataDb::save_system_entries(&mut conn, "snes", &[snes, clone], None).unwrap();
+
+        let results =
+            MetadataDb::cross_system_availability(&conn, "cpc", "pac-man", "usa", 10).unwrap();
+        assert_eq!(results.len(), 2);
+        let systems: Vec<&str> = results.iter().map(|e| e.system.as_str()).collect();
+        assert!(systems.contains(&"smd"));
+        assert!(systems.contains(&"snes"));
+        // Should NOT contain the CPC entry itself
+        assert!(!systems.contains(&"cpc"));
+    }
+
+    #[test]
+    fn cross_system_deduplicates_per_system() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut cpc = make_game_entry("cpc", "Game (1990)(Pub).dsk", false);
+        cpc.base_title = "game".into();
+
+        let mut smd_usa = make_game_entry("smd", "Game (USA).md", false);
+        smd_usa.base_title = "game".into();
+        smd_usa.region = "usa".into();
+        smd_usa.display_name = Some("Game (USA)".into());
+
+        let mut smd_eu = make_game_entry("smd", "Game (Europe).md", false);
+        smd_eu.base_title = "game".into();
+        smd_eu.region = "europe".into();
+        smd_eu.display_name = Some("Game (Europe)".into());
+
+        MetadataDb::save_system_entries(&mut conn, "cpc", &[cpc], None).unwrap();
+        MetadataDb::save_system_entries(&mut conn, "smd", &[smd_usa, smd_eu], None).unwrap();
+
+        // Prefer USA region
+        let results =
+            MetadataDb::cross_system_availability(&conn, "cpc", "game", "usa", 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rom_filename, "Game (USA).md");
+    }
+
+    #[test]
+    fn cross_system_empty_for_short_title() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut g = make_game_entry("cpc", "X.dsk", false);
+        g.base_title = "x".into();
+
+        MetadataDb::save_system_entries(&mut conn, "cpc", &[g], None).unwrap();
+
+        let results =
+            MetadataDb::cross_system_availability(&conn, "cpc", "x", "usa", 10).unwrap();
+        assert!(results.is_empty());
     }
 }
