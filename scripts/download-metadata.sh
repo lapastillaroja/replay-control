@@ -74,6 +74,8 @@ declare -A NOINTRO_DATS=(
     ["sega_sms"]="Sega - Master System - Mark III.dat"
     ["sega_smd"]="Sega - Mega Drive - Genesis.dat"
     ["sega_gg"]="Sega - Game Gear.dat"
+    ["sega_sg"]="Sega - SG-1000.dat"
+    ["sega_32x"]="Sega - 32X.dat"
 )
 
 for system in "${!NOINTRO_DATS[@]}"; do
@@ -105,6 +107,8 @@ declare -A MAXUSERS_DATS=(
     ["sega_sms"]="Sega - Master System - Mark III.dat"
     ["sega_smd"]="Sega - Mega Drive - Genesis.dat"
     ["sega_gg"]="Sega - Game Gear.dat"
+    ["sega_sg"]="Sega - SG-1000.dat"
+    ["sega_32x"]="Sega - 32X.dat"
 )
 
 for system in "${!MAXUSERS_DATS[@]}"; do
@@ -130,6 +134,8 @@ declare -A GENRE_DATS=(
     ["sega_sms"]="Sega - Master System - Mark III.dat"
     ["sega_smd"]="Sega - Mega Drive - Genesis.dat"
     ["sega_gg"]="Sega - Game Gear.dat"
+    ["sega_sg"]="Sega - SG-1000.dat"
+    ["sega_32x"]="Sega - 32X.dat"
 )
 
 for system in "${!GENRE_DATS[@]}"; do

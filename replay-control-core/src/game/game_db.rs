@@ -205,6 +205,8 @@ mod tests {
         assert!(systems.contains(&"nintendo_nes"));
         assert!(systems.contains(&"nintendo_snes"));
         assert!(systems.contains(&"sega_smd"));
+        assert!(systems.contains(&"sega_sg"));
+        assert!(systems.contains(&"sega_32x"));
     }
 
     #[test]
@@ -300,6 +302,56 @@ mod tests {
         let entry = lookup_game("sega_smd", "Sonic The Hedgehog (USA, Europe)")
             .expect("Sonic should exist in SMD DB");
         assert_eq!(entry.game.display_name, "Sonic The Hedgehog");
+    }
+
+    // --- SG-1000 tests ---
+
+    #[test]
+    fn sg1000_in_supported_systems() {
+        assert!(has_system("sega_sg"), "sega_sg should be in supported systems");
+    }
+
+    #[test]
+    fn lookup_sg1000_flicky() {
+        let entry = lookup_game("sega_sg", "Flicky (Japan) (Rev 1)")
+            .expect("Flicky should exist in SG-1000 DB");
+        assert_eq!(entry.game.display_name, "Flicky");
+        assert_eq!(entry.region, "Japan");
+    }
+
+    #[test]
+    fn sg1000_has_players_data() {
+        let entry = lookup_game("sega_sg", "Congo Bongo (Japan)")
+            .expect("Congo Bongo should exist in SG-1000 DB");
+        assert!(
+            entry.game.players > 0,
+            "Congo Bongo should have players data"
+        );
+    }
+
+    // --- 32X tests ---
+
+    #[test]
+    fn s32x_in_supported_systems() {
+        assert!(
+            has_system("sega_32x"),
+            "sega_32x should be in supported systems"
+        );
+    }
+
+    #[test]
+    fn lookup_32x_doom() {
+        let entry = lookup_game("sega_32x", "Doom (Europe)")
+            .expect("Doom should exist in 32X DB");
+        assert_eq!(entry.game.display_name, "Doom");
+        assert_eq!(entry.region, "Europe");
+    }
+
+    #[test]
+    fn s32x_has_players_data() {
+        let entry = lookup_game("sega_32x", "Doom (Europe)")
+            .expect("Doom should exist in 32X DB");
+        assert!(entry.game.players > 0, "Doom should have players data");
     }
 
     // --- Game Boy tests ---

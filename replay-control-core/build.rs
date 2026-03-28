@@ -1123,6 +1123,18 @@ const GAME_DB_SYSTEMS: &[SystemConfig] = &[
         rust_prefix: "GG",
         tgdb_platform_ids: &[20],
     },
+    SystemConfig {
+        folder_name: "sega_sg",
+        nointro_dat: "Sega - SG-1000.dat",
+        rust_prefix: "SG",
+        tgdb_platform_ids: &[4949],
+    },
+    SystemConfig {
+        folder_name: "sega_32x",
+        nointro_dat: "Sega - 32X.dat",
+        rust_prefix: "S32X",
+        tgdb_platform_ids: &[33],
+    },
 ];
 
 /// A ROM entry parsed from a No-Intro DAT file.
