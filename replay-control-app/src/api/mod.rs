@@ -691,9 +691,19 @@ impl AppState {
             ReplayConfig::parse("")?
         };
 
+        // Check if the effective skin changed after config re-read.
+        let old_skin = self.effective_skin();
         {
             let mut guard = self.config.write().expect("config lock poisoned");
             *guard = config.clone();
+        }
+        let new_skin = self.effective_skin();
+        if old_skin != new_skin {
+            let skin_css = replay_control_core::skins::theme_css(new_skin);
+            let _ = self.config_tx.send(ConfigEvent::SkinChanged {
+                skin_index: new_skin,
+                skin_css,
+            });
         }
 
         // Skip storage re-detection when an explicit path was given.
