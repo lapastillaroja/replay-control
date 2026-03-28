@@ -30,7 +30,7 @@ TARGET_TRIPLE="aarch64-unknown-linux-gnu"
 
 PI_USER="root"
 PI_PASSWORD="replayos"
-PI_DEFAULT_IP="<PI_IP>"
+PI_DEFAULT_IP="replay.local"
 PI_INSTALL_DIR="/usr/local/bin"
 PI_SITE_DIR="/usr/local/share/replay/site"
 PI_SERVICE="replay-control"

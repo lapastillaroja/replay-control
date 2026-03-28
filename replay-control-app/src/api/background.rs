@@ -116,11 +116,6 @@ impl BackgroundManager {
         }
     }
 
-    /// Phase 1.5: Auto-generate M3U playlists for multi-part TOSEC games.
-    ///
-    /// Scans all system directories for files with `(Side A/B)`, `(Disk N of M)`,
-    /// or `(Disc N)` patterns and generates `.m3u` playlists so that
-    /// `apply_m3u_dedup()` can deduplicate them during the ROM scan.
     /// Phase 2: Verify L2 cache freshness on startup and pre-populate if empty.
     async fn phase_cache_verification(state: &AppState) {
         let storage = state.storage();
