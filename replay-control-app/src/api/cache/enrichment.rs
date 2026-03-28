@@ -4,15 +4,15 @@ use replay_control_core::metadata_db::MetadataDb;
 
 use super::GameLibrary;
 
-/// Batched metadata from LaunchBox import (ratings, genres, players, rating counts, developers, release years).
-type LaunchBoxMetadata = (
-    HashMap<String, f64>,
-    HashMap<String, String>,
-    HashMap<String, u8>,
-    HashMap<String, u32>,
-    HashMap<String, String>,
-    HashMap<String, u16>,
-);
+/// Batched metadata from LaunchBox import, keyed by ROM filename.
+struct LaunchBoxMetadata {
+    ratings: HashMap<String, f64>,
+    genres: HashMap<String, String>,
+    players: HashMap<String, u8>,
+    rating_counts: HashMap<String, u32>,
+    developers: HashMap<String, String>,
+    release_years: HashMap<String, u16>,
+}
 
 impl GameLibrary {
     /// Enrich box_art_url (and rating) for all entries in a system's game library.
@@ -28,32 +28,39 @@ impl GameLibrary {
         // Load ratings, genres, players, rating counts, and developers from
         // game_metadata table (from LaunchBox import) in a single read call.
         let sys = system.clone();
-        let (ratings, lb_genres, lb_players, lb_rating_counts, lb_developers, lb_release_years): LaunchBoxMetadata =
-            state
+        let lb = state
             .metadata_pool
             .read(move |conn| {
-                let ratings = MetadataDb::system_ratings(conn, &sys)
-                    .ok()
-                    .unwrap_or_default();
-                let genres = MetadataDb::system_metadata_genres(conn, &sys)
-                    .ok()
-                    .unwrap_or_default();
-                let players = MetadataDb::system_metadata_players(conn, &sys)
-                    .ok()
-                    .unwrap_or_default();
-                let rating_counts = MetadataDb::system_metadata_rating_counts(conn, &sys)
-                    .ok()
-                    .unwrap_or_default();
-                let developers = MetadataDb::system_metadata_developers(conn, &sys)
-                    .ok()
-                    .unwrap_or_default();
-                let release_years = MetadataDb::system_metadata_release_years(conn, &sys)
-                    .ok()
-                    .unwrap_or_default();
-                (ratings, genres, players, rating_counts, developers, release_years)
+                LaunchBoxMetadata {
+                    ratings: MetadataDb::system_ratings(conn, &sys)
+                        .ok()
+                        .unwrap_or_default(),
+                    genres: MetadataDb::system_metadata_genres(conn, &sys)
+                        .ok()
+                        .unwrap_or_default(),
+                    players: MetadataDb::system_metadata_players(conn, &sys)
+                        .ok()
+                        .unwrap_or_default(),
+                    rating_counts: MetadataDb::system_metadata_rating_counts(conn, &sys)
+                        .ok()
+                        .unwrap_or_default(),
+                    developers: MetadataDb::system_metadata_developers(conn, &sys)
+                        .ok()
+                        .unwrap_or_default(),
+                    release_years: MetadataDb::system_metadata_release_years(conn, &sys)
+                        .ok()
+                        .unwrap_or_default(),
+                }
             })
-            .await
-            .unwrap_or_default();
+            .await;
+        let lb = lb.unwrap_or_else(|| LaunchBoxMetadata {
+            ratings: HashMap::new(),
+            genres: HashMap::new(),
+            players: HashMap::new(),
+            rating_counts: HashMap::new(),
+            developers: HashMap::new(),
+            release_years: HashMap::new(),
+        });
 
         // Load current game_library genres, players, developers, and release_years from L2
         // to know which are already set, in a single read call.
@@ -83,7 +90,7 @@ impl GameLibrary {
         let auto_matched_ratings = self.auto_match_metadata(state, &system).await;
 
         // Merge auto-matched ratings into the main ratings map.
-        let mut all_ratings = ratings;
+        let mut all_ratings = lb.ratings;
         for (filename, rating) in &auto_matched_ratings {
             all_ratings.entry(filename.clone()).or_insert(*rating);
         }
@@ -115,14 +122,14 @@ impl GameLibrary {
             .filter_map(|filename| {
                 let art = self.resolve_box_art(state, &index, &system, filename);
                 let rating = all_ratings.get(filename).map(|&r| r as f32);
-                let rating_count = lb_rating_counts.get(filename).copied();
+                let rating_count = lb.rating_counts.get(filename).copied();
                 let genre = if !existing_genres.contains(filename) {
-                    lb_genres.get(filename).cloned()
+                    lb.genres.get(filename).cloned()
                 } else {
                     None
                 };
                 let players = if !existing_players.contains(filename) {
-                    lb_players.get(filename).copied()
+                    lb.players.get(filename).copied()
                 } else {
                     None
                 };
@@ -152,7 +159,7 @@ impl GameLibrary {
             .iter()
             .filter(|f| !existing_developers.contains(*f))
             .filter_map(|f| {
-                lb_developers.get(f).map(|dev| {
+                lb.developers.get(f).map(|dev| {
                     let normalized = replay_control_core::developer::normalize_developer(dev);
                     (f.clone(), normalized)
                 })
@@ -177,7 +184,7 @@ impl GameLibrary {
         let year_updates: Vec<(String, u16)> = rom_filenames
             .iter()
             .filter(|f| !existing_years.contains(*f))
-            .filter_map(|f| lb_release_years.get(f).map(|&year| (f.clone(), year)))
+            .filter_map(|f| lb.release_years.get(f).map(|&year| (f.clone(), year)))
             .collect();
 
         if !year_updates.is_empty() {
