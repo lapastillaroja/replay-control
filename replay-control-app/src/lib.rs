@@ -1,5 +1,10 @@
 #![recursion_limit = "512"]
 
+/// App version from Cargo.toml.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Git commit hash, embedded at build time.
+pub const GIT_HASH: &str = env!("GIT_HASH");
+
 pub mod components;
 pub mod hooks;
 pub mod i18n;
@@ -62,6 +67,7 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <meta name="apple-mobile-web-app-capable" content="yes" />
                 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
                 <meta name="apple-mobile-web-app-title" content="Replay Control" />
+                <meta name="version" content=format!("{}-{}", VERSION, GIT_HASH) />
                 <title>"Replay Control"</title>
                 <link rel="manifest" href="/manifest.json" />
                 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />

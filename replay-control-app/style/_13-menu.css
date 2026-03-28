@@ -129,3 +129,12 @@
     font-size: 0.85rem;
     font-weight: 500;
 }
+
+/* Version footer on More page */
+.more-version {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    padding: 24px 0 8px;
+}

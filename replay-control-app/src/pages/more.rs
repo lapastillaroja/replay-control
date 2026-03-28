@@ -119,6 +119,10 @@ pub fn MorePage() -> impl IntoView {
                     <RebootButton />
                 </div>
             </section>
+
+            <div class="more-version">
+                {format!("v{} ({})", crate::VERSION, crate::GIT_HASH)}
+            </div>
         </div>
     }
 }

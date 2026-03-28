@@ -551,6 +551,15 @@ mod ssr {
         });
 
         let app = api::build_router(app_state, leptos_options)
+            .route(
+                "/api/version",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({
+                        "version": replay_control_app::VERSION,
+                        "git_hash": replay_control_app::GIT_HASH,
+                    }))
+                }),
+            )
             .route("/sse/activity", activity_sse_handler)
             .route("/sse/config", config_sse_handler)
             .route("/captures/*path", captures_handler)
