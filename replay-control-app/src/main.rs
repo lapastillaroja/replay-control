@@ -262,7 +262,7 @@ mod ssr {
                     StatusCode::OK,
                     [
                         ("content-type", content_type),
-                        ("cache-control", "public, max-age=86400"),
+                        ("cache-control", api::CACHE_1D),
                     ],
                     data,
                 )
@@ -444,7 +444,7 @@ mod ssr {
                                 StatusCode::OK,
                                 [
                                     ("content-type", content_type),
-                                    ("cache-control", "public, max-age=86400"),
+                                    ("cache-control", api::CACHE_1D),
                                 ],
                                 data,
                             )
@@ -477,7 +477,7 @@ mod ssr {
                             StatusCode::OK,
                             [
                                 ("content-type", "image/png"),
-                                ("cache-control", "public, max-age=31536000, immutable"),
+                                ("cache-control", api::CACHE_IMMUTABLE),
                             ],
                             data,
                         )
@@ -516,7 +516,7 @@ mod ssr {
                                 StatusCode::OK,
                                 [
                                     ("content-type", content_type),
-                                    ("cache-control", "public, max-age=86400"),
+                                    ("cache-control", api::CACHE_1D),
                                 ],
                                 data,
                             )
@@ -562,7 +562,7 @@ mod ssr {
                 tower::ServiceBuilder::new()
                     .layer(SetResponseHeaderLayer::overriding(
                         http::header::CACHE_CONTROL,
-                        http::HeaderValue::from_static("public, max-age=3600"),
+                        http::HeaderValue::from_static(api::CACHE_1H),
                     ))
                     .service(ServeDir::new(format!("{site_root}/pkg")).precompressed_gzip()),
             )
@@ -571,7 +571,7 @@ mod ssr {
                 tower::ServiceBuilder::new()
                     .layer(SetResponseHeaderLayer::overriding(
                         http::header::CACHE_CONTROL,
-                        http::HeaderValue::from_static("public, max-age=86400"),
+                        http::HeaderValue::from_static(api::CACHE_1D),
                     ))
                     .service(ServeDir::new(format!("{site_root}/icons"))),
             )
@@ -581,7 +581,7 @@ mod ssr {
                     (
                         [
                             ("content-type", "application/manifest+json"),
-                            ("cache-control", "public, max-age=3600"),
+                            ("cache-control", api::CACHE_1H),
                         ],
                         include_str!("../static/manifest.json"),
                     )
@@ -593,7 +593,7 @@ mod ssr {
                     (
                         [
                             ("content-type", "application/javascript"),
-                            ("cache-control", "public, max-age=3600"),
+                            ("cache-control", api::CACHE_1H),
                         ],
                         include_str!("../static/sw.js"),
                     )
@@ -605,7 +605,7 @@ mod ssr {
                     (
                         [
                             ("content-type", "application/javascript"),
-                            ("cache-control", "public, max-age=3600"),
+                            ("cache-control", api::CACHE_1H),
                         ],
                         include_str!("../static/ptr-init.js"),
                     )
@@ -617,7 +617,7 @@ mod ssr {
                     (
                         [
                             ("content-type", "application/javascript"),
-                            ("cache-control", "public, max-age=3600"),
+                            ("cache-control", api::CACHE_1H),
                         ],
                         include_str!("../static/pulltorefresh.min.js"),
                     )

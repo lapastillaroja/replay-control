@@ -14,6 +14,11 @@ pub use background::BackgroundManager;
 pub use cache::GameLibrary;
 pub use import::{ImportPipeline, ThumbnailPipeline};
 
+/// Cache-control header values for static asset responses.
+pub const CACHE_1H: &str = "public, max-age=3600";
+pub const CACHE_1D: &str = "public, max-age=86400";
+pub const CACHE_IMMUTABLE: &str = "public, max-age=31536000, immutable";
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -816,7 +821,7 @@ pub fn build_router(
                 (
                     [
                         ("content-type", "text/css"),
-                        ("cache-control", "public, max-age=3600"),
+                        ("cache-control", CACHE_1H),
                     ],
                     include_str!(concat!(env!("OUT_DIR"), "/style.css")),
                 )
