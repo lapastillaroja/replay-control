@@ -10,7 +10,7 @@ mod recommendations;
 mod relationships;
 
 pub use aliases_series::SequelChainInfo;
-pub use game_library::{DeveloperGamesFilter, PaginationParams};
+pub use game_library::{DeveloperGamesFilter, PaginationParams, SearchFilter};
 
 use std::path::{Path, PathBuf};
 

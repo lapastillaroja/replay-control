@@ -95,6 +95,18 @@ impl WhereBuilder {
     }
 }
 
+/// Filter options for game library search queries.
+#[derive(Debug, Default)]
+pub struct SearchFilter<'a> {
+    pub hide_hacks: bool,
+    pub hide_translations: bool,
+    pub hide_betas: bool,
+    pub hide_clones: bool,
+    pub genre: &'a str,
+    pub multiplayer_only: bool,
+    pub min_rating: Option<f64>,
+}
+
 /// Filter options for the developer games paginated query.
 #[derive(Debug, Default)]
 pub struct DeveloperGamesFilter<'a> {
@@ -1099,17 +1111,10 @@ impl MetadataDb {
     ///
     /// Returns all matching `GameEntry` rows — the caller is responsible for scoring
     /// and ranking.
-    #[allow(clippy::too_many_arguments)]
     pub fn search_game_library(
         conn: &Connection,
         query_words: &[String],
-        hide_hacks: bool,
-        hide_translations: bool,
-        hide_betas: bool,
-        hide_clones: bool,
-        genre: &str,
-        multiplayer_only: bool,
-        min_rating: Option<f64>,
+        filter: &SearchFilter<'_>,
     ) -> Result<Vec<GameEntry>> {
         // Build dynamic SQL with LIKE clauses for each query word.
         let mut where_clauses: Vec<String> = Vec::new();
@@ -1125,31 +1130,31 @@ impl MetadataDb {
         }
 
         // Content filters (static clauses, no params needed).
-        if hide_hacks {
+        if filter.hide_hacks {
             where_clauses.push("is_hack = 0".to_string());
         }
-        if hide_translations {
+        if filter.hide_translations {
             where_clauses.push("is_translation = 0".to_string());
         }
-        if hide_betas {
+        if filter.hide_betas {
             where_clauses.push("is_special = 0".to_string());
         }
-        if hide_clones {
+        if filter.hide_clones {
             where_clauses.push("is_clone = 0".to_string());
         }
-        if multiplayer_only {
+        if filter.multiplayer_only {
             where_clauses.push("players >= 2".to_string());
         }
 
         // Genre filter (parameterized).
-        if !genre.is_empty() {
-            param_values.push(genre.to_string());
+        if !filter.genre.is_empty() {
+            param_values.push(filter.genre.to_string());
             let idx = param_values.len();
             where_clauses.push(format!("genre_group = ?{idx} COLLATE NOCASE"));
         }
 
         // Rating filter (parameterized).
-        if let Some(mr) = min_rating {
+        if let Some(mr) = filter.min_rating {
             param_values.push(mr.to_string());
             let idx = param_values.len();
             where_clauses.push(format!("rating >= ?{idx}"));
@@ -1197,6 +1202,7 @@ impl MetadataDb {
 mod tests {
     use super::super::MetadataDb;
     use super::super::tests::*;
+    use super::SearchFilter;
 
     #[test]
     fn genre_enrichment_fills_empty_genre_from_launchbox() {
@@ -2308,13 +2314,7 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["sonic".to_string()],
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            None,
+            &SearchFilter::default(),
         )
         .unwrap();
         assert_eq!(results.len(), 1);
@@ -2329,13 +2329,7 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["super".to_string(), "mario".to_string()],
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            None,
+            &SearchFilter::default(),
         )
         .unwrap();
         // Should find both "Super Mario World" and "Super Mario Kart"
@@ -2353,13 +2347,7 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["mario".to_string()],
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            None,
+            &SearchFilter::default(),
         )
         .unwrap();
         // "mario" appears in both Super Mario entries
@@ -2374,13 +2362,10 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["street".to_string()],
-            true,
-            false,
-            false,
-            false,
-            "",
-            false,
-            None,
+            &SearchFilter {
+                hide_hacks: true,
+                ..SearchFilter::default()
+            },
         )
         .unwrap();
         // "Street Fighter II Turbo (Hack)" should be filtered out
@@ -2395,13 +2380,10 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["zelda".to_string()],
-            false,
-            true,
-            false,
-            false,
-            "",
-            false,
-            None,
+            &SearchFilter {
+                hide_translations: true,
+                ..SearchFilter::default()
+            },
         )
         .unwrap();
         // Zelda translation should be filtered out
@@ -2416,13 +2398,10 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["super".to_string()],
-            false,
-            false,
-            false,
-            false,
-            "Racing",
-            false,
-            None,
+            &SearchFilter {
+                genre: "Racing",
+                ..SearchFilter::default()
+            },
         )
         .unwrap();
         // Only Super Mario Kart should match (genre = Racing)
@@ -2438,13 +2417,11 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &[],
-            false,
-            false,
-            false,
-            false,
-            "Platform",
-            true,
-            None,
+            &SearchFilter {
+                genre: "Platform",
+                multiplayer_only: true,
+                ..SearchFilter::default()
+            },
         )
         .unwrap();
         // Only Super Mario World (platform + 2 players). Sonic is platform but 1 player.
@@ -2460,13 +2437,10 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &[],
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            Some(4.5),
+            &SearchFilter {
+                min_rating: Some(4.5),
+                ..SearchFilter::default()
+            },
         )
         .unwrap();
         // Only entries with rating >= 4.5
@@ -2480,18 +2454,8 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
-            &conn,
-            &[],
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            None,
-        )
-        .unwrap();
+        let results =
+            MetadataDb::search_game_library(&conn, &[], &SearchFilter::default()).unwrap();
         // Should return all entries (no text filter)
         assert!(results.len() >= 4);
     }
@@ -2505,13 +2469,7 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["hedgehog".to_string()],
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            None,
+            &SearchFilter::default(),
         )
         .unwrap();
         assert_eq!(results.len(), 1);
@@ -2527,13 +2485,7 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["%".to_string()],
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            None,
+            &SearchFilter::default(),
         )
         .unwrap();
         assert!(results.is_empty());
@@ -2541,13 +2493,7 @@ mod tests {
         let results = MetadataDb::search_game_library(
             &conn,
             &["_".to_string()],
-            false,
-            false,
-            false,
-            false,
-            "",
-            false,
-            None,
+            &SearchFilter::default(),
         )
         .unwrap();
         assert!(results.is_empty());

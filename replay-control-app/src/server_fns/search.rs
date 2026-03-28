@@ -465,19 +465,25 @@ pub async fn global_search(
         };
 
     // Single DB query: SQL-level pre-filtering on search_text + content filters.
+    let min_rating_f64 = min_rating.map(|r| r as f64);
+    let genre_owned = genre.clone();
     let candidates: Vec<GameEntry> = state
         .cache
-        .db_search(
-            query_words,
-            hide_hacks,
-            hide_translations,
-            hide_betas,
-            hide_clones,
-            genre.clone(),
-            multiplayer_only,
-            min_rating.map(|r| r as f64),
-        )
-        .await;
+        .db_read(move |conn| {
+            let filter = replay_control_core::metadata_db::SearchFilter {
+                hide_hacks,
+                hide_translations,
+                hide_betas,
+                hide_clones,
+                genre: &genre_owned,
+                multiplayer_only,
+                min_rating: min_rating_f64,
+            };
+            MetadataDb::search_game_library(conn, &query_words, &filter)
+                .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
 
     // Score the pre-filtered candidates using the existing ranking logic.
     let mut scored: Vec<(u32, GameEntry)> = candidates
