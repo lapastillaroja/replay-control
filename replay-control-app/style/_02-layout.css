@@ -19,9 +19,7 @@
     padding: 0 16px;
     background: var(--surface);
     border-bottom: 2px solid var(--accent);
-    position: sticky;
-    top: 0;
-    z-index: 100;
+    /* Not fixed/sticky — scrolls with content */
 }
 
 .app-title {

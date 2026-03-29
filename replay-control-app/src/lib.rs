@@ -101,14 +101,6 @@ pub fn App() -> impl IntoView {
                     <h1 class="app-title">
                         <A href="/" attr:class="app-title-link">{move || t(i18n.locale.get(), "app.title")}</A>
                     </h1>
-                    <div class="top-actions">
-                        <A href="/search" attr:class="icon-btn" attr:title="Search">
-                            {icon_search()}
-                        </A>
-                        <A href="/favorites" attr:class="icon-btn" attr:title="Favorites">
-                            {icon_star()}
-                        </A>
-                    </div>
                 </header>
 
                 <CorruptionBanner />

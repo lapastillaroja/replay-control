@@ -12,6 +12,7 @@ pub fn BottomNav() -> impl IntoView {
     let tabs = [
         ("/", "nav.games", "\u{1F3AE}"),
         ("/favorites", "nav.favorites", "\u{2B50}"),
+        ("/search", "nav.search", "\u{1F50D}"),
         ("/more", "nav.more", "\u{2261}"),
     ];
 

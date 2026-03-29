@@ -52,6 +52,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "nav.home" => "Games",
         "nav.games" => "Games",
         "nav.favorites" => "Favs",
+        "nav.search" => "Search",
         "nav.more" => "More",
 
         // Home page

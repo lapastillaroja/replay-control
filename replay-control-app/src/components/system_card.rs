@@ -18,9 +18,17 @@ pub fn SystemCard(system: SystemSummary, href: String) -> impl IntoView {
         "system-card empty"
     };
 
+    let icon = match system.category.as_str() {
+        "arcade" => "\u{1F579}\u{FE0F}", // 🕹️
+        "console" => "\u{1F3AE}",         // 🎮
+        "handheld" => "\u{1F4F1}",        // 📱
+        "computer" => "\u{1F4BB}",        // 💻
+        _ => "\u{1F3AE}",                 // 🎮 default
+    };
+
     view! {
         <A href=href attr:class=card_class>
-            <div class="system-card-name">{system.display_name.clone()}</div>
+            <div class="system-card-name"><span class="system-card-icon">{icon}</span>{system.display_name.clone()}</div>
             <div class="system-card-manufacturer">{system.manufacturer.clone()}</div>
             <div class="system-card-count">
                 {move || {
