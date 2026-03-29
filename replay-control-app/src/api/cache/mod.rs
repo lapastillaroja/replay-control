@@ -23,9 +23,25 @@ use super::DbPool;
 /// invalidation already cover all change scenarios.
 const NFS_CACHE_TTL: Duration = Duration::from_secs(1800); // 30 minutes
 
-/// Read the mtime of a directory (single stat call).
+/// Compute the max mtime across a directory and its immediate subdirectories
+/// (maxdepth 2). This detects changes inside organizational subdirectories
+/// like `00 Clean Romset/` without the cost of a full recursive scan.
 pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
+    let mut max_mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok())?;
+
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            if entry.file_type().ok().is_some_and(|ft| ft.is_dir()) {
+                if let Some(mtime) = entry.metadata().ok().and_then(|m| m.modified().ok()) {
+                    if mtime > max_mtime {
+                        max_mtime = mtime;
+                    }
+                }
+            }
+        }
+    }
+
+    Some(max_mtime)
 }
 
 /// Mtime + optional TTL freshness tracker.
@@ -143,7 +159,7 @@ impl GameLibrary {
 
     /// Get cached systems or scan and cache.
     /// L1 (in-memory) → L2 (SQLite game_library_meta) → L3 (filesystem scan).
-    pub async fn get_systems(&self, storage: &StorageLocation) -> Vec<SystemSummary> {
+    pub async fn cached_systems(&self, storage: &StorageLocation) -> Vec<SystemSummary> {
         let roms_dir = storage.roms_dir();
 
         // L1: Try in-memory cache.
@@ -229,9 +245,6 @@ impl GameLibrary {
         self.db
             .write(move |conn| {
                 for summary in &summaries {
-                    if summary.game_count == 0 {
-                        continue;
-                    }
                     let system_dir = roms_dir.join(&summary.folder_name);
                     let mtime_secs = dir_mtime(&system_dir).and_then(|t| {
                         t.duration_since(std::time::UNIX_EPOCH)
@@ -254,7 +267,7 @@ impl GameLibrary {
     /// Checks L1 (in-memory) → L2 (SQLite game_library).
     /// If neither has data and warmup is in progress, returns empty.
     /// Otherwise falls through to a full L3 filesystem scan.
-    pub async fn get_roms(
+    pub async fn cached_roms(
         &self,
         storage: &StorageLocation,
         system: &str,
@@ -708,7 +721,7 @@ mod tests {
 
         // get_roms should return empty during startup scanning.
         let result = cache
-            .get_roms(
+            .cached_roms(
                 &storage,
                 "test_system",
                 replay_control_core::rom_tags::RegionPreference::Usa,

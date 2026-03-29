@@ -50,7 +50,7 @@ async fn upload_rom(
 }
 
 async fn list_upload_targets(State(state): State<AppState>) -> Json<Vec<serde_json::Value>> {
-    let summaries = state.cache.get_systems(&state.storage()).await;
+    let summaries = state.cache.cached_systems(&state.storage()).await;
     Json(
         summaries
             .into_iter()

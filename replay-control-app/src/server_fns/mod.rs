@@ -468,7 +468,7 @@ pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
     // arcade MAME codename → display name translation automatically.
     if info.box_art_url.is_none() || info.screenshot_url.is_none() || info.title_url.is_none() {
         if info.box_art_url.is_none() {
-            let image_index = state.cache.get_image_index(&state, &info.system).await;
+            let image_index = state.cache.cached_image_index(&state, &info.system).await;
             if let Some(url) =
                 state
                     .cache

@@ -671,7 +671,7 @@ impl ThumbnailPipeline {
 
         // Collect systems that have ROMs and a thumbnail repo.
         let storage = state.storage();
-        let systems = state.cache.get_systems(&storage).await;
+        let systems = state.cache.cached_systems(&storage).await;
         let supported: Vec<String> = systems
             .into_iter()
             .filter(|s| s.game_count > 0)

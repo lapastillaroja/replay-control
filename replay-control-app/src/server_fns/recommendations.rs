@@ -48,7 +48,7 @@ pub struct RecommendationData {
 pub async fn get_recommendations(count: usize) -> Result<RecommendationData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.get_systems(&storage).await;
+    let systems = state.cache.cached_systems(&storage).await;
     let count = count.clamp(1, 12);
 
     // Collect favorites from the in-memory cache (no filesystem or DB access).
@@ -352,7 +352,7 @@ pub(super) async fn resolve_box_art_for_picks(
     > = std::collections::HashMap::new();
     for game in picks.iter_mut() {
         if !image_indexes.contains_key(&game.system) {
-            let index = state.cache.get_image_index(state, &game.system).await;
+            let index = state.cache.cached_image_index(state, &game.system).await;
             image_indexes.insert(game.system.clone(), index);
         }
         let index = &image_indexes[&game.system];

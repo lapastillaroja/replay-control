@@ -124,7 +124,7 @@ pub async fn get_related_games(
 ) -> Result<RelatedGamesData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.get_systems(&storage).await;
+    let systems = state.cache.cached_systems(&storage).await;
 
     // Look up the detail genre from game_library for two-tier similar matching.
     // The detail genre (e.g., "Maze / Shooter") is passed to similar_by_genre(),

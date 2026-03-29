@@ -9,7 +9,7 @@ use super::AppState;
 async fn list_systems(
     State(state): State<AppState>,
 ) -> Json<Vec<replay_control_core::roms::SystemSummary>> {
-    Json(state.cache.get_systems(&state.storage()).await)
+    Json(state.cache.cached_systems(&state.storage()).await)
 }
 
 async fn list_system_roms(
@@ -18,7 +18,7 @@ async fn list_system_roms(
 ) -> Result<Json<Vec<replay_control_core::roms::RomEntry>>, StatusCode> {
     state
         .cache
-        .get_roms(
+        .cached_roms(
             &state.storage(),
             &system,
             state.region_preference(),

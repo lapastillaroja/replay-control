@@ -116,30 +116,52 @@ impl BackgroundManager {
         }
     }
 
-    /// Phase 2: Verify L2 cache freshness on startup and pre-populate if empty.
+    /// Phase 2: Verify L2 cache freshness on startup and re-scan stale/incomplete systems.
+    ///
+    /// Works directly with the DB and filesystem — does NOT use the cache layer
+    /// (cached_systems, cached_roms, etc.) to avoid circular dependencies.
+    ///
+    /// Detects three cases:
+    /// - **Fresh DB**: `game_library_meta` is empty → full populate
+    /// - **Stale mtime**: directory mtime changed since last scan → re-scan
+    /// - **Interrupted scan**: meta says rom_count > 0 but game_library has 0 rows → re-scan
     async fn phase_cache_verification(state: &AppState) {
         let storage = state.storage();
         let roms_dir = storage.roms_dir();
         let region_pref = state.region_preference();
         let region_secondary = state.region_preference_secondary();
 
-        // Load all cached system metadata from L2.
+        // Load cached system metadata directly from DB (no cache layer).
         let cached_meta = state
             .metadata_pool
             .read(|conn| MetadataDb::load_all_system_meta(conn).ok())
             .await
-            .flatten();
-
-        let cached_meta = cached_meta.unwrap_or_default();
+            .flatten()
+            .unwrap_or_default();
 
         if cached_meta.is_empty() {
-            // Fresh DB -- pre-populate L2 for all systems with games.
-            // Activity is already Startup { phase: Scanning } (set by run_pipeline).
+            // Fresh DB — full populate.
             Self::populate_all_systems(state, &storage, region_pref, region_secondary).await;
             return;
         }
 
-        let mut stale_count = 0usize;
+        // Query actual game_library row counts per system to detect interrupted scans.
+        let actual_counts: std::collections::HashMap<String, usize> = state
+            .metadata_pool
+            .read(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT system, COUNT(*) FROM game_library GROUP BY system")
+                    .ok()?;
+                let rows = stmt
+                    .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize)))
+                    .ok()?;
+                Some(rows.flatten().collect())
+            })
+            .await
+            .flatten()
+            .unwrap_or_default();
+
+        let mut rescan_count = 0usize;
         for meta in &cached_meta {
             let system_dir = roms_dir.join(&meta.system);
             let current_mtime_secs = dir_mtime(&system_dir).and_then(|t| {
@@ -150,12 +172,25 @@ impl BackgroundManager {
 
             let is_stale = match (meta.dir_mtime_secs, current_mtime_secs) {
                 (Some(cached), Some(current)) => cached != current,
-                (Some(_), None) => false, // Can't read -- trust cache
-                (None, _) => true,        // No mtime stored -- re-scan
+                (Some(_), None) => false, // Can't read — trust cache
+                (None, _) => true,        // No mtime stored — re-scan
             };
 
-            if is_stale {
-                tracing::info!("Background re-scan: {} (mtime changed)", meta.system);
+            // Interrupted scan: meta says ROMs exist but game_library has none.
+            let is_incomplete = meta.rom_count > 0
+                && actual_counts.get(&meta.system).copied().unwrap_or(0) == 0;
+
+            if is_stale || is_incomplete {
+                let reason = if is_incomplete { "incomplete" } else { "mtime changed" };
+                tracing::info!("Background re-scan: {} ({reason})", meta.system);
+                let display_name = replay_control_core::systems::find_system(&meta.system)
+                    .map(|s| s.display_name.to_string())
+                    .unwrap_or_else(|| meta.system.clone());
+                state.update_activity(|act| {
+                    if let Activity::Startup { system, .. } = act {
+                        *system = display_name;
+                    }
+                });
                 let _ = state
                     .cache
                     .scan_and_cache_system(&storage, &meta.system, region_pref, region_secondary)
@@ -164,16 +199,14 @@ impl BackgroundManager {
                     .cache
                     .enrich_system_cache(state, meta.system.clone())
                     .await;
-                stale_count += 1;
+                rescan_count += 1;
             }
         }
 
-        if stale_count > 0 {
+        if rescan_count > 0 {
             tracing::info!(
-                "Background cache verification: re-scanned {stale_count} stale system(s)"
+                "Background cache verification: re-scanned {rescan_count} system(s)"
             );
-            // Also refresh the systems list since counts may have changed.
-            let _ = state.cache.get_systems(&storage).await;
         } else {
             tracing::debug!(
                 "Background cache verification: all {} system(s) fresh",
@@ -347,7 +380,7 @@ impl BackgroundManager {
         region_pref: replay_control_core::rom_tags::RegionPreference,
         region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
     ) {
-        let systems = state.cache.get_systems(storage).await;
+        let systems = state.cache.cached_systems(storage).await;
         let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
         tracing::info!(
             "L2 warmup: populating {} system(s) with games",
@@ -443,7 +476,7 @@ impl AppState {
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
-            let systems = state.cache.get_systems(&storage).await;
+            let systems = state.cache.cached_systems(&storage).await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
             if !with_games.is_empty() {
@@ -508,7 +541,7 @@ impl AppState {
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
-            let systems = state.cache.get_systems(&storage).await;
+            let systems = state.cache.cached_systems(&storage).await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
             state.update_activity(|act| {
@@ -904,7 +937,7 @@ impl AppState {
                 // new systems and update game counts.
                 if roms_dir_changed {
                     tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
-                    let systems = state.cache.get_systems(&storage).await;
+                    let systems = state.cache.cached_systems(&storage).await;
                     for sys in &systems {
                         if sys.game_count > 0 && !affected_systems.contains(&sys.folder_name) {
                             let _ = state
@@ -923,7 +956,7 @@ impl AppState {
                         }
                     }
                 } else if !affected_systems.is_empty() {
-                    let _ = state.cache.get_systems(&storage).await;
+                    let _ = state.cache.cached_systems(&storage).await;
                 }
             }
         });

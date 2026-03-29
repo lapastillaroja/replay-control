@@ -47,7 +47,7 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
     for sys in &distinct_systems {
-        let index = state.cache.get_image_index(&state, sys).await;
+        let index = state.cache.cached_image_index(&state, sys).await;
         image_indexes.insert(sys.clone(), index);
     }
     let mut results = Vec::with_capacity(favs.len());
@@ -67,7 +67,7 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    let image_index = state.cache.get_image_index(&state, &system).await;
+    let image_index = state.cache.cached_image_index(&state, &system).await;
     let mut results = Vec::with_capacity(favs.len());
     for fav in favs {
         let box_art_url = state.cache.resolve_box_art(

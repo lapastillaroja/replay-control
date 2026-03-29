@@ -34,7 +34,7 @@ impl ImageIndex {
 impl GameLibrary {
     /// Get or build the image index for a system.
     /// The index maps normalized image names to actual paths, enabling O(1) box art lookups.
-    pub async fn get_image_index(
+    pub async fn cached_image_index(
         &self,
         state: &crate::api::AppState,
         system: &str,

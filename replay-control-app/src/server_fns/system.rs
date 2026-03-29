@@ -20,7 +20,7 @@ pub struct RefreshResult {
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let summaries = state.cache.get_systems(&storage).await;
+    let summaries = state.cache.cached_systems(&storage).await;
     let total_favorites = state.cache.get_favorites_count(&storage);
 
     let disk = storage
@@ -76,7 +76,7 @@ fn get_network_ips() -> (Option<String>, Option<String>) {
 #[server(prefix = "/sfn")]
 pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    Ok(state.cache.get_systems(&state.storage()).await)
+    Ok(state.cache.cached_systems(&state.storage()).await)
 }
 
 #[server(prefix = "/sfn", endpoint = "/get_recents")]
@@ -98,7 +98,7 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         if !image_indexes.contains_key(&entry.game.system) {
             let index = state
                 .cache
-                .get_image_index(&state, &entry.game.system)
+                .cached_image_index(&state, &entry.game.system)
                 .await;
             image_indexes.insert(entry.game.system.clone(), index);
         }

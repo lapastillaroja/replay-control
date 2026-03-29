@@ -23,7 +23,7 @@ impl GameLibrary {
     /// LaunchBox entries by normalized title. Matched metadata is persisted
     /// so future lookups hit directly without re-matching.
     pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
-        let index = self.get_image_index(state, &system).await;
+        let index = self.cached_image_index(state, &system).await;
 
         // Load ratings, genres, players, rating counts, and developers from
         // game_metadata table (from LaunchBox import) in a single read call.

@@ -58,7 +58,7 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
         if !image_indexes.contains_key(&entry.game.system) {
             let index = state
                 .cache
-                .get_image_index(&state, &entry.game.system)
+                .cached_image_index(&state, &entry.game.system)
                 .await;
             image_indexes.insert(entry.game.system.clone(), index);
         }
@@ -95,7 +95,7 @@ async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEnt
     let mut result = Vec::with_capacity(favs.len());
     for fav in favs {
         if !image_indexes.contains_key(&fav.game.system) {
-            let index = state.cache.get_image_index(&state, &fav.game.system).await;
+            let index = state.cache.cached_image_index(&state, &fav.game.system).await;
             image_indexes.insert(fav.game.system.clone(), index);
         }
         let index = image_indexes.get(&fav.game.system).unwrap();

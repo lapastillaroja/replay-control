@@ -556,7 +556,7 @@ pub async fn global_search(
             .collect();
 
         // Resolve box art and favorites for the top entries.
-        let image_index = state.cache.get_image_index(&state, &system).await;
+        let image_index = state.cache.cached_image_index(&state, &system).await;
         let fav_set = state.cache.get_favorites_set(&storage, &system);
 
         let top_results: Vec<GlobalSearchResult> = top_entries
@@ -702,7 +702,7 @@ pub async fn search_by_developer(
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
     for sys in &distinct_systems {
-        let index = state.cache.get_image_index(&state, sys).await;
+        let index = state.cache.cached_image_index(&state, sys).await;
         image_indexes.insert(sys.clone(), index);
     }
     let games: Vec<GlobalSearchResult> = game_entries
@@ -897,7 +897,7 @@ pub async fn get_developer_games(
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
     for sys in &distinct_entry_systems {
-        let index = state.cache.get_image_index(&state, sys).await;
+        let index = state.cache.cached_image_index(&state, sys).await;
         image_indexes.insert(sys.to_string(), index);
     }
     // Convert GameEntry -> RomListEntry with box art resolution and favorites.
@@ -1724,7 +1724,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.get_systems(&storage).await;
+    let systems = state.cache.cached_systems(&storage).await;
 
     // Build a weighted list: (system_folder, game_count).
     let weighted: Vec<(String, usize)> = systems
@@ -1759,7 +1759,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 
     let roms = state
         .cache
-        .get_roms(
+        .cached_roms(
             &storage,
             &chosen_system,
             state.region_preference(),

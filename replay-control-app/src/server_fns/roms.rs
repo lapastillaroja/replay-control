@@ -140,7 +140,7 @@ pub async fn get_roms_page(
         }
 
         // Populate box art URLs.
-        let image_index = state.cache.get_image_index(&state, &system).await;
+        let image_index = state.cache.cached_image_index(&state, &system).await;
         for rom in &mut roms {
             rom.box_art_url =
                 state
@@ -237,7 +237,7 @@ pub async fn get_roms_page(
     // Full path: load all ROMs and filter/search in memory.
     let all_roms = state
         .cache
-        .get_roms(&storage, &system, region_pref, region_secondary)
+        .cached_roms(&storage, &system, region_pref, region_secondary)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -415,7 +415,7 @@ pub async fn get_roms_page(
     }
 
     // Populate box art URLs using cached per-system image index (single dir read).
-    let image_index = state.cache.get_image_index(&state, &system).await;
+    let image_index = state.cache.cached_image_index(&state, &system).await;
     for rom in &mut roms {
         rom.box_art_url =
             state
