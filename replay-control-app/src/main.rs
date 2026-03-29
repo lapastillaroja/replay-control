@@ -718,6 +718,15 @@ mod ssr {
                     ))
                     .service(ServeDir::new(format!("{site_root}/icons"))),
             )
+            .nest_service(
+                "/static/branding",
+                tower::ServiceBuilder::new()
+                    .layer(SetResponseHeaderLayer::overriding(
+                        http::header::CACHE_CONTROL,
+                        http::HeaderValue::from_static(api::CACHE_1D),
+                    ))
+                    .service(ServeDir::new(format!("{site_root}/branding"))),
+            )
             .route(
                 "/static/manifest.json",
                 axum::routing::get(|| async {

@@ -23,7 +23,7 @@ use leptos_router::path;
 use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
-use i18n::{provide_i18n, t, use_i18n};
+use i18n::provide_i18n;
 use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
@@ -90,7 +90,6 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_i18n();
-    let i18n = use_i18n();
 
     view! {
         <Router>
@@ -99,7 +98,9 @@ pub fn App() -> impl IntoView {
             <div class="app">
                 <header class="top-bar">
                     <h1 class="app-title">
-                        <A href="/" attr:class="app-title-link">{move || t(i18n.locale.get(), "app.title")}</A>
+                        <A href="/" attr:class="app-title-link">
+                            <span class="app-logo" aria-label="Replay Control"></span>
+                        </A>
                     </h1>
                 </header>
 
@@ -320,16 +321,6 @@ fn SearchShortcut() -> impl IntoView {
             cb.forget();
         });
     }
-}
-
-fn icon_search() -> impl leptos::IntoView {
-    leptos::prelude::view! {
-        <span inner_html="<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>" />
-    }
-}
-
-fn icon_star() -> &'static str {
-    "\u{2605}"
 }
 
 #[cfg(feature = "hydrate")]

@@ -55,10 +55,6 @@
     background: var(--surface);
 }
 
-.system-card-icon {
-    margin-right: 4px;
-    font-size: 0.85rem;
-}
 
 .system-card-name {
     font-weight: 600;

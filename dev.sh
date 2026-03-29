@@ -218,6 +218,7 @@ copy_assets() {
     mkdir -p "$OUT_DIR"
     cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"
     cp -r "replay-control-app/static/icons" "$OUT_DIR/icons" 2>/dev/null || true
+    cp -r "replay-control-app/static/branding" "$OUT_DIR/branding" 2>/dev/null || true
 }
 
 # ── aarch64 cross-compilation setup ─────────────────────────────────────────
@@ -413,6 +414,7 @@ cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile wasm-dev -
 wasm-bindgen target/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
 cat replay-control-app/style/_*.css > $OUT_DIR/style.css
 cp -r replay-control-app/static/icons $OUT_DIR/icons 2>/dev/null || true
+cp -r replay-control-app/static/branding $OUT_DIR/branding 2>/dev/null || true
 
 echo "${BOLD}${BLUE}==> Rebuilding server (dev, aarch64)${RESET}"
 export CFLAGS_aarch64_unknown_linux_gnu="$resolved_cflags"

@@ -14,7 +14,7 @@
 .top-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     height: var(--top-bar-height);
     padding: 0 16px;
     background: var(--surface);
@@ -26,6 +26,19 @@
     font-size: 1.25rem;
     font-weight: 700;
     color: var(--accent);
+}
+
+.app-logo {
+    display: inline-block;
+    height: 28px;
+    width: 254px; /* 1406/155 * 28 */
+    background-color: var(--accent);
+    -webkit-mask-image: url('/static/branding/logo-oneline-transparent.png');
+    mask-image: url('/static/branding/logo-oneline-transparent.png');
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
 }
 
 .top-actions {
