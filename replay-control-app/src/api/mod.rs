@@ -268,15 +268,15 @@ impl DbPool {
         })
     }
 
-    /// Create a closed (empty) pool for tests. All reads/writes return `None`.
-    #[cfg(test)]
-    pub(crate) fn new_closed(label: &'static str) -> Self {
+    /// Create a closed (empty) pool. All reads/writes return `None`.
+    /// Used at startup when storage is unavailable, and in tests.
+    pub fn new_closed(label: &'static str) -> Self {
         Self {
             read_pool: Arc::new(std::sync::RwLock::new(None)),
             write_pool: Arc::new(std::sync::RwLock::new(None)),
             db_path: Arc::new(std::sync::RwLock::new(PathBuf::new())),
             label,
-            opener: |_| Err(replay_control_core::error::Error::Other("test".into())),
+            opener: |_| Err(replay_control_core::error::Error::Other("closed".into())),
             corrupt: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -480,7 +480,7 @@ pub enum ConfigEvent {
 /// Shared application state.
 #[derive(Clone)]
 pub struct AppState {
-    pub storage: Arc<std::sync::RwLock<StorageLocation>>,
+    pub storage: Arc<std::sync::RwLock<Option<StorageLocation>>>,
     pub config: Arc<std::sync::RwLock<ReplayConfig>>,
     pub config_path: Option<PathBuf>,
     pub cache: Arc<GameLibrary>,
@@ -550,9 +550,9 @@ impl AppState {
                 _ => StorageKind::Sd,
             };
 
-            (StorageLocation::from_path(storage_root, kind), config)
+            (Some(StorageLocation::from_path(storage_root, kind)), config)
         } else {
-            // Auto-detect: try to read config from default location
+            // Auto-detect: try to read config from default location (SD card, always available)
             let default_config = PathBuf::from("/media/sd/config/replay.cfg");
             let config = if default_config.exists() {
                 ReplayConfig::from_file(&default_config)?
@@ -560,53 +560,60 @@ impl AppState {
                 ReplayConfig::parse("")?
             };
 
-            let storage = StorageLocation::detect(&config)?;
-            (storage, config)
+            match StorageLocation::detect(&config) {
+                Ok(storage) => (Some(storage), config),
+                Err(e) => {
+                    tracing::warn!("Storage unavailable at startup: {e}");
+                    (None, config)
+                }
+            }
         };
 
-        tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
+        let (metadata_pool, user_data_pool) = if let Some(ref storage) = storage {
+            tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
-        // Open DBs eagerly at startup so they're ready for the first request.
-        // Fail-fast: if DB creation/open fails here, the service can't function.
+            // Open DBs eagerly at startup so they're ready for the first request.
+            let (_meta_conn, meta_path) =
+                replay_control_core::metadata_db::MetadataDb::open(&storage.root)
+                    .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
+            tracing::info!("Metadata DB ready at {}", meta_path.display());
+            let metadata_pool = DbPool::new(meta_path.clone(), "metadata_db", open_metadata_db)?;
 
-        // Open the DB files eagerly to create schema + run migrations, then
-        // drop the connections. The pool will create its own connections.
-        let (_meta_conn, meta_path) =
-            replay_control_core::metadata_db::MetadataDb::open(&storage.root)
-                .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
-        tracing::info!("Metadata DB ready at {}", meta_path.display());
-        let metadata_pool = DbPool::new(meta_path.clone(), "metadata_db", open_metadata_db)?;
+            let (_ud_conn, ud_path, ud_corrupt) =
+                replay_control_core::user_data_db::UserDataDb::open(&storage.root)
+                    .map_err(|e| format!("Failed to open user data DB: {e}"))?;
+            tracing::info!("User data DB ready at {}", ud_path.display());
+            let user_data_pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;
 
-        let (_ud_conn, ud_path, ud_corrupt) =
-            replay_control_core::user_data_db::UserDataDb::open(&storage.root)
-                .map_err(|e| format!("Failed to open user data DB: {e}"))?;
-        tracing::info!("User data DB ready at {}", ud_path.display());
-        let user_data_pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;
-
-        if ud_corrupt {
-            // Mark the pool as corrupt so the banner shows immediately.
-            // Don't backup — the file is damaged. The user can restore
-            // from a previous backup or repair (fresh schema, loses data).
-            tracing::warn!("User data DB is corrupt — marking pool, awaiting user action");
-            user_data_pool.mark_corrupt();
-        } else {
-            // Back up user_data.db while it's known-healthy. This enables
-            // restore-from-backup if corruption occurs at runtime.
-            let backup_path = ud_path.with_extension("db.bak");
-            match std::fs::copy(&ud_path, &backup_path) {
-                Ok(_) => tracing::info!("User data backup saved to {}", backup_path.display()),
-                Err(e) => tracing::debug!("Could not back up user_data.db: {e}"),
+            if ud_corrupt {
+                tracing::warn!("User data DB is corrupt — marking pool, awaiting user action");
+                user_data_pool.mark_corrupt();
+            } else {
+                let backup_path = ud_path.with_extension("db.bak");
+                match std::fs::copy(&ud_path, &backup_path) {
+                    Ok(_) => tracing::info!("User data backup saved to {}", backup_path.display()),
+                    Err(e) => tracing::debug!("Could not back up user_data.db: {e}"),
+                }
             }
-        }
+
+            (metadata_pool, user_data_pool)
+        } else {
+            tracing::warn!("Starting without storage — all requests will redirect to /waiting until storage appears");
+            (
+                DbPool::new_closed("metadata_db"),
+                DbPool::new_closed("user_data_db"),
+            )
+        };
 
         let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
 
         let import = Arc::new(ImportPipeline::new());
         let thumbnails = Arc::new(ThumbnailPipeline::new());
 
-        // Read skin preference from `.replay-control/settings.cfg` before
-        // `storage` is moved into the Arc below.
-        let initial_skin = replay_control_core::settings::read_skin(&storage.root);
+        // Read skin preference from `.replay-control/settings.cfg` if storage is available.
+        let initial_skin = storage
+            .as_ref()
+            .and_then(|s| replay_control_core::settings::read_skin(&s.root));
 
         let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
         let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
@@ -629,10 +636,21 @@ impl AppState {
         })
     }
 
+    /// Check whether storage is available.
+    pub fn has_storage(&self) -> bool {
+        self.storage.read().expect("storage lock poisoned").is_some()
+    }
+
     /// Read-lock storage and clone the current StorageLocation.
-    /// Panics only if the lock is poisoned (program bug).
+    /// Panics if storage is None — the middleware redirects ALL requests to
+    /// `/waiting` when storage is unavailable, so no handler should ever
+    /// reach this when storage is None.
     pub fn storage(&self) -> StorageLocation {
-        self.storage.read().expect("storage lock poisoned").clone()
+        self.storage
+            .read()
+            .expect("storage lock poisoned")
+            .clone()
+            .expect("storage() called without storage — middleware should have redirected to /waiting")
     }
 
     /// Check if either database has been flagged as corrupt.
@@ -645,17 +663,22 @@ impl AppState {
     }
 
     /// Get the user's region preference from `.replay-control/settings.cfg`.
+    /// Returns the default preference when storage is unavailable.
     pub fn region_preference(&self) -> replay_control_core::rom_tags::RegionPreference {
-        let storage = self.storage();
-        replay_control_core::settings::read_region_preference(&storage.root)
+        let guard = self.storage.read().expect("storage lock poisoned");
+        match guard.as_ref() {
+            Some(storage) => replay_control_core::settings::read_region_preference(&storage.root),
+            None => replay_control_core::rom_tags::RegionPreference::default(),
+        }
     }
 
     /// Get the user's secondary (fallback) region preference from `.replay-control/settings.cfg`.
-    /// Returns `None` if not set.
+    /// Returns `None` if not set or if storage is unavailable.
     pub fn region_preference_secondary(
         &self,
     ) -> Option<replay_control_core::rom_tags::RegionPreference> {
-        let storage = self.storage();
+        let guard = self.storage.read().expect("storage lock poisoned");
+        let storage = guard.as_ref()?;
         replay_control_core::settings::read_region_preference_secondary(&storage.root)
     }
 
@@ -686,6 +709,7 @@ impl AppState {
 
     /// Re-detect storage from config (unless a CLI override was given).
     /// Returns `true` if the storage location actually changed.
+    /// Handles None->Some transitions (storage appearing after startup).
     pub async fn refresh_storage(&self) -> Result<bool, Box<dyn std::error::Error>> {
         // Re-read config from disk so system-level settings (wifi, NFS,
         // system_skin for sync mode, etc.) are picked up on next SSR render.
@@ -717,10 +741,14 @@ impl AppState {
         }
 
         let new_storage = StorageLocation::detect(&config)?;
+        let had_storage = self.has_storage();
 
         let changed = {
             let current = self.storage.read().expect("storage lock poisoned");
-            current.root != new_storage.root || current.kind != new_storage.kind
+            match current.as_ref() {
+                Some(s) => s.root != new_storage.root || s.kind != new_storage.kind,
+                None => true, // None -> Some is always a change
+            }
         };
 
         if changed {
@@ -732,7 +760,7 @@ impl AppState {
 
             {
                 let mut guard = self.storage.write().expect("storage lock poisoned");
-                *guard = new_storage;
+                *guard = Some(new_storage);
             }
 
             // Close old DB connections so they re-open at the new storage root.
@@ -743,12 +771,28 @@ impl AppState {
             self.metadata_pool.reopen(&new_storage_ref.root);
             self.user_data_pool.reopen(&new_storage_ref.root);
 
+            // Back up user_data.db after opening at the new location.
+            if !had_storage {
+                let ud_path = self.user_data_pool.db_path();
+                let backup_path = ud_path.with_extension("db.bak");
+                match std::fs::copy(&ud_path, &backup_path) {
+                    Ok(_) => tracing::info!("User data backup saved to {}", backup_path.display()),
+                    Err(e) => tracing::debug!("Could not back up user_data.db: {e}"),
+                }
+            }
+
             self.cache.invalidate().await;
 
             let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();
             let _ = self
                 .config_tx
                 .send(ConfigEvent::StorageChanged { storage_kind: kind });
+
+            // None->Some transition: start background pipeline and ROM watcher.
+            if !had_storage {
+                tracing::info!("Storage appeared — starting background pipeline and ROM watcher");
+                BackgroundManager::start(self.clone());
+            }
         }
 
         Ok(changed)
@@ -816,7 +860,7 @@ pub fn build_router(
             }),
         )
         .route(
-            "/style.css",
+            "/static/style.css",
             axum::routing::get(|| async {
                 (
                     [

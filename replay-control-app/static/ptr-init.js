@@ -19,7 +19,7 @@
 
   // Lazy-load PullToRefresh.js
   var script = document.createElement('script');
-  script.src = '/pulltorefresh.min.js';
+  script.src = '/static/pulltorefresh.min.js';
   script.onload = function () {
     PullToRefresh.init({
       mainElement: 'body',

@@ -588,13 +588,14 @@ impl AppState {
                 tracing::info!("Config file watcher unavailable; using 60s poll only");
             }
 
-            // The 60-second poll always runs as a fallback.
-            let mut interval =
-                tokio::time::interval(std::time::Duration::from_secs(STORAGE_CHECK_INTERVAL));
-            // Skip the first (immediate) tick -- we just initialized.
-            interval.tick().await;
+            // Poll loop: 10s when waiting for storage, 60s once connected.
             loop {
-                interval.tick().await;
+                let delay = if state.has_storage() {
+                    STORAGE_CHECK_INTERVAL
+                } else {
+                    10
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
                 match state.refresh_storage().await {
                     Ok(true) => tracing::info!("Background storage re-detection: storage changed"),
                     Ok(false) => {}

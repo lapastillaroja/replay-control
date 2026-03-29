@@ -69,16 +69,16 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <meta name="apple-mobile-web-app-title" content="Replay Control" />
                 <meta name="version" content=format!("{}-{}", VERSION, GIT_HASH) />
                 <title>"Replay Control"</title>
-                <link rel="manifest" href="/manifest.json" />
-                <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
-                <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-                <link rel="stylesheet" href="/style.css" />
+                <link rel="manifest" href="/static/manifest.json" />
+                <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
+                <link rel="apple-touch-icon" href="/static/icons/icon-192.png" />
+                <link rel="stylesheet" href="/static/style.css" />
                 <style id="skin-theme">{skin_css}</style>
                 <HydrationScripts options=options.clone() />
                 <script>
-                    "if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }"
+                    "if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/static/sw.js'); }"
                 </script>
-                <script defer src="/ptr-init.js"></script>
+                <script defer src="/static/ptr-init.js"></script>
             </head>
             <body>
                 <App />
