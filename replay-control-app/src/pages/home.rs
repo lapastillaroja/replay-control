@@ -273,13 +273,25 @@ fn RecommendationSections(
 #[component]
 fn EmptySystemCard(system: crate::server_fns::SystemSummary) -> impl IntoView {
     let i18n = use_i18n();
+    let icon_src = format!("/static/icons/systems/{}.png", system.folder_name);
 
     view! {
         <div class="system-card empty">
             <div class="system-card-name">{system.display_name.clone()}</div>
-            <div class="system-card-manufacturer">{system.manufacturer.clone()}</div>
-            <div class="system-card-count">
-                {move || t(i18n.locale.get(), "games.no_games").to_string()}
+            <div class="system-card-body">
+                <img
+                    class="system-card-icon"
+                    src=icon_src
+                    alt=""
+                    onerror="this.style.display='none'"
+                    loading="lazy"
+                />
+                <div class="system-card-text">
+                    <div class="system-card-manufacturer">{system.manufacturer.clone()}</div>
+                    <div class="system-card-count">
+                        {move || t(i18n.locale.get(), "games.no_games").to_string()}
+                    </div>
+                </div>
             </div>
         </div>
     }

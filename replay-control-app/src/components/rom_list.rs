@@ -227,12 +227,22 @@ pub fn RomList(system: String) -> impl IntoView {
                             }
                         };
 
+                        let icon_src = format!("/static/icons/systems/{}.png", sys.get_value());
                         view! {
                             <div class="rom-header">
                                 <A href="/" attr:class="back-btn">
                                     {t(locale, "games.back")}
                                 </A>
-                                <h2 class="page-title">{display_name}</h2>
+                                <h2 class="page-title">
+                                    <img
+                                        class="rom-header-icon"
+                                        src=icon_src
+                                        alt=""
+                                        onerror="this.style.display='none'"
+                                        loading="lazy"
+                                    />
+                                    {display_name}
+                                </h2>
                             </div>
                             <p class="rom-count">{count_text}</p>
                             <div class="rom-list">

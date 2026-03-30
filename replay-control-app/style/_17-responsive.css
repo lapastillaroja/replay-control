@@ -51,6 +51,11 @@
         grid-template-columns: repeat(3, 1fr);
     }
 
+    .system-card-icon {
+        width: 48px;
+        height: 48px;
+    }
+
     /* Stats: 4 columns */
     .stats-grid {
         grid-template-columns: repeat(4, 1fr);

@@ -9,6 +9,20 @@
     margin-bottom: 12px;
 }
 
+.rom-header .page-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.rom-header-icon {
+    width: 2.8rem;
+    height: 2.8rem;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
 .back-btn {
     background: none;
     border: 1px solid var(--border);

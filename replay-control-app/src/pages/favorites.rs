@@ -215,6 +215,7 @@ where
                     <div class="systems-grid">
                         {move || system_cards().into_iter().map(|(display_name, system, count, latest, _)| {
                             let href = format!("/favorites/{system}");
+                            let icon_src = format!("/static/icons/systems/{system}.png");
                             let count_label = move || {
                                 let locale = i18n.locale.get();
                                 format!("{count} {}", t(locale, "stats.favorites").to_lowercase())
@@ -222,8 +223,19 @@ where
                             view! {
                                 <A href=href attr:class="system-card">
                                     <div class="system-card-name">{display_name}</div>
-                                    <div class="system-card-count">{count_label}</div>
-                                    <div class="system-card-size">{latest}</div>
+                                    <div class="system-card-body">
+                                        <img
+                                            class="system-card-icon"
+                                            src=icon_src
+                                            alt=""
+                                            onerror="this.style.display='none'"
+                                            loading="lazy"
+                                        />
+                                        <div class="system-card-text">
+                                            <div class="system-card-count">{count_label}</div>
+                                            <div class="system-card-size">{latest}</div>
+                                        </div>
+                                    </div>
                                 </A>
                             }
                         }).collect::<Vec<_>>()}
@@ -651,12 +663,18 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
     let favorites = RwSignal::new(favs);
     let confirm_remove = RwSignal::new(Option::<String>::None);
 
-    // Derive the system display name from the first favorite (one-time read).
-    let system_display = favorites
-        .read_untracked()
+    // Derive system info from the first favorite (one-time read).
+    let first = favorites.read_untracked();
+    let system_display = first
         .first()
         .map(|f| f.fav.game.system_display.clone())
         .unwrap_or_default();
+    let system_folder = first
+        .first()
+        .map(|f| f.fav.game.system.clone())
+        .unwrap_or_default();
+    drop(first);
+    let icon_src = format!("/static/icons/systems/{system_folder}.png");
 
     let total_count = move || favorites.read().len();
     let is_empty = move || favorites.read().is_empty();
@@ -681,7 +699,16 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
             <A href="/favorites" attr:class="back-btn">
                 {move || t(i18n.locale.get(), "games.back")}
             </A>
-            <h2 class="page-title">{system_display}</h2>
+            <h2 class="page-title">
+                <img
+                    class="rom-header-icon"
+                    src=icon_src
+                    alt=""
+                    onerror="this.style.display='none'"
+                    loading="lazy"
+                />
+                {system_display}
+            </h2>
         </div>
         <p class="rom-count">{move || {
             let count = total_count();
