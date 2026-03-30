@@ -8,6 +8,10 @@
     padding: 0;
 }
 
+html {
+    overflow-y: scroll;
+}
+
 :root {
     --bg: #0f1115;
     --surface: #1a1d23;
