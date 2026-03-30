@@ -21,9 +21,17 @@
   var script = document.createElement('script');
   script.src = '/static/pulltorefresh.min.js';
   script.onload = function () {
+    // Read safe-area-inset-top for Dynamic Island offset.
+    // The .app element has padding-top: env(safe-area-inset-top).
+    var appEl = document.querySelector('.app');
+    var safeTop = appEl ? parseInt(getComputedStyle(appEl).paddingTop) || 0 : 0;
+
     PullToRefresh.init({
       mainElement: 'body',
-      distReload: 70,
+      distIgnore: safeTop,
+      distThreshold: 60,
+      distMax: 80 + safeTop,
+      distReload: 70 + safeTop,
       instructionsPullToRefresh: ' ',
       instructionsReleaseToRefresh: ' ',
       instructionsRefreshing: ' ',
