@@ -1283,6 +1283,7 @@ fn handle_input_home(s: &mut CoreState, up: bool, down: bool, a_pressed: bool, b
 }
 
 /// Input handling for the GameDetail view.
+#[allow(clippy::too_many_arguments)]
 fn handle_input_detail(
     s: &mut CoreState,
     left: bool,
@@ -1620,7 +1621,7 @@ pub unsafe extern "C" fn retro_run() {
 
     // Periodic diagnostic logging (every 6000 frames = ~100 seconds at 60fps).
     // Uses format! which allocates, but only once every ~100s -- negligible.
-    if s.display.frame_count % 6000 == 0 {
+    if s.display.frame_count.is_multiple_of(6000) {
         debug_log(&format!(
             "[frame {}] alive, view={}, idx={}, mode={}",
             s.display.frame_count,

@@ -1,6 +1,7 @@
 use crate::font;
 
 /// Draw a single 8x16 character at (x, y) with the given color and scale.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_char(fb: &mut [u32], w: u32, h: u32, ch: u8, x: i32, y: i32, color: u32, scale: u32) {
     let bitmap = font::get_char_bitmap(ch);
     let w = w as i32;
@@ -25,6 +26,7 @@ pub fn draw_char(fb: &mut [u32], w: u32, h: u32, ch: u8, x: i32, y: i32, color: 
 }
 
 /// Draw a string at (x, y). Returns the x position after the last character.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_string(
     fb: &mut [u32],
     w: u32,
@@ -48,6 +50,7 @@ pub fn draw_string(
 }
 
 /// Draw a string truncated to max_chars, adding ".." if truncated.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_string_truncated(
     fb: &mut [u32],
     w: u32,
@@ -74,6 +77,7 @@ pub fn draw_string_truncated(
 }
 
 /// Fill a rectangle.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_rect(fb: &mut [u32], w: u32, h: u32, rx: i32, ry: i32, rw: u32, rh: u32, color: u32) {
     let w = w as i32;
     let h = h as i32;
@@ -97,6 +101,7 @@ pub fn draw_hline(fb: &mut [u32], w: u32, h: u32, x: i32, y: i32, len: u32, colo
 
 /// Blit an image onto the framebuffer at position (dx, dy).
 /// Clips to framebuffer bounds.
+#[allow(clippy::too_many_arguments)]
 pub fn blit_image(
     fb: &mut [u32],
     fb_w: u32,
@@ -214,6 +219,7 @@ pub fn draw_star_empty(fb: &mut [u32], w: u32, h: u32, cx: i32, cy: i32, size: i
 ///   - `star_color`: filled star color (typically gold)
 ///   - `star_dim_color`: empty star outline color
 ///   - `rating_text_color`: numeric rating text color
+#[allow(clippy::too_many_arguments)]
 pub fn draw_rating(
     fb: &mut [u32],
     w: u32,

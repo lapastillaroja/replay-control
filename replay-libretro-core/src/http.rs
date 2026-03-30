@@ -14,7 +14,7 @@ pub fn api_base() -> &'static str {
 
 /// Fetch the list of recently played games from Replay Control.
 pub fn fetch_recents() -> Result<Vec<GameEntry>, String> {
-    let resp = minreq::get(&format!("{}/api/core/recents", api_base()))
+    let resp = minreq::get(format!("{}/api/core/recents", api_base()))
         .with_header("Accept", "application/json")
         .with_timeout(5)
         .send()
@@ -34,7 +34,7 @@ pub fn fetch_recents() -> Result<Vec<GameEntry>, String> {
 
 /// Fetch the list of favorites from Replay Control.
 pub fn fetch_favorites() -> Result<Vec<GameEntry>, String> {
-    let resp = minreq::get(&format!("{}/api/core/favorites", api_base()))
+    let resp = minreq::get(format!("{}/api/core/favorites", api_base()))
         .with_header("Accept", "application/json")
         .with_timeout(5)
         .send()
@@ -121,9 +121,6 @@ fn decode_png_to_xrgb8888(data: &[u8], max_w: u32, max_h: u32) -> Result<BoxArtI
             let offset = y * row_bytes + x * bytes_per_pixel;
             let (r, g, b) = if bytes_per_pixel >= 3 {
                 (buf[offset], buf[offset + 1], buf[offset + 2])
-            } else if bytes_per_pixel == 2 {
-                let v = buf[offset];
-                (v, v, v)
             } else {
                 let v = buf[offset];
                 (v, v, v)
@@ -186,7 +183,7 @@ pub fn fetch_box_art_for_layout(url: &str, layout: &LayoutConfig) -> Option<BoxA
         // URL-encode each path segment (preserving '/' separators).
         let encoded_path: String = url
             .split('/')
-            .map(|seg| urlencoding::encode(seg))
+            .map(urlencoding::encode)
             .collect::<Vec<_>>()
             .join("/");
         format!("{}{}", api_base(), encoded_path)
