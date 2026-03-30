@@ -1,0 +1,30 @@
+#!/bin/bash
+# Pre-commit hook: catch common mistakes before they enter history.
+
+STAGED_DIFF=$(git diff --cached --unified=0)
+
+if [ -z "$STAGED_DIFF" ]; then
+    exit 0
+fi
+
+ERRORS=0
+
+# Reject hardcoded home directory paths
+if echo "$STAGED_DIFF" | grep -qE '^\+.*(/home/[a-z]+/|/Users/[a-z]+/)'; then
+    echo "ERROR: hardcoded home directory path in staged changes"
+    echo "$STAGED_DIFF" | grep -nE '^\+.*(/home/[a-z]+/|/Users/[a-z]+/)' | head -5
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Reject hardcoded private IPs (192.168.x.x)
+if echo "$STAGED_DIFF" | grep -qE '^\+.*192\.168\.[0-9]+\.[0-9]+'; then
+    echo "ERROR: hardcoded private IP in staged changes"
+    echo "$STAGED_DIFF" | grep -nE '^\+.*192\.168\.[0-9]+\.[0-9]+' | head -5
+    ERRORS=$((ERRORS + 1))
+fi
+
+if [ $ERRORS -gt 0 ]; then
+    echo ""
+    echo "Commit blocked. Fix the issues above or use --no-verify to skip."
+    exit 1
+fi
