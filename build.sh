@@ -64,7 +64,9 @@ echo "    ${WASM_FILE}.gz: ${GZ_SIZE} bytes"
 
 # Copy static assets
 cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"
+rm -rf "$OUT_DIR/icons" "$OUT_DIR/branding"
 cp -r "replay-control-app/static/icons" "$OUT_DIR/icons" 2>/dev/null || true
+cp -r "replay-control-app/static/branding" "$OUT_DIR/branding" 2>/dev/null || true
 
 echo "==> Building server (ssr)..."
 if [[ -n "$TARGET" ]]; then
