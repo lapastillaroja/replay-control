@@ -277,6 +277,23 @@ Output:
 - **Our app** scans the filesystem independently — no dependency on RePlayOS's internal DB
 - For arcade metadata, we use the same public sources (MAME DATs, FBNeo DATs, Flycast CSV, catver.ini)
 
+## Third-Party Resources
+
+### Embedded Data (build time)
+- **No-Intro DATs** — ROM identification databases, via [libretro-database](https://github.com/libretro/libretro-database) (MIT)
+- **TheGamesDB** — game metadata (year, genre, developer, players), via [TheGamesDB](https://thegamesdb.net/) (GPLv3 codebase)
+- **MAME / FBNeo** — arcade game databases, via [libretro-database](https://github.com/libretro/libretro-database) (MIT/MAME License)
+- **Wikidata** — game series relationships (CC0)
+- **Flycast games CSV** — Atomiswave/Naomi arcade database (own curation)
+
+### Runtime Data (user-initiated downloads)
+- **LaunchBox XML** — game descriptions, ratings, publishers ([launchbox-app.com](https://gamesdb.launchbox-app.com/)) — not redistributed, downloaded by user
+- **libretro-thumbnails** — box art, screenshots, title screens ([GitHub](https://github.com/libretro-thumbnails)) — not redistributed, downloaded by user
+
+### UI Assets
+- **System controller icons** — [KyleBing/retro-game-console-icons](https://github.com/KyleBing/retro-game-console-icons) (GPLv3)
+- **Phosphor Icons** — top bar gaming icons ([phosphoricons.com](https://phosphoricons.com/)) (MIT)
+
 ## Open Questions
 
 - Backup format: tarball, incremental, or custom?
