@@ -2,6 +2,9 @@
 name = "replay-control-app"
 version = "0.1.0"
 edition = "2024"
+description = "Replay Control web app for RePlayOS"
+license.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

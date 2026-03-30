@@ -2,6 +2,10 @@
 resolver = "2"
 members = ["replay-control-core", "replay-control-app"]
 
+[workspace.package]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/lapastillaroja/replay-control"
+
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
