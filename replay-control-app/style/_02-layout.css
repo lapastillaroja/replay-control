@@ -28,6 +28,19 @@
     color: var(--accent);
 }
 
+.app-title-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.top-bar-icon {
+    width: 22px;
+    height: 22px;
+    color: var(--star);
+    flex-shrink: 0;
+}
+
 .app-logo {
     display: inline-block;
     height: 28px;
