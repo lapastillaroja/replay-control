@@ -404,6 +404,7 @@ pub fn extract_tags(filename: &str) -> String {
     let mut region: Option<String> = None;
     let mut revision: Option<String> = None;
     let mut translation: Option<String> = None;
+    let mut platform_variant: Option<&str> = None;
     let mut tosec_language: Option<String> = None;
     let mut patch_60hz = false;
     let mut patch_fastrom = false;
@@ -521,6 +522,14 @@ pub fn extract_tags(filename: &str) -> String {
             continue;
         }
 
+        // Platform variant tags — sub-platform identifiers within a system folder.
+        // e.g., "(Sega CD 32X)" in the sega_32x folder distinguishes disc games
+        // from regular cartridge 32X games.
+        if lower == "sega cd 32x" || lower == "mega-cd 32x" {
+            platform_variant = Some("CD 32X");
+            continue;
+        }
+
         // Skip non-region noise: Virtual Console, Switch Online, language-only
         // codes like (En), (Ja), (En,Fr,De), NP, BS, etc.
         if is_noise_tag(&lower) {
@@ -634,6 +643,9 @@ pub fn extract_tags(filename: &str) -> String {
     }
     if is_pirate {
         parts.push("Pirate".to_string());
+    }
+    if let Some(variant) = platform_variant {
+        parts.push(variant.to_string());
     }
 
     parts.join(", ")
@@ -2096,6 +2108,22 @@ mod tests {
     #[test]
     fn extract_tags_tosec_pirate_p1() {
         assert_eq!(extract_tags("Game (1987)(Publisher) [p1].dsk"), "Pirate");
+    }
+
+    #[test]
+    fn extract_tags_sega_cd_32x_variant() {
+        assert_eq!(
+            extract_tags("Corpse Killer (USA) (Sega CD 32X).chd"),
+            "USA, CD 32X"
+        );
+    }
+
+    #[test]
+    fn extract_tags_mega_cd_32x_variant() {
+        assert_eq!(
+            extract_tags("Corpse Killer (Europe) (Mega-CD 32X).chd"),
+            "Europe, CD 32X"
+        );
     }
 
     #[test]

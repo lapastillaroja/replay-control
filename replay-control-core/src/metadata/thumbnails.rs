@@ -140,7 +140,7 @@ pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
         "nintendo_snes" => Some(&["Nintendo - Super Nintendo Entertainment System"]),
         "panasonic_3do" => Some(&["The 3DO Company - 3DO"]),
         "philips_cdi" => Some(&["Philips - CDi"]),
-        "sega_32x" => Some(&["Sega - 32X"]),
+        "sega_32x" => Some(&["Sega - 32X", "Sega - Mega-CD - Sega CD"]),
         "sega_cd" => Some(&["Sega - Mega-CD - Sega CD"]),
         "sega_dc" => Some(&["Sega - Dreamcast"]),
         "sega_gg" => Some(&["Sega - Game Gear"]),

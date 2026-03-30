@@ -125,7 +125,7 @@ pub static SYSTEMS: &[System] = &[
         manufacturer: "Commodore",
         category: SystemCategory::Computer,
         extensions: &["iso", "cue", "chd", "ccd", "nrg", "mds", "m3u"],
-        launchbox_platforms: &[],
+        launchbox_platforms: &["Commodore Amiga CD32"],
     },
     System {
         folder_name: "commodore_c64",
@@ -259,8 +259,8 @@ pub static SYSTEMS: &[System] = &[
         display_name: "Sega 32X",
         manufacturer: "Sega",
         category: SystemCategory::Console,
-        extensions: &["32x", "bin"],
-        launchbox_platforms: &["Sega 32X"],
+        extensions: &["32x", "bin", "chd", "cue", "iso", "m3u"],
+        launchbox_platforms: &["Sega 32X", "Sega CD 32X"],
     },
     System {
         folder_name: "sega_cd",
@@ -616,7 +616,7 @@ mod tests {
         // Every non-utility, non-hidden system should have at least one
         // LaunchBox platform mapping. This catches forgotten mappings when
         // adding new systems.
-        let exceptions = ["commodore_amicd"]; // No LaunchBox platform exists
+        let exceptions: [&str; 0] = []; // All non-utility systems should have LaunchBox mappings
         for sys in SYSTEMS {
             if sys.category == SystemCategory::Utility || exceptions.contains(&sys.folder_name) {
                 continue;
