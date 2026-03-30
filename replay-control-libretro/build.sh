@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build the replay-libretro-core for local testing or Pi deployment.
+# Build the replay-control-libretro core for local testing or Pi deployment.
 #
 # Usage:
 #   ./build.sh              # Build for local x86_64
@@ -59,11 +59,11 @@ echo "==> Building ${CORE_NAME}_libretro.so..."
 if [[ -n "$TARGET" ]]; then
     echo "    Target: $TARGET"
     cargo build --release --target "$TARGET"
-    SRC="target/$TARGET/release/libreplay_libretro_core.so"
+    SRC="target/$TARGET/release/libreplay_control_libretro.so"
     OUT_DIR="target/$TARGET/release"
 else
     cargo build --release
-    SRC="target/release/libreplay_libretro_core.so"
+    SRC="target/release/libreplay_control_libretro.so"
     OUT_DIR="target/release"
 fi
 

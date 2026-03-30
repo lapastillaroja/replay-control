@@ -1,8 +1,10 @@
 [package]
-name = "replay-libretro-core"
+name = "replay-control-libretro"
 version = "0.6.0"
 edition = "2021"
 description = "Recently Played Game Detail Viewer — a libretro core for RePlayOS"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/lapastillaroja/replay-control"
 
 [workspace]
 # Standalone project — not part of the parent workspace
