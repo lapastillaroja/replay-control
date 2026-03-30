@@ -1135,6 +1135,162 @@ const GAME_DB_SYSTEMS: &[SystemConfig] = &[
         rust_prefix: "S32X",
         tgdb_platform_ids: &[33],
     },
+    // --- Atari cartridge systems (no No-Intro DATs yet) ---
+    SystemConfig {
+        folder_name: "atari_2600",
+        nointro_dat: "",
+        rust_prefix: "A26",
+        tgdb_platform_ids: &[22],
+    },
+    SystemConfig {
+        folder_name: "atari_5200",
+        nointro_dat: "",
+        rust_prefix: "A52",
+        tgdb_platform_ids: &[26],
+    },
+    SystemConfig {
+        folder_name: "atari_7800",
+        nointro_dat: "",
+        rust_prefix: "A78",
+        tgdb_platform_ids: &[27],
+    },
+    SystemConfig {
+        folder_name: "atari_jaguar",
+        nointro_dat: "",
+        rust_prefix: "JAG",
+        tgdb_platform_ids: &[28],
+    },
+    SystemConfig {
+        folder_name: "atari_lynx",
+        nointro_dat: "",
+        rust_prefix: "LYNX",
+        tgdb_platform_ids: &[4924],
+    },
+    // --- NEC ---
+    SystemConfig {
+        folder_name: "nec_pce",
+        nointro_dat: "",
+        rust_prefix: "PCE",
+        tgdb_platform_ids: &[34],
+    },
+    SystemConfig {
+        folder_name: "nec_pcecd",
+        nointro_dat: "",
+        rust_prefix: "PCECD",
+        tgdb_platform_ids: &[4955],
+    },
+    // --- Nintendo (missing) ---
+    SystemConfig {
+        folder_name: "nintendo_ds",
+        nointro_dat: "",
+        rust_prefix: "NDS",
+        tgdb_platform_ids: &[8],
+    },
+    // --- SNK ---
+    SystemConfig {
+        folder_name: "snk_ng",
+        nointro_dat: "",
+        rust_prefix: "NG",
+        tgdb_platform_ids: &[24],
+    },
+    SystemConfig {
+        folder_name: "snk_ngcd",
+        nointro_dat: "",
+        rust_prefix: "NGCD",
+        tgdb_platform_ids: &[4956],
+    },
+    SystemConfig {
+        folder_name: "snk_ngp",
+        nointro_dat: "",
+        rust_prefix: "NGP",
+        tgdb_platform_ids: &[4922, 4923],
+    },
+    // --- Disc-based consoles ---
+    SystemConfig {
+        folder_name: "sony_psx",
+        nointro_dat: "",
+        rust_prefix: "PSX",
+        tgdb_platform_ids: &[10],
+    },
+    SystemConfig {
+        folder_name: "sega_dc",
+        nointro_dat: "",
+        rust_prefix: "DC",
+        tgdb_platform_ids: &[16],
+    },
+    SystemConfig {
+        folder_name: "sega_st",
+        nointro_dat: "",
+        rust_prefix: "SAT",
+        tgdb_platform_ids: &[17],
+    },
+    SystemConfig {
+        folder_name: "sega_cd",
+        nointro_dat: "",
+        rust_prefix: "SCD",
+        tgdb_platform_ids: &[21],
+    },
+    SystemConfig {
+        folder_name: "panasonic_3do",
+        nointro_dat: "",
+        rust_prefix: "TDO",
+        tgdb_platform_ids: &[25],
+    },
+    SystemConfig {
+        folder_name: "philips_cdi",
+        nointro_dat: "",
+        rust_prefix: "CDI",
+        tgdb_platform_ids: &[4917],
+    },
+    // --- Computer systems ---
+    SystemConfig {
+        folder_name: "amstrad_cpc",
+        nointro_dat: "",
+        rust_prefix: "CPC",
+        tgdb_platform_ids: &[4914],
+    },
+    SystemConfig {
+        folder_name: "commodore_ami",
+        nointro_dat: "",
+        rust_prefix: "AMI",
+        tgdb_platform_ids: &[4911],
+    },
+    SystemConfig {
+        folder_name: "commodore_amicd",
+        nointro_dat: "",
+        rust_prefix: "AMICD",
+        tgdb_platform_ids: &[4947],
+    },
+    SystemConfig {
+        folder_name: "commodore_c64",
+        nointro_dat: "",
+        rust_prefix: "C64",
+        tgdb_platform_ids: &[40],
+    },
+    SystemConfig {
+        folder_name: "ibm_pc",
+        nointro_dat: "",
+        rust_prefix: "DOS",
+        tgdb_platform_ids: &[1],
+    },
+    SystemConfig {
+        folder_name: "microsoft_msx",
+        nointro_dat: "",
+        rust_prefix: "MSX",
+        tgdb_platform_ids: &[4929],
+    },
+    SystemConfig {
+        folder_name: "sharp_x68k",
+        nointro_dat: "",
+        rust_prefix: "X68K",
+        tgdb_platform_ids: &[4931],
+    },
+    SystemConfig {
+        folder_name: "sinclair_zx",
+        nointro_dat: "",
+        rust_prefix: "ZX",
+        tgdb_platform_ids: &[4913],
+    },
 ];
 
 /// A ROM entry parsed from a No-Intro DAT file.
@@ -1669,13 +1825,16 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
 
     // Process each system
     for sys in GAME_DB_SYSTEMS {
+        let has_nointro = !sys.nointro_dat.is_empty();
         let dat_path = nointro_dir.join(sys.nointro_dat);
-        if !dat_path.exists() {
-            println!(
-                "cargo:warning=Game DB: No-Intro DAT not found for {}, skipping",
-                sys.folder_name
-            );
-            // Write empty statics for this system
+        if !has_nointro || !dat_path.exists() {
+            if has_nointro {
+                println!(
+                    "cargo:warning=Game DB: No-Intro DAT not found for {}, skipping",
+                    sys.folder_name
+                );
+            }
+            // Write empty statics for this system (TGDB-only or no data at all)
             write_empty_system(&mut out, sys.rust_prefix);
             system_names.push(sys.folder_name);
             continue;
