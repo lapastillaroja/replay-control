@@ -4,7 +4,7 @@ A libretro core (.so) that displays recently played games with box art on the TV
 
 ## Overview
 
-The `replay-libretro-core` crate builds a `cdylib` (.so) that RePlayOS loads as a libretro core via the custom frontend. It fetches data from the Replay Control REST API running on localhost and renders a navigable game metadata viewer on the TV.
+The `replay-control-libretro` crate builds a `cdylib` (.so) that RePlayOS loads as a libretro core via the custom frontend. It fetches data from the Replay Control REST API running on localhost and renders a navigable game metadata viewer on the TV.
 
 ## Features
 
@@ -37,8 +37,8 @@ Target: `cdylib` for aarch64 (Raspberry Pi).
 
 | File | Role |
 |------|------|
-| `replay-libretro-core/src/lib.rs` | Libretro API implementation, game state, input handling |
-| `replay-libretro-core/src/http.rs` | REST API client, JSON parsing, box art fetching |
-| `replay-libretro-core/src/draw.rs` | Framebuffer rendering, text drawing, image blitting |
-| `replay-libretro-core/src/layout.rs` | CRT vs HDMI layout configuration |
+| `replay-control-libretro/src/lib.rs` | Libretro API implementation, game state, input handling |
+| `replay-control-libretro/src/http.rs` | REST API client, JSON parsing, box art fetching |
+| `replay-control-libretro/src/draw.rs` | Framebuffer rendering, text drawing, image blitting |
+| `replay-control-libretro/src/layout.rs` | CRT vs HDMI layout configuration |
 | `replay-control-app/src/api/core_api.rs` | Server-side REST endpoints |
