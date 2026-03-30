@@ -832,7 +832,15 @@ pub fn find_boxart_variants(
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
-            if entry_base != base_title && !tilde_halves.contains(&entry_base) {
+            if entry_base != base_title
+                && !tilde_halves.contains(&entry_base)
+                && !super::image_matching::base_titles_match_with_tags(
+                    &base_title,
+                    &thumb_name,
+                    &entry_base,
+                    &entry.filename,
+                )
+            {
                 continue;
             }
 
@@ -936,7 +944,15 @@ pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
-            if entry_base != base_title && !tilde_halves.contains(&entry_base) {
+            if entry_base != base_title
+                && !tilde_halves.contains(&entry_base)
+                && !super::image_matching::base_titles_match_with_tags(
+                    &base_title,
+                    &thumb_name,
+                    &entry_base,
+                    &entry.filename,
+                )
+            {
                 continue;
             }
 

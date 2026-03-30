@@ -189,6 +189,76 @@ pub fn tilde_halves(source: &str) -> Vec<String> {
     }
 }
 
+/// Check whether two base titles match allowing for platform-identifier suffixes.
+///
+/// When one base title is a word-aligned prefix of the other (e.g., `"corpse killer"`
+/// vs `"corpse killer 32x"`), the extra trailing words are checked against the
+/// parenthesized tags of the *shorter* entry's original filename. If every extra word
+/// appears inside those tags, the titles are considered equivalent.
+///
+/// This handles cases where libretro-thumbnails embeds a platform identifier in the
+/// title stem (e.g., `Corpse Killer 32X (Europe)`) while the ROM keeps it inside a
+/// tag (e.g., `Corpse Killer (USA) (Sega CD 32X)`).
+///
+/// Both `base_a` and `base_b` must already be lowercased.
+pub fn base_titles_match_with_tags(
+    base_a: &str,
+    original_a: &str,
+    base_b: &str,
+    original_b: &str,
+) -> bool {
+    // Try both directions: a is prefix of b, or b is prefix of a.
+    prefix_extra_in_tags(base_a, base_b, original_a)
+        || prefix_extra_in_tags(base_b, base_a, original_b)
+}
+
+/// Returns true if `shorter` is a word-aligned prefix of `longer` and every extra
+/// trailing word in `longer` appears inside the parenthesized tags of `shorter_original`.
+fn prefix_extra_in_tags(shorter: &str, longer: &str, shorter_original: &str) -> bool {
+    // `shorter` must be a strict prefix followed by a space.
+    let suffix = match longer.strip_prefix(shorter) {
+        Some(s) if !s.is_empty() => s,
+        _ => return false,
+    };
+    // Must be a word boundary (space after the prefix).
+    if !suffix.starts_with(' ') {
+        return false;
+    }
+    let suffix = suffix.trim_start();
+    if suffix.is_empty() {
+        return false;
+    }
+
+    let tags = collect_tag_words(shorter_original);
+    if tags.is_empty() {
+        return false;
+    }
+
+    suffix
+        .split_whitespace()
+        .all(|word| tags.iter().any(|t| t == word))
+}
+
+/// Extract all whitespace-separated words from parenthesized groups, lowercased.
+///
+/// `"Corpse Killer (USA) (Sega CD 32X)"` → `{"usa", "sega", "cd", "32x"}`
+fn collect_tag_words(filename: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut rest = filename;
+    while let Some(open) = rest.find('(') {
+        if let Some(close) = rest[open..].find(')') {
+            let inside = &rest[open + 1..open + close];
+            for w in inside.split_whitespace() {
+                words.push(w.to_lowercase());
+            }
+            rest = &rest[open + close + 1..];
+        } else {
+            break;
+        }
+    }
+    words
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,5 +382,98 @@ mod tests {
     fn tilde_halves_empty_for_no_tilde() {
         let halves = tilde_halves("Sonic the Hedgehog");
         assert!(halves.is_empty());
+    }
+
+    // --- base_titles_match_with_tags ---
+
+    #[test]
+    fn tag_match_platform_suffix_in_thumbnail() {
+        // ROM: "Corpse Killer (USA) (Sega CD 32X)" → base "corpse killer"
+        // Thumbnail: "Corpse Killer 32X (Europe)" → base "corpse killer 32x"
+        // "32x" appears in ROM's tags → match.
+        assert!(base_titles_match_with_tags(
+            "corpse killer",
+            "Corpse Killer (USA) (Sega CD 32X)",
+            "corpse killer 32x",
+            "Corpse Killer 32X (Europe)",
+        ));
+    }
+
+    #[test]
+    fn tag_match_does_not_match_sequel_number() {
+        // "Corpse Killer" should NOT match "Corpse Killer 2" — "2" is not in any tag.
+        assert!(!base_titles_match_with_tags(
+            "corpse killer",
+            "Corpse Killer (USA)",
+            "corpse killer 2",
+            "Corpse Killer 2 (USA)",
+        ));
+    }
+
+    #[test]
+    fn tag_match_exact_titles_not_needed() {
+        // When base titles are identical, the caller handles it; this function
+        // is only invoked when they differ, but it should still return false
+        // for identical titles (no prefix remainder).
+        assert!(!base_titles_match_with_tags(
+            "sonic",
+            "Sonic (USA)",
+            "sonic",
+            "Sonic (Europe)",
+        ));
+    }
+
+    #[test]
+    fn tag_match_multi_word_suffix() {
+        // Extra suffix has multiple words, all must be in the shorter entry's tags.
+        assert!(base_titles_match_with_tags(
+            "game",
+            "Game (Super Turbo Edition)",
+            "game super turbo",
+            "Game Super Turbo (USA)",
+        ));
+        // Only one word matches — should fail.
+        assert!(!base_titles_match_with_tags(
+            "game",
+            "Game (Super Edition)",
+            "game super turbo",
+            "Game Super Turbo (USA)",
+        ));
+    }
+
+    #[test]
+    fn tag_match_reverse_direction() {
+        // Entry base is shorter, ROM base is longer — extra words must be
+        // in the entry's tags.
+        assert!(base_titles_match_with_tags(
+            "game turbo",
+            "Game Turbo (USA)",
+            "game",
+            "Game (Turbo Edition)",
+        ));
+    }
+
+    #[test]
+    fn tag_match_no_tags_no_match() {
+        // If the shorter entry has no parenthesized tags, can't verify the
+        // extra words — should not match.
+        assert!(!base_titles_match_with_tags(
+            "corpse killer",
+            "Corpse Killer",
+            "corpse killer 32x",
+            "Corpse Killer 32X (Europe)",
+        ));
+    }
+
+    #[test]
+    fn collect_tag_words_basic() {
+        let words = collect_tag_words("Corpse Killer (USA) (Sega CD 32X)");
+        assert_eq!(words, vec!["usa", "sega", "cd", "32x"]);
+    }
+
+    #[test]
+    fn collect_tag_words_empty() {
+        let words = collect_tag_words("Sonic the Hedgehog");
+        assert!(words.is_empty());
     }
 }
