@@ -26,7 +26,14 @@ pub fn ErrorDisplay(errors: ArcRwSignal<Errors>) -> impl IntoView {
             {move || {
                 errors.read()
                     .iter()
-                    .map(|(_, e)| format!("{e}"))
+                    .map(|(_, e)| {
+                        let msg = format!("{e}");
+                        // Strip Leptos's "error running server function: " prefix
+                        // for a cleaner user-facing message.
+                        msg.strip_prefix("error running server function: ")
+                            .unwrap_or(&msg)
+                            .to_string()
+                    })
                     .collect::<Vec<_>>()
                     .join(", ")
             }}

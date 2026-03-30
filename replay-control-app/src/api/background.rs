@@ -466,6 +466,10 @@ impl AppState {
 
             if is_empty {
                 tracing::info!("Post-import: game library is empty, running full populate");
+                // Gate reads during heavy writes to prevent exFAT corruption.
+                let _write_gate = super::WriteGate::activate(
+                    state.metadata_pool.write_gate_flag(),
+                );
                 BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
@@ -473,9 +477,17 @@ impl AppState {
                     region_secondary,
                 )
                 .await;
+                state.metadata_pool.checkpoint().await;
+                drop(_write_gate);
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
+            // NOTE: enrichment writes are NOT gated because enrich_system_cache
+            // reads from the DB (LaunchBox metadata, existing genres, etc.) and
+            // the write gate blocks ALL reads on the same pool. Gating here would
+            // cause enrichment reads to return None, silently skipping all updates.
+            // Enrichment writes are small per-system UPDATEs (not bulk INSERTs),
+            // so the exFAT corruption risk is low.
             let systems = state.cache.cached_systems(&storage).await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
@@ -531,6 +543,10 @@ impl AppState {
                         progress.elapsed_secs = start.elapsed().as_secs();
                     }
                 });
+                // Gate reads during heavy writes to prevent exFAT corruption.
+                let _write_gate = super::WriteGate::activate(
+                    state.metadata_pool.write_gate_flag(),
+                );
                 BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
@@ -538,9 +554,14 @@ impl AppState {
                     region_secondary,
                 )
                 .await;
+                state.metadata_pool.checkpoint().await;
+                drop(_write_gate);
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
+            // NOTE: enrichment writes are NOT gated because enrich_system_cache
+            // reads from the DB and the write gate blocks ALL reads on the same pool.
+            // Enrichment writes are small per-system UPDATEs, not bulk INSERTs.
             let systems = state.cache.cached_systems(&storage).await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 

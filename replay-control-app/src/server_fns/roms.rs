@@ -519,7 +519,13 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         .cache
         .get_single_rom(&storage, &system, &filename)
         .await
-        .ok_or_else(|| ServerFnError::new(format!("ROM not found: {filename}")))?;
+        .ok_or_else(|| {
+            if !state.is_idle() {
+                ServerFnError::new("Game data is temporarily unavailable while the library is being rebuilt. Please try again in a moment.")
+            } else {
+                ServerFnError::new(format!("ROM not found: {filename}"))
+            }
+        })?;
 
     let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);
 

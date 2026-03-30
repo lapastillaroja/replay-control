@@ -93,24 +93,11 @@ impl ImportPipeline {
     /// Clear metadata DB and re-import from `launchbox-metadata.xml` if present.
     /// Returns an error message if the XML file is not found.
     pub async fn regenerate_metadata(&self, state: &AppState) -> Result<(), String> {
-        use replay_control_core::metadata_db::LAUNCHBOX_XML;
+        use replay_control_core::metadata_db::{ImportProgress, ImportState, LAUNCHBOX_XML};
 
-        // Check if another activity is running BEFORE clearing the DB.
-        // Otherwise we'd wipe metadata but fail to re-import.
-        if !state.is_idle() {
-            return Err("Another operation is already running".to_string());
-        }
-
-        // Clear existing metadata.
-        if let Some(result) = state
-            .metadata_pool
-            .write(|conn| MetadataDb::clear(conn))
-            .await
-        {
-            result.map_err(|e| e.to_string())?;
-        }
-
-        // Find launchbox-metadata.xml (with fallback to old name) and trigger re-import.
+        // Find launchbox-metadata.xml (with fallback to old name) BEFORE claiming
+        // the activity slot — no point locking out other operations if the file
+        // doesn't exist.
         let storage = state.storage();
         let rc_dir = storage.rc_dir();
         let xml_path = rc_dir.join(LAUNCHBOX_XML);
@@ -131,7 +118,40 @@ impl ImportPipeline {
             ));
         }
 
-        self.start_import(xml_path, state.clone());
+        // Atomically claim the activity slot FIRST, then clear the DB.
+        // This avoids a TOCTOU race where is_idle() succeeds, another operation
+        // claims the slot, and we wipe the DB without being able to re-import.
+        let guard = state
+            .try_start_activity(Activity::Import {
+                progress: ImportProgress {
+                    state: ImportState::BuildingIndex,
+                    processed: 0,
+                    matched: 0,
+                    inserted: 0,
+                    elapsed_secs: 0,
+                    error: None,
+                    download_bytes: 0,
+                    download_total: None,
+                },
+            })
+            .map_err(|e| e.to_string())?;
+
+        // Clear existing metadata (safe: we own the activity slot).
+        if let Some(result) = state
+            .metadata_pool
+            .write(|conn| MetadataDb::clear(conn))
+            .await
+        {
+            result.map_err(|e| e.to_string())?;
+        }
+
+        // Spawn the import task, passing the guard so the slot stays claimed.
+        let state = state.clone();
+        tokio::spawn(async move {
+            let start = std::time::Instant::now();
+            Self::run_import(&state, xml_path, start, false, guard).await;
+        });
+
         Ok(())
     }
 
@@ -250,6 +270,7 @@ impl ImportPipeline {
         _guard: ActivityGuard,
     ) {
         use replay_control_core::metadata_db::ImportState;
+        use super::WriteGate;
 
         // Build ROM index (no DB needed).
         let storage_root = state.storage().root.clone();
@@ -290,6 +311,11 @@ impl ImportPipeline {
                 progress.elapsed_secs = start.elapsed().as_secs();
             }
         });
+
+        // Gate reads while import writes to the metadata DB.
+        // On exFAT (DELETE journal), concurrent reads during heavy writes corrupt the DB.
+        // Activated after the DB availability check; dropped after checkpoint.
+        let write_gate = WriteGate::activate(state.metadata_pool.write_gate_flag());
 
         // The sync XML parser (import_launchbox) and its flush_batch callback
         // run in spawn_blocking since they are CPU-bound and use block_on to
@@ -339,6 +365,10 @@ impl ImportPipeline {
 
         // Checkpoint WAL after the heavy batch writes.
         state.metadata_pool.checkpoint().await;
+
+        // Release the write gate — heavy writes are done. The alias import
+        // below needs to read from the DB.
+        drop(write_gate);
 
         // Invalidate image cache so updated metadata paths are picked up.
         state.cache.invalidate_images();
@@ -516,6 +546,7 @@ impl ThumbnailPipeline {
     ) {
         use replay_control_core::thumbnail_manifest;
         use replay_control_core::thumbnails::ALL_THUMBNAIL_KINDS;
+        use super::WriteGate;
 
         let storage_root = state.storage().root.clone();
 
@@ -538,6 +569,11 @@ impl ThumbnailPipeline {
                 return;
             }
         }
+
+        // Gate reads while thumbnail index writes to the metadata DB.
+        // On exFAT (DELETE journal), concurrent reads during heavy writes corrupt the DB.
+        // Activated after the DB availability check; dropped after Phase 1 checkpoint.
+        let write_gate = WriteGate::activate(state.metadata_pool.write_gate_flag());
 
         // ── Phase 1: Index refresh ──────────────────────────────────
         let activity_lock = state.activity.clone();
@@ -646,6 +682,10 @@ impl ThumbnailPipeline {
 
         // Checkpoint WAL after the index phase's bulk writes.
         state.metadata_pool.checkpoint().await;
+
+        // Release the write gate — Phase 1 heavy writes are done. Phase 2
+        // (downloads) needs to read the DB for thumbnail index lookups.
+        drop(write_gate);
 
         // Check cancellation between phases.
         if cancel.load(Ordering::Relaxed) {

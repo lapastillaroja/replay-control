@@ -150,7 +150,7 @@ type SqlitePool = managed::Pool<SqliteManager>;
 /// Uses `deadpool` for true concurrent reads (WAL mode allows multiple readers)
 /// with separate read and write pools.
 ///
-/// - **Read pool**: `max_size=3` for WAL mode (concurrent readers), `1` for DELETE mode
+/// - **Read pool**: `max_size=3` (both WAL and DELETE modes support concurrent readers)
 /// - **Write pool**: `max_size=1` (SQLite serialises writes)
 ///
 /// Provides async `read()` / `write()` helpers that use deadpool's native async
@@ -176,6 +176,36 @@ pub struct DbPool {
     /// Once set, the pool is closed and all reads/writes return None until
     /// the DB is rebuilt/repaired and the flag is cleared.
     corrupt: Arc<AtomicBool>,
+    /// When set, `read()` returns `None` immediately without acquiring a
+    /// connection. Prevents SQLite corruption on exFAT (DELETE journal mode)
+    /// during heavy write operations (import, rebuild, thumbnail index).
+    write_gate: Arc<AtomicBool>,
+}
+
+/// Number of read connections per pool. Both WAL and DELETE modes use the same
+/// size — DELETE supports concurrent readers when no writer is active, and the
+/// write gate prevents reads during heavy writes on exFAT.
+const READ_POOL_SIZE: usize = 3;
+
+/// RAII guard that gates DB reads during heavy writes.
+///
+/// While held, `DbPool::read()` returns `None` for the gated pool.
+/// Automatically clears the gate on drop (including panic).
+pub(crate) struct WriteGate(Arc<AtomicBool>);
+
+impl WriteGate {
+    pub(crate) fn activate(flag: &Arc<AtomicBool>) -> Self {
+        flag.store(true, Ordering::Release);
+        tracing::debug!("WriteGate: activated");
+        Self(Arc::clone(flag))
+    }
+}
+
+impl Drop for WriteGate {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+        tracing::debug!("WriteGate: released");
+    }
 }
 
 /// Build a deadpool `SqlitePool` with the given size.
@@ -233,16 +263,12 @@ impl DbPool {
         let journal_mode = query_journal_mode(&warmup);
         drop(warmup);
 
-        let read_size = match journal_mode {
-            JournalMode::Wal => 3,
-            JournalMode::Delete => 3, // DELETE mode supports concurrent readers when no writer is active
-        };
         let read_pool = build_pool(
             &db_path,
             journal_mode,
             false,
             &format!("{label}_read"),
-            read_size,
+            READ_POOL_SIZE,
         )?;
         let write_pool = build_pool(&db_path, journal_mode, true, &format!("{label}_write"), 1)?;
 
@@ -265,6 +291,7 @@ impl DbPool {
             label,
             opener,
             corrupt: Arc::new(AtomicBool::new(false)),
+            write_gate: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -278,6 +305,7 @@ impl DbPool {
             label,
             opener: |_| Err(replay_control_core::error::Error::Other("closed".into())),
             corrupt: Arc::new(AtomicBool::new(false)),
+            write_gate: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -297,6 +325,11 @@ impl DbPool {
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        // Write gate: heavy writes in progress, return None to prevent
+        // concurrent reads that corrupt the DB on exFAT (DELETE journal mode).
+        if self.write_gate.load(Ordering::Acquire) {
+            return None;
+        }
         let pool = self.read_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
         let corrupt_flag = self.corrupt.clone();
@@ -367,16 +400,12 @@ impl DbPool {
                 let journal_mode = query_journal_mode(&conn);
                 drop(conn);
 
-                let read_size = match journal_mode {
-                    JournalMode::Wal => 3,
-                    JournalMode::Delete => 1,
-                };
                 let new_read = match build_pool(
                     &path,
                     journal_mode,
                     false,
                     &format!("{}_read", self.label),
-                    read_size,
+                    READ_POOL_SIZE,
                 ) {
                     Ok(p) => p,
                     Err(e) => {
@@ -415,6 +444,11 @@ impl DbPool {
                 false
             }
         }
+    }
+
+    /// Get the write gate flag for use with `WriteGate::activate()`.
+    pub(crate) fn write_gate_flag(&self) -> &Arc<AtomicBool> {
+        &self.write_gate
     }
 
     /// Check if the DB has been flagged as corrupt.
