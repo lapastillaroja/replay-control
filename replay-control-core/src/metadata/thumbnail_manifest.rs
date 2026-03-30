@@ -974,20 +974,39 @@ pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str
     seen_targets.len()
 }
 
-/// Extract the region label from a thumbnail filename.
+/// Extract a descriptive label from a thumbnail filename.
+///
+/// Collects all parenthesized tags, skipping language-only tags like `(En)`,
+/// `(En,Fr,De,Es,It)`, and `(Ja)` which don't help distinguish variants visually.
 ///
 /// "Sonic the Hedgehog (USA, Europe)" -> "USA, Europe"
-/// "Sonic the Hedgehog (Japan) (Rev 1)" -> "Japan"
-/// "Sonic the Hedgehog" -> "" (no region tag)
+/// "Sonic Spinball (USA) (Alt 1)" -> "USA, Alt 1"
+/// "Sonic The Hedgehog 2 (World) (Rev A) (Sonic Classic Collection)" -> "World, Rev A, Sonic Classic Collection"
+/// "Sonic the Hedgehog" -> "" (no tags)
 fn extract_region_label(filename: &str) -> String {
-    // Find the first parenthesized group.
-    if let Some(start) = filename.find(" (") {
-        let rest = &filename[start + 2..];
-        if let Some(end) = rest.find(')') {
-            return rest[..end].to_string();
+    let mut parts = Vec::new();
+    let mut rest = filename;
+    while let Some(start) = rest.find(" (") {
+        let after = &rest[start + 2..];
+        if let Some(end) = after.find(')') {
+            let tag = &after[..end];
+            // Skip language-only tags (e.g., "En", "En,Fr,De,Es,It", "Ja")
+            let is_lang_only = tag
+                .split(',')
+                .all(|p| {
+                    let t = p.trim();
+                    t.len() <= 3 && t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                        && t.chars().skip(1).all(|c| c.is_ascii_lowercase())
+                });
+            if !is_lang_only {
+                parts.push(tag.to_string());
+            }
+            rest = &after[end + 1..];
+        } else {
+            break;
         }
     }
-    String::new()
+    parts.join(", ")
 }
 
 /// Stats from a download operation.
