@@ -24,7 +24,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - **M3U multi-disc handling** — individual disc files are hidden when an M3U playlist exists; sizes are aggregated into the playlist entry. Auto-generates M3U playlists for TOSEC-named multi-part games (Side A/B, Disk N of M) at scan time
 - **Filesystem watching** — on local storage (SD/USB/NVMe), inotify detects new, changed, or deleted ROMs and updates the library automatically
 - **Unified GameListItem** — consistent game rendering component across all list views (ROM lists, search results, developer pages, series siblings, recommendations) with box art, badges, and favorite toggle
-- **Sequenced startup** — server responds immediately during warmup with empty data and a "Scanning game library..." banner; background pipeline runs auto-import, populate, enrich, and watchers in order. [Detail](game-library.md)
+- **Sequenced startup** — server responds immediately during warmup with empty data and a "Scanning game library..." banner; background pipeline runs auto-import, populate, enrich, and watchers in order. Starts gracefully when no storage is connected, showing a waiting page. Detects and resumes incomplete scans. [Detail](game-library.md)
 
 ## Game Detail
 
@@ -58,7 +58,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 
 ## Global Search
 
-- Cross-system search accessible from the nav bar, home page, or `/` keyboard shortcut
+- Cross-system search accessible from the bottom nav Search tab, home page, or `/` keyboard shortcut
 - **Parallel search** across systems via `tokio::spawn` for faster results
 - **SQL pre-filtered search** — `search_text` column enables database-level filtering before in-memory scoring (220ms to 16ms)
 - Word-level fuzzy matching against both filenames and display names
@@ -105,6 +105,7 @@ Accessible from the More page, organized into Preferences, Game Data, and System
 - **Hostname** — view and change the Pi's hostname and mDNS address
 - **Wi-Fi** — view and edit Wi-Fi settings (SSID, password, country, mode)
 - **NFS share** — view and edit NFS v4 share configuration
+- **Version display** — app version and git hash shown in the More page footer; `/api/version` endpoint for programmatic access
 - **System Info** — storage type and path, disk usage, network addresses
 - **System Logs** — view RePlayOS system logs with source filter and refresh
 
@@ -129,10 +130,10 @@ A libretro core (.so) loaded by the RePlayOS frontend on the TV:
 ## Technical Foundation
 
 - **Leptos 0.7 SSR** with WASM hydration — server-rendered HTML with client-side interactivity
-- **PWA** — installable as a home screen app on mobile devices
+- **PWA** — installable as a home screen app on mobile devices; service worker precaches app shell (CSS, WASM, JS, icons) for offline loading with a fallback page when the device is unreachable. Pull-to-refresh on iOS standalone mode
 - **Responsive design** — mobile-first with breakpoints at 600px (small tablet), 768px (tablet landscape), 900px (medium tablet), and 1024px (desktop). Grids, hero cards, screenshots, and navigation adapt at each breakpoint.
 - **Three-tier game library cache** — in-memory (L1), SQLite (L2), filesystem (L3) for fast page loads with automatic freshness. [Detail](game-library.md)
-- **Embedded game databases** — ~34K console ROMs (No-Intro + TheGamesDB + libretro-database) and ~15K playable arcade entries (MAME + FBNeo + Flycast) compiled via PHF maps for zero-cost lookups
+- **Embedded game databases** — ~34K console ROMs across 20+ systems including SG-1000 and 32X (No-Intro + TheGamesDB + libretro-database) and ~15K playable arcade entries (MAME + FBNeo + Flycast) compiled via PHF maps for zero-cost lookups
 - **Embedded series database** — ~5,345 Wikidata series entries compiled at build time for game franchise identification. [Detail](game-series.md)
 - **ROM filename parser** — extracts title, region, revision, and classification (hack, translation, special) from No-Intro, GoodTools, and TOSEC naming conventions. TOSEC support includes structured tag parsing (year, publisher, side/disk), 17 country code mappings, bracket flag classification ([a] Alternate, [h] Hack, [cr] Cracked, etc.) with display labels, language codes, and format suffix disambiguation. [Detail](rom-organization.md), [Detail](metadata.md)
 - **CRC32 ROM identification** — hash-based ROM identification for 9 cartridge systems using No-Intro DATs

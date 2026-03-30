@@ -4,6 +4,33 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## 2026-03-30
+
+### Features
+- feat: PWA app shell caching and offline fallback — precache static assets (CSS, JS, WASM, icons), cache-first for `/static/`, network-first for navigation, offline error page (`0b34353`)
+- feat: add Search tab to bottom nav, system category icons, unfixed header (`cd31b26`)
+- feat: graceful startup when storage unavailable + move assets to `/static/` (`e365dbb`)
+- feat: add SG-1000 and 32X to baked-in game_db (`2cad33e`)
+
+### Bug Fixes
+- fix: startup pipeline detects incomplete scans, improved cache clarity (`7fd46a4`)
+
+### Style
+- style: add accent-colored logo to top bar, remove system card icons (`e250af2`)
+
+### Refactoring
+- refactor: LaunchBoxMetadata tuple to named struct fields (`d65ba23`)
+- refactor: extract cache-control header values to constants (`8e93551`)
+- refactor: fix clippy warnings and remove allow annotations (`c338980`)
+- revert: remove auto M3U generation — should not modify user romset (`980e2e2`)
+- chore: use replay.local instead of hardcoded IP, remove stale M3U comment (`f184151`)
+
+### Documentation
+- docs: verify NFS startup v2 design works for all storage types (`b5882e5`)
+- docs: mark game detail variant improvements as implemented (`194b3a3`)
+
+---
+
 ## 2026-03-27
 
 ### Features
