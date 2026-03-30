@@ -10,7 +10,7 @@ RePlayOS is a Linux distribution featuring a custom libretro frontend for retro 
 
 ## Features
 
-See `docs/features/index.md` for the full feature list. Highlights:
+See [`docs/features/`](docs/features/index.md) for detailed documentation per feature. Highlights:
 
 - **ROM browsing & management** — browse by system, search, rename, delete, favorites
 - **Game metadata** — embedded databases for ~34K console ROMs and ~15K arcade games, plus LaunchBox XML import and libretro-thumbnails box art
@@ -86,6 +86,11 @@ replay-control/
 ### UI Assets
 - **System controller icons** — [KyleBing/retro-game-console-icons](https://github.com/KyleBing/retro-game-console-icons) (GPLv3)
 - **Phosphor Icons** — top bar icons ([phosphoricons.com](https://phosphoricons.com/)) (MIT)
+
+## Documentation
+
+- [`docs/features/`](docs/features/) — detailed feature documentation (game library, search, metadata, thumbnails, series, recommendations, storage, libretro core)
+- [`docs/features/index.md`](docs/features/index.md) — full feature list with per-page breakdown
 
 ## Not Tested Systems
 
