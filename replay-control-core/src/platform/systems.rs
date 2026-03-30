@@ -216,7 +216,7 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_nes",
-        display_name: "Nintendo Entertainment System",
+        display_name: "NES / Famicom",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
         extensions: &["nes", "unif", "unf", "fds"],
@@ -224,7 +224,7 @@ pub static SYSTEMS: &[System] = &[
     },
     System {
         folder_name: "nintendo_snes",
-        display_name: "Super Nintendo",
+        display_name: "Super Nintendo / Super Famicom",
         manufacturer: "Nintendo",
         category: SystemCategory::Console,
         extensions: &["smc", "sfc", "swc", "fig", "bs", "st"],
@@ -509,7 +509,7 @@ mod tests {
     #[test]
     fn find_known_system() {
         let sys = find_system("nintendo_nes").unwrap();
-        assert_eq!(sys.display_name, "Nintendo Entertainment System");
+        assert_eq!(sys.display_name, "NES / Famicom");
         assert_eq!(sys.category, SystemCategory::Console);
     }
 
