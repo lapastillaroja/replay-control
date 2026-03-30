@@ -20,22 +20,22 @@ set -euo pipefail
 #        ./build.sh aarch64
 #
 #   2. SSH into the Pi and back up the original core:
-#        ssh root@<PI_IP> 'cp /opt/replay/cores/fceumm_libretro.so /opt/replay/cores/fceumm_libretro.so.bak'
+#        ssh root@replay.local 'cp /opt/replay/cores/fceumm_libretro.so /opt/replay/cores/fceumm_libretro.so.bak'
 #
 #   3. Deploy our core under the target core's name:
 #        scp target/aarch64-unknown-linux-gnu/release/replay_hello_world_libretro.so \
-#            root@<PI_IP>:/opt/replay/cores/fceumm_libretro.so
+#            root@replay.local:/opt/replay/cores/fceumm_libretro.so
 #
 #   4. Also copy the original .so alongside (for easy restore):
 #        scp target/aarch64-unknown-linux-gnu/release/replay_hello_world_libretro.so \
-#            root@<PI_IP>:/opt/replay/cores/
+#            root@replay.local:/opt/replay/cores/
 #
 #   5. Launch any NES game from the Replay Control app. RetroArch will
 #      load our core instead of fceumm. You'll see the ROM info screen
 #      with the file's name, size, CRC32, and byte histogram.
 #
 #   6. To restore the original core:
-#        ssh root@<PI_IP> 'cp /opt/replay/cores/fceumm_libretro.so.bak /opt/replay/cores/fceumm_libretro.so'
+#        ssh root@replay.local 'cp /opt/replay/cores/fceumm_libretro.so.bak /opt/replay/cores/fceumm_libretro.so'
 #
 # Other cores you could replace for testing:
 #   - fceumm_libretro.so      (NES — most games are small, fast to load)
@@ -87,12 +87,12 @@ echo "  Size:   $SIZE bytes"
 if [[ -n "$TARGET" ]]; then
     echo ""
     echo "Deploy to Pi (as itself):"
-    echo "  scp $DEST root@<PI_IP>:/opt/replay/cores/"
+    echo "  scp $DEST root@replay.local:/opt/replay/cores/"
     echo ""
     echo "Deploy as NES core replacement (for testing):"
-    echo "  ssh root@<PI_IP> 'cp /opt/replay/cores/fceumm_libretro.so /opt/replay/cores/fceumm_libretro.so.bak'"
-    echo "  scp $DEST root@<PI_IP>:/opt/replay/cores/fceumm_libretro.so"
+    echo "  ssh root@replay.local 'cp /opt/replay/cores/fceumm_libretro.so /opt/replay/cores/fceumm_libretro.so.bak'"
+    echo "  scp $DEST root@replay.local:/opt/replay/cores/fceumm_libretro.so"
     echo ""
     echo "Restore original NES core:"
-    echo "  ssh root@<PI_IP> 'cp /opt/replay/cores/fceumm_libretro.so.bak /opt/replay/cores/fceumm_libretro.so'"
+    echo "  ssh root@replay.local 'cp /opt/replay/cores/fceumm_libretro.so.bak /opt/replay/cores/fceumm_libretro.so'"
 fi

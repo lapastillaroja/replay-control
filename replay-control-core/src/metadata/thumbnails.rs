@@ -432,7 +432,7 @@ pub fn clear_media(storage_root: &Path) -> Result<()> {
 ///
 /// An image file is considered orphaned if no entry in `game_library` for its system
 /// has a `box_art_url` pointing to that file. This approach is simpler and more
-/// reliable than trying to reverse-engineer the fuzzy matching pipeline.
+/// reliable than trying to replicate the fuzzy matching pipeline.
 ///
 /// Returns a list of `(system, file_path)` pairs for each orphaned image.
 pub fn find_orphaned_thumbnails(

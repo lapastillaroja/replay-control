@@ -16,14 +16,11 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
 
-# --- Configuration ---
+# --- Configuration (override via CLI args) ---
 
-NFS_ROMS = Path("<NFS_MOUNT>/roms")
-GAME_DB_RS = Path(
-    "<WORKSPACE>/target/debug/build/"
-    "replay-control-core-38b2403f41389830/out/game_db.rs"
-)
-LAUNCHBOX_XML = Path("/tmp/launchbox/Metadata.xml")
+NFS_ROMS: Path  # set in main() from argparse
+GAME_DB_RS: Path  # set in main() from argparse
+LAUNCHBOX_XML: Path  # set in main() from argparse
 
 SYSTEMS = {
     "sega_smd": "SMD",
@@ -197,6 +194,21 @@ def scan_roms(roms_dir, systems):
 
 
 def main():
+    import argparse
+    global NFS_ROMS, GAME_DB_RS, LAUNCHBOX_XML
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--roms-path", type=Path, required=True,
+                        help="Path to the ROM directory (e.g. /path/to/replayos-nfs/roms)")
+    parser.add_argument("--game-db-rs", type=Path, required=True,
+                        help="Path to generated game_db.rs (in target/debug/build/.../out/)")
+    parser.add_argument("--launchbox-xml", type=Path, default=Path("/tmp/launchbox/Metadata.xml"),
+                        help="Path to LaunchBox Metadata.xml (default: /tmp/launchbox/Metadata.xml)")
+    args = parser.parse_args()
+    NFS_ROMS = args.roms_path
+    GAME_DB_RS = args.game_db_rs
+    LAUNCHBOX_XML = args.launchbox_xml
+
     print("=" * 80)
     print("PLAYER COUNT COMPARISON: Baked-in game_db vs LaunchBox")
     print("=" * 80)

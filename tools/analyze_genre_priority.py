@@ -6,7 +6,7 @@ Quantifies how many canonical games have their genre set from a beta/prototype
 ROM's CRC rather than a primary ROM's CRC, and compares libretro vs TGDB genres.
 
 Usage:
-    python3 tools/analyze_genre_priority.py [--nfs-path /path/to/roms]
+    python3 tools/analyze_genre_priority.py [--nfs-path /path/to/replayos-nfs/roms]
 """
 
 import json
@@ -243,16 +243,13 @@ def is_beta(name: str) -> bool:
 # --------------------------------------------------------------------------- #
 
 def main():
-    nfs_path = None
-    if "--nfs-path" in sys.argv:
-        idx = sys.argv.index("--nfs-path")
-        if idx + 1 < len(sys.argv):
-            nfs_path = Path(sys.argv[idx + 1])
-    else:
-        # Default NFS path
-        default = Path("<NFS_MOUNT>/roms")
-        if default.exists():
-            nfs_path = default
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--nfs-path", type=Path, default=None,
+                        help="Path to the ROM directory (e.g. /path/to/replayos-nfs/roms)")
+    args = parser.parse_args()
+    nfs_path = args.nfs_path
 
     # Load TGDB data
     print("Loading TGDB data...")

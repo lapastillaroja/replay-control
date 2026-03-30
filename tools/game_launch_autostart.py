@@ -3,8 +3,8 @@
 game_launch_autostart.py - Launch a game on RePlayOS by writing an autostart
 file and restarting the replay service.
 
-This is the safe, non-invasive alternative to ptrace injection. It works by
-leveraging the replay binary's built-in autostart mechanism:
+Launches a game by writing an autostart file and restarting the service.
+It works by leveraging the replay binary's built-in autostart mechanism:
 
   1. Write a .auto file containing the ROM path
   2. Restart the replay service
@@ -15,7 +15,7 @@ Usage (run on Pi directly):
     python3 game_launch_autostart.py "/roms/arcade_fbneo/akatana.zip"
 
 Usage (run from host, SSHing to Pi):
-    python3 game_launch_autostart.py --ssh root@<PI_IP> "/roms/arcade_fbneo/akatana.zip"
+    python3 game_launch_autostart.py --ssh root@replay.local "/roms/arcade_fbneo/akatana.zip"
 """
 
 import argparse
@@ -32,7 +32,7 @@ STORAGE_PATH = "/media/usb"
 AUTOSTART_DIR = "_autostart"
 AUTOSTART_FILE = "autostart.auto"
 SERVICE_NAME = "replay.service"
-DEFAULT_SSH_TARGET = "root@<PI_IP>"
+DEFAULT_SSH_TARGET = "root@replay.local"
 SSH_PASSWORD = "replayos"
 
 # ---------------------------------------------------------------------------

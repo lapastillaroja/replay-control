@@ -77,10 +77,11 @@ fn check_game_loaded() -> bool {
 /// to the menu, we ensure the user can always recover without manual
 /// intervention. This also future-proofs against any core crash at launch time.
 ///
-/// NOTE: This is a reverse-engineered workaround — RePlayOS has no official
-/// API for programmatic game launching. The autostart mechanism was designed
-/// for boot-time auto-launch, not companion app integration. Check RePlayOS
-/// changelogs for official remote launch support in future releases.
+/// NOTE: This uses the autostart mechanism documented in RePlayOS — there
+/// is no official API for programmatic game launching. The autostart mechanism
+/// was designed for boot-time auto-launch, not companion app integration.
+/// Check RePlayOS changelogs for official remote launch support in future
+/// releases.
 pub fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()> {
     // Validate the ROM exists on disk
     let full_path = storage.root.join(rom_path.trim_start_matches('/'));

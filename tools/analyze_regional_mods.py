@@ -21,7 +21,8 @@ from pathlib import Path
 # Configuration
 # =============================================================================
 
-NFS_ROMS = Path("<NFS_MOUNT>/roms")
+_DEFAULT_ROMS = os.environ.get("NFS_ROMS", "")
+NFS_ROMS: Path  # set in main() from argparse
 
 # Directories at the system level that are NOT systems (start with _)
 SKIP_PREFIXES = ("_",)
@@ -526,6 +527,19 @@ def classify_modification(rom):
 
 
 def main():
+    import argparse
+    global NFS_ROMS
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--roms-path", type=Path,
+                        default=Path(_DEFAULT_ROMS) if _DEFAULT_ROMS else None,
+                        help="Path to the ROM directory (e.g. /path/to/replayos-nfs/roms). "
+                             "Can also be set via NFS_ROMS env var.")
+    args = parser.parse_args()
+    if not args.roms_path:
+        parser.error("--roms-path is required (or set NFS_ROMS env var)")
+    NFS_ROMS = args.roms_path
+
     print("=" * 80)
     print("Regional Modifications Analysis")
     print(f"ROM directory: {NFS_ROMS}")

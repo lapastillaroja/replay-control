@@ -5,7 +5,7 @@ set -euo pipefail
 # Tests multiple endpoints at increasing concurrency levels, runs a mixed
 # concurrent test, and produces a summary table plus raw output file.
 
-TARGET="${1:-http://<PI_IP>:8080}"
+TARGET="${1:-http://replay.local:8080}"
 DESCRIPTION="${2:-}"
 REQUESTS=50
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
