@@ -7,7 +7,7 @@
 - **Rust targets**:
   ```
   rustup target add wasm32-unknown-unknown
-  rustup target add aarch64-unknown-linux-gnu
+  rustup target add aarch64-unknown-linux-gnu   # only for Pi cross-compilation
   ```
 
 ### Cross-compilation (for deploying to Pi)
@@ -34,113 +34,91 @@ The Cargo linker config is already set up in `.cargo/config.toml`.
 
 ## Building
 
-### Native (for local development)
+### Release build
 
+```bash
+./build.sh              # x86_64
+./build.sh aarch64      # Cross-compile for Pi
 ```
+
+Produces a server binary and site assets at `target/site/`.
+
+### Development build
+
+```bash
+./dev.sh --storage-path /path/to/roms
+```
+
+This builds both WASM (wasm-dev profile) and the SSR server (dev profile), then starts `cargo-watch` for auto-rebuild and reload on file changes. The app runs on port 8091 by default.
+
+Options:
+- `--storage-path /path/to/roms` — path to ROM storage (required for local dev)
+- `--port 8091` — override the default port
+
+
+## Running Locally
+
+```bash
+# Development mode with auto-reload
+./dev.sh --storage-path /path/to/roms
+
+# Or run a release build manually
 ./build.sh
+./target/release/replay-control-app --storage-path /path/to/roms --site-root target/site
 ```
 
-Produces an x86_64 binary at `target/release/replay-control-app` and site assets at `target/site/`.
+The storage path should point to a directory with ROMs organized by system (e.g., `roms/Nintendo - Super Nintendo Entertainment System/`).
 
-Run locally:
+
+## Deploying to Pi
+
+### Fast iteration (recommended)
+
+```bash
+# Single deploy (dev profile, cross-compiled for aarch64)
+./dev.sh --pi [IP]
+
+# Watch mode: auto-rebuild + redeploy on file changes
+./dev.sh --pi [IP] --watch
+
+# Skip build, just redeploy existing artifacts
+./dev.sh --pi [IP] --deploy-only
 ```
-./target/release/replay-control-app --storage-path /run/media/$USER/replay-roms --site-root target/site
-```
 
-### Cross-compile for Pi (aarch64)
+If no IP is specified, defaults to `replay.local`.
 
-```
-./build.sh --target aarch64
-```
+### Release deploy
 
-Produces an aarch64 binary at `target/aarch64-unknown-linux-gnu/release/replay-control-app`.
-
-
-## Deploying to a Pi
-
-### Via SSH (recommended)
-
-With the Pi on the network:
-
-```
+```bash
+./build.sh aarch64
 bash install.sh --local --ip <pi-address>
 ```
 
-The install script packages the local build, transfers it to the Pi over SSH, sets up the systemd service, and starts it. The Pi's RePlayOS credentials are used automatically.
 
-If the Pi is discoverable via mDNS (`replaypi.local`), you can omit `--ip`:
+## Project Structure
 
-```
-bash install.sh --local
-```
+See [README.md](README.md) for a full overview. The key crates:
 
-### Via SD card (first-time setup)
-
-Mount the Pi's SD card rootfs partition on your computer, then:
-
-```
-bash install.sh --local --sdcard /path/to/rootfs
-```
-
-The app will start automatically on the next boot.
-
-### Dry run
-
-Preview what the installer would do without making changes:
-
-```
-bash install.sh --local --dry-run --ip <pi-address>
-```
+- **`replay-control-core/`** — shared library (game databases, ROM parsing, metadata, settings). Native only.
+- **`replay-control-app/`** — Leptos 0.7 SSR web app with WASM hydration. Has two feature flags: `ssr` (server) and `hydrate` (browser).
+- **`replay-control-libretro/`** — standalone libretro core for TV display (.so). Separate workspace, not part of the main Cargo workspace.
 
 
-## Project structure
+## Pull Requests
 
-```
-replay/
-├── replay-control-core/          # Business logic (native only, not WASM)
-├── replay-control-app/           # Leptos SSR app (server + hydration)
-│   ├── src/
-│   │   ├── main.rs       # Axum server entry point
-│   │   ├── lib.rs        # App component + hydrate entry
-│   │   ├── server_fns.rs # Leptos server functions
-│   │   ├── types.rs      # Client-side mirror types
-│   │   ├── i18n.rs       # Internationalization
-│   │   ├── api/          # REST API (SSR only)
-│   │   ├── components/   # Shared UI components
-│   │   └── pages/        # Page components
-│   └── style/
-│       └── style.css
-├── build.sh              # Build script (WASM + server)
-├── install.sh            # Installer (SSH or SD card)
-├── docs/                 # Design documents
-└── data/                 # Arcade DB source files
-```
-
-### Two-crate architecture
-
-- **`replay-control-core`**: ROM management, favorites, recents, storage, arcade DB. Native only (`std::fs`).
-- **`replay-control-app`**: Leptos SSR + hydration. Has two Cargo features:
-  - `ssr` — server binary (Axum, depends on `replay-control-core`)
-  - `hydrate` — WASM client for browser hydration
-
-Both features share the same components, pages, and types. Server functions (`#[server]`) are direct calls on the server and HTTP requests on the client.
+- Describe what changed and why
+- Test on Pi if possible (or note if you haven't)
+- Follow [Conventional Commits](https://www.conventionalcommits.org/):
+  ```
+  feat: add region preference setting
+  fix: resolve hydration warnings on games page
+  refactor: rename rom_cache -> game_library
+  docs: update metadata design doc
+  ```
+- See [AI_POLICY.md](AI_POLICY.md) for guidelines on AI-assisted contributions
 
 
-## Commit style
-
-Use [Conventional Commits](https://www.conventionalcommits.org/) for all commit messages:
-
-```
-feat: add region preference setting
-fix: resolve hydration warnings on games page
-refactor: rename rom_cache → game_library
-perf: 98% faster page loads via cache optimizations
-test: add arcade image matching pipeline tests
-docs: update metadata design doc
-chore: update build script
-```
-
-## Development tips
+## Development Tips
 
 - Always rebuild both WASM and server after changing shared types (`types.rs`, `server_fns.rs`). Stale WASM causes hydration failures.
 - If `cargo clean -p replay-control-app` doesn't pick up changes, delete `target/wasm32-unknown-unknown/release/deps/replay_control_app*` manually.
