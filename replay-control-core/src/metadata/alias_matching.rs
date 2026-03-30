@@ -355,6 +355,7 @@ mod tests {
             hash_matched_name: None,
             series_key: String::new(),
             developer: String::new(),
+            release_year: None,
         }
     }
 
