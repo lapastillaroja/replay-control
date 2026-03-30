@@ -20,7 +20,7 @@ pub fn HomePage() -> impl IntoView {
     view! {
         <div class="page home-page">
             <section class="section home-search-section">
-                <A href="/search" attr:class="home-search-link">
+                <A href="/search" attr:class="search-page-input home-search-link">
                     <span class="home-search-placeholder">
                         {move || t(i18n.locale.get(), "search.placeholder")}
                     </span>

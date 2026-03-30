@@ -206,23 +206,11 @@
     margin-bottom: 20px;
 }
 
+/* Reuses .search-page-input for shared box styles; these are link-specific overrides. */
 .home-search-link {
     display: block;
-    width: 100%;
-    padding: 14px 18px;
-    background: var(--surface);
-    border: 2px solid var(--border);
-    border-radius: var(--radius);
-    font-size: 1.05rem;
     text-decoration: none;
     cursor: text;
-    transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.home-search-link:hover,
-.home-search-link:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .home-search-placeholder {
