@@ -158,4 +158,3 @@ A libretro core (.so) loaded by the RePlayOS frontend on the TV:
 | [Storage](storage.md) | Storage detection, filesystem watching, config boundary |
 | [Thumbnails](thumbnails.md) | Box art, screenshots, title screens, matching pipeline, arcade image resolution |
 | [Libretro Core](libretro-core.md) | Recently played viewer, REST API, CRT/HDMI layout |
-| [Game Launching](game-launching.md) | Implementation guide for autostart-based game launching |
