@@ -35,7 +35,7 @@ See [`docs/features/`](docs/features/index.md) for detailed documentation per fe
 replay-control/
 ├── replay-control-core/    — shared library (game DBs, ROM parsing, metadata, settings)
 ├── replay-control-app/     — web app (Leptos SSR + WASM hydration, Axum server)
-├── replay-libretro-core/   — libretro core for TV display (.so)
+├── replay-control-libretro/ — libretro core for TV display (.so)
 ├── scripts/                — data download scripts (No-Intro, TGDB, Wikidata)
 ├── tools/                  — analysis scripts, benchmarks, icon generation
 ├── docs/                   — feature documentation
@@ -91,6 +91,10 @@ replay-control/
 
 - [`docs/features/`](docs/features/) — detailed feature documentation (game library, search, metadata, thumbnails, series, recommendations, storage, libretro core)
 - [`docs/features/index.md`](docs/features/index.md) — full feature list with per-page breakdown
+
+## AI Transparency
+
+This project was developed with significant AI assistance (primarily Claude by Anthropic). The author reviews, understands, tests, and maintains all code. See [AI_POLICY.md](AI_POLICY.md) for contribution guidelines.
 
 ## Not Tested Systems
 
