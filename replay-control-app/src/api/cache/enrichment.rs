@@ -95,21 +95,14 @@ impl GameLibrary {
             all_ratings.entry(filename.clone()).or_insert(*rating);
         }
 
-        // Read current ROMs from L1 cache to get filenames.
-        let rom_filenames: Vec<String> = if let Ok(guard) = self.roms.read() {
-            guard
-                .get(&system)
-                .map(|entry| {
-                    entry
-                        .data
-                        .iter()
-                        .map(|r| r.game.rom_filename.clone())
-                        .collect()
-                })
-                .unwrap_or_default()
-        } else {
-            return;
-        };
+        // Read filenames from L2 (SQLite) directly — avoids depending on L1 cache
+        // being populated, which would silently skip systems not yet loaded into memory.
+        let sys = system.clone();
+        let rom_filenames: Vec<String> = self
+            .db
+            .read(move |conn| MetadataDb::visible_filenames(conn, &sys).unwrap_or_default())
+            .await
+            .unwrap_or_default();
 
         if rom_filenames.is_empty() {
             return;
