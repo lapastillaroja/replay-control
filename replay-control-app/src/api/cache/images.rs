@@ -215,7 +215,12 @@ impl GameLibrary {
             arcade_display,
             db_paths,
         ) {
-            return Some(format!("/media/{system}/{path}"));
+            let encoded_path: String = path
+                .split('/')
+                .map(|seg| urlencoding::encode(seg))
+                .collect::<Vec<_>>()
+                .join("/");
+            return Some(format!("/media/{system}/{encoded_path}"));
         }
 
         // On-demand: check manifest for a remote thumbnail to download.

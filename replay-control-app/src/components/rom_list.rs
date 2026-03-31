@@ -145,7 +145,7 @@ pub fn RomList(system: String) -> impl IntoView {
 
     // Load more function.
     let load_more = move || {
-        if loading_more.get() || !has_more.get() {
+        if loading_more.get_untracked() || !has_more.get_untracked() {
             return;
         }
         set_loading_more.set(true);
