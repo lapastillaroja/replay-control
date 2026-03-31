@@ -57,16 +57,22 @@ pub fn SearchPage() -> impl IntoView {
     // Sync debounced query to URL + save to recent searches.
     #[cfg(feature = "hydrate")]
     {
-        // Skip the very first update_url_params call from the filter Effect.
-        // On mount, the Leptos Router's pushState hasn't fired yet (it's deferred
-        // via an async channel). If we call replaceState before pushState, we
-        // overwrite the *previous* page's history entry with /search, making the
-        // browser back button go from /search to /search (i.e., "nothing happens").
+        // Both effects below skip their first run. On mount, the Leptos Router's
+        // pushState hasn't fired yet (it's deferred via an async channel). If we
+        // call replaceState before pushState, we overwrite the *previous* page's
+        // history entry with /search, making the browser back button appear broken.
         let filters_initialized = StoredValue::new(false);
 
         // When the debounced query changes, sync to URL and save recent search.
+        // Skip the first run: URL already reflects initial values and the
+        // Router's pushState hasn't completed yet (same reason as filters below).
+        let query_initialized = StoredValue::new(false);
         Effect::new(move || {
             let val = debounced_query.get();
+            if !query_initialized.get_value() {
+                query_initialized.set_value(true);
+                return;
+            }
             update_url_params(
                 &val,
                 filters.hide_hacks.get_untracked(),
@@ -75,6 +81,7 @@ pub fn SearchPage() -> impl IntoView {
                 filters.hide_clones.get_untracked(),
                 filters.multiplayer_only.get_untracked(),
                 &filters.genre.get_untracked(),
+                filters.min_rating.get_untracked(),
             );
             if !val.trim().is_empty() {
                 save_recent_search(&val);
@@ -90,6 +97,7 @@ pub fn SearchPage() -> impl IntoView {
             let hc = filters.hide_clones.get();
             let mp = filters.multiplayer_only.get();
             let g = filters.genre.get();
+            let mr = filters.min_rating.get();
             debounced_genre.set(g.clone());
             // Skip the first run: URL already reflects initial values and the
             // Router's pushState hasn't completed yet.
@@ -97,7 +105,7 @@ pub fn SearchPage() -> impl IntoView {
                 filters_initialized.set_value(true);
                 return;
             }
-            update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, mp, &g);
+            update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, mp, &g, mr);
         });
     }
 
@@ -145,6 +153,7 @@ pub fn SearchPage() -> impl IntoView {
             filters.hide_clones.get_untracked(),
             filters.multiplayer_only.get_untracked(),
             &filters.genre.get_untracked(),
+            filters.min_rating.get_untracked(),
         );
     };
 
@@ -268,9 +277,11 @@ pub fn SearchPage() -> impl IntoView {
                     let ht = filters.hide_translations.get_untracked();
                     let hb = filters.hide_betas.get_untracked();
                     let hc = filters.hide_clones.get_untracked();
+                    let mp = filters.multiplayer_only.get_untracked();
+                    let mr = filters.min_rating.get_untracked();
                     let g = debounced_genre.get_untracked();
                     Ok::<_, server_fn::ServerFnError>(view! {
-                        <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc genre=g />
+                        <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc multiplayer_only=mp min_rating=mr genre=g />
                     })
                 })}
             </Suspense>
@@ -341,6 +352,8 @@ fn SearchResults(
     hide_translations: bool,
     hide_betas: bool,
     hide_clones: bool,
+    multiplayer_only: bool,
+    min_rating: Option<f32>,
     genre: String,
 ) -> impl IntoView {
     let has_results = !data.groups.is_empty();
@@ -388,8 +401,14 @@ fn SearchResults(
         if hide_clones {
             params.push("hide_clones=true".to_string());
         }
+        if multiplayer_only {
+            params.push("multiplayer=true".to_string());
+        }
         if !genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(&genre)));
+        }
+        if let Some(mr) = min_rating {
+            params.push(format!("min_rating={mr}"));
         }
         if params.is_empty() {
             String::new()
@@ -541,6 +560,7 @@ fn update_url_params(
     hide_clones: bool,
     multiplayer_only: bool,
     genre: &str,
+    min_rating: Option<f32>,
 ) {
     if let Some(window) = web_sys::window() {
         let mut params = Vec::new();
@@ -565,6 +585,9 @@ fn update_url_params(
         if !genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(genre)));
         }
+        if let Some(mr) = min_rating {
+            params.push(format!("min_rating={mr}"));
+        }
         let qs = if params.is_empty() {
             String::new()
         } else {
@@ -587,6 +610,7 @@ fn update_url_params_if_hydrate(
     hide_clones: bool,
     multiplayer_only: bool,
     genre: &str,
+    min_rating: Option<f32>,
 ) {
     #[cfg(feature = "hydrate")]
     update_url_params(
@@ -597,6 +621,7 @@ fn update_url_params_if_hydrate(
         hide_clones,
         multiplayer_only,
         genre,
+        min_rating,
     );
 }
 
