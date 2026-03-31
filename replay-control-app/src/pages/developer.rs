@@ -1,10 +1,10 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
-use leptos_router::hooks::use_params_map;
+use leptos_router::hooks::{use_params_map, use_query_map};
 
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
-use crate::hooks::{use_debounced, use_infinite_scroll};
+use crate::hooks::use_infinite_scroll;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{self, DeveloperSystem, PAGE_SIZE, RomListEntry};
 
@@ -15,28 +15,66 @@ pub fn DeveloperPage() -> impl IntoView {
     let params = use_params_map();
     let developer = params.read_untracked().get("name").unwrap_or_default();
 
-    let dev = StoredValue::new(developer.clone());
+    // Wrap in a Memo so it's reactive (tracked in Resource source closures).
+    // StoredValue::get_value() is not tracked by the reactive graph, which can
+    // prevent Resource from re-subscribing to other signals in the source tuple
+    // after hydration.
+    let dev = Memo::new({
+        let d = developer.clone();
+        move |_| d.clone()
+    });
 
-    // Active system filter signal (empty = all systems).
-    let system_filter = RwSignal::new(String::new());
+    // Read filter params from URL query (persisted across reloads).
+    let query_map = use_query_map();
+    let qm = query_map.read_untracked();
+
+    // Active system filter signal — read initial value from URL param `system`.
+    let system_filter = RwSignal::new(qm.get("system").unwrap_or_default());
 
     // Content filter state (shared with FilterChips component).
-    let filters = FilterState {
-        hide_hacks: RwSignal::new(false),
-        hide_translations: RwSignal::new(false),
-        hide_betas: RwSignal::new(false),
-        hide_clones: RwSignal::new(false),
-        multiplayer_only: RwSignal::new(false),
-        genre: RwSignal::new(String::new()),
-        min_rating: RwSignal::new(None),
-        min_year: RwSignal::new(None),
-        max_year: RwSignal::new(None),
-    };
-    let debounced_genre = use_debounced(filters.genre, 300);
+    let filters = FilterState::from_query_map(&qm);
+    drop(qm);
+    let debounced_genre = RwSignal::new(filters.genre_untracked());
+
+    // Sync filter changes to URL (hydrate-only).
+    #[cfg(feature = "hydrate")]
+    {
+        let dev_for_url = dev;
+        let filters_initialized = StoredValue::new(false);
+        Effect::new(move || {
+            let sys = system_filter.get();
+            let hh = filters.hide_hacks.get();
+            let ht = filters.hide_translations.get();
+            let hb = filters.hide_betas.get();
+            let hc = filters.hide_clones.get();
+            let mp = filters.multiplayer_only.get();
+            let g = filters.genre.get();
+            let mr = filters.min_rating.get();
+            let miny = filters.min_year.get();
+            let maxy = filters.max_year.get();
+            debounced_genre.set(g.clone());
+            if !filters_initialized.get_value() {
+                filters_initialized.set_value(true);
+                return;
+            }
+            update_developer_url(&dev_for_url.get_untracked(), &DeveloperUrlParams {
+                system: &sys,
+                hide_hacks: hh,
+                hide_translations: ht,
+                hide_betas: hb,
+                hide_clones: hc,
+                multiplayer_only: mp,
+                genre: &g,
+                min_rating: mr,
+                min_year: miny,
+                max_year: maxy,
+            });
+        });
+    }
 
     // Genre list resource — depends on developer and system filter.
     let genres_resource = Resource::new(
-        move || (dev.get_value(), system_filter.get()),
+        move || (dev.get(), system_filter.get()),
         move |(developer, system)| server_fns::get_developer_genres(developer, system),
     );
 
@@ -50,7 +88,7 @@ pub fn DeveloperPage() -> impl IntoView {
     let first_page = Resource::new(
         move || {
             (
-                dev.get_value(),
+                dev.get(),
                 system_filter.get(),
                 filters.hide_hacks.get(),
                 filters.hide_translations.get(),
@@ -81,11 +119,11 @@ pub fn DeveloperPage() -> impl IntoView {
 
     // Load more function.
     let load_more = move || {
-        if loading_more.get() || !has_more.get() {
+        if loading_more.get_untracked() || !has_more.get_untracked() {
             return;
         }
         set_loading_more.set(true);
-        let developer = dev.get_value();
+        let developer = dev.get_untracked();
         let system = system_filter.get_untracked();
         let current_offset = offset.get_untracked();
         let hh = filters.hide_hacks.get_untracked();
@@ -310,4 +348,66 @@ fn SystemFilterChips(
         </div>
     }
     .into_any()
+}
+
+/// Parameters for updating the developer page URL query string.
+#[cfg(feature = "hydrate")]
+struct DeveloperUrlParams<'a> {
+    system: &'a str,
+    hide_hacks: bool,
+    hide_translations: bool,
+    hide_betas: bool,
+    hide_clones: bool,
+    multiplayer_only: bool,
+    genre: &'a str,
+    min_rating: Option<f32>,
+    min_year: Option<u16>,
+    max_year: Option<u16>,
+}
+
+/// Update the URL query params for the developer page (replace, no navigation).
+#[cfg(feature = "hydrate")]
+fn update_developer_url(developer: &str, p: &DeveloperUrlParams<'_>) {
+    if let Some(window) = web_sys::window() {
+        let mut params = Vec::new();
+        if !p.system.is_empty() {
+            params.push(format!("system={}", urlencoding::encode(p.system)));
+        }
+        if p.hide_hacks {
+            params.push("hide_hacks=true".to_string());
+        }
+        if p.hide_translations {
+            params.push("hide_translations=true".to_string());
+        }
+        if p.hide_betas {
+            params.push("hide_betas=true".to_string());
+        }
+        if p.hide_clones {
+            params.push("hide_clones=true".to_string());
+        }
+        if p.multiplayer_only {
+            params.push("multiplayer=true".to_string());
+        }
+        if !p.genre.is_empty() {
+            params.push(format!("genre={}", urlencoding::encode(p.genre)));
+        }
+        if let Some(mr) = p.min_rating {
+            params.push(format!("min_rating={mr}"));
+        }
+        if let Some(y) = p.min_year {
+            params.push(format!("min_year={y}"));
+        }
+        if let Some(y) = p.max_year {
+            params.push(format!("max_year={y}"));
+        }
+        let qs = if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        };
+        let url = format!("/developer/{}{qs}", urlencoding::encode(developer));
+        let _ = window
+            .history()
+            .and_then(|h| h.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url)));
+    }
 }
