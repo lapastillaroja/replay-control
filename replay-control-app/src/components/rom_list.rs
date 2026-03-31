@@ -81,6 +81,7 @@ pub fn RomList(system: String) -> impl IntoView {
             let hc = filters.hide_clones.get();
             let mp = filters.multiplayer_only.get();
             let g = filters.genre.get();
+            let mr = filters.min_rating.get();
             debounced_genre.set(g.clone());
             if !filters_initialized.get_value() {
                 filters_initialized.set_value(true);
@@ -94,6 +95,7 @@ pub fn RomList(system: String) -> impl IntoView {
                 hide_clones: hc,
                 multiplayer_only: mp,
                 genre: &g,
+                min_rating: mr,
                 search: &debounced_search.get_untracked(),
             });
         });
@@ -326,6 +328,7 @@ struct FilterUrlParams<'a> {
     hide_clones: bool,
     multiplayer_only: bool,
     genre: &'a str,
+    min_rating: Option<f32>,
     search: &'a str,
 }
 
@@ -355,6 +358,9 @@ fn update_filter_url(p: FilterUrlParams<'_>) {
         }
         if !p.genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(p.genre)));
+        }
+        if let Some(mr) = p.min_rating {
+            params.push(format!("min_rating={mr}"));
         }
         let qs = if params.is_empty() {
             String::new()

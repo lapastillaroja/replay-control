@@ -17,17 +17,28 @@ fn RatingDropdown(min_rating: RwSignal<Option<f32>>) -> impl IntoView {
     };
     let value = move || min_rating.get().map(|v| v.to_string()).unwrap_or_default();
 
+    // Capture initial value for `selected` attributes (same reason as GenreDropdown).
+    let initial = min_rating.get_untracked().map(|v| v.to_string()).unwrap_or_default();
+
+    let select_class = move || {
+        if min_rating.read().is_some() {
+            "filter-genre-select filter-select-active"
+        } else {
+            "filter-genre-select"
+        }
+    };
+
     view! {
         <select
-            class="filter-genre-select"
+            class=select_class
             on:change=on_change
             prop:value=value
         >
-            <option value="">{move || t(i18n.locale.get(), "filter.rating_any")}</option>
-            <option value="3">"3+"</option>
-            <option value="3.5">"3.5+"</option>
-            <option value="4">"4+"</option>
-            <option value="4.5">"4.5+"</option>
+            <option value="" selected=initial.is_empty()>{move || t(i18n.locale.get(), "filter.rating_any")}</option>
+            <option value="3" selected={initial == "3"}>"3+"</option>
+            <option value="3.5" selected={initial == "3.5"}>"3.5+"</option>
+            <option value="4" selected={initial == "4"}>"4+"</option>
+            <option value="4.5" selected={initial == "4.5"}>"4.5+"</option>
         </select>
     }
 }
@@ -48,10 +59,13 @@ impl FilterState {
     /// Build a `FilterState` from URL query parameters.
     ///
     /// Reads `hide_hacks`, `hide_translations`, `hide_betas`, `hide_clones`,
-    /// `genre`, and `multiplayer` from the provided `ParamsMap`.
+    /// `genre`, `multiplayer`, and `min_rating` from the provided `ParamsMap`.
     pub fn from_query_map(qm: &leptos_router::params::ParamsMap) -> Self {
         let bool_param = |key: &str| qm.get(key).is_some_and(|v| v == "true");
         let genre = qm.get("genre").unwrap_or_default();
+        let min_rating = qm
+            .get("min_rating")
+            .and_then(|v| v.parse::<f32>().ok());
 
         Self {
             hide_hacks: RwSignal::new(bool_param("hide_hacks")),
@@ -60,7 +74,7 @@ impl FilterState {
             hide_clones: RwSignal::new(bool_param("hide_clones")),
             multiplayer_only: RwSignal::new(bool_param("multiplayer")),
             genre: RwSignal::new(genre.clone()),
-            min_rating: RwSignal::new(None),
+            min_rating: RwSignal::new(min_rating),
         }
     }
 
