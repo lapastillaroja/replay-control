@@ -35,6 +35,7 @@ use pages::logs::LogsPage;
 use pages::metadata::MetadataPage;
 use pages::more::MorePage;
 use pages::nfs::NfsPage;
+use pages::password::PasswordPage;
 use pages::search::SearchPage;
 use pages::skin::SkinPage;
 use pages::wifi::WifiPage;
@@ -154,6 +155,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/more/wifi") view=WifiPage />
                         <Route path=path!("/more/nfs") view=NfsPage />
                         <Route path=path!("/more/hostname") view=HostnamePage />
+                        <Route path=path!("/more/password") view=PasswordPage />
                         <Route path=path!("/more/metadata") view=MetadataPage />
                         <Route path=path!("/more/skin") view=SkinPage />
                         <Route path=path!("/more/logs") view=LogsPage />

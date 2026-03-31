@@ -16,7 +16,7 @@ set -euo pipefail
 
 REPO="user/replay"
 PI_USER="root"
-PI_PASSWORD="replayos"
+PI_PASSWORD="${PI_PASS:-replayos}"
 INSTALL_DIR="/usr/local/bin"
 SITE_DIR="/usr/local/share/replay"
 SERVICE_NAME="replay-control"

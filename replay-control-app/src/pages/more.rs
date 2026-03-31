@@ -93,6 +93,7 @@ pub fn MorePage() -> impl IntoView {
                         <MenuItem icon="\u{1F4F6}" label_key="more.wifi" href=Some("/more/wifi") />
                         <MenuItem icon="\u{1F4C1}" label_key="more.nfs" href=Some("/more/nfs") />
                         <MenuItem icon="\u{1F4BB}" label_key="more.hostname" href=Some("/more/hostname") />
+                        <MenuItem icon="\u{1F512}" label_key="more.password" href=Some("/more/password") />
                         <MenuItem icon="\u{1F4DC}" label_key="more.logs" href=Some("/more/logs") />
                     </div>
 

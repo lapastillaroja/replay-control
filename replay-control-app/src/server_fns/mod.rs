@@ -145,6 +145,14 @@ pub use replay_control_core::roms::{RomEntry, SystemSummary};
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::{Favorite, GameRef, RecentEntry, RomEntry, SystemSummary};
 
+/// Strip the Leptos "error running server function: " prefix from server errors.
+pub fn format_error(e: server_fn::ServerFnError) -> String {
+    let msg = e.to_string();
+    msg.strip_prefix("error running server function: ")
+        .unwrap_or(&msg)
+        .to_string()
+}
+
 /// Resolve full game metadata for any system.
 /// This is the single function that bridges arcade_db and game_db.
 #[cfg(feature = "ssr")]

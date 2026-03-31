@@ -29,7 +29,7 @@ PORT="${PORT:-8091}"
 TARGET_TRIPLE="aarch64-unknown-linux-gnu"
 
 PI_USER="root"
-PI_PASSWORD="replayos"
+PI_PASSWORD="${PI_PASS:-replayos}"
 PI_DEFAULT_IP="replay.local"
 PI_INSTALL_DIR="/usr/local/bin"
 PI_SITE_DIR="/usr/local/share/replay/site"

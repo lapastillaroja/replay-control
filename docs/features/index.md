@@ -103,6 +103,7 @@ Accessible from the More page, organized into Preferences, Game Data, and System
 - **Text size** — normal/large toggle with rem-based scaling
 - **Skin/theme sync** — browse and apply RePlayOS skins; optionally sync the app's color scheme to the active skin. Skin and storage changes push instantly to all connected browsers via broadcast SSE (`/sse/config`)
 - **Hostname** — view and change the Pi's hostname and mDNS address
+- **Change Password** — change the Pi's root SSH password from the web UI, with current-password verification. Deploy scripts support `PI_PASS` env var override
 - **Wi-Fi** — view and edit Wi-Fi settings (SSID, password, country, mode)
 - **NFS share** — view and edit NFS v4 share configuration
 - **Version display** — app version and git hash shown in the More page footer; `/api/version` endpoint for programmatic access

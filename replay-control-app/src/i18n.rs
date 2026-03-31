@@ -126,6 +126,22 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "hostname.hint" => {
             "Sets the network name for this RePlayOS system. Use lowercase letters, digits, and hyphens (e.g., replay-living-room)."
         }
+        // Password change
+        "more.password" => "Change Password",
+        "password.title" => "Change Password",
+        "password.current" => "Current Password",
+        "password.new" => "New Password",
+        "password.confirm" => "Confirm New Password",
+        "password.save" => "Change Password",
+        "password.success" => "Password changed successfully",
+        "password.mismatch" => "Passwords do not match",
+        "password.wrong_current" => "Current password is incorrect",
+        "password.empty" => "Password cannot be empty",
+        "password.dev_skip" => "Password change not available in development mode",
+        "password.deploy_hint" => {
+            "After changing the password, use PI_PASS=yourpassword when running dev.sh or install.sh."
+        }
+
         "hostname.saved" => {
             "Hostname updated. Reboot may be needed for mDNS (.local) to fully update."
         }

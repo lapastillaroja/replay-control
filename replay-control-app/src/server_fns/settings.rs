@@ -397,6 +397,107 @@ pub async fn save_language_preference(
     Ok(())
 }
 
+/// Change the root password on the Pi.
+/// Verifies the current password before applying the new one.
+#[server(prefix = "/sfn")]
+pub async fn change_root_password(
+    current_password: String,
+    new_password: String,
+) -> Result<String, ServerFnError> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    if !is_replayos() {
+        return Ok("Password change skipped (not running on RePlayOS)".to_string());
+    }
+
+    if new_password.is_empty() {
+        return Err(ServerFnError::new("Password cannot be empty"));
+    }
+
+    // Verify the current password against /etc/shadow.
+    // Both `su` and `unix_chkpwd` skip authentication when called by root,
+    // so we must verify directly.
+    let shadow = std::fs::read_to_string("/etc/shadow")
+        .map_err(|e| ServerFnError::new(format!("Cannot read shadow file: {e}")))?;
+
+    let stored_hash = shadow
+        .lines()
+        .find(|line| line.starts_with("root:"))
+        .and_then(|line| line.split(':').nth(1))
+        .ok_or_else(|| ServerFnError::new("Cannot find root password hash"))?;
+
+    if stored_hash == "*" || stored_hash == "!" || stored_hash.is_empty() {
+        return Err(ServerFnError::new("Root account has no password set"));
+    }
+
+    // Verify via libcrypt's crypt() called through Python3 ctypes.
+    // This avoids cross-compilation issues with libcrypt soname mismatches
+    // and supports all hash algorithms including yescrypt ($y$).
+    // Password is sent via stdin to avoid exposing it in /proc/cmdline.
+    let mut child = Command::new("python3")
+        .args([
+            "-c",
+            "import sys,ctypes; d=sys.stdin.read().split('\\n',1); \
+             l=ctypes.CDLL('libcrypt.so.1'); l.crypt.restype=ctypes.c_char_p; \
+             r=l.crypt(d[0].encode(),d[1].encode()); print(r.decode() if r else '')",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| ServerFnError::new(format!("Failed to verify password: {e}")))?;
+
+    {
+        let mut stdin = child.stdin.take()
+            .ok_or_else(|| ServerFnError::new("Failed to open stdin"))?;
+        stdin
+            .write_all(format!("{current_password}\n{stored_hash}").as_bytes())
+            .map_err(|e| ServerFnError::new(format!("Failed to verify password: {e}")))?;
+        // stdin is dropped here, closing the pipe so Python sees EOF.
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| ServerFnError::new(format!("Failed to verify password: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ServerFnError::new(format!("Password verification failed: {stderr}")));
+    }
+
+    let computed_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    if computed_hash != stored_hash {
+        return Err(ServerFnError::new("Current password is incorrect"));
+    }
+
+    // Apply the new password via chpasswd.
+    let mut child = Command::new("chpasswd")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| ServerFnError::new(format!("Failed to run chpasswd: {e}")))?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(format!("root:{new_password}\n").as_bytes())
+            .map_err(|e| ServerFnError::new(format!("Failed to write to chpasswd: {e}")))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| ServerFnError::new(format!("chpasswd failed: {e}")))?;
+
+    if output.status.success() {
+        Ok("Password changed successfully".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(ServerFnError::new(format!("chpasswd failed: {stderr}")))
+    }
+}
+
 /// Get the user's preferred languages as a priority-ordered list.
 /// Used by manual search to sort results by language relevance.
 #[server(prefix = "/sfn")]
