@@ -946,6 +946,45 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Find the most common genre_group among a set of filenames in a system.
+    ///
+    /// Uses a lightweight SQL query (only reads `genre_group`, no full row scan).
+    /// Returns `None` if none of the filenames have a genre_group.
+    pub fn top_genre_for_filenames(
+        conn: &Connection,
+        system: &str,
+        filenames: &[&str],
+    ) -> Result<Option<String>> {
+        if filenames.is_empty() {
+            return Ok(None);
+        }
+
+        // Build IN clause with positional parameters.
+        let placeholders: Vec<String> = (0..filenames.len())
+            .map(|i| format!("?{}", i + 2)) // ?1 is system
+            .collect();
+        let sql = format!(
+            "SELECT genre_group, COUNT(*) as cnt \
+             FROM game_library \
+             WHERE system = ?1 AND genre_group != '' AND rom_filename IN ({}) \
+             GROUP BY genre_group \
+             ORDER BY cnt DESC \
+             LIMIT 1",
+            placeholders.join(", ")
+        );
+
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::with_capacity(filenames.len() + 1);
+        params.push(Box::new(system.to_string()));
+        for f in filenames {
+            params.push(Box::new(f.to_string()));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        conn.query_row(&sql, param_refs.as_slice(), |row| row.get::<_, String>(0))
+            .optional()
+            .map_err(|e| Error::Other(format!("top_genre_for_filenames: {e}")))
+    }
+
     /// Build WHERE clauses and parameter values for a `SearchFilter` and optional
     /// search query words. Extracted to share logic between `search_game_library`
     /// and any future query functions.
@@ -1090,8 +1129,12 @@ impl MetadataDb {
 
         // When there's a text search, return all results for Rust-level scoring.
         // The caller will sort by relevance and paginate.
-        let (order_and_limit, extra_params) = if has_text_search {
-            (String::new(), Vec::<String>::new())
+        //
+        // LIMIT/OFFSET are bound as i64 (not String) because SQLite requires
+        // integer types for LIMIT/OFFSET, and string values larger than i64::MAX
+        // cause overflow/datatype-mismatch errors.
+        let (order_and_limit, limit_offset_params) = if has_text_search {
+            (String::new(), None)
         } else {
             let next_idx = param_values.len() + 1;
             (
@@ -1100,7 +1143,7 @@ impl MetadataDb {
                     next_idx,
                     next_idx + 1
                 ),
-                vec![limit.to_string(), offset.to_string()],
+                Some((limit.min(i64::MAX as usize) as i64, offset.min(i64::MAX as usize) as i64)),
             )
         };
 
@@ -1111,15 +1154,19 @@ impl MetadataDb {
              {order_and_limit}"
         );
 
-        // Combine all param values.
-        let all_params: Vec<String> = param_values
+        // Build parameter refs: string params from filters, then optional i64
+        // params for LIMIT/OFFSET.
+        let mut all_refs: Vec<Box<dyn rusqlite::types::ToSql>> = param_values
             .into_iter()
-            .chain(extra_params)
+            .map(|v| Box::new(v) as Box<dyn rusqlite::types::ToSql>)
             .collect();
-
-        let all_refs: Vec<&dyn rusqlite::types::ToSql> = all_params
+        if let Some((lim, off)) = limit_offset_params {
+            all_refs.push(Box::new(lim));
+            all_refs.push(Box::new(off));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = all_refs
             .iter()
-            .map(|v| v as &dyn rusqlite::types::ToSql)
+            .map(|v| v.as_ref())
             .collect();
 
         let mut stmt = conn
@@ -1127,7 +1174,7 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Prepare search_game_library: {e}")))?;
 
         let rows = stmt
-            .query_map(all_refs.as_slice(), Self::row_to_game_entry)
+            .query_map(param_refs.as_slice(), Self::row_to_game_entry)
             .map_err(|e| Error::Other(format!("Query search_game_library: {e}")))?;
 
         let mut result = Vec::new();
@@ -2383,5 +2430,55 @@ mod tests {
         )
         .unwrap();
         assert!(results.is_empty());
+    }
+
+    // ── top_genre_for_filenames ──────────────────────────────────────
+
+    #[test]
+    fn top_genre_for_filenames_returns_most_common() {
+        let (mut conn, _dir) = open_temp_db();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_game_entry_with_genre("snes", "mario.sfc", "Platform"),
+                make_game_entry_with_genre("snes", "zelda.sfc", "Action / RPG"),
+                make_game_entry_with_genre("snes", "metroid.sfc", "Platform"),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let result = MetadataDb::top_genre_for_filenames(
+            &conn,
+            "snes",
+            &["mario.sfc", "zelda.sfc", "metroid.sfc"],
+        )
+        .unwrap();
+        // Platform appears twice, Action / RPG once.
+        assert_eq!(result.as_deref(), Some("Platform"));
+    }
+
+    #[test]
+    fn top_genre_for_filenames_empty_input() {
+        let (conn, _dir) = open_temp_db();
+        let result = MetadataDb::top_genre_for_filenames(&conn, "snes", &[]).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn top_genre_for_filenames_no_matches() {
+        let (mut conn, _dir) = open_temp_db();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_game_entry("snes", "mario.sfc", false)],
+            None,
+        )
+        .unwrap();
+        // "mario.sfc" has no genre_group set.
+        let result =
+            MetadataDb::top_genre_for_filenames(&conn, "snes", &["mario.sfc"]).unwrap();
+        assert_eq!(result, None);
     }
 }

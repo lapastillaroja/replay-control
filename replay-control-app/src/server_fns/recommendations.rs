@@ -50,8 +50,9 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     let systems = state.cache.cached_systems(&storage).await;
     let count = count.clamp(1, 12);
 
-    // Collect favorites from the in-memory cache (no filesystem or DB access).
-    let favorites_info = collect_favorites_info(&state, &storage, &systems).await;
+    // Collect favorites from the in-memory cache — no DB access.
+    // top_genre is resolved inside the single DB closure below.
+    let favorites_info = collect_favorites_info_sync(&state, &storage, &systems);
 
     // Clone favorites_info for use after the DB closure (which consumes it via move).
     let favorites_info_for_picks = favorites_info.clone();
@@ -64,7 +65,9 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         .unwrap_or("")
         .to_string();
 
-    // Single DB access: run all SQL queries under one Mutex lock.
+    // Single DB access: run all SQL queries under one connection.
+    // This includes the favorites genre lookup that previously required a
+    // separate db_read round-trip.
     let db_data = state
         .cache
         .db_read(move |conn| {
@@ -88,13 +91,17 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             )
             .unwrap_or_default();
             let fav_roms = favorites_info.as_ref().map(|fi| {
+                // Compute top genre inside this closure instead of a separate db_read.
+                let fav_refs: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
+                let top_genre = MetadataDb::top_genre_for_filenames(conn, &fi.system, &fav_refs)
+                    .ok()
+                    .flatten();
                 let exclude: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
-                let top_genre = fi.top_genre.as_deref();
                 let mut roms = MetadataDb::system_roms_excluding(
                     conn,
                     &fi.system,
                     &exclude,
-                    top_genre,
+                    top_genre.as_deref(),
                     count,
                     &region_str,
                     &region_secondary_str,
@@ -205,14 +212,17 @@ struct FavoritesInfo {
     system: String,
     system_display: String,
     fav_filenames: Vec<String>,
-    top_genre: Option<String>,
 }
 
-/// Collect favorites info from the in-memory cache — no filesystem access.
+/// Collect favorites info from the in-memory cache — no DB access.
 /// Randomly picks among systems that have favorites (weighted by sqrt of count)
 /// so the section rotates across systems on each page load.
+///
+/// `top_genre` is left as `None` — the caller computes it inside the main
+/// `db_read` closure using `MetadataDb::top_genre_for_filenames` to avoid
+/// a separate DB round-trip.
 #[cfg(feature = "ssr")]
-async fn collect_favorites_info(
+fn collect_favorites_info_sync(
     state: &crate::api::AppState,
     storage: &replay_control_core::storage::StorageLocation,
     systems: &[SystemSummary],
@@ -249,43 +259,10 @@ async fn collect_favorites_info(
         .map(|s| s.display_name.clone())
         .unwrap_or_else(|| chosen_system.to_string());
 
-    // Determine top genre_group from favorites using game_library DB.
-    let genre_map: std::collections::HashMap<String, String> = state
-        .cache
-        .db_read({
-            let chosen_system = chosen_system.to_string();
-            move |conn| {
-                MetadataDb::load_system_entries(conn, &chosen_system)
-                    .map(|entries| {
-                        entries
-                            .into_iter()
-                            .filter(|e| !e.genre_group.is_empty())
-                            .map(|e| (e.rom_filename, e.genre_group))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            }
-        })
-        .await
-        .unwrap_or_default();
-
-    let mut genre_counts: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
-    for filename in fav_filenames {
-        if let Some(gg) = genre_map.get(filename) {
-            *genre_counts.entry(gg.clone()).or_default() += 1;
-        }
-    }
-    let top_genre = genre_counts
-        .into_iter()
-        .max_by_key(|(_, c)| *c)
-        .map(|(g, _)| g);
-
     Some(FavoritesInfo {
         system: chosen_system.to_string(),
         system_display,
         fav_filenames: fav_filenames.clone(),
-        top_genre,
     })
 }
 
@@ -470,8 +447,12 @@ fn diversify_picks(
     picks
 }
 
-/// Resolve box art URLs from the filesystem for a batch of picks.
-/// Uses the same ImageIndex approach as recents/favorites/games pages.
+/// Resolve box art URLs from the filesystem for picks that are missing one.
+///
+/// Skips games that already have a `box_art_url` from the DB (the common case),
+/// so filesystem/image-index work is only done for the few entries with NULL
+/// box art. This avoids building image indexes for every system on every home
+/// page load.
 #[cfg(feature = "ssr")]
 pub(super) async fn resolve_box_art_for_picks(
     state: &crate::api::AppState,
@@ -482,6 +463,10 @@ pub(super) async fn resolve_box_art_for_picks(
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
     for game in picks.iter_mut() {
+        // Skip if the DB already provided a box art URL.
+        if game.box_art_url.is_some() {
+            continue;
+        }
         if !image_indexes.contains_key(&game.system) {
             let index = state.cache.cached_image_index(state, &game.system).await;
             image_indexes.insert(game.system.clone(), index);
