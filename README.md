@@ -8,6 +8,31 @@ RePlayOS is a Linux distribution featuring a custom libretro frontend for retro 
 
 **Official site:** https://www.replayos.com/
 
+## Installation
+
+### Quick install to a running Pi
+
+```bash
+# Download and run the installer (latest version)
+curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip replay.local
+
+# Specific version
+curl -sSL https://github.com/lapastillaroja/replay-control/releases/download/v0.1.0/install.sh | bash -s -- --ip replay.local
+
+# Custom IP and password
+PI_PASS=mypassword curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip <your-pi-ip>
+```
+
+### Install to SD card (before first boot)
+
+```bash
+curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --sd /path/to/mounted/sdcard
+```
+
+> **Windows users:** Run these commands in [WSL](https://learn.microsoft.com/en-us/windows/wsl/).
+
+See [GitHub Releases](https://github.com/lapastillaroja/replay-control/releases) for all versions.
+
 ## Features
 
 See [`docs/features/`](docs/features/index.md) for detailed documentation per feature. Highlights:

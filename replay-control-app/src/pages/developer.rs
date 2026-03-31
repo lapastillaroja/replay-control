@@ -54,14 +54,19 @@ pub fn DeveloperPage() -> impl IntoView {
                 system_filter.get(),
                 filters.hide_hacks.get(),
                 filters.hide_translations.get(),
+                filters.hide_betas.get(),
                 filters.hide_clones.get(),
                 debounced_genre.get(),
                 filters.multiplayer_only.get(),
                 filters.min_rating.get(),
+                filters.min_year.get(),
+                filters.max_year.get(),
             )
         },
-        move |(developer, system, hh, ht, hc, gf, mp, mr)| {
-            server_fns::get_developer_games(developer, system, 0, PAGE_SIZE, hh, ht, hc, mp, gf, mr)
+        move |(developer, system, hh, ht, hb, hc, gf, mp, mr, miny, maxy)| {
+            server_fns::get_developer_games(
+                developer, system, 0, PAGE_SIZE, hh, ht, hb, hc, mp, gf, mr, miny, maxy,
+            )
         },
     );
 
@@ -85,10 +90,13 @@ pub fn DeveloperPage() -> impl IntoView {
         let current_offset = offset.get_untracked();
         let hh = filters.hide_hacks.get_untracked();
         let ht = filters.hide_translations.get_untracked();
+        let hb = filters.hide_betas.get_untracked();
         let hc = filters.hide_clones.get_untracked();
         let gf = debounced_genre.get_untracked();
         let mp = filters.multiplayer_only.get_untracked();
         let mr = filters.min_rating.get_untracked();
+        let miny = filters.min_year.get_untracked();
+        let maxy = filters.max_year.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) = server_fns::get_developer_games(
                 developer,
@@ -97,10 +105,13 @@ pub fn DeveloperPage() -> impl IntoView {
                 PAGE_SIZE,
                 hh,
                 ht,
+                hb,
                 hc,
                 mp,
                 gf,
                 mr,
+                miny,
+                maxy,
             )
             .await
             {

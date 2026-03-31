@@ -75,6 +75,74 @@ pub struct RomListEntry {
     pub genre: String,
 }
 
+/// Convert a slice of `GameEntry` rows into enriched `RomListEntry` values.
+///
+/// Handles multi-system results (e.g., developer page, global search) by
+/// batching image index loads and favorites per distinct system. Box art is
+/// resolved from the cached image index. All other metadata fields (genre,
+/// rating, players, driver_status) are already populated in `GameEntry`
+/// from the `game_library` table.
+#[cfg(feature = "ssr")]
+pub(crate) async fn enrich_game_entries(
+    state: &crate::api::AppState,
+    entries: Vec<replay_control_core::metadata_db::GameEntry>,
+) -> Vec<RomListEntry> {
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+
+    let storage = state.storage();
+
+    // Collect distinct systems for batch operations.
+    let distinct_systems: HashSet<&str> = entries.iter().map(|e| e.system.as_str()).collect();
+
+    // Batch-load image indexes per system.
+    let mut image_indexes: HashMap<String, Arc<crate::api::cache::ImageIndex>> = HashMap::new();
+    for sys in &distinct_systems {
+        let index = state.cache.cached_image_index(state, sys).await;
+        image_indexes.insert(sys.to_string(), index);
+    }
+
+    // Batch-load favorites per system.
+    let fav_sets: HashMap<String, HashSet<String>> = distinct_systems
+        .into_iter()
+        .map(|sys| {
+            let set = state.cache.get_favorites_set(&storage, sys);
+            (sys.to_string(), set)
+        })
+        .collect();
+
+    // Single pass: convert GameEntry -> RomListEntry with enrichment.
+    entries
+        .into_iter()
+        .map(|entry| {
+            let box_art_url = image_indexes.get(&entry.system).and_then(|index| {
+                state
+                    .cache
+                    .resolve_box_art(state, index, &entry.system, &entry.rom_filename)
+            });
+            let is_favorite = fav_sets
+                .get(&entry.system)
+                .is_some_and(|set| set.contains(&entry.rom_filename));
+            RomListEntry {
+                display_name: entry
+                    .display_name
+                    .unwrap_or_else(|| entry.rom_filename.clone()),
+                system: entry.system,
+                rom_filename: entry.rom_filename,
+                rom_path: entry.rom_path,
+                size_bytes: entry.size_bytes,
+                is_m3u: entry.is_m3u,
+                is_favorite,
+                box_art_url,
+                driver_status: entry.driver_status,
+                rating: entry.rating,
+                players: entry.players,
+                genre: entry.genre_group,
+            }
+        })
+        .collect()
+}
+
 /// Unified game metadata returned by server functions.
 /// Populated from arcade_db or game_db depending on the system,
 /// but consumers never need to know which source was used.

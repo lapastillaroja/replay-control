@@ -73,18 +73,18 @@ pub fn SearchPage() -> impl IntoView {
                 query_initialized.set_value(true);
                 return;
             }
-            update_url_params(
-                &val,
-                filters.hide_hacks.get_untracked(),
-                filters.hide_translations.get_untracked(),
-                filters.hide_betas.get_untracked(),
-                filters.hide_clones.get_untracked(),
-                filters.multiplayer_only.get_untracked(),
-                &filters.genre.get_untracked(),
-                filters.min_rating.get_untracked(),
-                filters.min_year.get_untracked(),
-                filters.max_year.get_untracked(),
-            );
+            update_url_params(&UrlParams {
+                query: &val,
+                hide_hacks: filters.hide_hacks.get_untracked(),
+                hide_translations: filters.hide_translations.get_untracked(),
+                hide_betas: filters.hide_betas.get_untracked(),
+                hide_clones: filters.hide_clones.get_untracked(),
+                multiplayer: filters.multiplayer_only.get_untracked(),
+                genre: &filters.genre.get_untracked(),
+                min_rating: filters.min_rating.get_untracked(),
+                min_year: filters.min_year.get_untracked(),
+                max_year: filters.max_year.get_untracked(),
+            });
             if !val.trim().is_empty() {
                 save_recent_search(&val);
                 recent_searches.set(load_recent_searches());
@@ -109,7 +109,18 @@ pub fn SearchPage() -> impl IntoView {
                 filters_initialized.set_value(true);
                 return;
             }
-            update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, mp, &g, mr, miny, maxy);
+            update_url_params(&UrlParams {
+                query: &debounced_query.get_untracked(),
+                hide_hacks: hh,
+                hide_translations: ht,
+                hide_betas: hb,
+                hide_clones: hc,
+                multiplayer: mp,
+                genre: &g,
+                min_rating: mr,
+                min_year: miny,
+                max_year: maxy,
+            });
         });
     }
 
@@ -153,18 +164,18 @@ pub fn SearchPage() -> impl IntoView {
     let on_recent_click = move |query: String| {
         search_input.set(query.clone());
         debounced_query.set(query.clone());
-        update_url_params_if_hydrate(
-            &query,
-            filters.hide_hacks.get_untracked(),
-            filters.hide_translations.get_untracked(),
-            filters.hide_betas.get_untracked(),
-            filters.hide_clones.get_untracked(),
-            filters.multiplayer_only.get_untracked(),
-            &filters.genre.get_untracked(),
-            filters.min_rating.get_untracked(),
-            filters.min_year.get_untracked(),
-            filters.max_year.get_untracked(),
-        );
+        update_url_params_if_hydrate(&UrlParams {
+            query: &query,
+            hide_hacks: filters.hide_hacks.get_untracked(),
+            hide_translations: filters.hide_translations.get_untracked(),
+            hide_betas: filters.hide_betas.get_untracked(),
+            hide_clones: filters.hide_clones.get_untracked(),
+            multiplayer: filters.multiplayer_only.get_untracked(),
+            genre: &filters.genre.get_untracked(),
+            min_rating: filters.min_rating.get_untracked(),
+            min_year: filters.min_year.get_untracked(),
+            max_year: filters.max_year.get_untracked(),
+        });
     };
 
     // Handler: remove a single recent search.
@@ -570,50 +581,57 @@ fn OtherDevelopersList(
     }
 }
 
-/// Update URL query params without navigating (replace mode).
-#[cfg(feature = "hydrate")]
-fn update_url_params(
-    query: &str,
+/// Grouped URL parameters for search page state synchronization.
+///
+/// Fields are read only under `#[cfg(feature = "hydrate")]` (in `update_url_params`),
+/// but the struct is constructed on both targets so the wrapper compiles unconditionally.
+#[cfg_attr(not(feature = "hydrate"), allow(dead_code))]
+struct UrlParams<'a> {
+    query: &'a str,
     hide_hacks: bool,
     hide_translations: bool,
     hide_betas: bool,
     hide_clones: bool,
-    multiplayer_only: bool,
-    genre: &str,
+    genre: &'a str,
+    multiplayer: bool,
     min_rating: Option<f32>,
     min_year: Option<u16>,
     max_year: Option<u16>,
-) {
+}
+
+/// Update URL query params without navigating (replace mode).
+#[cfg(feature = "hydrate")]
+fn update_url_params(p: &UrlParams<'_>) {
     if let Some(window) = web_sys::window() {
         let mut params = Vec::new();
-        if !query.is_empty() {
-            params.push(format!("q={}", urlencoding::encode(query)));
+        if !p.query.is_empty() {
+            params.push(format!("q={}", urlencoding::encode(p.query)));
         }
-        if hide_hacks {
+        if p.hide_hacks {
             params.push("hide_hacks=true".to_string());
         }
-        if hide_translations {
+        if p.hide_translations {
             params.push("hide_translations=true".to_string());
         }
-        if hide_betas {
+        if p.hide_betas {
             params.push("hide_betas=true".to_string());
         }
-        if hide_clones {
+        if p.hide_clones {
             params.push("hide_clones=true".to_string());
         }
-        if multiplayer_only {
+        if p.multiplayer {
             params.push("multiplayer=true".to_string());
         }
-        if !genre.is_empty() {
-            params.push(format!("genre={}", urlencoding::encode(genre)));
+        if !p.genre.is_empty() {
+            params.push(format!("genre={}", urlencoding::encode(p.genre)));
         }
-        if let Some(mr) = min_rating {
+        if let Some(mr) = p.min_rating {
             params.push(format!("min_rating={mr}"));
         }
-        if let Some(y) = min_year {
+        if let Some(y) = p.min_year {
             params.push(format!("min_year={y}"));
         }
-        if let Some(y) = max_year {
+        if let Some(y) = p.max_year {
             params.push(format!("max_year={y}"));
         }
         let qs = if params.is_empty() {
@@ -628,33 +646,11 @@ fn update_url_params(
     }
 }
 
-/// Wrapper that compiles on both targets — calls the real function only on hydrate.
+/// Wrapper that compiles on both targets -- calls the real function only on hydrate.
 #[allow(unused_variables)]
-fn update_url_params_if_hydrate(
-    query: &str,
-    hide_hacks: bool,
-    hide_translations: bool,
-    hide_betas: bool,
-    hide_clones: bool,
-    multiplayer_only: bool,
-    genre: &str,
-    min_rating: Option<f32>,
-    min_year: Option<u16>,
-    max_year: Option<u16>,
-) {
+fn update_url_params_if_hydrate(p: &UrlParams<'_>) {
     #[cfg(feature = "hydrate")]
-    update_url_params(
-        query,
-        hide_hacks,
-        hide_translations,
-        hide_betas,
-        hide_clones,
-        multiplayer_only,
-        genre,
-        min_rating,
-        min_year,
-        max_year,
-    );
+    update_url_params(p);
 }
 
 // ── localStorage helpers for recent searches ──────────────────────

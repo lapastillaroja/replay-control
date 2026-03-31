@@ -1,20 +1,6 @@
 use super::*;
-
-/// Build a `FavoriteWithArt` from a favorite and its resolved box art URL.
 #[cfg(feature = "ssr")]
-async fn enrich_favorite(fav: Favorite, box_art_url: Option<String>) -> FavoriteWithArt {
-    let genre_str = super::search::lookup_genre(&fav.game.system, &fav.game.rom_filename).await;
-    let genre = if genre_str.is_empty() {
-        None
-    } else {
-        Some(genre_str)
-    };
-    FavoriteWithArt {
-        fav,
-        box_art_url,
-        genre,
-    }
-}
+use replay_control_core::metadata_db::MetadataDb;
 
 /// A favorite enriched with box art URL and genre.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +25,7 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+
     // Pre-load image indexes for each distinct system (get_image_index is async).
     let distinct_systems: std::collections::HashSet<String> =
         favs.iter().map(|f| f.game.system.clone()).collect();
@@ -50,15 +37,44 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
         let index = state.cache.cached_image_index(&state, sys).await;
         image_indexes.insert(sys.clone(), index);
     }
-    let mut results = Vec::with_capacity(favs.len());
-    for fav in favs {
-        let index = &image_indexes[&fav.game.system];
-        let box_art_url =
-            state
-                .cache
-                .resolve_box_art(&state, index, &fav.game.system, &fav.game.rom_filename);
-        results.push(enrich_favorite(fav, box_art_url).await);
-    }
+
+    // Batch-load genre_group per system from game_library (replaces N+1 lookup_genre calls).
+    let systems_vec: Vec<String> = distinct_systems.into_iter().collect();
+    let genre_map: std::collections::HashMap<(String, String), String> = state
+        .cache
+        .db_read(move |conn| {
+            let mut map = std::collections::HashMap::new();
+            for sys in &systems_vec {
+                if let Ok(genres) = MetadataDb::system_rom_genres(conn, sys) {
+                    for (filename, genre) in genres {
+                        map.insert((sys.clone(), filename), genre);
+                    }
+                }
+            }
+            map
+        })
+        .await
+        .unwrap_or_default();
+
+    let results: Vec<FavoriteWithArt> = favs
+        .into_iter()
+        .map(|fav| {
+            let index = &image_indexes[&fav.game.system];
+            let box_art_url =
+                state
+                    .cache
+                    .resolve_box_art(&state, index, &fav.game.system, &fav.game.rom_filename);
+            let genre = genre_map
+                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
+                .filter(|g| !g.is_empty())
+                .cloned();
+            FavoriteWithArt {
+                fav,
+                box_art_url,
+                genre,
+            }
+        })
+        .collect();
     Ok(results)
 }
 
@@ -68,16 +84,35 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     let favs = replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let image_index = state.cache.cached_image_index(&state, &system).await;
-    let mut results = Vec::with_capacity(favs.len());
-    for fav in favs {
-        let box_art_url = state.cache.resolve_box_art(
-            &state,
-            &image_index,
-            &fav.game.system,
-            &fav.game.rom_filename,
-        );
-        results.push(enrich_favorite(fav, box_art_url).await);
-    }
+
+    // Batch-load genre from game_library for this system.
+    let sys = system.clone();
+    let genre_map: std::collections::HashMap<String, String> = state
+        .cache
+        .db_read(move |conn| MetadataDb::system_rom_genres(conn, &sys).unwrap_or_default())
+        .await
+        .unwrap_or_default();
+
+    let results: Vec<FavoriteWithArt> = favs
+        .into_iter()
+        .map(|fav| {
+            let box_art_url = state.cache.resolve_box_art(
+                &state,
+                &image_index,
+                &fav.game.system,
+                &fav.game.rom_filename,
+            );
+            let genre = genre_map
+                .get(&fav.game.rom_filename)
+                .filter(|g| !g.is_empty())
+                .cloned();
+            FavoriteWithArt {
+                fav,
+                box_art_url,
+                genre,
+            }
+        })
+        .collect();
     Ok(results)
 }
 

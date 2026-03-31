@@ -6,6 +6,16 @@ use crate::error::{Error, Result};
 
 use super::{GameEntry, MetadataDb, SystemMeta, unix_now};
 
+/// SELECT columns for `game_library` queries that feed `row_to_game_entry()`.
+///
+/// The column order must match the positional indices in `row_to_game_entry()`.
+const GAME_ENTRY_COLUMNS: &str = "\
+    system, rom_filename, rom_path, display_name, base_title, series_key, \
+    region, developer, genre, genre_group, rating, rating_count, players, \
+    is_clone, is_m3u, is_translation, is_hack, is_special, \
+    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name, \
+    release_year";
+
 /// Build the pre-computed, lowercased search index value for a game_library row.
 ///
 /// Format: `"{display}|{rom_filename}|{base_title}[|{developer}][|{year}]"`.
@@ -36,66 +46,7 @@ fn build_search_text(
     text
 }
 
-/// Helper for building dynamic SQL WHERE clauses with parameterized values.
-///
-/// Collects clause fragments and their associated parameter values together,
-/// so you never have to manually track parameter indices across multiple queries.
-struct WhereBuilder {
-    clauses: Vec<String>,
-    params: Vec<Box<dyn rusqlite::types::ToSql>>,
-}
-
-impl WhereBuilder {
-    fn new() -> Self {
-        Self {
-            clauses: Vec::new(),
-            params: Vec::new(),
-        }
-    }
-
-    /// Add a WHERE clause fragment with a parameterized value.
-    /// Use `{}` as the placeholder -- it will be replaced with the correct `?N` index
-    /// at build time.
-    fn add(&mut self, clause_template: &str, param: impl rusqlite::types::ToSql + 'static) {
-        self.clauses.push(clause_template.to_string());
-        self.params.push(Box::new(param));
-    }
-
-    /// Add a clause without a parameter (e.g., `is_clone = 0`).
-    fn add_static(&mut self, clause: &str) {
-        self.clauses.push(clause.to_string());
-    }
-
-    /// Build the WHERE string (joined with AND) and a reference slice for binding.
-    ///
-    /// Parameter indices start at `base_index` (e.g., if base_index=3, the first
-    /// parameterized clause gets `?3`, the next `?4`, etc.).
-    ///
-    /// Each parameterized clause template must contain exactly one `{}` placeholder,
-    /// which is replaced with `?N`. Static clauses (added via `add_static`) are
-    /// included as-is.
-    fn build(&self, base_index: usize) -> (String, Vec<&dyn rusqlite::types::ToSql>) {
-        let mut idx = base_index;
-        let mut parts = Vec::with_capacity(self.clauses.len());
-        let mut param_refs: Vec<&dyn rusqlite::types::ToSql> = Vec::new();
-        let mut param_pos = 0;
-
-        for clause in &self.clauses {
-            if clause.contains("{}") {
-                parts.push(clause.replacen("{}", &format!("?{idx}"), 1));
-                param_refs.push(self.params[param_pos].as_ref());
-                param_pos += 1;
-                idx += 1;
-            } else {
-                parts.push(clause.clone());
-            }
-        }
-
-        (parts.join(" AND "), param_refs)
-    }
-}
-
-/// Filter options for game library search queries.
+/// Unified filter options for all game library queries (search, ROM list, developer page).
 #[derive(Debug, Default)]
 pub struct SearchFilter<'a> {
     pub hide_hacks: bool,
@@ -107,26 +58,6 @@ pub struct SearchFilter<'a> {
     pub min_rating: Option<f64>,
     pub min_year: Option<u16>,
     pub max_year: Option<u16>,
-}
-
-/// Filter options for the developer games paginated query.
-#[derive(Debug, Default)]
-pub struct DeveloperGamesFilter<'a> {
-    pub hide_hacks: bool,
-    pub hide_translations: bool,
-    pub hide_clones: bool,
-    pub multiplayer_only: bool,
-    pub genre: &'a str,
-    pub min_rating: Option<f64>,
-}
-
-/// Pagination and region parameters for paginated queries.
-#[derive(Debug)]
-pub struct PaginationParams<'a> {
-    pub offset: usize,
-    pub limit: usize,
-    pub region_pref: &'a str,
-    pub region_secondary: &'a str,
 }
 
 impl MetadataDb {
@@ -281,15 +212,11 @@ impl MetadataDb {
 
     /// Load all game entries for a system.
     pub fn load_system_entries(conn: &Connection, system: &str) -> Result<Vec<GameEntry>> {
+        let sql = format!(
+            "SELECT {GAME_ENTRY_COLUMNS} FROM game_library WHERE system = ?1"
+        );
         let mut stmt = conn
-            .prepare(
-                "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
-                        region, developer, genre, genre_group, rating, rating_count, players,
-                        is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year
-                 FROM game_library WHERE system = ?1",
-            )
+            .prepare(&sql)
             .map_err(|e| Error::Other(format!("Prepare load_system_entries: {e}")))?;
 
         let rows = stmt
@@ -345,17 +272,13 @@ impl MetadataDb {
         offset: usize,
         limit: usize,
     ) -> Result<Vec<GameEntry>> {
+        let sql = format!(
+            "SELECT {GAME_ENTRY_COLUMNS} FROM game_library WHERE system = ?1 \
+             ORDER BY COALESCE(display_name, rom_filename) COLLATE NOCASE \
+             LIMIT ?2 OFFSET ?3"
+        );
         let mut stmt = conn
-            .prepare(
-                "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
-                        region, developer, genre, genre_group, rating, rating_count, players,
-                        is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year
-                 FROM game_library WHERE system = ?1
-                 ORDER BY COALESCE(display_name, rom_filename) COLLATE NOCASE
-                 LIMIT ?2 OFFSET ?3",
-            )
+            .prepare(&sql)
             .map_err(|e| Error::Other(format!("Prepare load_system_entries_page: {e}")))?;
 
         let rows = stmt
@@ -379,14 +302,12 @@ impl MetadataDb {
         system: &str,
         rom_filename: &str,
     ) -> Result<Option<GameEntry>> {
+        let sql = format!(
+            "SELECT {GAME_ENTRY_COLUMNS} FROM game_library \
+             WHERE system = ?1 AND rom_filename = ?2"
+        );
         conn.query_row(
-            "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
-                    region, developer, genre, genre_group, rating, rating_count, players,
-                    is_clone, is_m3u, is_translation, is_hack, is_special,
-                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                    release_year
-             FROM game_library
-             WHERE system = ?1 AND rom_filename = ?2",
+            &sql,
             params![system, rom_filename],
             Self::row_to_game_entry,
         )
@@ -920,37 +841,34 @@ impl MetadataDb {
         region_pref: &str,
         region_secondary: &str,
     ) -> Result<Vec<GameEntry>> {
-        let mut stmt = conn
-            .prepare(
-                "WITH deduped AS (
-                    SELECT *, ROW_NUMBER() OVER (
-                        PARTITION BY base_title
-                        ORDER BY
-                            box_art_url IS NULL,
-                            CASE
-                                WHEN region = ?2 THEN 0
-                                WHEN region = ?3 THEN 1
-                                WHEN region = 'world' THEN 2
-                                ELSE 3
-                            END
-                    ) AS rn
-                    FROM game_library
-                    WHERE developer = ?1
-                      AND is_clone = 0
-                      AND is_translation = 0
-                      AND is_hack = 0
-                      AND is_special = 0
-                      AND base_title != ''
-                )
-                SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
-                        region, developer, genre, genre_group, rating, rating_count, players,
-                        is_clone, is_m3u, is_translation, is_hack, is_special,
-                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year
-                FROM deduped WHERE rn = 1
-                ORDER BY box_art_url IS NULL, RANDOM()
-                LIMIT ?4",
+        let sql = format!(
+            "WITH deduped AS (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY base_title
+                    ORDER BY
+                        box_art_url IS NULL,
+                        CASE
+                            WHEN region = ?2 THEN 0
+                            WHEN region = ?3 THEN 1
+                            WHEN region = 'world' THEN 2
+                            ELSE 3
+                        END
+                ) AS rn
+                FROM game_library
+                WHERE developer = ?1
+                  AND is_clone = 0
+                  AND is_translation = 0
+                  AND is_hack = 0
+                  AND is_special = 0
+                  AND base_title != ''
             )
+            SELECT {GAME_ENTRY_COLUMNS}
+            FROM deduped WHERE rn = 1
+            ORDER BY box_art_url IS NULL, RANDOM()
+            LIMIT ?4"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
             .map_err(|e| Error::Other(format!("Prepare games_by_developer: {e}")))?;
 
         let rows = stmt
@@ -961,110 +879,6 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Query games_by_developer: {e}")))?;
 
         Ok(rows.flatten().collect())
-    }
-
-    /// Paginated game list for a developer, optionally filtered by system and content filters.
-    pub fn developer_games_paginated(
-        conn: &Connection,
-        developer: &str,
-        system_filter: Option<&str>,
-        page: &PaginationParams<'_>,
-        filters: &DeveloperGamesFilter,
-    ) -> Result<(Vec<GameEntry>, bool, usize)> {
-        let mut wb = WhereBuilder::new();
-        wb.add("developer = {}", developer.to_string());
-        wb.add_static("is_special = 0");
-        if filters.hide_hacks {
-            wb.add_static("is_hack = 0");
-        }
-        if filters.hide_translations {
-            wb.add_static("is_translation = 0");
-        }
-        if filters.hide_clones {
-            wb.add_static("is_clone = 0");
-        }
-        if filters.multiplayer_only {
-            wb.add_static("players >= 2");
-        }
-        if !filters.genre.is_empty() {
-            wb.add("genre_group = {}", filters.genre.to_string());
-        }
-        if let Some(mr) = filters.min_rating {
-            wb.add("rating >= {}", mr);
-        }
-        if let Some(sys) = system_filter.filter(|s| !s.is_empty()) {
-            wb.add("system = {}", sys.to_string());
-        }
-
-        // ── Count query ──
-        let (count_where, count_refs) = wb.build(1);
-        let count_sql = format!(
-            "SELECT COUNT(*) FROM (
-                SELECT DISTINCT system || '/' || base_title
-                FROM game_library
-                WHERE {count_where}
-            )"
-        );
-        let total: usize = conn
-            .query_row(&count_sql, count_refs.as_slice(), |row| {
-                row.get::<_, i64>(0).map(|v| v as usize)
-            })
-            .map_err(|e| Error::Other(format!("Count developer_games_paginated: {e}")))?;
-
-        // ── Fetch query ──
-        let fetch_limit = page.limit + 1;
-        let (fetch_where, filter_refs) = wb.build(5);
-        let fetch_sql = format!(
-            "WITH deduped AS (
-                SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY system, base_title
-                    ORDER BY CASE
-                        WHEN region = ?1 THEN 0
-                        WHEN region = ?2 THEN 1
-                        WHEN region = 'world' THEN 2
-                        ELSE 3
-                    END
-                ) AS rn
-                FROM game_library
-                WHERE {fetch_where}
-            )
-            SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
-                    region, developer, genre, genre_group, rating, rating_count, players,
-                    is_clone, is_m3u, is_translation, is_hack, is_special,
-                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                    release_year
-            FROM deduped WHERE rn = 1
-            ORDER BY display_name COLLATE NOCASE
-            LIMIT ?3 OFFSET ?4"
-        );
-
-        let region_pref_box: Box<dyn rusqlite::types::ToSql> =
-            Box::new(page.region_pref.to_string());
-        let region_secondary_box: Box<dyn rusqlite::types::ToSql> =
-            Box::new(page.region_secondary.to_string());
-        let limit_box: Box<dyn rusqlite::types::ToSql> = Box::new(fetch_limit as i64);
-        let offset_box: Box<dyn rusqlite::types::ToSql> = Box::new(page.offset as i64);
-
-        let mut fetch_refs: Vec<&dyn rusqlite::types::ToSql> = vec![
-            region_pref_box.as_ref(),
-            region_secondary_box.as_ref(),
-            limit_box.as_ref(),
-            offset_box.as_ref(),
-        ];
-        fetch_refs.extend(filter_refs);
-
-        let mut stmt = conn
-            .prepare(&fetch_sql)
-            .map_err(|e| Error::Other(format!("Prepare developer_games_paginated: {e}")))?;
-        let rows = stmt
-            .query_map(fetch_refs.as_slice(), Self::row_to_game_entry)
-            .map_err(|e| Error::Other(format!("Query developer_games_paginated: {e}")))?;
-        let mut entries: Vec<GameEntry> = rows.flatten().collect();
-
-        let has_more = entries.len() > page.limit;
-        entries.truncate(page.limit);
-
-        Ok((entries, has_more, total))
     }
 
     /// Get distinct genre groups for a developer's games, optionally filtered by system.
@@ -1132,22 +946,35 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Search the game library using pre-computed `search_text` for SQL-level pre-filtering.
+    /// Build WHERE clauses and parameter values for a `SearchFilter` and optional
+    /// search query words. Extracted to share logic between `search_game_library`
+    /// and any future query functions.
     ///
-    /// Each word in `query_words` must appear somewhere in the lowercased `search_text`
-    /// column (which contains `display_name|rom_filename|base_title`). Additional filters
-    /// are applied via parameterized WHERE clauses.
-    ///
-    /// Returns all matching `GameEntry` rows — the caller is responsible for scoring
-    /// and ranking.
-    pub fn search_game_library(
-        conn: &Connection,
+    /// If `system` is provided, adds a `system = ?` clause.
+    /// If `developer` is provided, adds a `developer = ? COLLATE NOCASE` clause.
+    /// If `query_words` is non-empty, adds `search_text LIKE ?` clauses.
+    fn build_filter_clauses(
+        system: Option<&str>,
+        developer: Option<&str>,
         query_words: &[String],
         filter: &SearchFilter<'_>,
-    ) -> Result<Vec<GameEntry>> {
-        // Build dynamic SQL with LIKE clauses for each query word.
+    ) -> (Vec<String>, Vec<String>) {
         let mut where_clauses: Vec<String> = Vec::new();
         let mut param_values: Vec<String> = Vec::new();
+
+        // System scope.
+        if let Some(sys) = system {
+            param_values.push(sys.to_string());
+            let idx = param_values.len();
+            where_clauses.push(format!("system = ?{idx}"));
+        }
+
+        // Developer scope (case-insensitive).
+        if let Some(dev) = developer {
+            param_values.push(dev.to_string());
+            let idx = param_values.len();
+            where_clauses.push(format!("developer = ?{idx} COLLATE NOCASE"));
+        }
 
         // Each query word becomes a LIKE pattern on search_text.
         // Escape SQL wildcards in the word to prevent injection via % or _.
@@ -1201,41 +1028,127 @@ impl MetadataDb {
             where_clauses.push(format!("release_year <= ?{idx}"));
         }
 
-        let where_sql = if where_clauses.is_empty() {
+        (where_clauses, param_values)
+    }
+
+    /// Build a WHERE SQL string from clause/param vectors.
+    fn build_where_sql(where_clauses: &[String]) -> String {
+        if where_clauses.is_empty() {
             String::new()
         } else {
             format!("WHERE {}", where_clauses.join(" AND "))
+        }
+    }
+
+    /// Unified game library search and pagination.
+    ///
+    /// Applies content filters, optional text search, optional system scope,
+    /// and optional developer scope at the SQL level.
+    ///
+    /// - `system`: `None` = all systems, `Some(sys)` = single system.
+    /// - `developer`: `None` = all developers, `Some(dev)` = single developer (case-insensitive).
+    /// - `query_words`: empty = no text filter, non-empty = `search_text LIKE` matching.
+    /// - `offset`/`limit`: SQL pagination. When `query_words` is non-empty, pagination
+    ///   is skipped (all matches returned) so the caller can score and re-paginate.
+    ///
+    /// Returns `(entries, total_count)`.
+    pub fn search_game_library(
+        conn: &Connection,
+        system: Option<&str>,
+        developer: Option<&str>,
+        query_words: &[String],
+        filter: &SearchFilter<'_>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<GameEntry>, usize)> {
+        let (where_clauses, param_values) =
+            Self::build_filter_clauses(system, developer, query_words, filter);
+        let where_sql = Self::build_where_sql(&where_clauses);
+
+        let has_text_search = !query_words.is_empty();
+
+        // When there's a text search, skip COUNT — the caller will re-score and
+        // re-paginate in Rust, so the SQL-level total is unused.
+        let total: usize = if has_text_search {
+            0
+        } else {
+            let count_sql = format!("SELECT COUNT(*) FROM game_library {where_sql}");
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
+                .iter()
+                .map(|v| v as &dyn rusqlite::types::ToSql)
+                .collect();
+            let t = conn
+                .query_row(&count_sql, param_refs.as_slice(), |row| {
+                    row.get::<_, i64>(0).map(|v| v as usize)
+                })
+                .map_err(|e| Error::Other(format!("Count search_game_library: {e}")))?;
+            if t == 0 {
+                return Ok((Vec::new(), 0));
+            }
+            t
+        };
+
+        // When there's a text search, return all results for Rust-level scoring.
+        // The caller will sort by relevance and paginate.
+        let (order_and_limit, extra_params) = if has_text_search {
+            (String::new(), Vec::<String>::new())
+        } else {
+            let next_idx = param_values.len() + 1;
+            (
+                format!(
+                    "ORDER BY COALESCE(display_name, rom_filename) COLLATE NOCASE LIMIT ?{} OFFSET ?{}",
+                    next_idx,
+                    next_idx + 1
+                ),
+                vec![limit.to_string(), offset.to_string()],
+            )
         };
 
         let sql = format!(
-            "SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
-                    region, developer, genre, genre_group, rating, rating_count, players,
-                    is_clone, is_m3u, is_translation, is_hack, is_special,
-                    box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                    release_year
-             FROM game_library
-             {where_sql}"
+            "SELECT {GAME_ENTRY_COLUMNS} \
+             FROM game_library \
+             {where_sql} \
+             {order_and_limit}"
         );
+
+        // Combine all param values.
+        let all_params: Vec<String> = param_values
+            .into_iter()
+            .chain(extra_params)
+            .collect();
+
+        let all_refs: Vec<&dyn rusqlite::types::ToSql> = all_params
+            .iter()
+            .map(|v| v as &dyn rusqlite::types::ToSql)
+            .collect();
 
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Other(format!("Prepare search_game_library: {e}")))?;
 
-        // Build parameter references for rusqlite.
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = param_values
-            .iter()
-            .map(|v| v as &dyn rusqlite::types::ToSql)
-            .collect();
-
         let rows = stmt
-            .query_map(param_refs.as_slice(), Self::row_to_game_entry)
+            .query_map(all_refs.as_slice(), Self::row_to_game_entry)
             .map_err(|e| Error::Other(format!("Query search_game_library: {e}")))?;
 
         let mut result = Vec::new();
         for row in rows {
             result.push(row.map_err(|e| Error::Other(format!("Row read failed: {e}")))?);
         }
-        Ok(result)
+        Ok((result, total))
+    }
+
+    /// Thin wrapper: paginated game list for a developer.
+    ///
+    /// Delegates to `search_game_library` with the developer parameter.
+    /// Returns `(entries, total_count)`.
+    pub fn developer_games(
+        conn: &Connection,
+        developer: &str,
+        filter: &SearchFilter<'_>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<GameEntry>, usize)> {
+        Self::search_game_library(conn, None, Some(developer), &[], filter, offset, limit)
     }
 }
 
@@ -1578,7 +1491,7 @@ mod tests {
     }
 
     #[test]
-    fn developer_games_paginated_empty_genre_returns_all() {
+    fn developer_games_empty_genre_returns_all() {
         let (mut conn, _dir) = open_temp_db();
         MetadataDb::save_system_entries(
             &mut conn,
@@ -1606,27 +1519,15 @@ mod tests {
             None,
         )
         .unwrap();
-        let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(
-            &conn,
-            "Capcom",
-            None,
-            &super::PaginationParams {
-                offset: 0,
-                limit: 50,
-                region_pref: "us",
-                region_secondary: "",
-            },
-            &filters,
-        )
-        .unwrap();
+        let filters = super::SearchFilter::default();
+        let (entries, total) =
+            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 2);
         assert_eq!(entries.len(), 2);
-        assert!(!has_more);
     }
 
     #[test]
-    fn developer_games_paginated_specific_genre() {
+    fn developer_games_specific_genre() {
         let (mut conn, _dir) = open_temp_db();
         MetadataDb::save_system_entries(
             &mut conn,
@@ -1663,30 +1564,19 @@ mod tests {
             None,
         )
         .unwrap();
-        let filters = super::DeveloperGamesFilter {
+        let filters = super::SearchFilter {
             genre: "Action",
             ..Default::default()
         };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(
-            &conn,
-            "Capcom",
-            None,
-            &super::PaginationParams {
-                offset: 0,
-                limit: 50,
-                region_pref: "us",
-                region_secondary: "",
-            },
-            &filters,
-        )
-        .unwrap();
+        let (entries, total) =
+            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Mega Man X");
     }
 
     #[test]
-    fn developer_games_paginated_system_and_genre_combined() {
+    fn developer_games_system_and_genre_combined() {
         let (mut conn, _dir) = open_temp_db();
         MetadataDb::save_system_entries(
             &mut conn,
@@ -1729,21 +1619,19 @@ mod tests {
             None,
         )
         .unwrap();
-        let filters = super::DeveloperGamesFilter {
+        let filters = super::SearchFilter {
             genre: "Action",
             ..Default::default()
         };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(
+        // Use search_game_library directly to combine system + developer filters.
+        let (entries, total) = MetadataDb::search_game_library(
             &conn,
-            "Capcom",
             Some("snes"),
-            &super::PaginationParams {
-                offset: 0,
-                limit: 50,
-                region_pref: "us",
-                region_secondary: "",
-            },
+            Some("Capcom"),
+            &[],
             &filters,
+            0,
+            50,
         )
         .unwrap();
         assert_eq!(total, 1);
@@ -1752,7 +1640,7 @@ mod tests {
     }
 
     #[test]
-    fn developer_games_paginated_region_dedup_prefers_user_region() {
+    fn developer_games_case_insensitive() {
         let (mut conn, _dir) = open_temp_db();
         MetadataDb::save_system_entries(
             &mut conn,
@@ -1760,28 +1648,10 @@ mod tests {
             &[
                 make_dev_entry(
                     "snes",
-                    "SF2-us.sfc",
+                    "SF2.sfc",
                     "Capcom",
                     "Street Fighter II",
                     "us",
-                    None,
-                    None,
-                ),
-                make_dev_entry(
-                    "snes",
-                    "SF2-jp.sfc",
-                    "Capcom",
-                    "Street Fighter II",
-                    "japan",
-                    None,
-                    None,
-                ),
-                make_dev_entry(
-                    "snes",
-                    "SF2-eu.sfc",
-                    "Capcom",
-                    "Street Fighter II",
-                    "europe",
                     None,
                     None,
                 ),
@@ -1789,27 +1659,16 @@ mod tests {
             None,
         )
         .unwrap();
-        let filters = super::DeveloperGamesFilter::default();
-        let (entries, _, total) = MetadataDb::developer_games_paginated(
-            &conn,
-            "Capcom",
-            None,
-            &super::PaginationParams {
-                offset: 0,
-                limit: 50,
-                region_pref: "us",
-                region_secondary: "europe",
-            },
-            &filters,
-        )
-        .unwrap();
+        let filters = super::SearchFilter::default();
+        // Query with different case should still match.
+        let (entries, total) =
+            MetadataDb::developer_games(&conn, "capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].region, "us");
     }
 
     #[test]
-    fn developer_games_paginated_offset_beyond_total() {
+    fn developer_games_offset_beyond_total() {
         let (mut conn, _dir) = open_temp_db();
         MetadataDb::save_system_entries(
             &mut conn,
@@ -1837,27 +1696,15 @@ mod tests {
             None,
         )
         .unwrap();
-        let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(
-            &conn,
-            "Capcom",
-            None,
-            &super::PaginationParams {
-                offset: 100,
-                limit: 50,
-                region_pref: "us",
-                region_secondary: "",
-            },
-            &filters,
-        )
-        .unwrap();
+        let filters = super::SearchFilter::default();
+        let (entries, total) =
+            MetadataDb::developer_games(&conn, "Capcom", &filters, 100, 50).unwrap();
         assert_eq!(total, 2);
         assert!(entries.is_empty());
-        assert!(!has_more);
     }
 
     #[test]
-    fn developer_games_paginated_has_more_with_limit_plus_one() {
+    fn developer_games_pagination() {
         let (mut conn, _dir) = open_temp_db();
         MetadataDb::save_system_entries(
             &mut conn,
@@ -1870,42 +1717,18 @@ mod tests {
             None,
         )
         .unwrap();
-        let filters = super::DeveloperGamesFilter::default();
-        let (entries, has_more, total) = MetadataDb::developer_games_paginated(
-            &conn,
-            "Capcom",
-            None,
-            &super::PaginationParams {
-                offset: 0,
-                limit: 2,
-                region_pref: "us",
-                region_secondary: "",
-            },
-            &filters,
-        )
-        .unwrap();
+        let filters = super::SearchFilter::default();
+        let (entries, total) =
+            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 2).unwrap();
         assert_eq!(entries.len(), 2);
-        assert!(has_more);
         assert_eq!(total, 3);
-        let (entries, has_more, _) = MetadataDb::developer_games_paginated(
-            &conn,
-            "Capcom",
-            None,
-            &super::PaginationParams {
-                offset: 2,
-                limit: 2,
-                region_pref: "us",
-                region_secondary: "",
-            },
-            &filters,
-        )
-        .unwrap();
+        let (entries, _) =
+            MetadataDb::developer_games(&conn, "Capcom", &filters, 2, 2).unwrap();
         assert_eq!(entries.len(), 1);
-        assert!(!has_more);
     }
 
     #[test]
-    fn developer_games_paginated_hide_hacks_and_clones() {
+    fn developer_games_hide_hacks_and_clones() {
         let (mut conn, _dir) = open_temp_db();
         MetadataDb::save_system_entries(
             &mut conn,
@@ -1926,31 +1749,20 @@ mod tests {
             None,
         )
         .unwrap();
-        let filters = super::DeveloperGamesFilter {
+        let filters = super::SearchFilter {
             hide_hacks: true,
             hide_clones: true,
             ..Default::default()
         };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(
-            &conn,
-            "Capcom",
-            None,
-            &super::PaginationParams {
-                offset: 0,
-                limit: 50,
-                region_pref: "us",
-                region_secondary: "",
-            },
-            &filters,
-        )
-        .unwrap();
+        let (entries, total) =
+            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Street Fighter II");
     }
 
     #[test]
-    fn developer_games_paginated_multiplayer_only() {
+    fn developer_games_multiplayer_only() {
         let (mut conn, _dir) = open_temp_db();
         MetadataDb::save_system_entries(
             &mut conn,
@@ -1970,23 +1782,12 @@ mod tests {
             None,
         )
         .unwrap();
-        let filters = super::DeveloperGamesFilter {
+        let filters = super::SearchFilter {
             multiplayer_only: true,
             ..Default::default()
         };
-        let (entries, _, total) = MetadataDb::developer_games_paginated(
-            &conn,
-            "Capcom",
-            None,
-            &super::PaginationParams {
-                offset: 0,
-                limit: 50,
-                region_pref: "us",
-                region_secondary: "",
-            },
-            &filters,
-        )
-        .unwrap();
+        let (entries, total) =
+            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Street Fighter II");
@@ -2352,10 +2153,14 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["sonic".to_string()],
             &SearchFilter::default(),
+            0,
+            usize::MAX,
         )
         .unwrap();
         assert_eq!(results.len(), 1);
@@ -2367,10 +2172,14 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["super".to_string(), "mario".to_string()],
             &SearchFilter::default(),
+            0,
+            usize::MAX,
         )
         .unwrap();
         // Should find both "Super Mario World" and "Super Mario Kart"
@@ -2385,10 +2194,14 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["mario".to_string()],
             &SearchFilter::default(),
+            0,
+            usize::MAX,
         )
         .unwrap();
         // "mario" appears in both Super Mario entries
@@ -2400,13 +2213,17 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["street".to_string()],
             &SearchFilter {
                 hide_hacks: true,
                 ..SearchFilter::default()
             },
+            0,
+            usize::MAX,
         )
         .unwrap();
         // "Street Fighter II Turbo (Hack)" should be filtered out
@@ -2418,13 +2235,17 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["zelda".to_string()],
             &SearchFilter {
                 hide_translations: true,
                 ..SearchFilter::default()
             },
+            0,
+            usize::MAX,
         )
         .unwrap();
         // Zelda translation should be filtered out
@@ -2436,13 +2257,17 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["super".to_string()],
             &SearchFilter {
                 genre: "Racing",
                 ..SearchFilter::default()
             },
+            0,
+            usize::MAX,
         )
         .unwrap();
         // Only Super Mario Kart should match (genre = Racing)
@@ -2455,14 +2280,18 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &[],
             &SearchFilter {
                 genre: "Platform",
                 multiplayer_only: true,
                 ..SearchFilter::default()
             },
+            0,
+            usize::MAX,
         )
         .unwrap();
         // Only Super Mario World (platform + 2 players). Sonic is platform but 1 player.
@@ -2475,13 +2304,17 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &[],
             &SearchFilter {
                 min_rating: Some(4.5),
                 ..SearchFilter::default()
             },
+            0,
+            usize::MAX,
         )
         .unwrap();
         // Only entries with rating >= 4.5
@@ -2495,8 +2328,8 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let results =
-            MetadataDb::search_game_library(&conn, &[], &SearchFilter::default()).unwrap();
+        let (results, _total) =
+            MetadataDb::search_game_library(&conn, None, None, &[], &SearchFilter::default(), 0, usize::MAX).unwrap();
         // Should return all entries (no text filter)
         assert!(results.len() >= 4);
     }
@@ -2507,10 +2340,14 @@ mod tests {
         insert_test_library(&mut conn);
 
         // "hedgehog" should find the sega_smd entry
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["hedgehog".to_string()],
             &SearchFilter::default(),
+            0,
+            usize::MAX,
         )
         .unwrap();
         assert_eq!(results.len(), 1);
@@ -2523,18 +2360,26 @@ mod tests {
         insert_test_library(&mut conn);
 
         // Searching for "%" or "_" should not match everything
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["%".to_string()],
             &SearchFilter::default(),
+            0,
+            usize::MAX,
         )
         .unwrap();
         assert!(results.is_empty());
 
-        let results = MetadataDb::search_game_library(
+        let (results, _total) = MetadataDb::search_game_library(
             &conn,
+            None,
+            None,
             &["_".to_string()],
             &SearchFilter::default(),
+            0,
+            usize::MAX,
         )
         .unwrap();
         assert!(results.is_empty());

@@ -1,5 +1,3 @@
-#[cfg(feature = "ssr")]
-use super::search::system_player_counts;
 use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::metadata_db::MetadataDb;
@@ -103,7 +101,6 @@ pub async fn get_roms_page(
     #[server(default)] min_year: Option<u16>,
     #[server(default)] max_year: Option<u16>,
 ) -> Result<RomPage, ServerFnError> {
-    use replay_control_core::rom_tags;
     use replay_control_core::systems::{self as sys_db, SystemCategory};
 
     let state = expect_context::<crate::api::AppState>();
@@ -112,432 +109,85 @@ pub async fn get_roms_page(
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| system.clone());
     let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
-    let storage = state.storage();
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
 
-    // Fast path: when no filters or search are active, try SQL-level pagination
-    // directly from L1 or L2 cache. This avoids loading all ROMs into memory
-    // on cold L1 cache (significant for systems with 3000+ ROMs).
-    let has_filters = hide_hacks
-        || hide_translations
-        || hide_betas
-        || hide_clones
-        || !genre.is_empty()
-        || multiplayer_only
-        || min_rating.is_some()
-        || min_year.is_some()
-        || max_year.is_some();
-    if !has_filters
-        && search.is_empty()
-        && let Some((mut roms, total)) = state
-            .cache
-            .get_roms_page_direct(&storage, &system, offset, limit)
-            .await
-    {
-        let has_more = offset + roms.len() < total;
+    // Unified path: all filtering (content, text search) at the SQL level via
+    // search_game_library(). GameEntry rows from the DB already carry genre,
+    // rating, players, and driver_status, so enrichment is minimal (just box art
+    // and favorites overlay).
+    use replay_control_core::metadata_db::SearchFilter;
 
-        // Overlay favorites.
-        let fav_set = state.cache.get_favorites_set(&storage, &system);
-        for rom in &mut roms {
-            rom.is_favorite = fav_set.contains(&rom.game.rom_filename);
-        }
-
-        // Populate box art URLs.
-        let image_index = state.cache.cached_image_index(&state, &system).await;
-        for rom in &mut roms {
-            rom.box_art_url =
-                state
-                    .cache
-                    .resolve_box_art(&state, &image_index, &system, &rom.game.rom_filename);
-        }
-
-        // Populate driver status for arcade systems.
-        if is_arcade {
-            use replay_control_core::arcade_db;
-            for rom in &mut roms {
-                let stem = rom
-                    .game
-                    .rom_filename
-                    .strip_suffix(".zip")
-                    .unwrap_or(&rom.game.rom_filename);
-                if let Some(info) = arcade_db::lookup_arcade_game(stem) {
-                    let status = match info.status {
-                        arcade_db::DriverStatus::Working => "Working",
-                        arcade_db::DriverStatus::Imperfect => "Imperfect",
-                        arcade_db::DriverStatus::Preliminary => "Preliminary",
-                        arcade_db::DriverStatus::Unknown => "Unknown",
-                    };
-                    rom.driver_status = Some(status.to_string());
-                }
-            }
-        }
-
-        // Populate players.
-        {
-            let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
-            let players = system_player_counts(&system, &filenames);
-            for rom in &mut roms {
-                if let Some(&p) = players.get(&rom.game.rom_filename) {
-                    rom.players = Some(p);
-                }
-            }
-        }
-
-        // Populate ratings from metadata DB.
-        {
-            let filenames: Vec<String> = roms.iter().map(|r| r.game.rom_filename.clone()).collect();
-            if let Some(Ok(ratings)) = state
-                .metadata_pool
-                .read({
-                    let system = system.clone();
-                    move |conn| {
-                        let refs: Vec<&str> = filenames.iter().map(|s| s.as_str()).collect();
-                        MetadataDb::lookup_ratings(conn, &system, &refs)
-                    }
-                })
-                .await
-            {
-                for rom in &mut roms {
-                    if let Some(&rating) = ratings.get(&rom.game.rom_filename)
-                        && rating > 0.0
-                    {
-                        rom.rating = Some(rating as f32);
-                    }
-                }
-            }
-        }
-
-        let list_entries: Vec<RomListEntry> = roms
+    let q = search.to_lowercase();
+    let query_words: Vec<String> = if q.is_empty() {
+        Vec::new()
+    } else {
+        super::search::split_into_words(&q)
             .into_iter()
-            .map(|rom| RomListEntry {
-                display_name: rom
-                    .game
-                    .display_name
-                    .unwrap_or_else(|| rom.game.rom_filename.clone()),
-                system: rom.game.system,
-                rom_filename: rom.game.rom_filename,
-                rom_path: rom.game.rom_path,
-                size_bytes: rom.size_bytes,
-                is_m3u: rom.is_m3u,
-                is_favorite: rom.is_favorite,
-                box_art_url: rom.box_art_url,
-                driver_status: rom.driver_status,
-                rating: rom.rating,
-                players: rom.players,
-                genre: String::new(),
-            })
-            .collect();
+            .map(|w| w.to_string())
+            .collect()
+    };
 
-        return Ok(RomPage {
-            roms: list_entries,
-            total,
-            has_more,
-            system_display,
-            is_arcade,
-        });
-    }
+    let min_rating_f64 = min_rating.map(|r| r as f64);
+    let genre_owned = genre.clone();
+    let sys_owned = system.clone();
 
-    // Full path: load all ROMs and filter/search in memory.
-    let all_roms = state
+    let db_result = state
         .cache
-        .cached_roms(&storage, &system, region_pref, region_secondary)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    // Batch-load genre groups for genre filtering (single DB query).
-    let genre_groups: std::collections::HashMap<String, String> = if !genre.is_empty() {
-        state
-            .cache
-            .db_read({
-                let system = system.clone();
-                move |conn| {
-                    MetadataDb::load_system_entries(conn, &system)
-                        .map(|entries| {
-                            entries
-                                .into_iter()
-                                .filter(|e| !e.genre_group.is_empty())
-                                .map(|e| (e.rom_filename, e.genre_group))
-                                .collect()
-                        })
-                        .unwrap_or_default()
-                }
-            })
-            .await
-            .unwrap_or_default()
-    } else {
-        std::collections::HashMap::new()
-    };
-
-    // Batch-load clone filenames for hide_clones filtering (all systems).
-    let clone_filenames: std::collections::HashSet<String> = if hide_clones {
-        state
-            .cache
-            .db_read({
-                let system = system.clone();
-                move |conn| {
-                    MetadataDb::load_clone_filenames(conn, &system).unwrap_or_default()
-                }
-            })
-            .await
-            .unwrap_or_default()
-    } else {
-        std::collections::HashSet::new()
-    };
-
-    // Batch-load player counts for multiplayer filtering.
-    let player_counts = if multiplayer_only {
-        let filenames: Vec<&str> = all_roms
-            .iter()
-            .map(|r| r.game.rom_filename.as_str())
-            .collect();
-        system_player_counts(&system, &filenames)
-    } else {
-        std::collections::HashMap::new()
-    };
-
-    // Apply tier-based, clone, and genre filters before search scoring.
-    let pre_filtered: Vec<&RomEntry> = all_roms
-        .iter()
-        .filter(|&r| {
-            if hide_hacks || hide_translations || hide_betas {
-                let (tier, _, _) = rom_tags::classify(&r.game.rom_filename);
-                if hide_hacks && tier == rom_tags::RomTier::Hack {
-                    return false;
-                }
-                if hide_translations && tier == rom_tags::RomTier::Translation {
-                    return false;
-                }
-                if hide_betas && tier == rom_tags::RomTier::PreRelease {
-                    return false;
-                }
-            }
-            if hide_clones {
-                // Check arcade_db for arcade systems (baked-in, fast).
-                if is_arcade {
-                    use replay_control_core::arcade_db;
-                    let stem = r
-                        .game
-                        .rom_filename
-                        .strip_suffix(".zip")
-                        .unwrap_or(&r.game.rom_filename);
-                    if let Some(info) = arcade_db::lookup_arcade_game(stem)
-                        && info.is_clone
-                    {
-                        return false;
-                    }
-                }
-                // Check DB-level is_clone for all systems (covers TOSEC bracket flags).
-                if clone_filenames.contains(&r.game.rom_filename) {
-                    return false;
-                }
-            }
-            true
+        .db_read(move |conn| {
+            let filter = SearchFilter {
+                hide_hacks,
+                hide_translations,
+                hide_betas,
+                hide_clones,
+                genre: &genre_owned,
+                multiplayer_only,
+                min_rating: min_rating_f64,
+                min_year,
+                max_year,
+            };
+            MetadataDb::search_game_library(conn, Some(&sys_owned), None, &query_words, &filter, offset, limit)
         })
-        .filter(|r| {
-            // Apply genre filter using genre_group from game_library.
-            if genre.is_empty() {
-                return true;
-            }
-            genre_groups
-                .get(&r.game.rom_filename)
-                .is_some_and(|gg| gg.eq_ignore_ascii_case(&genre))
-        })
-        .filter(|r| {
-            if !multiplayer_only {
-                return true;
-            }
-            player_counts
-                .get(&r.game.rom_filename)
-                .is_some_and(|&p| p >= 2)
-        })
-        .collect();
+        .await;
 
-    // Apply minimum rating filter: batch-load all ratings for the system,
-    // then exclude ROMs below the threshold (unrated games are excluded).
-    let pre_filtered: Vec<&RomEntry> = if let Some(threshold) = min_rating {
-        let ratings = state
-            .metadata_pool
-            .read({
-                let system = system.clone();
-                move |conn| MetadataDb::system_ratings(conn, &system).unwrap_or_default()
-            })
-            .await
-            .unwrap_or_default();
-        pre_filtered
-            .into_iter()
-            .filter(|r| {
-                ratings
-                    .get(&r.game.rom_filename)
-                    .is_some_and(|&rating| rating >= threshold as f64)
-            })
-            .collect()
-    } else {
-        pre_filtered
-    };
+    let (entries, total) = db_result
+        .and_then(|r| r.ok())
+        .unwrap_or((Vec::new(), 0));
 
-    // Apply year range filter: batch-load release years, exclude games
-    // outside the range. Games with NULL release_year are excluded.
-    let pre_filtered: Vec<&RomEntry> = if min_year.is_some() || max_year.is_some() {
-        let release_years = state
-            .metadata_pool
-            .read({
-                let system = system.clone();
-                move |conn| MetadataDb::system_release_years(conn, &system).unwrap_or_default()
-            })
-            .await
-            .unwrap_or_default();
-        pre_filtered
+    // When text search is active, score and paginate in Rust (SQL returned all
+    // matching rows without LIMIT/OFFSET so we can sort by relevance).
+    let (page_entries, total, has_more) = if !search.is_empty() {
+        let mut scored: Vec<(u32, replay_control_core::metadata_db::GameEntry)> = entries
             .into_iter()
-            .filter(|r| {
-                let Some(&year) = release_years.get(&r.game.rom_filename) else {
-                    return false;
-                };
-                if let Some(min) = min_year {
-                    if year < min {
-                        return false;
-                    }
-                }
-                if let Some(max) = max_year {
-                    if year > max {
-                        return false;
-                    }
-                }
-                true
-            })
-            .collect()
-    } else {
-        pre_filtered
-    };
-
-    let filtered: Vec<&RomEntry> = if search.is_empty() {
-        pre_filtered
-    } else {
-        let q = search.to_lowercase();
-        let mut scored: Vec<(u32, &RomEntry)> = pre_filtered
-            .into_iter()
-            .filter_map(|r| {
-                let display = r
-                    .game
-                    .display_name
-                    .as_deref()
-                    .unwrap_or(&r.game.rom_filename);
+            .filter_map(|entry| {
+                let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
                 let score = search_score(
                     &q,
                     display,
-                    &r.game.rom_filename,
+                    &entry.rom_filename,
                     region_pref,
                     region_secondary,
                 );
-                if score > 0 { Some((score, r)) } else { None }
+                if score > 0 { Some((score, entry)) } else { None }
             })
             .collect();
         scored.sort_by(|a, b| b.0.cmp(&a.0));
-        scored.into_iter().map(|(_, r)| r).collect()
+        let scored_total = scored.len();
+        let page: Vec<_> = scored
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|(_, e)| e)
+            .collect();
+        let hm = offset + page.len() < scored_total;
+        (page, scored_total, hm)
+    } else {
+        let hm = offset + entries.len() < total;
+        (entries, total, hm)
     };
 
-    let total = filtered.len();
-    // Clone only the page-sized subset we need to mutate.
-    let mut roms: Vec<RomEntry> = filtered
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .cloned()
-        .collect();
-    let has_more = offset + roms.len() < total;
-
-    // Use cached favorites set instead of per-request filesystem scan.
-    let fav_set = state.cache.get_favorites_set(&storage, &system);
-    for rom in &mut roms {
-        rom.is_favorite = fav_set.contains(&rom.game.rom_filename);
-    }
-
-    // Populate box art URLs using cached per-system image index (single dir read).
-    let image_index = state.cache.cached_image_index(&state, &system).await;
-    for rom in &mut roms {
-        rom.box_art_url =
-            state
-                .cache
-                .resolve_box_art(&state, &image_index, &system, &rom.game.rom_filename);
-    }
-
-    // Populate driver status for arcade systems.
-    if is_arcade {
-        use replay_control_core::arcade_db;
-        for rom in &mut roms {
-            let stem = rom
-                .game
-                .rom_filename
-                .strip_suffix(".zip")
-                .unwrap_or(&rom.game.rom_filename);
-            if let Some(info) = arcade_db::lookup_arcade_game(stem) {
-                let status = match info.status {
-                    arcade_db::DriverStatus::Working => "Working",
-                    arcade_db::DriverStatus::Imperfect => "Imperfect",
-                    arcade_db::DriverStatus::Preliminary => "Preliminary",
-                    arcade_db::DriverStatus::Unknown => "Unknown",
-                };
-                rom.driver_status = Some(status.to_string());
-            }
-        }
-    }
-
-    // Populate players from game_db / arcade_db (batch lookup).
-    {
-        let filenames: Vec<&str> = roms.iter().map(|r| r.game.rom_filename.as_str()).collect();
-        let players = system_player_counts(&system, &filenames);
-        for rom in &mut roms {
-            if let Some(&p) = players.get(&rom.game.rom_filename) {
-                rom.players = Some(p);
-            }
-        }
-    }
-
-    // Populate ratings from metadata DB (batch lookup for efficiency).
-    {
-        let filenames: Vec<String> = roms.iter().map(|r| r.game.rom_filename.clone()).collect();
-        if let Some(Ok(ratings)) = state
-            .metadata_pool
-            .read({
-                let system = system.clone();
-                move |conn| {
-                    let refs: Vec<&str> = filenames.iter().map(|s| s.as_str()).collect();
-                    MetadataDb::lookup_ratings(conn, &system, &refs)
-                }
-            })
-            .await
-        {
-            for rom in &mut roms {
-                if let Some(&rating) = ratings.get(&rom.game.rom_filename)
-                    && rating > 0.0
-                {
-                    rom.rating = Some(rating as f32);
-                }
-            }
-        }
-    }
-
-    // Convert RomEntry → RomListEntry with always-resolved display_name.
-    let list_entries: Vec<RomListEntry> = roms
-        .into_iter()
-        .map(|rom| RomListEntry {
-            display_name: rom
-                .game
-                .display_name
-                .unwrap_or_else(|| rom.game.rom_filename.clone()),
-            system: rom.game.system,
-            rom_filename: rom.game.rom_filename,
-            rom_path: rom.game.rom_path,
-            size_bytes: rom.size_bytes,
-            is_m3u: rom.is_m3u,
-            is_favorite: rom.is_favorite,
-            box_art_url: rom.box_art_url,
-            driver_status: rom.driver_status,
-            rating: rom.rating,
-            players: rom.players,
-            genre: String::new(),
-        })
-        .collect();
+    // Enrich page entries: box art, favorites, genre (shared with developer page).
+    let list_entries = super::enrich_game_entries(&state, page_entries).await;
 
     Ok(RomPage {
         roms: list_entries,
@@ -1111,48 +761,5 @@ mod tests {
     #[test]
     fn empty_path_accepted() {
         assert!(validate_path_safe("").is_ok());
-    }
-
-    // --- system_player_counts ---
-
-    #[test]
-    fn batch_player_counts_known_system() {
-        // SNES has player data in game_db. Super Mario World is a known 1-player game.
-        let filenames = vec!["Super Mario World (USA).sfc"];
-        let counts = system_player_counts("nintendo_snes", &filenames);
-        // Should return either a count > 0 or not be present (if the DB has it).
-        // The key invariant: no entries with players == 0 in the map.
-        for &p in counts.values() {
-            assert!(
-                p > 0,
-                "Batch map should only contain positive player counts"
-            );
-        }
-    }
-
-    #[test]
-    fn batch_player_counts_unknown_filenames() {
-        let filenames = vec!["nonexistent_game_12345.sfc"];
-        let counts = system_player_counts("nintendo_snes", &filenames);
-        assert!(
-            !counts.contains_key("nonexistent_game_12345.sfc"),
-            "Unknown game should not appear in counts map"
-        );
-    }
-
-    #[test]
-    fn batch_player_counts_empty_input() {
-        let counts = system_player_counts("nintendo_snes", &[]);
-        assert!(counts.is_empty());
-    }
-
-    #[test]
-    fn batch_player_counts_arcade_system() {
-        // Arcade ROMs use .zip extension; system_player_counts should handle stripping it.
-        let filenames = vec!["mslug6.zip"];
-        let counts = system_player_counts("arcade_fbneo", &filenames);
-        if let Some(&p) = counts.get("mslug6.zip") {
-            assert!(p >= 2, "Metal Slug 6 should be at least 2 players, got {p}");
-        }
     }
 }

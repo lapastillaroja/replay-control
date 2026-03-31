@@ -10,7 +10,7 @@ mod recommendations;
 mod relationships;
 
 pub use aliases_series::SequelChainInfo;
-pub use game_library::{DeveloperGamesFilter, PaginationParams, SearchFilter};
+pub use game_library::SearchFilter;
 
 use std::path::{Path, PathBuf};
 
@@ -375,7 +375,7 @@ impl MetadataDb {
                   WHERE series_key != '';
 
                 -- Covers: find_developer_matches, games_by_developer,
-                -- developer_games_paginated, developer_systems, developer_genre_groups
+                -- developer_games, developer_systems, developer_genre_groups
                 CREATE INDEX IF NOT EXISTS idx_game_library_developer
                   ON game_library (developer)
                   WHERE developer != '';
