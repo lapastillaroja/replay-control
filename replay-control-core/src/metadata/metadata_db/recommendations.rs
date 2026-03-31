@@ -407,6 +407,80 @@ impl MetadataDb {
 
         Ok(rows.flatten().collect())
     }
+
+    /// Top N developers by distinct game count (base_title).
+    /// Returns developer names only — counts are used for ranking, not displayed.
+    pub fn top_developers(conn: &Connection, limit: usize) -> Result<Vec<String>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT developer, COUNT(DISTINCT base_title) as cnt
+                 FROM game_library
+                 WHERE developer != ''
+                 GROUP BY developer
+                 ORDER BY cnt DESC
+                 LIMIT ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare top_developers: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![limit as i64], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query top_developers: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Decades that have at least 10 games in the library.
+    /// Returns decade start years (e.g., 1980, 1990, 2000).
+    pub fn decade_list(conn: &Connection) -> Result<Vec<u16>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT (release_year / 10) * 10 as decade
+                 FROM game_library
+                 WHERE release_year IS NOT NULL AND release_year > 0
+                 GROUP BY decade
+                 HAVING COUNT(*) >= 10
+                 ORDER BY decade",
+            )
+            .map_err(|e| Error::Other(format!("Prepare decade_list: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| row.get::<_, i64>(0).map(|v| v as u16))
+            .map_err(|e| Error::Other(format!("Query decade_list: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Whether any games have 4+ players.
+    pub fn has_4player_games(conn: &Connection) -> Result<bool> {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM game_library WHERE players >= 4)",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|e| Error::Other(format!("Query has_4player_games: {e}")))
+    }
+
+    /// Top genre names by game count (ordered descending).
+    /// Returns genre names only — no counts. Cheaper than `genre_counts`
+    /// since we only need the names for pill selection.
+    pub fn top_genre_names(conn: &Connection, limit: usize) -> Result<Vec<String>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT genre_group
+                 FROM game_library
+                 WHERE genre_group != ''
+                 GROUP BY genre_group
+                 ORDER BY COUNT(*) DESC
+                 LIMIT ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare top_genre_names: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![limit as i64], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("Query top_genre_names: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
 }
 
 #[cfg(test)]

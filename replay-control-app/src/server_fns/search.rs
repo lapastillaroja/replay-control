@@ -410,6 +410,8 @@ pub async fn global_search(
     #[server(default)] min_rating: Option<f32>,
     genre: String,
     per_system_limit: usize,
+    #[server(default)] min_year: Option<u16>,
+    #[server(default)] max_year: Option<u16>,
 ) -> Result<GlobalSearchResults, ServerFnError> {
     use replay_control_core::metadata_db::GameEntry;
     use replay_control_core::systems::{self as sys_db};
@@ -425,8 +427,8 @@ pub async fn global_search(
         per_system_limit
     };
 
-    // Empty query with no genre/multiplayer filter: no results.
-    if q.is_empty() && genre.is_empty() && !multiplayer_only {
+    // Empty query with no genre/multiplayer/year filter: no results.
+    if q.is_empty() && genre.is_empty() && !multiplayer_only && min_year.is_none() && max_year.is_none() {
         return Ok(GlobalSearchResults {
             groups: Vec::new(),
             total_results: 0,
@@ -478,6 +480,8 @@ pub async fn global_search(
                 genre: &genre_owned,
                 multiplayer_only,
                 min_rating: min_rating_f64,
+                min_year,
+                max_year,
             };
             MetadataDb::search_game_library(conn, &query_words, &filter)
                 .unwrap_or_default()

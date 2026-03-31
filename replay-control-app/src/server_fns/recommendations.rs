@@ -17,11 +17,11 @@ pub struct RecommendedGame {
     pub label: Option<String>,
 }
 
-/// A genre with its game count across the library.
+/// A pill in the Discover section: label + link.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenreCount {
-    pub genre: String,
-    pub count: usize,
+pub struct DiscoverPill {
+    pub label: String,
+    pub href: String,
 }
 
 /// Favorites-based recommendation: games from the user's most-favorited system(s).
@@ -36,8 +36,7 @@ pub struct FavoritesPicks {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecommendationData {
     pub random_picks: Vec<RecommendedGame>,
-    pub top_genres: Vec<GenreCount>,
-    pub multiplayer_count: usize,
+    pub discover_pills: Vec<DiscoverPill>,
     pub favorites_picks: Option<FavoritesPicks>,
     pub top_rated: Option<Vec<RecommendedGame>>,
 }
@@ -76,8 +75,11 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 &region_secondary_str,
             )
             .unwrap_or_default();
-            let genre_counts = MetadataDb::genre_counts(conn).unwrap_or_default();
-            let multiplayer = MetadataDb::multiplayer_count(conn).unwrap_or(0);
+            let top_genres = MetadataDb::top_genre_names(conn, 6).unwrap_or_default();
+            let top_developers = MetadataDb::top_developers(conn, 10).unwrap_or_default();
+            let decades = MetadataDb::decade_list(conn).unwrap_or_default();
+            let active_systems =
+                MetadataDb::active_systems(conn).unwrap_or_default();
             let top_rated = MetadataDb::top_rated_cached_roms(
                 conn,
                 count * 3,
@@ -123,16 +125,15 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 }
                 roms
             });
-            (random_pool, genre_counts, multiplayer, top_rated, fav_roms)
+            (random_pool, top_genres, top_developers, decades, active_systems, top_rated, fav_roms)
         })
         .await;
 
-    let Some((random_pool, genre_counts, multiplayer_count, top_rated_pool, fav_roms)) = db_data
+    let Some((random_pool, top_genres, top_developers, decades, active_systems, top_rated_pool, fav_roms)) = db_data
     else {
         return Ok(RecommendationData {
             random_picks: Vec::new(),
-            top_genres: Vec::new(),
-            multiplayer_count: 0,
+            discover_pills: Vec::new(),
             favorites_picks: None,
             top_rated: None,
         });
@@ -141,12 +142,14 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // --- Post-process random picks: ensure system diversity ---
     let mut random_picks = diversify_picks(random_pool, count, &systems);
 
-    // --- Genre/multiplayer ---
-    let top_genres: Vec<GenreCount> = genre_counts
-        .into_iter()
-        .take(4)
-        .map(|(genre, count)| GenreCount { genre, count })
-        .collect();
+    // --- Discover pills: build pool and pick 5 ---
+    let discover_pills = build_discover_pills(
+        &top_genres,
+        &top_developers,
+        &decades,
+        &active_systems,
+        &systems,
+    );
 
     // --- Favorites picks (pool already randomized by SQL) ---
     let mut favorites_picks = favorites_info_for_picks.and_then(|fi| {
@@ -189,8 +192,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
 
     Ok(RecommendationData {
         random_picks,
-        top_genres,
-        multiplayer_count,
+        discover_pills,
         favorites_picks,
         top_rated,
     })
@@ -285,6 +287,135 @@ async fn collect_favorites_info(
         fav_filenames: fav_filenames.clone(),
         top_genre,
     })
+}
+
+/// Build the Discover pills: pick 5 from a pool of genre, system, developer,
+/// decade, and multiplayer pills.
+///
+/// Selection: always 1 genre + 1 multiplayer, then 3 more random (no type repeats).
+#[cfg(feature = "ssr")]
+fn build_discover_pills(
+    top_genres: &[String],
+    top_developers: &[String],
+    decades: &[u16],
+    active_systems: &[String],
+    systems: &[SystemSummary],
+) -> Vec<DiscoverPill> {
+    use rand::Rng;
+
+    if top_genres.is_empty() && active_systems.is_empty() {
+        return Vec::new();
+    }
+
+    let mut rng = rand::rng();
+    let mut pills: Vec<DiscoverPill> = Vec::with_capacity(5);
+
+    // Track which pill types we've used to avoid repeats.
+    // Types: "genre", "system", "developer", "decade"
+    let mut used_types: Vec<&str> = Vec::new();
+
+    // 1. Always include 1 genre pill (random from top genres).
+    if !top_genres.is_empty() {
+        let idx = rng.random_range(0..top_genres.len());
+        let genre = &top_genres[idx];
+        pills.push(DiscoverPill {
+            label: genre.clone(),
+            href: format!("/search?genre={}", urlencoding::encode(genre)),
+        });
+        used_types.push("genre");
+    }
+
+    // 2. Always include the multiplayer pill.
+    pills.push(DiscoverPill {
+        label: "Multiplayer".to_string(),
+        href: "/search?multiplayer=true".to_string(),
+    });
+    used_types.push("multiplayer");
+
+    // 3. Build a pool of candidate pills for the remaining 3 slots.
+    let mut candidates: Vec<(&str, DiscoverPill)> = Vec::new();
+
+    // Another genre (different from the one already picked).
+    for genre in top_genres {
+        if pills.iter().any(|p| p.label == *genre) {
+            continue;
+        }
+        candidates.push((
+            "genre",
+            DiscoverPill {
+                label: genre.clone(),
+                href: format!("/search?genre={}", urlencoding::encode(genre)),
+            },
+        ));
+        break; // Only add one extra genre candidate
+    }
+
+    // System spotlight: link to the system's own page.
+    if !active_systems.is_empty() {
+        let idx = rng.random_range(0..active_systems.len());
+        let sys = &active_systems[idx];
+        let display = systems
+            .iter()
+            .find(|s| s.folder_name == *sys)
+            .map(|s| s.display_name.clone())
+            .unwrap_or_else(|| sys.clone());
+        candidates.push((
+            "system",
+            DiscoverPill {
+                label: format!("Best of {display}"),
+                href: format!("/games/{sys}?min_rating=3"),
+            },
+        ));
+    }
+
+    // Developer pill: pick a random developer from top list.
+    if !top_developers.is_empty() {
+        let idx = rng.random_range(0..top_developers.len());
+        let dev = &top_developers[idx];
+        candidates.push((
+            "developer",
+            DiscoverPill {
+                label: format!("Games by {dev}"),
+                href: format!("/developer/{}", urlencoding::encode(dev)),
+            },
+        ));
+    }
+
+    // Decade pill: pick a random decade.
+    if !decades.is_empty() {
+        let idx = rng.random_range(0..decades.len());
+        let decade = decades[idx];
+        let end = decade + 9;
+        candidates.push((
+            "decade",
+            DiscoverPill {
+                label: format!("{decade}s Classics"),
+                href: format!("/search?min_year={decade}&max_year={end}"),
+            },
+        ));
+    }
+
+    // NOTE: 4-Player pill deferred to Phase 3 — needs `min_players` search filter.
+
+    // Shuffle candidates and pick up to 3 more, no type repeats.
+    // Fisher-Yates shuffle.
+    for i in (1..candidates.len()).rev() {
+        let j = rng.random_range(0..=i);
+        candidates.swap(i, j);
+    }
+
+    for (pill_type, pill) in candidates {
+        if pills.len() >= 5 {
+            break;
+        }
+        if used_types.contains(&pill_type) {
+            continue;
+        }
+        used_types.push(pill_type);
+        pills.push(pill);
+    }
+
+    pills
 }
 
 /// Select diverse picks from a pool: prefer one per system, then fill with a cap.

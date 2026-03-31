@@ -29,6 +29,8 @@ pub fn DeveloperPage() -> impl IntoView {
         multiplayer_only: RwSignal::new(false),
         genre: RwSignal::new(String::new()),
         min_rating: RwSignal::new(None),
+        min_year: RwSignal::new(None),
+        max_year: RwSignal::new(None),
     };
     let debounced_genre = use_debounced(filters.genre, 300);
 

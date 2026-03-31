@@ -100,6 +100,8 @@ pub async fn get_roms_page(
     #[server(default)] genre: String,
     #[server(default)] multiplayer_only: bool,
     #[server(default)] min_rating: Option<f32>,
+    #[server(default)] min_year: Option<u16>,
+    #[server(default)] max_year: Option<u16>,
 ) -> Result<RomPage, ServerFnError> {
     use replay_control_core::rom_tags;
     use replay_control_core::systems::{self as sys_db, SystemCategory};
@@ -123,7 +125,9 @@ pub async fn get_roms_page(
         || hide_clones
         || !genre.is_empty()
         || multiplayer_only
-        || min_rating.is_some();
+        || min_rating.is_some()
+        || min_year.is_some()
+        || max_year.is_some();
     if !has_filters
         && search.is_empty()
         && let Some((mut roms, total)) = state
@@ -366,6 +370,40 @@ pub async fn get_roms_page(
                 ratings
                     .get(&r.game.rom_filename)
                     .is_some_and(|&rating| rating >= threshold as f64)
+            })
+            .collect()
+    } else {
+        pre_filtered
+    };
+
+    // Apply year range filter: batch-load release years, exclude games
+    // outside the range. Games with NULL release_year are excluded.
+    let pre_filtered: Vec<&RomEntry> = if min_year.is_some() || max_year.is_some() {
+        let release_years = state
+            .metadata_pool
+            .read({
+                let system = system.clone();
+                move |conn| MetadataDb::system_release_years(conn, &system).unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default();
+        pre_filtered
+            .into_iter()
+            .filter(|r| {
+                let Some(&year) = release_years.get(&r.game.rom_filename) else {
+                    return false;
+                };
+                if let Some(min) = min_year {
+                    if year < min {
+                        return false;
+                    }
+                }
+                if let Some(max) = max_year {
+                    if year > max {
+                        return false;
+                    }
+                }
+                true
             })
             .collect()
     } else {

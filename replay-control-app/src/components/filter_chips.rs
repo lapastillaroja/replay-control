@@ -53,19 +53,24 @@ pub struct FilterState {
     pub multiplayer_only: RwSignal<bool>,
     pub genre: RwSignal<String>,
     pub min_rating: RwSignal<Option<f32>>,
+    pub min_year: RwSignal<Option<u16>>,
+    pub max_year: RwSignal<Option<u16>>,
 }
 
 impl FilterState {
     /// Build a `FilterState` from URL query parameters.
     ///
     /// Reads `hide_hacks`, `hide_translations`, `hide_betas`, `hide_clones`,
-    /// `genre`, `multiplayer`, and `min_rating` from the provided `ParamsMap`.
+    /// `genre`, `multiplayer`, `min_rating`, `min_year`, and `max_year` from
+    /// the provided `ParamsMap`.
     pub fn from_query_map(qm: &leptos_router::params::ParamsMap) -> Self {
         let bool_param = |key: &str| qm.get(key).is_some_and(|v| v == "true");
         let genre = qm.get("genre").unwrap_or_default();
         let min_rating = qm
             .get("min_rating")
             .and_then(|v| v.parse::<f32>().ok());
+        let min_year = qm.get("min_year").and_then(|v| v.parse::<u16>().ok());
+        let max_year = qm.get("max_year").and_then(|v| v.parse::<u16>().ok());
 
         Self {
             hide_hacks: RwSignal::new(bool_param("hide_hacks")),
@@ -75,6 +80,8 @@ impl FilterState {
             multiplayer_only: RwSignal::new(bool_param("multiplayer")),
             genre: RwSignal::new(genre.clone()),
             min_rating: RwSignal::new(min_rating),
+            min_year: RwSignal::new(min_year),
+            max_year: RwSignal::new(max_year),
         }
     }
 

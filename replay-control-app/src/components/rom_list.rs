@@ -82,6 +82,8 @@ pub fn RomList(system: String) -> impl IntoView {
             let mp = filters.multiplayer_only.get();
             let g = filters.genre.get();
             let mr = filters.min_rating.get();
+            let miny = filters.min_year.get();
+            let maxy = filters.max_year.get();
             debounced_genre.set(g.clone());
             if !filters_initialized.get_value() {
                 filters_initialized.set_value(true);
@@ -96,6 +98,8 @@ pub fn RomList(system: String) -> impl IntoView {
                 multiplayer_only: mp,
                 genre: &g,
                 min_rating: mr,
+                min_year: miny,
+                max_year: maxy,
                 search: &debounced_search.get_untracked(),
             });
         });
@@ -120,10 +124,12 @@ pub fn RomList(system: String) -> impl IntoView {
                 debounced_genre.get(),
                 filters.multiplayer_only.get(),
                 filters.min_rating.get(),
+                filters.min_year.get(),
+                filters.max_year.get(),
             )
         },
-        move |(system, query, hh, ht, hb, hc, gf, mp, mr)| {
-            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr)
+        move |(system, query, hh, ht, hb, hc, gf, mp, mr, miny, maxy)| {
+            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr, miny, maxy)
         },
     );
 
@@ -153,6 +159,8 @@ pub fn RomList(system: String) -> impl IntoView {
         let gf = debounced_genre.get_untracked();
         let mp = filters.multiplayer_only.get_untracked();
         let mr = filters.min_rating.get_untracked();
+        let miny = filters.min_year.get_untracked();
+        let maxy = filters.max_year.get_untracked();
         leptos::task::spawn_local(async move {
             if let Ok(page) = server_fns::get_roms_page(
                 system,
@@ -166,6 +174,8 @@ pub fn RomList(system: String) -> impl IntoView {
                 gf,
                 mp,
                 mr,
+                miny,
+                maxy,
             )
             .await
             {
@@ -329,6 +339,8 @@ struct FilterUrlParams<'a> {
     multiplayer_only: bool,
     genre: &'a str,
     min_rating: Option<f32>,
+    min_year: Option<u16>,
+    max_year: Option<u16>,
     search: &'a str,
 }
 
@@ -361,6 +373,12 @@ fn update_filter_url(p: FilterUrlParams<'_>) {
         }
         if let Some(mr) = p.min_rating {
             params.push(format!("min_rating={mr}"));
+        }
+        if let Some(y) = p.min_year {
+            params.push(format!("min_year={y}"));
+        }
+        if let Some(y) = p.max_year {
+            params.push(format!("max_year={y}"));
         }
         let qs = if params.is_empty() {
             String::new()

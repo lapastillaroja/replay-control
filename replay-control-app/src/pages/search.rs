@@ -82,6 +82,8 @@ pub fn SearchPage() -> impl IntoView {
                 filters.multiplayer_only.get_untracked(),
                 &filters.genre.get_untracked(),
                 filters.min_rating.get_untracked(),
+                filters.min_year.get_untracked(),
+                filters.max_year.get_untracked(),
             );
             if !val.trim().is_empty() {
                 save_recent_search(&val);
@@ -98,6 +100,8 @@ pub fn SearchPage() -> impl IntoView {
             let mp = filters.multiplayer_only.get();
             let g = filters.genre.get();
             let mr = filters.min_rating.get();
+            let miny = filters.min_year.get();
+            let maxy = filters.max_year.get();
             debounced_genre.set(g.clone());
             // Skip the first run: URL already reflects initial values and the
             // Router's pushState hasn't completed yet.
@@ -105,7 +109,7 @@ pub fn SearchPage() -> impl IntoView {
                 filters_initialized.set_value(true);
                 return;
             }
-            update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, mp, &g, mr);
+            update_url_params(&debounced_query.get_untracked(), hh, ht, hb, hc, mp, &g, mr, miny, maxy);
         });
     }
 
@@ -121,9 +125,13 @@ pub fn SearchPage() -> impl IntoView {
                 filters.multiplayer_only.get(),
                 debounced_genre.get(),
                 filters.min_rating.get(),
+                filters.min_year.get(),
+                filters.max_year.get(),
             )
         },
-        |(q, hh, ht, hb, hc, mp, g, mr)| server_fns::global_search(q, hh, ht, hb, hc, mp, mr, g, 3),
+        |(q, hh, ht, hb, hc, mp, g, mr, miny, maxy)| {
+            server_fns::global_search(q, hh, ht, hb, hc, mp, mr, g, 3, miny, maxy)
+        },
     );
 
     // Developer match resource — only fires when query is non-empty.
@@ -154,6 +162,8 @@ pub fn SearchPage() -> impl IntoView {
             filters.multiplayer_only.get_untracked(),
             &filters.genre.get_untracked(),
             filters.min_rating.get_untracked(),
+            filters.min_year.get_untracked(),
+            filters.max_year.get_untracked(),
         );
     };
 
@@ -280,8 +290,10 @@ pub fn SearchPage() -> impl IntoView {
                     let mp = filters.multiplayer_only.get_untracked();
                     let mr = filters.min_rating.get_untracked();
                     let g = debounced_genre.get_untracked();
+                    let miny = filters.min_year.get_untracked();
+                    let maxy = filters.max_year.get_untracked();
                     Ok::<_, server_fn::ServerFnError>(view! {
-                        <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc multiplayer_only=mp min_rating=mr genre=g />
+                        <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc multiplayer_only=mp min_rating=mr genre=g min_year=miny max_year=maxy />
                     })
                 })}
             </Suspense>
@@ -355,6 +367,8 @@ fn SearchResults(
     multiplayer_only: bool,
     min_rating: Option<f32>,
     genre: String,
+    min_year: Option<u16>,
+    max_year: Option<u16>,
 ) -> impl IntoView {
     let has_results = !data.groups.is_empty();
 
@@ -409,6 +423,12 @@ fn SearchResults(
         }
         if let Some(mr) = min_rating {
             params.push(format!("min_rating={mr}"));
+        }
+        if let Some(y) = min_year {
+            params.push(format!("min_year={y}"));
+        }
+        if let Some(y) = max_year {
+            params.push(format!("max_year={y}"));
         }
         if params.is_empty() {
             String::new()
@@ -561,6 +581,8 @@ fn update_url_params(
     multiplayer_only: bool,
     genre: &str,
     min_rating: Option<f32>,
+    min_year: Option<u16>,
+    max_year: Option<u16>,
 ) {
     if let Some(window) = web_sys::window() {
         let mut params = Vec::new();
@@ -588,6 +610,12 @@ fn update_url_params(
         if let Some(mr) = min_rating {
             params.push(format!("min_rating={mr}"));
         }
+        if let Some(y) = min_year {
+            params.push(format!("min_year={y}"));
+        }
+        if let Some(y) = max_year {
+            params.push(format!("max_year={y}"));
+        }
         let qs = if params.is_empty() {
             String::new()
         } else {
@@ -611,6 +639,8 @@ fn update_url_params_if_hydrate(
     multiplayer_only: bool,
     genre: &str,
     min_rating: Option<f32>,
+    min_year: Option<u16>,
+    max_year: Option<u16>,
 ) {
     #[cfg(feature = "hydrate")]
     update_url_params(
@@ -622,6 +652,8 @@ fn update_url_params_if_hydrate(
         multiplayer_only,
         genre,
         min_rating,
+        min_year,
+        max_year,
     );
 }
 

@@ -189,7 +189,7 @@ fn RecommendationSections(
 ) -> impl IntoView {
     let has_random = !data.random_picks.is_empty();
     let has_top_rated = data.top_rated.as_ref().is_some_and(|v| !v.is_empty());
-    let has_discover = !data.top_genres.is_empty() || data.multiplayer_count > 0;
+    let has_discover = !data.discover_pills.is_empty();
 
     view! {
         <Show when=move || has_random>
@@ -252,16 +252,11 @@ fn RecommendationSections(
             <section class="section">
                 <h2 class="section-title">{t(locale, "home.discover")}</h2>
                 <div class="discover-links">
-                    {data.top_genres.iter().map(|gc| {
-                        let href = format!("/search?genre={}", urlencoding::encode(&gc.genre));
-                        let label = format!("{} ({} {})", gc.genre, gc.count, t(locale, "home.discover_games"));
+                    {data.discover_pills.iter().map(|pill| {
+                        let href = pill.href.clone();
+                        let label = pill.label.clone();
                         view! { <A href=href attr:class="discover-link">{label}</A> }
                     }).collect::<Vec<_>>()}
-                    <Show when={let mc = data.multiplayer_count; move || mc > 0}>
-                        <A href="/search?multiplayer=true" attr:class="discover-link">
-                            {format!("{} ({} {})", t(locale, "home.discover_multiplayer"), data.multiplayer_count, t(locale, "home.discover_games"))}
-                        </A>
-                    </Show>
                 </div>
             </section>
         </Show>

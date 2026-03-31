@@ -105,6 +105,8 @@ pub struct SearchFilter<'a> {
     pub genre: &'a str,
     pub multiplayer_only: bool,
     pub min_rating: Option<f64>,
+    pub min_year: Option<u16>,
+    pub max_year: Option<u16>,
 }
 
 /// Filter options for the developer games paginated query.
@@ -796,6 +798,33 @@ impl MetadataDb {
         Ok(set)
     }
 
+    /// Batch-load `(rom_filename, release_year)` pairs for a system.
+    ///
+    /// Returns only rows where `release_year IS NOT NULL`, keyed by filename.
+    pub fn system_release_years(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<std::collections::HashMap<String, u16>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename, release_year FROM game_library
+                 WHERE system = ?1 AND release_year IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_release_years: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u16>(1)?))
+            })
+            .map_err(|e| Error::Other(format!("Query system_release_years: {e}")))?;
+
+        let mut map = std::collections::HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    }
+
     /// Batch update `release_year` for entries in game_library.
     pub fn update_release_years(
         conn: &mut Connection,
@@ -1158,6 +1187,18 @@ impl MetadataDb {
             param_values.push(mr.to_string());
             let idx = param_values.len();
             where_clauses.push(format!("rating >= ?{idx}"));
+        }
+
+        // Year range filters (parameterized). NULL release_year is excluded.
+        if let Some(min_y) = filter.min_year {
+            param_values.push(min_y.to_string());
+            let idx = param_values.len();
+            where_clauses.push(format!("release_year >= ?{idx}"));
+        }
+        if let Some(max_y) = filter.max_year {
+            param_values.push(max_y.to_string());
+            let idx = param_values.len();
+            where_clauses.push(format!("release_year <= ?{idx}"));
         }
 
         let where_sql = if where_clauses.is_empty() {
