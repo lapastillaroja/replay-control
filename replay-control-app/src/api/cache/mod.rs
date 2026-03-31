@@ -31,12 +31,11 @@ pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
 
     if let Ok(entries) = std::fs::read_dir(path) {
         for entry in entries.flatten() {
-            if entry.file_type().ok().is_some_and(|ft| ft.is_dir()) {
-                if let Some(mtime) = entry.metadata().ok().and_then(|m| m.modified().ok()) {
-                    if mtime > max_mtime {
-                        max_mtime = mtime;
-                    }
-                }
+            if entry.file_type().ok().is_some_and(|ft| ft.is_dir())
+                && let Some(mtime) = entry.metadata().ok().and_then(|m| m.modified().ok())
+                && mtime > max_mtime
+            {
+                max_mtime = mtime;
             }
         }
     }

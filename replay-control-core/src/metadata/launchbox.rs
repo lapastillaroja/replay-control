@@ -311,7 +311,7 @@ fn parse_xml<R: BufRead>(
                 }
             }
             Ok(Event::Text(ref e)) => {
-                let text = e.unescape().unwrap_or_default();
+                let text = e.decode().unwrap_or_default();
                 match ctx {
                     Context::Game => match current_tag.as_str() {
                         "Name" => name.push_str(&text),

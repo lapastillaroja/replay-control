@@ -91,12 +91,15 @@ pub fn fetch_and_decode_box_art(url: &str, max_w: u32, max_h: u32) -> Result<Box
 
 /// Decode PNG bytes to XRGB8888 pixel data, scaled to fit within `max_w x max_h`.
 fn decode_png_to_xrgb8888(data: &[u8], max_w: u32, max_h: u32) -> Result<BoxArtImage, String> {
-    let mut decoder = png::Decoder::new(data);
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(data));
     // Expand indexed/palette and grayscale images to full RGB(A)
     decoder.set_transformations(png::Transformations::EXPAND);
     let mut reader = decoder.read_info().map_err(|e| format!("PNG header: {}", e))?;
 
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let buf_size = reader
+        .output_buffer_size()
+        .ok_or("PNG: unknown output buffer size")?;
+    let mut buf = vec![0u8; buf_size];
     let info = reader
         .next_frame(&mut buf)
         .map_err(|e| format!("PNG decode: {}", e))?;

@@ -19,7 +19,7 @@ crate-type = ["cdylib"]
 minreq = "2"
 
 # PNG decoder for box art images fetched from the companion app.
-png = "0.17"
+png = "0.18"
 
 [profile.release]
 panic = "abort"

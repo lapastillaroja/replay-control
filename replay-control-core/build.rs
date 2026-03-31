@@ -431,7 +431,7 @@ fn parse_fbneo_dat(path: &Path) -> Vec<GameEntry> {
                 }
             }
             Ok(Event::Text(ref e)) if in_game => {
-                let text = e.unescape().unwrap_or_default();
+                let text = e.decode().unwrap_or_default();
                 match current_element.as_str() {
                     "description" => current_description.push_str(&text),
                     "year" => current_year.push_str(&text),
@@ -586,7 +586,7 @@ fn parse_mame2003plus_xml(path: &Path) -> Vec<GameEntry> {
                 }
             }
             Ok(Event::Text(ref e)) if in_game => {
-                let text = e.unescape().unwrap_or_default();
+                let text = e.decode().unwrap_or_default();
                 match current_element.as_str() {
                     "description" => current_description.push_str(&text),
                     "year" => current_year.push_str(&text),
@@ -728,7 +728,7 @@ fn parse_mame_current_xml(path: &Path) -> Vec<GameEntry> {
                 }
             }
             Ok(Event::Text(ref e)) if in_machine => {
-                let text = e.unescape().unwrap_or_default();
+                let text = e.decode().unwrap_or_default();
                 match current_element.as_str() {
                     "d" => current_description.push_str(&text),
                     "y" => current_year.push_str(&text),
@@ -1012,39 +1012,45 @@ fn escape_str(s: &str) -> String {
 }
 
 fn generate_phf_map(out: &mut impl Write, entries: &[GameEntry]) {
-    let mut map = phf_codegen::Map::new();
+    // Collect formatted values first — phf_codegen 0.13 borrows them until build()
+    let values: Vec<String> = entries
+        .iter()
+        .map(|entry| {
+            let norm_genre = normalize_arcade_genre(&entry.category);
+            format!(
+                "ArcadeGameInfo {{ \
+                    rom_name: \"{}\", \
+                    display_name: \"{}\", \
+                    year: \"{}\", \
+                    manufacturer: \"{}\", \
+                    players: {}, \
+                    rotation: {}, \
+                    status: {}, \
+                    is_clone: {}, \
+                    is_bios: {}, \
+                    parent: \"{}\", \
+                    category: \"{}\", \
+                    normalized_genre: \"{}\" \
+                }}",
+                escape_str(&entry.rom_name),
+                escape_str(&entry.display_name),
+                escape_str(&entry.year),
+                escape_str(&entry.manufacturer),
+                entry.players,
+                rotation_variant(&entry.rotation),
+                status_variant(&entry.status),
+                entry.is_clone,
+                entry.is_bios,
+                escape_str(&entry.parent),
+                escape_str(&entry.category),
+                escape_str(norm_genre),
+            )
+        })
+        .collect();
 
-    for entry in entries {
-        let norm_genre = normalize_arcade_genre(&entry.category);
-        let value = format!(
-            "ArcadeGameInfo {{ \
-                rom_name: \"{}\", \
-                display_name: \"{}\", \
-                year: \"{}\", \
-                manufacturer: \"{}\", \
-                players: {}, \
-                rotation: {}, \
-                status: {}, \
-                is_clone: {}, \
-                is_bios: {}, \
-                parent: \"{}\", \
-                category: \"{}\", \
-                normalized_genre: \"{}\" \
-            }}",
-            escape_str(&entry.rom_name),
-            escape_str(&entry.display_name),
-            escape_str(&entry.year),
-            escape_str(&entry.manufacturer),
-            entry.players,
-            rotation_variant(&entry.rotation),
-            status_variant(&entry.status),
-            entry.is_clone,
-            entry.is_bios,
-            escape_str(&entry.parent),
-            escape_str(&entry.category),
-            escape_str(norm_genre),
-        );
-        map.entry(&entry.rom_name, &value);
+    let mut map = phf_codegen::Map::new();
+    for (entry, value) in entries.iter().zip(&values) {
+        map.entry(&entry.rom_name, value.as_str());
     }
 
     writeln!(
@@ -2128,20 +2134,27 @@ fn write_system_code(
         )
         .unwrap();
     } else {
-        let mut map = phf_codegen::Map::new();
+        // Collect deduplicated entries with their formatted values first —
+        // phf_codegen 0.13 borrows them until build()
         let mut seen_stems: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for entry in rom_entries {
-            if !seen_stems.insert(&entry.filename_stem) {
-                continue; // Skip duplicate filename stems
-            }
-            let value = format!(
-                "GameEntry {{ canonical_name: \"{}\", region: \"{}\", crc32: 0x{:08X}, game: &{prefix}_GAMES[{}] }}",
-                escape_str(&entry.filename_stem),
-                escape_str(&entry.region),
-                entry.crc32,
-                entry.game_id,
-            );
-            map.entry(&entry.filename_stem, &value);
+        let deduped: Vec<(&RomEntryBuild, String)> = rom_entries
+            .iter()
+            .filter(|entry| seen_stems.insert(&entry.filename_stem))
+            .map(|entry| {
+                let value = format!(
+                    "GameEntry {{ canonical_name: \"{}\", region: \"{}\", crc32: 0x{:08X}, game: &{prefix}_GAMES[{}] }}",
+                    escape_str(&entry.filename_stem),
+                    escape_str(&entry.region),
+                    entry.crc32,
+                    entry.game_id,
+                );
+                (entry, value)
+            })
+            .collect();
+
+        let mut map = phf_codegen::Map::new();
+        for (entry, value) in &deduped {
+            map.entry(entry.filename_stem.as_str(), value.as_str());
         }
         writeln!(
             out,
@@ -2170,9 +2183,15 @@ fn write_system_code(
             }
         }
 
+        // Collect formatted values first — phf_codegen 0.13 borrows them until build()
+        let crc_values: Vec<String> = crc_entries
+            .iter()
+            .map(|(_, stem)| format!("\"{}\"", escape_str(stem)))
+            .collect();
+
         let mut map = phf_codegen::Map::new();
-        for (crc, stem) in &crc_entries {
-            map.entry(*crc, &format!("\"{}\"", escape_str(stem)));
+        for ((crc, _), value) in crc_entries.iter().zip(&crc_values) {
+            map.entry(*crc, value.as_str());
         }
         writeln!(
             out,
@@ -2204,13 +2223,20 @@ fn write_system_code(
             }
         }
 
-        let mut map = phf_codegen::Map::new();
         // Sort for deterministic output
         let mut norm_entries: Vec<(&str, usize)> =
             norm_map.iter().map(|(k, &v)| (k.as_str(), v)).collect();
         norm_entries.sort_by_key(|(k, _)| k.to_string());
-        for (norm_title, game_id) in &norm_entries {
-            map.entry(*norm_title, &format!("{}u16", game_id));
+
+        // Collect formatted values first — phf_codegen 0.13 borrows them until build()
+        let norm_values: Vec<String> = norm_entries
+            .iter()
+            .map(|(_, game_id)| format!("{}u16", game_id))
+            .collect();
+
+        let mut map = phf_codegen::Map::new();
+        for ((norm_title, _), value) in norm_entries.iter().zip(&norm_values) {
+            map.entry(*norm_title, value.as_str());
         }
         writeln!(
             out,
