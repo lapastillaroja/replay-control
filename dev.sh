@@ -225,18 +225,28 @@ copy_assets() {
 # ── aarch64 cross-compilation setup ─────────────────────────────────────────
 
 check_aarch64_sysroot() {
-    local sysroot="/usr/aarch64-linux-gnu/sys-root"
-    if [[ -f "$sysroot/usr/include/stdio.h" && -f "$sysroot/usr/lib64/crti.o" && -f "$sysroot/usr/lib64/libgcc_s.so" ]]; then
-        return
+    AARCH64_SYSROOT="${AARCH64_SYSROOT:-}"
+    if [[ -z "$AARCH64_SYSROOT" ]]; then
+        # Auto-detect: Fedora uses sys-root subdir, Ubuntu puts files directly
+        for _sysroot in "/usr/aarch64-linux-gnu/sys-root" "/usr/aarch64-linux-gnu"; do
+            if [[ -f "$_sysroot/usr/include/stdio.h" ]]; then
+                AARCH64_SYSROOT="$_sysroot"
+                break
+            fi
+        done
     fi
-
-    echo ""
-    echo "  aarch64 cross-compile sysroot not found at $sysroot"
-    echo ""
-    echo "  The aarch64 GCC sysroot needs headers and libraries for the target."
-    echo "  See docs/reference/cross-compilation.md for setup instructions."
-    echo ""
-    fatal "aarch64 sysroot missing."
+    if [[ -z "$AARCH64_SYSROOT" || ! -f "$AARCH64_SYSROOT/usr/include/stdio.h" ]]; then
+        echo ""
+        echo "  aarch64 cross-compile sysroot not found."
+        echo ""
+        echo "  Searched: /usr/aarch64-linux-gnu/sys-root (Fedora)"
+        echo "           /usr/aarch64-linux-gnu (Ubuntu/Debian)"
+        echo ""
+        echo "  Set AARCH64_SYSROOT to override, or see research/reference/cross-compilation.md"
+        echo ""
+        fatal "aarch64 sysroot missing."
+    fi
+    info "Sysroot: $AARCH64_SYSROOT"
 }
 
 # ── SSH helpers ──────────────────────────────────────────────────────────────

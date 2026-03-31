@@ -75,14 +75,26 @@ if [[ -n "$TARGET" ]]; then
     # For aarch64 cross-compilation, ensure C headers are available.
     # The bundled SQLite in rusqlite needs libc headers for the target.
     if [[ "$TARGET" == "aarch64-unknown-linux-gnu" ]]; then
-        local sysroot="/usr/aarch64-linux-gnu/sys-root"
-        if [[ ! -f "$sysroot/usr/include/stdio.h" || ! -f "$sysroot/usr/lib64/crti.o" || ! -f "$sysroot/usr/lib64/libgcc_s.so" ]]; then
+        AARCH64_SYSROOT="${AARCH64_SYSROOT:-}"
+        if [[ -z "$AARCH64_SYSROOT" ]]; then
+            # Auto-detect: Fedora uses sys-root subdir, Ubuntu puts files directly
+            for _sysroot in "/usr/aarch64-linux-gnu/sys-root" "/usr/aarch64-linux-gnu"; do
+                if [[ -f "$_sysroot/usr/include/stdio.h" ]]; then
+                    AARCH64_SYSROOT="$_sysroot"
+                    break
+                fi
+            done
+        fi
+        if [[ -z "$AARCH64_SYSROOT" || ! -f "$AARCH64_SYSROOT/usr/include/stdio.h" ]]; then
             echo ""
-            echo "    ERROR: aarch64 sysroot not found at $sysroot"
-            echo "    See docs/reference/cross-compilation.md for setup instructions."
+            echo "    ERROR: aarch64 sysroot not found."
+            echo "    Searched: /usr/aarch64-linux-gnu/sys-root (Fedora)"
+            echo "             /usr/aarch64-linux-gnu (Ubuntu/Debian)"
+            echo "    Set AARCH64_SYSROOT to override, or see research/reference/cross-compilation.md"
             echo ""
             exit 1
         fi
+        echo "    Sysroot: $AARCH64_SYSROOT"
     fi
 
     cargo build -p "$CRATE" --bin "$CRATE" \
