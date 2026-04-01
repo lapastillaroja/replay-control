@@ -18,6 +18,8 @@ pub struct RefreshResult {
 
 #[server(prefix = "/sfn")]
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     let summaries = state.cache.cached_systems(&storage).await;
@@ -36,6 +38,8 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
 
     let (ethernet_ip, wifi_ip) = get_network_ips();
 
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_info complete");
     Ok(SystemInfo {
         storage_kind: format!("{:?}", storage.kind).to_lowercase(),
         storage_root: storage.root.display().to_string(),
@@ -75,12 +79,19 @@ fn get_network_ips() -> (Option<String>, Option<String>) {
 
 #[server(prefix = "/sfn")]
 pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
-    Ok(state.cache.cached_systems(&state.storage()).await)
+    let result = state.cache.cached_systems(&state.storage()).await;
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_systems complete");
+    Ok(result)
 }
 
 #[server(prefix = "/sfn", endpoint = "/get_recents")]
 pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     let entries = state
@@ -102,6 +113,8 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         })
         .await
         .unwrap_or_default();
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recents db_read complete");
 
     // Only build image indexes for systems that have entries with missing box_art_url.
     // Note: RecentWithArt only needs box art, not favorites — so we skip the
@@ -140,6 +153,8 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     // Cap at 15 to avoid serialising the full list (~95 entries, ~39KB).
     enriched.truncate(15);
 
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recents complete");
     Ok(enriched)
 }
 
