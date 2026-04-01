@@ -79,7 +79,7 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
                 })
             });
             let genre = db_entry
-                .map(|e| &e.genre_group)
+                .and_then(|e| e.genre.as_ref())
                 .filter(|g| !g.is_empty())
                 .cloned();
             FavoriteWithArt {
@@ -143,7 +143,7 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
                 })
             });
             let genre = db_entry
-                .map(|e| &e.genre_group)
+                .and_then(|e| e.genre.as_ref())
                 .filter(|g| !g.is_empty())
                 .cloned();
             FavoriteWithArt {
