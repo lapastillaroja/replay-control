@@ -29,7 +29,7 @@ pub fn FavoritesPage() -> impl IntoView {
     view! {
         <div class="page favorites-page">
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <FavoritesPageSkeleton /> }>
                     {move || Suspend::new(async move {
                         let favs = favorites.await?;
                         Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view toggle_label recommendations /> })
@@ -540,57 +540,71 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
             }
         };
 
-        // Gather primary -> secondary mappings from real data.
+        // Static examples for criteria we can't derive client-side.
+        let static_examples = |criteria: &str| -> Vec<&str> {
+            match criteria {
+                "players" => vec!["1 Player", "2 Players", "Unknown"],
+                "rating" => vec!["★★★★★", "★★★★", "Not Rated"],
+                "developer" => vec!["Capcom", "Konami", "Sega"],
+                _ => vec![],
+            }
+        };
+
+        // Determine whether each criterion has client-side data.
+        let pri_is_real = static_examples(&pri).is_empty();
+        let sec_is_real = sec != "none" && static_examples(&sec).is_empty();
+        let sec_is_static = sec != "none" && !sec_is_real;
+
+        // Build the preview map based on what data is available.
         let mut map: std::collections::HashMap<String, std::collections::BTreeSet<String>> =
             std::collections::HashMap::new();
-        for f in favs.iter() {
-            if let Some(pri_name) = folder_name(&pri, f) {
-                let subs = map.entry(pri_name).or_default();
-                if sec != "none" {
-                    if let Some(sec_name) = folder_name(&sec, f) {
-                        subs.insert(sec_name);
+
+        if pri_is_real {
+            // Primary from real data: gather primary folders (and secondary if also real).
+            for f in favs.iter() {
+                if let Some(pri_name) = folder_name(&pri, f) {
+                    let subs = map.entry(pri_name).or_default();
+                    if sec_is_real {
+                        if let Some(sec_name) = folder_name(&sec, f) {
+                            subs.insert(sec_name);
+                        }
                     }
                 }
             }
-        }
-
-        // For criteria we can't derive client-side, show static examples.
-        if map.is_empty() {
-            let static_primary = match pri.as_str() {
-                "players" => vec!["1 Player", "2 Players", "3-4 Players"],
-                "rating" => vec!["Highly Rated", "Average", "Unrated"],
-                "developer" => vec!["Capcom", "Konami", "Nintendo"],
-                _ => vec![],
-            };
-            let static_secondary = if sec != "none" {
-                match sec.as_str() {
-                    "players" => vec!["1 Player", "2 Players"],
-                    "rating" => vec!["Highly Rated", "Average"],
-                    "developer" => vec!["Capcom", "Nintendo"],
-                    "genre" => vec!["Action", "Platform"],
-                    "system" => vec!["Mega Drive", "SNES"],
-                    "alphabetical" => vec!["A", "S"],
-                    _ => vec![],
+            // If secondary is static, inject static examples into each primary.
+            if sec_is_static {
+                let examples: std::collections::BTreeSet<String> =
+                    static_examples(&sec).iter().map(|s| s.to_string()).collect();
+                for subs in map.values_mut() {
+                    *subs = examples.clone();
+                }
+            }
+        } else {
+            // Primary is static: use static primary folder names.
+            let pri_examples = static_examples(&pri);
+            if sec_is_real {
+                // Collect all unique real secondary values as a representative sample.
+                let mut all_secs = std::collections::BTreeSet::new();
+                for f in favs.iter() {
+                    if let Some(sec_name) = folder_name(&sec, f) {
+                        all_secs.insert(sec_name);
+                    }
+                }
+                // Show a few secondary values under each static primary.
+                let sample: Vec<String> = all_secs.into_iter().take(5).collect();
+                for name in pri_examples {
+                    map.insert(
+                        name.to_string(),
+                        sample.iter().cloned().collect(),
+                    );
                 }
             } else {
-                vec![]
-            };
-            for name in static_primary {
-                map.entry(name.to_string())
-                    .or_default()
-                    .extend(static_secondary.iter().map(|s| s.to_string()));
-            }
-        } else if sec != "none" && !map.values().any(|subs| !subs.is_empty()) {
-            // Primary came from real data but secondary is a static-only criterion.
-            let static_secondary = match sec.as_str() {
-                "players" => vec!["1 Player", "2 Players"],
-                "rating" => vec!["Highly Rated", "Average"],
-                "developer" => vec!["Capcom", "Nintendo"],
-                _ => vec![],
-            };
-            if !static_secondary.is_empty() {
-                for subs in map.values_mut() {
-                    *subs = static_secondary.iter().map(|s| s.to_string()).collect();
+                // Both static (or secondary is "none").
+                let sec_examples = if sec_is_static { static_examples(&sec) } else { vec![] };
+                for name in pri_examples {
+                    map.entry(name.to_string())
+                        .or_default()
+                        .extend(sec_examples.iter().map(|s| s.to_string()));
                 }
             }
         }
@@ -844,6 +858,52 @@ fn parse_criteria(value: &str) -> Option<OrganizeCriteria> {
 }
 
 /// `/favorites/:system` — favorites list filtered to a single system.
+
+/// Skeleton for the full favorites page while the main resource streams.
+#[component]
+fn FavoritesPageSkeleton() -> impl IntoView {
+    view! {
+        // Hero card skeleton
+        <section class="section">
+            <div class="skeleton-title skeleton-shimmer"></div>
+            <div class="skeleton-hero skeleton-shimmer">
+                <div class="skeleton-hero-thumb"></div>
+                <div class="skeleton-hero-info">
+                    <div class="skeleton-hero-title"></div>
+                    <div class="skeleton-hero-system"></div>
+                </div>
+            </div>
+        </section>
+        // Recent scroll skeleton
+        <section class="section">
+            <div class="skeleton-title skeleton-shimmer"></div>
+            <div class="scroll-card-row">
+                {(0..6).map(|_| view! {
+                    <div class="skeleton-card skeleton-shimmer">
+                        <div class="skeleton-card-image"></div>
+                        <div class="skeleton-card-text"></div>
+                        <div class="skeleton-card-subtext"></div>
+                    </div>
+                }).collect::<Vec<_>>()}
+            </div>
+        </section>
+        // List items skeleton
+        <section class="section">
+            <div class="skeleton-title skeleton-shimmer"></div>
+            <div class="fav-skeleton-list">
+                {(0..5).map(|_| view! {
+                    <div class="fav-skeleton-item skeleton-shimmer">
+                        <div class="fav-skeleton-thumb"></div>
+                        <div class="fav-skeleton-info">
+                            <div class="fav-skeleton-name"></div>
+                            <div class="fav-skeleton-system"></div>
+                        </div>
+                    </div>
+                }).collect::<Vec<_>>()}
+            </div>
+        </section>
+    }
+}
 
 /// Skeleton placeholder for favorites recommendation sections while streaming.
 #[component]
