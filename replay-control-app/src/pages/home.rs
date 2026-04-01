@@ -212,8 +212,6 @@ fn RecentlyPlayedSkeleton() -> impl IntoView {
     }
 }
 
-/// Render recommendation sections: random picks, favorites-based, top-rated, and discover links.
-
 /// Skeleton placeholder shown while recommendations are loading (streaming SSR).
 /// Mimics 2 recommendation sections with shimmer-animated cards.
 #[component]

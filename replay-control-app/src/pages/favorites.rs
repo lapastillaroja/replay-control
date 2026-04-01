@@ -564,11 +564,10 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
             for f in favs.iter() {
                 if let Some(pri_name) = folder_name(&pri, f) {
                     let subs = map.entry(pri_name).or_default();
-                    if sec_is_real {
-                        if let Some(sec_name) = folder_name(&sec, f) {
+                    if sec_is_real
+                        && let Some(sec_name) = folder_name(&sec, f) {
                             subs.insert(sec_name);
                         }
-                    }
                 }
             }
             // If secondary is static, inject static examples into each primary.
@@ -856,8 +855,6 @@ fn parse_criteria(value: &str) -> Option<OrganizeCriteria> {
         _ => None,
     }
 }
-
-/// `/favorites/:system` — favorites list filtered to a single system.
 
 /// Skeleton for the full favorites page while the main resource streams.
 #[component]

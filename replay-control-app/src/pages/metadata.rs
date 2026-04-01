@@ -441,11 +441,14 @@ fn close_activity_sse() {
     });
 }
 
+// SSR stub: called only from the wasm32 branch of watch_activity, but the
+// function must exist on both targets so the call site compiles.
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 fn close_activity_sse() {}
 
 /// Watches activity progress via single SSE endpoint.
+// SSR build early-returns, so params appear unused and code after `return` is unreachable.
 #[allow(unused_variables, unreachable_code)]
 fn watch_activity(
     activity: RwSignal<Activity>,

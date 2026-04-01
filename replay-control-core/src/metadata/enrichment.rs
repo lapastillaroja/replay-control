@@ -367,7 +367,7 @@ pub fn enrich_system(
 pub fn format_box_art_url(system: &str, relative_path: &str) -> String {
     let encoded_path: String = relative_path
         .split('/')
-        .map(|seg| encode_uri_path_segment(seg))
+        .map(encode_uri_path_segment)
         .collect::<Vec<_>>()
         .join("/");
     format!("/media/{system}/{encoded_path}")

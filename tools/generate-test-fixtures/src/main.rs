@@ -290,14 +290,13 @@ fn parse_fbneo_dat(path: &Path, max_count: usize) -> Vec<String> {
     for line in content.lines() {
         let trimmed = line.trim();
         // Match lines like: <game name="88games" sourcefile="...">
-        if trimmed.starts_with("<game ") {
-            if let Some(name) = extract_xml_attr(trimmed, "name") {
+        if trimmed.starts_with("<game ")
+            && let Some(name) = extract_xml_attr(trimmed, "name") {
                 filenames.push(format!("{name}.zip"));
                 if filenames.len() >= max_count {
                     break;
                 }
             }
-        }
     }
 
     filenames
@@ -500,9 +499,9 @@ fn extract_quoted(line: &str, prefix: &str) -> Option<String> {
         line.find(prefix).map(|i| &line[i + prefix.len()..])
     })?;
     let rest = rest.trim();
-    if rest.starts_with('"') {
-        let end = rest[1..].find('"')?;
-        Some(rest[1..1 + end].to_string())
+    if let Some(stripped) = rest.strip_prefix('"') {
+        let end = stripped.find('"')?;
+        Some(stripped[..end].to_string())
     } else {
         // Unquoted value (ends at space or end of line)
         let end = rest.find(' ').unwrap_or(rest.len());
@@ -513,11 +512,10 @@ fn extract_quoted(line: &str, prefix: &str) -> Option<String> {
 /// Extract region from a game name like "Super Mario World (USA)" -> "USA"
 fn extract_region(name: &str) -> String {
     // Find the first parenthesized group
-    if let Some(start) = name.find('(') {
-        if let Some(end) = name[start..].find(')') {
+    if let Some(start) = name.find('(')
+        && let Some(end) = name[start..].find(')') {
             return name[start + 1..start + end].to_string();
         }
-    }
     String::new()
 }
 
@@ -539,14 +537,12 @@ fn workspace_root() -> PathBuf {
     let mut dir = std::env::current_dir().expect("failed to get current directory");
     loop {
         let cargo_toml = dir.join("Cargo.toml");
-        if cargo_toml.exists() {
+        if cargo_toml.exists()
             // Check if this is the workspace root (has [workspace] section)
-            if let Ok(content) = fs::read_to_string(&cargo_toml) {
-                if content.contains("[workspace]") {
-                    return dir;
-                }
+            && let Ok(content) = fs::read_to_string(&cargo_toml)
+            && content.contains("[workspace]") {
+                return dir;
             }
-        }
         if !dir.pop() {
             // Fallback: assume current directory
             return std::env::current_dir().expect("failed to get current directory");

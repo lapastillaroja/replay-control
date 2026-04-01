@@ -273,16 +273,15 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
 
             // Batch lookup: all favorites + seed game (if from recents) in one query.
             let mut all_keys = fav_keys_vec;
-            if let Some(ref seed) = seed_game {
-                if !fav_keys.contains(seed) {
+            if let Some(ref seed) = seed_game
+                && !fav_keys.contains(seed) {
                     all_keys.push(seed.clone());
                 }
-            }
             let all_entries = MetadataDb::lookup_game_entries(conn, &all_keys).unwrap_or_default();
 
             // --- "Because You Love [Game]" ---
-            if let Some(ref seed) = seed_game {
-                if let Some(seed_entry) = all_entries.get(seed) {
+            if let Some(ref seed) = seed_game
+                && let Some(seed_entry) = all_entries.get(seed) {
                     let genre = if seed_entry.genre_group.is_empty() {
                         None
                     } else {
@@ -316,8 +315,8 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                         }
                     }
                     // Fill with developer matches if not enough genre matches.
-                    if similar.len() < 6 {
-                        if let Some(dev) = developer {
+                    if similar.len() < 6
+                        && let Some(dev) = developer {
                             let by_dev = MetadataDb::top_rated_filtered(
                                 conn,
                                 None,
@@ -342,7 +341,6 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                                 }
                             }
                         }
-                    }
 
                     if similar.len() >= 3 {
                         let raw_name = seed_entry
@@ -354,7 +352,6 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                         sections.push((title, similar, None));
                     }
                 }
-            }
 
             // --- "More from [Series]" ---
             if !all_entries.is_empty() {
