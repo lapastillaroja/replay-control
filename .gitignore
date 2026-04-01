@@ -119,3 +119,7 @@ tools/bench-results/
 data/*
 !data/README.md
 
+# Generated test fixtures (thousands of empty ROM files)
+# Regenerate with: cargo run -p generate-test-fixtures
+tests/fixtures/storage/
+

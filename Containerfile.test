@@ -1,0 +1,50 @@
+# Integration test container for replay-control.
+#
+# Runs the pre-built x86_64 binary with test fixtures (empty ROM files with
+# real No-Intro filenames) to enable HTTP-level integration testing without
+# a physical Pi or external network access.
+#
+# Build:
+#   podman build -f Containerfile.test -t replay-control-test .
+#   docker build -f Containerfile.test -t replay-control-test .
+#
+# Run (network-isolated):
+#   podman run --rm --network=none -p 8080:8080 replay-control-test
+#
+# Prerequisites:
+#   1. Build the app:        ./build.sh
+#   2. Generate fixtures:    cargo run -p generate-test-fixtures
+#
+# The binary path is passed as a build arg since it differs between
+# native builds (target/release/) and cross-compiled builds (target/<triple>/release/).
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy pre-built binary (default: native x86_64 release build)
+ARG APP_BIN=target/release/replay-control-app
+COPY ${APP_BIN} /app/replay-control-app
+
+# Copy site assets (WASM, CSS, JS, images)
+COPY target/site /app/site
+
+# Copy test fixture storage
+COPY tests/fixtures/storage /storage
+
+# Environment
+ENV RUST_LOG=replay_control_app=info,replay_control_core=info
+ENV LEPTOS_SITE_ROOT=/app/site
+
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/ || exit 1
+
+EXPOSE 8080
+
+CMD ["/app/replay-control-app", "--port", "8080", "--site-root", "/app/site", "--storage-path", "/storage"]

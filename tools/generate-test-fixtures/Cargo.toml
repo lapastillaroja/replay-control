@@ -1,0 +1,8 @@
+[package]
+name = "generate-test-fixtures"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Generates test fixture storage structure with real No-Intro filenames"
+
+[dependencies]

@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["replay-control-core", "replay-control-app"]
+members = [
+    "replay-control-core",
+    "replay-control-app",
+    "tools/generate-test-fixtures",
+]
 
 [workspace.package]
 license = "GPL-3.0-or-later"
