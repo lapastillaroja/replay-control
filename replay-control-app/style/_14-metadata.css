@@ -204,3 +204,46 @@
     color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
 }
+
+/* ── Skeleton placeholders ────────────────────────────────────────── */
+
+.meta-skeleton-table {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.meta-skeleton-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    height: 1.6rem;
+    border-radius: 4px;
+}
+
+.meta-skeleton-cell-wide {
+    flex: 3;
+    height: 0.75rem;
+    border-radius: 3px;
+    background: var(--border);
+}
+
+.meta-skeleton-cell {
+    flex: 1;
+    height: 0.75rem;
+    border-radius: 3px;
+    background: var(--border);
+}
+
+.meta-skeleton-bar-wide {
+    width: 80%;
+    height: 0.8rem;
+    border-radius: 4px;
+    margin-bottom: 8px;
+}
+
+.meta-skeleton-bar {
+    width: 55%;
+    height: 0.75rem;
+    border-radius: 4px;
+}

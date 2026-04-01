@@ -10,11 +10,12 @@ use crate::util::{format_number, format_size};
 #[component]
 pub fn MetadataPage() -> impl IntoView {
     let i18n = use_i18n();
-    let stats = Resource::new_blocking(|| (), |_| server_fns::get_metadata_stats());
-    let coverage = Resource::new_blocking(|| (), |_| server_fns::get_system_coverage());
-    let data_source = Resource::new_blocking(|| (), |_| server_fns::get_thumbnail_data_source());
-    let image_stats = Resource::new_blocking(|| (), |_| server_fns::get_image_stats());
-    let builtin_stats = Resource::new_blocking(|| (), |_| server_fns::get_builtin_db_stats());
+    // Non-blocking: each section is wrapped in Suspense with skeleton fallbacks.
+    let stats = Resource::new(|| (), |_| server_fns::get_metadata_stats());
+    let coverage = Resource::new(|| (), |_| server_fns::get_system_coverage());
+    let data_source = Resource::new(|| (), |_| server_fns::get_thumbnail_data_source());
+    let image_stats = Resource::new(|| (), |_| server_fns::get_image_stats());
+    let builtin_stats = Resource::new(|| (), |_| server_fns::get_builtin_db_stats());
 
     // Single activity signal (replaces importing + thumb_updating + rebuilding).
     let activity = RwSignal::new(Activity::Idle);
@@ -165,8 +166,8 @@ pub fn MetadataPage() -> impl IntoView {
             // ── System Overview ───────────────────────────────────────
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.system_overview")}</h2>
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <MetadataTableSkeleton /> }>
+                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let data = coverage.await?;
@@ -218,8 +219,8 @@ pub fn MetadataPage() -> impl IntoView {
                                 }.into_any()
                             })
                         })}
-                    </Suspense>
-                </ErrorBoundary>
+                    </ErrorBoundary>
+                </Suspense>
             </section>
 
             // ── Data Sources ──────────────────────────────────────────
@@ -227,8 +228,8 @@ pub fn MetadataPage() -> impl IntoView {
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.data_sources")}</h2>
 
                 // Built-in data info block
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || ()>
+                <Suspense fallback=move || view! { <MetadataCardSkeleton /> }>
+                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let bs = builtin_stats.await?;
@@ -257,16 +258,16 @@ pub fn MetadataPage() -> impl IntoView {
                                 </div>
                             })
                         })}
-                    </Suspense>
-                </ErrorBoundary>
+                    </ErrorBoundary>
+                </Suspense>
 
                 // Descriptions & Ratings (LaunchBox)
                 <div class="data-source-card">
                     <div class="data-source-header">
                         <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.descriptions_launchbox")}</span>
                     </div>
-                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                        <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
+                        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                             {move || Suspend::new(async move {
                                 let locale = i18n.locale.get();
                                 let data = stats.await?;
@@ -287,8 +288,8 @@ pub fn MetadataPage() -> impl IntoView {
                                     }.into_any()
                                 })
                             })}
-                        </Suspense>
-                    </ErrorBoundary>
+                        </ErrorBoundary>
+                    </Suspense>
                     <div class="data-source-actions">
                         <button
                             class="metadata-download-btn"
@@ -317,8 +318,8 @@ pub fn MetadataPage() -> impl IntoView {
                     <div class="data-source-header">
                         <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.thumbnails_libretro")}</span>
                     </div>
-                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                        <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
+                        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                             {move || Suspend::new(async move {
                                 let locale = i18n.locale.get();
                                 let ds = data_source.await?;
@@ -373,8 +374,8 @@ pub fn MetadataPage() -> impl IntoView {
                                     }.into_any()
                                 })
                             })}
-                        </Suspense>
-                    </ErrorBoundary>
+                        </ErrorBoundary>
+                    </Suspense>
                     <div class="data-source-actions">
                         <button
                             class="metadata-download-btn"
@@ -1016,5 +1017,43 @@ fn ClearActionCard(
                 <p class="manage-action-result">{move || result.get().unwrap_or_default()}</p>
             </Show>
         </div>
+    }
+}
+
+// ── Skeleton components ──────────────────────────────────────────────────
+
+/// Skeleton for the system overview table (4 shimmer rows).
+#[component]
+fn MetadataTableSkeleton() -> impl IntoView {
+    view! {
+        <div class="meta-skeleton-table">
+            {(0..4).map(|_| view! {
+                <div class="meta-skeleton-row skeleton-shimmer">
+                    <div class="meta-skeleton-cell-wide"></div>
+                    <div class="meta-skeleton-cell"></div>
+                    <div class="meta-skeleton-cell"></div>
+                    <div class="meta-skeleton-cell"></div>
+                </div>
+            }).collect::<Vec<_>>()}
+        </div>
+    }
+}
+
+/// Skeleton for a data-source card (builtin info block).
+#[component]
+fn MetadataCardSkeleton() -> impl IntoView {
+    view! {
+        <div class="data-source-card">
+            <div class="meta-skeleton-bar-wide skeleton-shimmer"></div>
+            <div class="meta-skeleton-bar skeleton-shimmer"></div>
+        </div>
+    }
+}
+
+/// Skeleton for a single summary line inside a data-source card.
+#[component]
+fn MetadataLineSkeleton() -> impl IntoView {
+    view! {
+        <div class="meta-skeleton-bar skeleton-shimmer"></div>
     }
 }
