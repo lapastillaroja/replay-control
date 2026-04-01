@@ -58,7 +58,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     }
 
     let storage = state.storage();
-    let systems = state.cache.cached_systems(&storage).await;
+    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
     let count = count.clamp(1, 12);
 
     // Collect favorites from the in-memory cache — no DB access.
@@ -116,8 +116,8 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // This includes the favorites genre lookup that previously required a
     // separate db_read round-trip.
     let db_data = state
-        .cache
-        .db_read(move |conn| {
+        .metadata_pool
+        .read(move |conn| {
             let random_pool = MetadataDb::random_cached_roms_diverse(
                 conn,
                 count,

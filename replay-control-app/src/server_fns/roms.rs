@@ -133,8 +133,8 @@ pub async fn get_roms_page(
     let sys_owned = system.clone();
 
     let db_result = state
-        .cache
-        .db_read(move |conn| {
+        .metadata_pool
+        .read(move |conn| {
             let filter = SearchFilter {
                 hide_hacks,
                 hide_translations,
@@ -207,7 +207,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     let rom = state
         .cache
-        .get_single_rom(&storage, &system, &filename)
+        .get_single_rom(&storage, &system, &filename, &state.metadata_pool)
         .await
         .ok_or_else(|| {
             if !state.is_idle() {
@@ -418,7 +418,7 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
     }
 
     // Invalidate caches.
-    state.cache.invalidate_system(system).await;
+    state.cache.invalidate_system(system, &state.metadata_pool).await;
     state.cache.invalidate_favorites();
     state.response_cache.invalidate_all();
 
@@ -550,7 +550,7 @@ pub async fn rename_rom(
     rename_rom_cascade(&state, &storage, &system, &old_filename, &new_filename).await;
 
     // Invalidate caches.
-    state.cache.invalidate_system(system).await;
+    state.cache.invalidate_system(system, &state.metadata_pool).await;
     state.cache.invalidate_favorites();
     state.response_cache.invalidate_all();
 

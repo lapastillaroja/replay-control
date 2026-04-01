@@ -103,7 +103,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 
     // Get total games per system from game library.
     let storage = state.storage();
-    let systems = state.cache.cached_systems(&storage).await;
+    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
 
     let mut meta_map: std::collections::HashMap<String, usize> =
         entries_per_system.into_iter().collect();
@@ -227,7 +227,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Clear L1+L2 cache.
-    state.cache.invalidate().await;
+    state.cache.invalidate(&state.metadata_pool).await;
     state.response_cache.invalidate_all();
 
     // Rebuild in background; the guard drops → Idle when done (or on panic).
@@ -286,7 +286,7 @@ pub async fn rebuild_corrupt_metadata() -> Result<(), ServerFnError> {
         ));
     }
     // Invalidate cache so stale data doesn't persist.
-    state.cache.invalidate().await;
+    state.cache.invalidate(&state.metadata_pool).await;
     state.response_cache.invalidate_all();
     // Trigger background re-import if XML exists.
     let _ = state.import.regenerate_metadata(&state).await;

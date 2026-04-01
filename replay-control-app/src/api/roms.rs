@@ -9,7 +9,7 @@ use super::AppState;
 async fn list_systems(
     State(state): State<AppState>,
 ) -> Json<Vec<replay_control_core::roms::SystemSummary>> {
-    Json(state.cache.cached_systems(&state.storage()).await)
+    Json(state.cache.cached_systems(&state.storage(), &state.metadata_pool).await)
 }
 
 async fn list_system_roms(
@@ -21,7 +21,7 @@ async fn list_system_roms(
     // L2: try SQLite game_library.
     if let Some(roms) = state
         .cache
-        .load_roms_from_db(&storage, &system, &storage.roms_dir().join(&system))
+        .load_roms_from_db(&storage, &system, &storage.roms_dir().join(&system), &state.metadata_pool)
         .await
     {
         return Ok(Json(roms));
@@ -35,6 +35,7 @@ async fn list_system_roms(
             &system,
             state.region_preference(),
             state.region_preference_secondary(),
+            &state.metadata_pool,
         )
         .await
         .map(|arc| Json(arc.to_vec()))
@@ -51,7 +52,7 @@ async fn delete_rom(
         &payload.relative_path,
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
-    state.cache.invalidate().await;
+    state.cache.invalidate(&state.metadata_pool).await;
     state.response_cache.invalidate_all();
     Ok(StatusCode::NO_CONTENT)
 }
@@ -66,7 +67,7 @@ async fn rename_rom(
         &payload.new_filename,
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
-    state.cache.invalidate().await;
+    state.cache.invalidate(&state.metadata_pool).await;
     state.response_cache.invalidate_all();
     Ok(Json(serde_json::json!({
         "new_path": new_path.display().to_string()

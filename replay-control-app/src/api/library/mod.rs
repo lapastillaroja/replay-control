@@ -1,17 +1,14 @@
-pub mod response;
 pub(crate) mod query;
 mod aliases;
 mod enrichment;
 mod favorites;
-mod hashing;
-mod images;
+mod scan_pipeline;
 
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use deadpool_sqlite::rusqlite;
 use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::recents::RecentEntry;
 use replay_control_core::rom_tags::RegionPreference;
@@ -105,50 +102,31 @@ impl<T: Clone> CacheEntry<T> {
 
 use favorites::FavoritesCache;
 
-pub struct GameLibrary {
+pub struct LibraryService {
     pub(crate) query_cache: query::QueryCache,
     pub(super) systems: std::sync::RwLock<Option<CacheEntry<Vec<SystemSummary>>>>,
     pub(super) favorites: std::sync::RwLock<Option<FavoritesCache>>,
     pub(super) recents: std::sync::RwLock<Option<CacheEntry<Vec<RecentEntry>>>>,
-    /// Metadata DB pool for L2 persistent cache.
-    pub(super) db: DbPool,
 }
 
-impl GameLibrary {
-    pub(crate) fn new(db: DbPool) -> Self {
+impl LibraryService {
+    pub(crate) fn new() -> Self {
         let query_cache = query::QueryCache::new();
         Self {
             systems: std::sync::RwLock::new(None),
             favorites: std::sync::RwLock::new(None),
             recents: std::sync::RwLock::new(None),
             query_cache,
-            db,
         }
-    }
-
-    /// Run a read-only closure with the metadata DB connection.
-    /// Returns None if the DB is unavailable.
-    pub async fn db_read<F, R>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.db.read(f).await
-    }
-
-    /// Run a write closure with the metadata DB connection.
-    /// Returns None if the DB is unavailable.
-    pub async fn db_write<F, R>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.db.write(f).await
     }
 
     /// Get cached systems or scan and cache.
     /// L1 (in-memory) → L2 (SQLite game_library_meta) → L3 (filesystem scan).
-    pub async fn cached_systems(&self, storage: &StorageLocation) -> Vec<SystemSummary> {
+    pub async fn cached_systems(
+        &self,
+        storage: &StorageLocation,
+        db: &DbPool,
+    ) -> Vec<SystemSummary> {
         let roms_dir = storage.roms_dir();
 
         // L1: Try in-memory cache.
@@ -161,7 +139,7 @@ impl GameLibrary {
 
         // L2: Try SQLite game_library_meta (reconstructs SystemSummary from cached metadata).
         let is_local = storage.kind.is_local();
-        if let Some(summaries) = self.load_systems_from_db(storage).await
+        if let Some(summaries) = self.load_systems_from_db(storage, db).await
             && !summaries.is_empty()
         {
             // Store in L1.
@@ -178,16 +156,20 @@ impl GameLibrary {
         }
 
         // Write-through to L2 (background-safe: no lock held on L1).
-        self.save_systems_to_db(storage, &summaries).await;
+        self.save_systems_to_db(storage, &summaries, db).await;
 
         summaries
     }
 
     /// Try to reconstruct SystemSummary list from SQLite game_library_meta.
-    async fn load_systems_from_db(&self, _storage: &StorageLocation) -> Option<Vec<SystemSummary>> {
+    async fn load_systems_from_db(
+        &self,
+        _storage: &StorageLocation,
+        db: &DbPool,
+    ) -> Option<Vec<SystemSummary>> {
         use replay_control_core::systems;
 
-        let cached_meta = self.db.read(MetadataDb::load_all_system_meta).await?;
+        let cached_meta = db.read(MetadataDb::load_all_system_meta).await?;
         let cached_meta = cached_meta.ok()?;
 
         if cached_meta.is_empty() {
@@ -228,28 +210,32 @@ impl GameLibrary {
     }
 
     /// Write system summaries to SQLite game_library_meta.
-    async fn save_systems_to_db(&self, storage: &StorageLocation, summaries: &[SystemSummary]) {
+    async fn save_systems_to_db(
+        &self,
+        storage: &StorageLocation,
+        summaries: &[SystemSummary],
+        db: &DbPool,
+    ) {
         let roms_dir = storage.roms_dir();
         let summaries: Vec<_> = summaries.to_vec();
-        self.db
-            .write(move |conn| {
-                for summary in &summaries {
-                    let system_dir = roms_dir.join(&summary.folder_name);
-                    let mtime_secs = dir_mtime(&system_dir).and_then(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH)
-                            .ok()
-                            .map(|d| d.as_secs() as i64)
-                    });
-                    let _ = MetadataDb::save_system_meta(
-                        conn,
-                        &summary.folder_name,
-                        mtime_secs,
-                        summary.game_count,
-                        summary.total_size_bytes,
-                    );
-                }
-            })
-            .await;
+        db.write(move |conn| {
+            for summary in &summaries {
+                let system_dir = roms_dir.join(&summary.folder_name);
+                let mtime_secs = dir_mtime(&system_dir).and_then(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|d| d.as_secs() as i64)
+                });
+                let _ = MetadataDb::save_system_meta(
+                    conn,
+                    &summary.folder_name,
+                    mtime_secs,
+                    summary.game_count,
+                    summary.total_size_bytes,
+                );
+            }
+        })
+        .await;
     }
 
     /// Look up a single ROM entry from L2 (SQLite) DB.
@@ -259,12 +245,12 @@ impl GameLibrary {
         _storage: &StorageLocation,
         system: &str,
         filename: &str,
+        db: &DbPool,
     ) -> Option<RomEntry> {
         // L2: direct single-row DB lookup.
         let sys = system.to_string();
         let fname = filename.to_string();
-        let game_entry = self
-            .db
+        let game_entry = db
             .read(move |conn| MetadataDb::load_single_entry(conn, &sys, &fname))
             .await?
             .ok()??;
@@ -296,6 +282,7 @@ impl GameLibrary {
         system: &str,
         region_pref: RegionPreference,
         region_secondary: Option<RegionPreference>,
+        db: &DbPool,
     ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
         let system_dir = storage.roms_dir().join(system);
 
@@ -306,12 +293,12 @@ impl GameLibrary {
 
         // Hash-and-identify step: for hash-eligible systems, compute CRC32 hashes
         // and look up canonical names in the embedded No-Intro DAT data.
-        let hash_results = self.hash_roms_for_system(storage, system, &mut roms).await;
+        let hash_results = self.hash_roms_for_system(storage, system, &mut roms, db).await;
 
         let arc = Arc::new(roms);
 
         // Write to L2.
-        self.save_roms_to_db(storage, system, &arc, &system_dir, &hash_results)
+        self.save_roms_to_db(storage, system, &arc, &system_dir, &hash_results, db)
             .await;
 
         Ok(arc)
@@ -323,12 +310,12 @@ impl GameLibrary {
         _storage: &StorageLocation,
         system: &str,
         system_dir: &Path,
+        db: &DbPool,
     ) -> Option<Vec<RomEntry>> {
         use replay_control_core::metadata_db::SystemMeta;
 
         let sys = system.to_string();
-        let meta: SystemMeta = self
-            .db
+        let meta: SystemMeta = db
             .read(move |conn| MetadataDb::load_system_meta(conn, &sys))
             .await?
             .ok()??;
@@ -363,8 +350,7 @@ impl GameLibrary {
 
         // Load ROMs from DB.
         let sys = system.to_string();
-        let cached_roms = self
-            .db
+        let cached_roms = db
             .read(move |conn| MetadataDb::load_system_entries(conn, &sys))
             .await?
             .ok()?;
@@ -374,7 +360,7 @@ impl GameLibrary {
             return None;
         }
 
-        // Convert GameEntry → RomEntry.
+        // Convert GameEntry -> RomEntry.
         let roms: Vec<RomEntry> = cached_roms
             .into_iter()
             .map(|cr| {
@@ -433,7 +419,7 @@ impl GameLibrary {
 
     /// Invalidate all caches (after delete, rename, upload).
     /// Clears L1 in-memory caches and L2 (SQLite game_library).
-    pub async fn invalidate(&self) {
+    pub async fn invalidate(&self, db: &DbPool) {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
         }
@@ -445,26 +431,24 @@ impl GameLibrary {
         }
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library.
-        self.db
-            .write(|conn| {
-                let _ = MetadataDb::clear_all_game_library(conn);
-            })
-            .await;
+        db.write(|conn| {
+            let _ = MetadataDb::clear_all_game_library(conn);
+        })
+        .await;
     }
 
     /// Invalidate cache for a specific system.
     /// Clears L1 systems cache and L2 (SQLite game_library) for the system.
-    pub async fn invalidate_system(&self, system: String) {
+    pub async fn invalidate_system(&self, system: String, db: &DbPool) {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
         }
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library for this system.
-        self.db
-            .write(move |conn| {
-                let _ = MetadataDb::clear_system_game_library(conn, &system);
-            })
-            .await;
+        db.write(move |conn| {
+            let _ = MetadataDb::clear_system_game_library(conn, &system);
+        })
+        .await;
     }
 
     /// Invalidate only the favorites cache (after add/remove favorite).
@@ -485,36 +469,6 @@ impl GameLibrary {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// ActivityGuard is cleared on drop.
-    /// This validates the guard pattern used in BackgroundManager::run_pipeline.
-    #[test]
-    fn activity_guard_resets_to_idle_on_drop() {
-        use crate::api::activity::{Activity, StartupPhase};
-
-        let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
-
-        {
-            // Simulate what run_pipeline does: set startup, then drop guard.
-            *activity.write().unwrap() = Activity::Startup {
-                phase: StartupPhase::Scanning,
-                system: String::new(),
-            };
-            assert!(matches!(
-                *activity.read().unwrap(),
-                Activity::Startup { .. }
-            ));
-
-            let _guard = crate::api::activity::ActivityGuard::new_for_test(activity.clone());
-            // Guard is alive — activity should still be Startup.
-            assert!(matches!(
-                *activity.read().unwrap(),
-                Activity::Startup { .. }
-            ));
-        }
-        // Guard dropped — activity should be Idle.
-        assert!(matches!(*activity.read().unwrap(), Activity::Idle));
-    }
 
     /// Per-batch DB locking: verify that the DB Mutex is released between
     /// batch operations, allowing other threads to access the DB.

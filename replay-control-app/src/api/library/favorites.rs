@@ -3,7 +3,7 @@ use std::path::Path;
 
 use replay_control_core::storage::StorageLocation;
 
-use super::{Freshness, GameLibrary};
+use super::{Freshness, LibraryService};
 
 /// Cached favorites: per-system set of favorited filenames.
 ///
@@ -36,7 +36,7 @@ impl FavoritesCache {
     }
 }
 
-impl GameLibrary {
+impl LibraryService {
     /// Ensure the favorites cache is fresh and apply `f` to its data.
     /// On cache hit, reads under a read lock. On miss, rebuilds the cache,
     /// stores it, and applies `f` to the fresh data.

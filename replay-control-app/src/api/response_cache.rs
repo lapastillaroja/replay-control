@@ -12,7 +12,7 @@ const RESPONSE_TTL: Duration = Duration::from_secs(10);
 /// `get_favorites_recommendations` so that back-navigation and rapid reloads
 /// (within the TTL window) skip all DB queries and box-art resolution.
 ///
-/// Lives on `AppState` (not inside `GameLibrary`) because it caches the fully
+/// Lives on `AppState` (not inside `LibraryService`) because it caches the fully
 /// assembled server-function response, not raw library data.
 pub struct ResponseCache {
     recommendations: RwLock<Option<(Instant, RecommendationData)>>,

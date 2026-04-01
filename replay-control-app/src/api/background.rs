@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use super::AppState;
 use super::activity::{Activity, StartupPhase};
-use super::cache::dir_mtime;
+use super::library::dir_mtime;
 use super::import::ImportPipeline;
 
 /// How often the background task re-checks storage (in seconds).
@@ -193,7 +193,7 @@ impl BackgroundManager {
                 });
                 let _ = state
                     .cache
-                    .scan_and_cache_system(&storage, &meta.system, region_pref, region_secondary)
+                    .scan_and_cache_system(&storage, &meta.system, region_pref, region_secondary, &state.metadata_pool)
                     .await;
                 state
                     .cache
@@ -380,7 +380,7 @@ impl BackgroundManager {
         region_pref: replay_control_core::rom_tags::RegionPreference,
         region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
     ) {
-        let systems = state.cache.cached_systems(storage).await;
+        let systems = state.cache.cached_systems(storage, &state.metadata_pool).await;
         let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
         tracing::info!(
             "L2 warmup: populating {} system(s) with games",
@@ -397,7 +397,7 @@ impl BackgroundManager {
             });
             match state
                 .cache
-                .scan_and_cache_system(storage, &sys.folder_name, region_pref, region_secondary)
+                .scan_and_cache_system(storage, &sys.folder_name, region_pref, region_secondary, &state.metadata_pool)
                 .await
             {
                 Ok(roms) => {
@@ -455,8 +455,8 @@ impl AppState {
 
             // Check if game library is empty -- if so, populate before enriching.
             let is_empty = state
-                .cache
-                .db_read(|conn| {
+                .metadata_pool
+                .read(|conn| {
                     MetadataDb::load_all_system_meta(conn)
                         .map(|m| m.is_empty())
                         .unwrap_or(true)
@@ -488,7 +488,7 @@ impl AppState {
             // cause enrichment reads to return None, silently skipping all updates.
             // Enrichment writes are small per-system UPDATEs (not bulk INSERTs),
             // so the exFAT corruption risk is low.
-            let systems = state.cache.cached_systems(&storage).await;
+            let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
             if !with_games.is_empty() {
@@ -526,8 +526,8 @@ impl AppState {
 
             // Check if game library is empty -- if so, populate before enriching.
             let is_empty = state
-                .cache
-                .db_read(|conn| {
+                .metadata_pool
+                .read(|conn| {
                     MetadataDb::load_all_system_meta(conn)
                         .map(|m| m.is_empty())
                         .unwrap_or(true)
@@ -562,7 +562,7 @@ impl AppState {
             // NOTE: enrichment writes are NOT gated because enrich_system_cache
             // reads from the DB and the write gate blocks ALL reads on the same pool.
             // Enrichment writes are small per-system UPDATEs, not bulk INSERTs.
-            let systems = state.cache.cached_systems(&storage).await;
+            let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
             state.update_activity(|act| {
@@ -927,7 +927,7 @@ impl AppState {
                 // Invalidate L1+L2 for each affected system so get_roms
                 // does a fresh L3 filesystem scan.
                 for system in &affected_systems {
-                    state.cache.invalidate_system(system.clone()).await;
+                    state.cache.invalidate_system(system.clone(), &state.metadata_pool).await;
                     state.response_cache.invalidate_all();
                 }
 
@@ -945,7 +945,7 @@ impl AppState {
                     for system in &affected_systems {
                         let _ = state
                             .cache
-                            .scan_and_cache_system(&storage, system, region_pref, region_secondary)
+                            .scan_and_cache_system(&storage, system, region_pref, region_secondary, &state.metadata_pool)
                             .await;
                         state
                             .cache
@@ -959,7 +959,7 @@ impl AppState {
                 // new systems and update game counts.
                 if roms_dir_changed {
                     tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
-                    let systems = state.cache.cached_systems(&storage).await;
+                    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
                     for sys in &systems {
                         if sys.game_count > 0 && !affected_systems.contains(&sys.folder_name) {
                             let _ = state
@@ -969,6 +969,7 @@ impl AppState {
                                     &sys.folder_name,
                                     region_pref,
                                     region_secondary,
+                                    &state.metadata_pool,
                                 )
                                 .await;
                             state
@@ -978,7 +979,7 @@ impl AppState {
                         }
                     }
                 } else if !affected_systems.is_empty() {
-                    let _ = state.cache.cached_systems(&storage).await;
+                    let _ = state.cache.cached_systems(&storage, &state.metadata_pool).await;
                 }
             }
         });

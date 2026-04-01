@@ -53,8 +53,8 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
         .map(|e| (e.game.system.clone(), e.game.rom_filename.clone()))
         .collect();
     let db_entries = state
-        .cache
-        .db_read(move |conn| {
+        .metadata_pool
+        .read(move |conn| {
             MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
         })
         .await
@@ -91,8 +91,8 @@ async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEnt
         .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
         .collect();
     let db_entries = state
-        .cache
-        .db_read(move |conn| {
+        .metadata_pool
+        .read(move |conn| {
             MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
         })
         .await
@@ -132,7 +132,7 @@ async fn game_detail(
     // Verify the ROM exists in the library (single-row lookup, no full system load).
     state
         .cache
-        .get_single_rom(&storage, &system, &filename)
+        .get_single_rom(&storage, &system, &filename, &state.metadata_pool)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 

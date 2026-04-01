@@ -38,6 +38,8 @@ pub use metadata::db_common;
 #[cfg(feature = "metadata")]
 pub use metadata::enrichment;
 #[cfg(feature = "metadata")]
+pub use metadata::game_entry_builder;
+#[cfg(feature = "metadata")]
 pub use metadata::image_matching;
 #[cfg(feature = "metadata")]
 pub use metadata::launchbox;

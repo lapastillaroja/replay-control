@@ -1,0 +1,159 @@
+use std::collections::HashMap;
+use std::path::Path;
+
+use replay_control_core::roms::RomEntry;
+use replay_control_core::storage::StorageLocation;
+
+use replay_control_core::metadata_db::MetadataDb;
+
+use super::{LibraryService, dir_mtime};
+use crate::api::DbPool;
+
+impl LibraryService {
+    /// Hash ROM files for a hash-eligible system and apply identification results.
+    ///
+    /// For eligible systems (cartridge-based with No-Intro CRC data), this:
+    /// 1. Loads cached hashes from the database
+    /// 2. Computes CRC32 for new/modified files
+    /// 3. Looks up CRC32 in the No-Intro index
+    /// 4. Overrides display names for matched ROMs (via `GameRef::new()` with the
+    ///    canonical No-Intro name)
+    ///
+    /// Returns a map of rom_filename -> HashResult for use by save_roms_to_db.
+    pub(super) async fn hash_roms_for_system(
+        &self,
+        storage: &StorageLocation,
+        system: &str,
+        roms: &mut [RomEntry],
+        db: &DbPool,
+    ) -> HashMap<String, replay_control_core::rom_hash::HashResult> {
+        use replay_control_core::rom_hash::{self, HashResult};
+
+        if !rom_hash::is_hash_eligible(system) {
+            return HashMap::new();
+        }
+
+        // Load cached hashes from L2 (database).
+        let system_owned = system.to_string();
+        let cached_hashes = db
+            .read(move |conn| MetadataDb::load_cached_hashes(conn, &system_owned))
+            .await
+            .and_then(|r| r.ok())
+            .unwrap_or_default();
+
+        // Build input list: (rom_filename, rom_path, size_bytes).
+        let rom_files: Vec<(String, String, u64)> = roms
+            .iter()
+            .filter(|r| !r.is_m3u) // Skip M3U playlists
+            .map(|r| {
+                (
+                    r.game.rom_filename.clone(),
+                    r.game.rom_path.clone(),
+                    r.size_bytes,
+                )
+            })
+            .collect();
+
+        let results =
+            rom_hash::hash_and_identify(system, &rom_files, &cached_hashes, &storage.root);
+
+        // Build a lookup map for applying results.
+        let mut result_map: HashMap<String, HashResult> = HashMap::new();
+        for result in results {
+            result_map.insert(result.rom_filename.clone(), result);
+        }
+
+        // Apply hash-matched display names to RomEntries.
+        // When a CRC match gives us a canonical No-Intro name (e.g.,
+        // "Super Mario World (USA)"), re-resolve the display name through
+        // GameRef::new() using that canonical name as the filename stem.
+        // This gives us the proper display name with tags.
+        for rom in roms.iter_mut() {
+            if let Some(hash_result) = result_map.get(&rom.game.rom_filename)
+                && let Some(ref matched_name) = hash_result.matched_name
+            {
+                // The matched_name is the No-Intro canonical filename stem
+                // (e.g., "Super Mario World (USA)"). Use game_display_name()
+                // to get the clean display title, then apply tags from the
+                // original filename.
+                let canonical_filename = format!("{matched_name}.rom");
+                if let Some(display) =
+                    replay_control_core::game_db::game_display_name(system, &canonical_filename)
+                {
+                    let with_tags = replay_control_core::rom_tags::display_name_with_tags(
+                        display,
+                        &rom.game.rom_filename,
+                    );
+                    rom.game.display_name = Some(with_tags);
+                }
+            }
+        }
+
+        if !result_map.is_empty() {
+            let matched = result_map
+                .values()
+                .filter(|r| r.matched_name.is_some())
+                .count();
+            tracing::debug!(
+                "Hash-and-identify for {system}: {} hashed, {} matched No-Intro",
+                result_map.len(),
+                matched
+            );
+        }
+
+        result_map
+    }
+
+    /// Write ROM list to SQLite game_library for persistent storage.
+    /// Enriches with genre/players from the baked-in game databases during write.
+    pub(super) async fn save_roms_to_db(
+        &self,
+        _storage: &StorageLocation,
+        system: &str,
+        roms: &[RomEntry],
+        system_dir: &Path,
+        hash_results: &HashMap<String, replay_control_core::rom_hash::HashResult>,
+        db: &DbPool,
+    ) {
+        let mtime_secs = dir_mtime(system_dir).and_then(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs() as i64)
+        });
+
+        // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
+        let cached_roms =
+            replay_control_core::game_entry_builder::build_game_entries(system, roms, hash_results);
+
+        tracing::debug!(
+            "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
+            cached_roms.len()
+        );
+        let system_owned = system.to_string();
+        let cached_roms_for_db = cached_roms.clone();
+        let result = db
+            .write(move |conn| {
+                MetadataDb::save_system_entries(
+                    conn,
+                    &system_owned,
+                    &cached_roms_for_db,
+                    mtime_secs,
+                )
+            })
+            .await;
+        match result {
+            Some(Ok(())) => {
+                tracing::debug!("L2 write-through: {system} OK ({} ROMs)", cached_roms.len());
+
+                // Populate TGDB aliases from embedded build-time data.
+                self.populate_tgdb_aliases(system, &cached_roms, db).await;
+
+                // Populate game_series from embedded Wikidata data.
+                self.populate_wikidata_series(system, &cached_roms, db)
+                    .await;
+            }
+            Some(Err(e)) => tracing::warn!("L2 write-through: {system} FAILED: {e}"),
+            None => tracing::warn!("L2 write-through: {system} skipped (DB unavailable)"),
+        }
+    }
+}

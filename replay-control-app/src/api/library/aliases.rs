@@ -1,9 +1,10 @@
 use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::title_utils::fuzzy_match_key;
 
-use super::GameLibrary;
+use super::LibraryService;
+use crate::api::DbPool;
 
-impl GameLibrary {
+impl LibraryService {
     /// Populate game_alias table with TGDB alternate names for a system.
     ///
     /// Builds lookup maps from library entries, delegates the matching to
@@ -12,6 +13,7 @@ impl GameLibrary {
         &self,
         system: &str,
         roms: &[replay_control_core::metadata_db::GameEntry],
+        db: &DbPool,
     ) {
         // Build lookup maps for matching TGDB names to library base_titles.
         let library_exact: std::collections::HashSet<&str> = roms
@@ -39,8 +41,7 @@ impl GameLibrary {
 
         let count = aliases.len();
         let system = system.to_owned();
-        let result = self
-            .db
+        let result = db
             .write(move |conn| MetadataDb::bulk_insert_aliases(conn, &aliases))
             .await;
         match result {
@@ -60,6 +61,7 @@ impl GameLibrary {
         &self,
         system: &str,
         roms: &[replay_control_core::metadata_db::GameEntry],
+        db: &DbPool,
     ) {
         // Call pure core matching function.
         let series_entries =
@@ -71,8 +73,7 @@ impl GameLibrary {
 
         let count = series_entries.len();
         let system = system.to_owned();
-        let result = self
-            .db
+        let result = db
             .write(move |conn| MetadataDb::bulk_insert_series(conn, &series_entries))
             .await;
         match result {

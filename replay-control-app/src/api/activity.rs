@@ -260,7 +260,7 @@ impl super::AppState {
     }
 
     /// Check if startup scanning is active (replaces is_scanning).
-    /// Used by GameLibrary::get_roms() to suppress L3 scans.
+    /// Used by LibraryService::get_roms() to suppress L3 scans.
     pub fn is_startup_scanning(&self) -> bool {
         matches!(
             *self.activity.read().expect("activity lock"),
@@ -283,5 +283,39 @@ impl super::AppState {
             }
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    /// ActivityGuard is cleared on drop.
+    /// This validates the guard pattern used in BackgroundManager::run_pipeline.
+    #[test]
+    fn activity_guard_resets_to_idle_on_drop() {
+        let activity = Arc::new(RwLock::new(Activity::Idle));
+
+        {
+            // Simulate what run_pipeline does: set startup, then drop guard.
+            *activity.write().unwrap() = Activity::Startup {
+                phase: StartupPhase::Scanning,
+                system: String::new(),
+            };
+            assert!(matches!(
+                *activity.read().unwrap(),
+                Activity::Startup { .. }
+            ));
+
+            let _guard = ActivityGuard::new_for_test(activity.clone());
+            // Guard is alive — activity should still be Startup.
+            assert!(matches!(
+                *activity.read().unwrap(),
+                Activity::Startup { .. }
+            ));
+        }
+        // Guard dropped — activity should be Idle.
+        assert!(matches!(*activity.read().unwrap(), Activity::Idle));
     }
 }

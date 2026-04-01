@@ -34,8 +34,8 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
 
     // Batch-load game entries (box_art_url + genre) in one DB read.
     let db_entries = state
-        .cache
-        .db_read(move |conn| {
+        .metadata_pool
+        .read(move |conn| {
             MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
         })
         .await
@@ -76,8 +76,8 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
 
     // Batch-load game entries (box_art_url + genre) in one DB read.
     let db_entries = state
-        .cache
-        .db_read(move |conn| {
+        .metadata_pool
+        .read(move |conn| {
             MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
         })
         .await
@@ -222,7 +222,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     }
 
     let storage = state.storage();
-    let systems = state.cache.cached_systems(&storage).await;
+    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
 
     let (region_str, region_secondary_str) = super::region_strings(&state);
 
@@ -267,8 +267,8 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
 
     // DB closure: run all queries under one connection.
     let db_result = state
-        .cache
-        .db_read(move |conn| {
+        .metadata_pool
+        .read(move |conn| {
             let mut sections: Vec<(String, Vec<replay_control_core::metadata_db::GameEntry>, Option<String>)> = Vec::new();
 
             // Batch lookup: all favorites + seed game (if from recents) in one query.

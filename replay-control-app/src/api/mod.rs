@@ -1,7 +1,8 @@
 pub mod activity;
 pub(crate) mod background;
-pub(crate) mod cache;
+pub(crate) mod library;
 pub(crate) mod core_api;
+pub mod response_cache;
 pub mod favorites;
 pub mod import;
 pub mod recents;
@@ -11,7 +12,7 @@ pub mod upload;
 
 pub use activity::{Activity, ActivityGuard, MaintenanceKind, StartupPhase};
 pub use background::BackgroundManager;
-pub use cache::GameLibrary;
+pub use library::LibraryService;
 pub use import::{ImportPipeline, ThumbnailPipeline};
 
 /// Cache-control header values for static asset responses.
@@ -521,9 +522,9 @@ pub struct AppState {
     pub storage: Arc<std::sync::RwLock<Option<StorageLocation>>>,
     pub config: Arc<std::sync::RwLock<ReplayConfig>>,
     pub config_path: Option<PathBuf>,
-    pub cache: Arc<GameLibrary>,
+    pub cache: Arc<LibraryService>,
     /// Response-level cache for assembled recommendation payloads.
-    pub response_cache: Arc<cache::response::ResponseCache>,
+    pub response_cache: Arc<response_cache::ResponseCache>,
     /// When set, --storage-path was given on the CLI and auto-detection is skipped.
     pub storage_path_override: Option<PathBuf>,
     /// When Some, the app uses this skin index (persisted in `settings.cfg`).
@@ -662,8 +663,8 @@ impl AppState {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
-            cache: Arc::new(GameLibrary::new(metadata_pool.clone())),
-            response_cache: Arc::new(cache::response::ResponseCache::new()),
+            cache: Arc::new(LibraryService::new()),
+            response_cache: Arc::new(response_cache::ResponseCache::new()),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(initial_skin)),
             metadata_pool,
@@ -822,7 +823,7 @@ impl AppState {
                 }
             }
 
-            self.cache.invalidate().await;
+            self.cache.invalidate(&self.metadata_pool).await;
             self.response_cache.invalidate_all();
 
             let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();

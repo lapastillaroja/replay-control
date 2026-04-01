@@ -22,7 +22,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let summaries = state.cache.cached_systems(&storage).await;
+    let summaries = state.cache.cached_systems(&storage, &state.metadata_pool).await;
     let total_favorites = state.cache.get_favorites_count(&storage);
 
     let disk = storage
@@ -82,7 +82,7 @@ pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     #[cfg(feature = "ssr")]
     let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
-    let result = state.cache.cached_systems(&state.storage()).await;
+    let result = state.cache.cached_systems(&state.storage(), &state.metadata_pool).await;
     #[cfg(feature = "ssr")]
     tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_systems complete");
     Ok(result)
@@ -107,8 +107,8 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
 
     // Batch-lookup box_art_url from game_library (most entries will have it).
     let db_entries = state
-        .cache
-        .db_read(move |conn| {
+        .metadata_pool
+        .read(move |conn| {
             MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
         })
         .await
