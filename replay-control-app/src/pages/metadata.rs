@@ -441,15 +441,10 @@ fn close_activity_sse() {
     });
 }
 
-// SSR stub: called only from the wasm32 branch of watch_activity, but the
-// function must exist on both targets so the call site compiles.
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(dead_code)]
-fn close_activity_sse() {}
 
 /// Watches activity progress via single SSE endpoint.
-// SSR build early-returns, so params appear unused and code after `return` is unreachable.
-#[allow(unused_variables, unreachable_code)]
+///
+/// On SSR this is a no-op; the real work happens client-side via EventSource.
 fn watch_activity(
     activity: RwSignal<Activity>,
     result_message: RwSignal<Option<String>>,
@@ -460,7 +455,7 @@ fn watch_activity(
     image_stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
-    return;
+    let _ = (&activity, &result_message, &thumb_cancelling, &stats, &coverage, &data_source, &image_stats);
 
     #[cfg(target_arch = "wasm32")]
     {

@@ -8,7 +8,7 @@ use leptos::prelude::*;
 /// The timer is automatically cleaned up on unmount.
 pub fn use_debounced<T: Clone + PartialEq + Send + Sync + 'static>(
     source: RwSignal<T>,
-    #[allow(unused_variables)] delay_ms: i32,
+    _delay_ms: i32,
 ) -> RwSignal<T> {
     let debounced = RwSignal::new(source.get_untracked());
 
@@ -59,7 +59,7 @@ pub fn use_debounced<T: Clone + PartialEq + Send + Sync + 'static>(
             if let Some(func) = js_fn.get_value()
                 && let Some(window) = web_sys::window()
                 && let Ok(handle) =
-                    window.set_timeout_with_callback_and_timeout_and_arguments_0(&func, delay_ms)
+                    window.set_timeout_with_callback_and_timeout_and_arguments_0(&func, _delay_ms)
             {
                 timer_handle.set_value(Some(handle));
             }

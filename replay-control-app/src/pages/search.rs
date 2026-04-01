@@ -648,11 +648,9 @@ fn update_url_params(p: &UrlParams<'_>) {
 }
 
 /// Wrapper that compiles on both targets -- calls the real function only on hydrate.
-// SSR build doesn't use `p`, but the parameter must exist for cfg-gated call.
-#[allow(unused_variables)]
-fn update_url_params_if_hydrate(p: &UrlParams<'_>) {
+fn update_url_params_if_hydrate(_p: &UrlParams<'_>) {
     #[cfg(feature = "hydrate")]
-    update_url_params(p);
+    update_url_params(_p);
 }
 
 // ── localStorage helpers for recent searches ──────────────────────
