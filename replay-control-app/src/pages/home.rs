@@ -188,24 +188,17 @@ fn RecommendationSections(
     data: server_fns::RecommendationData,
     locale: crate::i18n::Locale,
 ) -> impl IntoView {
-    let has_random = !data.random_picks.is_empty();
     let has_discover = !data.discover_pills.is_empty();
+    let random_picks = if data.random_picks.games.is_empty() {
+        None
+    } else {
+        Some(data.random_picks)
+    };
 
     view! {
-        <Show when=move || has_random>
-            <section class="section">
-                <h2 class="section-title">{t(locale, "home.discover_random")}</h2>
-                <div class="scroll-card-row">
-                    {data.random_picks.iter().map(|game| {
-                        let href = game.href.clone();
-                        let name = game.display_name.clone();
-                        let system = game.system_display.clone();
-                        let art = game.box_art_url.clone();
-                        view! { <GameScrollCard href name system box_art_url=art /> }
-                    }).collect::<Vec<_>>()}
-                </div>
-            </section>
-        </Show>
+        {random_picks.map(|rp| {
+            view! { <GameSectionRow section=rp /> }
+        })}
 
         {data.favorites_picks.map(|fp| {
             view! { <GameSectionRow section=fp /> }

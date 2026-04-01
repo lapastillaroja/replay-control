@@ -21,7 +21,7 @@ pub fn GameSectionRow(section: GameSection) -> impl IntoView {
                 <h2 class="section-title">{section.title}</h2>
                 <Show when=move || has_see_all>
                     <A href=see_all_href.clone() attr:class="section-link">
-                        {move || t(i18n.locale.get(), "home.see_all")}
+                        {move || t(i18n.locale.get(), "common.see_all")}
                     </A>
                 </Show>
             </div>

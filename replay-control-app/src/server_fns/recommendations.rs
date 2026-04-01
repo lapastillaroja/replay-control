@@ -36,7 +36,7 @@ pub struct GameSection {
 /// All recommendation data in a single response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecommendationData {
-    pub random_picks: Vec<RecommendedGame>,
+    pub random_picks: GameSection,
     pub discover_pills: Vec<DiscoverPill>,
     pub favorites_picks: Option<GameSection>,
     pub curated_spotlight: Option<GameSection>,
@@ -264,7 +264,11 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     let Some((random_pool, top_genres, top_developers, decades, active_systems, spotlight_pool, spotlight_title, spotlight_href, fav_roms)) = db_data
     else {
         return Ok(RecommendationData {
-            random_picks: Vec::new(),
+            random_picks: GameSection {
+                title: String::new(),
+                games: Vec::new(),
+                see_all_href: None,
+            },
             discover_pills: Vec::new(),
             favorites_picks: None,
             curated_spotlight: None,
@@ -342,7 +346,11 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     }
 
     Ok(RecommendationData {
-        random_picks,
+        random_picks: GameSection {
+            title: "Rediscover Your Library".to_string(),
+            games: random_picks,
+            see_all_href: None,
+        },
         discover_pills,
         favorites_picks,
         curated_spotlight,

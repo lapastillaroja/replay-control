@@ -499,6 +499,7 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         // Common
         "common.loading" => "Loading...",
         "common.error" => "Error",
+        "common.see_all" => "See all",
 
         _ => "???",
     }

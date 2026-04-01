@@ -67,10 +67,8 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let results: Vec<FavoriteWithArt> = favs
         .into_iter()
         .map(|fav| {
-            let db_box_art = db_entries
-                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
-                .and_then(|e| e.box_art_url.clone());
-            let box_art_url = db_box_art.or_else(|| {
+            let db_entry = db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
+            let box_art_url = db_entry.and_then(|e| e.box_art_url.clone()).or_else(|| {
                 image_indexes.get(&fav.game.system).and_then(|index| {
                     state.cache.resolve_box_art(
                         &state,
@@ -80,8 +78,7 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
                     )
                 })
             });
-            let genre = db_entries
-                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
+            let genre = db_entry
                 .and_then(|e| e.genre.as_ref())
                 .filter(|g| !g.is_empty())
                 .cloned();
@@ -134,10 +131,8 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     let results: Vec<FavoriteWithArt> = favs
         .into_iter()
         .map(|fav| {
-            let db_box_art = db_entries
-                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
-                .and_then(|e| e.box_art_url.clone());
-            let box_art_url = db_box_art.or_else(|| {
+            let db_entry = db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
+            let box_art_url = db_entry.and_then(|e| e.box_art_url.clone()).or_else(|| {
                 image_index.as_ref().and_then(|index| {
                     state.cache.resolve_box_art(
                         &state,
@@ -147,8 +142,7 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
                     )
                 })
             });
-            let genre = db_entries
-                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
+            let genre = db_entry
                 .and_then(|e| e.genre.as_ref())
                 .filter(|g| !g.is_empty())
                 .cloned();

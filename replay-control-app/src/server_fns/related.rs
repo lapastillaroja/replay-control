@@ -134,7 +134,7 @@ pub async fn get_related_games(
     let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
 
     let region_pref = state.region_preference();
-    let region_pref_str = format!("{:?}", region_pref).to_lowercase();
+    let region_pref_str = region_pref.as_str().to_string();
 
     // Pre-compute genre fallback outside the closure (lookup_genre is async).
     let genre_fallback = {
