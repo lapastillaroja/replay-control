@@ -1,5 +1,6 @@
 pub mod alias_matching;
 pub mod db_common;
+pub mod enrichment;
 pub mod game_docs;
 pub mod image_matching;
 pub mod launchbox;
