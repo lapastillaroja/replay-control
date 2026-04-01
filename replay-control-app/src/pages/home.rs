@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
+use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::system_card::SystemCard;
 use crate::i18n::{t, use_i18n};
@@ -188,7 +189,6 @@ fn RecommendationSections(
     locale: crate::i18n::Locale,
 ) -> impl IntoView {
     let has_random = !data.random_picks.is_empty();
-    let has_spotlight = data.curated_spotlight.as_ref().is_some_and(|s| !s.games.is_empty());
     let has_discover = !data.discover_pills.is_empty();
 
     view! {
@@ -207,55 +207,13 @@ fn RecommendationSections(
             </section>
         </Show>
 
-        {data.favorites_picks.as_ref().map(|fp| {
-            let has_see_all = fp.see_all_href.is_some();
-            let see_all_href = fp.see_all_href.clone().unwrap_or_default();
-            view! {
-                <section class="section">
-                    <div class="section-header">
-                        <h2 class="section-title">{fp.title.clone()}</h2>
-                        <Show when=move || has_see_all>
-                            <A href=see_all_href.clone() attr:class="section-link">{t(locale, "home.see_all")}</A>
-                        </Show>
-                    </div>
-                    <div class="scroll-card-row">
-                        {fp.games.iter().map(|game| {
-                            let href = game.href.clone();
-                            let name = game.display_name.clone();
-                            let system = game.system_display.clone();
-                            let art = game.box_art_url.clone();
-                            view! { <GameScrollCard href name system box_art_url=art /> }
-                        }).collect::<Vec<_>>()}
-                    </div>
-                </section>
-            }
+        {data.favorites_picks.map(|fp| {
+            view! { <GameSectionRow section=fp /> }
         })}
 
-        <Show when=move || has_spotlight>
-            {data.curated_spotlight.as_ref().map(|spotlight| {
-                let has_see_all = spotlight.see_all_href.is_some();
-                let see_all_href = spotlight.see_all_href.clone().unwrap_or_default();
-                view! {
-                    <section class="section">
-                        <div class="section-header">
-                            <h2 class="section-title">{spotlight.title.clone()}</h2>
-                            <Show when=move || has_see_all>
-                                <A href=see_all_href.clone() attr:class="section-link">{t(locale, "home.see_all")}</A>
-                            </Show>
-                        </div>
-                        <div class="scroll-card-row">
-                            {spotlight.games.iter().map(|game| {
-                                let href = game.href.clone();
-                                let name = game.display_name.clone();
-                                let system = game.system_display.clone();
-                                let art = game.box_art_url.clone();
-                                view! { <GameScrollCard href name system box_art_url=art /> }
-                            }).collect::<Vec<_>>()}
-                        </div>
-                    </section>
-                }
-            })}
-        </Show>
+        {data.curated_spotlight.map(|spotlight| {
+            view! { <GameSectionRow section=spotlight /> }
+        })}
 
         <Show when=move || has_discover>
             <section class="section">

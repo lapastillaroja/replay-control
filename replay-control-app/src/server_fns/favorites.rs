@@ -20,12 +20,6 @@ pub struct OrganizeResult {
     pub skipped: usize,
 }
 
-/// Recommendation sections for the favorites page.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FavoritesRecommendations {
-    pub sections: Vec<super::GameSection>,
-}
-
 #[server(prefix = "/sfn", endpoint = "/get_favorites")]
 pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -38,23 +32,11 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
         .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
         .collect();
 
-    // Batch-load game entries (box_art_url + genre) and genre map in one DB read.
-    let distinct_systems: std::collections::HashSet<String> =
-        favs.iter().map(|f| f.game.system.clone()).collect();
-    let systems_vec: Vec<String> = distinct_systems.into_iter().collect();
-    let (db_entries, genre_map) = state
+    // Batch-load game entries (box_art_url + genre) in one DB read.
+    let db_entries = state
         .cache
         .db_read(move |conn| {
-            let entries = MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default();
-            let mut gmap = std::collections::HashMap::new();
-            for sys in &systems_vec {
-                if let Ok(genres) = MetadataDb::system_rom_genres(conn, sys) {
-                    for (filename, genre) in genres {
-                        gmap.insert((sys.clone(), filename), genre);
-                    }
-                }
-            }
-            (entries, gmap)
+            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
         })
         .await
         .unwrap_or_default();
@@ -98,8 +80,9 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
                     )
                 })
             });
-            let genre = genre_map
+            let genre = db_entries
                 .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
+                .and_then(|e| e.genre.as_ref())
                 .filter(|g| !g.is_empty())
                 .cloned();
             FavoriteWithArt {
@@ -124,15 +107,11 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
         .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
         .collect();
 
-    // Batch-load game entries (box_art_url) and genre map in one DB read.
-    let sys = system.clone();
-    let (db_entries, genre_map) = state
+    // Batch-load game entries (box_art_url + genre) in one DB read.
+    let db_entries = state
         .cache
         .db_read(move |conn| {
-            let entries = MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default();
-            let genres: std::collections::HashMap<String, String> =
-                MetadataDb::system_rom_genres(conn, &sys).unwrap_or_default();
-            (entries, genres)
+            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
         })
         .await
         .unwrap_or_default();
@@ -168,8 +147,9 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
                     )
                 })
             });
-            let genre = genre_map
-                .get(&fav.game.rom_filename)
+            let genre = db_entries
+                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
+                .and_then(|e| e.genre.as_ref())
                 .filter(|g| !g.is_empty())
                 .cloned();
             FavoriteWithArt {
@@ -280,20 +260,14 @@ pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
 /// - "Because You Played [Game]": games similar to a random recent game by genre/developer
 /// - "More from [Series]": series siblings of favorited games that aren't yet favorited
 #[server(prefix = "/sfn")]
-pub async fn get_favorites_recommendations() -> Result<FavoritesRecommendations, ServerFnError> {
+pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, ServerFnError> {
     use super::{GameSection, RecommendedGame};
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     let systems = state.cache.cached_systems(&storage).await;
 
-    let region_pref = state.region_preference();
-    let region_secondary = state.region_preference_secondary();
-    let region_str = region_pref.as_str().to_string();
-    let region_secondary_str = region_secondary
-        .map(|r| r.as_str())
-        .unwrap_or("")
-        .to_string();
+    let (region_str, region_secondary_str) = super::region_strings(&state);
 
     // Collect recents and favorites from cache.
     let recents = state
@@ -305,8 +279,8 @@ pub async fn get_favorites_recommendations() -> Result<FavoritesRecommendations,
         .get_all_favorited_systems(&storage)
         .unwrap_or_default();
 
-    // Build a set of all favorite (system, rom_filename) for exclusion.
-    let fav_keys: std::collections::HashSet<(String, String)> = all_favorites
+    // Build Vec of all favorite keys, then derive HashSet for O(1) exclusion checks.
+    let fav_keys_vec: Vec<(String, String)> = all_favorites
         .iter()
         .flat_map(|(system, filenames)| {
             filenames
@@ -314,27 +288,25 @@ pub async fn get_favorites_recommendations() -> Result<FavoritesRecommendations,
                 .map(move |f| (system.clone(), f.clone()))
         })
         .collect();
+    let fav_keys: std::collections::HashSet<(String, String)> =
+        fav_keys_vec.iter().cloned().collect();
 
     // Pick a seed game for "Because You Love..." section.
     // Prefer a favorite (user explicitly likes it, better recommendations).
     // Fall back to a recent game if no favorites.
     let seed_game: Option<(String, String)> = {
-        use rand::Rng;
+        use rand::seq::IndexedRandom;
         let mut rng = rand::rng();
-        if !fav_keys.is_empty() {
-            let fav_list: Vec<_> = fav_keys.iter().collect();
-            let idx = rng.random_range(0..fav_list.len());
-            Some(fav_list[idx].clone())
+        if !fav_keys_vec.is_empty() {
+            fav_keys_vec.choose(&mut rng).cloned()
         } else if !recents.is_empty() {
-            let idx = rng.random_range(0..recents.len());
-            Some((recents[idx].game.system.clone(), recents[idx].game.rom_filename.clone()))
+            recents.choose(&mut rng).map(|r| {
+                (r.game.system.clone(), r.game.rom_filename.clone())
+            })
         } else {
             None
         }
     };
-
-    // Pick a random favorite for series lookup.
-    let fav_keys_vec: Vec<(String, String)> = fav_keys.iter().cloned().collect();
 
     // DB closure: run all queries under one connection.
     let db_result = state
@@ -342,13 +314,18 @@ pub async fn get_favorites_recommendations() -> Result<FavoritesRecommendations,
         .db_read(move |conn| {
             let mut sections: Vec<(String, Vec<replay_control_core::metadata_db::GameEntry>, Option<String>)> = Vec::new();
 
+            // Batch lookup: all favorites + seed game (if from recents) in one query.
+            let mut all_keys = fav_keys_vec;
+            if let Some(ref seed) = seed_game {
+                if !fav_keys.contains(seed) {
+                    all_keys.push(seed.clone());
+                }
+            }
+            let all_entries = MetadataDb::lookup_game_entries(conn, &all_keys).unwrap_or_default();
+
             // --- "Because You Love [Game]" ---
             if let Some(ref seed) = seed_game {
-                // Look up the seed game's metadata from game_library.
-                let seed_keys = vec![seed.clone()];
-                let seed_entries =
-                    MetadataDb::lookup_game_entries(conn, &seed_keys).unwrap_or_default();
-                if let Some(seed_entry) = seed_entries.get(seed) {
+                if let Some(seed_entry) = all_entries.get(seed) {
                     let genre = if seed_entry.genre_group.is_empty() {
                         None
                     } else {
@@ -423,17 +400,13 @@ pub async fn get_favorites_recommendations() -> Result<FavoritesRecommendations,
             }
 
             // --- "More from [Series]" ---
-            if !fav_keys_vec.is_empty() {
-                // Look up series_key for all favorites.
-                let fav_entries =
-                    MetadataDb::lookup_game_entries(conn, &fav_keys_vec).unwrap_or_default();
-
+            if !all_entries.is_empty() {
                 // Collect distinct series keys from favorites with proper display names.
                 // series_key is a normalized key — look up the real series_name from game_series
                 // via (system, base_title) join.
                 let mut series_map: std::collections::HashMap<String, String> =
                     std::collections::HashMap::new();
-                for entry in fav_entries.values() {
+                for entry in all_entries.values() {
                     if !entry.series_key.is_empty() && !series_map.contains_key(&entry.series_key) {
                         let display = conn
                             .query_row(
@@ -448,18 +421,12 @@ pub async fn get_favorites_recommendations() -> Result<FavoritesRecommendations,
                 }
 
                 // Pick a random series with non-favorited siblings.
-                let series_keys: Vec<(String, String)> = series_map.into_iter().collect();
+                let mut series_keys: Vec<(String, String)> = series_map.into_iter().collect();
                 if !series_keys.is_empty() {
-                    use rand::Rng;
-                    let mut indices: Vec<usize> = (0..series_keys.len()).collect();
-                    let mut rng = rand::rng();
-                    for i in (1..indices.len()).rev() {
-                        let j = rng.random_range(0..=i);
-                        indices.swap(i, j);
-                    }
+                    use rand::seq::SliceRandom;
+                    series_keys.shuffle(&mut rand::rng());
 
-                    for &idx in &indices {
-                        let (ref skey, ref stitle) = series_keys[idx];
+                    for (skey, stitle) in &series_keys {
                         let siblings = MetadataDb::series_siblings(
                             conn,
                             skey,
@@ -510,9 +477,7 @@ pub async fn get_favorites_recommendations() -> Result<FavoritesRecommendations,
         });
     }
 
-    Ok(FavoritesRecommendations {
-        sections: result_sections,
-    })
+    Ok(result_sections)
 }
 
 /// Title-case a string: capitalize the first letter of each word.

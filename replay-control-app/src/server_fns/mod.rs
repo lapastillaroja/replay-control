@@ -42,6 +42,17 @@ pub use replay_control_core::favorites::OrganizeCriteria;
 
 pub const PAGE_SIZE: usize = 100;
 
+/// Extract region preference strings from AppState for SQL queries.
+#[cfg(feature = "ssr")]
+pub(crate) fn region_strings(state: &crate::api::AppState) -> (String, String) {
+    let pref = state.region_preference();
+    let sec = state.region_preference_secondary();
+    (
+        pref.as_str().to_string(),
+        sec.map(|r| r.as_str()).unwrap_or("").to_string(),
+    )
+}
+
 /// Lightweight entry for ROM list views (game browser, search results).
 ///
 /// Unlike `GameInfo` (which carries full metadata for the detail page),

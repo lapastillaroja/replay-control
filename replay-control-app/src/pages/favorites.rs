@@ -3,11 +3,12 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 use server_fn::ServerFnError;
 
+use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
-use crate::server_fns::{FavoriteWithArt, FavoritesRecommendations, OrganizeCriteria};
+use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
 
 #[component]
 pub fn FavoritesPage() -> impl IntoView {
@@ -45,7 +46,7 @@ fn FavoritesContent<F>(
     favs: Vec<FavoriteWithArt>,
     grouped_view: RwSignal<bool>,
     toggle_label: F,
-    recommendations: Resource<Result<FavoritesRecommendations, ServerFnError>>,
+    recommendations: Resource<Result<Vec<GameSection>, ServerFnError>>,
 ) -> impl IntoView
 where
     F: Fn() -> &'static str + Clone + Send + Sync + 'static,
@@ -214,23 +215,10 @@ where
             <Suspense fallback=|| ()>
                 {move || Suspend::new(async move {
                     let recs = recommendations.await;
-                    let sections = recs.ok().map(|r| r.sections).unwrap_or_default();
+                    let sections = recs.ok().unwrap_or_default();
                     Ok::<_, ServerFnError>(view! {
                         {sections.into_iter().map(|section| {
-                            view! {
-                                <section class="section">
-                                    <h2 class="section-title">{section.title}</h2>
-                                    <div class="scroll-card-row">
-                                        {section.games.into_iter().map(|game| {
-                                            let href = game.href;
-                                            let name = game.display_name;
-                                            let system = game.system_display;
-                                            let box_art_url = game.box_art_url;
-                                            view! { <GameScrollCard href name system box_art_url /> }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-                                </section>
-                            }
+                            view! { <GameSectionRow section /> }
                         }).collect::<Vec<_>>()}
                     })
                 })}

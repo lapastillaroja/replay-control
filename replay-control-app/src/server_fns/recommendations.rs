@@ -58,34 +58,35 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // Clone favorites_info for use after the DB closure (which consumes it via move).
     let favorites_info_for_picks = favorites_info.clone();
 
-    // Collect recent + all-favorites filenames for the Hidden Gems spotlight.
-    // These are (system, rom_filename) pairs to exclude from the pool.
-    let recent_keys: Vec<(String, String)> = state
-        .cache
-        .get_recents(&storage)
-        .unwrap_or_default()
-        .iter()
-        .map(|r| (r.game.system.clone(), r.game.rom_filename.clone()))
-        .collect();
-    let all_fav_keys: Vec<(String, String)> = state
-        .cache
-        .get_all_favorited_systems(&storage)
-        .unwrap_or_default()
-        .into_iter()
-        .flat_map(|(system, filenames)| {
-            filenames
-                .into_iter()
-                .map(move |f| (system.clone(), f))
-        })
-        .collect();
+    // Pre-roll spotlight type so we can lazily collect Hidden Gems exclusion data.
+    let spotlight_type = {
+        use rand::Rng;
+        rand::rng().random_range(0u8..5)
+    };
 
-    let region_pref = state.region_preference();
-    let region_secondary = state.region_preference_secondary();
-    let region_str = region_pref.as_str().to_string();
-    let region_secondary_str = region_secondary
-        .map(|r| r.as_str())
-        .unwrap_or("")
-        .to_string();
+    // Only collect recent + favorite keys when Hidden Gems is selected (type 4).
+    // These are (system, rom_filename) pairs used as an exclusion set.
+    let hidden_gems_exclude: Vec<(String, String)> = if spotlight_type == 4 {
+        let recents = state.cache.get_recents(&storage).unwrap_or_default();
+        let recent_keys = recents
+            .iter()
+            .map(|r| (r.game.system.clone(), r.game.rom_filename.clone()));
+        let fav_keys = state
+            .cache
+            .get_all_favorited_systems(&storage)
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|(system, filenames)| {
+                filenames
+                    .into_iter()
+                    .map(move |f| (system.clone(), f))
+            });
+        recent_keys.chain(fav_keys).collect()
+    } else {
+        Vec::new()
+    };
+
+    let (region_str, region_secondary_str) = super::region_strings(&state);
 
     // Pre-build system display name pairs for use inside the DB closure.
     let systems_for_spotlight: Vec<(String, String)> = systems
@@ -111,11 +112,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             let decades = MetadataDb::decade_list(conn).unwrap_or_default();
             let active_systems =
                 MetadataDb::active_systems(conn).unwrap_or_default();
-            // --- Spotlight: pick one of 5 types at random ---
-            let spotlight_type = {
-                use rand::Rng;
-                rand::rng().random_range(0u8..5)
-            };
+            // --- Spotlight: type was pre-rolled above ---
 
             // Exclude the favorites system from system spotlight candidates.
             let fav_system: Option<&str> = favorites_info.as_ref().map(|fi| fi.system.as_str());
@@ -190,10 +187,9 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     let games = MetadataDb::top_rated_filtered(
                         conn, None, None, None, count * 6, &region_str, &region_secondary_str,
                     ).unwrap_or_default();
-                    // Build exclude set from recents + favorites.
-                    let exclude: std::collections::HashSet<(&str, &str)> = recent_keys.iter()
+                    // Build exclude set from recents + favorites (pre-collected above).
+                    let exclude: std::collections::HashSet<(&str, &str)> = hidden_gems_exclude.iter()
                         .map(|(s, f)| (s.as_str(), f.as_str()))
-                        .chain(all_fav_keys.iter().map(|(s, f)| (s.as_str(), f.as_str())))
                         .collect();
                     // Filter out known games and prefer low rating_count.
                     let mut filtered: Vec<_> = games.into_iter()
@@ -523,10 +519,9 @@ fn build_discover_pills(
     // NOTE: 4-Player pill deferred to Phase 3 — needs `min_players` search filter.
 
     // Shuffle candidates and pick up to 3 more, no type repeats.
-    // Fisher-Yates shuffle.
-    for i in (1..candidates.len()).rev() {
-        let j = rng.random_range(0..=i);
-        candidates.swap(i, j);
+    {
+        use rand::seq::SliceRandom;
+        candidates.shuffle(&mut rng);
     }
 
     for (pill_type, pill) in candidates {

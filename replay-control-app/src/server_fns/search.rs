@@ -585,13 +585,7 @@ pub async fn search_by_developer(
     }
 
     let state = expect_context::<crate::api::AppState>();
-    let region_pref = state.region_preference();
-    let region_secondary = state.region_preference_secondary();
-    let region_str = region_pref.as_str().to_string();
-    let region_secondary_str = region_secondary
-        .map(|r| r.as_str())
-        .unwrap_or("")
-        .to_string();
+    let (region_str, region_secondary_str) = super::region_strings(&state);
     let limit = limit.clamp(1, 30);
 
     // Single DB access: find matching developers, then fetch games for the top match.
