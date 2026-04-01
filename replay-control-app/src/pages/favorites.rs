@@ -212,7 +212,8 @@ where
             <OrganizePanel favorites />
 
             // Personalized recommendations (loaded in parallel, non-blocking)
-            <Suspense fallback=|| ()>
+            // Uses skeleton from home page while streaming.
+            <Suspense fallback=move || view! { <FavRecommendationsSkeleton /> }>
                 {move || Suspend::new(async move {
                     let recs = recommendations.await;
                     let sections = recs.ok().unwrap_or_default();
@@ -492,6 +493,77 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
         }
     });
 
+    // Build a preview of the folder structure from current favorites data.
+    let preview_folders = move || {
+        let favs = favorites.read();
+        let criteria = primary.get();
+        let unknown = t(i18n.locale.get(), "organize.preview_unknown").to_string();
+
+        let mut folders = std::collections::BTreeSet::new();
+        for f in favs.iter() {
+            let name = match criteria.as_str() {
+                "genre" => f
+                    .genre
+                    .as_deref()
+                    .filter(|g| !g.is_empty())
+                    .unwrap_or(&unknown)
+                    .to_string(),
+                "system" => f.fav.game.system_display.clone(),
+                "alphabetical" => {
+                    let display = f
+                        .fav
+                        .game
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&f.fav.game.rom_filename);
+                    display
+                        .chars()
+                        .next()
+                        .map(|c| {
+                            let upper = c.to_uppercase().to_string();
+                            if upper.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic()) {
+                                upper
+                            } else {
+                                "#".to_string()
+                            }
+                        })
+                        .unwrap_or_else(|| "#".to_string())
+                }
+                // For players/rating/developer we don't have the data client-side,
+                // so show a representative example.
+                "players" => continue,
+                "rating" => continue,
+                "developer" => continue,
+                _ => continue,
+            };
+            folders.insert(name);
+        }
+
+        // For criteria we can't derive client-side, show static examples.
+        if folders.is_empty() {
+            match criteria.as_str() {
+                "players" => {
+                    folders.insert("1 Player".to_string());
+                    folders.insert("2 Players".to_string());
+                    folders.insert("3-4 Players".to_string());
+                }
+                "rating" => {
+                    folders.insert("Highly Rated".to_string());
+                    folders.insert("Average".to_string());
+                    folders.insert("Unrated".to_string());
+                }
+                "developer" => {
+                    folders.insert("Capcom".to_string());
+                    folders.insert("Konami".to_string());
+                    folders.insert("Nintendo".to_string());
+                }
+                _ => {}
+            }
+        }
+
+        folders.into_iter().collect::<Vec<_>>()
+    };
+
     let on_organize = move |_| {
         busy.set(true);
         status.set(None);
@@ -547,8 +619,11 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                 class="toggle-btn organize-toggle"
                 on:click=move |_| expanded.update(|v| *v = !*v)
             >
-                <span class="organize-toggle-icon">{move || if expanded.get() { "\u{25BC}" } else { "\u{25B6}" }}</span>
-                {move || t(i18n.locale.get(), "organize.title")}
+                <span class="organize-toggle-icon">{move || if expanded.get() { "\u{1F4C2}" } else { "\u{1F4C1}" }}</span>
+                <span class="organize-toggle-text">
+                    <span class="organize-toggle-title">{move || t(i18n.locale.get(), "organize.title")}</span>
+                    <span class="organize-toggle-desc">{move || t(i18n.locale.get(), "organize.description")}</span>
+                </span>
             </button>
 
             <Show when=move || expanded.get()>
@@ -592,6 +667,8 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                             }
                         }}
                     </div>
+
+                    <OrganizePreview preview_folders />
 
                     <div class="form-field form-field-check">
                         <div>
@@ -637,6 +714,50 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
     }
 }
 
+/// Folder structure preview showing what subfolders will be created.
+#[component]
+fn OrganizePreview<F>(preview_folders: F) -> impl IntoView
+where
+    F: Fn() -> Vec<String> + Clone + Send + Sync + 'static,
+{
+    let i18n = use_i18n();
+
+    view! {
+        {move || {
+            let folders = preview_folders();
+            if folders.is_empty() {
+                return None;
+            }
+            let len = folders.len();
+            // Show at most 8 folders to avoid visual clutter.
+            let show_count = len.min(8);
+            let remaining = len.saturating_sub(8);
+            let mut lines = Vec::with_capacity(show_count + 1);
+            for (i, name) in folders.iter().take(show_count).enumerate() {
+                let connector = if i == show_count - 1 && remaining == 0 {
+                    "\u{2514}\u{2500}\u{2500} "
+                } else {
+                    "\u{251C}\u{2500}\u{2500} "
+                };
+                lines.push(format!("{connector}\u{1F4C1} {name}/"));
+            }
+            if remaining > 0 {
+                lines.push(format!("\u{2514}\u{2500}\u{2500} \u{2026} +{remaining} more"));
+            }
+            Some(view! {
+                <div class="organize-preview">
+                    <div class="organize-preview-label">{t(i18n.locale.get(), "organize.preview")}</div>
+                    <div class="organize-preview-tree">
+                        {lines.into_iter().map(|line| view! {
+                            <div>{line}</div>
+                        }).collect::<Vec<_>>()}
+                    </div>
+                </div>
+            })
+        }}
+    }
+}
+
 fn parse_criteria(value: &str) -> Option<OrganizeCriteria> {
     match value {
         "system" => Some(OrganizeCriteria::System),
@@ -650,6 +771,26 @@ fn parse_criteria(value: &str) -> Option<OrganizeCriteria> {
 }
 
 /// `/favorites/:system` — favorites list filtered to a single system.
+
+/// Skeleton placeholder for favorites recommendation sections while streaming.
+#[component]
+fn FavRecommendationsSkeleton() -> impl IntoView {
+    view! {
+        <section class="section">
+            <div class="skeleton-title skeleton-shimmer"></div>
+            <div class="scroll-card-row">
+                {(0..6).map(|_| view! {
+                    <div class="skeleton-card skeleton-shimmer">
+                        <div class="skeleton-card-image"></div>
+                        <div class="skeleton-card-text"></div>
+                        <div class="skeleton-card-subtext"></div>
+                    </div>
+                }).collect::<Vec<_>>()}
+            </div>
+        </section>
+    }
+}
+
 #[component]
 pub fn SystemFavoritesPage() -> impl IntoView {
     let i18n = use_i18n();

@@ -100,8 +100,9 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
 
         // Organize favorites
         "organize.title" => "Organize Favorites",
-        "organize.primary" => "Primary",
-        "organize.secondary" => "Secondary (optional)",
+        "organize.description" => "Create subfolders to organize your favorites",
+        "organize.primary" => "Organize by",
+        "organize.secondary" => "Then by (optional)",
         "organize.none" => "None",
         "organize.system" => "By System",
         "organize.genre" => "By Genre",
@@ -109,8 +110,10 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "organize.rating" => "By Rating",
         "organize.alphabetical" => "Alphabetical",
         "organize.developer" => "By Developer",
-        "organize.keep_originals" => "Keep originals at root",
-        "organize.keep_hint" => "Maintains compatibility with ReplayOS UI",
+        "organize.keep_originals" => "Keep copy in root",
+        "organize.keep_hint" => {
+            "Keeps original files at root so RePlayOS UI still shows all favorites"
+        }
         "organize.apply" => "Organize",
         "organize.organizing" => "Organizing...",
         "organize.flatten" => "Flatten All",
@@ -118,6 +121,8 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "organize.done" => "organized",
         "organize.flattened" => "favorites moved to root",
         "organize.already_flat" => "All favorites are already at root",
+        "organize.preview" => "Preview",
+        "organize.preview_unknown" => "Unknown",
 
         // Hostname settings
         "more.hostname" => "Hostname",
