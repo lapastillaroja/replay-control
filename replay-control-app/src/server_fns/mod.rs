@@ -86,9 +86,10 @@ pub struct RomListEntry {
     pub genre: String,
 }
 
-/// Batch-resolve box art URLs and favorites for a set of game references.
-/// Uses DB `box_art_url` when present, falls back to `ImageIndex` for misses.
-/// Returns a `HashMap` keyed by `(system, rom_filename)` with `(resolved_box_art_url, is_favorite)`.
+/// Batch-resolve favorites for a set of game references.
+/// Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
+/// If NULL, no art is available — show placeholder.
+/// Returns a `HashMap` keyed by `(system, rom_filename)` with `(box_art_url, is_favorite)`.
 #[cfg(feature = "ssr")]
 pub(crate) async fn enrich_box_art_and_favorites(
     state: &crate::api::AppState,
@@ -100,20 +101,6 @@ pub(crate) async fn enrich_box_art_and_favorites(
 
     // Collect distinct systems for batch operations.
     let distinct_systems: HashSet<&str> = entries.iter().map(|(sys, _, _)| sys.as_str()).collect();
-
-    // Only build image indexes for systems that have entries with missing box_art_url.
-    let systems_needing_index: HashSet<&str> = entries
-        .iter()
-        .filter(|(_, _, url)| url.is_none())
-        .map(|(sys, _, _)| sys.as_str())
-        .collect();
-
-    let mut image_indexes: HashMap<String, std::sync::Arc<crate::api::cache::ImageIndex>> =
-        HashMap::new();
-    for sys in &systems_needing_index {
-        let index = state.cache.cached_image_index(state, sys).await;
-        image_indexes.insert(sys.to_string(), index);
-    }
 
     // Batch-load favorites per system.
     let fav_sets: HashMap<String, HashSet<String>> = distinct_systems
@@ -127,19 +114,12 @@ pub(crate) async fn enrich_box_art_and_favorites(
     // Build result map.
     let mut result = HashMap::with_capacity(entries.len());
     for (system, rom_filename, existing_url) in entries {
-        let box_art_url = existing_url.clone().or_else(|| {
-            image_indexes.get(system.as_str()).and_then(|index| {
-                state
-                    .cache
-                    .resolve_box_art(state, index, system, rom_filename)
-            })
-        });
         let is_favorite = fav_sets
             .get(system.as_str())
             .is_some_and(|set| set.contains(rom_filename));
         result.insert(
             (system.clone(), rom_filename.clone()),
-            (box_art_url, is_favorite),
+            (existing_url.clone(), is_favorite),
         );
     }
     result
@@ -148,10 +128,10 @@ pub(crate) async fn enrich_box_art_and_favorites(
 /// Convert a slice of `GameEntry` rows into enriched `RomListEntry` values.
 ///
 /// Handles multi-system results (e.g., developer page, global search) by
-/// batching image index loads and favorites per distinct system. Box art is
-/// resolved from the cached image index. All other metadata fields (genre,
-/// rating, players, driver_status) are already populated in `GameEntry`
-/// from the `game_library` table.
+/// batching favorites per distinct system. Box art comes from the DB
+/// `box_art_url` field (set by enrichment pipeline). All other metadata
+/// fields (genre, rating, players, driver_status) are already populated
+/// in `GameEntry` from the `game_library` table.
 #[cfg(feature = "ssr")]
 pub(crate) async fn enrich_game_entries(
     state: &crate::api::AppState,
@@ -515,6 +495,28 @@ pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
         }
     }
 
+    // Use game_library.box_art_url as the primary box art source (set by enrichment).
+    if info.box_art_url.is_none() {
+        let sys = info.system.clone();
+        let rom = info.rom_filename.clone();
+        if let Some(url) = state
+            .metadata_pool
+            .read(move |conn| {
+                conn.query_row(
+                    "SELECT box_art_url FROM game_library WHERE system = ?1 AND rom_filename = ?2",
+                    [&sys, &rom],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten()
+            })
+            .await
+            .flatten()
+        {
+            info.box_art_url = Some(url);
+        }
+    }
+
     if let Some(lookup_result) = state
         .metadata_pool
         .read(move |conn| MetadataDb::lookup(conn, &system, &rom_filename))
@@ -588,22 +590,11 @@ pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
         }
     }
 
-    // Filesystem fallback: if no image URLs from DB, check filesystem.
-    // For box art, use the unified resolve_box_art() (same path as cards/recommendations)
-    // to ensure consistent box art between detail pages and series/recommendation cards.
+    // Filesystem fallback for screenshots and title screens.
+    // Box art uses the DB `box_art_url` only (set by enrichment pipeline).
     // For screenshots and title screens, use resolve_image_on_disk() which handles
     // arcade MAME codename → display name translation automatically.
-    if info.box_art_url.is_none() || info.screenshot_url.is_none() || info.title_url.is_none() {
-        if info.box_art_url.is_none() {
-            let image_index = state.cache.cached_image_index(&state, &info.system).await;
-            if let Some(url) =
-                state
-                    .cache
-                    .resolve_box_art(&state, &image_index, &info.system, &info.rom_filename)
-            {
-                info.box_art_url = Some(url);
-            }
-        }
+    if info.screenshot_url.is_none() || info.title_url.is_none() {
         let media_base = state.storage().rc_dir().join("media").join(&info.system);
         if info.screenshot_url.is_none()
             && let Some(path) = resolve_image_on_disk(

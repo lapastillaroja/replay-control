@@ -47,36 +47,34 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
         .get_recents(&storage)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Build image indexes per-system (typically only a few distinct systems).
-    let mut image_indexes: std::collections::HashMap<
-        String,
-        std::sync::Arc<crate::api::cache::ImageIndex>,
-    > = std::collections::HashMap::new();
+    // Batch-lookup box_art_url from game_library DB.
+    let keys: Vec<(String, String)> = entries
+        .iter()
+        .map(|e| (e.game.system.clone(), e.game.rom_filename.clone()))
+        .collect();
+    let db_entries = state
+        .cache
+        .db_read(move |conn| {
+            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
 
-    let mut result = Vec::with_capacity(entries.len());
-    for entry in entries {
-        if !image_indexes.contains_key(&entry.game.system) {
-            let index = state
-                .cache
-                .cached_image_index(&state, &entry.game.system)
-                .await;
-            image_indexes.insert(entry.game.system.clone(), index);
-        }
-        let index = image_indexes.get(&entry.game.system).unwrap();
-        let box_art_url = state.cache.resolve_box_art(
-            &state,
-            index,
-            &entry.game.system,
-            &entry.game.rom_filename,
-        );
-        result.push(CoreGameEntry {
-            system: entry.game.system,
-            system_display: entry.game.system_display,
-            rom_filename: entry.game.rom_filename.clone(),
-            display_name: entry.game.display_name.unwrap_or(entry.game.rom_filename),
-            box_art_url,
-        });
-    }
+    let result: Vec<CoreGameEntry> = entries
+        .into_iter()
+        .map(|entry| {
+            let box_art_url = db_entries
+                .get(&(entry.game.system.clone(), entry.game.rom_filename.clone()))
+                .and_then(|e| e.box_art_url.clone());
+            CoreGameEntry {
+                system: entry.game.system,
+                system_display: entry.game.system_display,
+                rom_filename: entry.game.rom_filename.clone(),
+                display_name: entry.game.display_name.unwrap_or(entry.game.rom_filename),
+                box_art_url,
+            }
+        })
+        .collect();
 
     Ok(Json(result))
 }
@@ -87,30 +85,34 @@ async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEnt
     let favs = replay_control_core::favorites::list_favorites(&storage)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let mut image_indexes: std::collections::HashMap<
-        String,
-        std::sync::Arc<crate::api::cache::ImageIndex>,
-    > = std::collections::HashMap::new();
+    // Batch-lookup box_art_url from game_library DB.
+    let keys: Vec<(String, String)> = favs
+        .iter()
+        .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
+        .collect();
+    let db_entries = state
+        .cache
+        .db_read(move |conn| {
+            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
 
-    let mut result = Vec::with_capacity(favs.len());
-    for fav in favs {
-        if !image_indexes.contains_key(&fav.game.system) {
-            let index = state.cache.cached_image_index(&state, &fav.game.system).await;
-            image_indexes.insert(fav.game.system.clone(), index);
-        }
-        let index = image_indexes.get(&fav.game.system).unwrap();
-        let box_art_url =
-            state
-                .cache
-                .resolve_box_art(&state, index, &fav.game.system, &fav.game.rom_filename);
-        result.push(CoreGameEntry {
-            system: fav.game.system,
-            system_display: fav.game.system_display,
-            rom_filename: fav.game.rom_filename.clone(),
-            display_name: fav.game.display_name.unwrap_or(fav.game.rom_filename),
-            box_art_url,
-        });
-    }
+    let result: Vec<CoreGameEntry> = favs
+        .into_iter()
+        .map(|fav| {
+            let box_art_url = db_entries
+                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
+                .and_then(|e| e.box_art_url.clone());
+            CoreGameEntry {
+                system: fav.game.system,
+                system_display: fav.game.system_display,
+                rom_filename: fav.game.rom_filename.clone(),
+                display_name: fav.game.display_name.unwrap_or(fav.game.rom_filename),
+                box_art_url,
+            }
+        })
+        .collect();
 
     Ok(Json(result))
 }

@@ -47,7 +47,7 @@ pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
 
 /// Mtime + optional TTL freshness tracker.
 ///
-/// Shared by `CacheEntry`, `FavoritesCache`, and `ImageIndex` to avoid
+/// Shared by `CacheEntry` and `FavoritesCache` to avoid
 /// duplicating the same expiry/mtime logic across cache types.
 ///
 /// For local storage (SD/USB/NVMe), there is no TTL — inotify watcher + mtime
@@ -104,17 +104,12 @@ impl<T: Clone> CacheEntry<T> {
 }
 
 use favorites::FavoritesCache;
-pub use images::ImageIndex;
 
 pub struct GameLibrary {
     pub(crate) query_cache: query::QueryCache,
     pub(super) systems: std::sync::RwLock<Option<CacheEntry<Vec<SystemSummary>>>>,
     pub(super) favorites: std::sync::RwLock<Option<FavoritesCache>>,
     pub(super) recents: std::sync::RwLock<Option<CacheEntry<Vec<RecentEntry>>>>,
-    /// Per-system image index for batch box art resolution.
-    /// Wrapped in `Arc` so cache hits return a cheap `Arc::clone()` instead of
-    /// deep-copying all 4 HashMaps.
-    pub(super) images: std::sync::RwLock<HashMap<String, Arc<ImageIndex>>>,
     /// Metadata DB pool for L2 persistent cache.
     pub(super) db: DbPool,
 }
@@ -126,7 +121,6 @@ impl GameLibrary {
             systems: std::sync::RwLock::new(None),
             favorites: std::sync::RwLock::new(None),
             recents: std::sync::RwLock::new(None),
-            images: std::sync::RwLock::new(HashMap::new()),
             query_cache,
             db,
         }
@@ -449,9 +443,6 @@ impl GameLibrary {
         if let Ok(mut guard) = self.recents.write() {
             *guard = None;
         }
-        if let Ok(mut guard) = self.images.write() {
-            guard.clear();
-        }
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library.
         self.db
@@ -487,21 +478,6 @@ impl GameLibrary {
     pub fn invalidate_recents(&self) {
         if let Ok(mut guard) = self.recents.write() {
             *guard = None;
-        }
-    }
-
-    /// Invalidate only the per-system image indexes.
-    /// Called after thumbnail downloads to force re-scan of the media directory.
-    pub fn invalidate_images(&self) {
-        if let Ok(mut guard) = self.images.write() {
-            guard.clear();
-        }
-    }
-
-    /// Invalidate a single system's image index.
-    pub fn invalidate_system_images(&self, system: &str) {
-        if let Ok(mut guard) = self.images.write() {
-            guard.remove(system);
         }
     }
 }

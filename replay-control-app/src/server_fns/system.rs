@@ -116,37 +116,13 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     #[cfg(feature = "ssr")]
     tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recents db_read complete");
 
-    // Only build image indexes for systems that have entries with missing box_art_url.
-    // Note: RecentWithArt only needs box art, not favorites — so we skip the
-    // shared enrich_box_art_and_favorites() to avoid loading favorites for ~10 systems.
-    let mut image_indexes: std::collections::HashMap<
-        String,
-        std::sync::Arc<crate::api::cache::ImageIndex>,
-    > = std::collections::HashMap::new();
+    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
+    // If NULL, no art is available — show placeholder.
     let mut enriched = Vec::with_capacity(entries.len());
     for entry in entries {
-        let db_box_art = db_entries
+        let box_art_url = db_entries
             .get(&(entry.game.system.clone(), entry.game.rom_filename.clone()))
             .and_then(|e| e.box_art_url.clone());
-        let box_art_url = if db_box_art.is_some() {
-            db_box_art
-        } else {
-            // Fallback: build image index for this system if not yet loaded.
-            if !image_indexes.contains_key(&entry.game.system) {
-                let index = state
-                    .cache
-                    .cached_image_index(&state, &entry.game.system)
-                    .await;
-                image_indexes.insert(entry.game.system.clone(), index);
-            }
-            let index = &image_indexes[&entry.game.system];
-            state.cache.resolve_box_art(
-                &state,
-                index,
-                &entry.game.system,
-                &entry.game.rom_filename,
-            )
-        };
         enriched.push(RecentWithArt { entry, box_art_url });
     }
     // The homepage only displays 1 hero + 10 scroll = 11 entries.

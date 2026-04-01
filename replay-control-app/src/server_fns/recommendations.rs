@@ -302,7 +302,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     state.cache.query_cache.set_active_systems(&active_systems);
 
     // --- Post-process random picks: ensure system diversity ---
-    let mut random_picks = diversify_picks(random_pool, count, &systems);
+    let random_picks = diversify_picks(random_pool, count, &systems);
 
     // --- Discover pills: build pool and pick 5 ---
     let discover_pills = build_discover_pills(
@@ -314,7 +314,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     );
 
     // --- Favorites picks (pool already randomized by SQL) ---
-    let mut favorites_picks = favorites_info_for_picks.and_then(|fi| {
+    let favorites_picks = favorites_info_for_picks.and_then(|fi| {
         let roms = fav_roms?;
         if roms.is_empty() {
             return None;
@@ -337,7 +337,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // --- Curated spotlight: pool already randomized by SQL ---
     // For single-system spotlights (e.g., "Best of SNES"), skip diversity capping
     // since all games share one system and the cap would limit output to 2 games.
-    let mut curated_spotlight = if spotlight_pool.is_empty() {
+    let curated_spotlight = if spotlight_pool.is_empty() {
         None
     } else {
         let single_system = spotlight_pool.iter().all(|g| g.system == spotlight_pool[0].system);
@@ -361,15 +361,8 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         }
     };
 
-    // Resolve box art from filesystem (same approach as recents/favorites/games).
-    // The pre-cached game_library.box_art_url may be stale or NULL.
-    resolve_box_art_for_picks(&state, &mut random_picks).await;
-    if let Some(ref mut fp) = favorites_picks {
-        resolve_box_art_for_picks(&state, &mut fp.games).await;
-    }
-    if let Some(ref mut cs) = curated_spotlight {
-        resolve_box_art_for_picks(&state, &mut cs.games).await;
-    }
+    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
+    // No filesystem fallback at request time — NULL means no art, show placeholder.
 
     #[cfg(feature = "ssr")]
     tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations box art resolved");
@@ -633,40 +626,9 @@ fn diversify_picks(
     picks
 }
 
-/// Resolve box art URLs from the filesystem for picks that are missing one.
-///
-/// Skips games that already have a `box_art_url` from the DB (the common case),
-/// so filesystem/image-index work is only done for the few entries with NULL
-/// box art. This avoids building image indexes for every system on every home
-/// page load.
-#[cfg(feature = "ssr")]
-pub(super) async fn resolve_box_art_for_picks(
-    state: &crate::api::AppState,
-    picks: &mut [RecommendedGame],
-) {
-    let mut image_indexes: std::collections::HashMap<
-        String,
-        std::sync::Arc<crate::api::cache::ImageIndex>,
-    > = std::collections::HashMap::new();
-    for game in picks.iter_mut() {
-        // Skip if the DB already provided a box art URL.
-        if game.box_art_url.is_some() {
-            continue;
-        }
-        if !image_indexes.contains_key(&game.system) {
-            let index = state.cache.cached_image_index(state, &game.system).await;
-            image_indexes.insert(game.system.clone(), index);
-        }
-        let index = &image_indexes[&game.system];
-        if let Some(url) =
-            state
-                .cache
-                .resolve_box_art(state, index, &game.system, &game.rom_filename)
-        {
-            game.box_art_url = Some(url);
-        }
-    }
-}
+// NOTE: resolve_box_art_for_picks was removed — box art at request time uses
+// the DB `box_art_url` field only (set by enrichment pipeline). If NULL, no
+// art is available and the UI shows a placeholder.
 
 /// Convert GameEntry to RecommendedGame. box_art_url is resolved later by the caller.
 #[cfg(feature = "ssr")]

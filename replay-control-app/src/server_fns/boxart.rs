@@ -174,10 +174,23 @@ pub async fn set_boxart_override(
         .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Invalidate the image cache for this system.
-    state.cache.invalidate_system_images(&system);
-
+    // Update game_library.box_art_url so the override is visible immediately in list views.
     let image_url = format!("/media/{system}/{boxart_dir}/{variant_filename}.png");
+    {
+        let url = image_url.clone();
+        let sys = system.clone();
+        let rom = rom_filename.clone();
+        let _ = state
+            .metadata_pool
+            .write(move |conn| {
+                conn.execute(
+                    "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
+                    [&url, &sys, &rom],
+                ).ok();
+            })
+            .await;
+    }
+    state.response_cache.invalidate_all();
     Ok(image_url)
 }
 
@@ -189,7 +202,8 @@ pub async fn reset_boxart_override(
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    let system_for_invalidate = system.clone();
+    let sys_for_db = system.clone();
+    let rom_for_db = rom_filename.clone();
     state
         .user_data_pool
         .write(move |conn| UserDataDb::remove_override(conn, &system, &rom_filename))
@@ -197,8 +211,21 @@ pub async fn reset_boxart_override(
         .ok_or_else(|| ServerFnError::new("Cannot open user data DB"))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Invalidate the image cache for this system.
-    state.cache.invalidate_system_images(&system_for_invalidate);
+    // Clear box_art_url so it reverts to enrichment-resolved value on next enrichment run.
+    {
+        let sys = sys_for_db;
+        let rom = rom_for_db;
+        let _ = state
+            .metadata_pool
+            .write(move |conn| {
+                conn.execute(
+                    "UPDATE game_library SET box_art_url = NULL WHERE system = ?1 AND rom_filename = ?2",
+                    [&sys, &rom],
+                ).ok();
+            })
+            .await;
+    }
+    state.response_cache.invalidate_all();
 
     Ok(())
 }

@@ -1,5 +1,5 @@
 #[cfg(feature = "ssr")]
-use super::recommendations::{resolve_box_art_for_picks, to_recommended};
+use super::recommendations::to_recommended;
 use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::metadata_db::MetadataDb;
@@ -449,7 +449,7 @@ pub async fn get_related_games(
     // show only the region (e.g., "Europe"). If the title is different (cross-name variant),
     // show the different name + region (e.g., "Vampire Killer (Japan)").
     let current_bt = &base_title;
-    let mut alias_variants: Vec<RecommendedGame> = alias_raw
+    let alias_variants: Vec<RecommendedGame> = alias_raw
         .iter()
         .filter_map(|rom| {
             let mut game = to_recommended(&rom.system, rom, &systems)?;
@@ -470,33 +470,27 @@ pub async fn get_related_games(
             Some(game)
         })
         .collect();
-    resolve_box_art_for_picks(&state, &mut alias_variants).await;
 
     // Build cross-system availability (same game on other systems).
-    let mut cross_system: Vec<RecommendedGame> = cross_system_raw
+    let cross_system: Vec<RecommendedGame> = cross_system_raw
         .iter()
         .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
         .collect();
-    resolve_box_art_for_picks(&state, &mut cross_system).await;
 
     // Build series siblings (other games in the same franchise, cross-system).
-    let mut series_siblings: Vec<RecommendedGame> = series_raw
+    let series_siblings: Vec<RecommendedGame> = series_raw
         .iter()
         .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
         .collect();
-    resolve_box_art_for_picks(&state, &mut series_siblings).await;
 
     // Build similar games. The two-tier similar_by_genre query already orders
     // by exact genre match first (relevance=2) then genre_group (relevance=1),
     // so we just take the top results.
-    let mut similar_games: Vec<RecommendedGame> = similar_pool
+    let similar_games: Vec<RecommendedGame> = similar_pool
         .iter()
         .take(8)
         .filter_map(|rom| to_recommended(&system, rom, &systems))
         .collect();
-
-    // Resolve box art from filesystem.
-    resolve_box_art_for_picks(&state, &mut similar_games).await;
 
     // Build sequel/prequel links.
     let sequel_prev = sequel_chain.follows_title.map(|title| {

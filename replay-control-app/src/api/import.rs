@@ -370,8 +370,7 @@ impl ImportPipeline {
         // below needs to read from the DB.
         drop(write_gate);
 
-        // Invalidate image cache so updated metadata paths are picked up.
-        state.cache.invalidate_images();
+        // Image index is no longer cached — enrichment builds it fresh each run.
 
         let (succeeded, parse_result) = match &result {
             Ok((_, pr)) => (true, Some(pr)),
@@ -804,8 +803,7 @@ impl ThumbnailPipeline {
             Self::update_image_paths_from_disk(state, &storage_root, system).await;
         }
 
-        // Invalidate the image cache so new thumbnails are picked up.
-        state.cache.invalidate_images();
+        // Image index is no longer cached — enrichment builds it fresh each run.
 
         let cancelled = cancel.load(Ordering::Relaxed);
 

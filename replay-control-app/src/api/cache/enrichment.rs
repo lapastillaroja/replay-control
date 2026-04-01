@@ -23,7 +23,8 @@ impl GameLibrary {
     /// LaunchBox entries by normalized title. Matched metadata is persisted
     /// so future lookups hit directly without re-matching.
     pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
-        let index = self.cached_image_index(state, &system).await;
+        // Build a temporary image index for this enrichment run (not cached).
+        let index = super::images::build_image_index(state, &system).await;
 
         // Load ratings, genres, players, rating counts, and developers from
         // game_metadata table (from LaunchBox import) in a single read call.
@@ -113,7 +114,7 @@ impl GameLibrary {
         let enrichments: Vec<replay_control_core::metadata_db::BoxArtGenreRating> = rom_filenames
             .iter()
             .filter_map(|filename| {
-                let art = self.resolve_box_art(state, &index, &system, filename);
+                let art = super::images::resolve_box_art(state, &index, &system, filename);
                 let rating = all_ratings.get(filename).map(|&r| r as f32);
                 let rating_count = lb.rating_counts.get(filename).copied();
                 let genre = if !existing_genres.contains(filename) {
