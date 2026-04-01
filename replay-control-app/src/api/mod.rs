@@ -80,6 +80,9 @@ impl managed::Manager for SqliteManager {
                 })?;
 
             // Per-role PRAGMAs (on top of the base PRAGMAs from open_connection):
+            // Reduce page cache from default 2000 pages (8MB) to 500 (2MB).
+            // With 4 connections per pool this saves ~24MB of RSS.
+            conn.execute_batch("PRAGMA cache_size = 500;")?;
             if is_write && is_wal {
                 // Disable automatic WAL checkpoints so we can checkpoint
                 // manually after heavy writes (import, thumbnail rebuild).
@@ -182,10 +185,11 @@ pub struct DbPool {
     write_gate: Arc<AtomicBool>,
 }
 
-/// Number of read connections per pool. Both WAL and DELETE modes use the same
-/// size — DELETE supports concurrent readers when no writer is active, and the
-/// write gate prevents reads during heavy writes on exFAT.
-const READ_POOL_SIZE: usize = 3;
+/// Number of read connections per pool. Load tests on USB storage (DELETE journal
+/// mode, no WAL) showed no performance improvement with more than 1 reader — the
+/// single-user access pattern and fast queries (<50ms) don't benefit from
+/// concurrent readers. Keeping 1 reduces memory by ~2MB per saved connection.
+const READ_POOL_SIZE: usize = 1;
 
 /// RAII guard that gates DB reads during heavy writes.
 ///
