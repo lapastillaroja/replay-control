@@ -214,6 +214,7 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
     let mut is_pirate = false;
     let mut has_fastrom = false;
     let mut has_60hz = false;
+    let mut has_extended_screen = false;
 
     for tag in ParenTags::new(stem) {
         let trimmed = tag.trim();
@@ -280,6 +281,10 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
             has_fastrom = true;
             continue;
         }
+        if lower == "extended screen" {
+            has_extended_screen = true;
+            continue;
+        }
         if lower == "60hz" {
             has_60hz = true;
             continue;
@@ -341,6 +346,7 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
         tier,
         RomTier::Unlicensed | RomTier::Homebrew | RomTier::PreRelease | RomTier::Pirate
     ) || has_fastrom
+        || has_extended_screen
         || has_60hz;
 
     (tier, region_priority, is_special)
@@ -408,6 +414,7 @@ pub fn extract_tags(filename: &str) -> String {
     let mut tosec_language: Option<String> = None;
     let mut patch_60hz = false;
     let mut patch_fastrom = false;
+    let mut patch_extended_screen = false;
     let mut is_hack = false;
     let mut is_beta = false;
     let mut is_proto = false;
@@ -422,6 +429,7 @@ pub fn extract_tags(filename: &str) -> String {
     let mut is_fixed = false;
     let mut is_overdump = false;
     let mut is_bad_dump = false;
+    let mut extra_tags: Vec<String> = Vec::new();
 
     // Extract all parenthesized tags: (...)
     for tag in ParenTags::new(stem) {
@@ -453,6 +461,10 @@ pub fn extract_tags(filename: &str) -> String {
         }
         if lower == "fastrom" {
             patch_fastrom = true;
+            continue;
+        }
+        if lower == "extended screen" {
+            patch_extended_screen = true;
             continue;
         }
 
@@ -530,8 +542,14 @@ pub fn extract_tags(filename: &str) -> String {
             continue;
         }
 
+        // Distribution channel tags — shown verbatim in the display suffix.
+        if is_distribution_channel(&lower) {
+            extra_tags.push(trimmed.to_string());
+            continue;
+        }
+
         // Skip non-region noise: Virtual Console, Switch Online, language-only
-        // codes like (En), (Ja), (En,Fr,De), NP, BS, etc.
+        // codes like (En), (Ja), (En,Fr,De), NP, etc.
         if is_noise_tag(&lower) {
             continue;
         }
@@ -587,6 +605,9 @@ pub fn extract_tags(filename: &str) -> String {
         parts.push(lang);
     }
 
+    // Distribution channel and other passthrough tags (e.g., SegaNet, BS, Sufami Turbo)
+    parts.extend(extra_tags);
+
     if let Some(rev) = revision {
         parts.push(rev);
     }
@@ -600,6 +621,9 @@ pub fn extract_tags(filename: &str) -> String {
     }
     if patch_fastrom {
         parts.push("FastROM".to_string());
+    }
+    if patch_extended_screen {
+        parts.push("Extended Screen".to_string());
     }
 
     if is_hack {
@@ -1404,6 +1428,16 @@ pub fn extract_disc_label(filename: &str) -> Option<String> {
     None
 }
 
+/// Check if a parenthesized tag is a distribution channel that should be shown
+/// verbatim in the display suffix. These represent legitimate different releases
+/// or hardware variants (not hacks, translations, or patches).
+fn is_distribution_channel(lower: &str) -> bool {
+    matches!(
+        lower,
+        "seganet" | "sega channel" | "bs" | "sufami turbo" | "retro-bit" | "retro-bit generations"
+    )
+}
+
 /// Check if a parenthesized tag is noise that should be skipped.
 fn is_noise_tag(lower: &str) -> bool {
     // Language-only tags: (En), (Ja), (En,Fr,De), etc.
@@ -1422,13 +1456,9 @@ fn is_noise_tag(lower: &str) -> bool {
             | "virtual console, classic mini"
             | "classic mini"
             | "np" // Nintendo Power
-            | "bs" // BS-X Satellaview
             | "program"
             | "ntsc"
             | "pal"
-            | "sufami turbo"
-            | "seganet"
-            | "sega channel"
             | "fixed"
             | "alt"
             | "final"
@@ -2683,6 +2713,84 @@ mod tests {
     fn classify_hack_not_special() {
         let (_, _, is_special) = classify("Game (Hack).sfc");
         assert!(!is_special, "Hack should NOT be is_special");
+    }
+
+    #[test]
+    fn classify_extended_screen_is_special() {
+        let (tier, _, is_special) = classify("Game (Japan) (Extended Screen).gg");
+        assert_eq!(tier, RomTier::Original);
+        assert!(is_special, "Extended Screen patch should be is_special");
+    }
+
+    // ==========================================
+    // Distribution channel tag visibility tests
+    // ==========================================
+
+    #[test]
+    fn seganet_visible_in_tags() {
+        assert_eq!(extract_tags("16t (Japan) (SegaNet).md"), "Japan, SegaNet");
+    }
+
+    #[test]
+    fn sega_channel_visible_in_tags() {
+        assert_eq!(
+            extract_tags("Sonic 3D Blast (USA) (Sega Channel).md"),
+            "USA, Sega Channel"
+        );
+    }
+
+    #[test]
+    fn bs_visible_in_tags() {
+        assert_eq!(
+            extract_tags("BS Zelda no Densetsu (Japan) (BS).sfc"),
+            "Japan, BS"
+        );
+    }
+
+    #[test]
+    fn sufami_turbo_visible_in_tags() {
+        assert_eq!(
+            extract_tags("Columns (Japan) (Sufami Turbo).sfc"),
+            "Japan, Sufami Turbo"
+        );
+    }
+
+    #[test]
+    fn extended_screen_visible_in_tags() {
+        assert_eq!(
+            extract_tags("Sonic the Hedgehog (Japan) (Extended Screen).gg"),
+            "Japan, Extended Screen"
+        );
+    }
+
+    #[test]
+    fn seganet_not_noise() {
+        assert!(!is_noise_tag("seganet"));
+    }
+
+    #[test]
+    fn sega_channel_not_noise() {
+        assert!(!is_noise_tag("sega channel"));
+    }
+
+    #[test]
+    fn bs_not_noise() {
+        assert!(!is_noise_tag("bs"));
+    }
+
+    #[test]
+    fn sufami_turbo_not_noise() {
+        assert!(!is_noise_tag("sufami turbo"));
+    }
+
+    #[test]
+    fn np_still_noise() {
+        assert!(is_noise_tag("np"));
+    }
+
+    #[test]
+    fn virtual_console_still_noise() {
+        assert!(is_noise_tag("virtual console"));
     }
 
     // ==========================================
