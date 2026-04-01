@@ -246,3 +246,47 @@
 .organize-preview-tree .folder-icon {
     color: var(--accent);
 }
+
+/* ── Skeleton placeholders ────────────────────────────────────────── */
+
+.fav-skeleton-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.fav-skeleton-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 4px;
+}
+
+.fav-skeleton-thumb {
+    width: 2.5rem;
+    height: 3.2rem;
+    border-radius: 3px;
+    background: var(--border);
+    flex-shrink: 0;
+}
+
+.fav-skeleton-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.fav-skeleton-name {
+    width: 60%;
+    height: 0.8rem;
+    border-radius: 3px;
+    background: var(--border);
+    margin-bottom: 6px;
+}
+
+.fav-skeleton-system {
+    width: 30%;
+    height: 0.65rem;
+    border-radius: 3px;
+    background: var(--border);
+}
