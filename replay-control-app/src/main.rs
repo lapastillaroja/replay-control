@@ -1,6 +1,10 @@
 #![recursion_limit = "512"]
 
 #[cfg(feature = "ssr")]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[cfg(feature = "ssr")]
 mod ssr {
     use clap::Parser;
     use leptos::config::LeptosOptions;
