@@ -104,6 +104,8 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         .unwrap_or_default();
 
     // Only build image indexes for systems that have entries with missing box_art_url.
+    // Note: RecentWithArt only needs box art, not favorites — so we skip the
+    // shared enrich_box_art_and_favorites() to avoid loading favorites for ~10 systems.
     let mut image_indexes: std::collections::HashMap<
         String,
         std::sync::Arc<crate::api::cache::ImageIndex>,

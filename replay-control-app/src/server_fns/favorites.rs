@@ -54,6 +54,8 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
         .unwrap_or_default();
 
     // Only build image indexes for systems that have entries missing box_art_url.
+    // Note: FavoriteWithArt doesn't need is_favorite (they're all favorites) — skip
+    // the shared enrich_box_art_and_favorites() to avoid redundant favorites loading.
     let needs_index: std::collections::HashSet<&str> = favs
         .iter()
         .filter(|f| {
@@ -130,6 +132,8 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
         .unwrap_or_default();
 
     // Only build image index if some entries are missing box_art_url.
+    // Note: FavoriteWithArt doesn't need is_favorite — skip the shared
+    // enrich_box_art_and_favorites() to avoid redundant favorites loading.
     let needs_fallback = favs.iter().any(|f| {
         db_entries
             .get(&(f.game.system.clone(), f.game.rom_filename.clone()))

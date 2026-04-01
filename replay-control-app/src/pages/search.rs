@@ -7,7 +7,7 @@ use crate::components::game_list_item::GameListItem;
 use crate::hooks::use_debounced;
 use crate::i18n::{t, use_i18n};
 use crate::server_fns::{
-    self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResult, GlobalSearchResults,
+    self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResults, RomListEntry,
     SystemSearchGroup,
 };
 
@@ -497,7 +497,7 @@ fn SystemGroup(
 
 /// A single search result row — delegates to the shared `GameListItem`.
 #[component]
-fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
+fn SearchResultItem(result: RomListEntry) -> impl IntoView {
     let genre = (!result.genre.is_empty()).then(|| result.genre.clone());
     view! {
         <GameListItem
@@ -509,6 +509,7 @@ fn SearchResultItem(result: GlobalSearchResult) -> impl IntoView {
             is_favorite=result.is_favorite
             genre=genre
             rating=result.rating
+            driver_status=result.driver_status.clone()
         />
     }
 }

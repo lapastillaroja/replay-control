@@ -7,7 +7,7 @@ use replay_control_core::metadata_db::MetadataDb;
 pub struct DeveloperSearchResult {
     pub developer_name: String,
     pub total_count: usize,
-    pub games: Vec<GlobalSearchResult>,
+    pub games: Vec<RomListEntry>,
     pub other_developers: Vec<DeveloperMatch>,
 }
 
@@ -18,29 +18,13 @@ pub struct DeveloperMatch {
     pub game_count: usize,
 }
 
-/// A single result in global search.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GlobalSearchResult {
-    pub rom_filename: String,
-    pub display_name: String,
-    pub system: String,
-    pub rom_path: String,
-    pub genre: String,
-    pub is_favorite: bool,
-    pub box_art_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rating: Option<f32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub players: Option<u8>,
-}
-
 /// A group of search results for a single system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemSearchGroup {
     pub system: String,
     pub system_display: String,
     pub total_matches: usize,
-    pub top_results: Vec<GlobalSearchResult>,
+    pub top_results: Vec<RomListEntry>,
 }
 
 /// Aggregated global search results across all systems.
@@ -374,7 +358,6 @@ pub async fn global_search(
     use replay_control_core::systems::{self as sys_db};
 
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
     let q = query.to_lowercase();
@@ -497,8 +480,9 @@ pub async fn global_search(
             .push((score, entry));
     }
 
-    // Build SystemSearchGroup results.
-    let mut groups: Vec<SystemSearchGroup> = Vec::new();
+    // Collect top entries per system and their metadata for batch enrichment.
+    let mut system_meta: Vec<(String, String, usize)> = Vec::new(); // (system, system_display, match_count)
+    let mut all_top_entries: Vec<GameEntry> = Vec::new();
     let mut total_results = 0usize;
 
     for (system, mut system_scored) in system_groups {
@@ -511,47 +495,42 @@ pub async fn global_search(
             .unwrap_or_else(|| system.clone());
 
         // Take top N entries for this system.
-        let top_entries: Vec<GameEntry> = system_scored
+        let top: Vec<GameEntry> = system_scored
             .into_iter()
             .take(per_system_limit)
             .map(|(_, entry)| entry)
             .collect();
 
-        // Resolve box art and favorites for the top entries.
-        let image_index = state.cache.cached_image_index(&state, &system).await;
-        let fav_set = state.cache.get_favorites_set(&storage, &system);
-
-        let top_results: Vec<GlobalSearchResult> = top_entries
-            .into_iter()
-            .map(|entry| {
-                let box_art_url =
-                    state
-                        .cache
-                        .resolve_box_art(&state, &image_index, &system, &entry.rom_filename);
-                let is_favorite = fav_set.contains(&entry.rom_filename);
-                GlobalSearchResult {
-                    display_name: entry
-                        .display_name
-                        .unwrap_or_else(|| entry.rom_filename.clone()),
-                    rom_filename: entry.rom_filename,
-                    system: entry.system,
-                    rom_path: entry.rom_path,
-                    genre: entry.genre_group,
-                    is_favorite,
-                    box_art_url,
-                    rating: entry.rating,
-                    players: entry.players,
-                }
-            })
-            .collect();
-
-        groups.push(SystemSearchGroup {
-            system,
-            system_display,
-            total_matches: match_count,
-            top_results,
-        });
+        system_meta.push((system, system_display, match_count));
+        all_top_entries.extend(top);
     }
+
+    // Batch-enrich all top entries at once (shared box art + favorites resolution).
+    let enriched = super::enrich_game_entries(&state, all_top_entries).await;
+
+    // Re-group enriched entries by system.
+    let mut enriched_by_system: std::collections::HashMap<String, Vec<RomListEntry>> =
+        std::collections::HashMap::new();
+    for entry in enriched {
+        enriched_by_system
+            .entry(entry.system.clone())
+            .or_default()
+            .push(entry);
+    }
+
+    // Build SystemSearchGroup results.
+    let mut groups: Vec<SystemSearchGroup> = system_meta
+        .into_iter()
+        .map(|(system, system_display, match_count)| {
+            let top_results = enriched_by_system.remove(&system).unwrap_or_default();
+            SystemSearchGroup {
+                system,
+                system_display,
+                total_matches: match_count,
+                top_results,
+            }
+        })
+        .collect();
 
     // Sort systems by match count descending.
     groups.sort_by(|a, b| b.total_matches.cmp(&a.total_matches));
@@ -656,50 +635,8 @@ pub async fn search_by_developer(
         return Ok(None);
     }
 
-    // Pre-load image indexes and favorites for each distinct system.
-    let storage = state.storage();
-    let distinct_systems: std::collections::HashSet<String> =
-        game_entries.iter().map(|e| e.system.clone()).collect();
-    let mut image_indexes: std::collections::HashMap<
-        String,
-        std::sync::Arc<crate::api::cache::ImageIndex>,
-    > = std::collections::HashMap::new();
-    let mut fav_sets: std::collections::HashMap<
-        String,
-        std::collections::HashSet<String>,
-    > = std::collections::HashMap::new();
-    for sys in &distinct_systems {
-        let index = state.cache.cached_image_index(&state, sys).await;
-        image_indexes.insert(sys.clone(), index);
-        let favs = state.cache.get_favorites_set(&storage, sys);
-        fav_sets.insert(sys.clone(), favs);
-    }
-    let games: Vec<GlobalSearchResult> = game_entries
-        .into_iter()
-        .map(|entry| {
-            let index = &image_indexes[&entry.system];
-            let box_art_url =
-                state
-                    .cache
-                    .resolve_box_art(&state, index, &entry.system, &entry.rom_filename);
-            let is_favorite = fav_sets
-                .get(&entry.system)
-                .is_some_and(|set| set.contains(&entry.rom_filename));
-            GlobalSearchResult {
-                display_name: entry
-                    .display_name
-                    .unwrap_or_else(|| entry.rom_filename.clone()),
-                system: entry.system,
-                rom_filename: entry.rom_filename,
-                rom_path: entry.rom_path,
-                genre: entry.genre_group,
-                is_favorite,
-                box_art_url,
-                rating: entry.rating,
-                players: entry.players,
-            }
-        })
-        .collect();
+    // Enrich entries: box art, favorites (shared enrichment function).
+    let games = super::enrich_game_entries(&state, game_entries).await;
 
     Ok(Some(DeveloperSearchResult {
         developer_name,

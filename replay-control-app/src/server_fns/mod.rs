@@ -75,34 +75,30 @@ pub struct RomListEntry {
     pub genre: String,
 }
 
-/// Convert a slice of `GameEntry` rows into enriched `RomListEntry` values.
-///
-/// Handles multi-system results (e.g., developer page, global search) by
-/// batching image index loads and favorites per distinct system. Box art is
-/// resolved from the cached image index. All other metadata fields (genre,
-/// rating, players, driver_status) are already populated in `GameEntry`
-/// from the `game_library` table.
+/// Batch-resolve box art URLs and favorites for a set of game references.
+/// Uses DB `box_art_url` when present, falls back to `ImageIndex` for misses.
+/// Returns a `HashMap` keyed by `(system, rom_filename)` with `(resolved_box_art_url, is_favorite)`.
 #[cfg(feature = "ssr")]
-pub(crate) async fn enrich_game_entries(
+pub(crate) async fn enrich_box_art_and_favorites(
     state: &crate::api::AppState,
-    entries: Vec<replay_control_core::metadata_db::GameEntry>,
-) -> Vec<RomListEntry> {
+    entries: &[(String, String, Option<String>)], // (system, rom_filename, existing_box_art_url)
+) -> std::collections::HashMap<(String, String), (Option<String>, bool)> {
     use std::collections::{HashMap, HashSet};
-    use std::sync::Arc;
 
     let storage = state.storage();
 
     // Collect distinct systems for batch operations.
-    let distinct_systems: HashSet<&str> = entries.iter().map(|e| e.system.as_str()).collect();
+    let distinct_systems: HashSet<&str> = entries.iter().map(|(sys, _, _)| sys.as_str()).collect();
 
     // Only build image indexes for systems that have entries with missing box_art_url.
     let systems_needing_index: HashSet<&str> = entries
         .iter()
-        .filter(|e| e.box_art_url.is_none())
-        .map(|e| e.system.as_str())
+        .filter(|(_, _, url)| url.is_none())
+        .map(|(sys, _, _)| sys.as_str())
         .collect();
 
-    let mut image_indexes: HashMap<String, Arc<crate::api::cache::ImageIndex>> = HashMap::new();
+    let mut image_indexes: HashMap<String, std::sync::Arc<crate::api::cache::ImageIndex>> =
+        HashMap::new();
     for sys in &systems_needing_index {
         let index = state.cache.cached_image_index(state, sys).await;
         image_indexes.insert(sys.to_string(), index);
@@ -117,21 +113,56 @@ pub(crate) async fn enrich_game_entries(
         })
         .collect();
 
+    // Build result map.
+    let mut result = HashMap::with_capacity(entries.len());
+    for (system, rom_filename, existing_url) in entries {
+        let box_art_url = existing_url.clone().or_else(|| {
+            image_indexes.get(system.as_str()).and_then(|index| {
+                state
+                    .cache
+                    .resolve_box_art(state, index, system, rom_filename)
+            })
+        });
+        let is_favorite = fav_sets
+            .get(system.as_str())
+            .is_some_and(|set| set.contains(rom_filename));
+        result.insert(
+            (system.clone(), rom_filename.clone()),
+            (box_art_url, is_favorite),
+        );
+    }
+    result
+}
+
+/// Convert a slice of `GameEntry` rows into enriched `RomListEntry` values.
+///
+/// Handles multi-system results (e.g., developer page, global search) by
+/// batching image index loads and favorites per distinct system. Box art is
+/// resolved from the cached image index. All other metadata fields (genre,
+/// rating, players, driver_status) are already populated in `GameEntry`
+/// from the `game_library` table.
+#[cfg(feature = "ssr")]
+pub(crate) async fn enrich_game_entries(
+    state: &crate::api::AppState,
+    entries: Vec<replay_control_core::metadata_db::GameEntry>,
+) -> Vec<RomListEntry> {
+    // Build input tuples for the shared enrichment function.
+    let input: Vec<(String, String, Option<String>)> = entries
+        .iter()
+        .map(|e| (e.system.clone(), e.rom_filename.clone(), e.box_art_url.clone()))
+        .collect();
+
+    let enriched = enrich_box_art_and_favorites(state, &input).await;
+
     // Single pass: convert GameEntry -> RomListEntry with enrichment.
     entries
         .into_iter()
         .map(|entry| {
-            // Use DB box_art_url when available; fall back to image index scan.
-            let box_art_url = entry.box_art_url.clone().or_else(|| {
-                image_indexes.get(&entry.system).and_then(|index| {
-                    state
-                        .cache
-                        .resolve_box_art(state, index, &entry.system, &entry.rom_filename)
-                })
-            });
-            let is_favorite = fav_sets
-                .get(&entry.system)
-                .is_some_and(|set| set.contains(&entry.rom_filename));
+            let key = (entry.system.clone(), entry.rom_filename.clone());
+            let (box_art_url, is_favorite) = enriched
+                .get(&key)
+                .cloned()
+                .unwrap_or((None, false));
             RomListEntry {
                 display_name: entry
                     .display_name
