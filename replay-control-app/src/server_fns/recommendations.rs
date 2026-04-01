@@ -58,6 +58,27 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // Clone favorites_info for use after the DB closure (which consumes it via move).
     let favorites_info_for_picks = favorites_info.clone();
 
+    // Collect recent + all-favorites filenames for the Hidden Gems spotlight.
+    // These are (system, rom_filename) pairs to exclude from the pool.
+    let recent_keys: Vec<(String, String)> = state
+        .cache
+        .get_recents(&storage)
+        .unwrap_or_default()
+        .iter()
+        .map(|r| (r.game.system.clone(), r.game.rom_filename.clone()))
+        .collect();
+    let all_fav_keys: Vec<(String, String)> = state
+        .cache
+        .get_all_favorited_systems(&storage)
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|(system, filenames)| {
+            filenames
+                .into_iter()
+                .map(move |f| (system.clone(), f))
+        })
+        .collect();
+
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
     let region_str = region_pref.as_str().to_string();
@@ -90,10 +111,10 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             let decades = MetadataDb::decade_list(conn).unwrap_or_default();
             let active_systems =
                 MetadataDb::active_systems(conn).unwrap_or_default();
-            // --- Spotlight: pick one of 4 types at random ---
+            // --- Spotlight: pick one of 5 types at random ---
             let spotlight_type = {
                 use rand::Rng;
-                rand::rng().random_range(0u8..4)
+                rand::rng().random_range(0u8..5)
             };
 
             // Exclude the favorites system from system spotlight candidates.
@@ -161,6 +182,31 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                         let title = format!("Games by {dev}");
                         let href = Some(format!("/developer/{}", urlencoding::encode(dev)));
                         Some((games, title, href))
+                    }
+                }
+                4 => {
+                    // Hidden Gems — high-rated games the user hasn't played recently or favorited.
+                    // Prefer games with fewer ratings to surface less-known titles.
+                    let games = MetadataDb::top_rated_filtered(
+                        conn, None, None, None, count * 6, &region_str, &region_secondary_str,
+                    ).unwrap_or_default();
+                    // Build exclude set from recents + favorites.
+                    let exclude: std::collections::HashSet<(&str, &str)> = recent_keys.iter()
+                        .map(|(s, f)| (s.as_str(), f.as_str()))
+                        .chain(all_fav_keys.iter().map(|(s, f)| (s.as_str(), f.as_str())))
+                        .collect();
+                    // Filter out known games and prefer low rating_count.
+                    let mut filtered: Vec<_> = games.into_iter()
+                        .filter(|g| !exclude.contains(&(g.system.as_str(), g.rom_filename.as_str())))
+                        .collect();
+                    // Sort by rating_count ascending so lesser-known gems come first,
+                    // then take a random subset from the top candidates.
+                    filtered.sort_by_key(|g| g.rating_count.unwrap_or(0));
+                    let pool: Vec<_> = filtered.into_iter().take(count * 3).collect();
+                    if pool.len() < spotlight_min {
+                        None
+                    } else {
+                        Some((pool, "Hidden Gems".to_string(), None))
                     }
                 }
                 _ => None, // Falls through to global top rated below

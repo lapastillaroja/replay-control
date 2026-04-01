@@ -6,29 +6,47 @@ How the home page recommendation engine works.
 
 The home page shows several recommendation blocks, all powered by SQL queries against the `game_library` table in `metadata.db`. No per-ROM filesystem I/O is needed at render time.
 
-## Recommendation Blocks
+## Home Page
 
-### Random Picks (Diverse)
+### Rediscover Your Library (Random Picks)
 `random_cached_roms_diverse()` selects random games with genre diversity. Uses a dedup CTE that partitions by `(system, base_title)` and picks one ROM per game (preferring the user's region). Results are shuffled and genre-balanced.
-
-### Top Rated
-`top_rated_cached_roms()` returns the highest-rated games by LaunchBox community rating, weighted by vote count. Same dedup CTE to avoid showing multiple variants of the same game. Results are randomized within top-N to avoid a static list.
-
-Weighted scoring penalizes games with few votes to prevent obscure games rated 5.0 by a single voter from appearing above well-known classics:
-- 10+ votes: full rating
-- 3-9 votes: 90% of rating
-- 0-2 votes: 70% of rating
-
-The `rating_count` field (from LaunchBox `<CommunityRatingCount>`) is stored per ROM and used in the SQL `ORDER BY` clause.
-
-### Multiplayer
-Filters for games with `players >= 2`. Random selection with dedup.
 
 ### Because You Love (Favorites-Based)
 `system_roms_excluding()` takes the user's favorited systems and genres, then finds other games in those categories. Excludes already-favorited games.
 
+### Curated Spotlight (Rotating)
+One section per page load, randomly picked from 5 types:
+
+| Type | Title | Query |
+|------|-------|-------|
+| Global Top Rated | "Top Rated" | `top_rated_filtered(None, None, None)` |
+| Best by Genre | "Best Platformers" | `top_rated_filtered(None, Some(genre), None)` |
+| Best of System | "Best of Mega Drive" | `top_rated_filtered(Some(system), None, None)` |
+| Games by Developer | "Games by Capcom" | `top_rated_filtered(None, None, Some(developer))` |
+| Hidden Gems | "Hidden Gems" | `top_rated_filtered` excluding recents + favorites, prefer low rating_count |
+
+Uses `top_rated_filtered()` — a generic rated-games query with optional system/genre/developer filters. Minimum 6 games per spotlight; falls back to global Top Rated if insufficient. Rating threshold: 3.5+.
+
+Weighted scoring penalizes games with few votes:
+- 10+ votes: full rating
+- 3-9 votes: 90% of rating
+- 0-2 votes: 70% of rating
+
+### Discover Pills
+Rotating set of 5 pills linking to filtered search/browse pages: genre, system, developer, decade, multiplayer, 4-player.
+
+## Favorites Page
+
+### Because You Love [Game]
+Picks a random favorite, finds similar games by genre (cross-system), fills with developer matches. Excludes already-favorited games. Shows 6 games. Section title uses `strip_tags()` to remove region/revision tags.
+
+### More from [Series]
+Looks up `series_key` for all favorites, finds series siblings not yet favorited. Uses proper display name from `game_series.series_name` table.
+
+## Game Detail Page
+
 ### Related Games (Genre Similarity)
-`similar_by_genre()` on the game detail page finds games sharing the same normalized genre, excluding the current game.
+`similar_by_genre()` finds games sharing the same normalized genre, excluding the current game.
 
 ## Deduplication
 
@@ -69,7 +87,8 @@ Each recommended game's box art URL is resolved via the same 5-tier pipeline use
 
 | File | Role |
 |------|------|
-| `replay-control-core/src/metadata/metadata_db/` | All recommendation SQL queries (split across sub-modules) |
-| `replay-control-app/src/server_fns/search.rs` | `lookup_genre()` with LaunchBox fallback |
-| `replay-control-app/src/server_fns/related.rs` | Related games, regional variants |
+| `replay-control-core/src/metadata/metadata_db/recommendations.rs` | `top_rated_filtered`, `random_cached_roms_diverse`, `top_developers`, etc. |
+| `replay-control-app/src/server_fns/recommendations.rs` | Home page: `get_recommendations()`, spotlight rotation, `GameSection` struct |
+| `replay-control-app/src/server_fns/favorites.rs` | Favorites page: `get_favorites_recommendations()` |
+| `replay-control-app/src/server_fns/related.rs` | Game detail: related games, regional variants |
 | `replay-control-app/src/api/cache/enrichment.rs` | `enrich_system_cache` populates box_art_url and rating |

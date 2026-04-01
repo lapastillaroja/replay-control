@@ -7,12 +7,13 @@ use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::i18n::{t, use_i18n};
 use crate::pages::ErrorDisplay;
 use crate::server_fns;
-use crate::server_fns::{FavoriteWithArt, OrganizeCriteria};
+use crate::server_fns::{FavoriteWithArt, FavoritesRecommendations, OrganizeCriteria};
 
 #[component]
 pub fn FavoritesPage() -> impl IntoView {
     let i18n = use_i18n();
     let favorites = Resource::new(|| (), |_| server_fns::get_favorites());
+    let recommendations = Resource::new(|| (), |_| server_fns::get_favorites_recommendations());
     let grouped_view = RwSignal::new(false);
 
     let toggle_label = move || {
@@ -30,7 +31,7 @@ pub fn FavoritesPage() -> impl IntoView {
                 <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
                     {move || Suspend::new(async move {
                         let favs = favorites.await?;
-                        Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view toggle_label /> })
+                        Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view toggle_label recommendations /> })
                     })}
                 </Suspense>
             </ErrorBoundary>
@@ -44,6 +45,7 @@ fn FavoritesContent<F>(
     favs: Vec<FavoriteWithArt>,
     grouped_view: RwSignal<bool>,
     toggle_label: F,
+    recommendations: Resource<Result<FavoritesRecommendations, ServerFnError>>,
 ) -> impl IntoView
 where
     F: Fn() -> &'static str + Clone + Send + Sync + 'static,
@@ -207,6 +209,32 @@ where
 
             // Organize panel
             <OrganizePanel favorites />
+
+            // Personalized recommendations (loaded in parallel, non-blocking)
+            <Suspense fallback=|| ()>
+                {move || Suspend::new(async move {
+                    let recs = recommendations.await;
+                    let sections = recs.ok().map(|r| r.sections).unwrap_or_default();
+                    Ok::<_, ServerFnError>(view! {
+                        {sections.into_iter().map(|section| {
+                            view! {
+                                <section class="section">
+                                    <h2 class="section-title">{section.title}</h2>
+                                    <div class="scroll-card-row">
+                                        {section.games.into_iter().map(|game| {
+                                            let href = game.href;
+                                            let name = game.display_name;
+                                            let system = game.system_display;
+                                            let box_art_url = game.box_art_url;
+                                            view! { <GameScrollCard href name system box_art_url /> }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                </section>
+                            }
+                        }).collect::<Vec<_>>()}
+                    })
+                })}
+            </Suspense>
 
             // By System — system cards
             <Show when=move || { system_cards().len() > 1 }>

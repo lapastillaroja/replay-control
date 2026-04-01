@@ -495,6 +495,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFontSize>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveFontSize>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecommendations>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFavoritesRecommendations>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::UpdateThumbnails>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelThumbnailUpdate>(
         );
