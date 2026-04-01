@@ -375,9 +375,10 @@ impl MetadataDb {
                   WHERE series_key != '';
 
                 -- Covers: find_developer_matches, games_by_developer,
-                -- developer_games, developer_systems, developer_genre_groups
-                CREATE INDEX IF NOT EXISTS idx_game_library_developer
-                  ON game_library (developer)
+                -- developer_games, developer_systems, developer_genre_groups,
+                -- top_developers (COUNT(DISTINCT base_title) GROUP BY developer)
+                CREATE INDEX IF NOT EXISTS idx_game_library_developer_title
+                  ON game_library (developer, base_title)
                   WHERE developer != '';
 
                 -- Covers: regional_variants, translations, hacks, specials (all filter
@@ -440,6 +441,10 @@ impl MetadataDb {
 
         // Add release_year column to game_library (added for TOSEC tag parsing).
         let _ = conn.execute_batch("ALTER TABLE game_library ADD COLUMN release_year INTEGER");
+
+        // Replace single-column developer index with compound (developer, base_title)
+        // to cover top_developers query (COUNT(DISTINCT base_title) GROUP BY developer).
+        let _ = conn.execute_batch("DROP INDEX IF EXISTS idx_game_library_developer");
 
         Ok(())
     }

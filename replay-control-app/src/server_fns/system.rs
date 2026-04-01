@@ -88,27 +88,50 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
         .get_recents(&storage)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Build image indexes per-system (typically only a few distinct systems in recents).
+    // Collect (system, rom_filename) pairs for a batch DB lookup.
+    let keys: Vec<(String, String)> = entries
+        .iter()
+        .map(|e| (e.game.system.clone(), e.game.rom_filename.clone()))
+        .collect();
+
+    // Batch-lookup box_art_url from game_library (most entries will have it).
+    let db_entries = state
+        .cache
+        .db_read(move |conn| {
+            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
+
+    // Only build image indexes for systems that have entries with missing box_art_url.
     let mut image_indexes: std::collections::HashMap<
         String,
         std::sync::Arc<crate::api::cache::ImageIndex>,
     > = std::collections::HashMap::new();
     let mut enriched = Vec::with_capacity(entries.len());
     for entry in entries {
-        if !image_indexes.contains_key(&entry.game.system) {
-            let index = state
-                .cache
-                .cached_image_index(&state, &entry.game.system)
-                .await;
-            image_indexes.insert(entry.game.system.clone(), index);
-        }
-        let index = &image_indexes[&entry.game.system];
-        let box_art_url = state.cache.resolve_box_art(
-            &state,
-            index,
-            &entry.game.system,
-            &entry.game.rom_filename,
-        );
+        let db_box_art = db_entries
+            .get(&(entry.game.system.clone(), entry.game.rom_filename.clone()))
+            .and_then(|e| e.box_art_url.clone());
+        let box_art_url = if db_box_art.is_some() {
+            db_box_art
+        } else {
+            // Fallback: build image index for this system if not yet loaded.
+            if !image_indexes.contains_key(&entry.game.system) {
+                let index = state
+                    .cache
+                    .cached_image_index(&state, &entry.game.system)
+                    .await;
+                image_indexes.insert(entry.game.system.clone(), index);
+            }
+            let index = &image_indexes[&entry.game.system];
+            state.cache.resolve_box_art(
+                &state,
+                index,
+                &entry.game.system,
+                &entry.game.rom_filename,
+            )
+        };
         enriched.push(RecentWithArt { entry, box_art_url });
     }
     // The homepage only displays 1 hero + 10 scroll = 11 entries.

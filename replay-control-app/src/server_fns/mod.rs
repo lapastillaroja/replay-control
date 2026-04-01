@@ -95,9 +95,15 @@ pub(crate) async fn enrich_game_entries(
     // Collect distinct systems for batch operations.
     let distinct_systems: HashSet<&str> = entries.iter().map(|e| e.system.as_str()).collect();
 
-    // Batch-load image indexes per system.
+    // Only build image indexes for systems that have entries with missing box_art_url.
+    let systems_needing_index: HashSet<&str> = entries
+        .iter()
+        .filter(|e| e.box_art_url.is_none())
+        .map(|e| e.system.as_str())
+        .collect();
+
     let mut image_indexes: HashMap<String, Arc<crate::api::cache::ImageIndex>> = HashMap::new();
-    for sys in &distinct_systems {
+    for sys in &systems_needing_index {
         let index = state.cache.cached_image_index(state, sys).await;
         image_indexes.insert(sys.to_string(), index);
     }
@@ -115,10 +121,13 @@ pub(crate) async fn enrich_game_entries(
     entries
         .into_iter()
         .map(|entry| {
-            let box_art_url = image_indexes.get(&entry.system).and_then(|index| {
-                state
-                    .cache
-                    .resolve_box_art(state, index, &entry.system, &entry.rom_filename)
+            // Use DB box_art_url when available; fall back to image index scan.
+            let box_art_url = entry.box_art_url.clone().or_else(|| {
+                image_indexes.get(&entry.system).and_then(|index| {
+                    state
+                        .cache
+                        .resolve_box_art(state, index, &entry.system, &entry.rom_filename)
+                })
             });
             let is_favorite = fav_sets
                 .get(&entry.system)

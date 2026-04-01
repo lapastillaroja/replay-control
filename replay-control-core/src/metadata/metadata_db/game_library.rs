@@ -61,6 +61,68 @@ pub struct SearchFilter<'a> {
 }
 
 impl MetadataDb {
+    /// Batch lookup of game entries by primary key `(system, rom_filename)`.
+    ///
+    /// Groups keys by system and uses `WHERE system = ? AND rom_filename IN (...)`
+    /// per group. Returns a map from `(system, rom_filename)` to `GameEntry`.
+    pub fn lookup_game_entries(
+        conn: &Connection,
+        keys: &[(impl AsRef<str>, impl AsRef<str>)],
+    ) -> Result<std::collections::HashMap<(String, String), GameEntry>> {
+        use std::collections::HashMap;
+
+        if keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Group keys by system.
+        let mut by_system: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (sys, fname) in keys {
+            by_system
+                .entry(sys.as_ref())
+                .or_default()
+                .push(fname.as_ref());
+        }
+
+        let mut result: HashMap<(String, String), GameEntry> = HashMap::new();
+
+        for (system, filenames) in &by_system {
+            let placeholders: Vec<String> = (0..filenames.len())
+                .map(|i| format!("?{}", i + 2))
+                .collect();
+            let sql = format!(
+                "SELECT {GAME_ENTRY_COLUMNS} FROM game_library \
+                 WHERE system = ?1 AND rom_filename IN ({})",
+                placeholders.join(", ")
+            );
+
+            let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+                Vec::with_capacity(filenames.len() + 1);
+            params.push(Box::new(system.to_string()));
+            for f in filenames {
+                params.push(Box::new(f.to_string()));
+            }
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+
+            let mut stmt = conn
+                .prepare(&sql)
+                .map_err(|e| Error::Other(format!("Prepare lookup_game_entries: {e}")))?;
+            let rows = stmt
+                .query_map(param_refs.as_slice(), Self::row_to_game_entry)
+                .map_err(|e| Error::Other(format!("Query lookup_game_entries: {e}")))?;
+
+            for entry in rows.flatten() {
+                result.insert(
+                    (entry.system.clone(), entry.rom_filename.clone()),
+                    entry,
+                );
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Get all distinct `box_art_url` values from `game_library` for a given system.
     ///
     /// Returns the URL paths (e.g., `/media/sega_smd/boxart/Sonic.png`).
@@ -948,7 +1010,11 @@ impl MetadataDb {
 
     /// Find the most common genre_group among a set of filenames in a system.
     ///
-    /// Uses a lightweight SQL query (only reads `genre_group`, no full row scan).
+    /// Resolves filenames to `base_title` via a subquery, then groups by
+    /// `genre_group` across all ROMs sharing those base titles. This uses
+    /// the `idx_game_library_base_title (system, base_title)` index for
+    /// the genre aggregation instead of scanning by `rom_filename`.
+    ///
     /// Returns `None` if none of the filenames have a genre_group.
     pub fn top_genre_for_filenames(
         conn: &Connection,
@@ -966,7 +1032,10 @@ impl MetadataDb {
         let sql = format!(
             "SELECT genre_group, COUNT(*) as cnt \
              FROM game_library \
-             WHERE system = ?1 AND genre_group != '' AND rom_filename IN ({}) \
+             WHERE system = ?1 AND genre_group != '' AND base_title IN (\
+               SELECT base_title FROM game_library \
+               WHERE system = ?1 AND rom_filename IN ({}) AND base_title != ''\
+             ) \
              GROUP BY genre_group \
              ORDER BY cnt DESC \
              LIMIT 1",
@@ -2437,14 +2506,18 @@ mod tests {
     #[test]
     fn top_genre_for_filenames_returns_most_common() {
         let (mut conn, _dir) = open_temp_db();
+        // Entries need base_title set — the query resolves filenames to base_titles
+        // via a subquery and then aggregates genre_group by base_title.
+        let mut mario = make_game_entry_with_genre("snes", "mario.sfc", "Platform");
+        mario.base_title = "Super Mario World".into();
+        let mut zelda = make_game_entry_with_genre("snes", "zelda.sfc", "Action / RPG");
+        zelda.base_title = "The Legend of Zelda".into();
+        let mut metroid = make_game_entry_with_genre("snes", "metroid.sfc", "Platform");
+        metroid.base_title = "Super Metroid".into();
         MetadataDb::save_system_entries(
             &mut conn,
             "snes",
-            &[
-                make_game_entry_with_genre("snes", "mario.sfc", "Platform"),
-                make_game_entry_with_genre("snes", "zelda.sfc", "Action / RPG"),
-                make_game_entry_with_genre("snes", "metroid.sfc", "Platform"),
-            ],
+            &[mario, zelda, metroid],
             None,
         )
         .unwrap();
@@ -2476,9 +2549,91 @@ mod tests {
             None,
         )
         .unwrap();
-        // "mario.sfc" has no genre_group set.
+        // "mario.sfc" has no genre_group set and no base_title.
         let result =
             MetadataDb::top_genre_for_filenames(&conn, "snes", &["mario.sfc"]).unwrap();
         assert_eq!(result, None);
+    }
+
+    // ── lookup_game_entries ─────────────────────────────────────────
+
+    #[test]
+    fn lookup_game_entries_returns_matching() {
+        let (mut conn, _dir) = open_temp_db();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[
+                make_game_entry("snes", "mario.sfc", false),
+                make_game_entry("snes", "zelda.sfc", false),
+            ],
+            None,
+        )
+        .unwrap();
+
+        let keys = vec![
+            ("snes".to_string(), "mario.sfc".to_string()),
+            ("snes".to_string(), "zelda.sfc".to_string()),
+        ];
+        let result = MetadataDb::lookup_game_entries(&conn, &keys).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.contains_key(&("snes".into(), "mario.sfc".into())));
+        assert!(result.contains_key(&("snes".into(), "zelda.sfc".into())));
+    }
+
+    #[test]
+    fn lookup_game_entries_empty_keys() {
+        let (conn, _dir) = open_temp_db();
+        let keys: Vec<(String, String)> = vec![];
+        let result = MetadataDb::lookup_game_entries(&conn, &keys).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn lookup_game_entries_missing_entries() {
+        let (mut conn, _dir) = open_temp_db();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_game_entry("snes", "mario.sfc", false)],
+            None,
+        )
+        .unwrap();
+
+        let keys = vec![
+            ("snes".to_string(), "mario.sfc".to_string()),
+            ("snes".to_string(), "nonexistent.sfc".to_string()),
+        ];
+        let result = MetadataDb::lookup_game_entries(&conn, &keys).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(result.contains_key(&("snes".into(), "mario.sfc".into())));
+    }
+
+    #[test]
+    fn lookup_game_entries_multi_system() {
+        let (mut conn, _dir) = open_temp_db();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_game_entry("snes", "mario.sfc", false)],
+            None,
+        )
+        .unwrap();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "nes",
+            &[make_game_entry("nes", "contra.nes", false)],
+            None,
+        )
+        .unwrap();
+
+        let keys = vec![
+            ("snes".to_string(), "mario.sfc".to_string()),
+            ("nes".to_string(), "contra.nes".to_string()),
+        ];
+        let result = MetadataDb::lookup_game_entries(&conn, &keys).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.contains_key(&("snes".into(), "mario.sfc".into())));
+        assert!(result.contains_key(&("nes".into(), "contra.nes".into())));
     }
 }

@@ -26,44 +26,70 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let favs = replay_control_core::favorites::list_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Pre-load image indexes for each distinct system (get_image_index is async).
+    // Collect (system, rom_filename) keys for batch DB lookup.
+    let keys: Vec<(String, String)> = favs
+        .iter()
+        .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
+        .collect();
+
+    // Batch-load game entries (box_art_url + genre) and genre map in one DB read.
     let distinct_systems: std::collections::HashSet<String> =
         favs.iter().map(|f| f.game.system.clone()).collect();
-    let mut image_indexes: std::collections::HashMap<
-        String,
-        std::sync::Arc<crate::api::cache::ImageIndex>,
-    > = std::collections::HashMap::new();
-    for sys in &distinct_systems {
-        let index = state.cache.cached_image_index(&state, sys).await;
-        image_indexes.insert(sys.clone(), index);
-    }
-
-    // Batch-load genre_group per system from game_library (replaces N+1 lookup_genre calls).
     let systems_vec: Vec<String> = distinct_systems.into_iter().collect();
-    let genre_map: std::collections::HashMap<(String, String), String> = state
+    let (db_entries, genre_map) = state
         .cache
         .db_read(move |conn| {
-            let mut map = std::collections::HashMap::new();
+            let entries = MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default();
+            let mut gmap = std::collections::HashMap::new();
             for sys in &systems_vec {
                 if let Ok(genres) = MetadataDb::system_rom_genres(conn, sys) {
                     for (filename, genre) in genres {
-                        map.insert((sys.clone(), filename), genre);
+                        gmap.insert((sys.clone(), filename), genre);
                     }
                 }
             }
-            map
+            (entries, gmap)
         })
         .await
         .unwrap_or_default();
 
+    // Only build image indexes for systems that have entries missing box_art_url.
+    let needs_index: std::collections::HashSet<&str> = favs
+        .iter()
+        .filter(|f| {
+            db_entries
+                .get(&(f.game.system.clone(), f.game.rom_filename.clone()))
+                .and_then(|e| e.box_art_url.as_ref())
+                .is_none()
+        })
+        .map(|f| f.game.system.as_str())
+        .collect();
+
+    let mut image_indexes: std::collections::HashMap<
+        String,
+        std::sync::Arc<crate::api::cache::ImageIndex>,
+    > = std::collections::HashMap::new();
+    for sys in &needs_index {
+        let index = state.cache.cached_image_index(&state, sys).await;
+        image_indexes.insert(sys.to_string(), index);
+    }
+
     let results: Vec<FavoriteWithArt> = favs
         .into_iter()
         .map(|fav| {
-            let index = &image_indexes[&fav.game.system];
-            let box_art_url =
-                state
-                    .cache
-                    .resolve_box_art(&state, index, &fav.game.system, &fav.game.rom_filename);
+            let db_box_art = db_entries
+                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
+                .and_then(|e| e.box_art_url.clone());
+            let box_art_url = db_box_art.or_else(|| {
+                image_indexes.get(&fav.game.system).and_then(|index| {
+                    state.cache.resolve_box_art(
+                        &state,
+                        index,
+                        &fav.game.system,
+                        &fav.game.rom_filename,
+                    )
+                })
+            });
             let genre = genre_map
                 .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
                 .filter(|g| !g.is_empty())
@@ -83,25 +109,55 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    let image_index = state.cache.cached_image_index(&state, &system).await;
 
-    // Batch-load genre from game_library for this system.
+    // Collect keys for batch DB lookup.
+    let keys: Vec<(String, String)> = favs
+        .iter()
+        .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
+        .collect();
+
+    // Batch-load game entries (box_art_url) and genre map in one DB read.
     let sys = system.clone();
-    let genre_map: std::collections::HashMap<String, String> = state
+    let (db_entries, genre_map) = state
         .cache
-        .db_read(move |conn| MetadataDb::system_rom_genres(conn, &sys).unwrap_or_default())
+        .db_read(move |conn| {
+            let entries = MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default();
+            let genres: std::collections::HashMap<String, String> =
+                MetadataDb::system_rom_genres(conn, &sys).unwrap_or_default();
+            (entries, genres)
+        })
         .await
         .unwrap_or_default();
+
+    // Only build image index if some entries are missing box_art_url.
+    let needs_fallback = favs.iter().any(|f| {
+        db_entries
+            .get(&(f.game.system.clone(), f.game.rom_filename.clone()))
+            .and_then(|e| e.box_art_url.as_ref())
+            .is_none()
+    });
+    let image_index = if needs_fallback {
+        Some(state.cache.cached_image_index(&state, &system).await)
+    } else {
+        None
+    };
 
     let results: Vec<FavoriteWithArt> = favs
         .into_iter()
         .map(|fav| {
-            let box_art_url = state.cache.resolve_box_art(
-                &state,
-                &image_index,
-                &fav.game.system,
-                &fav.game.rom_filename,
-            );
+            let db_box_art = db_entries
+                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
+                .and_then(|e| e.box_art_url.clone());
+            let box_art_url = db_box_art.or_else(|| {
+                image_index.as_ref().and_then(|index| {
+                    state.cache.resolve_box_art(
+                        &state,
+                        index,
+                        &fav.game.system,
+                        &fav.game.rom_filename,
+                    )
+                })
+            });
             let genre = genre_map
                 .get(&fav.game.rom_filename)
                 .filter(|g| !g.is_empty())
