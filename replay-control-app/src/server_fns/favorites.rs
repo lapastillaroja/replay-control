@@ -41,45 +41,15 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
         .await
         .unwrap_or_default();
 
-    // Only build image indexes for systems that have entries missing box_art_url.
-    // Note: FavoriteWithArt doesn't need is_favorite (they're all favorites) — skip
-    // the shared enrich_box_art_and_favorites() to avoid redundant favorites loading.
-    let needs_index: std::collections::HashSet<&str> = favs
-        .iter()
-        .filter(|f| {
-            db_entries
-                .get(&(f.game.system.clone(), f.game.rom_filename.clone()))
-                .and_then(|e| e.box_art_url.as_ref())
-                .is_none()
-        })
-        .map(|f| f.game.system.as_str())
-        .collect();
-
-    let mut image_indexes: std::collections::HashMap<
-        String,
-        std::sync::Arc<crate::api::cache::ImageIndex>,
-    > = std::collections::HashMap::new();
-    for sys in &needs_index {
-        let index = state.cache.cached_image_index(&state, sys).await;
-        image_indexes.insert(sys.to_string(), index);
-    }
-
+    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
+    // If NULL, no art is available — show placeholder.
     let results: Vec<FavoriteWithArt> = favs
         .into_iter()
         .map(|fav| {
             let db_entry = db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
-            let box_art_url = db_entry.and_then(|e| e.box_art_url.clone()).or_else(|| {
-                image_indexes.get(&fav.game.system).and_then(|index| {
-                    state.cache.resolve_box_art(
-                        &state,
-                        index,
-                        &fav.game.system,
-                        &fav.game.rom_filename,
-                    )
-                })
-            });
+            let box_art_url = db_entry.and_then(|e| e.box_art_url.clone());
             let genre = db_entry
-                .and_then(|e| e.genre.as_ref())
+                .map(|e| &e.genre_group)
                 .filter(|g| !g.is_empty())
                 .cloned();
             FavoriteWithArt {
@@ -113,37 +83,15 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
         .await
         .unwrap_or_default();
 
-    // Only build image index if some entries are missing box_art_url.
-    // Note: FavoriteWithArt doesn't need is_favorite — skip the shared
-    // enrich_box_art_and_favorites() to avoid redundant favorites loading.
-    let needs_fallback = favs.iter().any(|f| {
-        db_entries
-            .get(&(f.game.system.clone(), f.game.rom_filename.clone()))
-            .and_then(|e| e.box_art_url.as_ref())
-            .is_none()
-    });
-    let image_index = if needs_fallback {
-        Some(state.cache.cached_image_index(&state, &system).await)
-    } else {
-        None
-    };
-
+    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
+    // If NULL, no art is available — show placeholder.
     let results: Vec<FavoriteWithArt> = favs
         .into_iter()
         .map(|fav| {
             let db_entry = db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
-            let box_art_url = db_entry.and_then(|e| e.box_art_url.clone()).or_else(|| {
-                image_index.as_ref().and_then(|index| {
-                    state.cache.resolve_box_art(
-                        &state,
-                        index,
-                        &fav.game.system,
-                        &fav.game.rom_filename,
-                    )
-                })
-            });
+            let box_art_url = db_entry.and_then(|e| e.box_art_url.clone());
             let genre = db_entry
-                .and_then(|e| e.genre.as_ref())
+                .map(|e| &e.genre_group)
                 .filter(|g| !g.is_empty())
                 .cloned();
             FavoriteWithArt {
@@ -469,10 +417,11 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
 
     let raw_sections = db_result.unwrap_or_default();
 
-    // Convert GameEntry to RecommendedGame and resolve box art.
+    // Convert GameEntry to RecommendedGame.
+    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
     let mut result_sections = Vec::new();
     for (title, games, see_all_href) in raw_sections {
-        let mut picks: Vec<RecommendedGame> = games
+        let picks: Vec<RecommendedGame> = games
             .iter()
             .take(6)
             .filter_map(|rom| super::to_recommended(&rom.system, rom, &systems))
@@ -480,7 +429,6 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
         if picks.is_empty() {
             continue;
         }
-        super::resolve_box_art_for_picks(&state, &mut picks).await;
         result_sections.push(GameSection {
             title,
             games: picks,

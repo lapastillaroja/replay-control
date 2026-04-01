@@ -494,21 +494,24 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
     });
 
     // Build a preview of the folder structure from current favorites data.
+    // Returns (primary_folder, sub_folders) tuples for nested preview.
     let preview_folders = move || {
         let favs = favorites.read();
-        let criteria = primary.get();
+        let pri = primary.get();
+        let sec = secondary.get();
         let unknown = t(i18n.locale.get(), "organize.preview_unknown").to_string();
 
-        let mut folders = std::collections::BTreeSet::new();
-        for f in favs.iter() {
-            let name = match criteria.as_str() {
-                "genre" => f
-                    .genre
-                    .as_deref()
-                    .filter(|g| !g.is_empty())
-                    .unwrap_or(&unknown)
-                    .to_string(),
-                "system" => f.fav.game.system_display.clone(),
+        // Helper: extract folder name for a given criterion from a favorite.
+        let folder_name = |criteria: &str, f: &FavoriteWithArt| -> Option<String> {
+            match criteria {
+                "genre" => Some(
+                    f.genre
+                        .as_deref()
+                        .filter(|g| !g.is_empty())
+                        .unwrap_or(&unknown)
+                        .to_string(),
+                ),
+                "system" => Some(f.fav.game.system_display.clone()),
                 "alphabetical" => {
                     let display = f
                         .fav
@@ -516,52 +519,89 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                         .display_name
                         .as_deref()
                         .unwrap_or(&f.fav.game.rom_filename);
-                    display
-                        .chars()
-                        .next()
-                        .map(|c| {
-                            let upper = c.to_uppercase().to_string();
-                            if upper.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic()) {
-                                upper
-                            } else {
-                                "#".to_string()
-                            }
-                        })
-                        .unwrap_or_else(|| "#".to_string())
+                    Some(
+                        display
+                            .chars()
+                            .next()
+                            .map(|c| {
+                                let upper = c.to_uppercase().to_string();
+                                if upper.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic())
+                                {
+                                    upper
+                                } else {
+                                    "#".to_string()
+                                }
+                            })
+                            .unwrap_or_else(|| "#".to_string()),
+                    )
                 }
-                // For players/rating/developer we don't have the data client-side,
-                // so show a representative example.
-                "players" => continue,
-                "rating" => continue,
-                "developer" => continue,
-                _ => continue,
-            };
-            folders.insert(name);
-        }
+                // players/rating/developer: no client-side data
+                _ => None,
+            }
+        };
 
-        // For criteria we can't derive client-side, show static examples.
-        if folders.is_empty() {
-            match criteria.as_str() {
-                "players" => {
-                    folders.insert("1 Player".to_string());
-                    folders.insert("2 Players".to_string());
-                    folders.insert("3-4 Players".to_string());
+        // Gather primary -> secondary mappings from real data.
+        let mut map: std::collections::HashMap<String, std::collections::BTreeSet<String>> =
+            std::collections::HashMap::new();
+        for f in favs.iter() {
+            if let Some(pri_name) = folder_name(&pri, f) {
+                let subs = map.entry(pri_name).or_default();
+                if sec != "none" {
+                    if let Some(sec_name) = folder_name(&sec, f) {
+                        subs.insert(sec_name);
+                    }
                 }
-                "rating" => {
-                    folders.insert("Highly Rated".to_string());
-                    folders.insert("Average".to_string());
-                    folders.insert("Unrated".to_string());
-                }
-                "developer" => {
-                    folders.insert("Capcom".to_string());
-                    folders.insert("Konami".to_string());
-                    folders.insert("Nintendo".to_string());
-                }
-                _ => {}
             }
         }
 
-        folders.into_iter().collect::<Vec<_>>()
+        // For criteria we can't derive client-side, show static examples.
+        if map.is_empty() {
+            let static_primary = match pri.as_str() {
+                "players" => vec!["1 Player", "2 Players", "3-4 Players"],
+                "rating" => vec!["Highly Rated", "Average", "Unrated"],
+                "developer" => vec!["Capcom", "Konami", "Nintendo"],
+                _ => vec![],
+            };
+            let static_secondary = if sec != "none" {
+                match sec.as_str() {
+                    "players" => vec!["1 Player", "2 Players"],
+                    "rating" => vec!["Highly Rated", "Average"],
+                    "developer" => vec!["Capcom", "Nintendo"],
+                    "genre" => vec!["Action", "Platform"],
+                    "system" => vec!["Mega Drive", "SNES"],
+                    "alphabetical" => vec!["A", "S"],
+                    _ => vec![],
+                }
+            } else {
+                vec![]
+            };
+            for name in static_primary {
+                map.entry(name.to_string())
+                    .or_default()
+                    .extend(static_secondary.iter().map(|s| s.to_string()));
+            }
+        } else if sec != "none" && !map.values().any(|subs| !subs.is_empty()) {
+            // Primary came from real data but secondary is a static-only criterion.
+            let static_secondary = match sec.as_str() {
+                "players" => vec!["1 Player", "2 Players"],
+                "rating" => vec!["Highly Rated", "Average"],
+                "developer" => vec!["Capcom", "Nintendo"],
+                _ => vec![],
+            };
+            if !static_secondary.is_empty() {
+                for subs in map.values_mut() {
+                    *subs = static_secondary.iter().map(|s| s.to_string()).collect();
+                }
+            }
+        }
+
+        // Convert to sorted Vec of tuples.
+        let mut result: Vec<(String, Vec<String>)> = map
+            .into_iter()
+            .map(|(k, v)| (k, v.into_iter().collect()))
+            .collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
     };
 
     let on_organize = move |_| {
@@ -718,7 +758,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
 #[component]
 fn OrganizePreview<F>(preview_folders: F) -> impl IntoView
 where
-    F: Fn() -> Vec<String> + Clone + Send + Sync + 'static,
+    F: Fn() -> Vec<(String, Vec<String>)> + Clone + Send + Sync + 'static,
 {
     let i18n = use_i18n();
 
@@ -728,21 +768,54 @@ where
             if folders.is_empty() {
                 return None;
             }
-            let len = folders.len();
-            // Show at most 8 folders to avoid visual clutter.
-            let show_count = len.min(8);
-            let remaining = len.saturating_sub(8);
-            let mut lines = Vec::with_capacity(show_count + 1);
-            for (i, name) in folders.iter().take(show_count).enumerate() {
-                let connector = if i == show_count - 1 && remaining == 0 {
+            let total_primary = folders.len();
+            // Cap at 6 primary folders shown.
+            let show_primary = total_primary.min(6);
+            let remaining_primary = total_primary.saturating_sub(6);
+            let has_subfolders = folders.iter().any(|(_, subs)| !subs.is_empty());
+
+            let mut lines = Vec::new();
+            for (i, (name, subs)) in folders.iter().take(show_primary).enumerate() {
+                let is_last_primary = i == show_primary - 1 && remaining_primary == 0;
+                let connector = if is_last_primary {
                     "\u{2514}\u{2500}\u{2500} "
                 } else {
                     "\u{251C}\u{2500}\u{2500} "
                 };
                 lines.push(format!("{connector}\u{1F4C1} {name}/"));
+
+                if !subs.is_empty() {
+                    let total_subs = subs.len();
+                    // Cap at 3 sub-folders per parent.
+                    let show_subs = total_subs.min(3);
+                    let remaining_subs = total_subs.saturating_sub(3);
+                    let continuation = if is_last_primary { "    " } else { "\u{2502}   " };
+                    for (j, sub) in subs.iter().take(show_subs).enumerate() {
+                        let sub_connector = if j == show_subs - 1 && remaining_subs == 0 {
+                            "\u{2514}\u{2500}\u{2500} "
+                        } else {
+                            "\u{251C}\u{2500}\u{2500} "
+                        };
+                        lines.push(format!("{continuation}{sub_connector}\u{1F4C1} {sub}/"));
+                    }
+                    if remaining_subs > 0 {
+                        lines.push(format!(
+                            "{continuation}\u{2514}\u{2500}\u{2500} \u{2026} +{remaining_subs} more"
+                        ));
+                    }
+                }
             }
-            if remaining > 0 {
-                lines.push(format!("\u{2514}\u{2500}\u{2500} \u{2026} +{remaining} more"));
+            if remaining_primary > 0 {
+                // If there are sub-folders, the overflow hint uses a folder icon too.
+                if has_subfolders {
+                    lines.push(format!(
+                        "\u{2514}\u{2500}\u{2500} \u{2026} +{remaining_primary} more folders"
+                    ));
+                } else {
+                    lines.push(format!(
+                        "\u{2514}\u{2500}\u{2500} \u{2026} +{remaining_primary} more"
+                    ));
+                }
             }
             Some(view! {
                 <div class="organize-preview">
