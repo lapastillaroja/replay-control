@@ -201,47 +201,15 @@ impl GameLibrary {
 
         let count = enrichments.len();
 
-        // Update L1 cache entries before the final DB write so `system` can be
-        // moved into the last closure without an extra clone.
-        // Build a HashMap for O(1) lookup instead of O(n*m) nested scan.
-        let enrichment_map: HashMap<&str, &replay_control_core::metadata_db::BoxArtGenreRating> =
-            enrichments
-                .iter()
-                .map(|e| (e.rom_filename.as_str(), e))
-                .collect();
-
-        if let Ok(mut guard) = self.roms.write()
-            && let Some(entry) = guard.get_mut(&*system)
-        {
-            let roms = std::sync::Arc::make_mut(&mut entry.data);
-            for rom in roms {
-                if let Some(e) = enrichment_map.get(rom.game.rom_filename.as_str()) {
-                    if e.box_art_url.is_some() {
-                        rom.box_art_url = e.box_art_url.clone();
-                    }
-                    // RomEntry doesn't carry genre — L1 genre is
-                    // served via lookup_genre() which reads game_library.
-                    if let Some(r) = e.rating {
-                        rom.rating = Some(r);
-                    }
-                    if rom.players.is_none() {
-                        rom.players = e.players;
-                    }
-                }
-            }
-        }
-
         tracing::debug!(
             "L2 enrichment: {system} — {count} ROMs updated with box art/genre/players/ratings"
         );
 
-        // Use targeted SQL update for box_art_url, genre, and rating.
-        // This is the last use of `system` — move it into the closure.
-        let enrichments_for_db = enrichments.clone();
+        // Write enrichments to L2 (SQLite).
         self.db
             .write(move |conn| {
                 if let Err(e) =
-                    MetadataDb::update_box_art_genre_rating(conn, &system, &enrichments_for_db)
+                    MetadataDb::update_box_art_genre_rating(conn, &system, &enrichments)
                 {
                     tracing::warn!("Enrichment failed for {system}: {e}");
                 }
@@ -273,21 +241,17 @@ impl GameLibrary {
             return HashMap::new();
         }
 
-        // Gather inputs: ROM filenames from L1 cache.
-        let rom_filenames: Vec<String> = if let Ok(guard) = self.roms.read() {
-            guard
-                .get(system)
-                .map(|entry| {
-                    entry
-                        .data
-                        .iter()
-                        .map(|r| r.game.rom_filename.clone())
-                        .collect()
-                })
-                .unwrap_or_default()
-        } else {
+        // Gather inputs: ROM filenames from L2 (SQLite).
+        let sys = system.to_string();
+        let rom_filenames: Vec<String> = self
+            .db
+            .read(move |conn| MetadataDb::visible_filenames(conn, &sys).unwrap_or_default())
+            .await
+            .unwrap_or_default();
+
+        if rom_filenames.is_empty() {
             return HashMap::new();
-        };
+        }
 
         // Call pure core matching function.
         let matches =

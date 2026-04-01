@@ -656,7 +656,7 @@ impl AppState {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
-            cache: Arc::new(GameLibrary::new(metadata_pool.clone(), activity.clone())),
+            cache: Arc::new(GameLibrary::new(metadata_pool.clone())),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(initial_skin)),
             metadata_pool,

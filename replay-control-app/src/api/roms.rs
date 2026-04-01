@@ -16,10 +16,22 @@ async fn list_system_roms(
     State(state): State<AppState>,
     Path(system): Path<String>,
 ) -> Result<Json<Vec<replay_control_core::roms::RomEntry>>, StatusCode> {
+    let storage = state.storage();
+
+    // L2: try SQLite game_library.
+    if let Some(roms) = state
+        .cache
+        .load_roms_from_db(&storage, &system, &storage.roms_dir().join(&system))
+        .await
+    {
+        return Ok(Json(roms));
+    }
+
+    // L3: full filesystem scan (L2 miss, e.g. first access before pipeline).
     state
         .cache
-        .cached_roms(
-            &state.storage(),
+        .scan_and_cache_system(
+            &storage,
             &system,
             state.region_preference(),
             state.region_preference_secondary(),

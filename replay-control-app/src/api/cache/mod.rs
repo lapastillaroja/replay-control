@@ -106,7 +106,6 @@ pub use images::ImageIndex;
 
 pub struct GameLibrary {
     pub(super) systems: std::sync::RwLock<Option<CacheEntry<Vec<SystemSummary>>>>,
-    pub(super) roms: std::sync::RwLock<HashMap<String, CacheEntry<Arc<Vec<RomEntry>>>>>,
     pub(super) favorites: std::sync::RwLock<Option<FavoritesCache>>,
     pub(super) recents: std::sync::RwLock<Option<CacheEntry<Vec<RecentEntry>>>>,
     /// Per-system image index for batch box art resolution.
@@ -115,24 +114,16 @@ pub struct GameLibrary {
     pub(super) images: std::sync::RwLock<HashMap<String, Arc<ImageIndex>>>,
     /// Metadata DB pool for L2 persistent cache.
     pub(super) db: DbPool,
-    /// Shared activity state. Used by get_roms() to check if startup scanning
-    /// is in progress (suppresses L3 filesystem scans during Phase 2).
-    activity: Arc<std::sync::RwLock<super::activity::Activity>>,
 }
 
 impl GameLibrary {
-    pub(crate) fn new(
-        db: DbPool,
-        activity: Arc<std::sync::RwLock<super::activity::Activity>>,
-    ) -> Self {
+    pub(crate) fn new(db: DbPool) -> Self {
         Self {
             systems: std::sync::RwLock::new(None),
-            roms: std::sync::RwLock::new(HashMap::new()),
             favorites: std::sync::RwLock::new(None),
             recents: std::sync::RwLock::new(None),
             images: std::sync::RwLock::new(HashMap::new()),
             db,
-            activity,
         }
     }
 
@@ -262,102 +253,15 @@ impl GameLibrary {
             .await;
     }
 
-    /// Get cached ROM list for a system.
-    /// Checks L1 (in-memory) → L2 (SQLite game_library).
-    /// If neither has data and warmup is in progress, returns empty.
-    /// Otherwise falls through to a full L3 filesystem scan.
-    pub async fn cached_roms(
-        &self,
-        storage: &StorageLocation,
-        system: &str,
-        region_pref: RegionPreference,
-        region_secondary: Option<RegionPreference>,
-    ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
-        // L1/L2: try cached data.
-        if let Some(roms) = self.get_roms_cached(storage, system).await {
-            return Ok(roms);
-        }
-
-        // During startup scanning (Phase 2), return empty — the pipeline will populate.
-        // Only Startup { Scanning } blocks here, not other activities — thumbnail
-        // update and import should NOT prevent ROM lookups.
-        {
-            let is_scanning = self.activity.read().is_ok_and(|act| {
-                matches!(
-                    *act,
-                    super::activity::Activity::Startup {
-                        phase: super::activity::StartupPhase::Scanning,
-                        ..
-                    }
-                )
-            });
-            if is_scanning {
-                tracing::debug!("get_roms({system}): returning empty (startup scan in progress)");
-                return Ok(Arc::new(Vec::new()));
-            }
-        }
-
-        // L3: full filesystem scan (user-triggered, outside warmup).
-        self.scan_and_cache_system(storage, system, region_pref, region_secondary)
-            .await
-    }
-
-    /// Try L1 (in-memory) then L2 (SQLite) for cached ROM data.
-    /// Returns None if neither has fresh data.
-    async fn get_roms_cached(
-        &self,
-        storage: &StorageLocation,
-        system: &str,
-    ) -> Option<Arc<Vec<RomEntry>>> {
-        let key = system.to_string();
-        let system_dir = storage.roms_dir().join(system);
-
-        // L1: in-memory cache — cheap Arc::clone() on hit.
-        if let Ok(guard) = self.roms.read()
-            && let Some(entry) = guard.get(&key)
-            && entry.is_fresh(&system_dir)
-        {
-            return Some(Arc::clone(&entry.data));
-        }
-
-        // L2: SQLite game_library.
-        if let Some(roms) = self.load_roms_from_db(storage, system, &system_dir).await {
-            let arc = Arc::new(roms);
-            if let Ok(mut guard) = self.roms.write() {
-                guard.insert(
-                    key,
-                    CacheEntry::new(Arc::clone(&arc), &system_dir, storage.kind.is_local()),
-                );
-            }
-            return Some(arc);
-        }
-
-        None
-    }
-
-    /// Look up a single ROM entry: L1 cache first, then direct L2 DB lookup.
+    /// Look up a single ROM entry from L2 (SQLite) DB.
     /// Never triggers a full L3 filesystem scan.
     pub async fn get_single_rom(
         &self,
-        storage: &StorageLocation,
+        _storage: &StorageLocation,
         system: &str,
         filename: &str,
     ) -> Option<RomEntry> {
-        let system_dir = storage.roms_dir().join(system);
-
-        // L1: check in-memory cache (cheap Arc::clone + linear scan).
-        if let Ok(guard) = self.roms.read()
-            && let Some(entry) = guard.get(system)
-            && entry.is_fresh(&system_dir)
-        {
-            return entry
-                .data
-                .iter()
-                .find(|r| r.game.rom_filename == filename)
-                .cloned();
-        }
-
-        // L2: direct single-row DB lookup (no full system load).
+        // L2: direct single-row DB lookup.
         let sys = system.to_string();
         let fname = filename.to_string();
         let game_entry = self
@@ -385,8 +289,8 @@ impl GameLibrary {
         })
     }
 
-    /// Scan a system from filesystem and populate L1+L2 cache.
-    /// Called by the background pipeline during warmup and by get_roms() outside warmup.
+    /// Scan a system from filesystem and write to L2 (SQLite).
+    /// Called by the background pipeline during warmup and by REST API on L2 miss.
     pub async fn scan_and_cache_system(
         &self,
         storage: &StorageLocation,
@@ -394,7 +298,6 @@ impl GameLibrary {
         region_pref: RegionPreference,
         region_secondary: Option<RegionPreference>,
     ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
-        let key = system.to_string();
         let system_dir = storage.roms_dir().join(system);
 
         tracing::debug!("L3 scan for {system}: starting filesystem scan");
@@ -408,14 +311,7 @@ impl GameLibrary {
 
         let arc = Arc::new(roms);
 
-        if let Ok(mut guard) = self.roms.write() {
-            guard.insert(
-                key,
-                CacheEntry::new(Arc::clone(&arc), &system_dir, storage.kind.is_local()),
-            );
-        }
-
-        // Write-through to L2.
+        // Write to L2.
         self.save_roms_to_db(storage, system, &arc, &system_dir, &hash_results)
             .await;
 
@@ -423,7 +319,7 @@ impl GameLibrary {
     }
 
     /// Try to load ROMs from SQLite game_library, validating via mtime.
-    async fn load_roms_from_db(
+    pub(crate) async fn load_roms_from_db(
         &self,
         _storage: &StorageLocation,
         system: &str,
@@ -537,13 +433,10 @@ impl GameLibrary {
     }
 
     /// Invalidate all caches (after delete, rename, upload).
-    /// Clears both L1 (in-memory) and L2 (SQLite game_library).
+    /// Clears L1 in-memory caches and L2 (SQLite game_library).
     pub async fn invalidate(&self) {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
-        }
-        if let Ok(mut guard) = self.roms.write() {
-            guard.clear();
         }
         if let Ok(mut guard) = self.favorites.write() {
             *guard = None;
@@ -563,13 +456,10 @@ impl GameLibrary {
     }
 
     /// Invalidate cache for a specific system.
-    /// Clears both L1 (in-memory) and L2 (SQLite game_library) for the system.
+    /// Clears L1 systems cache and L2 (SQLite game_library) for the system.
     pub async fn invalidate_system(&self, system: String) {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
-        }
-        if let Ok(mut guard) = self.roms.write() {
-            guard.remove(&system);
         }
         // L2: Clear SQLite game_library for this system.
         self.db
@@ -612,46 +502,6 @@ impl GameLibrary {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn startup_scanning_blocks_l3_scan() {
-        use crate::api::activity::{Activity, StartupPhase};
-
-        let activity = Arc::new(std::sync::RwLock::new(Activity::Startup {
-            phase: StartupPhase::Scanning,
-            system: String::new(),
-        }));
-        // Create a dummy DbPool with no connection (closed).
-        let db = DbPool::new_closed("test");
-        let cache = GameLibrary::new(db, activity.clone());
-
-        let tmp = std::env::temp_dir().join(format!(
-            "replay-cache-test-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(tmp.join("roms/test_system")).unwrap();
-        let storage = replay_control_core::storage::StorageLocation::from_path(
-            tmp.clone(),
-            replay_control_core::storage::StorageKind::Sd,
-        );
-
-        // get_roms should return empty during startup scanning.
-        let result = cache
-            .cached_roms(
-                &storage,
-                "test_system",
-                replay_control_core::rom_tags::RegionPreference::Usa,
-                None,
-            )
-            .await;
-        assert!(result.unwrap().is_empty());
-
-        // Set to Idle — should allow L3 scans again.
-        *activity.write().unwrap() = Activity::Idle;
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
 
     /// ActivityGuard is cleared on drop.
     /// This validates the guard pattern used in BackgroundManager::run_pipeline.

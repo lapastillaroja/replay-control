@@ -1592,7 +1592,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 
     // Pick system using a block-scoped RNG so it doesn't live across await points
     // (rand::rng() returns an Rc-based thread-local RNG that isn't Send).
-    let (chosen_system, system_pick) = {
+    let chosen_system = {
         let mut rng = rand::rng();
         let pick = rng.random_range(0..total);
 
@@ -1605,25 +1605,28 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
                 break;
             }
         }
-        (chosen_system, rng.random_range(0..usize::MAX))
+        chosen_system
     };
 
-    let roms = state
+    // Pick a random ROM filename from L2 (SQLite).
+    let sys = chosen_system.clone();
+    let filename: Option<String> = state
         .cache
-        .cached_roms(
-            &storage,
-            &chosen_system,
-            state.region_preference(),
-            state.region_preference_secondary(),
-        )
+        .db_read(move |conn| {
+            conn.query_row(
+                "SELECT rom_filename FROM game_library
+                 WHERE system = ?1 AND is_special = 0
+                 ORDER BY RANDOM() LIMIT 1",
+                [&sys],
+                |row| row.get(0),
+            )
+            .ok()
+        })
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        .flatten();
 
-    if roms.is_empty() {
-        return Err(ServerFnError::new("No ROMs in selected system"));
+    match filename {
+        Some(f) => Ok((chosen_system, f)),
+        None => Err(ServerFnError::new("No ROMs in selected system")),
     }
-
-    let idx = system_pick % roms.len();
-    let rom = &roms[idx];
-    Ok((chosen_system, rom.game.rom_filename.clone()))
 }
