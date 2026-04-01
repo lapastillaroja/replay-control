@@ -167,6 +167,7 @@ pub async fn add_favorite(
         replay_control_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
             .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites();
+    state.response_cache.invalidate_all();
     Ok(result)
 }
 
@@ -194,6 +195,7 @@ pub async fn remove_favorite(
     }
 
     state.cache.invalidate_favorites();
+    state.response_cache.invalidate_all();
     Ok(())
 }
 
@@ -224,6 +226,7 @@ pub async fn organize_favorites(
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites();
+    state.response_cache.invalidate_all();
     Ok(OrganizeResult {
         organized: result.organized,
         skipped: result.skipped,
@@ -236,6 +239,7 @@ pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let result = replay_control_core::favorites::group_by_system(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites();
+    state.response_cache.invalidate_all();
     Ok(result)
 }
 
@@ -245,6 +249,7 @@ pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let result = replay_control_core::favorites::flatten_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites();
+    state.response_cache.invalidate_all();
     Ok(result)
 }
 
@@ -255,9 +260,19 @@ pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
 /// - "More from [Series]": series siblings of favorited games that aren't yet favorited
 #[server(prefix = "/sfn")]
 pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    let fn_start = std::time::Instant::now();
     use super::{GameSection, RecommendedGame};
 
     let state = expect_context::<crate::api::AppState>();
+
+    // Response cache: return immediately on hit.
+    if let Some(cached) = state.response_cache.get_favorites_recommendations() {
+        #[cfg(feature = "ssr")]
+        tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_favorites_recommendations cache hit");
+        return Ok(cached);
+    }
+
     let storage = state.storage();
     let systems = state.cache.cached_systems(&storage).await;
 
@@ -449,6 +464,8 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
             sections
         })
         .await;
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_favorites_recommendations db_read complete");
 
     let raw_sections = db_result.unwrap_or_default();
 
@@ -471,6 +488,11 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
         });
     }
 
+    // Response cache: store for subsequent hits within TTL.
+    state.response_cache.set_favorites_recommendations(&result_sections);
+
+    #[cfg(feature = "ssr")]
+    tracing::info!(elapsed_ms = fn_start.elapsed().as_millis(), "get_favorites_recommendations complete");
     Ok(result_sections)
 }
 

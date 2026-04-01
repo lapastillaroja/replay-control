@@ -928,6 +928,7 @@ impl AppState {
                 // does a fresh L3 filesystem scan.
                 for system in &affected_systems {
                     state.cache.invalidate_system(system.clone()).await;
+                    state.response_cache.invalidate_all();
                 }
 
                 // Re-scan each affected system.

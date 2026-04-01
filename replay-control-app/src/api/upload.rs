@@ -44,6 +44,7 @@ async fn upload_rom(
 
     if !uploaded.is_empty() {
         state.cache.invalidate_system(system.clone()).await;
+        state.response_cache.invalidate_all();
     }
 
     Ok(Json(serde_json::json!({ "uploaded": uploaded })))

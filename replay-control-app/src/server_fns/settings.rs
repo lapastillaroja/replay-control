@@ -339,6 +339,7 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     // Invalidate cache so ROM lists are re-sorted with the new preference.
     state.cache.invalidate().await;
+    state.response_cache.invalidate_all();
     Ok(())
 }
 
@@ -365,6 +366,7 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
     replay_control_core::settings::write_region_preference_secondary(&storage.root, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate().await;
+    state.response_cache.invalidate_all();
     Ok(())
 }
 

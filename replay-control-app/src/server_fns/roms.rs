@@ -200,6 +200,8 @@ pub async fn get_roms_page(
 
 #[server(prefix = "/sfn", endpoint = "/get_rom_detail")]
 pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetail, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
 
@@ -218,6 +220,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);
 
     let game = resolve_game_info(&system, &filename, &rom.game.rom_path).await;
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_rom_detail game_info resolved");
 
     let user_screenshots =
         replay_control_core::screenshots::find_screenshots_for_rom(&storage, &system, &filename)
@@ -265,6 +269,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
             }
         });
 
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_rom_detail complete");
     Ok(RomDetail {
         game,
         size_bytes: rom.size_bytes,
@@ -414,6 +420,7 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
     // Invalidate caches.
     state.cache.invalidate_system(system).await;
     state.cache.invalidate_favorites();
+    state.response_cache.invalidate_all();
 
     Ok(())
 }
@@ -545,6 +552,7 @@ pub async fn rename_rom(
     // Invalidate caches.
     state.cache.invalidate_system(system).await;
     state.cache.invalidate_favorites();
+    state.response_cache.invalidate_all();
 
     Ok(new_path.display().to_string())
 }
@@ -675,6 +683,7 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
             tracing::warn!("Failed to create recents entry: {e}");
         }
         state.cache.invalidate_recents();
+        state.response_cache.invalidate_recommendations();
     }
 
     Ok("Game launching".into())

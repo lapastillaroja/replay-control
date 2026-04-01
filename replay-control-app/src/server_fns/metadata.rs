@@ -228,6 +228,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
 
     // Clear L1+L2 cache.
     state.cache.invalidate().await;
+    state.response_cache.invalidate_all();
 
     // Rebuild in background; the guard drops → Idle when done (or on panic).
     state.spawn_rebuild_enrichment(guard);
@@ -286,6 +287,7 @@ pub async fn rebuild_corrupt_metadata() -> Result<(), ServerFnError> {
     }
     // Invalidate cache so stale data doesn't persist.
     state.cache.invalidate().await;
+    state.response_cache.invalidate_all();
     // Trigger background re-import if XML exists.
     let _ = state.import.regenerate_metadata(&state).await;
     Ok(())

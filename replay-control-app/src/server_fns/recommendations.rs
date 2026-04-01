@@ -46,7 +46,17 @@ pub struct RecommendationData {
 /// Returns empty data gracefully if game_library is not yet populated.
 #[server(prefix = "/sfn")]
 pub async fn get_recommendations(count: usize) -> Result<RecommendationData, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    let fn_start = std::time::Instant::now();
+
     let state = expect_context::<crate::api::AppState>();
+    // Response cache: return immediately on hit.
+    if let Some(cached) = state.response_cache.get_recommendations() {
+        #[cfg(feature = "ssr")]
+        tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations cache hit");
+        return Ok(cached);
+    }
+
     let storage = state.storage();
     let systems = state.cache.cached_systems(&storage).await;
     let count = count.clamp(1, 12);
@@ -94,6 +104,14 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         .map(|s| (s.folder_name.clone(), s.display_name.clone()))
         .collect();
 
+    // Query cache: read cached pill data before entering the DB closure.
+    let cached_genres = state.cache.query_cache.get_top_genres();
+    let cached_developers = state.cache.query_cache.get_top_developers();
+    let cached_decades = state.cache.query_cache.get_decades();
+    let cached_active_systems = state.cache.query_cache.get_active_systems();
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations query cache reads done");
+
     // Single DB access: run all SQL queries under one connection.
     // This includes the favorites genre lookup that previously required a
     // separate db_read round-trip.
@@ -107,11 +125,11 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 &region_secondary_str,
             )
             .unwrap_or_default();
-            let top_genres = MetadataDb::top_genre_names(conn, 6).unwrap_or_default();
-            let top_developers = MetadataDb::top_developers(conn, 10).unwrap_or_default();
-            let decades = MetadataDb::decade_list(conn).unwrap_or_default();
-            let active_systems =
-                MetadataDb::active_systems(conn).unwrap_or_default();
+            let top_genres = cached_genres.unwrap_or_else(|| MetadataDb::top_genre_names(conn, 6).unwrap_or_default());
+            let top_developers = cached_developers.unwrap_or_else(|| MetadataDb::top_developers(conn, 10).unwrap_or_default());
+            let decades = cached_decades.unwrap_or_else(|| MetadataDb::decade_list(conn).unwrap_or_default());
+            let active_systems = cached_active_systems.unwrap_or_else(||
+                MetadataDb::active_systems(conn).unwrap_or_default());
             // --- Spotlight: type was pre-rolled above ---
 
             // Exclude the favorites system from system spotlight candidates.
@@ -260,6 +278,8 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             (random_pool, top_genres, top_developers, decades, active_systems, spotlight_pool, spotlight_title, spotlight_href, fav_roms)
         })
         .await;
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations db_read complete");
 
     let Some((random_pool, top_genres, top_developers, decades, active_systems, spotlight_pool, spotlight_title, spotlight_href, fav_roms)) = db_data
     else {
@@ -274,6 +294,12 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             curated_spotlight: None,
         });
     };
+
+    // Query cache: store freshly computed pill data for future requests.
+    state.cache.query_cache.set_top_genres(&top_genres);
+    state.cache.query_cache.set_top_developers(&top_developers);
+    state.cache.query_cache.set_decades(&decades);
+    state.cache.query_cache.set_active_systems(&active_systems);
 
     // --- Post-process random picks: ensure system diversity ---
     let mut random_picks = diversify_picks(random_pool, count, &systems);
@@ -345,7 +371,9 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         resolve_box_art_for_picks(&state, &mut cs.games).await;
     }
 
-    Ok(RecommendationData {
+    #[cfg(feature = "ssr")]
+    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations box art resolved");
+    let data = RecommendationData {
         random_picks: GameSection {
             title: "Rediscover Your Library".to_string(),
             games: random_picks,
@@ -354,7 +382,14 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         discover_pills,
         favorites_picks,
         curated_spotlight,
-    })
+    };
+
+    // Response cache: store for subsequent hits within TTL.
+    state.response_cache.set_recommendations(&data);
+
+    #[cfg(feature = "ssr")]
+    tracing::info!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations complete");
+    Ok(data)
 }
 
 /// Info about the user's favorites needed for building recommendations.

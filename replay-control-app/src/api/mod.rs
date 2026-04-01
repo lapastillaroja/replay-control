@@ -518,6 +518,8 @@ pub struct AppState {
     pub config: Arc<std::sync::RwLock<ReplayConfig>>,
     pub config_path: Option<PathBuf>,
     pub cache: Arc<GameLibrary>,
+    /// Response-level cache for assembled recommendation payloads.
+    pub response_cache: Arc<cache::response::ResponseCache>,
     /// When set, --storage-path was given on the CLI and auto-detection is skipped.
     pub storage_path_override: Option<PathBuf>,
     /// When Some, the app uses this skin index (persisted in `settings.cfg`).
@@ -657,6 +659,7 @@ impl AppState {
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
             cache: Arc::new(GameLibrary::new(metadata_pool.clone())),
+            response_cache: Arc::new(cache::response::ResponseCache::new()),
             storage_path_override,
             skin_override: Arc::new(std::sync::RwLock::new(initial_skin)),
             metadata_pool,
@@ -816,6 +819,7 @@ impl AppState {
             }
 
             self.cache.invalidate().await;
+            self.response_cache.invalidate_all();
 
             let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();
             let _ = self

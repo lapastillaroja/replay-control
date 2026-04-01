@@ -52,6 +52,7 @@ async fn delete_rom(
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
     state.cache.invalidate().await;
+    state.response_cache.invalidate_all();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -66,6 +67,7 @@ async fn rename_rom(
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
     state.cache.invalidate().await;
+    state.response_cache.invalidate_all();
     Ok(Json(serde_json::json!({
         "new_path": new_path.display().to_string()
     })))

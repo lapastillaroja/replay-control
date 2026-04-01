@@ -1,3 +1,5 @@
+pub mod response;
+pub(crate) mod query;
 mod aliases;
 mod enrichment;
 mod favorites;
@@ -105,6 +107,7 @@ use favorites::FavoritesCache;
 pub use images::ImageIndex;
 
 pub struct GameLibrary {
+    pub(crate) query_cache: query::QueryCache,
     pub(super) systems: std::sync::RwLock<Option<CacheEntry<Vec<SystemSummary>>>>,
     pub(super) favorites: std::sync::RwLock<Option<FavoritesCache>>,
     pub(super) recents: std::sync::RwLock<Option<CacheEntry<Vec<RecentEntry>>>>,
@@ -118,11 +121,13 @@ pub struct GameLibrary {
 
 impl GameLibrary {
     pub(crate) fn new(db: DbPool) -> Self {
+        let query_cache = query::QueryCache::new();
         Self {
             systems: std::sync::RwLock::new(None),
             favorites: std::sync::RwLock::new(None),
             recents: std::sync::RwLock::new(None),
             images: std::sync::RwLock::new(HashMap::new()),
+            query_cache,
             db,
         }
     }
@@ -447,6 +452,7 @@ impl GameLibrary {
         if let Ok(mut guard) = self.images.write() {
             guard.clear();
         }
+        self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library.
         self.db
             .write(|conn| {
@@ -461,6 +467,7 @@ impl GameLibrary {
         if let Ok(mut guard) = self.systems.write() {
             *guard = None;
         }
+        self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library for this system.
         self.db
             .write(move |conn| {
