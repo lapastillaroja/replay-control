@@ -14,10 +14,10 @@ use crate::util::format_size_short;
 pub fn HomePage() -> impl IntoView {
     let i18n = use_i18n();
     let info = Resource::new_blocking(|| (), |_| server_fns::get_info());
-    let recents = Resource::new_blocking(|| (), |_| server_fns::get_recents());
+    let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new_blocking(|| (), |_| server_fns::get_systems());
 
-    let recommendations = Resource::new_blocking(|| (), |_| server_fns::get_recommendations(6));
+    let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations(6));
     view! {
         <div class="page home-page">
             <section class="section home-search-section">
@@ -31,7 +31,7 @@ pub fn HomePage() -> impl IntoView {
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.last_played")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let entries = recents.await?;
@@ -54,7 +54,7 @@ pub fn HomePage() -> impl IntoView {
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.recently_played")}</h2>
                 <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Suspense fallback=move || view! { <RecentlyPlayedSkeleton /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let entries = recents.await?;
@@ -83,7 +83,7 @@ pub fn HomePage() -> impl IntoView {
 
             // --- Recommendations ---
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=|| ()>
+                <Suspense fallback=move || view! { <RecommendationsSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
                         let data = recommendations.await?;
@@ -182,7 +182,64 @@ fn StorageBarCard(pct: u8, detail: String) -> impl IntoView {
     }
 }
 
+/// Skeleton placeholder for the hero card while recents stream in.
+#[component]
+fn HeroCardSkeleton() -> impl IntoView {
+    view! {
+        <div class="skeleton-hero skeleton-shimmer">
+            <div class="skeleton-hero-thumb"></div>
+            <div class="skeleton-hero-info">
+                <div class="skeleton-hero-title"></div>
+                <div class="skeleton-hero-system"></div>
+            </div>
+        </div>
+    }
+}
+
+/// Skeleton placeholder for the recently played scroll row while recents stream in.
+#[component]
+fn RecentlyPlayedSkeleton() -> impl IntoView {
+    view! {
+        <div class="scroll-card-row">
+            {(0..6).map(|_| view! {
+                <div class="skeleton-card skeleton-shimmer">
+                    <div class="skeleton-card-image"></div>
+                    <div class="skeleton-card-text"></div>
+                    <div class="skeleton-card-subtext"></div>
+                </div>
+            }).collect::<Vec<_>>()}
+        </div>
+    }
+}
+
 /// Render recommendation sections: random picks, favorites-based, top-rated, and discover links.
+
+/// Skeleton placeholder shown while recommendations are loading (streaming SSR).
+/// Mimics 2 recommendation sections with shimmer-animated cards.
+#[component]
+fn RecommendationsSkeleton() -> impl IntoView {
+    let section = |_| {
+        view! {
+            <section class="section">
+                <div class="skeleton-title skeleton-shimmer"></div>
+                <div class="scroll-card-row">
+                    {(0..6).map(|_| view! {
+                        <div class="skeleton-card skeleton-shimmer">
+                            <div class="skeleton-card-image"></div>
+                            <div class="skeleton-card-text"></div>
+                            <div class="skeleton-card-subtext"></div>
+                        </div>
+                    }).collect::<Vec<_>>()}
+                </div>
+            </section>
+        }
+    };
+    view! {
+        {section(0)}
+        {section(1)}
+    }
+}
+
 #[component]
 fn RecommendationSections(
     data: server_fns::RecommendationData,

@@ -318,3 +318,103 @@
 .section-link:hover {
     text-decoration: underline;
 }
+
+/* ── Skeleton loaders (streaming SSR placeholder) ──────────────── */
+
+.skeleton-shimmer {
+    background: linear-gradient(
+        90deg,
+        var(--surface) 25%,
+        var(--surface-hover) 50%,
+        var(--surface) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.skeleton-title {
+    width: 10rem;
+    height: 0.85rem;
+    border-radius: 4px;
+    margin-bottom: 12px;
+}
+
+/* Match .scroll-card-item dimensions */
+.skeleton-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    width: 8.125rem;
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    border: 1px solid var(--border);
+}
+
+.skeleton-card-image {
+    width: 3.5rem;
+    height: 5rem;
+    border-radius: 3px;
+    background: var(--border);
+    margin-bottom: 8px;
+}
+
+.skeleton-card-text {
+    width: 80%;
+    height: 0.8rem;
+    border-radius: 3px;
+    background: var(--border);
+    margin-bottom: 4px;
+}
+
+.skeleton-card-subtext {
+    width: 50%;
+    height: 0.7rem;
+    border-radius: 3px;
+    background: var(--border);
+}
+
+/* Match .hero-card dimensions */
+.skeleton-hero {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+}
+
+.skeleton-hero-thumb {
+    width: 3.5rem;
+    height: 3.5rem;
+    background: var(--border);
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.skeleton-hero-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.skeleton-hero-title {
+    width: 60%;
+    height: 1.1rem;
+    border-radius: 4px;
+    background: var(--border);
+    margin-bottom: 8px;
+}
+
+.skeleton-hero-system {
+    width: 35%;
+    height: 0.9rem;
+    border-radius: 4px;
+    background: var(--border);
+}

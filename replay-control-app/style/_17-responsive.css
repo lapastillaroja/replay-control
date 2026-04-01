@@ -83,7 +83,8 @@
         overflow-x: visible;
     }
 
-    .scroll-card-item {
+    .scroll-card-item,
+    .skeleton-card {
         width: auto;
         flex-shrink: unset;
     }

@@ -33,7 +33,6 @@ fn split_filename(filename: &str) -> (String, String) {
 
 #[component]
 pub fn GameDetailPage() -> impl IntoView {
-    let i18n = use_i18n();
     let params = use_params_map();
     let system = move || params.read().get("system").unwrap_or_default();
     let filename = move || {
@@ -44,7 +43,7 @@ pub fn GameDetailPage() -> impl IntoView {
             .unwrap_or(raw)
     };
 
-    let detail = Resource::new_blocking(
+    let detail = Resource::new(
         move || (system(), filename()),
         |(sys, fname)| server_fns::get_rom_detail(sys, fname),
     );
@@ -52,7 +51,7 @@ pub fn GameDetailPage() -> impl IntoView {
     view! {
         <div class="page game-detail">
             <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <Suspense fallback=move || view! { <GameDetailSkeleton /> }>
                     {move || Suspend::new(async move {
                         let data = detail.await?;
                         Ok::<_, ServerFnError>(view! {
@@ -62,6 +61,41 @@ pub fn GameDetailPage() -> impl IntoView {
                 </Suspense>
             </ErrorBoundary>
         </div>
+    }
+}
+
+/// Skeleton placeholder for the game detail page while data loads.
+#[component]
+fn GameDetailSkeleton() -> impl IntoView {
+    view! {
+        // Header skeleton
+        <div class="rom-header">
+            <div class="skeleton-detail-back skeleton-shimmer"></div>
+            <div class="skeleton-detail-title skeleton-shimmer"></div>
+        </div>
+
+        // Cover art skeleton
+        <section class="section">
+            <div class="game-cover skeleton-detail-cover skeleton-shimmer"></div>
+        </section>
+
+        // Launch CTA skeleton
+        <section class="game-launch-cta">
+            <div class="skeleton-detail-launch skeleton-shimmer"></div>
+        </section>
+
+        // Info grid skeleton
+        <section class="section">
+            <div class="skeleton-detail-section-title skeleton-shimmer"></div>
+            <div class="game-meta-grid">
+                {(0..4).map(|_| view! {
+                    <div class="game-meta-item">
+                        <div class="skeleton-detail-meta-label skeleton-shimmer"></div>
+                        <div class="skeleton-detail-meta-value skeleton-shimmer"></div>
+                    </div>
+                }).collect::<Vec<_>>()}
+            </div>
+        </section>
     }
 }
 
