@@ -30,8 +30,8 @@ pub fn HomePage() -> impl IntoView {
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.last_played")}</h2>
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
+                <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
+                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let entries = recents.await?;
@@ -47,14 +47,14 @@ pub fn HomePage() -> impl IntoView {
                                 view! { <p class="empty-state">{t(locale, "home.no_games_played")}</p> }.into_any()
                             })
                         })}
-                    </Suspense>
-                </ErrorBoundary>
+                    </ErrorBoundary>
+                </Suspense>
             </section>
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.recently_played")}</h2>
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    <Suspense fallback=move || view! { <RecentlyPlayedSkeleton /> }>
+                <Suspense fallback=move || view! { <RecentlyPlayedSkeleton /> }>
+                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let entries = recents.await?;
@@ -77,20 +77,20 @@ pub fn HomePage() -> impl IntoView {
                                 }.into_any()
                             })
                         })}
-                    </Suspense>
-                </ErrorBoundary>
+                    </ErrorBoundary>
+                </Suspense>
             </section>
 
             // --- Recommendations ---
-            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <RecommendationsSkeleton /> }>
+            <Suspense fallback=move || view! { <RecommendationsSkeleton /> }>
+                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
                         let data = recommendations.await?;
                         Ok::<_, ServerFnError>(view! { <RecommendationSections data locale /> })
                     })}
-                </Suspense>
-            </ErrorBoundary>
+                </ErrorBoundary>
+            </Suspense>
 
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "home.library")}</h2>

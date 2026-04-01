@@ -50,16 +50,16 @@ pub fn GameDetailPage() -> impl IntoView {
 
     view! {
         <div class="page game-detail">
-            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <GameDetailSkeleton /> }>
+            <Suspense fallback=move || view! { <GameDetailSkeleton /> }>
+                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
                     {move || Suspend::new(async move {
                         let data = detail.await?;
                         Ok::<_, ServerFnError>(view! {
                             <GameDetailContent detail=data system=system() />
                         })
                     })}
-                </Suspense>
-            </ErrorBoundary>
+                </ErrorBoundary>
+            </Suspense>
         </div>
     }
 }
