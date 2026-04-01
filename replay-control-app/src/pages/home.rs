@@ -188,7 +188,7 @@ fn RecommendationSections(
     locale: crate::i18n::Locale,
 ) -> impl IntoView {
     let has_random = !data.random_picks.is_empty();
-    let has_top_rated = data.top_rated.as_ref().is_some_and(|v| !v.is_empty());
+    let has_spotlight = data.curated_spotlight.as_ref().is_some_and(|s| !s.games.is_empty());
     let has_discover = !data.discover_pills.is_empty();
 
     view! {
@@ -208,16 +208,18 @@ fn RecommendationSections(
         </Show>
 
         {data.favorites_picks.as_ref().map(|fp| {
-            let section_title = format!("{} {}", t(locale, "home.because_you_love"), &fp.system_display);
-            let see_all_href = format!("/games/{}", &fp.system);
+            let has_see_all = fp.see_all_href.is_some();
+            let see_all_href = fp.see_all_href.clone().unwrap_or_default();
             view! {
                 <section class="section">
                     <div class="section-header">
-                        <h2 class="section-title">{section_title}</h2>
-                        <A href=see_all_href attr:class="section-link">{t(locale, "home.see_all")}</A>
+                        <h2 class="section-title">{fp.title.clone()}</h2>
+                        <Show when=move || has_see_all>
+                            <A href=see_all_href.clone() attr:class="section-link">{t(locale, "home.see_all")}</A>
+                        </Show>
                     </div>
                     <div class="scroll-card-row">
-                        {fp.picks.iter().map(|game| {
+                        {fp.games.iter().map(|game| {
                             let href = game.href.clone();
                             let name = game.display_name.clone();
                             let system = game.system_display.clone();
@@ -229,13 +231,20 @@ fn RecommendationSections(
             }
         })}
 
-        <Show when=move || has_top_rated>
-            {data.top_rated.as_ref().map(|picks| {
+        <Show when=move || has_spotlight>
+            {data.curated_spotlight.as_ref().map(|spotlight| {
+                let has_see_all = spotlight.see_all_href.is_some();
+                let see_all_href = spotlight.see_all_href.clone().unwrap_or_default();
                 view! {
                     <section class="section">
-                        <h2 class="section-title">{t(locale, "home.top_rated")}</h2>
+                        <div class="section-header">
+                            <h2 class="section-title">{spotlight.title.clone()}</h2>
+                            <Show when=move || has_see_all>
+                                <A href=see_all_href.clone() attr:class="section-link">{t(locale, "home.see_all")}</A>
+                            </Show>
+                        </div>
                         <div class="scroll-card-row">
-                            {picks.iter().map(|game| {
+                            {spotlight.games.iter().map(|game| {
                                 let href = game.href.clone();
                                 let name = game.display_name.clone();
                                 let system = game.system_display.clone();

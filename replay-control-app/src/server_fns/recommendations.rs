@@ -24,12 +24,13 @@ pub struct DiscoverPill {
     pub href: String,
 }
 
-/// Favorites-based recommendation: games from the user's most-favorited system(s).
+/// A titled row of game recommendations (favorites-based, curated spotlight, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FavoritesPicks {
-    pub system_display: String,
-    pub system: String,
-    pub picks: Vec<RecommendedGame>,
+pub struct GameSection {
+    pub title: String,
+    pub games: Vec<RecommendedGame>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub see_all_href: Option<String>,
 }
 
 /// All recommendation data in a single response.
@@ -37,8 +38,8 @@ pub struct FavoritesPicks {
 pub struct RecommendationData {
     pub random_picks: Vec<RecommendedGame>,
     pub discover_pills: Vec<DiscoverPill>,
-    pub favorites_picks: Option<FavoritesPicks>,
-    pub top_rated: Option<Vec<RecommendedGame>>,
+    pub favorites_picks: Option<GameSection>,
+    pub curated_spotlight: Option<GameSection>,
 }
 
 /// Get recommendation data from SQLite game_library + filesystem image resolution.
@@ -65,6 +66,12 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         .unwrap_or("")
         .to_string();
 
+    // Pre-build system display name pairs for use inside the DB closure.
+    let systems_for_spotlight: Vec<(String, String)> = systems
+        .iter()
+        .map(|s| (s.folder_name.clone(), s.display_name.clone()))
+        .collect();
+
     // Single DB access: run all SQL queries under one connection.
     // This includes the favorites genre lookup that previously required a
     // separate db_read round-trip.
@@ -83,13 +90,89 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             let decades = MetadataDb::decade_list(conn).unwrap_or_default();
             let active_systems =
                 MetadataDb::active_systems(conn).unwrap_or_default();
-            let top_rated = MetadataDb::top_rated_cached_roms(
-                conn,
-                count * 3,
-                &region_str,
-                &region_secondary_str,
-            )
-            .unwrap_or_default();
+            // --- Spotlight: pick one of 4 types at random ---
+            let spotlight_type = {
+                use rand::Rng;
+                rand::rng().random_range(0u8..4)
+            };
+
+            // Exclude the favorites system from system spotlight candidates.
+            let fav_system: Option<&str> = favorites_info.as_ref().map(|fi| fi.system.as_str());
+
+            // Minimum games a spotlight must return to be shown.
+            // Fewer than this looks sparse — fall back to global Top Rated.
+            let spotlight_min = count;
+
+            let spotlight_result: Option<(Vec<replay_control_core::metadata_db::GameEntry>, String, Option<String>)> = match spotlight_type {
+                1 if !top_genres.is_empty() => {
+                    // Best by Genre
+                    use rand::Rng;
+                    let idx = rand::rng().random_range(0..top_genres.len());
+                    let genre = &top_genres[idx];
+                    let games = MetadataDb::top_rated_filtered(
+                        conn, None, Some(genre), None, count * 3, &region_str, &region_secondary_str,
+                    ).unwrap_or_default();
+                    if games.len() < spotlight_min {
+                        None
+                    } else {
+                        let title = format!("Best {genre}");
+                        let href = Some(format!("/search?genre={}&min_rating=3.5", urlencoding::encode(genre)));
+                        Some((games, title, href))
+                    }
+                }
+                2 if !active_systems.is_empty() => {
+                    // Best of System — pick from systems excluding favorites system
+                    use rand::Rng;
+                    let candidates: Vec<&String> = active_systems.iter()
+                        .filter(|s| fav_system != Some(s.as_str()))
+                        .collect();
+                    if candidates.is_empty() {
+                        None
+                    } else {
+                        let idx = rand::rng().random_range(0..candidates.len());
+                        let sys = candidates[idx];
+                        let games = MetadataDb::top_rated_filtered(
+                            conn, Some(sys), None, None, count * 3, &region_str, &region_secondary_str,
+                        ).unwrap_or_default();
+                        if games.len() < spotlight_min {
+                            None
+                        } else {
+                            let display = systems_for_spotlight.iter()
+                                .find(|s| s.0 == *sys)
+                                .map(|s| s.1.clone())
+                                .unwrap_or_else(|| sys.clone());
+                            let title = format!("Best of {display}");
+                            let href = Some(format!("/games/{sys}?min_rating=3.5"));
+                            Some((games, title, href))
+                        }
+                    }
+                }
+                3 if !top_developers.is_empty() => {
+                    // Games by Developer
+                    use rand::Rng;
+                    let idx = rand::rng().random_range(0..top_developers.len());
+                    let dev = &top_developers[idx];
+                    let games = MetadataDb::top_rated_filtered(
+                        conn, None, None, Some(dev), count * 3, &region_str, &region_secondary_str,
+                    ).unwrap_or_default();
+                    if games.len() < spotlight_min {
+                        None
+                    } else {
+                        let title = format!("Games by {dev}");
+                        let href = Some(format!("/developer/{}", urlencoding::encode(dev)));
+                        Some((games, title, href))
+                    }
+                }
+                _ => None, // Falls through to global top rated below
+            };
+
+            // Fall back to global top rated if the selected type returned empty or was type 0.
+            let (spotlight_pool, spotlight_title, spotlight_href) = spotlight_result.unwrap_or_else(|| {
+                let games = MetadataDb::top_rated_filtered(
+                    conn, None, None, None, count * 3, &region_str, &region_secondary_str,
+                ).unwrap_or_default();
+                (games, "Top Rated".to_string(), None)
+            });
             let fav_roms = favorites_info.as_ref().map(|fi| {
                 // Compute top genre inside this closure instead of a separate db_read.
                 let fav_refs: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
@@ -132,17 +215,17 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 }
                 roms
             });
-            (random_pool, top_genres, top_developers, decades, active_systems, top_rated, fav_roms)
+            (random_pool, top_genres, top_developers, decades, active_systems, spotlight_pool, spotlight_title, spotlight_href, fav_roms)
         })
         .await;
 
-    let Some((random_pool, top_genres, top_developers, decades, active_systems, top_rated_pool, fav_roms)) = db_data
+    let Some((random_pool, top_genres, top_developers, decades, active_systems, spotlight_pool, spotlight_title, spotlight_href, fav_roms)) = db_data
     else {
         return Ok(RecommendationData {
             random_picks: Vec::new(),
             discover_pills: Vec::new(),
             favorites_picks: None,
-            top_rated: None,
+            curated_spotlight: None,
         });
     };
 
@@ -172,36 +255,55 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         if picks.is_empty() {
             return None;
         }
-        Some(FavoritesPicks {
-            system_display: fi.system_display,
-            system: fi.system,
-            picks,
+        Some(GameSection {
+            title: format!("Because You Love {}", fi.system_display),
+            games: picks,
+            see_all_href: Some(format!("/games/{}", fi.system)),
         })
     });
 
-    // --- Top rated: pool already randomized by SQL, diversify across systems ---
-    let mut top_rated = if top_rated_pool.is_empty() {
+    // --- Curated spotlight: pool already randomized by SQL ---
+    // For single-system spotlights (e.g., "Best of SNES"), skip diversity capping
+    // since all games share one system and the cap would limit output to 2 games.
+    let mut curated_spotlight = if spotlight_pool.is_empty() {
         None
     } else {
-        let picks = diversify_picks(top_rated_pool, count, &systems);
-        if picks.is_empty() { None } else { Some(picks) }
+        let single_system = spotlight_pool.iter().all(|g| g.system == spotlight_pool[0].system);
+        let games = if single_system {
+            spotlight_pool
+                .iter()
+                .take(count)
+                .filter_map(|rom| to_recommended(&rom.system, rom, &systems))
+                .collect()
+        } else {
+            diversify_picks(spotlight_pool, count, &systems)
+        };
+        if games.is_empty() {
+            None
+        } else {
+            Some(GameSection {
+                title: spotlight_title,
+                games,
+                see_all_href: spotlight_href,
+            })
+        }
     };
 
     // Resolve box art from filesystem (same approach as recents/favorites/games).
     // The pre-cached game_library.box_art_url may be stale or NULL.
     resolve_box_art_for_picks(&state, &mut random_picks).await;
     if let Some(ref mut fp) = favorites_picks {
-        resolve_box_art_for_picks(&state, &mut fp.picks).await;
+        resolve_box_art_for_picks(&state, &mut fp.games).await;
     }
-    if let Some(ref mut tr) = top_rated {
-        resolve_box_art_for_picks(&state, tr).await;
+    if let Some(ref mut cs) = curated_spotlight {
+        resolve_box_art_for_picks(&state, &mut cs.games).await;
     }
 
     Ok(RecommendationData {
         random_picks,
         discover_pills,
         favorites_picks,
-        top_rated,
+        curated_spotlight,
     })
 }
 
@@ -340,7 +442,7 @@ fn build_discover_pills(
             "system",
             DiscoverPill {
                 label: format!("Best of {display}"),
-                href: format!("/games/{sys}?min_rating=3"),
+                href: format!("/games/{sys}?min_rating=3.5"),
             },
         ));
     }

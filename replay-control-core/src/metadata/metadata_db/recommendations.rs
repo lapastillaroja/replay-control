@@ -114,7 +114,7 @@ impl MetadataDb {
                     END
                 ) AS rn
                 FROM game_library
-                WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND rating IS NOT NULL AND rating > 0
+                WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND rating IS NOT NULL AND rating >= 3.5
             )
             SELECT {GAME_ENTRY_COLS}
             FROM (
@@ -408,6 +408,89 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Get top-rated cached ROMs with optional filters for system, genre, and developer.
+    ///
+    /// Follows the same dedup CTE + weighted scoring pattern as `top_rated_cached_roms`,
+    /// but adds optional WHERE clauses. When all filters are None, behaves identically
+    /// to `top_rated_cached_roms`.
+    ///
+    /// Developer matching uses COLLATE NOCASE for case-insensitive comparison.
+    pub fn top_rated_filtered(
+        conn: &Connection,
+        system: Option<&str>,
+        genre: Option<&str>,
+        developer: Option<&str>,
+        count: usize,
+        region_pref: &str,
+        region_secondary: &str,
+    ) -> Result<Vec<GameEntry>> {
+        let pool_size = (count * 4).max(40) as i64;
+
+        // Build optional WHERE clauses. Parameter indices start at ?4
+        // because ?1=pool_size, ?2=region_pref, ?3=region_secondary.
+        let mut extra_where = String::new();
+        let mut param_idx = 4u32;
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+            Box::new(pool_size),
+            Box::new(region_pref.to_string()),
+            Box::new(region_secondary.to_string()),
+        ];
+
+        if let Some(sys) = system {
+            extra_where.push_str(&format!(" AND system = ?{param_idx}"));
+            params_vec.push(Box::new(sys.to_string()));
+            param_idx += 1;
+        }
+        if let Some(g) = genre {
+            extra_where.push_str(&format!(" AND genre_group = ?{param_idx}"));
+            params_vec.push(Box::new(g.to_string()));
+            param_idx += 1;
+        }
+        if let Some(dev) = developer {
+            extra_where.push_str(&format!(" AND developer = ?{param_idx} COLLATE NOCASE"));
+            params_vec.push(Box::new(dev.to_string()));
+            let _ = param_idx; // suppress unused warning
+        }
+
+        let sql = format!(
+            "WITH deduped AS (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY system, base_title
+                    ORDER BY CASE
+                        WHEN region = ?2 THEN 0
+                        WHEN region = ?3 THEN 1
+                        WHEN region = 'world' THEN 2
+                        ELSE 3
+                    END
+                ) AS rn
+                FROM game_library
+                WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0 AND rating IS NOT NULL AND rating >= 3.5{extra_where}
+            )
+            SELECT {GAME_ENTRY_COLS}
+            FROM (
+                SELECT * FROM deduped WHERE rn = 1
+                ORDER BY CASE
+                    WHEN COALESCE(rating_count, 0) >= 10 THEN rating
+                    WHEN COALESCE(rating_count, 0) >= 3 THEN rating * 0.9
+                    ELSE rating * 0.7
+                END DESC
+                LIMIT ?1
+            )
+            ORDER BY RANDOM()"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Prepare top_rated_filtered: {e}")))?;
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt
+            .query_map(&*params_refs, Self::row_to_game_entry)
+            .map_err(|e| Error::Other(format!("Query top_rated_filtered: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
     /// Top N developers by distinct game count (base_title).
     /// Returns developer names only — counts are used for ranking, not displayed.
     pub fn top_developers(conn: &Connection, limit: usize) -> Result<Vec<String>> {
@@ -547,5 +630,91 @@ mod tests {
         let filenames: Vec<&str> = top.iter().map(|r| r.rom_filename.as_str()).collect();
         assert!(filenames.contains(&"Classic.sfc"));
         assert!(filenames.contains(&"Obscure.sfc"));
+    }
+
+    #[test]
+    fn top_rated_filtered_by_system() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut snes_game = make_game_entry_with_genre("snes", "Mario (USA).sfc", "Platform");
+        snes_game.base_title = "Mario".into();
+        snes_game.region = "usa".into();
+        snes_game.rating = Some(4.5);
+        snes_game.rating_count = Some(20);
+
+        let mut md_game =
+            make_game_entry_with_genre("sega_smd", "Sonic (USA).bin", "Platform");
+        md_game.base_title = "Sonic".into();
+        md_game.region = "usa".into();
+        md_game.rating = Some(4.3);
+        md_game.rating_count = Some(30);
+
+        MetadataDb::save_system_entries(&mut conn, "snes", &[snes_game], None).unwrap();
+        MetadataDb::save_system_entries(&mut conn, "sega_smd", &[md_game], None).unwrap();
+
+        // Filter by system=snes should only return the SNES game.
+        let filtered =
+            MetadataDb::top_rated_filtered(&conn, Some("snes"), None, None, 10, "usa", "")
+                .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].system, "snes");
+
+        // No filter returns both.
+        let all =
+            MetadataDb::top_rated_filtered(&conn, None, None, None, 10, "usa", "").unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn top_rated_filtered_by_genre() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut platformer = make_game_entry_with_genre("snes", "Mario (USA).sfc", "Platform");
+        platformer.base_title = "Mario".into();
+        platformer.region = "usa".into();
+        platformer.rating = Some(4.5);
+        platformer.rating_count = Some(20);
+
+        let mut rpg = make_game_entry_with_genre("snes", "FF6 (USA).sfc", "Role-Playing");
+        rpg.base_title = "FF6".into();
+        rpg.region = "usa".into();
+        rpg.rating = Some(4.8);
+        rpg.rating_count = Some(40);
+
+        MetadataDb::save_system_entries(&mut conn, "snes", &[platformer, rpg], None).unwrap();
+
+        let filtered =
+            MetadataDb::top_rated_filtered(&conn, None, Some("Platform"), None, 10, "usa", "")
+                .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].rom_filename, "Mario (USA).sfc");
+    }
+
+    #[test]
+    fn top_rated_filtered_by_developer() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut capcom = make_game_entry_with_genre("snes", "MegaManX (USA).sfc", "Platform");
+        capcom.base_title = "Mega Man X".into();
+        capcom.region = "usa".into();
+        capcom.developer = "Capcom".into();
+        capcom.rating = Some(4.6);
+        capcom.rating_count = Some(25);
+
+        let mut nintendo = make_game_entry_with_genre("snes", "Mario (USA).sfc", "Platform");
+        nintendo.base_title = "Mario".into();
+        nintendo.region = "usa".into();
+        nintendo.developer = "Nintendo".into();
+        nintendo.rating = Some(4.5);
+        nintendo.rating_count = Some(20);
+
+        MetadataDb::save_system_entries(&mut conn, "snes", &[capcom, nintendo], None).unwrap();
+
+        // Case-insensitive match.
+        let filtered =
+            MetadataDb::top_rated_filtered(&conn, None, None, Some("capcom"), 10, "usa", "")
+                .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].developer, "Capcom");
     }
 }

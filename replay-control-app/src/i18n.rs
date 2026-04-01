@@ -485,7 +485,6 @@ pub fn t(locale: Locale, key: &str) -> &'static str {
         "home.discover_random" => "Rediscover Your Library",
         "home.discover_multiplayer" => "Multiplayer",
         "home.discover_games" => "games",
-        "home.because_you_love" => "Because You Love",
         "home.see_all" => "See all",
         "home.top_rated" => "Top Rated",
 
