@@ -409,6 +409,8 @@ pub struct ManifestFuzzyIndex {
     pub by_tags: HashMap<String, ManifestMatch>,
     /// lowercase(strip_version(strip_tags(stem))) -> ManifestMatch
     pub by_version: HashMap<String, ManifestMatch>,
+    /// base_title(stem) -> ManifestMatch (tilde split + article normalization + lowercase)
+    pub by_base_title: HashMap<String, ManifestMatch>,
 }
 
 /// Build a ManifestFuzzyIndex from the DB for the given repos and kind.
@@ -417,12 +419,14 @@ pub fn build_manifest_fuzzy_index(
     repo_display_names: &[&str],
     kind: &str,
 ) -> ManifestFuzzyIndex {
+    use crate::title_utils::base_title;
     use thumbnails::{strip_tags, strip_version};
 
     let mut exact = HashMap::new();
     let mut exact_ci = HashMap::new();
     let mut by_tags = HashMap::new();
     let mut by_version = HashMap::new();
+    let mut by_base_title = HashMap::new();
 
     for display_name in repo_display_names {
         let url_name = thumbnails::repo_url_name(display_name);
@@ -464,7 +468,15 @@ pub fn build_manifest_fuzzy_index(
             // Tier 3: version-stripped
             let version_key = strip_version(&key);
             if version_key.len() < key.len() {
-                by_version.entry(version_key.to_string()).or_insert(m);
+                by_version
+                    .entry(version_key.to_string())
+                    .or_insert_with(|| m.clone());
+            }
+
+            // Tier 4: base_title (tilde split + article normalization)
+            let bt = base_title(&entry.filename);
+            if bt != key {
+                by_base_title.entry(bt).or_insert(m);
             }
         }
     }
@@ -474,6 +486,7 @@ pub fn build_manifest_fuzzy_index(
         exact_ci,
         by_tags,
         by_version,
+        by_base_title,
     }
 }
 
@@ -485,12 +498,14 @@ pub fn build_manifest_fuzzy_index(
 pub fn build_manifest_fuzzy_index_from_raw(
     repo_data: &[(String, String, Vec<crate::metadata_db::ThumbnailIndexEntry>)],
 ) -> ManifestFuzzyIndex {
+    use crate::title_utils::base_title;
     use thumbnails::{strip_tags, strip_version};
 
     let mut exact = HashMap::new();
     let mut exact_ci = HashMap::new();
     let mut by_tags = HashMap::new();
     let mut by_version = HashMap::new();
+    let mut by_base_title = HashMap::new();
 
     for (url_name, branch, entries) in repo_data {
         for entry in entries {
@@ -519,7 +534,15 @@ pub fn build_manifest_fuzzy_index_from_raw(
             // Tier 3: version-stripped
             let version_key = strip_version(&key);
             if version_key.len() < key.len() {
-                by_version.entry(version_key.to_string()).or_insert(m);
+                by_version
+                    .entry(version_key.to_string())
+                    .or_insert_with(|| m.clone());
+            }
+
+            // Tier 4: base_title (tilde split + article normalization)
+            let bt = base_title(&entry.filename);
+            if bt != key {
+                by_base_title.entry(bt).or_insert(m);
             }
         }
     }
@@ -529,28 +552,38 @@ pub fn build_manifest_fuzzy_index_from_raw(
         exact_ci,
         by_tags,
         by_version,
+        by_base_title,
     }
 }
 
 /// Look up a ROM in the manifest fuzzy index.
 /// Returns the matching manifest entry, or None.
+///
+/// Matching tiers mirror `image_matching::find_best_match`:
+/// 1. Exact thumbnail_filename match
+/// 2. Colon variants (": " → " - " and ": " → " ")
+/// 3. Case-insensitive exact
+/// 4. Strip tags (region/version parentheses)
+/// 5. Base title (tilde split + article normalization)
+/// 6. Tilde dual-title split — try each half through tags + base_title
+/// 7. Version-stripped
+/// 8. Slash dual-name matching (arcade " / " separator)
 pub fn find_in_manifest<'a>(
     index: &'a ManifestFuzzyIndex,
     rom_filename: &str,
     system: &str,
 ) -> Option<&'a ManifestMatch> {
     use crate::arcade_db;
+    use crate::title_utils::{base_title, strip_n64dd_prefix};
     use thumbnails::{strip_tags, strip_version, thumbnail_filename};
 
     let stem = rom_filename
         .rfind('.')
         .map(|i| &rom_filename[..i])
         .unwrap_or(rom_filename);
+    let stem = strip_n64dd_prefix(stem);
 
-    let is_arcade = matches!(
-        system,
-        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
-    );
+    let is_arcade = crate::systems::is_arcade_system(system);
 
     // For arcade ROMs, translate MAME codename to display name.
     let display_name = if is_arcade {
@@ -558,7 +591,8 @@ pub fn find_in_manifest<'a>(
     } else {
         None
     };
-    let thumb_name = thumbnail_filename(display_name.unwrap_or(stem));
+    let source = display_name.unwrap_or(stem);
+    let thumb_name = thumbnail_filename(source);
 
     // Tier 1: exact match.
     if let Some(m) = index.exact.get(&thumb_name) {
@@ -566,7 +600,6 @@ pub fn find_in_manifest<'a>(
     }
 
     // Colon variants (same logic as import_system_thumbnails in thumbnails.rs).
-    let source = display_name.unwrap_or(stem);
     if source.contains(':') {
         let dash_variant = thumbnail_filename(&source.replace(": ", " - ").replace(':', " -"));
         if let Some(m) = index.exact.get(&dash_variant) {
@@ -578,18 +611,53 @@ pub fn find_in_manifest<'a>(
         }
     }
 
-    // Tier 1b: case-insensitive exact (preserves region tags like "(USA)", "(Europe)")
+    // Tier 2: case-insensitive exact (preserves region tags like "(USA)", "(Europe)")
     if let Some(m) = index.exact_ci.get(&thumb_name.to_lowercase()) {
         return Some(m);
     }
 
-    // Tier 2: strip tags.
+    // Tier 3: strip tags.
     let key = strip_tags(&thumb_name).to_lowercase();
     if let Some(m) = index.by_tags.get(&key) {
         return Some(m);
     }
 
-    // Tier 3: version-stripped.
+    // Tier 4: base title (tilde split + article normalization).
+    let base = base_title(&thumb_name);
+    if base != key
+        && let Some(m) = index
+            .by_tags
+            .get(&base)
+            .or_else(|| index.by_base_title.get(&base))
+    {
+        return Some(m);
+    }
+
+    // Tier 5: tilde dual-title split — try each half through tags + base_title.
+    if source.contains(" ~ ") {
+        for half in source.split(" ~ ") {
+            let half = half.trim();
+            let half_thumb = thumbnail_filename(half);
+            if let Some(m) = index.exact.get(&half_thumb) {
+                return Some(m);
+            }
+            let half_key = strip_tags(&half_thumb).to_lowercase();
+            if let Some(m) = index.by_tags.get(&half_key) {
+                return Some(m);
+            }
+            let half_base = base_title(&half_thumb);
+            if half_base != half_key
+                && let Some(m) = index
+                    .by_tags
+                    .get(&half_base)
+                    .or_else(|| index.by_base_title.get(&half_base))
+            {
+                return Some(m);
+            }
+        }
+    }
+
+    // Tier 6: version-stripped.
     let version_key = strip_version(&key);
     if version_key.len() < key.len()
         && let Some(m) = index
@@ -600,7 +668,7 @@ pub fn find_in_manifest<'a>(
         return Some(m);
     }
 
-    // Tier 4: slash dual-name matching.
+    // Tier 7: slash dual-name matching.
     // Arcade display names often contain " / " separating English and Japanese
     // titles (e.g., "Animal Basket / Hustle Tamaire Kyousou"). The thumbnail
     // repo may list only the primary (English) name. Try each side independently.
@@ -1215,6 +1283,7 @@ mod tests {
             exact_ci,
             by_tags,
             by_version,
+            by_base_title: HashMap::new(),
         };
 
         // ROM "Sonic the Hedgehog 3 (USA).md" (lowercase "the") should match USA via CI-exact
@@ -1246,6 +1315,7 @@ mod tests {
             exact_ci,
             by_tags,
             by_version,
+            by_base_title: HashMap::new(),
         };
 
         let result = find_in_manifest(&index, "Game (USA).md", "sega_smd");
@@ -1277,6 +1347,7 @@ mod tests {
             exact_ci,
             by_tags,
             by_version,
+            by_base_title: HashMap::new(),
         };
 
         // ROM stem after tag stripping matches
@@ -1358,6 +1429,7 @@ mod tests {
             exact_ci: HashMap::new(),
             by_tags,
             by_version: HashMap::new(),
+            by_base_title: HashMap::new(),
         };
 
         // Simulate: ROM "anmlbskt.zip" resolves via arcade_db to
@@ -1394,6 +1466,7 @@ mod tests {
             exact_ci: HashMap::new(),
             by_tags,
             by_version: HashMap::new(),
+            by_base_title: HashMap::new(),
         };
 
         // After thumbnail_filename and strip_tags, the search key would be

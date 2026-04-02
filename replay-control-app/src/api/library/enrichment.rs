@@ -240,6 +240,7 @@ fn queue_on_demand_download(
     let pending = state.pending_downloads.clone();
     let metadata_pool = state.metadata_pool.clone();
     let response_cache = state.response_cache.clone();
+    let rt_handle = tokio::runtime::Handle::current();
 
     std::thread::spawn(move || {
         match download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir()) {
@@ -262,7 +263,7 @@ fn queue_on_demand_download(
                     );
                     let sys = system.clone();
                     let rom = rom_filename.clone();
-                    let _ = tokio::runtime::Handle::current().block_on(
+                    let _ = rt_handle.block_on(
                         metadata_pool.write(move |conn| {
                             let _ = conn.execute(
                                 "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
