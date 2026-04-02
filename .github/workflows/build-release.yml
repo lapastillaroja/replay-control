@@ -34,8 +34,10 @@ jobs:
 
       - name: Download data files
         run: |
-          bash scripts/download-arcade-data.sh
-          bash scripts/download-metadata.sh
+          bash scripts/download-arcade-data.sh || echo "Warning: some arcade data downloads failed"
+          bash scripts/download-metadata.sh || echo "Warning: some metadata downloads failed"
+          mkdir -p data/wikidata
+          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json || echo "Warning: wikidata download failed"
 
       - name: Build (WASM + aarch64 server)
         run: ./build.sh aarch64
