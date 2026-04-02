@@ -81,7 +81,11 @@ else
         download \
             "https://www.progettosnaps.net/download/?tipo=dat_mame&file=/dats/MAME/packs/MAME_Dats_${MAME_VERSION}.7z" \
             "$MAME_7Z" \
-            "MAME 0.${MAME_VERSION} DAT pack (7z archive)"
+            "MAME 0.${MAME_VERSION} DAT pack (7z archive)" || {
+            echo "  WARNING: MAME DAT pack download failed." >&2
+            echo "  Build will proceed without MAME current data." >&2
+            echo
+        }
 
         if [ -f "$MAME_7Z" ]; then
             echo "Extracting full MAME XML from archive..."
@@ -127,12 +131,12 @@ CATEGORY_TMP="$DATA_DIR/.category-raw.ini"
 download \
     "$CATVER_MAME_URL" \
     "$CATVER_TMP" \
-    "catver.ini (MAME categories from MAME_SupportFiles)"
+    "catver.ini (MAME categories from MAME_SupportFiles)" || true
 
 download \
     "$CATEGORY_INI_URL" \
     "$CATEGORY_TMP" \
-    "category.ini (MAME categories, updated more frequently)"
+    "category.ini (MAME categories, updated more frequently)" || true
 
 if [ -f "$CATVER_TMP" ] && [ -f "$CATEGORY_TMP" ]; then
     echo "Merging catver.ini + category.ini into catver-mame-current.ini..."
@@ -161,7 +165,11 @@ else
     download \
         "http://nplayers.arcadebelgium.be/files/nplayers${NPLAYERS_VERSION}.zip" \
         "$NPLAYERS_ZIP" \
-        "nplayers.ini (player count data, v${NPLAYERS_VERSION})"
+        "nplayers.ini (player count data, v${NPLAYERS_VERSION})" || {
+        echo "  WARNING: nplayers.ini download failed (host may be down)." >&2
+        echo "  Build will proceed without supplementary player count data." >&2
+        echo
+    }
 
     if [ -f "$NPLAYERS_ZIP" ]; then
         echo "Extracting nplayers.ini from archive..."
