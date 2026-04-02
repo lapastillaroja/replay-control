@@ -23,6 +23,25 @@ done
 # Allow TARGET env var as well
 TARGET="${TARGET:-${BUILD_TARGET:-}}"
 
+# ── Download data files if missing ─────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+data_missing=false
+[[ ! -d "$SCRIPT_DIR/data/arcade" || -z "$(ls "$SCRIPT_DIR/data/arcade/"*.dat "$SCRIPT_DIR/data/arcade/"*.xml 2>/dev/null)" ]] && data_missing=true
+[[ ! -f "$SCRIPT_DIR/data/thegamesdb-latest.json" ]] && data_missing=true
+[[ ! -f "$SCRIPT_DIR/data/wikidata/series.json" ]] && data_missing=true
+
+if [[ "$data_missing" == "true" ]]; then
+    echo "==> Downloading data files..."
+    bash "$SCRIPT_DIR/scripts/download-arcade-data.sh"
+    bash "$SCRIPT_DIR/scripts/download-metadata.sh"
+    mkdir -p "$SCRIPT_DIR/data/wikidata"
+    python3 "$SCRIPT_DIR/scripts/wikidata-series-extract.py" > "$SCRIPT_DIR/data/wikidata/series.json"
+    echo "    Data files ready."
+else
+    echo "==> Data files present, skipping download."
+fi
+
 echo "==> Building WASM (hydrate)..."
 cargo build -p "$CRATE" --lib \
   --target wasm32-unknown-unknown \

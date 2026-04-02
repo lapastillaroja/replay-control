@@ -29,6 +29,7 @@ jobs:
           python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 
       - name: Check formatting
+
         run: cargo fmt --all -- --check
 
       - name: Clippy (core)
