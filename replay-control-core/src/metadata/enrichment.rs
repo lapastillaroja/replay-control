@@ -102,21 +102,44 @@ pub fn build_image_index(
                     dir_index
                         .exact_ci
                         .entry(img_stem.to_lowercase())
+                        .and_modify(|existing| {
+                            if resolved_path < *existing {
+                                *existing = resolved_path.clone();
+                            }
+                        })
                         .or_insert_with(|| resolved_path.clone());
                     let bt = base_title(img_stem);
                     let vs = thumbnails::strip_version(&bt).to_string();
                     dir_index
                         .fuzzy
                         .entry(bt.clone())
+                        .and_modify(|existing| {
+                            if resolved_path < *existing {
+                                *existing = resolved_path.clone();
+                            }
+                        })
                         .or_insert_with(|| resolved_path.clone());
                     if vs.len() < bt.len() {
                         dir_index
                             .version
                             .entry(vs)
+                            .and_modify(|existing| {
+                                if resolved_path < *existing {
+                                    *existing = resolved_path.clone();
+                                }
+                            })
                             .or_insert_with(|| resolved_path.clone());
                     }
                     let agg = crate::title_utils::normalize_aggressive(&bt);
-                    dir_index.aggressive.entry(agg).or_insert(resolved_path);
+                    dir_index
+                        .aggressive
+                        .entry(agg)
+                        .and_modify(|existing| {
+                            if resolved_path < *existing {
+                                *existing = resolved_path.clone();
+                            }
+                        })
+                        .or_insert(resolved_path);
                 }
             }
         }
@@ -538,15 +561,41 @@ mod tests {
             exact.insert(stem.to_string(), path.to_string());
             exact_ci
                 .entry(stem.to_lowercase())
+                .and_modify(|existing| {
+                    if path < existing.as_str() {
+                        *existing = path.to_string();
+                    }
+                })
                 .or_insert_with(|| path.to_string());
             let bt = base_title(stem);
             let vs = strip_version(&bt).to_string();
-            fuzzy.entry(bt.clone()).or_insert_with(|| path.to_string());
+            fuzzy
+                .entry(bt.clone())
+                .and_modify(|existing| {
+                    if path < existing.as_str() {
+                        *existing = path.to_string();
+                    }
+                })
+                .or_insert_with(|| path.to_string());
             if vs.len() < bt.len() {
-                version.entry(vs).or_insert_with(|| path.to_string());
+                version
+                    .entry(vs)
+                    .and_modify(|existing| {
+                        if path < existing.as_str() {
+                            *existing = path.to_string();
+                        }
+                    })
+                    .or_insert_with(|| path.to_string());
             }
             let agg = normalize_aggressive(&bt);
-            aggressive.entry(agg).or_insert_with(|| path.to_string());
+            aggressive
+                .entry(agg)
+                .and_modify(|existing| {
+                    if path < existing.as_str() {
+                        *existing = path.to_string();
+                    }
+                })
+                .or_insert_with(|| path.to_string());
         }
 
         ImageIndex {

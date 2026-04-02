@@ -361,14 +361,24 @@ pub fn resolve_image_on_disk(
 }
 
 /// Build a list of ROM filenames for a system from the filesystem.
+///
+/// Only includes files whose extension matches the system's known ROM
+/// extensions (plus `.m3u` which is always accepted). This prevents
+/// non-ROM files (`.txt`, `.nfo`, `.jpg`, etc.) from triggering
+/// thumbnail downloads.
 pub fn list_rom_filenames(storage_root: &Path, system: &str) -> Vec<String> {
     let roms_dir = storage_root.join("roms").join(system);
+    let extensions = crate::systems::find_system(system).map(|s| s.extensions);
     let mut filenames = Vec::new();
-    collect_rom_filenames_recursive(&roms_dir, &mut filenames);
+    collect_rom_filenames_recursive(&roms_dir, &mut filenames, extensions);
     filenames
 }
 
-fn collect_rom_filenames_recursive(dir: &Path, filenames: &mut Vec<String>) {
+fn collect_rom_filenames_recursive(
+    dir: &Path,
+    filenames: &mut Vec<String>,
+    extensions: Option<&[&str]>,
+) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -378,10 +388,23 @@ fn collect_rom_filenames_recursive(dir: &Path, filenames: &mut Vec<String>) {
         if path.is_dir() {
             let name = entry.file_name();
             if !name.to_string_lossy().starts_with('_') {
-                collect_rom_filenames_recursive(&path, filenames);
+                collect_rom_filenames_recursive(&path, filenames, extensions);
             }
         } else {
-            filenames.push(entry.file_name().to_string_lossy().to_string());
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(exts) = extensions {
+                let matches = name
+                    .rsplit_once('.')
+                    .map(|(_, ext)| {
+                        let ext_lower = ext.to_lowercase();
+                        ext_lower == "m3u" || exts.iter().any(|e| *e == ext_lower)
+                    })
+                    .unwrap_or(false);
+                if !matches {
+                    continue;
+                }
+            }
+            filenames.push(name);
         }
     }
 }
@@ -935,5 +958,45 @@ mod tests {
         let v_stripped = strip_version(&base_v);
         assert_eq!(v_stripped, "sonic adventure 2");
         assert_eq!(strip_version(&base), "sonic adventure 2");
+    }
+
+    // --- list_rom_filenames extension filtering ---
+
+    #[test]
+    fn list_rom_filenames_filters_unsupported_extensions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let roms_dir = tmp.path().join("roms").join("amstrad_cpc");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+
+        // .dsk is a valid Amstrad CPC extension
+        std::fs::write(roms_dir.join("Game.dsk"), b"rom").unwrap();
+        // .m3u is always accepted
+        std::fs::write(roms_dir.join("Playlist.m3u"), b"list").unwrap();
+        // .txt and .nfo are not valid ROM extensions
+        std::fs::write(roms_dir.join("readme.txt"), b"text").unwrap();
+        std::fs::write(roms_dir.join("info.nfo"), b"nfo").unwrap();
+        // .jpg is not a ROM extension
+        std::fs::write(roms_dir.join("cover.jpg"), b"img").unwrap();
+
+        let mut filenames = list_rom_filenames(tmp.path(), "amstrad_cpc");
+        filenames.sort();
+
+        assert_eq!(filenames, vec!["Game.dsk", "Playlist.m3u"]);
+    }
+
+    #[test]
+    fn list_rom_filenames_unknown_system_returns_all() {
+        // For an unknown system (no entry in SYSTEMS), all files are returned.
+        let tmp = tempfile::tempdir().unwrap();
+        let roms_dir = tmp.path().join("roms").join("unknown_sys");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+
+        std::fs::write(roms_dir.join("game.rom"), b"data").unwrap();
+        std::fs::write(roms_dir.join("readme.txt"), b"text").unwrap();
+
+        let mut filenames = list_rom_filenames(tmp.path(), "unknown_sys");
+        filenames.sort();
+
+        assert_eq!(filenames, vec!["game.rom", "readme.txt"]);
     }
 }

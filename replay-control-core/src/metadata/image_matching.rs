@@ -52,16 +52,42 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
                 exact.insert(img_stem.to_string(), path.clone());
                 exact_ci
                     .entry(img_stem.to_lowercase())
+                    .and_modify(|existing| {
+                        if path < *existing {
+                            *existing = path.clone();
+                        }
+                    })
                     .or_insert_with(|| path.clone());
                 let bt = base_title(img_stem);
                 let vs = strip_version(&bt).to_string();
-                fuzzy.entry(bt.clone()).or_insert_with(|| path.clone());
+                fuzzy
+                    .entry(bt.clone())
+                    .and_modify(|existing| {
+                        if path < *existing {
+                            *existing = path.clone();
+                        }
+                    })
+                    .or_insert_with(|| path.clone());
                 if vs.len() < bt.len() {
-                    version.entry(vs).or_insert_with(|| path.clone());
+                    version
+                        .entry(vs)
+                        .and_modify(|existing| {
+                            if path < *existing {
+                                *existing = path.clone();
+                            }
+                        })
+                        .or_insert_with(|| path.clone());
                 }
                 // Aggressive: strip all punctuation for last-resort matching.
                 let agg = normalize_aggressive(&bt);
-                aggressive.entry(agg).or_insert(path);
+                aggressive
+                    .entry(agg)
+                    .and_modify(|existing| {
+                        if path < *existing {
+                            *existing = path.clone();
+                        }
+                    })
+                    .or_insert(path);
             }
         }
     }
@@ -290,15 +316,41 @@ mod tests {
             exact.insert(stem.to_string(), path.to_string());
             exact_ci
                 .entry(stem.to_lowercase())
+                .and_modify(|existing| {
+                    if path < existing.as_str() {
+                        *existing = path.to_string();
+                    }
+                })
                 .or_insert_with(|| path.to_string());
             let bt = base_title(stem);
             let vs = strip_version(&bt).to_string();
-            fuzzy.entry(bt.clone()).or_insert_with(|| path.to_string());
+            fuzzy
+                .entry(bt.clone())
+                .and_modify(|existing| {
+                    if path < existing.as_str() {
+                        *existing = path.to_string();
+                    }
+                })
+                .or_insert_with(|| path.to_string());
             if vs.len() < bt.len() {
-                version.entry(vs).or_insert_with(|| path.to_string());
+                version
+                    .entry(vs)
+                    .and_modify(|existing| {
+                        if path < existing.as_str() {
+                            *existing = path.to_string();
+                        }
+                    })
+                    .or_insert_with(|| path.to_string());
             }
             let agg = normalize_aggressive(&bt);
-            aggressive.entry(agg).or_insert_with(|| path.to_string());
+            aggressive
+                .entry(agg)
+                .and_modify(|existing| {
+                    if path < existing.as_str() {
+                        *existing = path.to_string();
+                    }
+                })
+                .or_insert_with(|| path.to_string());
         }
 
         DirIndex {
@@ -523,6 +575,49 @@ mod tests {
         assert!(
             result.is_none(),
             "Battletoads & Double Dragon should not match Battletoads"
+        );
+    }
+
+    // --- deterministic tier tests ---
+
+    #[test]
+    fn build_dir_index_deterministic_fuzzy_key() {
+        // Two images that normalize to the same fuzzy key "game".
+        // "Game (Europe).png" sorts before "Game (USA).png" alphabetically,
+        // so the Europe path should win regardless of insertion order.
+        let index_ab = index_from(&[
+            ("Game (USA)", "boxart/Game (USA).png"),
+            ("Game (Europe)", "boxart/Game (Europe).png"),
+        ]);
+        let index_ba = index_from(&[
+            ("Game (Europe)", "boxart/Game (Europe).png"),
+            ("Game (USA)", "boxart/Game (USA).png"),
+        ]);
+        // Both should resolve to the alphabetically-first path.
+        assert_eq!(
+            index_ab.fuzzy.get("game"),
+            Some(&"boxart/Game (Europe).png".to_string()),
+            "fuzzy tier should pick alphabetically-first path"
+        );
+        assert_eq!(
+            index_ab.fuzzy.get("game"),
+            index_ba.fuzzy.get("game"),
+            "fuzzy tier must be deterministic regardless of insertion order"
+        );
+        // Also check exact_ci tier.
+        assert_eq!(
+            index_ab.exact_ci.get("game (europe)"),
+            index_ba.exact_ci.get("game (europe)"),
+        );
+        // Aggressive tier should also be deterministic.
+        assert_eq!(
+            index_ab.aggressive.get("game"),
+            Some(&"boxart/Game (Europe).png".to_string()),
+        );
+        assert_eq!(
+            index_ab.aggressive.get("game"),
+            index_ba.aggressive.get("game"),
+            "aggressive tier must be deterministic"
         );
     }
 }
