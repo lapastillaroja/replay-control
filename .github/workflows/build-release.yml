@@ -60,3 +60,4 @@ jobs:
             install.sh
             checksums.sha256
           prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+          generate_release_notes: true
