@@ -97,7 +97,10 @@ pub fn MetadataBusyBanner() -> impl IntoView {
                     };
                     format!(
                         "{} {} ({}/{})...",
-                        phase, progress.current_system, progress.systems_done + 1, progress.systems_total
+                        phase,
+                        progress.current_system,
+                        progress.systems_done + 1,
+                        progress.systems_total
                     )
                 } else {
                     format!("Rebuilding library ({})...", progress.current_system)

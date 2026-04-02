@@ -140,7 +140,13 @@ pub(crate) async fn enrich_game_entries(
     // Build input tuples for the shared enrichment function.
     let input: Vec<(String, String, Option<String>)> = entries
         .iter()
-        .map(|e| (e.system.clone(), e.rom_filename.clone(), e.box_art_url.clone()))
+        .map(|e| {
+            (
+                e.system.clone(),
+                e.rom_filename.clone(),
+                e.box_art_url.clone(),
+            )
+        })
         .collect();
 
     let enriched = enrich_box_art_and_favorites(state, &input).await;
@@ -150,10 +156,7 @@ pub(crate) async fn enrich_game_entries(
         .into_iter()
         .map(|entry| {
             let key = (entry.system.clone(), entry.rom_filename.clone());
-            let (box_art_url, is_favorite) = enriched
-                .get(&key)
-                .cloned()
-                .unwrap_or((None, false));
+            let (box_art_url, is_favorite) = enriched.get(&key).cloned().unwrap_or((None, false));
             RomListEntry {
                 display_name: entry
                     .display_name

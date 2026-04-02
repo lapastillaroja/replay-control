@@ -642,8 +642,7 @@ mod tests {
         snes_game.rating = Some(4.5);
         snes_game.rating_count = Some(20);
 
-        let mut md_game =
-            make_game_entry_with_genre("sega_smd", "Sonic (USA).bin", "Platform");
+        let mut md_game = make_game_entry_with_genre("sega_smd", "Sonic (USA).bin", "Platform");
         md_game.base_title = "Sonic".into();
         md_game.region = "usa".into();
         md_game.rating = Some(4.3);
@@ -654,14 +653,12 @@ mod tests {
 
         // Filter by system=snes should only return the SNES game.
         let filtered =
-            MetadataDb::top_rated_filtered(&conn, Some("snes"), None, None, 10, "usa", "")
-                .unwrap();
+            MetadataDb::top_rated_filtered(&conn, Some("snes"), None, None, 10, "usa", "").unwrap();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].system, "snes");
 
         // No filter returns both.
-        let all =
-            MetadataDb::top_rated_filtered(&conn, None, None, None, 10, "usa", "").unwrap();
+        let all = MetadataDb::top_rated_filtered(&conn, None, None, None, 10, "usa", "").unwrap();
         assert_eq!(all.len(), 2);
     }
 

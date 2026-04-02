@@ -284,9 +284,7 @@ mod ssr {
     /// Paths that bypass the storage guard middleware.
     /// When storage is unavailable, ALL other requests redirect to `/waiting`.
     fn is_allowed_without_storage(path: &str) -> bool {
-        path == "/waiting"
-            || path.starts_with("/static/")
-            || path == "/api/version"
+        path == "/waiting" || path.starts_with("/static/") || path == "/api/version"
     }
 
     /// Render the /waiting page: tells the user storage is unavailable and
@@ -499,7 +497,9 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFontSize>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveFontSize>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRecommendations>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetFavoritesRecommendations>();
+        server_fn::axum::register_explicit::<
+            replay_control_app::server_fns::GetFavoritesRecommendations,
+        >();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::UpdateThumbnails>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelThumbnailUpdate>(
         );
@@ -751,7 +751,11 @@ mod ssr {
                     // Inject build version so the SW cache name updates on every deploy.
                     let body = include_str!("../static/sw.js").replace(
                         "__CACHE_VERSION__",
-                        &format!("{}-{}", replay_control_app::VERSION, replay_control_app::GIT_HASH),
+                        &format!(
+                            "{}-{}",
+                            replay_control_app::VERSION,
+                            replay_control_app::GIT_HASH
+                        ),
                     );
                     (
                         [
@@ -790,22 +794,24 @@ mod ssr {
             .layer(CompressionLayer::new().gzip(true))
             .layer(CorsLayer::permissive())
             .layer({
-                axum::middleware::from_fn(move |request: axum::http::Request<axum::body::Body>, next: Next| {
-                    let state = guard_state.clone();
-                    async move {
-                        if state.has_storage() {
-                            return next.run(request).await;
+                axum::middleware::from_fn(
+                    move |request: axum::http::Request<axum::body::Body>, next: Next| {
+                        let state = guard_state.clone();
+                        async move {
+                            if state.has_storage() {
+                                return next.run(request).await;
+                            }
+
+                            let path = request.uri().path().to_string();
+
+                            if is_allowed_without_storage(&path) {
+                                return next.run(request).await;
+                            }
+
+                            Redirect::temporary("/waiting").into_response()
                         }
-
-                        let path = request.uri().path().to_string();
-
-                        if is_allowed_without_storage(&path) {
-                            return next.run(request).await;
-                        }
-
-                        Redirect::temporary("/waiting").into_response()
-                    }
-                })
+                    },
+                )
             });
 
         let addr = format!("0.0.0.0:{}", cli.port);

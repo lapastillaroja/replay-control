@@ -103,7 +103,10 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 
     // Get total games per system from game library.
     let storage = state.storage();
-    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
+    let systems = state
+        .cache
+        .cached_systems(&storage, &state.metadata_pool)
+        .await;
 
     let mut meta_map: std::collections::HashMap<String, usize> =
         entries_per_system.into_iter().collect();

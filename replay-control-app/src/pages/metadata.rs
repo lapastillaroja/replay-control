@@ -436,7 +436,6 @@ fn close_activity_sse() {
     });
 }
 
-
 /// Watches activity progress via single SSE endpoint.
 ///
 /// On SSR this is a no-op; the real work happens client-side via EventSource.
@@ -452,7 +451,17 @@ fn watch_activity(
     image_stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = (&activity, &import_result, &thumb_result, &rebuild_result, &thumb_cancelling, &stats, &coverage, &data_source, &image_stats);
+    let _ = (
+        &activity,
+        &import_result,
+        &thumb_result,
+        &rebuild_result,
+        &thumb_cancelling,
+        &stats,
+        &coverage,
+        &data_source,
+        &image_stats,
+    );
 
     #[cfg(target_arch = "wasm32")]
     {

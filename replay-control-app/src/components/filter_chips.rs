@@ -18,7 +18,10 @@ fn RatingDropdown(min_rating: RwSignal<Option<f32>>) -> impl IntoView {
     let value = move || min_rating.get().map(|v| v.to_string()).unwrap_or_default();
 
     // Capture initial value for `selected` attributes (same reason as GenreDropdown).
-    let initial = min_rating.get_untracked().map(|v| v.to_string()).unwrap_or_default();
+    let initial = min_rating
+        .get_untracked()
+        .map(|v| v.to_string())
+        .unwrap_or_default();
 
     let select_class = move || {
         if min_rating.read().is_some() {
@@ -66,9 +69,7 @@ impl FilterState {
     pub fn from_query_map(qm: &leptos_router::params::ParamsMap) -> Self {
         let bool_param = |key: &str| qm.get(key).is_some_and(|v| v == "true");
         let genre = qm.get("genre").unwrap_or_default();
-        let min_rating = qm
-            .get("min_rating")
-            .and_then(|v| v.parse::<f32>().ok());
+        let min_rating = qm.get("min_rating").and_then(|v| v.parse::<f32>().ok());
         let min_year = qm.get("min_year").and_then(|v| v.parse::<u16>().ok());
         let max_year = qm.get("max_year").and_then(|v| v.parse::<u16>().ok());
 

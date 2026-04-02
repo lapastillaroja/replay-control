@@ -88,9 +88,7 @@ impl LibraryService {
         // Write enrichments to L2 (SQLite).
         let enrichments = result.enrichments;
         db.write(move |conn| {
-            if let Err(e) =
-                MetadataDb::update_box_art_genre_rating(conn, &system, &enrichments)
-            {
+            if let Err(e) = MetadataDb::update_box_art_genre_rating(conn, &system, &enrichments) {
                 tracing::warn!("Enrichment failed for {system}: {e}");
             }
         })
@@ -175,10 +173,7 @@ impl LibraryService {
 ///
 /// Orchestrates pool access (user_data + metadata) and delegates to
 /// the core `enrichment::build_image_index` which does pure DB + filesystem work.
-async fn build_image_index(
-    state: &crate::api::AppState,
-    system: &str,
-) -> ImageIndex {
+async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageIndex {
     // Load user box art overrides first (separate pool, no contention with metadata).
     let system_owned = system.to_string();
     let user_overrides = state
@@ -193,9 +188,7 @@ async fn build_image_index(
     let storage_root = state.storage().root.clone();
     state
         .metadata_pool
-        .read(move |conn| {
-            enrichment::build_image_index(conn, &sys, &storage_root, user_overrides)
-        })
+        .read(move |conn| enrichment::build_image_index(conn, &sys, &storage_root, user_overrides))
         .await
         .unwrap_or_else(|| {
             // Pool unavailable — return an empty index.

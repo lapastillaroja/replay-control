@@ -57,18 +57,21 @@ pub fn DeveloperPage() -> impl IntoView {
                 filters_initialized.set_value(true);
                 return;
             }
-            update_developer_url(&dev_for_url.get_untracked(), &DeveloperUrlParams {
-                system: &sys,
-                hide_hacks: hh,
-                hide_translations: ht,
-                hide_betas: hb,
-                hide_clones: hc,
-                multiplayer_only: mp,
-                genre: &g,
-                min_rating: mr,
-                min_year: miny,
-                max_year: maxy,
-            });
+            update_developer_url(
+                &dev_for_url.get_untracked(),
+                &DeveloperUrlParams {
+                    system: &sys,
+                    hide_hacks: hh,
+                    hide_translations: ht,
+                    hide_betas: hb,
+                    hide_clones: hc,
+                    multiplayer_only: mp,
+                    genre: &g,
+                    min_rating: mr,
+                    min_year: miny,
+                    max_year: maxy,
+                },
+            );
         });
     }
 

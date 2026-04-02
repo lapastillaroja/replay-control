@@ -1,7 +1,7 @@
-pub(crate) mod query;
 mod aliases;
 mod enrichment;
 mod favorites;
+pub(crate) mod query;
 mod scan_pipeline;
 
 use std::collections::HashMap;
@@ -26,7 +26,9 @@ const NFS_CACHE_TTL: Duration = Duration::from_secs(1800); // 30 minutes
 /// (maxdepth 2). This detects changes inside organizational subdirectories
 /// like `00 Clean Romset/` without the cost of a full recursive scan.
 pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
-    let mut max_mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok())?;
+    let mut max_mtime = std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())?;
 
     if let Ok(entries) = std::fs::read_dir(path) {
         for entry in entries.flatten() {
@@ -293,7 +295,9 @@ impl LibraryService {
 
         // Hash-and-identify step: for hash-eligible systems, compute CRC32 hashes
         // and look up canonical names in the embedded No-Intro DAT data.
-        let hash_results = self.hash_roms_for_system(storage, system, &mut roms, db).await;
+        let hash_results = self
+            .hash_roms_for_system(storage, system, &mut roms, db)
+            .await;
 
         let arc = Arc::new(roms);
 

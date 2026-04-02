@@ -53,12 +53,18 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // Response cache: return immediately on hit.
     if let Some(cached) = state.response_cache.get_recommendations() {
         #[cfg(feature = "ssr")]
-        tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations cache hit");
+        tracing::debug!(
+            elapsed_ms = fn_start.elapsed().as_millis(),
+            "get_recommendations cache hit"
+        );
         return Ok(cached);
     }
 
     let storage = state.storage();
-    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
+    let systems = state
+        .cache
+        .cached_systems(&storage, &state.metadata_pool)
+        .await;
     let count = count.clamp(1, 12);
 
     // Collect favorites from the in-memory cache — no DB access.
@@ -87,9 +93,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             .unwrap_or_default()
             .into_iter()
             .flat_map(|(system, filenames)| {
-                filenames
-                    .into_iter()
-                    .map(move |f| (system.clone(), f))
+                filenames.into_iter().map(move |f| (system.clone(), f))
             });
         recent_keys.chain(fav_keys).collect()
     } else {
@@ -110,7 +114,10 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     let cached_decades = state.cache.query_cache.get_decades();
     let cached_active_systems = state.cache.query_cache.get_active_systems();
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations query cache reads done");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_recommendations query cache reads done"
+    );
 
     // Single DB access: run all SQL queries under one connection.
     // This includes the favorites genre lookup that previously required a
@@ -125,11 +132,14 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 &region_secondary_str,
             )
             .unwrap_or_default();
-            let top_genres = cached_genres.unwrap_or_else(|| MetadataDb::top_genre_names(conn, 6).unwrap_or_default());
-            let top_developers = cached_developers.unwrap_or_else(|| MetadataDb::top_developers(conn, 10).unwrap_or_default());
-            let decades = cached_decades.unwrap_or_else(|| MetadataDb::decade_list(conn).unwrap_or_default());
-            let active_systems = cached_active_systems.unwrap_or_else(||
-                MetadataDb::active_systems(conn).unwrap_or_default());
+            let top_genres = cached_genres
+                .unwrap_or_else(|| MetadataDb::top_genre_names(conn, 6).unwrap_or_default());
+            let top_developers = cached_developers
+                .unwrap_or_else(|| MetadataDb::top_developers(conn, 10).unwrap_or_default());
+            let decades =
+                cached_decades.unwrap_or_else(|| MetadataDb::decade_list(conn).unwrap_or_default());
+            let active_systems = cached_active_systems
+                .unwrap_or_else(|| MetadataDb::active_systems(conn).unwrap_or_default());
             // --- Spotlight: type was pre-rolled above ---
 
             // Exclude the favorites system from system spotlight candidates.
@@ -139,27 +149,42 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             // Fewer than this looks sparse — fall back to global Top Rated.
             let spotlight_min = count;
 
-            let spotlight_result: Option<(Vec<replay_control_core::metadata_db::GameEntry>, String, Option<String>)> = match spotlight_type {
+            let spotlight_result: Option<(
+                Vec<replay_control_core::metadata_db::GameEntry>,
+                String,
+                Option<String>,
+            )> = match spotlight_type {
                 1 if !top_genres.is_empty() => {
                     // Best by Genre
                     use rand::Rng;
                     let idx = rand::rng().random_range(0..top_genres.len());
                     let genre = &top_genres[idx];
                     let games = MetadataDb::top_rated_filtered(
-                        conn, None, Some(genre), None, count * 3, &region_str, &region_secondary_str,
-                    ).unwrap_or_default();
+                        conn,
+                        None,
+                        Some(genre),
+                        None,
+                        count * 3,
+                        &region_str,
+                        &region_secondary_str,
+                    )
+                    .unwrap_or_default();
                     if games.len() < spotlight_min {
                         None
                     } else {
                         let title = format!("Best {genre}");
-                        let href = Some(format!("/search?genre={}&min_rating=3.5", urlencoding::encode(genre)));
+                        let href = Some(format!(
+                            "/search?genre={}&min_rating=3.5",
+                            urlencoding::encode(genre)
+                        ));
                         Some((games, title, href))
                     }
                 }
                 2 if !active_systems.is_empty() => {
                     // Best of System — pick from systems excluding favorites system
                     use rand::Rng;
-                    let candidates: Vec<&String> = active_systems.iter()
+                    let candidates: Vec<&String> = active_systems
+                        .iter()
                         .filter(|s| fav_system != Some(s.as_str()))
                         .collect();
                     if candidates.is_empty() {
@@ -168,12 +193,20 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                         let idx = rand::rng().random_range(0..candidates.len());
                         let sys = candidates[idx];
                         let games = MetadataDb::top_rated_filtered(
-                            conn, Some(sys), None, None, count * 3, &region_str, &region_secondary_str,
-                        ).unwrap_or_default();
+                            conn,
+                            Some(sys),
+                            None,
+                            None,
+                            count * 3,
+                            &region_str,
+                            &region_secondary_str,
+                        )
+                        .unwrap_or_default();
                         if games.len() < spotlight_min {
                             None
                         } else {
-                            let display = systems_for_spotlight.iter()
+                            let display = systems_for_spotlight
+                                .iter()
                                 .find(|s| s.0 == *sys)
                                 .map(|s| s.1.clone())
                                 .unwrap_or_else(|| sys.clone());
@@ -189,8 +222,15 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     let idx = rand::rng().random_range(0..top_developers.len());
                     let dev = &top_developers[idx];
                     let games = MetadataDb::top_rated_filtered(
-                        conn, None, None, Some(dev), count * 3, &region_str, &region_secondary_str,
-                    ).unwrap_or_default();
+                        conn,
+                        None,
+                        None,
+                        Some(dev),
+                        count * 3,
+                        &region_str,
+                        &region_secondary_str,
+                    )
+                    .unwrap_or_default();
                     if games.len() < spotlight_min {
                         None
                     } else {
@@ -203,15 +243,26 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     // Hidden Gems — high-rated games the user hasn't played recently or favorited.
                     // Prefer games with fewer ratings to surface less-known titles.
                     let games = MetadataDb::top_rated_filtered(
-                        conn, None, None, None, count * 6, &region_str, &region_secondary_str,
-                    ).unwrap_or_default();
+                        conn,
+                        None,
+                        None,
+                        None,
+                        count * 6,
+                        &region_str,
+                        &region_secondary_str,
+                    )
+                    .unwrap_or_default();
                     // Build exclude set from recents + favorites (pre-collected above).
-                    let exclude: std::collections::HashSet<(&str, &str)> = hidden_gems_exclude.iter()
+                    let exclude: std::collections::HashSet<(&str, &str)> = hidden_gems_exclude
+                        .iter()
                         .map(|(s, f)| (s.as_str(), f.as_str()))
                         .collect();
                     // Filter out known games and prefer low rating_count.
-                    let mut filtered: Vec<_> = games.into_iter()
-                        .filter(|g| !exclude.contains(&(g.system.as_str(), g.rom_filename.as_str())))
+                    let mut filtered: Vec<_> = games
+                        .into_iter()
+                        .filter(|g| {
+                            !exclude.contains(&(g.system.as_str(), g.rom_filename.as_str()))
+                        })
                         .collect();
                     // Sort by rating_count ascending so lesser-known gems come first,
                     // then take a random subset from the top candidates.
@@ -227,12 +278,20 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             };
 
             // Fall back to global top rated if the selected type returned empty or was type 0.
-            let (spotlight_pool, spotlight_title, spotlight_href) = spotlight_result.unwrap_or_else(|| {
-                let games = MetadataDb::top_rated_filtered(
-                    conn, None, None, None, count * 3, &region_str, &region_secondary_str,
-                ).unwrap_or_default();
-                (games, "Top Rated".to_string(), None)
-            });
+            let (spotlight_pool, spotlight_title, spotlight_href) = spotlight_result
+                .unwrap_or_else(|| {
+                    let games = MetadataDb::top_rated_filtered(
+                        conn,
+                        None,
+                        None,
+                        None,
+                        count * 3,
+                        &region_str,
+                        &region_secondary_str,
+                    )
+                    .unwrap_or_default();
+                    (games, "Top Rated".to_string(), None)
+                });
             let fav_roms = favorites_info.as_ref().map(|fi| {
                 // Compute top genre inside this closure instead of a separate DB read.
                 let fav_refs: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
@@ -275,13 +334,36 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 }
                 roms
             });
-            (random_pool, top_genres, top_developers, decades, active_systems, spotlight_pool, spotlight_title, spotlight_href, fav_roms)
+            (
+                random_pool,
+                top_genres,
+                top_developers,
+                decades,
+                active_systems,
+                spotlight_pool,
+                spotlight_title,
+                spotlight_href,
+                fav_roms,
+            )
         })
         .await;
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations db_read complete");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_recommendations db_read complete"
+    );
 
-    let Some((random_pool, top_genres, top_developers, decades, active_systems, spotlight_pool, spotlight_title, spotlight_href, fav_roms)) = db_data
+    let Some((
+        random_pool,
+        top_genres,
+        top_developers,
+        decades,
+        active_systems,
+        spotlight_pool,
+        spotlight_title,
+        spotlight_href,
+        fav_roms,
+    )) = db_data
     else {
         return Ok(RecommendationData {
             random_picks: GameSection {
@@ -340,7 +422,9 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     let curated_spotlight = if spotlight_pool.is_empty() {
         None
     } else {
-        let single_system = spotlight_pool.iter().all(|g| g.system == spotlight_pool[0].system);
+        let single_system = spotlight_pool
+            .iter()
+            .all(|g| g.system == spotlight_pool[0].system);
         let games = if single_system {
             spotlight_pool
                 .iter()
@@ -365,7 +449,10 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // No filesystem fallback at request time — NULL means no art, show placeholder.
 
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations box art resolved");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_recommendations box art resolved"
+    );
     let data = RecommendationData {
         random_picks: GameSection {
             title: "Rediscover Your Library".to_string(),
@@ -381,7 +468,10 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     state.response_cache.set_recommendations(&data);
 
     #[cfg(feature = "ssr")]
-    tracing::info!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recommendations complete");
+    tracing::info!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_recommendations complete"
+    );
     Ok(data)
 }
 

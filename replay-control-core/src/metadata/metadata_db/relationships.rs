@@ -426,16 +426,10 @@ mod tests {
         hack_clone.is_clone = true;
         hack_clone.is_hack = true;
 
-        MetadataDb::save_system_entries(
-            &mut conn,
-            "cpc",
-            &[parent, alt1, alt2, hack_clone],
-            None,
-        )
-        .unwrap();
+        MetadataDb::save_system_entries(&mut conn, "cpc", &[parent, alt1, alt2, hack_clone], None)
+            .unwrap();
 
-        let alts =
-            MetadataDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub).dsk").unwrap();
+        let alts = MetadataDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub).dsk").unwrap();
         assert_eq!(alts.len(), 2);
         let filenames: Vec<&str> = alts.iter().map(|(f, _)| f.as_str()).collect();
         assert!(filenames.contains(&"Game (1990)(Pub)[a].dsk"));
@@ -458,8 +452,7 @@ mod tests {
         MetadataDb::save_system_entries(&mut conn, "cpc", &[parent, alt], None).unwrap();
 
         // Query from the clone's perspective — should still find the other clone
-        let alts =
-            MetadataDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub)[a].dsk").unwrap();
+        let alts = MetadataDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub)[a].dsk").unwrap();
         assert_eq!(alts.len(), 1);
         assert_eq!(alts[0].0, "Game (1990)(Pub)[a].dsk");
     }
@@ -538,8 +531,7 @@ mod tests {
 
         MetadataDb::save_system_entries(&mut conn, "cpc", &[g], None).unwrap();
 
-        let results =
-            MetadataDb::cross_system_availability(&conn, "cpc", "x", "usa", 10).unwrap();
+        let results = MetadataDb::cross_system_availability(&conn, "cpc", "x", "usa", 10).unwrap();
         assert!(results.is_empty());
     }
 }

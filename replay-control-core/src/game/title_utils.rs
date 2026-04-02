@@ -527,10 +527,7 @@ mod tests {
 
     #[test]
     fn normalize_aggressive_strips_punctuation() {
-        assert_eq!(
-            normalize_aggressive("Ghouls 'N Ghosts"),
-            "ghouls n ghosts"
-        );
+        assert_eq!(normalize_aggressive("Ghouls 'N Ghosts"), "ghouls n ghosts");
         assert_eq!(
             normalize_aggressive("E.V.O. Search for Eden"),
             "e v o search for eden"

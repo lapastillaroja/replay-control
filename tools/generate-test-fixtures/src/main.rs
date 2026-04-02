@@ -87,7 +87,10 @@ const TINY_PNG: &[u8] = &[
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let output_dir = if let Some(idx) = args.iter().position(|a| a == "--output") {
-        PathBuf::from(args.get(idx + 1).expect("--output requires a path argument"))
+        PathBuf::from(
+            args.get(idx + 1)
+                .expect("--output requires a path argument"),
+        )
     } else {
         // Default: tests/fixtures/storage relative to workspace root
         workspace_root().join("tests/fixtures/storage")
@@ -109,7 +112,11 @@ fn main() {
     for sys in NOINTRO_SYSTEMS {
         let dat_path = data_dir.join("no-intro").join(sys.dat_file);
         if !dat_path.exists() {
-            eprintln!("  SKIP {} (DAT not found: {})", sys.folder, dat_path.display());
+            eprintln!(
+                "  SKIP {} (DAT not found: {})",
+                sys.folder,
+                dat_path.display()
+            );
             continue;
         }
 
@@ -205,7 +212,11 @@ fn main() {
     // Summary
     let total_roms: usize = all_roms.values().map(|v| v.len()).sum();
     eprintln!();
-    eprintln!("Done. Total: {} ROM files across {} systems", total_roms, all_roms.len());
+    eprintln!(
+        "Done. Total: {} ROM files across {} systems",
+        total_roms,
+        all_roms.len()
+    );
 }
 
 // ── DAT Parsing ──────────────────────────────────────────────────────────────
@@ -291,12 +302,13 @@ fn parse_fbneo_dat(path: &Path, max_count: usize) -> Vec<String> {
         let trimmed = line.trim();
         // Match lines like: <game name="88games" sourcefile="...">
         if trimmed.starts_with("<game ")
-            && let Some(name) = extract_xml_attr(trimmed, "name") {
-                filenames.push(format!("{name}.zip"));
-                if filenames.len() >= max_count {
-                    break;
-                }
+            && let Some(name) = extract_xml_attr(trimmed, "name")
+        {
+            filenames.push(format!("{name}.zip"));
+            if filenames.len() >= max_count {
+                break;
             }
+        }
     }
 
     filenames
@@ -339,9 +351,8 @@ fn generate_disc_system(
         File::create(rom_dir.join(&bin_name)).expect("failed to create bin file");
 
         // Create minimal cue file
-        let cue_content = format!(
-            "FILE \"{bin_name}\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n"
-        );
+        let cue_content =
+            format!("FILE \"{bin_name}\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n");
         fs::write(rom_dir.join(&cue_name), &cue_content).expect("failed to write cue file");
 
         // Create M3U referencing the cue
@@ -376,9 +387,7 @@ fn generate_disc_system(
             }
 
             let m3u_name = format!("{name}.m3u");
-            let m3u_content = format!(
-                "{name} (Disc 1).cue\n{name} (Disc 2).cue\n"
-            );
+            let m3u_content = format!("{name} (Disc 1).cue\n{name} (Disc 2).cue\n");
             fs::write(rom_dir.join(&m3u_name), &m3u_content)
                 .expect("failed to write multi-disc m3u");
             filenames.push(m3u_name);
@@ -425,8 +434,7 @@ fn generate_favorites(
         let fav_filename = format!("{system}@{rom_filename}.fav");
         let rom_path = format!("{system}/{rom_filename}");
 
-        fs::write(favs_dir.join(&fav_filename), &rom_path)
-            .expect("failed to write fav file");
+        fs::write(favs_dir.join(&fav_filename), &rom_path).expect("failed to write fav file");
         count += 1;
         *offset += 1;
         system_idx += 1;
@@ -513,9 +521,10 @@ fn extract_quoted(line: &str, prefix: &str) -> Option<String> {
 fn extract_region(name: &str) -> String {
     // Find the first parenthesized group
     if let Some(start) = name.find('(')
-        && let Some(end) = name[start..].find(')') {
-            return name[start + 1..start + end].to_string();
-        }
+        && let Some(end) = name[start..].find(')')
+    {
+        return name[start + 1..start + end].to_string();
+    }
     String::new()
 }
 
@@ -540,9 +549,10 @@ fn workspace_root() -> PathBuf {
         if cargo_toml.exists()
             // Check if this is the workspace root (has [workspace] section)
             && let Ok(content) = fs::read_to_string(&cargo_toml)
-            && content.contains("[workspace]") {
-                return dir;
-            }
+            && content.contains("[workspace]")
+        {
+            return dir;
+        }
         if !dir.pop() {
             // Fallback: assume current directory
             return std::env::current_dir().expect("failed to get current directory");

@@ -311,7 +311,9 @@ pub fn classify(filename: &str) -> (RomTier, RegionPriority, bool) {
             match flag {
                 TosecBracketFlag::Hack => is_hack = true,
                 TosecBracketFlag::Pirate => is_pirate = true,
-                TosecBracketFlag::Alternate | TosecBracketFlag::Fixed | TosecBracketFlag::Overdump => {
+                TosecBracketFlag::Alternate
+                | TosecBracketFlag::Fixed
+                | TosecBracketFlag::Overdump => {
                     has_revision = true;
                 }
                 TosecBracketFlag::BadDump => is_pirate = true,
@@ -725,7 +727,11 @@ fn classify_tosec_bracket(tag: &str) -> Option<TosecBracketFlag> {
     if lower == "cr" || lower.starts_with("cr ") || starts_with_flag(&lower, "cr") {
         return Some(TosecBracketFlag::Cracked);
     }
-    if lower == "t" || lower.starts_with("t ") || lower.starts_with("t+") || starts_with_flag(&lower, "t") {
+    if lower == "t"
+        || lower.starts_with("t ")
+        || lower.starts_with("t+")
+        || starts_with_flag(&lower, "t")
+    {
         // Avoid matching translation tags [T-xxx] and [T+xxx] — those are handled by
         // parse_translation_bracket() which runs first.
         // But [t] (lowercase, no + or -) is a trainer flag.
@@ -766,9 +772,7 @@ fn extract_bracket_number(tag: &str) -> Option<u8> {
     // Find trailing digits in the tag
     let digits_start = tag.rfind(|c: char| !c.is_ascii_digit());
     match digits_start {
-        Some(pos) if pos + 1 < tag.len() => {
-            tag[pos + 1..].parse::<u8>().ok()
-        }
+        Some(pos) if pos + 1 < tag.len() => tag[pos + 1..].parse::<u8>().ok(),
         _ => None,
     }
 }
@@ -2061,12 +2065,18 @@ mod tests {
 
     #[test]
     fn extract_tags_tosec_alternate_a2() {
-        assert_eq!(extract_tags("Game (1987)(Publisher) [a2].dsk"), "Alternate 2");
+        assert_eq!(
+            extract_tags("Game (1987)(Publisher) [a2].dsk"),
+            "Alternate 2"
+        );
     }
 
     #[test]
     fn extract_tags_tosec_alternate_a3() {
-        assert_eq!(extract_tags("Game (1987)(Publisher) [a3].dsk"), "Alternate 3");
+        assert_eq!(
+            extract_tags("Game (1987)(Publisher) [a3].dsk"),
+            "Alternate 3"
+        );
     }
 
     #[test]
@@ -2089,7 +2099,10 @@ mod tests {
 
     #[test]
     fn extract_tags_tosec_cracked_cr1() {
-        assert_eq!(extract_tags("Game (1987)(Publisher) [cr1].dsk"), "Cracked 1");
+        assert_eq!(
+            extract_tags("Game (1987)(Publisher) [cr1].dsk"),
+            "Cracked 1"
+        );
     }
 
     #[test]
@@ -2169,10 +2182,7 @@ mod tests {
     fn extract_tags_tosec_no_intro_hack_bracket_ignored() {
         // No-Intro style [Hack by hosiza] should NOT match TOSEC bracket flags
         // (starts with "ha" not "h ")
-        assert_eq!(
-            extract_tags("Game (USA) [Hack by hosiza].sfc"),
-            "USA"
-        );
+        assert_eq!(extract_tags("Game (USA) [Hack by hosiza].sfc"), "USA");
     }
 
     // --- has_tosec_bracket_flag ---
@@ -2199,7 +2209,9 @@ mod tests {
 
     #[test]
     fn has_bracket_flag_custom_not_flag() {
-        assert!(!has_tosec_bracket_flag("Game (1987)(Publisher) [joystick].dsk"));
+        assert!(!has_tosec_bracket_flag(
+            "Game (1987)(Publisher) [joystick].dsk"
+        ));
     }
 
     #[test]
@@ -2224,8 +2236,7 @@ mod tests {
 
     #[test]
     fn bracket_descriptors_skip_standard_flags() {
-        let descs =
-            extract_bracket_descriptors("Game (2017-08)(Publisher) [a] [joystick].dsk");
+        let descs = extract_bracket_descriptors("Game (2017-08)(Publisher) [a] [joystick].dsk");
         assert_eq!(descs, vec!["joystick"]);
     }
 
@@ -3011,10 +3022,7 @@ mod tests {
 
     #[test]
     fn extract_tags_gr_region() {
-        assert_eq!(
-            extract_tags("Game (1987)(Publisher)(GR).dsk"),
-            "Greece"
-        );
+        assert_eq!(extract_tags("Game (1987)(Publisher)(GR).dsk"), "Greece");
     }
 
     #[test]
@@ -3030,17 +3038,26 @@ mod tests {
     #[test]
     fn extract_tags_alternate_bare() {
         // [a] → "Alternate" (no number)
-        assert_eq!(extract_tags("3D Fight (1985)(Loriciels)(fr)[a].dsk"), "FR, Alternate");
+        assert_eq!(
+            extract_tags("3D Fight (1985)(Loriciels)(fr)[a].dsk"),
+            "FR, Alternate"
+        );
     }
 
     #[test]
     fn extract_tags_alternate_a4() {
-        assert_eq!(extract_tags("3D Fight (1985)(Loriciels)(fr)[a4].dsk"), "FR, Alternate 4");
+        assert_eq!(
+            extract_tags("3D Fight (1985)(Loriciels)(fr)[a4].dsk"),
+            "FR, Alternate 4"
+        );
     }
 
     #[test]
     fn extract_tags_alternate_a5() {
-        assert_eq!(extract_tags("3D Fight (1985)(Loriciels)(fr)[a5].dsk"), "FR, Alternate 5");
+        assert_eq!(
+            extract_tags("3D Fight (1985)(Loriciels)(fr)[a5].dsk"),
+            "FR, Alternate 5"
+        );
     }
 
     #[test]
@@ -3050,12 +3067,18 @@ mod tests {
 
     #[test]
     fn extract_tags_trained_t2() {
-        assert_eq!(extract_tags("Pinball Power (1990)(Pub)[t2].dsk"), "Trained 2");
+        assert_eq!(
+            extract_tags("Pinball Power (1990)(Pub)[t2].dsk"),
+            "Trained 2"
+        );
     }
 
     #[test]
     fn extract_tags_trained_t3() {
-        assert_eq!(extract_tags("Pinball Power (1990)(Pub)[t3].dsk"), "Trained 3");
+        assert_eq!(
+            extract_tags("Pinball Power (1990)(Pub)[t3].dsk"),
+            "Trained 3"
+        );
     }
 
     #[test]
@@ -3098,10 +3121,7 @@ mod tests {
 
     #[test]
     fn extract_disc_label_no_tape() {
-        assert_eq!(
-            extract_disc_label("Commando (1985)(Elite)(GB).dsk"),
-            None
-        );
+        assert_eq!(extract_disc_label("Commando (1985)(Elite)(GB).dsk"), None);
     }
 
     #[test]
@@ -3122,10 +3142,7 @@ mod tests {
 
     #[test]
     fn tosec_language_fr() {
-        assert_eq!(
-            extract_tags("3D Fight (1985)(Loriciels)(fr).dsk"),
-            "FR"
-        );
+        assert_eq!(extract_tags("3D Fight (1985)(Loriciels)(fr).dsk"), "FR");
     }
 
     #[test]
@@ -3146,10 +3163,7 @@ mod tests {
 
     #[test]
     fn tosec_language_de() {
-        assert_eq!(
-            extract_tags("Game (1990)(Publisher)(de).dsk"),
-            "DE"
-        );
+        assert_eq!(extract_tags("Game (1990)(Publisher)(de).dsk"), "DE");
     }
 
     #[test]
@@ -3162,10 +3176,7 @@ mod tests {
 
     #[test]
     fn tosec_language_multi_en_fr() {
-        assert_eq!(
-            extract_tags("Game (1990)(Publisher)(en-fr).dsk"),
-            "EN-FR"
-        );
+        assert_eq!(extract_tags("Game (1990)(Publisher)(en-fr).dsk"), "EN-FR");
     }
 
     #[test]
@@ -3225,10 +3236,7 @@ mod tests {
     #[test]
     fn tosec_language_region_none_for_nointro() {
         // No-Intro capitalized language codes should NOT match
-        assert_eq!(
-            extract_tosec_language_as_region("Game (En).sfc"),
-            None
-        );
+        assert_eq!(extract_tosec_language_as_region("Game (En).sfc"), None);
     }
 
     #[test]
@@ -3241,17 +3249,11 @@ mod tests {
 
     #[test]
     fn tosec_language_nl() {
-        assert_eq!(
-            extract_tags("Game (1990)(Publisher)(nl).dsk"),
-            "NL"
-        );
+        assert_eq!(extract_tags("Game (1990)(Publisher)(nl).dsk"), "NL");
     }
 
     #[test]
     fn tosec_language_pt() {
-        assert_eq!(
-            extract_tags("Game (1990)(Publisher)(pt).dsk"),
-            "PT"
-        );
+        assert_eq!(extract_tags("Game (1990)(Publisher)(pt).dsk"), "PT");
     }
 }

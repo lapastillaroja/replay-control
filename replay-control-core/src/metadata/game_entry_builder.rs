@@ -268,10 +268,7 @@ fn disambiguate_display_names(entries: &mut [GameEntry]) {
     // Group ALL entries by display_name to find duplicates.
     let mut display_groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, entry) in entries.iter().enumerate() {
-        let display = entry
-            .display_name
-            .as_deref()
-            .unwrap_or(&entry.rom_filename);
+        let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
         display_groups
             .entry(display.to_string())
             .or_default()
@@ -322,9 +319,7 @@ fn disambiguate_display_names(entries: &mut [GameEntry]) {
             let mut suffix_parts: Vec<String> = Vec::new();
 
             // Priority 1: Publisher
-            if has_different_publishers
-                && let Some(ref publisher) = tosec.publisher
-            {
+            if has_different_publishers && let Some(ref publisher) = tosec.publisher {
                 // Use the already-normalized developer from the entry, or fall back to raw publisher.
                 let dev = &entries[idx].developer;
                 if !dev.is_empty() {
@@ -335,9 +330,7 @@ fn disambiguate_display_names(entries: &mut [GameEntry]) {
             }
 
             // Priority 2/3: Date-based disambiguation.
-            if has_different_dates
-                && let Some(ref date) = tosec.date
-            {
+            if has_different_dates && let Some(ref date) = tosec.date {
                 if use_full_dates {
                     suffix_parts.push(date.clone());
                 } else if let Some(year) = tosec.year {
@@ -387,10 +380,7 @@ fn disambiguate_by_format(entries: &mut [GameEntry]) {
     // Re-group by display_name
     let mut display_groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, entry) in entries.iter().enumerate() {
-        let display = entry
-            .display_name
-            .as_deref()
-            .unwrap_or(&entry.rom_filename);
+        let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
         display_groups
             .entry(display.to_string())
             .or_default()

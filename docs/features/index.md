@@ -2,7 +2,7 @@
 
 Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.com/), a retro gaming operating system for the Raspberry Pi. It runs as a local server on the Pi and provides a browser UI for managing your game library, launching games, and enriching your collection with metadata and artwork — all from your phone, tablet, or desktop.
 
-**Offline-first by design.** Display names, genres, player counts, developer, and year data for ~34K console ROMs and ~15K playable arcade games are available out of the box — no internet required. Online sources (LaunchBox, libretro-thumbnails, Wikidata) can optionally enrich the library with descriptions, ratings, series data, and box art when connected.
+**Offline-first by design.** Display names, genres, player counts, developer, and year data for ~34K console ROMs and ~15K playable arcade games are available out of the box — no internet required. Online sources ([LaunchBox](https://gamesdb.launchbox-app.com/), [libretro-thumbnails](https://github.com/libretro-thumbnails), [Wikidata](https://www.wikidata.org/)) can optionally enrich the library with descriptions, ratings, series data, and box art when connected.
 
 > **A personal project.** Replay Control is built by one person who loves retro gaming and wanted a better companion app for RePlayOS. Feature requests and ideas are always welcome, but the roadmap follows personal preferences and what makes the app better for its core use case.
 
@@ -34,7 +34,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - **System ROM list** with debounced search, infinite scroll, and fast pagination (100 per page)
 - **Per-ROM actions** — favorite toggle, inline rename, delete with confirmation
 - **ROM details** — filename, path, file size (Mbit/Kbit for cartridge systems, MB/GB for disc-based), extension badge, box art thumbnail
-- **Arcade display names** — ~15K playable arcade entries (MAME, FBNeo, Flycast/Naomi/Atomiswave) show human-readable titles instead of codenames across the entire app. Non-playable machines filtered out
+- **Arcade display names** — ~15K playable arcade entries ([MAME](https://www.mamedev.org/), [FBNeo](https://github.com/finalburnneo/FBNeo), [Flycast](https://github.com/flyinghead/flycast)/Naomi/Atomiswave) show human-readable titles instead of codenames across the entire app. Non-playable machines filtered out
 - **M3U multi-disc handling** — individual disc files are hidden when an M3U playlist exists; sizes are aggregated into the playlist entry. Auto-generates M3U playlists for multi-part games (Side A/B, Disk N of M) at scan time
 - **Automatic library updates** — on local storage (SD/USB/NVMe), new, changed, or deleted ROMs are detected and the library updates automatically
 - **Consistent game cards** — uniform game rendering with box art, badges, and favorite toggle across all views (ROM lists, search, developer pages, series siblings, recommendations)
@@ -48,13 +48,13 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 - **Game info card** — system, filename, file size, format, developer. Arcade games additionally show year, manufacturer, players, rotation, category, driver status, and parent ROM
 - **Launch on TV** — launch the game on the RePlayOS device with visual feedback (launching, success, error states). Creates a recents entry on successful launch
 - **User screenshots** — displays screenshots captured on RePlayOS, matched by ROM filename. Gallery view with fullscreen lightbox and keyboard navigation
-- **Videos** — paste YouTube/Twitch/Vimeo/Dailymotion URLs or search for trailers, gameplay, and 1CC videos via Invidious/Piped. Pin results to saved videos. Privacy-respecting embeds. Videos are shared across regional variants, with alias resolution for cross-name sharing
+- **Videos** — paste YouTube/Twitch/Vimeo/Dailymotion URLs or search for trailers, gameplay, and 1CC videos via [Invidious](https://invidious.io/)/[Piped](https://piped.video/). Pin results to saved videos. Privacy-respecting embeds. Videos are shared across regional variants, with alias resolution for cross-name sharing
 - **Box art swap** — pick alternate region-variant cover art from the full libretro-thumbnails catalog
 - **Game series** — series name heading with horizontal scroll of series siblings across systems. Sequel/prequel breadcrumb navigation (< Prev | 2 of 5 | Next >) with bidirectional link filling. Clone ROMs used as fallback when non-clone targets are unavailable. [Detail](game-series.md)
 - **Alternate versions** — other versions of the same game shown as chip links (clones, region variants with different tags)
 - **Also available on** — cross-system section showing the same game on other systems in the library
 - **Related games** — genre-based recommendations on the detail page
-- **Game manuals** — in-folder document detection (PDF, TXT, HTML) and on-demand download from archive.org via RetroKit TSV. Language preferences for manual search. Inline delete for downloaded manuals
+- **Game manuals** — in-folder document detection (PDF, TXT, HTML) and on-demand download from [Internet Archive](https://archive.org/) via RetroKit TSV. Language preferences for manual search. Inline delete for downloaded manuals
 - **Actions** — favorite/unfavorite toggle, inline rename (with extension protection), delete with multi-file confirmation
 - **Smart multi-file management** — delete handles M3U + disc files, CUE + BIN, ScummVM data directories, SBI companions. Rename restrictions prevent broken games (CUE, ScummVM, binary M3U). Delete confirmation shows file count and total size
 - **Variant sections** — regional variants, translations, hacks, specials, arcade versions, and cross-name aliases shown in dedicated collapsible sections
@@ -105,7 +105,7 @@ Accessible from More > Game Data.
 - On-demand single-image downloads without cloning entire repos
 - Auto-deletes cloned repos after matching to save disk space
 
-**Series data (Wikidata):**
+**Series data ([Wikidata](https://www.wikidata.org/)):**
 - ~5,345 embedded game series entries across 194+ franchises, with sequel/prequel chains and ordinals
 - Wikidata attribution shown on the metadata page. [Detail](game-series.md)
 
@@ -188,3 +188,9 @@ For implementation details, database schemas, caching strategies, and design dec
 | [Enrichment](../architecture/enrichment.md) | Box art, genre, rating population pipeline |
 | [ROM Classification](../architecture/rom-classification.md) | Filename parsing and tier assignment |
 | [Activity System](../architecture/activity-system.md) | Mutual exclusion and progress broadcasting |
+
+---
+
+## Third-Party Attribution
+
+For full attribution of third-party data sources and tools, see [NOTICES.md](../../NOTICES.md).

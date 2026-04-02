@@ -113,10 +113,7 @@ impl MetadataDb {
                 .map_err(|e| Error::Other(format!("Query lookup_game_entries: {e}")))?;
 
             for entry in rows.flatten() {
-                result.insert(
-                    (entry.system.clone(), entry.rom_filename.clone()),
-                    entry,
-                );
+                result.insert((entry.system.clone(), entry.rom_filename.clone()), entry);
             }
         }
 
@@ -274,9 +271,7 @@ impl MetadataDb {
 
     /// Load all game entries for a system.
     pub fn load_system_entries(conn: &Connection, system: &str) -> Result<Vec<GameEntry>> {
-        let sql = format!(
-            "SELECT {GAME_ENTRY_COLUMNS} FROM game_library WHERE system = ?1"
-        );
+        let sql = format!("SELECT {GAME_ENTRY_COLUMNS} FROM game_library WHERE system = ?1");
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| Error::Other(format!("Prepare load_system_entries: {e}")))?;
@@ -368,13 +363,9 @@ impl MetadataDb {
             "SELECT {GAME_ENTRY_COLUMNS} FROM game_library \
              WHERE system = ?1 AND rom_filename = ?2"
         );
-        conn.query_row(
-            &sql,
-            params![system, rom_filename],
-            Self::row_to_game_entry,
-        )
-        .optional()
-        .map_err(|e| Error::Other(format!("Query load_single_entry: {e}")))
+        conn.query_row(&sql, params![system, rom_filename], Self::row_to_game_entry)
+            .optional()
+            .map_err(|e| Error::Other(format!("Query load_single_entry: {e}")))
     }
 
     /// Save just the system-level metadata (counts, mtime) without replacing game entries.
@@ -647,14 +638,9 @@ impl MetadataDb {
     ///
     /// Used by enrichment to share box art between ROMs with the same base_title
     /// (e.g., region variants, revisions).
-    pub fn visible_base_titles(
-        conn: &Connection,
-        system: &str,
-    ) -> Result<Vec<(String, String)>> {
+    pub fn visible_base_titles(conn: &Connection, system: &str) -> Result<Vec<(String, String)>> {
         let mut stmt = conn
-            .prepare(
-                "SELECT rom_filename, base_title FROM game_library WHERE system = ?1",
-            )
+            .prepare("SELECT rom_filename, base_title FROM game_library WHERE system = ?1")
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
         let rows = stmt
             .query_map(params![system], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -1061,12 +1047,14 @@ impl MetadataDb {
             placeholders.join(", ")
         );
 
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::with_capacity(filenames.len() + 1);
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+            Vec::with_capacity(filenames.len() + 1);
         params.push(Box::new(system.to_string()));
         for f in filenames {
             params.push(Box::new(f.to_string()));
         }
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
 
         conn.query_row(&sql, param_refs.as_slice(), |row| row.get::<_, String>(0))
             .optional()
@@ -1231,7 +1219,10 @@ impl MetadataDb {
                     next_idx,
                     next_idx + 1
                 ),
-                Some((limit.min(i64::MAX as usize) as i64, offset.min(i64::MAX as usize) as i64)),
+                Some((
+                    limit.min(i64::MAX as usize) as i64,
+                    offset.min(i64::MAX as usize) as i64,
+                )),
             )
         };
 
@@ -1252,10 +1243,8 @@ impl MetadataDb {
             all_refs.push(Box::new(lim));
             all_refs.push(Box::new(off));
         }
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = all_refs
-            .iter()
-            .map(|v| v.as_ref())
-            .collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            all_refs.iter().map(|v| v.as_ref()).collect();
 
         let mut stmt = conn
             .prepare(&sql)
@@ -1780,17 +1769,15 @@ mod tests {
         MetadataDb::save_system_entries(
             &mut conn,
             "snes",
-            &[
-                make_dev_entry(
-                    "snes",
-                    "SF2.sfc",
-                    "Capcom",
-                    "Street Fighter II",
-                    "us",
-                    None,
-                    None,
-                ),
-            ],
+            &[make_dev_entry(
+                "snes",
+                "SF2.sfc",
+                "Capcom",
+                "Street Fighter II",
+                "us",
+                None,
+                None,
+            )],
             None,
         )
         .unwrap();
@@ -1857,8 +1844,7 @@ mod tests {
             MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 2).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(total, 3);
-        let (entries, _) =
-            MetadataDb::developer_games(&conn, "Capcom", &filters, 2, 2).unwrap();
+        let (entries, _) = MetadataDb::developer_games(&conn, "Capcom", &filters, 2, 2).unwrap();
         assert_eq!(entries.len(), 1);
     }
 
@@ -2463,8 +2449,16 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) =
-            MetadataDb::search_game_library(&conn, None, None, &[], &SearchFilter::default(), 0, usize::MAX).unwrap();
+        let (results, _total) = MetadataDb::search_game_library(
+            &conn,
+            None,
+            None,
+            &[],
+            &SearchFilter::default(),
+            0,
+            usize::MAX,
+        )
+        .unwrap();
         // Should return all entries (no text filter)
         assert!(results.len() >= 4);
     }
@@ -2533,13 +2527,7 @@ mod tests {
         zelda.base_title = "The Legend of Zelda".into();
         let mut metroid = make_game_entry_with_genre("snes", "metroid.sfc", "Platform");
         metroid.base_title = "Super Metroid".into();
-        MetadataDb::save_system_entries(
-            &mut conn,
-            "snes",
-            &[mario, zelda, metroid],
-            None,
-        )
-        .unwrap();
+        MetadataDb::save_system_entries(&mut conn, "snes", &[mario, zelda, metroid], None).unwrap();
 
         let result = MetadataDb::top_genre_for_filenames(
             &conn,
@@ -2569,8 +2557,7 @@ mod tests {
         )
         .unwrap();
         // "mario.sfc" has no genre_group set and no base_title.
-        let result =
-            MetadataDb::top_genre_for_filenames(&conn, "snes", &["mario.sfc"]).unwrap();
+        let result = MetadataDb::top_genre_for_filenames(&conn, "snes", &["mario.sfc"]).unwrap();
         assert_eq!(result, None);
     }
 

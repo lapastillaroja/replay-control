@@ -1,19 +1,19 @@
 pub mod activity;
 pub(crate) mod background;
-pub(crate) mod library;
 pub(crate) mod core_api;
-pub mod response_cache;
 pub mod favorites;
 pub mod import;
+pub(crate) mod library;
 pub mod recents;
+pub mod response_cache;
 pub mod roms;
 pub mod system_info;
 pub mod upload;
 
 pub use activity::{Activity, ActivityGuard, MaintenanceKind, StartupPhase};
 pub use background::BackgroundManager;
-pub use library::LibraryService;
 pub use import::{ImportPipeline, ThumbnailPipeline};
+pub use library::LibraryService;
 
 /// Cache-control header values for static asset responses.
 pub const CACHE_1H: &str = "public, max-age=3600";
@@ -639,7 +639,9 @@ impl AppState {
 
             (metadata_pool, user_data_pool)
         } else {
-            tracing::warn!("Starting without storage — all requests will redirect to /waiting until storage appears");
+            tracing::warn!(
+                "Starting without storage — all requests will redirect to /waiting until storage appears"
+            );
             (
                 DbPool::new_closed("metadata_db"),
                 DbPool::new_closed("user_data_db"),
@@ -680,7 +682,10 @@ impl AppState {
 
     /// Check whether storage is available.
     pub fn has_storage(&self) -> bool {
-        self.storage.read().expect("storage lock poisoned").is_some()
+        self.storage
+            .read()
+            .expect("storage lock poisoned")
+            .is_some()
     }
 
     /// Read-lock storage and clone the current StorageLocation.
@@ -692,7 +697,9 @@ impl AppState {
             .read()
             .expect("storage lock poisoned")
             .clone()
-            .expect("storage() called without storage — middleware should have redirected to /waiting")
+            .expect(
+                "storage() called without storage — middleware should have redirected to /waiting",
+            )
     }
 
     /// Check if either database has been flagged as corrupt.
@@ -906,10 +913,7 @@ pub fn build_router(
             "/static/style.css",
             axum::routing::get(|| async {
                 (
-                    [
-                        ("content-type", "text/css"),
-                        ("cache-control", CACHE_1H),
-                    ],
+                    [("content-type", "text/css"), ("cache-control", CACHE_1H)],
                     include_str!(concat!(env!("OUT_DIR"), "/style.css")),
                 )
             }),

@@ -92,9 +92,7 @@ pub fn build_image_index(
                     continue; // Already indexed by build_dir_index.
                 }
                 let full = entry.path();
-                if let Some(resolved) =
-                    thumbnails::try_resolve_fake_symlink(&full, &boxart_dir)
-                {
+                if let Some(resolved) = thumbnails::try_resolve_fake_symlink(&full, &boxart_dir) {
                     let resolved_path = format!("boxart/{resolved}");
                     dir_index
                         .exact
@@ -220,12 +218,9 @@ pub fn resolve_box_art<'a>(
     } else {
         Some(&index.db_paths)
     };
-    if let Some(path) = image_matching::find_best_match(
-        &index.dir_index,
-        rom_filename,
-        arcade_display,
-        db_paths,
-    ) {
+    if let Some(path) =
+        image_matching::find_best_match(&index.dir_index, rom_filename, arcade_display, db_paths)
+    {
         return BoxArtResult::Found(path);
     }
 
@@ -436,11 +431,10 @@ fn apply_base_title_fallback(
     rom_filenames: &[String],
 ) -> Vec<BoxArtGenreRating> {
     // Load base_title for every ROM in this system.
-    let base_titles: HashMap<String, String> =
-        MetadataDb::visible_base_titles(conn, system)
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
+    let base_titles: HashMap<String, String> = MetadataDb::visible_base_titles(conn, system)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
 
     // Build map: base_title → box_art_url from enrichments that resolved art.
     let mut art_by_base_title: HashMap<&str, &str> = HashMap::new();
@@ -465,10 +459,7 @@ fn apply_base_title_fallback(
         .collect();
 
     // Track which ROMs already have an enrichment entry.
-    let enriched: HashSet<String> = enrichments
-        .iter()
-        .map(|e| e.rom_filename.clone())
-        .collect();
+    let enriched: HashSet<String> = enrichments.iter().map(|e| e.rom_filename.clone()).collect();
 
     // Pass 1: fill in existing enrichment entries that have no art.
     for e in &mut enrichments {
@@ -616,8 +607,8 @@ mod tests {
         // "pacman" is a clone of "puckman". If there's no art for
         // pacman's display name but there IS art for puckman's display name,
         // the clone fallback should find the parent's art.
-        let clone_info = crate::arcade_db::lookup_arcade_game("pacman")
-            .expect("pacman should be in arcade DB");
+        let clone_info =
+            crate::arcade_db::lookup_arcade_game("pacman").expect("pacman should be in arcade DB");
         assert!(clone_info.is_clone, "pacman should be a clone");
         assert_eq!(clone_info.parent, "puckman");
 
@@ -636,9 +627,7 @@ mod tests {
             BoxArtResult::Found(found_path) => {
                 assert_eq!(found_path, path);
             }
-            _ => panic!(
-                "Expected clone fallback to find parent art for pacman → puckman"
-            ),
+            _ => panic!("Expected clone fallback to find parent art for pacman → puckman"),
         }
     }
 
@@ -872,16 +861,10 @@ mod tests {
         // matching "Puck Man", it should return NotFound (no parent to fall back to).
         let info = crate::arcade_db::lookup_arcade_game("puckman")
             .expect("puckman should be in arcade DB");
-        assert!(
-            !info.is_clone,
-            "puckman should not be a clone"
-        );
+        assert!(!info.is_clone, "puckman should not be a clone");
 
         // Index has art for an unrelated game only.
-        let index = image_index_from(&[(
-            "Unrelated Game",
-            "boxart/Unrelated Game.png",
-        )]);
+        let index = image_index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
 
         let result = resolve_box_art(&index, "arcade_mame", "puckman.zip");
         assert!(

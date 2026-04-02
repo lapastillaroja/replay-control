@@ -40,7 +40,7 @@ From a user perspective, a 3-disc game appears as a single entry with the combin
 
 ## Arcade Display Names
 
-Arcade ROMs use internal codenames (e.g., `sf2.zip`). The app automatically shows human-readable titles ("Street Fighter II") for ~15K playable arcade entries across MAME, FBNeo, and Flycast (Naomi/Atomiswave). Non-playable machines (slot machines, gambling, etc.) are filtered out.
+Arcade ROMs use internal codenames (e.g., `sf2.zip`). The app automatically shows human-readable titles ("Street Fighter II") for ~15K playable arcade entries across [MAME](https://www.mamedev.org/), [FBNeo](https://github.com/finalburnneo/FBNeo), and [Flycast](https://github.com/flyinghead/flycast) (Naomi/Atomiswave). Non-playable machines (slot machines, gambling, etc.) are filtered out.
 
 ## Favorites
 

@@ -308,7 +308,10 @@ mod tests {
 
     #[test]
     fn sg1000_in_supported_systems() {
-        assert!(has_system("sega_sg"), "sega_sg should be in supported systems");
+        assert!(
+            has_system("sega_sg"),
+            "sega_sg should be in supported systems"
+        );
     }
 
     #[test]
@@ -341,16 +344,14 @@ mod tests {
 
     #[test]
     fn lookup_32x_doom() {
-        let entry = lookup_game("sega_32x", "Doom (Europe)")
-            .expect("Doom should exist in 32X DB");
+        let entry = lookup_game("sega_32x", "Doom (Europe)").expect("Doom should exist in 32X DB");
         assert_eq!(entry.game.display_name, "Doom");
         assert_eq!(entry.region, "Europe");
     }
 
     #[test]
     fn s32x_has_players_data() {
-        let entry = lookup_game("sega_32x", "Doom (Europe)")
-            .expect("Doom should exist in 32X DB");
+        let entry = lookup_game("sega_32x", "Doom (Europe)").expect("Doom should exist in 32X DB");
         assert!(entry.game.players > 0, "Doom should have players data");
     }
 

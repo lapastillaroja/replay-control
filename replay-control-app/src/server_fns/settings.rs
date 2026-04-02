@@ -451,7 +451,9 @@ pub async fn change_root_password(
         .map_err(|e| ServerFnError::new(format!("Failed to verify password: {e}")))?;
 
     {
-        let mut stdin = child.stdin.take()
+        let mut stdin = child
+            .stdin
+            .take()
             .ok_or_else(|| ServerFnError::new("Failed to open stdin"))?;
         stdin
             .write_all(format!("{current_password}\n{stored_hash}").as_bytes())
@@ -465,7 +467,9 @@ pub async fn change_root_password(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ServerFnError::new(format!("Password verification failed: {stderr}")));
+        return Err(ServerFnError::new(format!(
+            "Password verification failed: {stderr}"
+        )));
     }
 
     let computed_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();

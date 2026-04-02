@@ -566,12 +566,7 @@ mod tests {
         // ROM: "Battletoads & Double Dragon (USA).md" — a different game
         // These should NOT match because the aggressive keys are different strings.
         let index = index_from(&[("Battletoads (Europe)", "boxart/Battletoads (Europe).png")]);
-        let result = find_best_match(
-            &index,
-            "Battletoads & Double Dragon (USA).md",
-            None,
-            None,
-        );
+        let result = find_best_match(&index, "Battletoads & Double Dragon (USA).md", None, None);
         assert!(
             result.is_none(),
             "Battletoads & Double Dragon should not match Battletoads"

@@ -3,8 +3,8 @@ use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
-use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::boxart_picker::BoxArtPicker;
+use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{CapturesLightbox, INITIAL_CAPTURE_COUNT};
 use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;

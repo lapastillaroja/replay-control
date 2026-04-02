@@ -479,9 +479,7 @@ pub fn build_manifest_fuzzy_index(
             // Tier 4: base_title (tilde split + article normalization)
             let bt = base_title(&entry.filename);
             if bt != key {
-                by_base_title
-                    .entry(bt.clone())
-                    .or_insert_with(|| m.clone());
+                by_base_title.entry(bt.clone()).or_insert_with(|| m.clone());
             }
 
             // Tier 5: aggressive normalization (strip all punctuation)
@@ -553,9 +551,7 @@ pub fn build_manifest_fuzzy_index_from_raw(
             // Tier 4: base_title (tilde split + article normalization)
             let bt = base_title(&entry.filename);
             if bt != key {
-                by_base_title
-                    .entry(bt.clone())
-                    .or_insert_with(|| m.clone());
+                by_base_title.entry(bt.clone()).or_insert_with(|| m.clone());
             }
 
             // Tier 5: aggressive normalization (strip all punctuation)
@@ -1092,13 +1088,12 @@ fn extract_region_label(filename: &str) -> String {
         if let Some(end) = after.find(')') {
             let tag = &after[..end];
             // Skip language-only tags (e.g., "En", "En,Fr,De,Es,It", "Ja")
-            let is_lang_only = tag
-                .split(',')
-                .all(|p| {
-                    let t = p.trim();
-                    t.len() <= 3 && t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
-                        && t.chars().skip(1).all(|c| c.is_ascii_lowercase())
-                });
+            let is_lang_only = tag.split(',').all(|p| {
+                let t = p.trim();
+                t.len() <= 3
+                    && t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                    && t.chars().skip(1).all(|c| c.is_ascii_lowercase())
+            });
             if !is_lang_only {
                 parts.push(tag.to_string());
             }

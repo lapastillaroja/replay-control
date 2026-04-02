@@ -368,7 +368,12 @@ pub async fn global_search(
     };
 
     // Empty query with no genre/multiplayer/year filter: no results.
-    if q.is_empty() && genre.is_empty() && !multiplayer_only && min_year.is_none() && max_year.is_none() {
+    if q.is_empty()
+        && genre.is_empty()
+        && !multiplayer_only
+        && min_year.is_none()
+        && max_year.is_none()
+    {
         return Ok(GlobalSearchResults {
             groups: Vec::new(),
             total_results: 0,
@@ -1575,7 +1580,10 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
+    let systems = state
+        .cache
+        .cached_systems(&storage, &state.metadata_pool)
+        .await;
 
     // Build a weighted list: (system_folder, game_count).
     let weighted: Vec<(String, usize)> = systems

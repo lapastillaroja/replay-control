@@ -59,7 +59,8 @@ fn top_bar_icon_path() -> &'static str {
         let idx = (std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .subsec_nanos() % 3) as usize;
+            .subsec_nanos()
+            % 3) as usize;
         TOP_BAR_ICONS[idx]
     }
     #[cfg(not(feature = "ssr"))]
@@ -128,13 +129,12 @@ pub fn App() -> impl IntoView {
                 <header class="top-bar">
                     <h1 class="app-title">
                         <A href="/" attr:class="app-title-link">
-                            <svg
+                            <img
                                 class="top-bar-icon"
-                                viewBox="0 0 256 256"
-                                fill="currentColor"
+                                src="/static/branding/app-icon.png"
+                                alt=""
                                 aria-hidden="true"
-                                inner_html=top_bar_icon_path()
-                            ></svg>
+                            />
                             <span class="app-logo" aria-label="Replay Control"></span>
                         </A>
                     </h1>

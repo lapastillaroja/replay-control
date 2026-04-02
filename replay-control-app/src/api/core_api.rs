@@ -54,9 +54,7 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
         .collect();
     let db_entries = state
         .metadata_pool
-        .read(move |conn| {
-            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
-        })
+        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default();
 
@@ -92,9 +90,7 @@ async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEnt
         .collect();
     let db_entries = state
         .metadata_pool
-        .read(move |conn| {
-            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
-        })
+        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default();
 

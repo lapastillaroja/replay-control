@@ -815,7 +815,6 @@ fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
     None
 }
 
-
 /// Detect duplicate ROMs across all systems by file size + name similarity.
 pub fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
     let roms_dir = storage.roms_dir();

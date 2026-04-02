@@ -146,13 +146,19 @@ pub async fn get_roms_page(
                 min_year,
                 max_year,
             };
-            MetadataDb::search_game_library(conn, Some(&sys_owned), None, &query_words, &filter, offset, limit)
+            MetadataDb::search_game_library(
+                conn,
+                Some(&sys_owned),
+                None,
+                &query_words,
+                &filter,
+                offset,
+                limit,
+            )
         })
         .await;
 
-    let (entries, total) = db_result
-        .and_then(|r| r.ok())
-        .unwrap_or((Vec::new(), 0));
+    let (entries, total) = db_result.and_then(|r| r.ok()).unwrap_or((Vec::new(), 0));
 
     // When text search is active, score and paginate in Rust (SQL returned all
     // matching rows without LIMIT/OFFSET so we can sort by relevance).
@@ -168,7 +174,11 @@ pub async fn get_roms_page(
                     region_pref,
                     region_secondary,
                 );
-                if score > 0 { Some((score, entry)) } else { None }
+                if score > 0 {
+                    Some((score, entry))
+                } else {
+                    None
+                }
             })
             .collect();
         scored.sort_by(|a, b| b.0.cmp(&a.0));
@@ -221,7 +231,10 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     let game = resolve_game_info(&system, &filename, &rom.game.rom_path).await;
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_rom_detail game_info resolved");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_rom_detail game_info resolved"
+    );
 
     let user_screenshots =
         replay_control_core::screenshots::find_screenshots_for_rom(&storage, &system, &filename)
@@ -270,7 +283,10 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         });
 
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_rom_detail complete");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_rom_detail complete"
+    );
     Ok(RomDetail {
         game,
         size_bytes: rom.size_bytes,
@@ -418,7 +434,10 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
     }
 
     // Invalidate caches.
-    state.cache.invalidate_system(system, &state.metadata_pool).await;
+    state
+        .cache
+        .invalidate_system(system, &state.metadata_pool)
+        .await;
     state.cache.invalidate_favorites();
     state.response_cache.invalidate_all();
 
@@ -550,7 +569,10 @@ pub async fn rename_rom(
     rename_rom_cascade(&state, &storage, &system, &old_filename, &new_filename).await;
 
     // Invalidate caches.
-    state.cache.invalidate_system(system, &state.metadata_pool).await;
+    state
+        .cache
+        .invalidate_system(system, &state.metadata_pool)
+        .await;
     state.cache.invalidate_favorites();
     state.response_cache.invalidate_all();
 

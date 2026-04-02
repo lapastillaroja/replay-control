@@ -269,8 +269,8 @@ impl ImportPipeline {
         skip_enrichment: bool,
         _guard: ActivityGuard,
     ) {
-        use replay_control_core::metadata_db::ImportState;
         use super::WriteGate;
+        use replay_control_core::metadata_db::ImportState;
 
         // Build ROM index (no DB needed).
         let storage_root = state.storage().root.clone();
@@ -543,9 +543,9 @@ impl ThumbnailPipeline {
         cancel: Arc<AtomicBool>,
         _guard: ActivityGuard,
     ) {
+        use super::WriteGate;
         use replay_control_core::thumbnail_manifest;
         use replay_control_core::thumbnails::ALL_THUMBNAIL_KINDS;
-        use super::WriteGate;
 
         let storage_root = state.storage().root.clone();
 
@@ -710,7 +710,10 @@ impl ThumbnailPipeline {
 
         // Collect systems that have ROMs and a thumbnail repo.
         let storage = state.storage();
-        let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
+        let systems = state
+            .cache
+            .cached_systems(&storage, &state.metadata_pool)
+            .await;
         let supported: Vec<String> = systems
             .into_iter()
             .filter(|s| s.game_count > 0)

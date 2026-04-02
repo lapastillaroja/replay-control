@@ -35,9 +35,7 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     // Batch-load game entries (box_art_url + genre) in one DB read.
     let db_entries = state
         .metadata_pool
-        .read(move |conn| {
-            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
-        })
+        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default();
 
@@ -46,7 +44,8 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let results: Vec<FavoriteWithArt> = favs
         .into_iter()
         .map(|fav| {
-            let db_entry = db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
+            let db_entry =
+                db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
             let box_art_url = db_entry.and_then(|e| e.box_art_url.clone());
             let genre = db_entry
                 .map(|e| &e.genre_group)
@@ -77,9 +76,7 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     // Batch-load game entries (box_art_url + genre) in one DB read.
     let db_entries = state
         .metadata_pool
-        .read(move |conn| {
-            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
-        })
+        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default();
 
@@ -88,7 +85,8 @@ pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>
     let results: Vec<FavoriteWithArt> = favs
         .into_iter()
         .map(|fav| {
-            let db_entry = db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
+            let db_entry =
+                db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
             let box_art_url = db_entry.and_then(|e| e.box_art_url.clone());
             let genre = db_entry
                 .map(|e| &e.genre_group)
@@ -217,20 +215,23 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     // Response cache: return immediately on hit.
     if let Some(cached) = state.response_cache.get_favorites_recommendations() {
         #[cfg(feature = "ssr")]
-        tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_favorites_recommendations cache hit");
+        tracing::debug!(
+            elapsed_ms = fn_start.elapsed().as_millis(),
+            "get_favorites_recommendations cache hit"
+        );
         return Ok(cached);
     }
 
     let storage = state.storage();
-    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
+    let systems = state
+        .cache
+        .cached_systems(&storage, &state.metadata_pool)
+        .await;
 
     let (region_str, region_secondary_str) = super::region_strings(&state);
 
     // Collect recents and favorites from cache.
-    let recents = state
-        .cache
-        .get_recents(&storage)
-        .unwrap_or_default();
+    let recents = state.cache.get_recents(&storage).unwrap_or_default();
     let all_favorites = state
         .cache
         .get_all_favorited_systems(&storage)
@@ -239,11 +240,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     // Build Vec of all favorite keys, then derive HashSet for O(1) exclusion checks.
     let fav_keys_vec: Vec<(String, String)> = all_favorites
         .iter()
-        .flat_map(|(system, filenames)| {
-            filenames
-                .iter()
-                .map(move |f| (system.clone(), f.clone()))
-        })
+        .flat_map(|(system, filenames)| filenames.iter().map(move |f| (system.clone(), f.clone())))
         .collect();
     let fav_keys: std::collections::HashSet<(String, String)> =
         fav_keys_vec.iter().cloned().collect();
@@ -257,9 +254,9 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
         if !fav_keys_vec.is_empty() {
             fav_keys_vec.choose(&mut rng).cloned()
         } else if !recents.is_empty() {
-            recents.choose(&mut rng).map(|r| {
-                (r.game.system.clone(), r.game.rom_filename.clone())
-            })
+            recents
+                .choose(&mut rng)
+                .map(|r| (r.game.system.clone(), r.game.rom_filename.clone()))
         } else {
             None
         }
@@ -410,7 +407,10 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
         })
         .await;
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_favorites_recommendations db_read complete");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_favorites_recommendations db_read complete"
+    );
 
     let raw_sections = db_result.unwrap_or_default();
 
@@ -434,10 +434,15 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     }
 
     // Response cache: store for subsequent hits within TTL.
-    state.response_cache.set_favorites_recommendations(&result_sections);
+    state
+        .response_cache
+        .set_favorites_recommendations(&result_sections);
 
     #[cfg(feature = "ssr")]
-    tracing::info!(elapsed_ms = fn_start.elapsed().as_millis(), "get_favorites_recommendations complete");
+    tracing::info!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_favorites_recommendations complete"
+    );
     Ok(result_sections)
 }
 

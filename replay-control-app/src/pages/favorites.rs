@@ -531,7 +531,10 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                             .next()
                             .map(|c| {
                                 let upper = c.to_uppercase().to_string();
-                                if upper.chars().next().is_some_and(|ch| ch.is_ascii_alphabetic())
+                                if upper
+                                    .chars()
+                                    .next()
+                                    .is_some_and(|ch| ch.is_ascii_alphabetic())
                                 {
                                     upper
                                 } else {
@@ -570,16 +573,17 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
             for f in favs.iter() {
                 if let Some(pri_name) = folder_name(&pri, f) {
                     let subs = map.entry(pri_name).or_default();
-                    if sec_is_real
-                        && let Some(sec_name) = folder_name(&sec, f) {
-                            subs.insert(sec_name);
-                        }
+                    if sec_is_real && let Some(sec_name) = folder_name(&sec, f) {
+                        subs.insert(sec_name);
+                    }
                 }
             }
             // If secondary is static, inject static examples into each primary.
             if sec_is_static {
-                let examples: std::collections::BTreeSet<String> =
-                    static_examples(&sec).iter().map(|s| s.to_string()).collect();
+                let examples: std::collections::BTreeSet<String> = static_examples(&sec)
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
                 for subs in map.values_mut() {
                     *subs = examples.clone();
                 }
@@ -598,14 +602,15 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                 // Show a few secondary values under each static primary.
                 let sample: Vec<String> = all_secs.into_iter().take(5).collect();
                 for name in pri_examples {
-                    map.insert(
-                        name.to_string(),
-                        sample.iter().cloned().collect(),
-                    );
+                    map.insert(name.to_string(), sample.iter().cloned().collect());
                 }
             } else {
                 // Both static (or secondary is "none").
-                let sec_examples = if sec_is_static { static_examples(&sec) } else { vec![] };
+                let sec_examples = if sec_is_static {
+                    static_examples(&sec)
+                } else {
+                    vec![]
+                };
                 for name in pri_examples {
                     map.entry(name.to_string())
                         .or_default()

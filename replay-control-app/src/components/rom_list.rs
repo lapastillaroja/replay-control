@@ -129,7 +129,9 @@ pub fn RomList(system: String) -> impl IntoView {
             )
         },
         move |(system, query, hh, ht, hb, hc, gf, mp, mr, miny, maxy)| {
-            server_fns::get_roms_page(system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr, miny, maxy)
+            server_fns::get_roms_page(
+                system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr, miny, maxy,
+            )
         },
     );
 

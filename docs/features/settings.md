@@ -33,7 +33,7 @@ Browse and apply skins from the [RePlayOS](https://www.replayos.com/) skin colle
 
 ### GitHub API Key
 
-Optional GitHub personal access token for downloading thumbnails. Without a key, GitHub API requests are rate-limited to 60/hour; with one, the limit is 5,000/hour.
+Optional [GitHub](https://github.com/) personal access token for downloading thumbnails. Without a key, GitHub API requests are rate-limited to 60/hour; with one, the limit is 5,000/hour.
 
 ## System Configuration
 

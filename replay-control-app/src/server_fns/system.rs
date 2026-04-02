@@ -22,7 +22,10 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let summaries = state.cache.cached_systems(&storage, &state.metadata_pool).await;
+    let summaries = state
+        .cache
+        .cached_systems(&storage, &state.metadata_pool)
+        .await;
     let total_favorites = state.cache.get_favorites_count(&storage);
 
     let disk = storage
@@ -39,7 +42,10 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let (ethernet_ip, wifi_ip) = get_network_ips();
 
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_info complete");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_info complete"
+    );
     Ok(SystemInfo {
         storage_kind: format!("{:?}", storage.kind).to_lowercase(),
         storage_root: storage.root.display().to_string(),
@@ -82,9 +88,15 @@ pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     #[cfg(feature = "ssr")]
     let fn_start = std::time::Instant::now();
     let state = expect_context::<crate::api::AppState>();
-    let result = state.cache.cached_systems(&state.storage(), &state.metadata_pool).await;
+    let result = state
+        .cache
+        .cached_systems(&state.storage(), &state.metadata_pool)
+        .await;
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_systems complete");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_systems complete"
+    );
     Ok(result)
 }
 
@@ -108,13 +120,14 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     // Batch-lookup box_art_url from game_library (most entries will have it).
     let db_entries = state
         .metadata_pool
-        .read(move |conn| {
-            MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default()
-        })
+        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default();
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recents db_read complete");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_recents db_read complete"
+    );
 
     // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
     // If NULL, no art is available — show placeholder.
@@ -130,7 +143,10 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     enriched.truncate(15);
 
     #[cfg(feature = "ssr")]
-    tracing::debug!(elapsed_ms = fn_start.elapsed().as_millis(), "get_recents complete");
+    tracing::debug!(
+        elapsed_ms = fn_start.elapsed().as_millis(),
+        "get_recents complete"
+    );
     Ok(enriched)
 }
 

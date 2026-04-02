@@ -124,7 +124,10 @@ pub async fn get_related_games(
 ) -> Result<RelatedGamesData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let systems = state.cache.cached_systems(&storage, &state.metadata_pool).await;
+    let systems = state
+        .cache
+        .cached_systems(&storage, &state.metadata_pool)
+        .await;
 
     // Look up the detail genre from game_library for two-tier similar matching.
     // The detail genre (e.g., "Maze / Shooter") is passed to similar_by_genre(),
@@ -215,8 +218,7 @@ pub async fn get_related_games(
             // Cross-system availability: same base_title on other systems.
             // Skip when Wikidata series data exists (it already covers cross-system entries).
             // Also skip for clones/hacks — only show for primary entries.
-            let is_primary = current_entry
-                .is_none_or(|e| !e.is_clone && !e.is_hack);
+            let is_primary = current_entry.is_none_or(|e| !e.is_clone && !e.is_hack);
             let cross_system_raw = if series_raw.is_empty() && is_primary {
                 MetadataDb::cross_system_availability(
                     conn,
