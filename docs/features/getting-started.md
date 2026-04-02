@@ -13,10 +13,10 @@ A quick guide to get Replay Control running on your Pi.
 From any computer on the same network:
 
 ```bash
-curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
 ```
 
-The installer downloads the latest release and sets everything up. If `replay.local` doesn't work, replace it with your Pi's IP address (e.g., `192.168.1.50` — check your router's admin page to find it). For more install options (SD card, specific version, custom password), see the [Installation guide](install.md).
+The installer downloads the latest release and sets everything up. If `replay.local` doesn't work, replace it with your Pi's IP address (e.g., `your-pi-ip` — check your router's admin page to find it). For more install options (SD card, specific version, custom password), see the [Installation guide](install.md).
 
 ## First Launch
 
@@ -26,7 +26,7 @@ Open a browser and go to:
 http://replay.local:8080
 ```
 
-If `replay.local` does not resolve, use your Pi's IP address instead (e.g., `http://192.168.1.50:8080`).
+If `replay.local` does not resolve, use your Pi's IP address instead (e.g., `http://your-pi-ip:8080`).
 
 > **Tip:** To find your Pi's IP address, check your router's connected devices list, or run `hostname -I` on the Pi.
 

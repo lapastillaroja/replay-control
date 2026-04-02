@@ -80,7 +80,7 @@ This is a personal project born from my love for retro gaming on real hardware. 
 ## Quick Install
 
 ```bash
-curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
 ```
 
 <details>
@@ -88,17 +88,17 @@ curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/downl
 
 **Specific version:**
 ```bash
-curl -sSL https://github.com/lapastillaroja/replay-control/releases/download/v0.1.0/install.sh | bash -s -- --ip replay.local
+REPLAY_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
 ```
 
 **Custom IP and password:**
 ```bash
-PI_PASS=mypassword curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip <your-pi-ip>
+PI_PASS=mypassword curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
 ```
 
 **Install to SD card (before first boot):**
 ```bash
-curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --sd /path/to/mounted/sdcard
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --sd /path/to/mounted/sdcard
 ```
 
 > **Windows users:** Run these commands in [WSL](https://learn.microsoft.com/en-us/windows/wsl/).

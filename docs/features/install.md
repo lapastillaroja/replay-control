@@ -7,10 +7,10 @@ How to install, update, and uninstall Replay Control on a Raspberry Pi running R
 From any computer on the same network as the Pi:
 
 ```bash
-curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
 ```
 
-The installer downloads the latest release from GitHub and deploys to the Pi over SSH. If `replay.local` doesn't work, replace it with your Pi's IP address (e.g., `192.168.1.50`).
+The installer downloads the latest release from GitHub and deploys to the Pi over SSH. If `replay.local` doesn't work, replace it with your Pi's IP address (e.g., `your-pi-ip`).
 
 ## Install Methods
 
@@ -20,10 +20,10 @@ The default method. Downloads the latest release and deploys to the Pi over SSH.
 
 ```bash
 # Using replay.local (default mDNS hostname)
-curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
 
 # Using a specific IP address
-curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip 192.168.1.50
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip your-pi-ip
 ```
 
 > **Tip:** To find your Pi's IP address, check your router's connected devices list, or run `hostname -I` on the Pi.
@@ -32,7 +32,7 @@ If you already downloaded `install.sh`:
 
 ```bash
 bash install.sh --ip replay.local
-bash install.sh --ip 192.168.1.50
+bash install.sh --ip your-pi-ip
 ```
 
 ### SSH Install (already on the Pi)
@@ -93,7 +93,7 @@ REPLAY_VERSION=v0.2.0 bash install.sh
 Instead of `--ip`, you can set the address via environment variable:
 
 ```bash
-REPLAY_PI_ADDR=192.168.1.50 bash install.sh
+REPLAY_PI_ADDR=your-pi-ip bash install.sh
 ```
 
 ### Dry Run
