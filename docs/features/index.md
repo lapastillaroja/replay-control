@@ -4,6 +4,8 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 
 **Offline-first by design.** Display names, genres, player counts, developer, and year data for ~34K console ROMs and ~15K playable arcade games are available out of the box — no internet required. Online sources ([LaunchBox](https://gamesdb.launchbox-app.com/), [libretro-thumbnails](https://github.com/libretro-thumbnails), [Wikidata](https://www.wikidata.org/)) can optionally enrich the library with descriptions, ratings, series data, and box art when connected.
 
+**Configure WiFi, NFS shares, and hostname directly from the browser** — no SSH or terminal required. Mount network-attached storage, set up WiFi connectivity, and change the Pi's hostname from the web UI. All changes persist across reboots.
+
 > **A personal project.** Replay Control is built by one person who loves retro gaming and wanted a better companion app for RePlayOS. Feature requests and ideas are always welcome, but the roadmap follows personal preferences and what makes the app better for its core use case.
 
 ---
@@ -113,20 +115,31 @@ Accessible from More > Game Data.
 - Clear metadata, clear images, orphaned image cleanup — each with confirmation
 - Orphaned image cleanup with safety net per system. [Detail](metadata.md), [Thumbnails detail](thumbnails.md)
 
-## Settings and System Configuration
+## Pi Configuration
 
-Accessible from the More page, organized into Preferences, Game Data, and System sections.
+Manage WiFi, NFS shares, hostname, and SSH password directly from the browser — no terminal or SSH required. All configuration changes persist across reboots.
+
+- **WiFi Setup** — configure SSID, password, country, and security mode. Takes effect on reboot
+- **NFS Share** — mount network-attached storage for game ROMs. Specify server address, export path, and NFS version
+- **Hostname** — change the Pi's mDNS address (e.g., `replay.local`) for convenient network access
+- **Change Password** — update the root SSH password from the web UI, with current-password verification
+- **System Info** — view storage path, disk usage, and network addresses
+- **System Logs** — view RePlayOS system logs with source filter and refresh
+- **Restart / Reboot** — restart the TV frontend or reboot the entire Pi
+
+[Full Configuration Guide](configuration.md)
+
+## Preferences
+
+Customize how the app displays your library and interacts with external services.
 
 - **Region preference** — primary and secondary preferred ROM region (USA, Europe, Japan, World); affects sort order, search scoring, and recommendation dedup. Default: World
 - **Text size** — normal/large toggle
 - **Skin/theme sync** — browse and apply RePlayOS skins; optionally sync the app's color scheme to the active skin. Skin and storage changes push instantly to all connected browsers
-- **Hostname** — view and change the Pi's hostname and mDNS address
-- **Change Password** — change the Pi's root SSH password from the web UI, with current-password verification
-- **Wi-Fi** — view and edit Wi-Fi settings (SSID, password, country, mode)
-- **NFS share** — view and edit NFS v4 share configuration
+- **GitHub API Key** — optional token for higher GitHub API rate limits (5,000/hour vs 60/hour)
 - **Version display** — app version and git hash shown in the More page footer; API endpoint for programmatic access
-- **System Info** — storage type and path, disk usage, network addresses
-- **System Logs** — view RePlayOS system logs with source filter and refresh
+
+[Full Preferences Guide](settings.md)
 
 ## Storage
 
@@ -168,7 +181,8 @@ Accessible from the More page, organized into Preferences, Game Data, and System
 | [Search](search.md) | Global search, developer search, developer game list page |
 | [Storage](storage.md) | Storage detection, automatic updates, config boundary |
 | [Thumbnails](thumbnails.md) | Box art, screenshots, title screens, image matching, box art swap |
-| [Settings](settings.md) | System configuration, user preferences |
+| [Pi Configuration](configuration.md) | WiFi setup, NFS shares, hostname, password, system info, logs |
+| [Preferences](settings.md) | Region, language, text size, skin/theme, GitHub API key |
 | [Libretro Core](libretro-core.md) | Recently played viewer, TV display |
 | [Benchmarks](benchmarks.md) | Performance measurements on Raspberry Pi 5 |
 
