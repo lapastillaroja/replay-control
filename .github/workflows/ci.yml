@@ -10,7 +10,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
+  # ── Quality & style checks ─────────────────────────────────────────
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -21,6 +23,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Cache data files
+        uses: actions/cache@v4
+        with:
+          path: data/
+          key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
+
       - name: Download data files
         run: |
           bash scripts/download-arcade-data.sh
@@ -29,7 +37,6 @@ jobs:
           python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 
       - name: Check formatting
-
         run: cargo fmt --all -- --check
 
       - name: Clippy (core)
@@ -38,5 +45,57 @@ jobs:
       - name: Clippy (app, SSR)
         run: cargo clippy -p replay-control-app --features ssr -- -D warnings
 
-      - name: Tests
+      - name: Clippy (app, hydrate)
+        run: cargo clippy -p replay-control-app --target wasm32-unknown-unknown --features hydrate --no-default-features -- -D warnings
+
+  # ── Build ───────────────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli@0.2.116
+
+      - name: Install binaryen (wasm-opt)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Build (x86_64)
+        run: ./build.sh
+
+  # ── Tests ───────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache data files
+        uses: actions/cache@v4
+        with:
+          path: data/
+          key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
+
+      - name: Download data files
+        run: |
+          bash scripts/download-arcade-data.sh
+          bash scripts/download-metadata.sh
+          mkdir -p data/wikidata
+          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
+
+      - name: Unit tests (core)
         run: cargo test -p replay-control-core
+
+      - name: Unit tests (app)
+        run: cargo test -p replay-control-app --features ssr
