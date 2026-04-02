@@ -480,19 +480,18 @@ fn apply_base_title_fallback(
         if enriched.contains(filename) {
             continue;
         }
-        if let Some(bt) = base_titles.get(filename) {
-            if !bt.is_empty() {
-                if let Some(url) = art_by_base_title.get(bt.as_str()) {
-                    enrichments.push(BoxArtGenreRating {
-                        rom_filename: filename.clone(),
-                        box_art_url: Some(url.clone()),
-                        genre: None,
-                        players: None,
-                        rating: None,
-                        rating_count: None,
-                    });
-                }
-            }
+        if let Some(bt) = base_titles.get(filename)
+            && !bt.is_empty()
+            && let Some(url) = art_by_base_title.get(bt.as_str())
+        {
+            enrichments.push(BoxArtGenreRating {
+                rom_filename: filename.clone(),
+                box_art_url: Some(url.clone()),
+                genre: None,
+                players: None,
+                rating: None,
+                rating_count: None,
+            });
         }
     }
 

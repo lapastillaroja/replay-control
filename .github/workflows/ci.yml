@@ -21,6 +21,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Download data files
+        run: |
+          bash scripts/download-arcade-data.sh
+          bash scripts/download-metadata.sh
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
