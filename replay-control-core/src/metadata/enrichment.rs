@@ -237,25 +237,25 @@ pub fn resolve_box_art<'a>(
         && !info.parent.is_empty()
         && let Some(parent_info) = crate::arcade_db::lookup_arcade_game(info.parent)
     {
-            // Build a synthetic rom_filename from the parent codename so
-            // find_best_match uses the parent's display name for matching.
-            let parent_filename = format!("{}.zip", info.parent);
-            if let Some(path) = image_matching::find_best_match(
-                &index.dir_index,
-                &parent_filename,
-                Some(parent_info.display_name),
-                db_paths,
-            ) {
-                return BoxArtResult::Found(path);
-            }
+        // Build a synthetic rom_filename from the parent codename so
+        // find_best_match uses the parent's display name for matching.
+        let parent_filename = format!("{}.zip", info.parent);
+        if let Some(path) = image_matching::find_best_match(
+            &index.dir_index,
+            &parent_filename,
+            Some(parent_info.display_name),
+            db_paths,
+        ) {
+            return BoxArtResult::Found(path);
+        }
 
-            // Also try manifest with parent.
-            if let Some(ref manifest) = index.manifest
-                && let Some(m) =
-                    thumbnail_manifest::find_in_manifest(manifest, &parent_filename, system)
-            {
-                return BoxArtResult::ManifestHit(m);
-            }
+        // Also try manifest with parent.
+        if let Some(ref manifest) = index.manifest
+            && let Some(m) =
+                thumbnail_manifest::find_in_manifest(manifest, &parent_filename, system)
+        {
+            return BoxArtResult::ManifestHit(m);
+        }
     }
 
     BoxArtResult::NotFound

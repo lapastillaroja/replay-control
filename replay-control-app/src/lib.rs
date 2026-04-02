@@ -41,8 +41,6 @@ use pages::search::SearchPage;
 use pages::skin::SkinPage;
 use pages::wifi::WifiPage;
 
-
-
 /// The HTML shell wrapping the App component for SSR.
 #[cfg(feature = "ssr")]
 #[component]
