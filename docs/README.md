@@ -1,55 +1,38 @@
-# Documentation Index
+# Documentation
 
-Replay Control companion app documentation, organized into two tiers within `docs/` (features and reference), plus a separate `research/` directory at the repository root for internal development work.
+Replay Control documentation, organized into two sections:
 
----
+- **[Features](features/index.md)** — what the app does, from a user perspective
+- **[Architecture](architecture/index.md)** — how it works under the hood
 
-## Features (current-state developer docs)
-
-Start here when joining the project. Each doc describes how a feature works today, with key source files and architecture decisions.
+## Features
 
 | Doc | Covers |
 |-----|--------|
-| [index.md](features/index.md) | User-facing feature overview — what the app does |
-| [game-library.md](features/game-library.md) | Three-tier cache (L1 in-memory, L2 SQLite, L3 filesystem), ROM scanning, display name resolution, enrichment, filesystem watching, cache invalidation |
-| [metadata.md](features/metadata.md) | Embedded databases (arcade_db ~28K entries, game_db ~34K entries), LaunchBox XML import, genre fallback, unified GameInfo API, ROM tag parsing |
-| [thumbnails.md](features/thumbnails.md) | Thumbnail index (manifest), 5-tier fuzzy matching, arcade multi-repo images, on-demand download with SSE progress, box art swap |
-| [recommendations.md](features/recommendations.md) | Home page recommendation blocks (random, top-rated, multiplayer, favorites-based, related), dedup CTE pattern, ROM tag filters |
-| [search.md](features/search.md) | Global search scoring algorithm, genre/driver-status/favorites filters, recent searches, random game |
-| [rom-organization.md](features/rom-organization.md) | Favorites (.fav files), recents (.rec files), region preference, game launching (autostart mechanism), favorites organization |
-| [storage.md](features/storage.md) | Storage detection (USB/NFS/SD), StorageKind, config/ROM watchers (inotify + polling), config boundary (replay.cfg vs settings.cfg), .replay-control/ directory |
-| [game-launching.md](features/game-launching.md) | Game launching implementation guide |
+| [Getting Started](features/getting-started.md) | Prerequisites, quick install, first launch, adding ROMs |
+| [Installation](features/install.md) | All install methods, update, uninstall, environment configuration |
+| [Game Library](features/game-library.md) | System browsing, game actions, favorites, recents, region preference |
+| [Game Series](features/game-series.md) | Series navigation, sequel/prequel links, cross-system matching |
+| [Metadata](features/metadata.md) | Embedded databases, LaunchBox import, ROM classification |
+| [Recommendations](features/recommendations.md) | Home page and favorites recommendations, spotlight rotation |
+| [Search](features/search.md) | Global search, developer search, developer game list |
+| [Storage](features/storage.md) | Storage detection, automatic updates, config boundary |
+| [Thumbnails](features/thumbnails.md) | Box art, screenshots, title screens, image matching |
+| [Settings](features/settings.md) | System configuration, user preferences |
+| [Benchmarks](features/benchmarks.md) | Performance measurements on Raspberry Pi |
+| [Libretro Core](features/libretro-core.md) | TV display proof of concept |
 
----
+## Architecture
 
-## Reference (stable specs, data, benchmarks)
-
-Long-lived documents that describe how things are built, specifications, and benchmark data.
-
-| Doc | Topic |
-|-----|-------|
-| [source-code-analysis.md](reference/source-code-analysis.md) | Full codebase walkthrough |
-| [performance-benchmarks.md](reference/performance-benchmarks.md) | Before/after measurements |
-| [compile-time-analysis.md](reference/compile-time-analysis.md) | Rust compile time breakdown |
-| [integration-testing-analysis.md](reference/integration-testing-analysis.md) | Integration testing approach |
-| [server-lifecycle.md](reference/server-lifecycle.md) | Server startup, background pipeline, connection pools |
-| [binary-distribution.md](reference/binary-distribution.md) | Binary distribution via GitHub |
-| [deployment.md](reference/deployment.md) | Deployment on RePlayOS (build, install, service) |
-| [replay-control-folder.md](reference/replay-control-folder.md) | .replay-control/ directory structure |
-| [game-metadata.md](reference/game-metadata.md) | Metadata source evaluation and storage design |
-| [rom-identification.md](reference/rom-identification.md) | ROM filename parsing specification |
-| [rom-matching.md](reference/rom-matching.md) | ROM matching pipeline and coverage |
-
----
-
-## Other top-level docs
-
-| Doc | Purpose |
-|-----|---------|
-| [known-issues.md](known-issues.md) | Known issues and TODOs |
-
----
-
-## Research (internal development work)
-
-Development analyses, feasibility studies, and implementation plans live in the [`research/`](../research/) directory at the repository root. See [`research/README.md`](../research/README.md) for a full index.
+| Doc | Covers |
+|-----|--------|
+| [Overview](architecture/index.md) | Crate structure, key components |
+| [Design Decisions](architecture/design-decisions.md) | Performance decisions, memory budget, rejected alternatives |
+| [Technical Foundation](architecture/technical-foundation.md) | Stack, embedded databases, cross-compilation |
+| [Database Schema](architecture/database-schema.md) | Tables, indexes, migrations |
+| [Connection Pooling](architecture/connection-pooling.md) | Pool setup, WriteGate, journal modes |
+| [Server Functions](architecture/server-functions.md) | SSR, streaming, caching |
+| [Startup Pipeline](architecture/startup-pipeline.md) | Background initialization phases |
+| [Enrichment](architecture/enrichment.md) | Box art, genre, rating population |
+| [ROM Classification](architecture/rom-classification.md) | Filename parsing, tier assignment |
+| [Activity System](architecture/activity-system.md) | Mutual exclusion, progress broadcasting |

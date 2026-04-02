@@ -10,7 +10,7 @@ DESCRIPTION="${2:-}"
 REQUESTS=50
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RESULTS_DIR="${REPO_ROOT}/research/investigations/load-tests"
+RESULTS_DIR="${REPO_ROOT}/tools/bench-results"
 mkdir -p "$RESULTS_DIR"
 RAW_FILE="${RESULTS_DIR}/load-test-raw-${TIMESTAMP}.txt"
 
