@@ -23,6 +23,14 @@ if echo "$STAGED_DIFF" | grep -qE '^\+.*192\.168\.[0-9]+\.[0-9]+'; then
     ERRORS=$((ERRORS + 1))
 fi
 
+# Reject staged __pycache__ files/directories (exclude this hook file)
+if git diff --cached --name-only | grep -qv '.githooks/pre-commit' \
+   && git diff --cached -- . ':(exclude).githooks/pre-commit' | grep -qE '^\+.*__pycache__'; then
+    echo "ERROR: __pycache__ reference in staged changes"
+    git diff --cached -- . ':(exclude).githooks/pre-commit' | grep -nE '^\+.*__pycache__' | head -5
+    ERRORS=$((ERRORS + 1))
+fi
+
 if [ $ERRORS -gt 0 ]; then
     echo ""
     echo "Commit blocked. Fix the issues above or use --no-verify to skip."

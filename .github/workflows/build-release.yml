@@ -1,0 +1,56 @@
+name: Build Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,aarch64-unknown-linux-gnu
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binaryen
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build (WASM + aarch64 server)
+        run: ./build.sh aarch64
+
+      - name: Package release archives
+        run: |
+          tar -czf replay-control-app-aarch64-linux.tar.gz \
+              -C target/aarch64-unknown-linux-gnu/release \
+              replay-control-app
+
+          tar -czf replay-site.tar.gz \
+              -C target \
+              site
+
+          sha256sum \
+              replay-control-app-aarch64-linux.tar.gz \
+              replay-site.tar.gz \
+              > checksums.sha256
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            replay-control-app-aarch64-linux.tar.gz
+            replay-site.tar.gz
+            install.sh
+            checksums.sha256
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}

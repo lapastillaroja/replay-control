@@ -6,7 +6,7 @@ set -euo pipefail
 # Installs the Replay Control on a Raspberry Pi running RePlayOS.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/user/replay/main/install.sh | bash
+#   curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip replay.local
 #   bash install.sh --sdcard
 #   bash install.sh --ip 192.168.1.50
 #   bash install.sh --dry-run
@@ -14,7 +14,7 @@ set -euo pipefail
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
-REPO="user/replay"
+REPO="lapastillaroja/replay-control"
 PI_USER="root"
 PI_PASSWORD="${PI_PASS:-replayos}"
 INSTALL_DIR="/usr/local/bin"

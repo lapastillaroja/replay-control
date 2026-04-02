@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (core)
+        run: cargo clippy -p replay-control-core -- -D warnings
+
+      - name: Clippy (app, SSR)
+        run: cargo clippy -p replay-control-app --features ssr -- -D warnings
+
+      - name: Tests
+        run: cargo test -p replay-control-core
