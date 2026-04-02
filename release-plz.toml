@@ -12,7 +12,7 @@ changelog_path = "CHANGELOG.md"
 # Only track the app crate for releases (core is a library, not released separately)
 [[package]]
 name = "replay-control-app"
-changelog_path = "../../CHANGELOG.md"
+changelog_path = "../CHANGELOG.md"
 
 [[package]]
 name = "replay-control-core"
