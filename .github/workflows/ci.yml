@@ -19,6 +19,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
+          targets: wasm32-unknown-unknown
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
@@ -93,6 +94,11 @@ jobs:
           bash scripts/download-metadata.sh
           mkdir -p data/wikidata
           python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
+
+      - name: Generate CSS for integration tests
+        run: |
+          mkdir -p target/site
+          cat replay-control-app/style/_*.css > target/site/style.css
 
       - name: Unit tests (core)
         run: cargo test -p replay-control-core
