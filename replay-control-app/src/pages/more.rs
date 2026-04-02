@@ -4,7 +4,6 @@ use server_fn::ServerFnError;
 
 use crate::components::reboot_button::RebootButton;
 use crate::i18n::{t, use_i18n};
-use crate::pages::ErrorDisplay;
 use crate::server_fns;
 use crate::util::format_size;
 
@@ -33,41 +32,35 @@ pub fn MorePage() -> impl IntoView {
                     <div class="more-inline-setting">
                         <h4 class="more-setting-title">{move || t(i18n.locale.get(), "region.title")}</h4>
                         <p class="form-hint">{move || t(i18n.locale.get(), "region.hint")}</p>
-                        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                                {move || Suspend::new(async move {
-                                    let current = region.await?;
-                                    let current_secondary = region_secondary.await?;
-                                    Ok::<_, ServerFnError>(view! { <RegionSelector current current_secondary /> })
-                                })}
-                            </Transition>
-                        </ErrorBoundary>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                            {move || Suspend::new(async move {
+                                let current = region.await?;
+                                let current_secondary = region_secondary.await?;
+                                Ok::<_, ServerFnError>(view! { <RegionSelector current current_secondary /> })
+                            })}
+                        </Transition>
                     </div>
 
                     <div class="more-inline-setting">
                         <h4 class="more-setting-title">{move || t(i18n.locale.get(), "language.title")}</h4>
                         <p class="form-hint">{move || t(i18n.locale.get(), "language.hint")}</p>
-                        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                                {move || Suspend::new(async move {
-                                    let (primary, secondary) = language.await?;
-                                    Ok::<_, ServerFnError>(view! { <LanguageSelector current_primary=primary current_secondary=secondary /> })
-                                })}
-                            </Transition>
-                        </ErrorBoundary>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                            {move || Suspend::new(async move {
+                                let (primary, secondary) = language.await?;
+                                Ok::<_, ServerFnError>(view! { <LanguageSelector current_primary=primary current_secondary=secondary /> })
+                            })}
+                        </Transition>
                     </div>
 
                     <div class="more-inline-setting">
                         <h4 class="more-setting-title">{move || t(i18n.locale.get(), "more.text_size")}</h4>
                         <p class="form-hint">{move || t(i18n.locale.get(), "more.text_size_hint")}</p>
-                        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                                {move || Suspend::new(async move {
-                                    let current = font_size.await?;
-                                    Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
-                                })}
-                            </Transition>
-                        </ErrorBoundary>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                            {move || Suspend::new(async move {
+                                let current = font_size.await?;
+                                Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
+                            })}
+                        </Transition>
                     </div>
                 </div>
             </section>
@@ -97,25 +90,23 @@ pub fn MorePage() -> impl IntoView {
                         <MenuItem icon="\u{1F4DC}" label_key="more.logs" href=Some("/more/logs") />
                     </div>
 
-                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                            {move || Suspend::new(async move {
-                                let locale = i18n.locale.get();
-                                let info = info.await?;
-                                Ok::<_, ServerFnError>(view! {
-                                    <div class="info-grid">
-                                        <InfoRow label=t(locale, "more.storage") value=info.storage_kind.to_uppercase() />
-                                        <InfoRow label=t(locale, "more.path") value=info.storage_root.clone() />
-                                        <InfoRow label=t(locale, "more.disk_total") value=format_size(info.disk_total_bytes) />
-                                        <InfoRow label=t(locale, "more.disk_used") value=format_size(info.disk_used_bytes) />
-                                        <InfoRow label=t(locale, "more.disk_available") value=format_size(info.disk_available_bytes) />
-                                        <InfoRow label=t(locale, "more.ethernet_ip") value=info.ethernet_ip.unwrap_or_else(|| t(locale, "more.not_connected").to_string()) />
-                                        <InfoRow label=t(locale, "more.wifi_ip") value=info.wifi_ip.unwrap_or_else(|| t(locale, "more.not_connected").to_string()) />
-                                    </div>
-                                })
-                            })}
-                        </Transition>
-                    </ErrorBoundary>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                        {move || Suspend::new(async move {
+                            let locale = i18n.locale.get();
+                            let info = info.await?;
+                            Ok::<_, ServerFnError>(view! {
+                                <div class="info-grid">
+                                    <InfoRow label=t(locale, "more.storage") value=info.storage_kind.to_uppercase() />
+                                    <InfoRow label=t(locale, "more.path") value=info.storage_root.clone() />
+                                    <InfoRow label=t(locale, "more.disk_total") value=format_size(info.disk_total_bytes) />
+                                    <InfoRow label=t(locale, "more.disk_used") value=format_size(info.disk_used_bytes) />
+                                    <InfoRow label=t(locale, "more.disk_available") value=format_size(info.disk_available_bytes) />
+                                    <InfoRow label=t(locale, "more.ethernet_ip") value=info.ethernet_ip.unwrap_or_else(|| t(locale, "more.not_connected").to_string()) />
+                                    <InfoRow label=t(locale, "more.wifi_ip") value=info.wifi_ip.unwrap_or_else(|| t(locale, "more.not_connected").to_string()) />
+                                </div>
+                            })
+                        })}
+                    </Transition>
 
                     <RebootButton />
                 </div>

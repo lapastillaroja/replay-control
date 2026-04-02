@@ -6,7 +6,6 @@ use server_fn::ServerFnError;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::i18n::{t, use_i18n};
-use crate::pages::ErrorDisplay;
 use crate::server_fns;
 use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
 
@@ -29,12 +28,10 @@ pub fn FavoritesPage() -> impl IntoView {
     view! {
         <div class="page favorites-page">
             <Suspense fallback=move || view! { <FavoritesPageSkeleton /> }>
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    {move || Suspend::new(async move {
-                        let favs = favorites.await?;
-                        Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view toggle_label recommendations /> })
-                    })}
-                </ErrorBoundary>
+                {move || Suspend::new(async move {
+                    let favs = favorites.await?;
+                    Ok::<_, ServerFnError>(view! { <FavoritesContent favs grouped_view toggle_label recommendations /> })
+                })}
             </Suspense>
         </div>
     }
@@ -932,12 +929,10 @@ pub fn SystemFavoritesPage() -> impl IntoView {
     view! {
         <div class="page favorites-page">
             <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    {move || Suspend::new(async move {
-                        let favs = favorites.await?;
-                        Ok::<_ , ServerFnError>(view! { <SystemFavoritesContent favs /> })
-                    })}
-                </ErrorBoundary>
+                {move || Suspend::new(async move {
+                    let favs = favorites.await?;
+                    Ok::<_ , ServerFnError>(view! { <SystemFavoritesContent favs /> })
+                })}
             </Suspense>
         </div>
     }

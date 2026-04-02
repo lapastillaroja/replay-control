@@ -3,7 +3,6 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::i18n::{t, use_i18n};
-use crate::pages::ErrorDisplay;
 use crate::server_fns::{self, Activity, ImportState, RebuildPhase, ThumbnailPhase};
 use crate::util::{format_number, format_size};
 
@@ -20,8 +19,10 @@ pub fn MetadataPage() -> impl IntoView {
     // Single activity signal (replaces importing + thumb_updating + rebuilding).
     let activity = RwSignal::new(Activity::Idle);
 
-    // Result message signal — set by SSE watcher on terminal events, cleared by client-side timer.
-    let result_message = RwSignal::new(None::<String>);
+    // Per-operation result messages — prevents a rebuild message from showing in LaunchBox/Thumbnail sections.
+    let import_result = RwSignal::new(None::<String>);
+    let thumb_result = RwSignal::new(None::<String>);
+    let rebuild_result = RwSignal::new(None::<String>);
 
     // Progress signals derived from activity for display components.
     let import_progress = Memo::new(move |_| match activity.get() {
@@ -60,7 +61,9 @@ pub fn MetadataPage() -> impl IntoView {
                 activity.set(act);
                 watch_activity(
                     activity,
-                    result_message,
+                    import_result,
+                    thumb_result,
+                    rebuild_result,
                     thumb_cancelling,
                     stats,
                     coverage,
@@ -75,7 +78,7 @@ pub fn MetadataPage() -> impl IntoView {
         if is_busy.get() {
             return;
         }
-        result_message.set(None);
+        import_result.set(None);
         leptos::task::spawn_local(async move {
             match server_fns::download_metadata().await {
                 Ok(()) => {
@@ -94,7 +97,9 @@ pub fn MetadataPage() -> impl IntoView {
                     });
                     watch_activity(
                         activity,
-                        result_message,
+                        import_result,
+                        thumb_result,
+                        rebuild_result,
                         thumb_cancelling,
                         stats,
                         coverage,
@@ -103,7 +108,7 @@ pub fn MetadataPage() -> impl IntoView {
                     );
                 }
                 Err(e) => {
-                    result_message.set(Some(format!("Error: {e}")));
+                    import_result.set(Some(format!("Error: {e}")));
                 }
             }
         });
@@ -114,7 +119,7 @@ pub fn MetadataPage() -> impl IntoView {
             return;
         }
         thumb_cancelling.set(false);
-        result_message.set(None);
+        thumb_result.set(None);
         leptos::task::spawn_local(async move {
             match server_fns::update_thumbnails().await {
                 Ok(()) => {
@@ -132,7 +137,9 @@ pub fn MetadataPage() -> impl IntoView {
                     ));
                     watch_activity(
                         activity,
-                        result_message,
+                        import_result,
+                        thumb_result,
+                        rebuild_result,
                         thumb_cancelling,
                         stats,
                         coverage,
@@ -141,7 +148,7 @@ pub fn MetadataPage() -> impl IntoView {
                     );
                 }
                 Err(e) => {
-                    result_message.set(Some(format!("Error: {e}")));
+                    thumb_result.set(Some(format!("Error: {e}")));
                 }
             }
         });
@@ -167,59 +174,57 @@ pub fn MetadataPage() -> impl IntoView {
             <section class="section">
                 <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.system_overview")}</h2>
                 <Suspense fallback=move || view! { <MetadataTableSkeleton /> }>
-                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                        {move || Suspend::new(async move {
-                            let locale = i18n.locale.get();
-                            let data = coverage.await?;
+                    {move || Suspend::new(async move {
+                        let locale = i18n.locale.get();
+                        let data = coverage.await?;
 
-                            let has_any_data = data.iter().any(|c| c.with_metadata > 0 || c.with_thumbnail > 0);
+                        let has_any_data = data.iter().any(|c| c.with_metadata > 0 || c.with_thumbnail > 0);
 
-                            Ok::<_, ServerFnError>(if !has_any_data {
-                                view! {
-                                    <p class="game-section-empty">{t(locale, "metadata.no_systems")}</p>
-                                }.into_any()
-                            } else {
-                                let rows = data.into_iter()
-                                    .filter(|c| c.with_metadata > 0 || c.with_thumbnail > 0)
-                                    .map(|c| {
-                                        let desc_pct = if c.total_games > 0 && c.with_metadata > 0 {
-                                            format!("{}%", (c.with_metadata as f64 / c.total_games as f64 * 100.0) as u32)
-                                        } else {
-                                            "--".to_string()
-                                        };
-                                        let thumb_pct = if c.total_games > 0 && c.with_thumbnail > 0 {
-                                            format!("{}%", (c.with_thumbnail as f64 / c.total_games as f64 * 100.0) as u32)
-                                        } else {
-                                            "--".to_string()
-                                        };
-                                        view! {
+                        Ok::<_, ServerFnError>(if !has_any_data {
+                            view! {
+                                <p class="game-section-empty">{t(locale, "metadata.no_systems")}</p>
+                            }.into_any()
+                        } else {
+                            let rows = data.into_iter()
+                                .filter(|c| c.with_metadata > 0 || c.with_thumbnail > 0)
+                                .map(|c| {
+                                    let desc_pct = if c.total_games > 0 && c.with_metadata > 0 {
+                                        format!("{}%", (c.with_metadata as f64 / c.total_games as f64 * 100.0) as u32)
+                                    } else {
+                                        "--".to_string()
+                                    };
+                                    let thumb_pct = if c.total_games > 0 && c.with_thumbnail > 0 {
+                                        format!("{}%", (c.with_thumbnail as f64 / c.total_games as f64 * 100.0) as u32)
+                                    } else {
+                                        "--".to_string()
+                                    };
+                                    view! {
+                                        <tr>
+                                            <td class="overview-system">{c.display_name}</td>
+                                            <td class="overview-num">{c.total_games}</td>
+                                            <td class="overview-num">{desc_pct}</td>
+                                            <td class="overview-num">{thumb_pct}</td>
+                                        </tr>
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+                            view! {
+                                <div class="overview-table-wrap">
+                                    <table class="overview-table">
+                                        <thead>
                                             <tr>
-                                                <td class="overview-system">{c.display_name}</td>
-                                                <td class="overview-num">{c.total_games}</td>
-                                                <td class="overview-num">{desc_pct}</td>
-                                                <td class="overview-num">{thumb_pct}</td>
+                                                <th class="overview-system">{t(locale, "metadata.col_system")}</th>
+                                                <th class="overview-num">{t(locale, "metadata.col_games")}</th>
+                                                <th class="overview-num">{t(locale, "metadata.col_desc")}</th>
+                                                <th class="overview-num">{t(locale, "metadata.col_thumb")}</th>
                                             </tr>
-                                        }
-                                    })
-                                    .collect::<Vec<_>>();
-                                view! {
-                                    <div class="overview-table-wrap">
-                                        <table class="overview-table">
-                                            <thead>
-                                                <tr>
-                                                    <th class="overview-system">{t(locale, "metadata.col_system")}</th>
-                                                    <th class="overview-num">{t(locale, "metadata.col_games")}</th>
-                                                    <th class="overview-num">{t(locale, "metadata.col_desc")}</th>
-                                                    <th class="overview-num">{t(locale, "metadata.col_thumb")}</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>{rows}</tbody>
-                                        </table>
-                                    </div>
-                                }.into_any()
-                            })
-                        })}
-                    </ErrorBoundary>
+                                        </thead>
+                                        <tbody>{rows}</tbody>
+                                    </table>
+                                </div>
+                            }.into_any()
+                        })
+                    })}
                 </Suspense>
             </section>
 
@@ -229,36 +234,34 @@ pub fn MetadataPage() -> impl IntoView {
 
                 // Built-in data info block
                 <Suspense fallback=move || view! { <MetadataCardSkeleton /> }>
-                    <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                        {move || Suspend::new(async move {
-                            let locale = i18n.locale.get();
-                            let bs = builtin_stats.await?;
-                            Ok::<_, ServerFnError>(view! {
-                                <div class="data-source-card builtin-info">
-                                    <div class="data-source-header">
-                                        <span class="data-source-name">{t(locale, "metadata.builtin")}</span>
-                                    </div>
-                                    <p class="data-source-summary">
-                                        {format!(
-                                            "{} {} {} — {} {} {} {} — {} {} {} {}",
-                                            format_number(bs.arcade_entries),
-                                            t(locale, "metadata.builtin_arcade_summary"),
-                                            bs.arcade_mame_version,
-                                            format_number(bs.game_rom_entries),
-                                            t(locale, "metadata.builtin_console_summary_entries"),
-                                            bs.game_system_count,
-                                            t(locale, "metadata.builtin_console_summary_systems"),
-                                            format_number(bs.wikidata_series_entries),
-                                            t(locale, "metadata.builtin_wikidata_entries"),
-                                            bs.wikidata_series_count,
-                                            t(locale, "metadata.builtin_wikidata_series"),
-                                        )}
-                                    </p>
-                                    <p class="settings-hint">{t(locale, "metadata.builtin_hint")}</p>
+                    {move || Suspend::new(async move {
+                        let locale = i18n.locale.get();
+                        let bs = builtin_stats.await?;
+                        Ok::<_, ServerFnError>(view! {
+                            <div class="data-source-card builtin-info">
+                                <div class="data-source-header">
+                                    <span class="data-source-name">{t(locale, "metadata.builtin")}</span>
                                 </div>
-                            })
-                        })}
-                    </ErrorBoundary>
+                                <p class="data-source-summary">
+                                    {format!(
+                                        "{} {} {} — {} {} {} {} — {} {} {} {}",
+                                        format_number(bs.arcade_entries),
+                                        t(locale, "metadata.builtin_arcade_summary"),
+                                        bs.arcade_mame_version,
+                                        format_number(bs.game_rom_entries),
+                                        t(locale, "metadata.builtin_console_summary_entries"),
+                                        bs.game_system_count,
+                                        t(locale, "metadata.builtin_console_summary_systems"),
+                                        format_number(bs.wikidata_series_entries),
+                                        t(locale, "metadata.builtin_wikidata_entries"),
+                                        bs.wikidata_series_count,
+                                        t(locale, "metadata.builtin_wikidata_series"),
+                                    )}
+                                </p>
+                                <p class="settings-hint">{t(locale, "metadata.builtin_hint")}</p>
+                            </div>
+                        })
+                    })}
                 </Suspense>
 
                 // Descriptions & Ratings (LaunchBox)
@@ -267,28 +270,26 @@ pub fn MetadataPage() -> impl IntoView {
                         <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.descriptions_launchbox")}</span>
                     </div>
                     <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
-                        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                            {move || Suspend::new(async move {
-                                let locale = i18n.locale.get();
-                                let data = stats.await?;
-                                Ok::<_, ServerFnError>(if data.total_entries == 0 {
-                                    view! {
-                                        <p class="data-source-summary dim">{t(locale, "metadata.no_data")}</p>
-                                    }.into_any()
+                        {move || Suspend::new(async move {
+                            let locale = i18n.locale.get();
+                            let data = stats.await?;
+                            Ok::<_, ServerFnError>(if data.total_entries == 0 {
+                                view! {
+                                    <p class="data-source-summary dim">{t(locale, "metadata.no_data")}</p>
+                                }.into_any()
+                            } else {
+                                let updated = if data.last_updated_text.is_empty() {
+                                    String::new()
                                 } else {
-                                    let updated = if data.last_updated_text.is_empty() {
-                                        String::new()
-                                    } else {
-                                        format!(" — {}", data.last_updated_text)
-                                    };
-                                    view! {
-                                        <p class="data-source-summary">
-                                            {format!("{} {}{}", data.total_entries, t(locale, "metadata.entries_summary"), updated)}
-                                        </p>
-                                    }.into_any()
-                                })
-                            })}
-                        </ErrorBoundary>
+                                    format!(" — {}", data.last_updated_text)
+                                };
+                                view! {
+                                    <p class="data-source-summary">
+                                        {format!("{} {}{}", data.total_entries, t(locale, "metadata.entries_summary"), updated)}
+                                    </p>
+                                }.into_any()
+                            })
+                        })}
                     </Suspense>
                     <div class="data-source-actions">
                         <button
@@ -306,10 +307,8 @@ pub fn MetadataPage() -> impl IntoView {
                     <Show when=move || import_progress.get().is_some()>
                         <ImportProgressDisplay progress=import_progress />
                     </Show>
-                    <Show when=move || {
-                        result_message.read().is_some() && matches!(activity.get(), Activity::Idle | Activity::Import { .. })
-                    }>
-                        <p class="settings-saved">{move || result_message.get().unwrap_or_default()}</p>
+                    <Show when=move || import_result.read().is_some()>
+                        <p class="settings-saved">{move || import_result.get().unwrap_or_default()}</p>
                     </Show>
                 </div>
 
@@ -319,62 +318,60 @@ pub fn MetadataPage() -> impl IntoView {
                         <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.thumbnails_libretro")}</span>
                     </div>
                     <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
-                        <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                            {move || Suspend::new(async move {
-                                let locale = i18n.locale.get();
-                                let ds = data_source.await?;
-                                let (with_boxart, with_snap, media_size) = image_stats.await?;
+                        {move || Suspend::new(async move {
+                            let locale = i18n.locale.get();
+                            let ds = data_source.await?;
+                            let (with_boxart, with_snap, media_size) = image_stats.await?;
 
-                                Ok::<_, ServerFnError>(if ds.entry_count == 0 && with_boxart == 0 {
-                                    view! {
-                                        <p class="data-source-summary dim">{t(locale, "metadata.thumbnail_no_data")}</p>
-                                    }.into_any()
+                            Ok::<_, ServerFnError>(if ds.entry_count == 0 && with_boxart == 0 {
+                                view! {
+                                    <p class="data-source-summary dim">{t(locale, "metadata.thumbnail_no_data")}</p>
+                                }.into_any()
+                            } else {
+                                let images_line = if with_boxart > 0 || with_snap > 0 {
+                                    format!(
+                                        "{} {}, {} {} — {} {}",
+                                        with_boxart,
+                                        t(locale, "metadata.thumbnail_summary"),
+                                        with_snap,
+                                        t(locale, "metadata.thumbnail_snaps"),
+                                        format_size(media_size),
+                                        t(locale, "metadata.thumbnail_on_disk"),
+                                    )
                                 } else {
-                                    let images_line = if with_boxart > 0 || with_snap > 0 {
-                                        format!(
-                                            "{} {}, {} {} — {} {}",
-                                            with_boxart,
-                                            t(locale, "metadata.thumbnail_summary"),
-                                            with_snap,
-                                            t(locale, "metadata.thumbnail_snaps"),
-                                            format_size(media_size),
-                                            t(locale, "metadata.thumbnail_on_disk"),
-                                        )
-                                    } else {
+                                    String::new()
+                                };
+                                let index_line = if ds.entry_count > 0 {
+                                    let updated = if ds.last_updated_text.is_empty() {
                                         String::new()
-                                    };
-                                    let index_line = if ds.entry_count > 0 {
-                                        let updated = if ds.last_updated_text.is_empty() {
-                                            String::new()
-                                        } else {
-                                            format!(" — {}", ds.last_updated_text)
-                                        };
-                                        format!(
-                                            "Index: {} {} {} {}{}",
-                                            ds.entry_count,
-                                            t(locale, "metadata.thumbnail_index_summary"),
-                                            ds.repo_count,
-                                            t(locale, "metadata.thumbnail_systems"),
-                                            updated,
-                                        )
                                     } else {
-                                        String::new()
+                                        format!(" — {}", ds.last_updated_text)
                                     };
-                                    let has_images = !images_line.is_empty();
-                                    let has_index = !index_line.is_empty();
-                                    view! {
-                                        <div class="data-source-details">
-                                            {has_images.then(|| view! {
-                                                <p class="data-source-summary">{images_line}</p>
-                                            })}
-                                            {has_index.then(|| view! {
-                                                <p class="data-source-summary">{index_line}</p>
-                                            })}
-                                        </div>
-                                    }.into_any()
-                                })
-                            })}
-                        </ErrorBoundary>
+                                    format!(
+                                        "Index: {} {} {} {}{}",
+                                        ds.entry_count,
+                                        t(locale, "metadata.thumbnail_index_summary"),
+                                        ds.repo_count,
+                                        t(locale, "metadata.thumbnail_systems"),
+                                        updated,
+                                    )
+                                } else {
+                                    String::new()
+                                };
+                                let has_images = !images_line.is_empty();
+                                let has_index = !index_line.is_empty();
+                                view! {
+                                    <div class="data-source-details">
+                                        {has_images.then(|| view! {
+                                            <p class="data-source-summary">{images_line}</p>
+                                        })}
+                                        {has_index.then(|| view! {
+                                            <p class="data-source-summary">{index_line}</p>
+                                        })}
+                                    </div>
+                                }.into_any()
+                            })
+                        })}
                     </Suspense>
                     <div class="data-source-actions">
                         <button
@@ -405,16 +402,14 @@ pub fn MetadataPage() -> impl IntoView {
                     <Show when=move || thumb_progress.get().is_some()>
                         <ThumbnailProgressDisplay progress=thumb_progress />
                     </Show>
-                    <Show when=move || {
-                        result_message.read().is_some() && matches!(activity.get(), Activity::Idle) && !is_importing.get()
-                    }>
-                        <p class="settings-saved">{move || result_message.get().unwrap_or_default()}</p>
+                    <Show when=move || thumb_result.read().is_some()>
+                        <p class="settings-saved">{move || thumb_result.get().unwrap_or_default()}</p>
                     </Show>
                 </div>
             </section>
 
             // ── Data Management ───────────────────────────────────────
-            <DataManagementSection stats coverage activity result_message is_busy />
+            <DataManagementSection stats coverage activity result_message=rebuild_result is_busy />
 
             // ── Attribution ───────────────────────────────────────────
             <section class="section">
@@ -447,7 +442,9 @@ fn close_activity_sse() {
 /// On SSR this is a no-op; the real work happens client-side via EventSource.
 fn watch_activity(
     activity: RwSignal<Activity>,
-    result_message: RwSignal<Option<String>>,
+    import_result: RwSignal<Option<String>>,
+    thumb_result: RwSignal<Option<String>>,
+    rebuild_result: RwSignal<Option<String>>,
     thumb_cancelling: RwSignal<bool>,
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
@@ -455,7 +452,7 @@ fn watch_activity(
     image_stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = (&activity, &result_message, &thumb_cancelling, &stats, &coverage, &data_source, &image_stats);
+    let _ = (&activity, &import_result, &thumb_result, &rebuild_result, &thumb_cancelling, &stats, &coverage, &data_source, &image_stats);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -498,13 +495,19 @@ fn watch_activity(
                     // 1. Set activity to Idle immediately (buttons re-enable).
                     activity.set(Activity::Idle);
 
-                    // 2. Set result message for display.
+                    // 2. Set result message on the correct per-operation signal.
                     if !message.is_empty() {
-                        result_message.set(Some(message));
+                        let target = match &act {
+                            Activity::Import { .. } => import_result,
+                            Activity::ThumbnailUpdate { .. } => thumb_result,
+                            Activity::Rebuild { .. } => rebuild_result,
+                            _ => import_result, // fallback
+                        };
+                        target.set(Some(message));
 
                         // 3. Start client-side timer to clear the message after 5s.
                         gloo_timers::callback::Timeout::new(5_000, move || {
-                            result_message.set(None);
+                            target.set(None);
                         })
                         .forget();
                     }
@@ -767,17 +770,14 @@ fn DataManagementSection(
         leptos::task::spawn_local(async move {
             match server_fns::rebuild_game_library().await {
                 Ok(()) => {
-                    // The server has claimed Activity::Rebuild. Fetch it to set local state,
-                    // then start watching.
                     if let Ok(act) = server_fns::get_activity().await {
                         activity.set(act);
                     }
-                    // We need to start watching even if get_activity returned Idle
-                    // (the rebuild might already be done by the time we check).
-                    // watch_activity handles Idle gracefully.
                     watch_activity(
                         activity,
-                        result_message,
+                        RwSignal::new(None), // import_result (unused for rebuild)
+                        RwSignal::new(None), // thumb_result (unused for rebuild)
+                        result_message,      // rebuild_result
                         RwSignal::new(false), // no cancelling for rebuild
                         stats,
                         coverage,

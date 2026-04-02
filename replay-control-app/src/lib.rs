@@ -24,6 +24,7 @@ use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
 use i18n::provide_i18n;
+use pages::ErrorDisplay;
 use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
@@ -144,22 +145,22 @@ pub fn App() -> impl IntoView {
 
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
-                        <Route path=path!("/") view=HomePage />
-                        <Route path=path!("/developer/:name") view=DeveloperPage />
-                        <Route path=path!("/games/:system") view=SystemRomView />
-                        <Route path=path!("/games/:system/:filename") view=GameDetailPage />
-                        <Route path=path!("/favorites") view=FavoritesPage />
-                        <Route path=path!("/favorites/:system") view=SystemFavoritesPage />
-                        <Route path=path!("/search") view=SearchPage />
-                        <Route path=path!("/more") view=MorePage />
-                        <Route path=path!("/more/wifi") view=WifiPage />
-                        <Route path=path!("/more/nfs") view=NfsPage />
-                        <Route path=path!("/more/hostname") view=HostnamePage />
-                        <Route path=path!("/more/password") view=PasswordPage />
-                        <Route path=path!("/more/metadata") view=MetadataPage />
-                        <Route path=path!("/more/skin") view=SkinPage />
-                        <Route path=path!("/more/logs") view=LogsPage />
-                        <Route path=path!("/more/github") view=GithubPage />
+                        <Route path=path!("/") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HomePage /></ErrorBoundary> } />
+                        <Route path=path!("/developer/:name") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><DeveloperPage /></ErrorBoundary> } />
+                        <Route path=path!("/games/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemRomView /></ErrorBoundary> } />
+                        <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GameDetailPage /></ErrorBoundary> } />
+                        <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
+                        <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
+                        <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />
+                        <Route path=path!("/more") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MorePage /></ErrorBoundary> } />
+                        <Route path=path!("/more/wifi") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><WifiPage /></ErrorBoundary> } />
+                        <Route path=path!("/more/nfs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><NfsPage /></ErrorBoundary> } />
+                        <Route path=path!("/more/hostname") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HostnamePage /></ErrorBoundary> } />
+                        <Route path=path!("/more/password") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><PasswordPage /></ErrorBoundary> } />
+                        <Route path=path!("/more/metadata") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MetadataPage /></ErrorBoundary> } />
+                        <Route path=path!("/more/skin") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SkinPage /></ErrorBoundary> } />
+                        <Route path=path!("/more/logs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><LogsPage /></ErrorBoundary> } />
+                        <Route path=path!("/more/github") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GithubPage /></ErrorBoundary> } />
                     </Routes>
                 </main>
 

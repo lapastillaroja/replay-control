@@ -3,7 +3,6 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::i18n::{t, use_i18n};
-use crate::pages::ErrorDisplay;
 use crate::server_fns;
 
 #[component]
@@ -20,14 +19,12 @@ pub fn SkinPage() -> impl IntoView {
                 <h2 class="page-title">{move || t(i18n.locale.get(), "skin.title")}</h2>
             </div>
 
-            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                    {move || Suspend::new(async move {
-                        let (current, sync, skins) = skins.await?;
-                        Ok::<_, ServerFnError>(view! { <SkinGrid current sync skins /> })
-                    })}
-                </Suspense>
-            </ErrorBoundary>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                {move || Suspend::new(async move {
+                    let (current, sync, skins) = skins.await?;
+                    Ok::<_, ServerFnError>(view! { <SkinGrid current sync skins /> })
+                })}
+            </Suspense>
         </div>
     }
 }

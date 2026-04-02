@@ -3,7 +3,6 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::i18n::{t, use_i18n};
-use crate::pages::ErrorDisplay;
 use crate::server_fns;
 
 /// Available log sources that map to journalctl unit filters.
@@ -57,16 +56,14 @@ pub fn LogsPage() -> impl IntoView {
                 </button>
             </div>
 
-            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                    {move || Suspend::new(async move {
-                        let text = logs.await?;
-                        Ok::<_, ServerFnError>(view! {
-                            <pre class="logs-output">{text}</pre>
-                        })
-                    })}
-                </Suspense>
-            </ErrorBoundary>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                {move || Suspend::new(async move {
+                    let text = logs.await?;
+                    Ok::<_, ServerFnError>(view! {
+                        <pre class="logs-output">{text}</pre>
+                    })
+                })}
+            </Suspense>
         </div>
     }
 }

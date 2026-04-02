@@ -4,7 +4,6 @@ use server_fn::ServerFnError;
 
 use crate::components::reboot_button::RebootButton;
 use crate::i18n::{t, use_i18n};
-use crate::pages::ErrorDisplay;
 use crate::server_fns;
 
 #[component]
@@ -21,14 +20,12 @@ pub fn NfsPage() -> impl IntoView {
                 <h2 class="page-title">{move || t(i18n.locale.get(), "nfs.title")}</h2>
             </div>
 
-            <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
-                    {move || Suspend::new(async move {
-                        let config = nfs.await?;
-                        Ok::<_, ServerFnError>(view! { <NfsForm config /> })
-                    })}
-                </Suspense>
-            </ErrorBoundary>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                {move || Suspend::new(async move {
+                    let config = nfs.await?;
+                    Ok::<_, ServerFnError>(view! { <NfsForm config /> })
+                })}
+            </Suspense>
         </div>
     }
 }

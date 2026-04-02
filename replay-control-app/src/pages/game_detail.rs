@@ -9,7 +9,6 @@ use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{t, use_i18n};
-use crate::pages::ErrorDisplay;
 use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
 
@@ -51,14 +50,12 @@ pub fn GameDetailPage() -> impl IntoView {
     view! {
         <div class="page game-detail">
             <Suspense fallback=move || view! { <GameDetailSkeleton /> }>
-                <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }>
-                    {move || Suspend::new(async move {
-                        let data = detail.await?;
-                        Ok::<_, ServerFnError>(view! {
-                            <GameDetailContent detail=data system=system() />
-                        })
-                    })}
-                </ErrorBoundary>
+                {move || Suspend::new(async move {
+                    let data = detail.await?;
+                    Ok::<_, ServerFnError>(view! {
+                        <GameDetailContent detail=data system=system() />
+                    })
+                })}
             </Suspense>
         </div>
     }
