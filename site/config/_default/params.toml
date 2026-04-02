@@ -1,0 +1,93 @@
+title = "Replay Control"
+description = "A companion web app for RePlayOS - manage your retro game library from any device"
+images = ["logo-oneline-transparent.png"]
+mainSections = ["docs"]
+math = false
+mathEngine = "KaTeX"
+
+[social]
+  twitter = ""
+
+[doks]
+  colorMode = "auto"
+  colorModeToggler = true
+  navbarSticky = true
+  containerBreakpoint = ""
+  navBarButton = true
+  navBarButtonUrl = "/docs/features/"
+  navBarButtonText = "Get started"
+  flexSearch = true
+  searchExclKinds = []
+  searchExclTypes = []
+  showSearch = []
+  indexSummary = false
+  showDate = false
+  showSummary = true
+  searchLimit = 99
+  alert = false
+  alertDismissable = true
+  bootstrapJavascript = true
+  sectionSwitcher = false
+  sectionNav = ["docs"]
+  toTopButton = true
+  breadcrumbTrail = true
+  headlineHash = true
+  scrollSpy = true
+  multilingualMode = false
+  showMissingLanguages = true
+  docsVersioning = false
+  docsVersion = "1.0"
+  headerBar = false
+  backgroundDots = true
+  aiButtons = false
+  sectionFooter = true
+  relatedPosts = false
+  imageList = true
+  imageSingle = true
+  editPage = false
+  lastMod = false
+  repoHost = "GitHub"
+  docsRepo = "https://github.com/lapastillaroja/replay-control"
+  docsRepoBranch = "main"
+  docsRepoSubPath = ""
+
+[render_hooks.image]
+  errorLevel = 'ignore'
+
+[render_hooks.link]
+  errorLevel = 'ignore'
+  highlightBroken = false
+
+[thulite_images]
+  [thulite_images.defaults]
+    decoding = "async"
+    fetchpriority = "auto"
+    loading = "lazy"
+    widths = [480, 576, 768, 1025, 1200, 1440]
+    sizes = "auto"
+    process = ""
+    lqip = "16x webp q20"
+
+[inline_svg]
+  iconSetDir = "tabler-icons"
+  iconSetVariant = "outline"
+
+[seo]
+  [seo.title]
+    separator = "|"
+    suffix = "Replay Control"
+  [seo.description]
+    summaryFallback = ""
+  [seo.favicons]
+    icon = "favicon.png"
+    svgIcon = "favicon.svg"
+  [seo.schemas]
+    type = "Organization"
+    logo = "favicon-512x512.png"
+    name = "Replay Control"
+    sameAs = []
+    images = ["logo-oneline-transparent.png"]
+    article = []
+    newsArticle = []
+    blogPosting = ["blog"]
+    product = []

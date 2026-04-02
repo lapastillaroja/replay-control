@@ -1,0 +1,113 @@
+{{ define "main" }}
+<section class="section container-fluid mt-n3 pb-3">
+  <div class="row justify-content-center">
+    <div class="col-lg-12 text-center">
+      <img src="/logo-oneline-transparent.png" alt="Replay Control" style="max-width: 400px; width: 100%; height: auto; margin-bottom: 1rem;" />
+    </div>
+    <div class="col-lg-9 col-xl-8 text-center">
+      <p class="lead">{{ .Params.lead | safeHTML }}</p>
+      <p class="meta">Manage your retro game library, browse metadata, and launch games &mdash; all from your phone, tablet, or desktop.</p>
+      <a class="btn btn-primary btn-cta rounded-pill btn-lg my-3" href="/docs/features/" role="button">{{ i18n "get_started" }}</a>
+      {{ .Content }}
+    </div>
+  </div>
+</section>
+{{ end }}
+
+{{ define "sidebar-prefooter" }}
+  {{ if site.Params.doks.backgroundDots -}}
+  <div class="d-flex justify-content-start">
+    <div class="bg-dots"></div>
+  </div>
+  {{ end -}}
+
+  <!-- Screenshots -->
+  <section class="section section-md">
+    <div class="container">
+      
+      <div style="display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 1rem; padding: 1rem 0; -webkit-overflow-scrolling: touch; align-items: flex-start;">
+        {{ $screenshots := slice
+          (dict "src" "/screenshots/home-desktop.png" "alt" "Home page - Desktop" "caption" "Home page")
+          (dict "src" "/screenshots/detail-sonic2.png" "alt" "Game detail - Sonic the Hedgehog 2" "caption" "Game detail")
+          (dict "src" "/screenshots/search-zelda.png" "alt" "Search results - Zelda" "caption" "Search")
+          (dict "src" "/screenshots/system-megadrive.png" "alt" "System browser - Mega Drive" "caption" "System browser")
+          (dict "src" "/screenshots/favorites-crop.png" "alt" "Favorites collection" "caption" "Favorites")
+          (dict "src" "/screenshots/skin-astro-home.png" "alt" "Astro skin - Home" "caption" "Astro skin")
+          (dict "src" "/screenshots/skin-astro-search.png" "alt" "Astro skin - Search" "caption" "Astro skin search")
+          (dict "src" "/screenshots/search-capcom.png" "alt" "Developer search - Capcom" "caption" "Developer search")
+        }}
+        {{ range $screenshots }}
+        <figure class="screenshot-thumb" data-bs-toggle="modal" data-bs-target="#lightbox" data-src="{{ .src }}" data-caption="{{ .caption }}" style="flex: 0 0 auto; scroll-snap-align: center; margin: 0; cursor: pointer;">
+          <img src="{{ .src }}" alt="{{ .alt }}" style="height: 300px; object-fit: cover; border-radius: 8px; border: 1px solid #333;" loading="lazy" />
+          <figcaption style="text-align: center; color: #888; font-size: 0.85rem; margin-top: 0.5rem;">{{ .caption }}</figcaption>
+        </figure>
+        {{ end }}
+      </div>
+
+      <!-- Lightbox modal -->
+      <div class="modal fade" id="lightbox" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+          <div class="modal-content" style="background: transparent; border: none;">
+            <div class="text-end p-2">
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <img id="lightbox-img" src="" alt="" style="width: 100%; border-radius: 8px;" />
+            <p id="lightbox-caption" class="text-center mt-2" style="color: #ccc; font-size: 0.9rem;"></p>
+          </div>
+        </div>
+      </div>
+      <script>
+        document.getElementById('lightbox').addEventListener('show.bs.modal', function(e) {
+          var trigger = e.relatedTarget;
+          document.getElementById('lightbox-img').src = trigger.dataset.src;
+          document.getElementById('lightbox-caption').textContent = trigger.dataset.caption;
+        });
+      </script>
+    </div>
+  </section>
+
+  <!-- Key Features -->
+  <section class="section section-md">
+    <div class="container">
+      <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; max-width: 800px; margin: 0 auto;">
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">📚 Metadata for 49K+ Games</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">🔍 Instant Search</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">⭐ Smart Recommendations</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">🎮 Launch Games from Phone</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">🖼️ Auto Box Art</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">📡 WiFi & NFS Setup</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">🎨 11 Skins</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">📴 Offline-First</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; padding: 0.4rem 1rem; font-size: 0.9rem; color: #ccc;">⚡ Built with Rust</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Install -->
+  <section class="section section-md">
+    <div class="container">
+      <h2 class="text-center mb-4">Quick Install</h2>
+      <div class="row justify-content-center">
+        <div class="col-lg-8">
+          <p class="text-center" style="color: #f0ad4e; font-size: 0.9rem;">⚠️ Beta — use this command until v1.0.0 is released:</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash">REPLAY_VERSION=v0.1.0-beta.4 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+</code></pre></div>
+          <p class="text-center mt-3">Then open <code>http://replay.local:8080</code> in your browser.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+{{ end }}
+
+{{ define "sidebar-footer" }}
+{{ if site.Params.doks.sectionFooter -}}
+<section class="section section-md container-fluid bg-light">
+  <div class="row justify-content-center text-center">
+    <div class="col-lg-7">
+      <h2 class="mt-2">Start exploring the docs</h2>
+      <a class="btn btn-primary rounded-pill px-4 my-2" href="/docs/features/" role="button">{{ i18n "get_started" }}</a>
+    </div>
+  </div>
+</section>
+{{ end -}}
+{{ end }}
