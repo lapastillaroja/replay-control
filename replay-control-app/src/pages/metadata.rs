@@ -439,6 +439,7 @@ fn close_activity_sse() {
 /// Watches activity progress via single SSE endpoint.
 ///
 /// On SSR this is a no-op; the real work happens client-side via EventSource.
+#[allow(clippy::too_many_arguments)] // SSE watcher needs activity + 3 result signals + resources
 fn watch_activity(
     activity: RwSignal<Activity>,
     import_result: RwSignal<Option<String>>,

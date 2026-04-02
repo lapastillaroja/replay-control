@@ -232,11 +232,11 @@ pub fn resolve_box_art<'a>(
     }
 
     // Arcade clone fallback: if this ROM is a clone, try the parent's display name.
-    if is_arcade {
-        if let Some(info) = crate::arcade_db::lookup_arcade_game(stem)
-            && !info.parent.is_empty()
-            && let Some(parent_info) = crate::arcade_db::lookup_arcade_game(info.parent)
-        {
+    if is_arcade
+        && let Some(info) = crate::arcade_db::lookup_arcade_game(stem)
+        && !info.parent.is_empty()
+        && let Some(parent_info) = crate::arcade_db::lookup_arcade_game(info.parent)
+    {
             // Build a synthetic rom_filename from the parent codename so
             // find_best_match uses the parent's display name for matching.
             let parent_filename = format!("{}.zip", info.parent);
@@ -256,7 +256,6 @@ pub fn resolve_box_art<'a>(
             {
                 return BoxArtResult::ManifestHit(m);
             }
-        }
     }
 
     BoxArtResult::NotFound
@@ -439,12 +438,11 @@ fn apply_base_title_fallback(
     // Build map: base_title → box_art_url from enrichments that resolved art.
     let mut art_by_base_title: HashMap<&str, &str> = HashMap::new();
     for e in &enrichments {
-        if let Some(ref url) = e.box_art_url {
-            if let Some(bt) = base_titles.get(&e.rom_filename) {
-                if !bt.is_empty() {
-                    art_by_base_title.entry(bt.as_str()).or_insert(url.as_str());
-                }
-            }
+        if let Some(ref url) = e.box_art_url
+            && let Some(bt) = base_titles.get(&e.rom_filename)
+            && !bt.is_empty()
+        {
+            art_by_base_title.entry(bt.as_str()).or_insert(url.as_str());
         }
     }
 
@@ -463,14 +461,12 @@ fn apply_base_title_fallback(
 
     // Pass 1: fill in existing enrichment entries that have no art.
     for e in &mut enrichments {
-        if e.box_art_url.is_none() {
-            if let Some(bt) = base_titles.get(&e.rom_filename) {
-                if !bt.is_empty() {
-                    if let Some(url) = art_by_base_title.get(bt.as_str()) {
-                        e.box_art_url = Some(url.clone());
-                    }
-                }
-            }
+        if e.box_art_url.is_none()
+            && let Some(bt) = base_titles.get(&e.rom_filename)
+            && !bt.is_empty()
+            && let Some(url) = art_by_base_title.get(bt.as_str())
+        {
+            e.box_art_url = Some(url.clone());
         }
     }
 
@@ -538,11 +534,11 @@ mod tests {
 
     /// Build a minimal ImageIndex with given (stem, path) entries and no manifest.
     fn image_index_from(entries: &[(&str, &str)]) -> ImageIndex {
-        let mut exact = HashMap::new();
-        let mut exact_ci = HashMap::new();
-        let mut fuzzy = HashMap::new();
-        let mut version = HashMap::new();
-        let mut aggressive = HashMap::new();
+        let mut exact: HashMap<String, String> = HashMap::new();
+        let mut exact_ci: HashMap<String, String> = HashMap::new();
+        let mut fuzzy: HashMap<String, String> = HashMap::new();
+        let mut version: HashMap<String, String> = HashMap::new();
+        let mut aggressive: HashMap<String, String> = HashMap::new();
 
         for &(stem, path) in entries {
             use crate::thumbnails::{base_title, strip_version};
