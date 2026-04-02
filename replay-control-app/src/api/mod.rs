@@ -892,7 +892,6 @@ pub fn build_router(
     );
 
     let state_for_sfn = app_state.clone();
-    let opts_for_style = leptos_options.clone();
 
     Router::new()
         .nest("/api", api_routes)
@@ -907,39 +906,6 @@ pub fn build_router(
                         req,
                     )
                     .await
-                }
-            }),
-        )
-        .route(
-            "/style.css",
-            axum::routing::get(move || {
-                let opts = opts_for_style.clone();
-                async move {
-                    use axum::response::IntoResponse;
-
-                    // Try to serve from filesystem first (for tests and development)
-                    // Check both the configured site_root and the default test location
-                    let possible_paths = vec![
-                        "target/site/style.css".to_string(),
-                        format!("{}/style.css", opts.site_root),
-                    ];
-
-                    for file_path in possible_paths {
-                        if let Ok(content) = std::fs::read_to_string(&file_path) {
-                            return (
-                                [("content-type", "text/css"), ("cache-control", CACHE_1H)],
-                                content,
-                            )
-                                .into_response();
-                        }
-                    }
-
-                    // Fallback to embedded CSS from build
-                    (
-                        [("content-type", "text/css"), ("cache-control", CACHE_1H)],
-                        include_str!(concat!(env!("OUT_DIR"), "/style.css")),
-                    )
-                        .into_response()
                 }
             }),
         )
