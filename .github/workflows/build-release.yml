@@ -17,15 +17,25 @@ jobs:
         with:
           targets: wasm32-unknown-unknown,aarch64-unknown-linux-gnu
 
-      - name: Install cross-compilation tools
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu binaryen
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            binaryen \
+            p7zip-full \
+            unzip
 
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli@0.2.116
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Download data files
+        run: |
+          bash scripts/download-arcade-data.sh
+          bash scripts/download-metadata.sh
 
       - name: Build (WASM + aarch64 server)
         run: ./build.sh aarch64
@@ -43,6 +53,7 @@ jobs:
           sha256sum \
               replay-control-app-aarch64-linux.tar.gz \
               replay-site.tar.gz \
+              install.sh \
               > checksums.sha256
 
       - name: Upload to GitHub Release

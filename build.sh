@@ -77,15 +77,20 @@ if [[ -n "$TARGET" ]]; then
     if [[ "$TARGET" == "aarch64-unknown-linux-gnu" ]]; then
         AARCH64_SYSROOT="${AARCH64_SYSROOT:-}"
         if [[ -z "$AARCH64_SYSROOT" ]]; then
-            # Auto-detect: Fedora uses sys-root subdir, Ubuntu puts files directly
+            # Auto-detect sysroot location (varies by distro):
+            #   Fedora: /usr/aarch64-linux-gnu/sys-root/usr/include/stdio.h
+            #   Ubuntu: /usr/aarch64-linux-gnu/usr/include/stdio.h
+            #           or /usr/aarch64-linux-gnu/include/stdio.h
             for _sysroot in "/usr/aarch64-linux-gnu/sys-root" "/usr/aarch64-linux-gnu"; do
-                if [[ -f "$_sysroot/usr/include/stdio.h" ]]; then
-                    AARCH64_SYSROOT="$_sysroot"
-                    break
-                fi
+                for _inc in "$_sysroot/usr/include" "$_sysroot/include"; do
+                    if [[ -f "$_inc/stdio.h" ]]; then
+                        AARCH64_SYSROOT="$_sysroot"
+                        break 2
+                    fi
+                done
             done
         fi
-        if [[ -z "$AARCH64_SYSROOT" || ! -f "$AARCH64_SYSROOT/usr/include/stdio.h" ]]; then
+        if [[ -z "$AARCH64_SYSROOT" ]]; then
             echo ""
             echo "    ERROR: aarch64 sysroot not found."
             echo "    Searched: /usr/aarch64-linux-gnu/sys-root (Fedora)"
