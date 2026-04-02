@@ -643,6 +643,25 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Get `(rom_filename, base_title)` pairs for a system.
+    ///
+    /// Used by enrichment to share box art between ROMs with the same base_title
+    /// (e.g., region variants, revisions).
+    pub fn visible_base_titles(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<Vec<(String, String)>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename, base_title FROM game_library WHERE system = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+        Ok(rows.flatten().collect())
+    }
+
     /// Clear all game_library and game_library_meta entries.
     pub fn clear_all_game_library(conn: &Connection) -> Result<()> {
         conn.execute("DELETE FROM game_library", [])
