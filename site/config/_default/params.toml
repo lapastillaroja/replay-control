@@ -80,7 +80,7 @@ mathEngine = "KaTeX"
     summaryFallback = ""
   [seo.favicons]
     icon = "favicon.png"
-    svgIcon = "favicon.svg"
+    svgIcon = ""
   [seo.schemas]
     type = "Organization"
     logo = "favicon-512x512.png"
