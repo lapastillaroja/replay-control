@@ -72,6 +72,10 @@
         max-width: 6rem;
     }
 
+    .hero-thumb-placeholder {
+        height: 4.5rem;
+    }
+
     .hero-title {
         font-size: 1.25rem;
     }
@@ -121,6 +125,10 @@
 
     .game-cover-img {
         max-height: 22rem;
+    }
+
+    .bp-detail {
+        height: 22rem;
     }
 
     /* ROM list / game list items: wider padding */

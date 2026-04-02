@@ -114,9 +114,8 @@
 }
 
 .rom-thumb-placeholder {
-    width: 2.5rem;
     height: 2.5rem;
-    background: var(--border);
+    aspect-ratio: 0.7;
     border-radius: 3px;
 }
 

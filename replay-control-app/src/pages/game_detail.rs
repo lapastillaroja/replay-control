@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
+use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::captures::{CapturesLightbox, INITIAL_CAPTURE_COUNT};
 use crate::components::hero_card::GameScrollCard;
@@ -255,7 +256,13 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         <section class="section">
             <div class="game-cover">
                 <Show when=move || box_art_url.read().is_some()
-                    fallback=move || view! { <span class="game-cover-text">{game_name_sv.get_value()}</span> }
+                    fallback=move || view! {
+                        <BoxArtPlaceholder
+                            system=system_sv.get_value()
+                            name=game_name_sv.get_value()
+                            size="detail".to_string()
+                        />
+                    }
                 >
                     <img
                         class="game-cover-img"
@@ -986,6 +993,7 @@ fn SimilarGamesRow(
                             href=game.href
                             name=name
                             system=game.system_display
+                            system_folder=game.system
                             box_art_url=game.box_art_url
                         />
                     }

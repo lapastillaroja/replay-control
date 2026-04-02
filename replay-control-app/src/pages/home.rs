@@ -36,10 +36,11 @@ pub fn HomePage() -> impl IntoView {
                         Ok::<_, ServerFnError>(if let Some(last) = entries.first() {
                             let name = last.entry.game.display_name.clone().unwrap_or_else(|| last.entry.game.rom_filename.clone());
                             let sys = last.entry.game.system_display.clone();
+                            let sys_folder = last.entry.game.system.clone();
                             let href = format!("/games/{}/{}", last.entry.game.system, urlencoding::encode(&last.entry.game.rom_filename));
                             let art_url = last.box_art_url.clone();
                             view! {
-                                <HeroCard href name system=sys box_art_url=art_url />
+                                <HeroCard href name system=sys system_folder=sys_folder box_art_url=art_url />
                             }.into_any()
                         } else {
                             view! { <p class="empty-state">{t(locale, "home.no_games_played")}</p> }.into_any()
@@ -65,8 +66,9 @@ pub fn HomePage() -> impl IntoView {
                                         let href = format!("/games/{}/{}", item.entry.game.system, urlencoding::encode(&item.entry.game.rom_filename));
                                         let art_url = item.box_art_url.clone();
                                         let system = item.entry.game.system_display.clone();
+                                        let system_folder = item.entry.game.system.clone();
                                         view! {
-                                            <GameScrollCard href name system box_art_url=art_url />
+                                            <GameScrollCard href name system system_folder box_art_url=art_url />
                                         }
                                     }).collect::<Vec<_>>()}
                                 </div>

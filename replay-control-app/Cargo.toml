@@ -21,9 +21,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 urlencoding = "2"
 wasm-bindgen = "0.2"
+replay-control-core = { path = "../replay-control-core", default-features = false }
 
 # SSR-only
-replay-control-core = { path = "../replay-control-core", features = ["metadata"], optional = true }
 axum = { version = "0.7", features = ["multipart"], optional = true }
 leptos_axum = { version = "0.7", optional = true }
 tower-http = { version = "0.6", features = ["fs", "cors", "compression-gzip", "set-header"], optional = true }
@@ -72,7 +72,7 @@ hydrate = [
 ssr = [
     "leptos/ssr",
     "server_fn/axum-no-default",
-    "dep:replay-control-core",
+    "replay-control-core/metadata",
     "dep:axum",
     "dep:leptos_axum",
     "dep:tower-http",

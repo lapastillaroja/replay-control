@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 use server_fn::ServerFnError;
 
+use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::i18n::{t, use_i18n};
@@ -166,9 +167,10 @@ where
                     let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
                     let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
                     let system = f.fav.game.system_display.clone();
+                    let system_folder = f.fav.game.system.clone();
                     let box_art_url = f.box_art_url.clone();
                     view! {
-                        <HeroCard href name system box_art_url />
+                        <HeroCard href name system system_folder box_art_url />
                     }
                 })}
             </section>
@@ -182,9 +184,10 @@ where
                             let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
                             let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
                             let system = f.fav.game.system_display.clone();
+                            let system_folder = f.fav.game.system.clone();
                             let box_art_url = f.box_art_url.clone();
                             view! {
-                                <GameScrollCard href name system box_art_url />
+                                <GameScrollCard href name system system_folder box_art_url />
                             }
                         }).collect::<Vec<_>>()}
                     </div>
@@ -410,7 +413,9 @@ where
     let box_art = StoredValue::new(box_art_url);
     let fav_filename = StoredValue::new(fav.marker_filename.clone());
     let subfolder = StoredValue::new(fav.subfolder.clone());
+    let system_folder = StoredValue::new(fav.game.system.clone());
     let rom_name = fav.game.display_name.unwrap_or(fav.game.rom_filename);
+    let placeholder_name = StoredValue::new(rom_name.clone());
     let system_display = if show_system {
         Some(fav.game.system_display)
     } else {
@@ -440,7 +445,11 @@ where
     view! {
         <div class="fav-item">
             <A href=game_href.get_value() attr:class="rom-thumb-link">
-                <Show when=move || has_box_art fallback=|| view! { <div class="rom-thumb-placeholder"></div> }>
+                <Show when=move || has_box_art fallback=move || view! {
+                    <div class="rom-thumb-placeholder">
+                        <BoxArtPlaceholder system=system_folder.get_value() name=placeholder_name.get_value() size="list".to_string() />
+                    </div>
+                }>
                     <img class="rom-thumb" src=box_art.get_value() loading="lazy" />
                 </Show>
             </A>

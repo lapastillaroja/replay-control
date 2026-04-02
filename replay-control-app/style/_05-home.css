@@ -39,9 +39,8 @@
 }
 
 .hero-thumb-placeholder {
-    width: 3.5rem;
     height: 3.5rem;
-    background: var(--border);
+    aspect-ratio: 0.7;
     border-radius: 4px;
     flex-shrink: 0;
 }
@@ -103,9 +102,8 @@
 }
 
 .scroll-card-thumb-placeholder {
-    width: 3.5rem;
     height: 5rem;
-    background: var(--border);
+    aspect-ratio: 0.7;
     border-radius: 3px;
     margin-bottom: 8px;
 }
@@ -357,8 +355,8 @@
 }
 
 .skeleton-card-image {
-    width: 3.5rem;
     height: 5rem;
+    aspect-ratio: 0.7;
     border-radius: 3px;
     background: var(--border);
     margin-bottom: 8px;
@@ -392,8 +390,8 @@
 }
 
 .skeleton-hero-thumb {
-    width: 3.5rem;
     height: 3.5rem;
+    aspect-ratio: 0.7;
     background: var(--border);
     border-radius: 4px;
     flex-shrink: 0;

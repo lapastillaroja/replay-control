@@ -1,4 +1,5 @@
 pub mod boxart_picker;
+pub mod boxart_placeholder;
 pub mod captures;
 pub mod corruption_banner;
 pub mod filter_chips;

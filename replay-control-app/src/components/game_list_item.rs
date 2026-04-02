@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
+use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::server_fns;
 
 /// Unified game list row component used across search results, developer pages,
@@ -30,6 +31,8 @@ pub fn GameListItem(
     let rom_path = StoredValue::new(rom_path);
     let has_box_art = box_art_url.is_some();
     let box_art_url = StoredValue::new(box_art_url);
+    let placeholder_name = StoredValue::new(display_name.clone());
+    let placeholder_system = StoredValue::new(system.get_value());
 
     let game_href = StoredValue::new(format!(
         "/games/{}/{}",
@@ -88,7 +91,11 @@ pub fn GameListItem(
                         />
                     }.into_any()
                 } else {
-                    view! { <div class="rom-thumb-placeholder"></div> }.into_any()
+                    view! {
+                        <div class="rom-thumb-placeholder">
+                            <BoxArtPlaceholder system=placeholder_system.get_value() name=placeholder_name.get_value() size="list".to_string() />
+                        </div>
+                    }.into_any()
                 }}
             </A>
 

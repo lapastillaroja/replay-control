@@ -1,0 +1,80 @@
+/* ================================================================
+   Box Art Placeholder — system-colored fallback for missing covers
+   ================================================================ */
+
+.boxart-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm, 4px);
+    overflow: hidden;
+    text-align: center;
+    gap: 2px;
+    width: 100%;
+    height: 100%;
+}
+
+.bp-abbrev {
+    font-weight: 700;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.bp-name {
+    font-size: 0.5rem;
+    color: rgba(255, 255, 255, 0.6);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    text-transform: capitalize;
+    padding: 0 4px;
+    line-height: 1.2;
+}
+
+/* Size variants */
+.bp-hero .bp-abbrev { font-size: 0.9rem; }
+.bp-hero .bp-name { font-size: 0.6rem; }
+.bp-list .bp-abbrev { font-size: 0.55rem; }
+.bp-list .bp-name { display: none; }
+
+/* Detail size — game detail cover placeholder.
+   Radial gradient background with large game name as the hero element. */
+.bp-detail {
+    width: auto;
+    height: 18.75rem;
+    aspect-ratio: 0.7;
+    padding: 24px 16px;
+    background: radial-gradient(
+        ellipse at center,
+        var(--bp-color, #2a4858) 0%,
+        color-mix(in srgb, var(--bp-color, #2a4858), black 40%) 100%
+    ) !important;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.bp-detail .bp-abbrev {
+    display: none;
+}
+
+.bp-detail .bp-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    -webkit-line-clamp: 4;
+    padding: 0 12px;
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1.3;
+}
+
+.bp-system-display {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-bottom: 4px;
+}

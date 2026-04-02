@@ -32,6 +32,7 @@ pub fn GameSectionRow(section: GameSection) -> impl IntoView {
                             href=game.href
                             name=game.display_name
                             system=game.system_display
+                            system_folder=game.system
                             box_art_url=game.box_art_url
                         />
                     }
