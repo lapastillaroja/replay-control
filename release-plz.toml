@@ -6,3 +6,15 @@ git_release_enable = true
 git_tag_enable = true
 # Single version tag for the workspace (v0.1.0, not crate-v0.1.0)
 git_tag_name = "v{{ version }}"
+# Use the root CHANGELOG.md for the whole workspace
+changelog_path = "CHANGELOG.md"
+
+# Only track the app crate for releases (core is a library, not released separately)
+[[package]]
+name = "replay-control-app"
+changelog_path = "../../CHANGELOG.md"
+
+[[package]]
+name = "replay-control-core"
+# Core is a workspace dependency, not released independently
+release = false
