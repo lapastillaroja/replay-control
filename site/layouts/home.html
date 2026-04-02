@@ -27,14 +27,14 @@
       
       <div style="display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 1rem; padding: 1rem 0; -webkit-overflow-scrolling: touch; align-items: flex-start;">
         {{ $screenshots := slice
-          (dict "src" "/screenshots/home-desktop.png" "alt" "Home page - Desktop" "caption" "Home page")
-          (dict "src" "/screenshots/detail-sonic2.png" "alt" "Game detail - Sonic the Hedgehog 2" "caption" "Game detail")
-          (dict "src" "/screenshots/search-zelda.png" "alt" "Search results - Zelda" "caption" "Search")
-          (dict "src" "/screenshots/system-megadrive.png" "alt" "System browser - Mega Drive" "caption" "System browser")
-          (dict "src" "/screenshots/favorites-crop.png" "alt" "Favorites collection" "caption" "Favorites")
-          (dict "src" "/screenshots/skin-astro-home.png" "alt" "Astro skin - Home" "caption" "Astro skin")
-          (dict "src" "/screenshots/skin-astro-search.png" "alt" "Astro skin - Search" "caption" "Astro skin search")
-          (dict "src" "/screenshots/search-capcom.png" "alt" "Developer search - Capcom" "caption" "Developer search")
+          (dict "src" "screenshots/home-desktop.png" "alt" "Home page - Desktop" "caption" "Home page")
+          (dict "src" "screenshots/detail-sonic2.png" "alt" "Game detail - Sonic the Hedgehog 2" "caption" "Game detail")
+          (dict "src" "screenshots/search-zelda.png" "alt" "Search results - Zelda" "caption" "Search")
+          (dict "src" "screenshots/system-megadrive.png" "alt" "System browser - Mega Drive" "caption" "System browser")
+          (dict "src" "screenshots/favorites-crop.png" "alt" "Favorites collection" "caption" "Favorites")
+          (dict "src" "screenshots/skin-astro-home.png" "alt" "Astro skin - Home" "caption" "Astro skin")
+          (dict "src" "screenshots/skin-astro-search.png" "alt" "Astro skin - Search" "caption" "Astro skin search")
+          (dict "src" "screenshots/search-capcom.png" "alt" "Developer search - Capcom" "caption" "Developer search")
         }}
         {{ range $screenshots }}
         <figure class="screenshot-thumb" data-bs-toggle="modal" data-bs-target="#lightbox" data-src="{{ .src | relURL }}" data-caption="{{ .caption }}" style="flex: 0 0 auto; scroll-snap-align: center; margin: 0; cursor: pointer;">
