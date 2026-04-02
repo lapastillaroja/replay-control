@@ -14,7 +14,7 @@ name = "replay-control-app"
 path = "src/main.rs"
 
 [dependencies]
-leptos = "0.7"
+leptos = "0.8"
 leptos_router = "0.7"
 server_fn = "0.7"
 serde = { workspace = true }
