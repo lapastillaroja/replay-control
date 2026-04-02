@@ -28,7 +28,7 @@ jobs:
   # When a release PR is merged (version bump committed): create git tag + GitHub Release
   release:
     runs-on: ubuntu-latest
-    if: github.event.head_commit.message == 'chore: release' || startsWith(github.event.head_commit.message, 'chore(release)')
+    if: ${{ github.event.head_commit.message == 'chore: release' || startsWith(github.event.head_commit.message, 'chore(release)') }}
     steps:
       - uses: actions/checkout@v6
         with:
