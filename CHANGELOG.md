@@ -143,7 +143,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Documentation
 - docs: update for filesystem-aware journal mode, SQLite upgrade, server lifecycle (`04db204`)
 - docs: update all documentation for pool migration, ROM management, cache TTL (`9a278c6`)
-- docs: add research documents — distribution strategy, git audit, SSR analysis (`8ccc06c`)
+- docs: add internal analysis documents (`8ccc06c`)
 - docs: mark ROM rename cascade as resolved in known issues (`896c927`)
 - docs: add cross-compilation reference guide for Fedora (`4f28ac2`)
 
@@ -260,7 +260,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - fix: tilde dual-title boxart matching — split on ~ and match either half (`84cf3d5`)
 - fix: non-blocking startup when game library is empty (`f55ed74`)
 - fix: eliminate rogue DB connections causing corruption (`f38f77a`)
-- docs: add secondary region analysis, Wikidata enrichment, sequel/franchise plan, pull-to-refresh research, app refactoring plan, SQLite filesystem analysis (`various`)
+- docs: add internal analysis and planning documents (`various`)
 
 ## 2026-03-14
 
@@ -283,7 +283,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - feat: improve image matching with slash dual-name, TOSEC version strip, and CHD filtering (`04ffb89`)
 - refactor: consolidate LaunchBox platform mappings into System struct (`2eeea32`)
 - feat: improve ScummVM detection and filter orphan M3U stubs (`8c89834`)
-- docs: reorganize into docs/ (public) and research/ (internal) (`9ad58c7`)
+- docs: reorganize documentation structure (`9ad58c7`)
 - feat: two-tier genre system with `genre_group` for unified filtering (`6afaafc`)
 - refactor: migrate video storage from `videos.json` to SQLite `user_data.db` (`6927907`)
 - docs: add conventional commits style guideline to CONTRIBUTING.md (`523ce2b`)
