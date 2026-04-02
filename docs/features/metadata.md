@@ -1,151 +1,77 @@
 # Metadata
 
-How game metadata is sourced, imported, and used.
+How game metadata is sourced and used.
 
-## Design Principle: Offline-First
+## Offline-First Design
 
-Replay Control is designed to work fully offline from the first install. The embedded databases (game_db, arcade_db) are compiled into the binary and provide genre, players, year, and display names for ~34K console ROMs and ~15K playable arcade games without any network access.
+Replay Control works fully offline from the first install. Built-in databases provide genre, player count, year, and display names for ~34K console ROMs and ~15K playable arcade games without any network access.
 
-When connected to the internet, users can optionally enrich their library further: downloading LaunchBox metadata (descriptions, ratings) and libretro-thumbnails (box art, screenshots). These online sources fill gaps that the baked-in data doesn't cover but are never required.
+When connected to the internet, you can optionally enrich your library with additional data from external sources. These fill gaps that the built-in data does not cover but are never required.
 
-## Embedded Databases (Compile-Time)
+## Built-In Data
 
-Two PHF maps are compiled into the binary via `build.rs`:
+### Console Games (~34K ROMs)
 
-### arcade_db (~15,440 entries, 15,414 playable)
+Display names, year, genre, developer, player count, and region for games across 20+ systems. Data is sourced from No-Intro, TheGamesDB, and libretro-database at build time.
 
-Covers all four arcade system folders: `arcade_mame`, `arcade_fbneo`, `arcade_mame_2k3p`, `arcade_dc`.
+Games are identified by filename, with a CRC32 hash fallback for 9 cartridge systems when the filename does not match the database.
 
-Fields: `display_name`, `year`, `manufacturer`, `players`, `rotation`, `driver_status`, `is_clone`, `is_bios`, `parent`, `category`, `normalized_genre`.
+### Arcade Games (~15K playable entries)
 
-Build-time merge order (later overrides earlier, except Flycast which is always preserved):
-1. Flycast CSV (hand-curated Naomi/Atomiswave, ~300 entries)
-2. FBNeo DAT (~8K entries)
-3. MAME 2003+ XML (~5K entries, adds players/rotation/status)
-4. MAME 0.285 XML (~27K entries, most complete)
-5. catver.ini v0.285 merged with category.ini v0.285 (~49,801 category entries)
-6. nplayers.ini v0.278 (~427 player count fills for entries missing players from XML)
+Covers MAME, FBNeo, and Flycast (Naomi/Atomiswave) arcade systems. Each entry includes display name, year, manufacturer, player count, rotation, driver status, clone/parent relationships, and category.
 
-Non-playable entries are filtered at build time: 13,153 non-game machines (slot machines, gambling, computers, electromechanical, etc.) are excluded by category prefix matching. 26 BIOS entries are preserved with `is_bios` flag for future system info pages but filtered from game lists at display time.
+Non-playable machines (slot machines, gambling, etc.) are filtered out.
 
-Source data is downloaded via `./scripts/download-arcade-data.sh` into the gitignored `data/` directory.
+### Genre Taxonomy
 
-### game_db (~34K ROM entries, ~15K canonical games)
+Both console and arcade databases map to a shared set of ~18 normalized genres: Action, Adventure, Beat'em Up, Board & Card, Driving, Educational, Fighting, Maze, Music, Pinball, Platform, Puzzle, Quiz, Role-Playing, Shooter, Simulation, Sports, Strategy, and Other.
 
-Covers 20+ non-arcade systems. Two-level model: `CanonicalGame` (shared per game) + `GameEntry` (per ROM variant).
+### Series Data
 
-Fields: `canonical_name`, `year`, `genre`, `developer`, `players`, `region`, `crc32`, `normalized_genre`.
+~5,345 game series entries across 194+ franchises from [Wikidata](https://www.wikidata.org/), with sequel/prequel chains and ordinals. See [Game Series](game-series.md) for details.
 
-Lookup chain: exact filename stem (O(1) PHF) -> CRC32 hash-based fallback (for 9 cartridge systems with No-Intro DATs) -> normalized title fallback.
+## External Metadata (Optional)
 
-Sources: No-Intro DATs (ROM identification), TheGamesDB JSON (metadata enrichment), libretro-database DATs (genre/players).
+### LaunchBox Import
 
-### Shared Genre Taxonomy
+Download the LaunchBox XML file (~460 MB) from the metadata page. The import:
 
-Both databases map to ~18 normalized genres at build time: Action, Adventure, Beat'em Up, Board & Card, Driving, Educational, Fighting, Maze, Music, Pinball, Platform, Puzzle, Quiz, Role-Playing, Shooter, Simulation, Sports, Strategy, Other.
+- Parses the file with real-time progress updates (downloading, parsing, matching)
+- Automatically matches entries to your ROM library by title
+- Shows per-system coverage stats after import
 
-## External Metadata (Runtime)
+Data imported: description, rating, rating count, publisher, developer, genre, max players, release date, and cooperative flag.
 
-### LaunchBox XML Import
+Where the built-in database already has a value (e.g., genre), it takes priority. LaunchBox data only fills gaps.
 
-The user downloads a ~460 MB XML file from LaunchBox containing ~108K game entries. The import pipeline:
+### Box Art and Screenshots
 
-1. **Build ROM index**: Scan all ROM directories, translate arcade codenames to display names via `arcade_db`, normalize filenames
-2. **Stream-parse XML**: Process each `<Game>` element, map platform to system folder(s) via `platform_map()` (~45 mappings)
-3. **Match and insert**: Normalized title matching against the ROM index, batch upsert to `game_metadata` table (batches of 500)
-
-Matching uses `normalize_title()`: strip parenthetical/bracket tags, reorder articles ("Title, The" -> "The Title"), keep only lowercase alphanumeric.
-
-Data stored: description, rating, rating count (from `<CommunityRatingCount>`), publisher, developer (from `<Developer>`), genre, max players (from `<MaxPlayers>`), release date (from `<ReleaseDate>`), cooperative flag (from `<Cooperative>`).
-
-### Genre Fallback
-
-When the baked-in database has no genre for a ROM, `enrich_system_cache()` fills it from LaunchBox's `game_metadata.genre`. This happens automatically after import. The baked-in genre always takes priority (LaunchBox only fills gaps).
-
-### Player Count Fallback
-
-Similarly, when a ROM has no player count from the baked-in database, enrichment falls back to `game_metadata.players` (parsed from LaunchBox's `<MaxPlayers>` field). This is critical for 11 systems that have 0% baked-in player coverage (amstrad_cpc, sharp_x68k, sega_sg, sega_32x, sega_st, sega_cd, sega_dc, sony_psx, ibm_pc, scummvm, commodore_ami).
-
-### Orphaned Image Cleanup
-
-The metadata page provides a "Cleanup Orphaned Images" button that removes downloaded images no longer associated with any game in the library. The cleanup:
-- Scans `boxart/` directories for each system (snap has no URL column to cross-reference)
-- Compares files on disk against active `game_library.box_art_url` entries
-- Applies an 80% safety net per system (refuses to delete if >80% would be removed)
-- Skips systems where no box art URLs have been enriched yet
-- Protected by `metadata_operation_in_progress` guard to prevent races with other operations
-
-### Wikidata Series Data
-
-Embedded at build time from Wikidata SPARQL extracts. Provides game series/franchise relationships using P179 (part of the series), P155/P156 (follows/followed by) for sequel chains, and P1545 ordinals for series ordering. ~5,345 entries across 194+ series covering both console and arcade systems.
-
-At scan time, entries are matched to library games by normalized title (with roman numeral normalization, e.g., "II" matches "2") and cross-system matching (a game's Wikidata entry may list a different platform than the ROM's system folder). See [Game Series](game-series.md) for details.
-
-## Unified GameInfo API
-
-Server functions return a single `GameInfo` struct regardless of data source. `resolve_game_info()` is the only place that branches on arcade vs. non-arcade:
-
-- Always available (from embedded DB): display_name, year, genre, developer, players
-- Available after import (from metadata_db): description, rating, rating_count, publisher, developer, box_art_url, screenshot_url, title_url
-- Arcade-specific: rotation, driver_status, is_clone, parent_rom, arcade_category
-- Console-specific: region
+See [Thumbnails](thumbnails.md) for image downloads from libretro-thumbnails.
 
 ## ROM Tag Parsing
 
-`rom_tags.rs` classifies ROMs by parsing filename tags. Supports No-Intro, GoodTools, and TOSEC naming conventions. TOSEC version strings and country codes are recognized for display name improvement and thumbnail matching.
+ROM filenames are parsed to extract region, revision, and classification tags. Supported naming conventions:
 
-| Tier | Examples | Effect |
-|------|----------|--------|
+- **No-Intro** -- parenthesized tags: `(USA)`, `(Rev 1)`, `(Hack)`, `(Beta)`, etc.
+- **GoodTools** -- bracket flags: `[!]` verified, `[h]` hack, `[T-Spa]` translation, etc.
+- **TOSEC** -- structured tags: year, publisher, side/disk, country codes, language codes, format suffix
+
+### ROM Classification
+
+ROMs are classified into tiers that affect their visibility in recommendations and variant sections:
+
+| Category | Examples | Effect |
+|----------|----------|--------|
 | Original | No special tags | Included in recommendations |
+| Revision | `(Rev 1)`, `(Rev A)` | Shown as variant, included in recommendations |
 | Translation | `(Traducido Es)`, `[T+Spa]` | Separate section, excluded from recommendations |
 | Hack | `(Hack)`, `[h1]` | Separate section, excluded from recommendations |
-| Special | `(FastRom)`, `(Unl)`, `(Homebrew)`, `(Beta)`, `(Pirate)` | Excluded from recommendations |
-| Revision | `(Rev 1)`, `(Rev A)` | Shown as variant, included in recommendations |
+| Special | `(Unl)`, `(Homebrew)`, `(Beta)`, `(Pirate)` | Excluded from recommendations |
 
-### TOSEC Structured Tag Parsing
+## Cache Management
 
-TOSEC filenames follow a structured convention: `Title (year)(publisher)(media)(country)(language)(other)[flags]`. The parser extracts:
+The metadata page provides tools to manage stored data:
 
-- **Year**: `(1988)`, `(19xx)` — displayed in metadata
-- **Publisher**: `(Ocean)`, `(Amstrad)` — used for developer/manufacturer display
-- **Side/Disk**: `(Side A)`, `(Disk 1 of 3)`, `(Tape 1 of 2)`, `(Part 1 of 3)` — triggers M3U auto-generation for multi-part grouping
-- **Country codes**: 17 recognized TOSEC country codes mapped to regions — US, GB, JP, DE, FR, ES, IT, NL, SE, AU, BR, KR, CN, TW, CA, PT, DK
-- **Language codes**: `(fr)`, `(es)`, `(en)` — displayed in display names and used for region field
-- **Format suffix**: `[DSK]`, `[CDT]` — added to display names when ambiguous (same title in multiple formats)
-
-### TOSEC Bracket Flag Classification
-
-Square bracket flags in TOSEC filenames are classified and given human-readable display labels:
-
-| Flag | Meaning | Display Label |
-|------|---------|---------------|
-| `[a]`, `[a2]` | Alternate dump | "Alternate", "Alternate 2" |
-| `[h]`, `[h1]` | Hack | "Hack" |
-| `[cr]` | Cracked | "Cracked" |
-| `[t]`, `[t1]` | Trained | "Trained", "Trained 1" |
-| `[f]` | Fixed | "Fixed" |
-| `[o]` | Overdump | "Overdump" |
-| `[b]` | Bad dump | "Bad Dump" |
-| `[!]` | Verified good | (not displayed) |
-
-Numbered flags (e.g., `[a2]`, `[t3]`) show the number in their label ("Alternate 2", "Trained 3"). These labels appear in display names alongside version/country information to disambiguate otherwise identical titles.
-
-## Key Source Files
-
-| File | Role |
-|------|------|
-| `replay-control-core/src/game/arcade_db.rs` | Arcade PHF map + lookup |
-| `replay-control-core/src/game/game_db.rs` | Console PHF maps + lookup chain |
-| `replay-control-core/src/metadata/launchbox.rs` | LaunchBox XML import, ROM index, title normalization |
-| `replay-control-core/src/metadata/metadata_db/` | SQLite schema, game_metadata, game_library, aliases/series tables |
-| `replay-control-core/src/game/series_db.rs` | Embedded Wikidata series database |
-| `replay-control-core/src/game/rom_tags.rs` | ROM filename classification and tag extraction |
-| `replay-control-core/build.rs` | Build-time database generation |
-| `replay-control-app/src/server_fns/mod.rs` | `resolve_game_info()` |
-
-## Related Documentation
-
-- `research/investigations/arcade-db-design.md` -- Full design doc for the arcade database build pipeline
-- `docs/reference/game-metadata.md` -- Comprehensive metadata source evaluation and storage design
-- `docs/reference/rom-matching.md` -- Matching pipeline details and coverage results
-- `docs/reference/rom-identification.md` -- ROM filename parsing specification
+- **Clear metadata** -- removes imported LaunchBox data
+- **Clear images** -- removes downloaded box art and screenshots
+- **Cleanup orphaned images** -- removes downloaded images no longer associated with any game in the library, with a safety threshold per system to prevent accidental mass deletion

@@ -1,5 +1,7 @@
 # Contributing
 
+Replay Control is a personal project — I built it for my own retro gaming setup and share it because others might find it useful too. Contributions are welcome! That said, I reserve the right to decline pull requests or feature suggestions that don't align with the project's direction. If you're thinking about a large change, open an issue first so we can discuss it.
+
 ## Prerequisites
 
 - **Rust** (stable) via [rustup](https://rustup.rs/)
@@ -105,6 +107,8 @@ See [README.md](README.md) for a full overview. The key crates:
 
 
 ## Pull Requests
+
+Pull requests are welcome for bug fixes, documentation improvements, and small enhancements. For larger features, please open an issue first — the maintainer may have different plans or may prefer a different approach.
 
 - Describe what changed and why
 - Test on Pi if possible (or note if you haven't)

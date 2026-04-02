@@ -1,77 +1,49 @@
 # Search
 
-How global search works: matching, scoring, and filtering.
+How global search, developer search, and the developer game list work.
 
-## Overview
+## Global Search
 
-Global search is a cross-system search accessible from the top bar icon, the home page search bar, and the `/` keyboard shortcut. Results are served via the `global_search()` server function.
+Cross-system search accessible from the bottom nav Search tab, the home page search bar, or the `/` keyboard shortcut.
 
-## Search Flow
+### How It Works
 
-1. User types a query (debounced 300ms)
-2. Server runs search in parallel across systems via `tokio::spawn`
-3. Each system's ROMs are pre-filtered at the SQL level using the `search_text` column (concatenated lowercase filename + display name), reducing the candidate set before in-memory scoring (220ms to 16ms for typical queries)
-4. Each ROM is scored against the query
-5. Results are filtered by optional criteria (genre, driver status, favorites-only)
-6. Top results are returned sorted by score, paginated
+- Type a query (results appear after a short debounce)
+- Search matches against both ROM filenames and display names using word-level fuzzy matching
+- Results are ranked with region preference bonuses and hack/translation penalties
+- Near-instant results across 23K+ games
 
-## Scoring Algorithm
+### Filters
 
-Word-level fuzzy matching in `server_fns/search.rs`:
+All filters are persisted in the URL, so you can share or bookmark filtered searches:
 
-1. **Tokenize** query and candidate name into words
-2. **Word boundary matching**: bonus for matches at word boundaries (e.g., "mario" matches "Super Mario World" better than "mariobros")
-3. **Substring matching**: each query word is checked against each name word
-4. **Region preference bonus**: ROMs in the user's preferred region score higher
-5. **Penalties**: Hacks and translations receive score penalties to rank below originals
-6. **Display name matching**: Both filename and display name (from arcade_db/game_db) are checked; best score wins
+| Filter | Options |
+|--------|---------|
+| Genre | Any normalized genre (Action, Platform, Shooter, etc.) |
+| Driver Status | Working, Imperfect, Preliminary (arcade only) |
+| Favorites Only | Show only favorited games |
+| Min Rating | Minimum community rating threshold |
 
-## Filters
+### Recent Searches
 
-URL-persisted query parameters on `/search`:
+Your last search queries are stored and displayed as quick-access chips on the search page.
 
-| Filter | Parameter | Options |
-|--------|-----------|---------|
-| Genre | `genre` | Any normalized genre from the taxonomy |
-| Driver Status | `status` | Working, Imperfect, Preliminary (arcade only) |
-| Favorites Only | `fav` | Boolean |
-| Min Rating | `rating` | Minimum LaunchBox community rating |
+### Random Game
 
-Genre resolution uses `lookup_genre()` which falls back to LaunchBox data when the baked-in database has no genre.
-
-## Recent Searches
-
-The last N search queries are stored client-side and displayed as quick-access chips on the search page.
+A "Random Game" button picks a random ROM from the library and navigates to its detail page.
 
 ## Developer Search
 
-When the search query matches a developer/manufacturer name, a "Games by Developer" block appears above the regular search results. This is powered by `search_by_developer()`, which:
+When your search query matches a developer or manufacturer name, a "Games by Developer" block appears above the regular search results. This shows:
 
-1. Queries the `developer` column in `game_library` for matching developer names (case-insensitive substring match)
-2. Returns the top-matched developer's games in a horizontal scroll block with box art
-3. Shows up to 2 additional matching developers as tappable links with game counts ("Other developers matching...")
-4. Each developer link navigates to `/developer/:name`
+- The top-matched developer's games in a horizontal scroll with box art
+- Up to 2 additional matching developers as tappable links with game counts
 
-### Developer Game List Page
+## Developer Game List
 
-`/developer/:name` shows the full game list for a specific developer with:
+Each developer has a dedicated page (`/developer/:name`) with:
+
 - **System filter chips** across the top (all systems the developer has games on, with counts)
-- **Content filter chips** (hide hacks, hide translations, hide clones, multiplayer only, genre, min rating)
+- **Content filters** -- hide hacks, hide translations, hide clones, multiplayer only, genre filter, minimum rating
 - **Infinite scroll** with pagination
-- **Cross-system game list** using the unified `GameListItem` component with system badges
-- Empty state for non-existent developers
-
-The developer column is populated from `arcade_db` manufacturer (for arcade systems) and LaunchBox `<Developer>` enrichment (for all systems).
-
-## Random Game
-
-A "Random Game" button picks a random ROM from the library and navigates to its game detail page.
-
-## Key Source Files
-
-| File | Role |
-|------|------|
-| `replay-control-app/src/server_fns/search.rs` | `global_search()`, `search_by_developer()`, scoring, `lookup_genre()` |
-| `replay-control-app/src/pages/search.rs` | Search page UI, URL param persistence |
-| `replay-control-app/src/pages/developer.rs` | Developer game list page |
-| `replay-control-app/src/components/search_bar.rs` | Top bar search icon, input handling |
+- **Cross-system game list** with system badges on each card

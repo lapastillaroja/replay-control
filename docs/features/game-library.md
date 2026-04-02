@@ -1,106 +1,88 @@
 # Game Library
 
-How the game library works: ROM scanning, caching, and the three-tier architecture.
+How the game library works from a user perspective: browsing systems, managing ROMs, and keeping your library up to date.
 
-## Architecture
+## Systems Grid
 
-The game library uses a three-tier cache to balance performance with freshness:
+The main library view shows all known systems as cards, each with the system display name, manufacturer, game count, and total size. Systems with no ROMs appear dimmed.
 
-```
-L1 (In-Memory)          L2 (SQLite)              L3 (Filesystem)
-RwLock<HashMap>     game_library table          roms/ directory tree
-  ~0ns lookup         ~1ms lookup                ~100ms full scan
-  CacheEntry<Arc<Vec>>  GameEntry rows           list_roms() + dedup
-  mtime-based         mtime-based invalidation   source of truth
-  NFS: 30-min TTL
-```
+Tap a system to view its games.
 
-### L1: In-Memory Cache
+## Game List
 
-`GameLibrary.roms` is a `RwLock<HashMap<String, CacheEntry<Arc<Vec<RomEntry>>>>>` keyed by system folder name. Each `CacheEntry` stores the data, directory mtime at cache time, and an optional hard TTL.
+Each system page shows its ROMs with:
 
-**Local storage** (SD/USB/NVMe): No hard TTL. Freshness is determined purely by mtime comparison (single `stat()` call). inotify watcher + explicit invalidation cover all change scenarios.
+- **Box art thumbnails** for every game that has images available
+- **Search** within the system (debounced so it doesn't lag while typing)
+- **Infinite scroll** with fast pagination (100 games per page)
+- **ROM details** -- filename, file size (Mbit/Kbit for cartridge systems, MB/GB for disc-based), file format badge
+- **Consistent game cards** -- the same card layout (box art, badges, favorite toggle) is used across all views: ROM lists, search results, developer pages, series siblings, and recommendations
 
-**NFS storage**: 30-minute hard TTL (`NFS_CACHE_TTL`) acts as a safety net since inotify cannot detect remote changes. The TTL is lazy (only checked on access, so it won't wake idle disks).
+## Per-Game Actions
 
-On access via `get_roms()`, if the entry exists and the directory mtime matches (and the TTL has not expired for NFS), the cached data is returned directly.
+Each game supports:
 
-### L2: SQLite Persistent Cache
+- **Favorite toggle** -- add or remove from favorites
+- **Inline rename** -- rename the ROM file (with extension protection to prevent breaking file associations)
+- **Delete with confirmation** -- shows file count and total size before deleting
 
-The `game_library` table in `metadata.db` stores one row per ROM with fields: `system`, `rom_filename`, `rom_path`, `display_name`, `size_bytes`, `is_m3u`, `box_art_url`, `driver_status`, `genre`, `genre_group`, `players`, `rating`, `rating_count`, `base_title`, `series_key`, `region`, `developer`, `is_clone`, `is_translation`, `is_hack`, `is_special`, `crc32`, `hash_mtime`, `hash_matched_name`, `search_text`.
+**Smart multi-file management:** Delete handles related files together -- M3U + disc files, CUE + BIN, ScummVM data directories, SBI companions. Rename is restricted for formats where renaming would break the game (CUE sheets, ScummVM, binary-referenced M3U playlists).
 
-The `search_text` column stores a pre-computed concatenation of lowercase filename and display name, enabling SQL-level `LIKE` pre-filtering during search queries. This reduces the candidate set before in-memory scoring runs, improving search latency from ~220ms to ~16ms for typical queries.
+## Multi-Disc Handling (M3U)
 
-The `game_library_meta` table tracks per-system metadata: `system`, `rom_count`, `total_size`, `dir_mtime_secs`.
+Games that span multiple discs (common for PlayStation, Sega CD, etc.) are handled automatically:
 
-On L1 miss, `load_roms_from_db()` checks the stored mtime against the current directory mtime. Match = serve from L2. Mismatch = fall through to L3.
+- When an M3U playlist exists, individual disc files are hidden from the game list
+- Sizes from all disc files are aggregated into the playlist entry
+- M3U playlists are auto-generated at scan time for multi-part games (Side A/B, Disk 1 of N)
 
-System ROM list pages use SQL-level pagination (`LIMIT`/`OFFSET`) directly against `game_library` instead of loading all rows into memory. Game detail pages use a single-row primary key lookup (`system` + `rom_filename`) instead of loading the entire system, reducing cold-cache latency from ~15 seconds to under 1 millisecond for large systems.
+From a user perspective, a 3-disc game appears as a single entry with the combined size.
 
-### L3: Filesystem Scan
+## Arcade Display Names
 
-`list_roms()` in `replay-control-core/src/library/roms.rs` recursively walks the system directory, collects ROM files, applies M3U deduplication, and returns `Vec<RomEntry>`. Results are written through to both L2 and L1 via `save_roms_to_db()`.
+Arcade ROMs use internal codenames (e.g., `sf2.zip`). The app automatically shows human-readable titles ("Street Fighter II") for ~15K playable arcade entries across MAME, FBNeo, and Flycast (Naomi/Atomiswave). Non-playable machines (slot machines, gambling, etc.) are filtered out.
 
-## ROM Scanning
+## Favorites
 
-`collect_roms_recursive()` walks system directories collecting files that match the system's extension list. M3U files are always accepted regardless of extensions.
+- **Add/remove favorites** from any game card or the game detail page
+- **Favorites page** with featured card, recently added scroll, per-system cards, and flat/grouped views
+- **Organize by criteria** -- group favorites into subfolders by developer, genre, system, players, or alphabetically (up to 2 levels of nesting)
+- **Remove confirmation** -- tapping the star shows "Remove?" before acting
+- **Sorted by date added** -- newest first, consistent across subfolders
+- **Favorites-based recommendations** on the favorites page:
+  - "Because You Love [Game]" -- similar games by genre and developer
+  - "More from [Series]" -- unfavorited series siblings across all your favorites
 
-After collection, `apply_m3u_dedup()` parses M3U playlists, hides referenced disc files, and aggregates their sizes into the M3U entry.
+## Recents
 
-## Display Name Resolution
+Recently played games are tracked automatically when you launch a game from the app. The home page shows:
 
-- **Arcade systems**: `arcade_db::arcade_display_name(filename)` looks up by zip name
-- **Non-arcade**: `game_db::game_display_name(system, filename)` with fallback to tag-stripped filename + `rom_tags::display_name_with_tags()` for region/revision suffixes
+- **Last Played** hero card with the most recently launched game
+- **Recently Played** horizontal scroll of recent games
 
-## Enrichment
+## Region Preference
 
-`enrich_system_cache()` runs after cache population and after metadata imports. It:
+Set your preferred ROM region (USA, Europe, Japan, World) in Settings. This affects:
 
-1. Resolves box art URLs via the 5-tier resolution pipeline (see `docs/features/thumbnails.md`)
-2. Loads ratings and rating counts from `game_metadata` (LaunchBox)
-3. Fills empty genres from LaunchBox data
-4. Fills empty developer from LaunchBox data
-5. Auto-matches new ROMs to existing metadata by normalized title
-6. Populates series data from Wikidata (see [Game Series](game-series.md))
+- **Sort order** -- preferred region variants appear first in game lists
+- **Search scoring** -- preferred region gets a boost in search results
+- **Recommendation dedup** -- when multiple region variants exist, the preferred one is shown
 
-## Unified GameListItem
+A secondary region preference is also supported for a two-tier sort: Primary > Secondary > World > others.
 
-The `GameListItem` component provides a consistent game rendering across all list views: system ROM lists, search results, developer pages, series siblings, and recommendation blocks. Props include system, display name, box art, genre/rating badges, favorite toggle, driver status badge, and an optional system badge for cross-system lists. This ensures a uniform look-and-feel across the app.
+## Automatic Library Updates
 
-## Startup Pipeline
+On local storage (SD, USB, NVMe), the app watches the `roms/` directory for changes. New, modified, or deleted ROMs are detected automatically -- no manual refresh needed. Changes are debounced (3 seconds) to handle bulk file copies smoothly.
 
-Server startup follows a sequenced pipeline to avoid race conditions between tasks that share the database:
+On NFS storage, automatic detection is not possible (inotify does not work across network mounts). Use the "Rebuild Game Library" button in the metadata page to pick up changes.
 
-1. **Auto-import**: run any pending metadata imports
-2. **Populate**: scan all system directories and populate the game library cache
-3. **Enrich**: resolve box art, ratings, developer, genre, and series data
-4. **Watchers**: start filesystem and config watchers
+## Startup Behavior
 
-The server responds immediately during warmup with a "Scanning game library..." banner, serving empty data until population completes (non-blocking startup). The rebuild banner shows the current phase, system display name, and progress count (e.g., "Scanning sega_smd... 450 games").
+On first launch or after a rebuild, the app scans all system directories to index your ROMs. During this process:
 
-## Filesystem Watching
+- The server responds immediately with a "Scanning game library..." banner showing progress (current system and game count)
+- Pages are fully usable while scanning runs in the background
+- If no storage is connected, a waiting page is shown until storage becomes available
+- Interrupted scans are detected and resumed automatically
 
-On local storage (SD/USB/NVMe), a `notify` (inotify) watcher monitors the `roms/` directory with `RecursiveMode::Recursive`. Events are debounced (3 seconds) and trigger targeted cache invalidation + re-enrichment for affected systems.
-
-On NFS storage, no watcher is set up (inotify does not detect remote changes). The user triggers updates manually from the metadata page.
-
-## Cache Invalidation
-
-- `invalidate()` clears all L1 and L2 data
-- `invalidate_system(system)` clears one system from L1 and L2
-- `invalidate_favorites()` and `invalidate_recents()` clear their respective caches
-- Directory mtime changes trigger automatic L3 rescan on next access
-
-## Key Source Files
-
-| File | Role |
-|------|------|
-| `replay-control-app/src/api/cache/mod.rs` | GameLibrary, get_roms, CacheEntry with mtime + NFS TTL |
-| `replay-control-app/src/api/cache/enrichment.rs` | Enrichment pipeline (ratings, developer, genre, series) |
-| `replay-control-app/src/api/cache/images.rs` | ImageIndex with mtime-based invalidation |
-| `replay-control-app/src/api/cache/favorites.rs` | FavoritesCache with mtime-based invalidation |
-| `replay-control-core/src/library/roms.rs` | ROM scanning, M3U dedup, collect_roms_recursive, multi-file delete/rename |
-| `replay-control-core/src/metadata/metadata_db/game_library.rs` | game_library/game_library_meta tables, GameEntry |
-| `replay-control-app/src/api/background.rs` | Startup pipeline, filesystem watcher, auto-import |
-| `replay-control-app/src/components/game_list_item.rs` | Unified GameListItem component |
-| `replay-control-core/src/platform/storage.rs` | StorageLocation, StorageKind |
+For architecture details on the cache tiers, scan pipeline, and enrichment process, see the [Architecture](../architecture/index.md) section.

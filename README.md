@@ -1,30 +1,102 @@
 # Replay Control
 
-A companion web app for **RePlayOS** to manage ROMs, favorites, and settings from any device on the local network.
+<p align="center">
+  <img src="replay-control-app/static/branding/logo-oneline-transparent.png" alt="Replay Control" width="400">
+</p>
 
-## About RePlayOS
+<p align="center">
+  A companion web app for <a href="https://www.replayos.com/">RePlayOS</a> — manage ROMs, favorites, and settings from any device on the local network.
+</p>
 
-RePlayOS is a Linux distribution featuring a custom libretro frontend for retro gaming on Raspberry Pi, with LCD and CRT support.
+<p align="center">
+  <a href="https://github.com/lapastillaroja/replay-control/actions"><img src="https://github.com/lapastillaroja/replay-control/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue.svg" alt="License: GPLv3"></a>
+</p>
 
-**Official site:** https://www.replayos.com/
+---
 
-## Installation
+This is a personal project born from my love for retro gaming on real hardware. I built it because I wanted a better way to manage my game library on [RePlayOS](https://www.replayos.com/). Feedback, ideas, and pull requests are welcome — though I'll implement things based on what feels right for the project.
 
-### Quick install to a running Pi
+---
+
+## Screenshots
+
+> Screenshots coming soon.
+
+## Features
+
+### Browse & Manage
+
+- Browse games by system with box art, search, and infinite scroll
+- Favorites with organize-by-genre, system, or developer subfolders
+- Multi-disc game handling — auto-generates M3U playlists, hides individual disc files
+- Inline rename and delete with multi-file safety (CUE+BIN, M3U+discs, ScummVM)
+- Arcade display names — 15K+ playable entries show human-readable titles instead of codenames
+- Automatic library updates — new, changed, or deleted ROMs are detected live
+- Consistent game cards with box art, badges, and favorite toggle across every view
+
+### Discover
+
+- Personalized recommendations on the home page: Rediscover Your Library, Top Rated, Multiplayer, Because You Love, and more
+- Curated Spotlight — a rotating section that highlights a different angle each visit: best by genre, best of system, games by developer, or hidden gems
+- Discover pills — quick-links to browse by genre, system, developer, decade, or multiplayer mode
+- Cross-system search with word-level fuzzy matching against filenames and display names
+- Developer pages — dedicated game list per developer with system filter chips and infinite scroll
+- Recent searches and Random Game button
+
+### Game Detail
+
+- Box art, in-game screenshots, title screens, and user-captured screenshots with fullscreen lightbox
+- Pin YouTube/Twitch/Vimeo trailers and gameplay videos — privacy-respecting embeds via Invidious/Piped
+- Series navigation with sequel/prequel links across systems (< Prev | 2 of 5 | Next >)
+- Regional variants, translations, hacks, and arcade versions in collapsible sections
+- Game manuals — in-folder detection plus on-demand download from archive.org
+- Launch games on the TV from the web UI with visual feedback
+- Related games and "Also available on" cross-system recommendations
+
+### Metadata & Media
+
+- Embedded databases: ~34K console ROMs and ~15K playable arcade games — display names, genres, player counts, developer, and year data with no internet required
+- One-click LaunchBox XML import (~460 MB) for descriptions, ratings, genres, publishers — fast streaming parse (~6s on Pi)
+- Per-system or batch box art download from libretro-thumbnails with smart multi-tier matching
+- ~5,345 game series entries across 194+ franchises with sequel/prequel chains from Wikidata
+- Box art swap — pick alternate region-variant covers from the full libretro-thumbnails catalog
+
+### Settings & System
+
+- Wi-Fi, NFS share, hostname, and password change from the browser
+- Skin/theme sync with RePlayOS — changes push instantly to all connected browsers
+- Region preference for sort order, search scoring, and recommendation dedup
+- Storage auto-detection (SD, USB, NVMe, NFS) with corruption recovery banners
+- System info, disk usage, network addresses, and live system logs
+
+### User Experience
+
+- PWA — installable as a home screen app with offline fallback
+- Streaming SSR — layout appears instantly with skeleton placeholders, content fills in progressively
+- Responsive design from phones to desktops
+- Instant page loads with smart multi-layer caching
+
+## Quick Install
 
 ```bash
-# Download and run the installer (latest version)
 curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip replay.local
+```
 
-# Specific version
+<details>
+<summary>More install options</summary>
+
+**Specific version:**
+```bash
 curl -sSL https://github.com/lapastillaroja/replay-control/releases/download/v0.1.0/install.sh | bash -s -- --ip replay.local
+```
 
-# Custom IP and password
+**Custom IP and password:**
+```bash
 PI_PASS=mypassword curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --ip <your-pi-ip>
 ```
 
-### Install to SD card (before first boot)
-
+**Install to SD card (before first boot):**
 ```bash
 curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/download/install.sh | bash -s -- --sd /path/to/mounted/sdcard
 ```
@@ -33,18 +105,13 @@ curl -sSL https://github.com/lapastillaroja/replay-control/releases/latest/downl
 
 See [GitHub Releases](https://github.com/lapastillaroja/replay-control/releases) for all versions.
 
-## Features
+</details>
 
-See [`docs/features/`](docs/features/index.md) for detailed documentation per feature. Highlights:
+## About RePlayOS
 
-- **ROM browsing & management** — browse by system, search, rename, delete, favorites
-- **Game metadata** — embedded databases for ~34K console ROMs and ~15K arcade games, plus LaunchBox XML import and libretro-thumbnails box art
-- **Game detail** — box art, screenshots, videos, manuals, series navigation, variant sections
-- **Global search** — cross-system fuzzy search with filters (genre, driver status, multiplayer, rating)
-- **Game launching** — launch games on the TV from the web UI
-- **Settings** — skin/theme sync, Wi-Fi, NFS, hostname, system logs
-- **PWA** — installable, app shell caching, offline fallback
-- **Libretro core** — displays recently played / favorites on the TV via gamepad, with box art and metadata
+RePlayOS is a Linux distribution featuring a custom libretro frontend for retro gaming on Raspberry Pi, with LCD and CRT support.
+
+**Official site:** https://www.replayos.com/
 
 ## Tech Stack
 
@@ -52,23 +119,7 @@ See [`docs/features/`](docs/features/index.md) for detailed documentation per fe
 - **Leptos 0.7** — SSR with WASM hydration
 - **Axum** — HTTP server, REST API, SSE
 - **SQLite** — metadata cache via deadpool-sqlite connection pool
-- **No cargo-leptos** — custom `build.sh` (WASM + wasm-bindgen + server)
-
-## Project Structure
-
-```
-replay-control/
-├── replay-control-core/    — shared library (game DBs, ROM parsing, metadata, settings)
-├── replay-control-app/     — web app (Leptos SSR + WASM hydration, Axum server)
-├── replay-control-libretro/ — libretro core for TV display (.so)
-├── scripts/                — data download scripts (No-Intro, TGDB, Wikidata)
-├── tools/                  — analysis scripts, benchmarks, icon generation
-├── docs/                   — feature documentation
-├── research/               — investigations, plans, design docs
-├── build.sh                — release build (WASM + server)
-├── dev.sh                  — development (auto-reload, Pi deployment)
-└── install.sh              — Pi installation (SSH or SD card)
-```
+- **No cargo-leptos** — custom build pipeline (`build.sh`)
 
 ## Build & Run
 
@@ -84,17 +135,27 @@ replay-control/
 ./build.sh aarch64      # Pi cross-compile
 ```
 
-## Routes
+See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, cross-compilation setup, and development tips.
 
-| Route | Page |
-|---|---|
-| `/` | Home (last played, recents, stats, systems, recommendations) |
-| `/games/:system` | ROM list with search, filters, infinite scroll |
-| `/games/:system/:filename` | Game detail (metadata, actions, media) |
-| `/favorites` | Favorites (flat and grouped views) |
-| `/search` | Global cross-system search |
-| `/developer/:name` | Developer game list |
-| `/more` | Settings, metadata, system info |
+## Project Structure
+
+```
+replay-control/
+├── replay-control-core/    — shared library (game DBs, ROM parsing, metadata, settings)
+├── replay-control-app/     — web app (Leptos SSR + WASM hydration, Axum server)
+├── replay-control-libretro/ — libretro core for TV display (.so)
+├── scripts/                — data download scripts (No-Intro, TGDB, Wikidata)
+├── tools/                  — analysis scripts, benchmarks, icon generation
+├── docs/                   — feature and architecture documentation
+├── build.sh                — release build (WASM + server)
+├── dev.sh                  — development (auto-reload, Pi deployment)
+└── install.sh              — Pi installation (SSH or SD card)
+```
+
+## Documentation
+
+- [Features](docs/features/) — what the app does
+- [Architecture](docs/architecture/) — how it works under the hood
 
 ## Third-Party Resources
 
@@ -112,25 +173,10 @@ replay-control/
 - **System controller icons** — [KyleBing/retro-game-console-icons](https://github.com/KyleBing/retro-game-console-icons) (GPLv3)
 - **Phosphor Icons** — top bar icons ([phosphoricons.com](https://phosphoricons.com/)) (MIT)
 
-## Documentation
-
-- [`docs/features/`](docs/features/) — detailed feature documentation (game library, search, metadata, thumbnails, series, recommendations, storage, libretro core)
-- [`docs/features/index.md`](docs/features/index.md) — full feature list with per-page breakdown
-
 ## AI Transparency
 
 This project was developed with significant AI assistance (primarily Claude by Anthropic). The author reviews, understands, tests, and maintains all code. See [AI_POLICY.md](AI_POLICY.md) for contribution guidelines.
 
-## Not Tested Systems
+## License
 
-The following systems have no ROMs on the test device and have not been verified:
-
-- Arcade (MAME 2003+)
-- Atari 2600, 5200, 7800, Jaguar, Lynx
-- Commodore 64, Amiga CD
-- MSX
-- PC Engine / TurboGrafx-16, PC Engine CD
-- Nintendo DS, Game Boy, Game Boy Color
-- 3DO, Philips CD-i
-- ZX Spectrum
-- Neo Geo, Neo Geo CD, Neo Geo Pocket
+GPLv3 — see [LICENSE](LICENSE).

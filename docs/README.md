@@ -10,7 +10,7 @@ Start here when joining the project. Each doc describes how a feature works toda
 
 | Doc | Covers |
 |-----|--------|
-| [index.md](features/index.md) | Feature tracker and backlog (checklist format) |
+| [index.md](features/index.md) | User-facing feature overview — what the app does |
 | [game-library.md](features/game-library.md) | Three-tier cache (L1 in-memory, L2 SQLite, L3 filesystem), ROM scanning, display name resolution, enrichment, filesystem watching, cache invalidation |
 | [metadata.md](features/metadata.md) | Embedded databases (arcade_db ~28K entries, game_db ~34K entries), LaunchBox XML import, genre fallback, unified GameInfo API, ROM tag parsing |
 | [thumbnails.md](features/thumbnails.md) | Thumbnail index (manifest), 5-tier fuzzy matching, arcade multi-repo images, on-demand download with SSE progress, box art swap |
