@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::thumbnails::{base_title, is_valid_image, strip_version, thumbnail_filename};
-use crate::title_utils::{strip_n64dd_prefix, strip_tags};
+use crate::title_utils::{normalize_aggressive, strip_n64dd_prefix, strip_tags};
 
 /// Directory index for matching ROM filenames to image files.
 ///
@@ -22,6 +22,8 @@ pub struct DirIndex {
     pub fuzzy: HashMap<String, String>,
     /// version-stripped base_title → relative path
     pub version: HashMap<String, String>,
+    /// Aggressively normalized (all punctuation stripped) → relative path
+    pub aggressive: HashMap<String, String>,
 }
 
 /// Build a `DirIndex` by scanning a media subdirectory (boxart or snap).
@@ -35,6 +37,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
     let mut exact_ci = HashMap::new();
     let mut fuzzy = HashMap::new();
     let mut version = HashMap::new();
+    let mut aggressive = HashMap::new();
 
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -54,8 +57,11 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
                 let vs = strip_version(&bt).to_string();
                 fuzzy.entry(bt.clone()).or_insert_with(|| path.clone());
                 if vs.len() < bt.len() {
-                    version.entry(vs).or_insert(path);
+                    version.entry(vs).or_insert_with(|| path.clone());
                 }
+                // Aggressive: strip all punctuation for last-resort matching.
+                let agg = normalize_aggressive(&bt);
+                aggressive.entry(agg).or_insert(path);
             }
         }
     }
@@ -65,6 +71,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
         exact_ci,
         fuzzy,
         version,
+        aggressive,
     }
 }
 
@@ -163,6 +170,14 @@ pub fn find_best_match(
     let vs = strip_version(&base);
     if vs.len() < base.len()
         && let Some(path) = index.fuzzy.get(vs).or_else(|| index.version.get(vs))
+    {
+        return Some(path.clone());
+    }
+
+    // Tier 7: aggressive normalization (strip all punctuation, last resort)
+    let agg = normalize_aggressive(&base);
+    if !agg.is_empty()
+        && let Some(path) = index.aggressive.get(&agg)
     {
         return Some(path.clone());
     }
@@ -269,6 +284,7 @@ mod tests {
         let mut exact_ci = HashMap::new();
         let mut fuzzy = HashMap::new();
         let mut version = HashMap::new();
+        let mut aggressive = HashMap::new();
 
         for &(stem, path) in entries {
             exact.insert(stem.to_string(), path.to_string());
@@ -281,6 +297,8 @@ mod tests {
             if vs.len() < bt.len() {
                 version.entry(vs).or_insert_with(|| path.to_string());
             }
+            let agg = normalize_aggressive(&bt);
+            aggressive.entry(agg).or_insert_with(|| path.to_string());
         }
 
         DirIndex {
@@ -288,6 +306,7 @@ mod tests {
             exact_ci,
             fuzzy,
             version,
+            aggressive,
         }
     }
 
@@ -475,5 +494,35 @@ mod tests {
     fn collect_tag_words_empty() {
         let words = collect_tag_words("Sonic the Hedgehog");
         assert!(words.is_empty());
+    }
+
+    // --- aggressive tier ---
+
+    #[test]
+    fn aggressive_tier_matches_punctuation_variants() {
+        // Image: "Bio Hazard Battle.png" in the directory
+        // ROM: "Bio-Hazard Battle.smd" — the hyphen differs
+        // Aggressive normalization strips punctuation so both → "bio hazard battle"
+        let index = index_from(&[("Bio Hazard Battle", "boxart/Bio Hazard Battle.png")]);
+        let result = find_best_match(&index, "Bio-Hazard Battle.smd", None, None);
+        assert_eq!(result.as_deref(), Some("boxart/Bio Hazard Battle.png"));
+    }
+
+    #[test]
+    fn aggressive_tier_rejects_false_positives() {
+        // Image: "Battletoads (Europe).png" in the directory
+        // ROM: "Battletoads & Double Dragon (USA).md" — a different game
+        // These should NOT match because the aggressive keys are different strings.
+        let index = index_from(&[("Battletoads (Europe)", "boxart/Battletoads (Europe).png")]);
+        let result = find_best_match(
+            &index,
+            "Battletoads & Double Dragon (USA).md",
+            None,
+            None,
+        );
+        assert!(
+            result.is_none(),
+            "Battletoads & Double Dragon should not match Battletoads"
+        );
     }
 }

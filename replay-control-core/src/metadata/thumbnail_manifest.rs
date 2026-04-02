@@ -411,6 +411,8 @@ pub struct ManifestFuzzyIndex {
     pub by_version: HashMap<String, ManifestMatch>,
     /// base_title(stem) -> ManifestMatch (tilde split + article normalization + lowercase)
     pub by_base_title: HashMap<String, ManifestMatch>,
+    /// Aggressively normalized (all punctuation stripped) -> ManifestMatch
+    pub by_aggressive: HashMap<String, ManifestMatch>,
 }
 
 /// Build a ManifestFuzzyIndex from the DB for the given repos and kind.
@@ -419,7 +421,7 @@ pub fn build_manifest_fuzzy_index(
     repo_display_names: &[&str],
     kind: &str,
 ) -> ManifestFuzzyIndex {
-    use crate::title_utils::base_title;
+    use crate::title_utils::{base_title, normalize_aggressive};
     use thumbnails::{strip_tags, strip_version};
 
     let mut exact = HashMap::new();
@@ -427,6 +429,7 @@ pub fn build_manifest_fuzzy_index(
     let mut by_tags = HashMap::new();
     let mut by_version = HashMap::new();
     let mut by_base_title = HashMap::new();
+    let mut by_aggressive = HashMap::new();
 
     for display_name in repo_display_names {
         let url_name = thumbnails::repo_url_name(display_name);
@@ -476,8 +479,14 @@ pub fn build_manifest_fuzzy_index(
             // Tier 4: base_title (tilde split + article normalization)
             let bt = base_title(&entry.filename);
             if bt != key {
-                by_base_title.entry(bt).or_insert(m);
+                by_base_title
+                    .entry(bt.clone())
+                    .or_insert_with(|| m.clone());
             }
+
+            // Tier 5: aggressive normalization (strip all punctuation)
+            let agg = normalize_aggressive(&bt);
+            by_aggressive.entry(agg).or_insert(m);
         }
     }
 
@@ -487,6 +496,7 @@ pub fn build_manifest_fuzzy_index(
         by_tags,
         by_version,
         by_base_title,
+        by_aggressive,
     }
 }
 
@@ -498,7 +508,7 @@ pub fn build_manifest_fuzzy_index(
 pub fn build_manifest_fuzzy_index_from_raw(
     repo_data: &[(String, String, Vec<crate::metadata_db::ThumbnailIndexEntry>)],
 ) -> ManifestFuzzyIndex {
-    use crate::title_utils::base_title;
+    use crate::title_utils::{base_title, normalize_aggressive};
     use thumbnails::{strip_tags, strip_version};
 
     let mut exact = HashMap::new();
@@ -506,6 +516,7 @@ pub fn build_manifest_fuzzy_index_from_raw(
     let mut by_tags = HashMap::new();
     let mut by_version = HashMap::new();
     let mut by_base_title = HashMap::new();
+    let mut by_aggressive = HashMap::new();
 
     for (url_name, branch, entries) in repo_data {
         for entry in entries {
@@ -542,8 +553,14 @@ pub fn build_manifest_fuzzy_index_from_raw(
             // Tier 4: base_title (tilde split + article normalization)
             let bt = base_title(&entry.filename);
             if bt != key {
-                by_base_title.entry(bt).or_insert(m);
+                by_base_title
+                    .entry(bt.clone())
+                    .or_insert_with(|| m.clone());
             }
+
+            // Tier 5: aggressive normalization (strip all punctuation)
+            let agg = normalize_aggressive(&bt);
+            by_aggressive.entry(agg).or_insert(m);
         }
     }
 
@@ -553,6 +570,7 @@ pub fn build_manifest_fuzzy_index_from_raw(
         by_tags,
         by_version,
         by_base_title,
+        by_aggressive,
     }
 }
 
@@ -672,12 +690,19 @@ pub fn find_in_manifest<'a>(
     // Arcade display names often contain " / " separating English and Japanese
     // titles (e.g., "Animal Basket / Hustle Tamaire Kyousou"). The thumbnail
     // repo may list only the primary (English) name. Try each side independently.
+    //
+    // IMPORTANT: Only split on " _ " when the original source contains " / ".
+    // thumbnail_filename() converts both "/" and "&" to "_", so splitting on
+    // " _ " without checking the source would cause false positives:
+    //   "Battletoads & Double Dragon" → "Battletoads _ Double Dragon"
+    //   → wrongly splits and matches "Battletoads" alone.
     let search_key = if version_key.len() < key.len() {
         version_key
     } else {
         &key
     };
-    if search_key.contains(" / ") || search_key.contains(" _ ") {
+    let has_real_slash = source.contains(" / ");
+    if search_key.contains(" / ") || (has_real_slash && search_key.contains(" _ ")) {
         // After thumbnail_filename(), "/" becomes "_", so check both patterns.
         let separator = if search_key.contains(" / ") {
             " / "
@@ -695,6 +720,14 @@ pub fn find_in_manifest<'a>(
                 return Some(m);
             }
         }
+    }
+
+    // Tier 8: aggressive normalization (strip all punctuation, last resort).
+    let agg_key = crate::title_utils::normalize_aggressive(&base);
+    if !agg_key.is_empty()
+        && let Some(m) = index.by_aggressive.get(&agg_key)
+    {
+        return Some(m);
     }
 
     None
@@ -1284,6 +1317,7 @@ mod tests {
             by_tags,
             by_version,
             by_base_title: HashMap::new(),
+            by_aggressive: HashMap::new(),
         };
 
         // ROM "Sonic the Hedgehog 3 (USA).md" (lowercase "the") should match USA via CI-exact
@@ -1316,6 +1350,7 @@ mod tests {
             by_tags,
             by_version,
             by_base_title: HashMap::new(),
+            by_aggressive: HashMap::new(),
         };
 
         let result = find_in_manifest(&index, "Game (USA).md", "sega_smd");
@@ -1348,6 +1383,7 @@ mod tests {
             by_tags,
             by_version,
             by_base_title: HashMap::new(),
+            by_aggressive: HashMap::new(),
         };
 
         // ROM stem after tag stripping matches
@@ -1430,6 +1466,7 @@ mod tests {
             by_tags,
             by_version: HashMap::new(),
             by_base_title: HashMap::new(),
+            by_aggressive: HashMap::new(),
         };
 
         // Simulate: ROM "anmlbskt.zip" resolves via arcade_db to
@@ -1437,8 +1474,9 @@ mod tests {
         // After thumbnail_filename: "Animal Basket _ Hustle Tamaire Kyousou (19 Jan 2005)"
         // After strip_tags: "animal basket _ hustle tamaire kyousou"
         // Tiers 1-3 fail. Tier 4 splits on " _ " and tries "animal basket" — match.
+        let source = "Animal Basket / Hustle Tamaire Kyousou (19 Jan 2005)";
         let thumb = "Animal Basket _ Hustle Tamaire Kyousou (19 Jan 2005)";
-        let result = find_in_manifest_with_thumb_name(&index, thumb);
+        let result = find_in_manifest_with_thumb_name(&index, thumb, source);
         assert!(
             result.is_some(),
             "Slash dual-name should match primary part"
@@ -1467,20 +1505,92 @@ mod tests {
             by_tags,
             by_version: HashMap::new(),
             by_base_title: HashMap::new(),
+            by_aggressive: HashMap::new(),
         };
 
         // After thumbnail_filename and strip_tags, the search key would be
         // "mushiking iv _ v _ vi" — parts "v" and "vi" are < 5 chars.
+        let source = "Mushiking IV / V / VI (World)";
         let thumb = "Mushiking IV _ V _ VI (World)";
-        let result = find_in_manifest_with_thumb_name(&index, thumb);
+        let result = find_in_manifest_with_thumb_name(&index, thumb, source);
         assert!(result.is_none(), "Should not match on short slash parts");
+    }
+
+    #[test]
+    fn find_in_manifest_ampersand_not_treated_as_slash() {
+        // "Battletoads & Double Dragon (USA)" — the "&" becomes "_" via
+        // thumbnail_filename, producing "Battletoads _ Double Dragon (USA)".
+        // This must NOT be split as a dual-name (only real " / " should split).
+        let m = ManifestMatch {
+            filename: "Battletoads (Europe)".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut by_tags = HashMap::new();
+        by_tags.insert("battletoads".to_string(), m.clone());
+
+        let index = ManifestFuzzyIndex {
+            exact: HashMap::new(),
+            exact_ci: HashMap::new(),
+            by_tags,
+            by_version: HashMap::new(),
+            by_base_title: HashMap::new(),
+            by_aggressive: HashMap::new(),
+        };
+
+        // Source has "&" not "/", so " _ " splitting should be suppressed.
+        let source = "Battletoads & Double Dragon (USA)";
+        let thumb = "Battletoads _ Double Dragon (USA)";
+        let result = find_in_manifest_with_thumb_name(&index, thumb, source);
+        assert!(
+            result.is_none(),
+            "Ampersand title should not match via slash splitting"
+        );
+    }
+
+    #[test]
+    fn find_in_manifest_spiderman_ampersand_no_false_positive() {
+        // "Spider-Man & Venom - Maximum Carnage (USA)" — the "&" becomes "_".
+        // Must NOT split and match "Spider-Man" alone.
+        let m = ManifestMatch {
+            filename: "Spider-Man".to_string(),
+            is_symlink: false,
+            repo_url_name: "test".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut by_tags = HashMap::new();
+        by_tags.insert("spider-man".to_string(), m.clone());
+
+        let index = ManifestFuzzyIndex {
+            exact: HashMap::new(),
+            exact_ci: HashMap::new(),
+            by_tags,
+            by_version: HashMap::new(),
+            by_base_title: HashMap::new(),
+            by_aggressive: HashMap::new(),
+        };
+
+        let source = "Spider-Man & Venom - Maximum Carnage (USA)";
+        let thumb = "Spider-Man _ Venom - Maximum Carnage (USA)";
+        let result = find_in_manifest_with_thumb_name(&index, thumb, source);
+        assert!(
+            result.is_none(),
+            "Ampersand title should not match via slash splitting"
+        );
     }
 
     /// Helper for testing find_in_manifest with a pre-computed thumbnail name,
     /// bypassing the arcade_db lookup and filename extraction.
+    ///
+    /// `source` is the original display name (before `thumbnail_filename`), used
+    /// to decide whether ` _ ` splitting is valid (only when `source` has ` / `).
     fn find_in_manifest_with_thumb_name<'a>(
         index: &'a ManifestFuzzyIndex,
         thumb_name: &str,
+        source: &str,
     ) -> Option<&'a ManifestMatch> {
         use crate::thumbnails::{strip_tags, strip_version};
 
@@ -1508,13 +1618,14 @@ mod tests {
                 return Some(m);
             }
         }
-        // Tier 4: slash dual-name
+        // Tier 4: slash dual-name (only split on " _ " if source had " / ")
         let search_key = if version_key.len() < key.len() {
             version_key
         } else {
             &key
         };
-        if search_key.contains(" / ") || search_key.contains(" _ ") {
+        let has_real_slash = source.contains(" / ");
+        if search_key.contains(" / ") || (has_real_slash && search_key.contains(" _ ")) {
             let separator = if search_key.contains(" / ") {
                 " / "
             } else {

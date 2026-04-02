@@ -205,6 +205,7 @@ async fn build_image_index(
                     exact_ci: Default::default(),
                     fuzzy: Default::default(),
                     version: Default::default(),
+                    aggressive: Default::default(),
                 },
                 db_paths: Default::default(),
                 manifest: None,

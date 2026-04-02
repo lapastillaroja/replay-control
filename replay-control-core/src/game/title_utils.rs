@@ -70,6 +70,30 @@ pub fn base_title(name: &str) -> String {
     lower
 }
 
+/// Aggressively normalize a title by stripping all punctuation and collapsing spaces.
+///
+/// Strips `' : - _ . , ! ? &` and any other non-alphanumeric, non-space characters,
+/// normalizes multiple spaces to single, trims, and lowercases. This is the most
+/// aggressive matching tier — used only as a last resort when all other tiers fail.
+///
+/// Example: `"Shin Megami Tensei: Devil Children - Black Book"` → `"shin megami tensei devil children black book"`
+pub fn normalize_aggressive(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        if ch.is_alphanumeric() || ch == ' ' {
+            out.push(ch);
+        } else {
+            // Replace punctuation with space (so "X-Men" becomes "X Men" not "XMen")
+            out.push(' ');
+        }
+    }
+    // Collapse multiple spaces, trim, lowercase.
+    out.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 /// Roman numeral values for series key extraction.
 const ROMAN_NUMERALS: &[(&str, u32)] = &[
     ("xviii", 18),
@@ -496,6 +520,48 @@ mod tests {
         assert_eq!(
             resolve_to_library_title("Bare Knuckle: Ikari no Tekken", &exact, &fuzzy),
             "bare knuckle - ikari no tekken"
+        );
+    }
+
+    // --- normalize_aggressive ---
+
+    #[test]
+    fn normalize_aggressive_strips_punctuation() {
+        assert_eq!(
+            normalize_aggressive("Ghouls 'N Ghosts"),
+            "ghouls n ghosts"
+        );
+        assert_eq!(
+            normalize_aggressive("E.V.O. Search for Eden"),
+            "e v o search for eden"
+        );
+        assert_eq!(
+            normalize_aggressive("Brett Hull Hockey '95"),
+            "brett hull hockey 95"
+        );
+    }
+
+    #[test]
+    fn normalize_aggressive_preserves_words() {
+        assert_eq!(
+            normalize_aggressive("Bio-Hazard Battle"),
+            "bio hazard battle"
+        );
+        assert_eq!(normalize_aggressive("Clever & Smart"), "clever smart");
+    }
+
+    #[test]
+    fn normalize_aggressive_different_games_dont_collide() {
+        // These should produce DIFFERENT keys — the aggressive tier uses
+        // exact HashMap equality so they won't collide, but verify the
+        // normalized forms are indeed distinct.
+        assert_ne!(
+            normalize_aggressive("Battletoads"),
+            normalize_aggressive("Battletoads & Double Dragon")
+        );
+        assert_ne!(
+            normalize_aggressive("Spider-Man"),
+            normalize_aggressive("Spider-Man & Venom - Maximum Carnage")
         );
     }
 
