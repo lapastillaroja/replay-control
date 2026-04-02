@@ -242,7 +242,7 @@ check_aarch64_sysroot() {
         echo "  Searched: /usr/aarch64-linux-gnu/sys-root (Fedora)"
         echo "           /usr/aarch64-linux-gnu (Ubuntu/Debian)"
         echo ""
-        echo "  Set AARCH64_SYSROOT to override, or see research/reference/cross-compilation.md"
+        echo "  Set AARCH64_SYSROOT to override. See CONTRIBUTING.md for cross-compilation setup."
         echo ""
         fatal "aarch64 sysroot missing."
     fi
