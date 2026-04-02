@@ -1,5 +1,11 @@
 # Code Rules
 
+## Commits
+
+- Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`, `docs:`, `style:`, `test:`, `chore:`, `perf:`, `build:`
+- Dependency updates use `build:` (e.g., `build: bump actions/checkout to v6`)
+- Never commit without explicit user approval
+
 ## General
 
 - Follow best practices for the language and framework in use
