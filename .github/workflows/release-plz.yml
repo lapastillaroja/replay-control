@@ -22,17 +22,6 @@ jobs:
       - uses: release-plz/action@v0.5
         with:
           command: release-pr
-          verbose: "true"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Debug — re-run release-plz with full stderr
-        if: always()
-        run: |
-          release-plz release-pr \
-            --git-token "$GITHUB_TOKEN" \
-            --verbose \
-            -o json 2>&1 || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
