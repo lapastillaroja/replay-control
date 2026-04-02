@@ -19,5 +19,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
