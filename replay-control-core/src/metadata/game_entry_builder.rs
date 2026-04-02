@@ -10,6 +10,19 @@ use crate::rom_hash::HashResult;
 use crate::roms::RomEntry;
 use crate::{arcade_db, developer, game_db, genre, rom_tags, systems, title_utils};
 
+/// Intermediate metadata extracted from game/arcade databases and filename tags.
+///
+/// Fields: (genre_detail, genre_group, players, is_clone, base_title, developer, release_year)
+type RomMetadata = (
+    Option<String>,
+    String,
+    Option<u8>,
+    bool,
+    String,
+    String,
+    Option<u16>,
+);
+
 /// Build `GameEntry` records from scanned ROM entries.
 ///
 /// Enriches each ROM with genre, developer, year, region, clone status, and
@@ -131,18 +144,7 @@ fn build_single_entry(
 }
 
 /// Extract metadata from arcade databases. Returns `None` for BIOS entries.
-fn build_arcade_metadata(
-    rom_filename: &str,
-    stem: &str,
-) -> Option<(
-    Option<String>,
-    String,
-    Option<u8>,
-    bool,
-    String,
-    String,
-    Option<u16>,
-)> {
+fn build_arcade_metadata(rom_filename: &str, stem: &str) -> Option<RomMetadata> {
     let arcade_stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
     match arcade_db::lookup_arcade_game(arcade_stem) {
         Some(info) => {
@@ -188,15 +190,7 @@ fn build_console_metadata(
     rom_filename: &str,
     stem: &str,
     hash_results: &HashMap<String, HashResult>,
-) -> Option<(
-    Option<String>,
-    String,
-    Option<u8>,
-    bool,
-    String,
-    String,
-    Option<u16>,
-)> {
+) -> Option<RomMetadata> {
     // Try CRC-based lookup first (if we have a hash match),
     // then fall back to filename-based lookup.
     let hash_entry = hash_results

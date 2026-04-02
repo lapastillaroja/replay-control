@@ -114,7 +114,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
 
     // Single DB access: run all SQL queries under one connection.
     // This includes the favorites genre lookup that previously required a
-    // separate db_read round-trip.
+    // separate DB read round-trip.
     let db_data = state
         .metadata_pool
         .read(move |conn| {
@@ -234,7 +234,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 (games, "Top Rated".to_string(), None)
             });
             let fav_roms = favorites_info.as_ref().map(|fi| {
-                // Compute top genre inside this closure instead of a separate db_read.
+                // Compute top genre inside this closure instead of a separate DB read.
                 let fav_refs: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
                 let top_genre = MetadataDb::top_genre_for_filenames(conn, &fi.system, &fav_refs)
                     .ok()
@@ -399,8 +399,8 @@ struct FavoritesInfo {
 /// so the section rotates across systems on each page load.
 ///
 /// `top_genre` is left as `None` — the caller computes it inside the main
-/// `db_read` closure using `MetadataDb::top_genre_for_filenames` to avoid
-/// a separate DB round-trip.
+/// DB read closure using `MetadataDb::top_genre_for_filenames` to avoid
+/// a separate round-trip.
 #[cfg(feature = "ssr")]
 fn collect_favorites_info_sync(
     state: &crate::api::AppState,

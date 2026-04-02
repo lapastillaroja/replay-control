@@ -19,6 +19,12 @@ pub struct ResponseCache {
     favorites_recommendations: RwLock<Option<(Instant, Vec<GameSection>)>>,
 }
 
+impl Default for ResponseCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResponseCache {
     pub fn new() -> Self {
         Self {
