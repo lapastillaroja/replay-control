@@ -1,6 +1,8 @@
 [workspace]
 # Don't publish to crates.io — this is a private application
 publish = false
+# Use git tags (not crates.io) to determine the current version
+git_only = true
 # Create git tags and GitHub Releases
 git_release_enable = true
 git_tag_enable = true
@@ -9,12 +11,16 @@ git_tag_name = "v{{ version }}"
 # Use the root CHANGELOG.md for the whole workspace
 changelog_path = "CHANGELOG.md"
 
-# Only track the app crate for releases (core is a library, not released separately)
+# Only track the app crate for releases (core and tools are not released separately)
 [[package]]
 name = "replay-control-app"
-changelog_path = "../CHANGELOG.md"
 
 [[package]]
 name = "replay-control-core"
 # Core is a workspace dependency, not released independently
+release = false
+
+[[package]]
+name = "generate-test-fixtures"
+# Dev tool, not released
 release = false
