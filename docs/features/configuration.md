@@ -1,4 +1,4 @@
-# Pi Configuration
+# WiFi, NFS & Pi Setup
 
 Manage your Raspberry Pi's network connectivity, storage, hostname, and access. These settings are accessible from the **More** page.
 

@@ -115,7 +115,7 @@ Accessible from More > Game Data.
 - Clear metadata, clear images, orphaned image cleanup — each with confirmation
 - Orphaned image cleanup with safety net per system. [Detail](metadata.md), [Thumbnails detail](thumbnails.md)
 
-## Pi Configuration
+## WiFi, NFS & Pi Setup
 
 Manage WiFi, NFS shares, hostname, and SSH password directly from the browser — no terminal or SSH required. All configuration changes persist across reboots.
 
@@ -181,7 +181,7 @@ Customize how the app displays your library and interacts with external services
 | [Search](search.md) | Global search, developer search, developer game list page |
 | [Storage](storage.md) | Storage detection, automatic updates, config boundary |
 | [Thumbnails](thumbnails.md) | Box art, screenshots, title screens, image matching, box art swap |
-| [Pi Configuration](configuration.md) | WiFi setup, NFS shares, hostname, password, system info, logs |
+| [WiFi, NFS & Pi Setup](configuration.md) | WiFi setup, NFS shares, hostname, password, system info, logs |
 | [Preferences](settings.md) | Region, language, text size, skin/theme, GitHub API key |
 | [Libretro Core](libretro-core.md) | Recently played viewer, TV display |
 | [Benchmarks](benchmarks.md) | Performance measurements on Raspberry Pi 5 |
