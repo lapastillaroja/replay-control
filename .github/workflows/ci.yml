@@ -25,6 +25,8 @@ jobs:
         run: |
           bash scripts/download-arcade-data.sh
           bash scripts/download-metadata.sh
+          mkdir -p data/wikidata
+          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 
       - name: Check formatting
         run: cargo fmt --all -- --check
