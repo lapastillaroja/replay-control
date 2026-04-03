@@ -316,7 +316,7 @@ mod tests {
             exact.insert(stem.to_string(), path.to_string());
             exact_ci
                 .entry(stem.to_lowercase())
-                .and_modify(|existing| {
+                .and_modify(|existing: &mut String| {
                     if path < existing.as_str() {
                         *existing = path.to_string();
                     }
@@ -326,7 +326,7 @@ mod tests {
             let vs = strip_version(&bt).to_string();
             fuzzy
                 .entry(bt.clone())
-                .and_modify(|existing| {
+                .and_modify(|existing: &mut String| {
                     if path < existing.as_str() {
                         *existing = path.to_string();
                     }
@@ -335,7 +335,7 @@ mod tests {
             if vs.len() < bt.len() {
                 version
                     .entry(vs)
-                    .and_modify(|existing| {
+                    .and_modify(|existing: &mut String| {
                         if path < existing.as_str() {
                             *existing = path.to_string();
                         }
@@ -345,7 +345,7 @@ mod tests {
             let agg = normalize_aggressive(&bt);
             aggressive
                 .entry(agg)
-                .and_modify(|existing| {
+                .and_modify(|existing: &mut String| {
                     if path < existing.as_str() {
                         *existing = path.to_string();
                     }
