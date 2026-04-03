@@ -80,17 +80,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "any_spawner"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1384d3fe1eecb464229fcf6eebb72306591c56bf27b373561489458a7c73027d"
-dependencies = [
- "futures",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1274,7 +1263,7 @@ version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26b8731cb00f3f0894058155410b95c8955b17273181d2bc72600ab84edd24f1"
 dependencies = [
- "any_spawner 0.2.0",
+ "any_spawner",
  "base64",
  "cfg-if",
  "either_of",
@@ -1311,7 +1300,7 @@ version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e4b8a1c190800d24f0c79e6c320186ad31ca8800e54c057ad65cdf452ff7d0"
 dependencies = [
- "any_spawner 0.2.0",
+ "any_spawner",
  "axum",
  "dashmap",
  "futures",
@@ -1434,7 +1423,7 @@ version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4168ead6a9715daba953aa842795cb2ad81b6e011a15745bd3d1baf86f76de95"
 dependencies = [
- "any_spawner 0.2.0",
+ "any_spawner",
  "either_of",
  "futures",
  "gloo-net",
@@ -1471,7 +1460,7 @@ version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66985242812ec95e224fb48effe651ba02728beca92c461a9464c811a71aab11"
 dependencies = [
- "any_spawner 0.2.0",
+ "any_spawner",
  "base64",
  "codee",
  "futures",
@@ -2014,7 +2003,7 @@ version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76a0ccddbc11a648bd09761801dac9e3f246ef7641130987d6120fced22515e6"
 dependencies = [
- "any_spawner 0.2.0",
+ "any_spawner",
  "async-lock",
  "futures",
  "guardian",
@@ -2099,7 +2088,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 name = "replay-control-app"
 version = "0.1.0"
 dependencies = [
- "any_spawner 0.3.0",
+ "any_spawner",
  "async-stream",
  "axum",
  "clap",
@@ -2540,7 +2529,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f66c3b70c32844a6f1e2943c72a33ebb777ad6acbeb20d1329d62e3a7806d6ec"
 dependencies = [
- "any_spawner 0.2.0",
+ "any_spawner",
  "async-trait",
  "const_str_slice_concat",
  "drain_filter_polyfill",
