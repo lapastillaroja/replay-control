@@ -504,6 +504,30 @@ pub async fn change_root_password(
     }
 }
 
+/// Get the UI locale from `.replay-control/settings.cfg`.
+/// Returns the explicit setting, or empty string if not set
+/// (client uses the SSR-resolved locale as the effective value).
+#[server(prefix = "/sfn")]
+pub async fn get_locale() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    Ok(replay_control_core::settings::read_locale(&storage.root).unwrap_or_default())
+}
+
+/// Save the UI locale to `.replay-control/settings.cfg`.
+/// Validates against the supported locale list before writing.
+#[server(prefix = "/sfn")]
+pub async fn save_locale(locale: String) -> Result<(), ServerFnError> {
+    match locale.as_str() {
+        "en" | "es" | "ja" => {}
+        _ => return Err(ServerFnError::new("Unsupported locale")),
+    }
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    replay_control_core::settings::write_locale(&storage.root, &locale)
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
 /// Get the user's preferred languages as a priority-ordered list.
 /// Used by manual search to sort results by language relevance.
 #[server(prefix = "/sfn")]

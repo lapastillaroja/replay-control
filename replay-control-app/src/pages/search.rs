@@ -5,7 +5,7 @@ use leptos_router::hooks::use_query_map;
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
 use crate::hooks::use_debounced;
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns::{
     self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResults, RomListEntry,
     SystemSearchGroup,
@@ -227,7 +227,7 @@ pub fn SearchPage() -> impl IntoView {
                     type="text"
                     class="search-page-input"
                     node_ref=input_ref
-                    placeholder=move || t(i18n.locale.get(), "search.placeholder")
+                    placeholder=move || t(i18n.locale.get(), Key::SearchPlaceholder)
                     prop:value=move || search_input.get()
                     on:input=move |ev| search_input.set(event_target_value(&ev))
                     autofocus=true
@@ -250,9 +250,9 @@ pub fn SearchPage() -> impl IntoView {
                         <span class="random-game-icon">{"\u{1F3B2}"}</span>
                         " "
                         {move || if random_loading.get() {
-                            t(i18n.locale.get(), "common.loading")
+                            t(i18n.locale.get(), Key::CommonLoading)
                         } else {
-                            t(i18n.locale.get(), "search.random_game")
+                            t(i18n.locale.get(), Key::SearchRandomGame)
                         }}
                     </button>
                 </div>
@@ -288,7 +288,7 @@ pub fn SearchPage() -> impl IntoView {
             </Suspense>
 
             <Suspense fallback=move || view! {
-                <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div>
+                <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div>
             }>
                 {move || Suspend::new(async move {
                     let locale = i18n.locale.get();
@@ -327,7 +327,7 @@ fn RecentSearches(
         <Show when=has_searches>
             <div class="recent-searches">
                 <span class="recent-searches-label">
-                    {move || t(i18n.locale.get(), "search.recent_searches")}
+                    {move || t(i18n.locale.get(), Key::SearchRecentSearches)}
                 </span>
                 <div class="recent-searches-chips">
                     {move || {
@@ -385,7 +385,7 @@ fn SearchResults(
 
     if !has_results {
         return view! {
-            <p class="empty-state">{t(locale, "search.no_results")}</p>
+            <p class="empty-state">{t(locale, Key::SearchNoResults)}</p>
         }
         .into_any();
     }
@@ -393,14 +393,14 @@ fn SearchResults(
     let count_summary = format!(
         "{} {} {} {}",
         data.total_results,
-        t(locale, "search.results_summary"),
+        t(locale, Key::SearchResultsSummary),
         data.total_systems,
-        t(locale, "search.systems")
+        t(locale, Key::SearchSystems)
     );
     let summary = if query.is_empty() && !genre.is_empty() {
         format!(
             "{} {} — {}",
-            t(locale, "search.browsing_genre"),
+            t(locale, Key::SearchBrowsingGenre),
             genre,
             count_summary
         )
@@ -479,7 +479,7 @@ fn SystemGroup(
             <div class="search-group-header">
                 <h3 class="search-group-title">{header_text}</h3>
                 <A href=see_all_href attr:class="search-see-all">
-                    {t(locale, "search.see_all")} " \u{2192}"
+                    {t(locale, Key::CommonSeeAll)} " \u{2192}"
                 </A>
             </div>
             <div class="search-group-results">
@@ -523,7 +523,7 @@ fn DeveloperBlock(
 ) -> impl IntoView {
     let title = format!(
         "{} {} ({})",
-        t(locale, "search.games_by"),
+        t(locale, Key::SearchGamesBy),
         data.developer_name,
         data.total_count
     );
@@ -537,7 +537,7 @@ fn DeveloperBlock(
             <div class="search-group-header">
                 <h3 class="search-group-title">{title}</h3>
                 <A href=see_all_href attr:class="search-see-all">
-                    {t(locale, "developer.see_all")} " \u{2192}"
+                    {t(locale, Key::CommonSeeAll)} " \u{2192}"
                 </A>
             </div>
             <div class="search-group-results">
@@ -563,7 +563,7 @@ fn OtherDevelopersList(
     query: String,
     locale: crate::i18n::Locale,
 ) -> impl IntoView {
-    let heading = format!("{} \"{}\"", t(locale, "search.other_developers"), query,);
+    let heading = format!("{} \"{}\"", t(locale, Key::SearchOtherDevelopers), query,);
 
     view! {
         <section class="developer-match-list">

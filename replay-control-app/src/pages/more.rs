@@ -3,7 +3,7 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::components::reboot_button::RebootButton;
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key, Locale};
 use crate::server_fns;
 use crate::util::format_size;
 
@@ -11,6 +11,7 @@ use crate::util::format_size;
 pub fn MorePage() -> impl IntoView {
     let i18n = use_i18n();
     let info = Resource::new(|| (), |_| server_fns::get_info());
+    let locale_res = Resource::new(|| (), |_| server_fns::get_locale());
     let region = Resource::new(|| (), |_| server_fns::get_region_preference());
     let region_secondary = Resource::new(|| (), |_| server_fns::get_region_preference_secondary());
     let language = Resource::new(|| (), |_| server_fns::get_language_preference());
@@ -18,21 +19,38 @@ pub fn MorePage() -> impl IntoView {
 
     view! {
         <div class="page more-page">
-            <h2 class="page-title">{move || t(i18n.locale.get(), "more.title")}</h2>
+            <h2 class="page-title">{move || t(i18n.locale.get(), Key::MoreTitle)}</h2>
 
             // ── Preferences section ──────────────────────────────
             <section class="more-section">
-                <h3 class="more-section-header">{move || t(i18n.locale.get(), "more.section_preferences")}</h3>
+                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionPreferences)}</h3>
 
                 <div class="more-section-body">
+                    <div class="more-inline-setting">
+                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::LocaleTitle)}</h4>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                            {move || Suspend::new(async move {
+                                // get_locale returns the explicit setting or empty string;
+                                // fall back to the current SSR-resolved locale from context.
+                                let saved = locale_res.await.unwrap_or_default();
+                                let current = if saved.is_empty() {
+                                    i18n.locale.get_untracked().code().to_string()
+                                } else {
+                                    saved
+                                };
+                                Ok::<_, ServerFnError>(view! { <LocaleSelector current /> })
+                            })}
+                        </Transition>
+                    </div>
+
                     <div class="menu-list">
-                        <MenuItem icon="\u{1F3A8}" label_key="more.skin" href=Some("/more/skin") />
+                        <MenuItem icon="\u{1F3A8}" label_key=Key::MoreSkin href=Some("/more/skin") />
                     </div>
 
                     <div class="more-inline-setting">
-                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), "region.title")}</h4>
-                        <p class="form-hint">{move || t(i18n.locale.get(), "region.hint")}</p>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::RegionTitle)}</h4>
+                        <p class="form-hint">{move || t(i18n.locale.get(), Key::RegionHint)}</p>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                             {move || Suspend::new(async move {
                                 let current = region.await?;
                                 let current_secondary = region_secondary.await?;
@@ -42,9 +60,9 @@ pub fn MorePage() -> impl IntoView {
                     </div>
 
                     <div class="more-inline-setting">
-                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), "language.title")}</h4>
-                        <p class="form-hint">{move || t(i18n.locale.get(), "language.hint")}</p>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::LanguageTitle)}</h4>
+                        <p class="form-hint">{move || t(i18n.locale.get(), Key::LanguageHint)}</p>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                             {move || Suspend::new(async move {
                                 let (primary, secondary) = language.await?;
                                 Ok::<_, ServerFnError>(view! { <LanguageSelector current_primary=primary current_secondary=secondary /> })
@@ -53,9 +71,9 @@ pub fn MorePage() -> impl IntoView {
                     </div>
 
                     <div class="more-inline-setting">
-                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), "more.text_size")}</h4>
-                        <p class="form-hint">{move || t(i18n.locale.get(), "more.text_size_hint")}</p>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
+                        <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                             {move || Suspend::new(async move {
                                 let current = font_size.await?;
                                 Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
@@ -67,42 +85,42 @@ pub fn MorePage() -> impl IntoView {
 
             // ── Game Data section ────────────────────────────────
             <section class="more-section">
-                <h3 class="more-section-header">{move || t(i18n.locale.get(), "more.section_game_data")}</h3>
+                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionGameData)}</h3>
 
                 <div class="more-section-body">
                     <div class="menu-list">
-                        <MenuItem icon="\u{1F4DA}" label_key="more.metadata" href=Some("/more/metadata") />
-                        <MenuItem icon="\u{1F511}" label_key="more.github" href=Some("/more/github") />
+                        <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/more/metadata") />
+                        <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/more/github") />
                     </div>
                 </div>
             </section>
 
             // ── System section ───────────────────────────────────
             <section class="more-section">
-                <h3 class="more-section-header">{move || t(i18n.locale.get(), "more.section_system")}</h3>
+                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionSystem)}</h3>
 
                 <div class="more-section-body">
                     <div class="menu-list">
-                        <MenuItem icon="\u{1F4F6}" label_key="more.wifi" href=Some("/more/wifi") />
-                        <MenuItem icon="\u{1F4C1}" label_key="more.nfs" href=Some("/more/nfs") />
-                        <MenuItem icon="\u{1F4BB}" label_key="more.hostname" href=Some("/more/hostname") />
-                        <MenuItem icon="\u{1F512}" label_key="more.password" href=Some("/more/password") />
-                        <MenuItem icon="\u{1F4DC}" label_key="more.logs" href=Some("/more/logs") />
+                        <MenuItem icon="\u{1F4F6}" label_key=Key::MoreWifi href=Some("/more/wifi") />
+                        <MenuItem icon="\u{1F4C1}" label_key=Key::MoreNfs href=Some("/more/nfs") />
+                        <MenuItem icon="\u{1F4BB}" label_key=Key::MoreHostname href=Some("/more/hostname") />
+                        <MenuItem icon="\u{1F512}" label_key=Key::MorePassword href=Some("/more/password") />
+                        <MenuItem icon="\u{1F4DC}" label_key=Key::MoreLogs href=Some("/more/logs") />
                     </div>
 
-                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let info = info.await?;
                             Ok::<_, ServerFnError>(view! {
                                 <div class="info-grid">
-                                    <InfoRow label=t(locale, "more.storage") value=info.storage_kind.to_uppercase() />
-                                    <InfoRow label=t(locale, "more.path") value=info.storage_root.clone() />
-                                    <InfoRow label=t(locale, "more.disk_total") value=format_size(info.disk_total_bytes) />
-                                    <InfoRow label=t(locale, "more.disk_used") value=format_size(info.disk_used_bytes) />
-                                    <InfoRow label=t(locale, "more.disk_available") value=format_size(info.disk_available_bytes) />
-                                    <InfoRow label=t(locale, "more.ethernet_ip") value=info.ethernet_ip.unwrap_or_else(|| t(locale, "more.not_connected").to_string()) />
-                                    <InfoRow label=t(locale, "more.wifi_ip") value=info.wifi_ip.unwrap_or_else(|| t(locale, "more.not_connected").to_string()) />
+                                    <InfoRow label=t(locale, Key::MoreStorage) value=info.storage_kind.to_uppercase() />
+                                    <InfoRow label=t(locale, Key::MorePath) value=info.storage_root.clone() />
+                                    <InfoRow label=t(locale, Key::MoreDiskTotal) value=format_size(info.disk_total_bytes) />
+                                    <InfoRow label=t(locale, Key::MoreDiskUsed) value=format_size(info.disk_used_bytes) />
+                                    <InfoRow label=t(locale, Key::MoreDiskAvailable) value=format_size(info.disk_available_bytes) />
+                                    <InfoRow label=t(locale, Key::MoreEthernetIp) value=info.ethernet_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
+                                    <InfoRow label=t(locale, Key::MoreWifiIp) value=info.wifi_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
                                 </div>
                             })
                         })}
@@ -127,11 +145,11 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
-    let options: &[(&str, &str)] = &[
-        ("usa", "region.usa"),
-        ("europe", "region.europe"),
-        ("japan", "region.japan"),
-        ("world", "region.world"),
+    let options: &[(&str, Key)] = &[
+        ("usa", Key::RegionUsa),
+        ("europe", Key::RegionEurope),
+        ("japan", Key::RegionJapan),
+        ("world", Key::RegionWorld),
     ];
 
     let on_change = move |ev: leptos::ev::Event| {
@@ -152,7 +170,7 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
                     }
                     active.set(v);
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "region.saved").to_string())));
+                    status.set(Some((true, t(locale, Key::RegionSaved).to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -175,7 +193,7 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
                 Ok(()) => {
                     active_secondary.set(v);
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "region.saved").to_string())));
+                    status.set(Some((true, t(locale, Key::RegionSaved).to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -217,7 +235,7 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
 
     view! {
         <div class="form-field">
-            <label class="form-label">{move || t(i18n.locale.get(), "region.primary_label")}</label>
+            <label class="form-label">{move || t(i18n.locale.get(), Key::RegionPrimaryLabel)}</label>
             <select
                 class="form-input"
                 on:change=on_change
@@ -228,14 +246,14 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
         </div>
 
         <div class="form-field">
-            <label class="form-label">{move || t(i18n.locale.get(), "region.secondary_label")}</label>
+            <label class="form-label">{move || t(i18n.locale.get(), Key::RegionSecondaryLabel)}</label>
             <select
                 class="form-input"
                 on:change=on_change_secondary
                 disabled=move || saving.get()
             >
                 <option value="" selected=move || active_secondary.read().is_empty()>
-                    {move || t(i18n.locale.get(), "region.none")}
+                    {move || t(i18n.locale.get(), Key::RegionNone)}
                 </option>
                 {secondary_option_views}
             </select>
@@ -311,7 +329,7 @@ fn TextSizeToggle(current: String) -> impl IntoView {
 #[component]
 fn MenuItem(
     icon: &'static str,
-    label_key: &'static str,
+    label_key: Key,
     href: Option<&'static str>,
 ) -> impl IntoView {
     let i18n = use_i18n();
@@ -347,26 +365,26 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
     // Language options: (value, i18n_key)
-    let options: &[(&str, &str)] = &[
-        ("", "language.auto"),
-        ("en", "language.en"),
-        ("es", "language.es"),
-        ("fr", "language.fr"),
-        ("de", "language.de"),
-        ("it", "language.it"),
-        ("ja", "language.ja"),
-        ("pt", "language.pt"),
+    let options: &[(&str, Key)] = &[
+        ("", Key::LanguageAuto),
+        ("en", Key::LanguageEn),
+        ("es", Key::LanguageEs),
+        ("fr", Key::LanguageFr),
+        ("de", Key::LanguageDe),
+        ("it", Key::LanguageIt),
+        ("ja", Key::LanguageJa),
+        ("pt", Key::LanguagePt),
     ];
 
-    let secondary_options: &[(&str, &str)] = &[
-        ("", "region.none"),
-        ("en", "language.en"),
-        ("es", "language.es"),
-        ("fr", "language.fr"),
-        ("de", "language.de"),
-        ("it", "language.it"),
-        ("ja", "language.ja"),
-        ("pt", "language.pt"),
+    let secondary_options: &[(&str, Key)] = &[
+        ("", Key::RegionNone),
+        ("en", Key::LanguageEn),
+        ("es", Key::LanguageEs),
+        ("fr", Key::LanguageFr),
+        ("de", Key::LanguageDe),
+        ("it", Key::LanguageIt),
+        ("ja", Key::LanguageJa),
+        ("pt", Key::LanguagePt),
     ];
 
     let on_change_primary = move |ev: leptos::ev::Event| {
@@ -383,7 +401,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
                 Ok(()) => {
                     active_primary.set(v);
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "language.saved").to_string())));
+                    status.set(Some((true, t(locale, Key::LanguageSaved).to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -407,7 +425,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
                 Ok(()) => {
                     active_secondary.set(v);
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "language.saved").to_string())));
+                    status.set(Some((true, t(locale, Key::LanguageSaved).to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -447,7 +465,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
 
     view! {
         <div class="form-field">
-            <label class="form-label">{move || t(i18n.locale.get(), "language.primary_label")}</label>
+            <label class="form-label">{move || t(i18n.locale.get(), Key::LanguagePrimaryLabel)}</label>
             <select
                 class="form-input"
                 on:change=on_change_primary
@@ -458,7 +476,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
         </div>
 
         <div class="form-field">
-            <label class="form-label">{move || t(i18n.locale.get(), "language.secondary_label")}</label>
+            <label class="form-label">{move || t(i18n.locale.get(), Key::LanguageSecondaryLabel)}</label>
             <select
                 class="form-input"
                 on:change=on_change_secondary
@@ -481,5 +499,82 @@ fn InfoRow(label: &'static str, value: String) -> impl IntoView {
             <span class="info-label">{label}</span>
             <span class="info-value">{value}</span>
         </div>
+    }
+}
+
+/// Inline locale selector. Language names are always shown in their own script
+/// so users can find their language regardless of the current UI locale.
+#[component]
+fn LocaleSelector(current: String) -> impl IntoView {
+    let i18n = use_i18n();
+    let active = RwSignal::new(current);
+    let saving = RwSignal::new(false);
+    let status = RwSignal::new(Option::<(bool, String)>::None);
+
+    // Language options: (locale_code, native_name)
+    // Names are shown in their own script — not translated — so they're always readable.
+    let options: &[(&str, Key)] = &[
+        ("en", Key::LocaleEn),
+        ("es", Key::LocaleEs),
+        ("ja", Key::LocaleJa),
+    ];
+
+    let on_change = move |ev: leptos::ev::Event| {
+        let value = leptos::prelude::event_target_value(&ev);
+        if saving.get_untracked() || active.get_untracked() == value {
+            return;
+        }
+        saving.set(true);
+        status.set(None);
+        let v = value.clone();
+        leptos::task::spawn_local(async move {
+            match server_fns::save_locale(v.clone()).await {
+                Ok(()) => {
+                    let locale = Locale::from_code(&v);
+                    i18n.set_locale.set(locale);
+                    active.set(v);
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                            if let Some(html) = doc.document_element() {
+                                let _ = html.set_attribute("lang", locale.code());
+                            }
+                        }
+                    }
+                    let new_locale = i18n.locale.get_untracked();
+                    status.set(Some((true, t(new_locale, Key::LocaleSaved).to_string())));
+                }
+                Err(e) => {
+                    status.set(Some((false, e.to_string())));
+                }
+            }
+            saving.set(false);
+        });
+    };
+
+    let option_views = options
+        .iter()
+        .map(|(value, label_key)| {
+            let value = *value;
+            let label_key = *label_key;
+            let is_selected = move || active.read().as_str() == value;
+            view! {
+                <option value=value selected=is_selected>
+                    {move || t(i18n.locale.get(), label_key)}
+                </option>
+            }
+        })
+        .collect::<Vec<_>>();
+
+    view! {
+        <div class="form-field">
+            <select class="form-input" on:change=on_change disabled=move || saving.get()>
+                {option_views}
+            </select>
+        </div>
+        {move || status.get().map(|(ok, msg)| {
+            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
+            view! { <div class=class>{msg}</div> }
+        })}
     }
 }

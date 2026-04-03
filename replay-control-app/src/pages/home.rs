@@ -5,7 +5,7 @@ use server_fn::ServerFnError;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::system_card::SystemCard;
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{key_from_str, t, tf, use_i18n, Key};
 use crate::server_fns;
 use crate::util::format_size_short;
 
@@ -22,13 +22,13 @@ pub fn HomePage() -> impl IntoView {
             <section class="section home-search-section">
                 <A href="/search" attr:class="search-page-input home-search-link">
                     <span class="home-search-placeholder">
-                        {move || t(i18n.locale.get(), "search.placeholder")}
+                        {move || t(i18n.locale.get(), Key::SearchPlaceholder)}
                     </span>
                 </A>
             </section>
 
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "home.last_played")}</h2>
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::HomeLastPlayed)}</h2>
                 <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
@@ -43,21 +43,21 @@ pub fn HomePage() -> impl IntoView {
                                 <HeroCard href name system=sys system_folder=sys_folder box_art_url=art_url />
                             }.into_any()
                         } else {
-                            view! { <p class="empty-state">{t(locale, "home.no_games_played")}</p> }.into_any()
+                            view! { <p class="empty-state">{t(locale, Key::HomeNoGamesPlayed)}</p> }.into_any()
                         })
                     })}
                 </Suspense>
             </section>
 
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "home.recently_played")}</h2>
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::HomeRecentlyPlayed)}</h2>
                 <Suspense fallback=move || view! { <RecentlyPlayedSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
                         let entries = recents.await?;
                         let items: Vec<_> = entries.iter().skip(1).take(10).cloned().collect();
                         Ok::<_, ServerFnError>(if items.is_empty() {
-                            view! { <p class="empty-state">{t(locale, "home.no_recent")}</p> }.into_any()
+                            view! { <p class="empty-state">{t(locale, Key::HomeNoRecent)}</p> }.into_any()
                         } else {
                             view! {
                                 <div class="scroll-card-row">
@@ -88,8 +88,8 @@ pub fn HomePage() -> impl IntoView {
             </Suspense>
 
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "home.library")}</h2>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::HomeLibrary)}</h2>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
                         let info = info.await?;
@@ -110,9 +110,9 @@ pub fn HomePage() -> impl IntoView {
                         };
                         Ok::<_, ServerFnError>(view! {
                             <div class="stats-grid">
-                                <StatCard value=info.total_games.to_string() label=t(locale, "stats.games") />
-                                <StatCard value=info.systems_with_games.to_string() label=t(locale, "stats.systems") />
-                                <StatCard value=info.total_favorites.to_string() label=t(locale, "stats.favorites") />
+                                <StatCard value=info.total_games.to_string() label=t(locale, Key::StatsGames) />
+                                <StatCard value=info.systems_with_games.to_string() label=t(locale, Key::CommonSystems) />
+                                <StatCard value=info.total_favorites.to_string() label=t(locale, Key::StatsFavorites) />
                                 <StorageBarCard pct=storage_pct detail=storage_label />
                             </div>
                         })
@@ -121,8 +121,8 @@ pub fn HomePage() -> impl IntoView {
             </section>
 
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "home.systems")}</h2>
-                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::CommonSystems)}</h2>
+                <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                     {move || Suspend::new(async move {
                         let systems = systems.await?;
                         Ok::<_, ServerFnError>(view! {
@@ -256,11 +256,18 @@ fn RecommendationSections(
 
         <Show when=move || has_discover>
             <section class="section">
-                <h2 class="section-title">{t(locale, "home.discover")}</h2>
+                <h2 class="section-title">{t(locale, Key::HomeDiscover)}</h2>
                 <div class="discover-links">
                     {data.discover_pills.iter().map(|pill| {
                         let href = pill.href.clone();
-                        let label = pill.label.clone();
+                        let label_key = pill.label_key.clone();
+                        let label_args = pill.label_args.clone();
+                        let label = if let Some(key) = key_from_str(&label_key) {
+                            let args: Vec<&str> = label_args.iter().map(|s| s.as_str()).collect();
+                            tf(locale, key, &args)
+                        } else {
+                            label_key.clone()
+                        };
                         view! { <A href=href attr:class="discover-link">{label}</A> }
                     }).collect::<Vec<_>>()}
                 </div>
@@ -290,7 +297,7 @@ fn EmptySystemCard(system: crate::server_fns::SystemSummary) -> impl IntoView {
                 <div class="system-card-text">
                     <div class="system-card-manufacturer">{system.manufacturer.clone()}</div>
                     <div class="system-card-count">
-                        {move || t(i18n.locale.get(), "games.no_games").to_string()}
+                        {move || t(i18n.locale.get(), Key::GamesNoGames).to_string()}
                     </div>
                 </div>
             </div>

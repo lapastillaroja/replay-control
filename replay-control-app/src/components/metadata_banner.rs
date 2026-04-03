@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns::{self, Activity};
 
 /// A thin banner shown at the top of the page when any activity is running
@@ -127,7 +127,7 @@ pub fn MetadataBusyBanner() -> impl IntoView {
                 {move || {
                     let lbl = busy_label();
                     if lbl.is_empty() {
-                        t(i18n.locale.get(), "metadata.busy_banner").to_string()
+                        t(i18n.locale.get(), Key::MetadataBusyBanner).to_string()
                     } else {
                         lbl
                     }

@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns::{self, BoxArtVariant};
 
 /// Bottom sheet for picking a box art variant.
@@ -87,7 +87,7 @@ pub fn BoxArtPicker(
             <div class="boxart-picker-sheet" on:click=on_sheet_click>
                 <div class="boxart-picker-header">
                     <span class="boxart-picker-title">
-                        {move || t(i18n.locale.get(), "game_detail.choose_boxart")}
+                        {move || t(i18n.locale.get(), Key::GameDetailChooseBoxart)}
                     </span>
                     <button class="boxart-picker-close" on:click=move |ev: leptos::ev::MouseEvent| {
                         ev.stop_propagation();
@@ -99,13 +99,13 @@ pub fn BoxArtPicker(
 
                 <Show when=move || loading.get()>
                     <div class="boxart-picker-loading">
-                        {move || t(i18n.locale.get(), "common.loading")}
+                        {move || t(i18n.locale.get(), Key::CommonLoading)}
                     </div>
                 </Show>
 
                 <Show when=move || !loading.get() && variants.read().is_empty()>
                     <div class="boxart-picker-empty">
-                        {move || t(i18n.locale.get(), "game_detail.no_variants")}
+                        {move || t(i18n.locale.get(), Key::GameDetailNoVariants)}
                     </div>
                 </Show>
 
@@ -162,9 +162,9 @@ pub fn BoxArtPicker(
                     >
                         {move || {
                             if applying.get() {
-                                t(i18n.locale.get(), "game_detail.downloading")
+                                t(i18n.locale.get(), Key::GameDetailDownloading)
                             } else {
-                                t(i18n.locale.get(), "game_detail.reset_default")
+                                t(i18n.locale.get(), Key::GameDetailResetDefault)
                             }
                         }}
                     </button>

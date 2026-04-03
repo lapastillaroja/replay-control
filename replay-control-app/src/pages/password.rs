@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns;
 
 #[component]
@@ -12,9 +12,9 @@ pub fn PasswordPage() -> impl IntoView {
         <div class="page settings-page">
             <div class="rom-header">
                 <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "password.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::PasswordTitle)}</h2>
             </div>
 
             <PasswordForm />
@@ -40,11 +40,11 @@ fn PasswordForm() -> impl IntoView {
 
         // Client-side validation.
         if current.is_empty() || new_pw.is_empty() || confirm.is_empty() {
-            status.set(Some((false, t(locale, "password.empty").to_string())));
+            status.set(Some((false, t(locale, Key::PasswordEmpty).to_string())));
             return;
         }
         if new_pw != confirm {
-            status.set(Some((false, t(locale, "password.mismatch").to_string())));
+            status.set(Some((false, t(locale, Key::PasswordMismatch).to_string())));
             return;
         }
 
@@ -53,7 +53,15 @@ fn PasswordForm() -> impl IntoView {
 
         leptos::task::spawn_local(async move {
             match server_fns::change_root_password(current, new_pw).await {
-                Ok(msg) => {
+                Ok(server_msg) => {
+                    let locale = use_i18n().locale.get_untracked();
+                    // The server returns either the success message or a dev-mode skip message.
+                    // Map both to appropriate translated keys.
+                    let msg = if server_msg.contains("skipped") {
+                        t(locale, Key::PasswordDevSkip).to_string()
+                    } else {
+                        t(locale, Key::PasswordSuccess).to_string()
+                    };
                     status.set(Some((true, msg)));
                     // Clear fields on success.
                     current_password.set(String::new());
@@ -61,7 +69,17 @@ fn PasswordForm() -> impl IntoView {
                     confirm_password.set(String::new());
                 }
                 Err(e) => {
-                    status.set(Some((false, server_fns::format_error(e))));
+                    let locale = use_i18n().locale.get_untracked();
+                    let raw = server_fns::format_error(e);
+                    // Map known server-side error strings to translated keys.
+                    let msg = if raw.contains("incorrect") {
+                        t(locale, Key::PasswordWrongCurrent).to_string()
+                    } else if raw.contains("empty") {
+                        t(locale, Key::PasswordEmpty).to_string()
+                    } else {
+                        raw
+                    };
+                    status.set(Some((false, msg)));
                 }
             }
             saving.set(false);
@@ -71,7 +89,7 @@ fn PasswordForm() -> impl IntoView {
     view! {
         <div class="settings-form">
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "password.current")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::PasswordCurrent)}</label>
                 <input type="password"
                     class="form-input"
                     bind:value=current_password
@@ -80,7 +98,7 @@ fn PasswordForm() -> impl IntoView {
             </div>
 
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "password.new")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::PasswordNew)}</label>
                 <input type="password"
                     class="form-input"
                     bind:value=new_password
@@ -89,7 +107,7 @@ fn PasswordForm() -> impl IntoView {
             </div>
 
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "password.confirm")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::PasswordConfirm)}</label>
                 <input type="password"
                     class="form-input"
                     bind:value=confirm_password
@@ -97,7 +115,7 @@ fn PasswordForm() -> impl IntoView {
                 />
             </div>
 
-            <p class="form-hint">{move || t(i18n.locale.get(), "password.deploy_hint")}</p>
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::PasswordDeployHint)}</p>
 
             {move || status.get().map(|(ok, msg)| {
                 let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
@@ -111,7 +129,7 @@ fn PasswordForm() -> impl IntoView {
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if saving.get() { t(locale, "settings.saving") } else { t(locale, "password.save") }
+                    if saving.get() { t(locale, Key::SettingsSaving) } else { t(locale, Key::PasswordSave) }
                 }}
             </button>
         </div>

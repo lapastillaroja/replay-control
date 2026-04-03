@@ -3,7 +3,7 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::components::reboot_button::RebootButton;
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns;
 
 #[component]
@@ -15,12 +15,12 @@ pub fn WifiPage() -> impl IntoView {
         <div class="page settings-page">
             <div class="rom-header">
                 <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "wifi.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::WifiTitle)}</h2>
             </div>
 
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let config = wifi.await?;
                     Ok::<_, ServerFnError>(view! { <WifiForm config /> })
@@ -57,7 +57,7 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
             match server_fns::save_wifi_config(ssid, password, country, mode, hidden).await {
                 Ok(()) => {
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "settings.saved").to_string())));
+                    status.set(Some((true, t(locale, Key::SettingsSaved).to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -70,7 +70,7 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
     view! {
         <div class="settings-form">
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "wifi.ssid")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::WifiSsid)}</label>
                 <input type="text"
                     class="form-input"
                     bind:value=ssid
@@ -79,13 +79,13 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
             </div>
 
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "wifi.password")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::WifiPassword)}</label>
                 <div class="input-with-toggle">
                     <input
                         type=move || if show_password.get() { "text" } else { "password" }
                         class="form-input"
                         bind:value=password
-                        placeholder=move || t(i18n.locale.get(), "settings.password_enter")
+                        placeholder=move || t(i18n.locale.get(), Key::SettingsPasswordEnter)
                     />
                     <button
                         type="button"
@@ -98,7 +98,7 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
             </div>
 
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "wifi.country")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::WifiCountry)}</label>
                 <input type="text"
                     class="form-input"
                     bind:value=country
@@ -108,7 +108,7 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
             </div>
 
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "wifi.mode")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::WifiMode)}</label>
                 <select class="form-input" bind:value=mode>
                     <option value="transition">"WPA2/WPA3 (Transition)"</option>
                     <option value="wpa2">"WPA2 Only"</option>
@@ -117,7 +117,7 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
             </div>
 
             <div class="form-field form-field-check">
-                <label class="form-label">{move || t(i18n.locale.get(), "wifi.hidden")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::WifiHidden)}</label>
                 <input type="checkbox"
                     class="form-checkbox"
                     bind:checked=hidden
@@ -136,7 +136,7 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if saving.get() { t(locale, "settings.saving") } else { t(locale, "settings.save") }
+                    if saving.get() { t(locale, Key::SettingsSaving) } else { t(locale, Key::SettingsSave) }
                 }}
             </button>
 

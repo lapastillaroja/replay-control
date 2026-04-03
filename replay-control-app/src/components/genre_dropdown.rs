@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 
 /// Genre dropdown filter — shared between ROM list and global search pages.
 #[component]
@@ -28,7 +28,7 @@ pub fn GenreDropdown(genre: RwSignal<String>, genre_list: Vec<String>) -> impl I
             prop:value=move || genre.get()
         >
             <option value="" selected=initial.is_empty()>
-                {move || t(i18n.locale.get(), "filter.genre_all")}
+                {move || t(i18n.locale.get(), Key::FilterGenreAll)}
             </option>
             {genre_list
                 .into_iter()

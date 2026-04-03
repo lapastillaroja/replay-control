@@ -5,7 +5,7 @@ use leptos_router::hooks::{use_params_map, use_query_map};
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
 use crate::hooks::use_infinite_scroll;
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, tf, use_i18n, Key};
 use crate::server_fns::{self, DeveloperSystem, PAGE_SIZE, RomListEntry};
 
 /// `/developer/:name` — Game list for a specific developer with system filter chips.
@@ -187,7 +187,7 @@ pub fn DeveloperPage() -> impl IntoView {
                 </Suspense>
             </div>
             <Transition fallback=move || view! {
-                <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div>
+                <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div>
             }>
                 {move || Suspend::new(async move {
                     let locale = i18n.locale.get();
@@ -207,9 +207,9 @@ pub fn DeveloperPage() -> impl IntoView {
                             let count_text = move || {
                                 let loaded = first_page_len + extra_roms.read().len();
                                 if loaded < total {
-                                    format!("{loaded} / {total} {}", t(locale, "stats.games").to_lowercase())
+                                    tf(locale, Key::CountGamesPartial, &[&loaded.to_string(), &total.to_string()])
                                 } else {
-                                    format!("{total} {}", t(locale, "stats.games").to_lowercase())
+                                    tf(locale, Key::CountGames, &[&total.to_string()])
                                 }
                             };
                             let is_empty = page.roms.is_empty() && total == 0;
@@ -218,17 +218,17 @@ pub fn DeveloperPage() -> impl IntoView {
                                 view! {
                                     <div class="rom-header">
                                         <A href="/search" attr:class="back-btn">
-                                            {t(locale, "games.back")}
+                                            {t(locale, Key::GamesBack)}
                                         </A>
                                         <h2 class="page-title">{developer_name}</h2>
                                     </div>
-                                    <p class="empty-state">{t(locale, "developer.no_games")}</p>
+                                    <p class="empty-state">{t(locale, Key::DeveloperNoGames)}</p>
                                 }.into_any()
                             } else {
                                 view! {
                                     <div class="rom-header">
                                         <A href="/search" attr:class="back-btn">
-                                            {t(locale, "games.back")}
+                                            {t(locale, Key::GamesBack)}
                                         </A>
                                         <h2 class="page-title">{developer_name}</h2>
                                     </div>
@@ -283,9 +283,9 @@ pub fn DeveloperPage() -> impl IntoView {
                                                     on:click=move |_| load_more()
                                                 >
                                                     {move || if loading_more.get() {
-                                                        t(i18n.locale.get(), "common.loading")
+                                                        t(i18n.locale.get(), Key::CommonLoading)
                                                     } else {
-                                                        t(i18n.locale.get(), "games.load_more")
+                                                        t(i18n.locale.get(), Key::GamesLoadMore)
                                                     }}
                                                 </button>
                                             </div>
@@ -295,7 +295,7 @@ pub fn DeveloperPage() -> impl IntoView {
                             }
                         }
                         Err(e) => {
-                            view! { <p class="error">{format!("{}: {e}", t(locale, "common.error"))}</p> }.into_any()
+                            view! { <p class="error">{format!("{}: {e}", t(locale, Key::CommonError))}</p> }.into_any()
                         }
                     }
                 })}
@@ -317,7 +317,7 @@ fn SystemFilterChips(
     }
 
     let total_count: usize = systems.iter().map(|s| s.game_count).sum();
-    let all_label = format!("{} ({})", t(locale, "developer.all_systems"), total_count);
+    let all_label = format!("{} ({})", t(locale, Key::DeveloperAllSystems), total_count);
 
     view! {
         <div class="system-filter-chips">

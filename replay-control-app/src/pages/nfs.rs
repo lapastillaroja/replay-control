@@ -3,7 +3,7 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::components::reboot_button::RebootButton;
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns;
 
 #[component]
@@ -15,12 +15,12 @@ pub fn NfsPage() -> impl IntoView {
         <div class="page settings-page">
             <div class="rom-header">
                 <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "nfs.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::NfsTitle)}</h2>
             </div>
 
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let config = nfs.await?;
                     Ok::<_, ServerFnError>(view! { <NfsForm config /> })
@@ -52,7 +52,7 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
             match server_fns::save_nfs_config(server, share, version).await {
                 Ok(()) => {
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "settings.saved").to_string())));
+                    status.set(Some((true, t(locale, Key::SettingsSaved).to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -65,7 +65,7 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
     view! {
         <div class="settings-form">
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "nfs.server")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::NfsServer)}</label>
                 <input type="text"
                     class="form-input"
                     bind:value=server
@@ -74,7 +74,7 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
             </div>
 
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "nfs.share")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::NfsShare)}</label>
                 <input type="text"
                     class="form-input"
                     bind:value=share
@@ -83,7 +83,7 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
             </div>
 
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "nfs.version")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::NfsVersion)}</label>
                 <select class="form-input" bind:value=version>
                     <option value="4">"NFSv4"</option>
                     <option value="3">"NFSv3"</option>
@@ -102,7 +102,7 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if saving.get() { t(locale, "settings.saving") } else { t(locale, "settings.save") }
+                    if saving.get() { t(locale, Key::SettingsSaving) } else { t(locale, Key::SettingsSave) }
                 }}
             </button>
 

@@ -9,7 +9,7 @@ use crate::components::captures::{CapturesLightbox, INITIAL_CAPTURE_COUNT};
 use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;
 use crate::components::video_section::GameVideoSection;
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
 
@@ -229,9 +229,9 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let fav_label = move || {
         let locale = i18n.locale.get();
         if is_favorite.get() {
-            t(locale, "game_detail.unfavorite")
+            t(locale, Key::GameDetailUnfavorite)
         } else {
-            t(locale, "game_detail.favorite")
+            t(locale, Key::GameDetailFavorite)
         }
     };
 
@@ -247,7 +247,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         // Header
         <div class="rom-header">
             <button class="back-btn" on:click=go_back>
-                {move || t(i18n.locale.get(), "games.back")}
+                {move || t(i18n.locale.get(), Key::GamesBack)}
             </button>
             <h2 class="page-title">{game_name.clone()}</h2>
         </div>
@@ -279,7 +279,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             </div>
             <Show when=move || has_variants>
                 <div class="change-cover-link" on:click=move |_| show_picker.set(true)>
-                    {move || t(i18n.locale.get(), "game_detail.change_cover")}
+                    {move || t(i18n.locale.get(), Key::GameDetailChangeCover)}
                     " \u{203A}"
                 </div>
             </Show>
@@ -314,59 +314,59 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
 
         // Game Info Card
         <section class="section">
-            <h2 class="section-title">{move || t(i18n.locale.get(), "game_detail.info")}</h2>
+            <h2 class="section-title">{move || t(i18n.locale.get(), Key::GameDetailInfo)}</h2>
             <div class="game-meta-grid">
                 <div class="game-meta-item">
-                    <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.system")}</span>
+                    <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailSystem)}</span>
                     <span class="game-meta-value">{system_display.clone()}</span>
                 </div>
                 <div class="game-meta-item">
-                    <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.filename")}</span>
+                    <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailFilename)}</span>
                     <span class="game-meta-value">{relative_path_sv.get_value()}</span>
                 </div>
                 <div class="game-meta-item">
-                    <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.file_size")}</span>
+                    <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailFileSize)}</span>
                     <span class="game-meta-value">{size_display}</span>
                 </div>
                 <Show when=move || !has_arcade>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.format")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailFormat)}</span>
                         <span class="game-meta-value">{ext.clone()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_year>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.year")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailYear)}</span>
                         <span class="game-meta-value">{year.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_developer>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.developer")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailDeveloper)}</span>
                         <span class="game-meta-value">{developer.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_publisher>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.publisher")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailPublisher)}</span>
                         <span class="game-meta-value">{publisher.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_genre>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.genre")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailGenre)}</span>
                         <span class="game-meta-value">{genre.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_players>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.players")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailPlayers)}</span>
                         <span class="game-meta-value">{players_str.clone()}</span>
                     </div>
                 </Show>
                 <Show when=move || has_rating>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.rating")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRating)}</span>
                         <span class="game-meta-value">{rating_display.get_value()}</span>
                     </div>
                 </Show>
@@ -374,7 +374,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                 // Arcade-specific fields
                 {rotation.map(|r| view! {
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.rotation")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRotation)}</span>
                         <span class="game-meta-value">{r}</span>
                     </div>
                 })}
@@ -399,7 +399,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                     };
                     view! {
                         <div class="game-meta-item">
-                            <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.emulation")}</span>
+                            <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailEmulation)}</span>
                             <span class="game-meta-value game-meta-status">
                                 <span class=dot_class></span>
                                 {label}
@@ -409,13 +409,13 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                 })}
                 <Show when=move || has_category>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.raw_category")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRawCategory)}</span>
                         <span class="game-meta-value">{arcade_category.get_value()}</span>
                     </div>
                 </Show>
                 <Show when=move || is_clone>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.parent_rom")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailParentRom)}</span>
                         <span class="game-meta-value">{parent_rom.clone()}</span>
                     </div>
                 </Show>
@@ -423,7 +423,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                 // Console-specific fields
                 {region.map(|r| view! {
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), "game_detail.region")}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailRegion)}</span>
                         <span class="game-meta-value">{r}</span>
                     </div>
                 })}
@@ -433,7 +433,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         // Description (hidden when no description available)
         <Show when=move || has_description>
             <section class="section game-section">
-                <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.description")}</h2>
+                <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailDescription)}</h2>
                 <p class="game-description">{move || description.get_value()}</p>
             </section>
         </Show>
@@ -441,18 +441,18 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         // Screenshots Gallery (hidden when no screenshots)
         <Show when=move || has_screenshot || has_title>
             <section class="section game-section">
-                <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.screenshots")}</h2>
+                <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailScreenshots)}</h2>
                 <div class="game-screenshots">
                     {title_url.get_value().map(|url| view! {
                         <div class="game-screenshot-item">
                             <img class="game-screenshot-img" src=url alt="Title screen" />
-                            <span class="game-screenshot-label">{move || t(i18n.locale.get(), "game_detail.title_screen")}</span>
+                            <span class="game-screenshot-label">{move || t(i18n.locale.get(), Key::GameDetailTitleScreen)}</span>
                         </div>
                     })}
                     {screenshot_url.get_value().map(|url| view! {
                         <div class="game-screenshot-item">
                             <img class="game-screenshot-img" src=url alt="In-game screenshot" />
-                            <span class="game-screenshot-label">{move || t(i18n.locale.get(), "game_detail.in_game")}</span>
+                            <span class="game-screenshot-label">{move || t(i18n.locale.get(), Key::GameDetailInGame)}</span>
                         </div>
                     })}
                 </div>
@@ -461,9 +461,9 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
 
         // User Captures (hidden when none, with helpful prompt)
         <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.user_captures")}</h2>
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailUserCaptures)}</h2>
             <Show when=move || has_user_screenshots
-                fallback=move || view! { <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_captures")}</p> }
+                fallback=move || view! { <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoCaptures)}</p> }
             >
                 <div class="user-captures-gallery">
                     {move || {
@@ -492,7 +492,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                         class="game-action-btn captures-show-all"
                         on:click=move |_| captures_show_all.set(true)
                     >
-                        {move || t(i18n.locale.get(), "game_detail.view_all_captures")}
+                        {move || t(i18n.locale.get(), Key::GameDetailViewAllCaptures)}
                         {move || format!(" ({})", user_screenshots.get_value().len())}
                     </button>
                 </Show>
@@ -527,7 +527,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
 
         // Actions
         <section class="section">
-            <h2 class="section-title">{move || t(i18n.locale.get(), "game_detail.actions")}</h2>
+            <h2 class="section-title">{move || t(i18n.locale.get(), Key::CommonActions)}</h2>
             <div class="game-actions">
                 <button class="game-action-btn game-action-fav" on:click=on_toggle_fav>
                     <span class="game-action-icon">{fav_icon}</span>
@@ -605,15 +605,15 @@ fn GameLaunchAction(relative_path: StoredValue<String>) -> impl IntoView {
     let label = move || {
         let locale = i18n.locale.get();
         if launching.get() {
-            t(locale, "game_detail.launching")
+            t(locale, Key::GameDetailLaunching)
         } else if is_launched() {
-            t(locale, "game_detail.launched")
+            t(locale, Key::GameDetailLaunched)
         } else if is_simulated() {
-            t(locale, "game_detail.launch_not_replayos")
+            t(locale, Key::GameDetailLaunchNotReplayos)
         } else if is_error() {
-            t(locale, "game_detail.launch_error")
+            t(locale, Key::GameDetailLaunchError)
         } else {
-            t(locale, "game_detail.launch")
+            t(locale, Key::GameDetailLaunch)
         }
     };
 
@@ -695,7 +695,7 @@ fn GameRenameAction(
                     is_renaming.set(true);
                 }>
                     <span class="game-action-icon">{"\u{270F}"}</span>
-                    {move || t(i18n.locale.get(), "game_detail.rename")}
+                    {move || t(i18n.locale.get(), Key::CommonRename)}
                 </button>
             }>
                 <div class="game-rename-inline">
@@ -773,7 +773,7 @@ fn GameDeleteAction(
         <Show when=move || confirming_delete.get() fallback=move || view! {
             <button class="game-action-btn game-action-delete" on:click=on_start_delete>
                 <span class="game-action-icon">{"\u{2715}"}</span>
-                {move || t(i18n.locale.get(), "game_detail.delete")}
+                {move || t(i18n.locale.get(), Key::CommonDelete)}
             </button>
         }>
             <div class="game-delete-confirm">
@@ -793,10 +793,10 @@ fn GameDeleteAction(
                     })
                 }}
                 <button class="game-action-btn game-action-delete-confirm" on:click=on_delete>
-                    {move || t(i18n.locale.get(), "game_detail.confirm_delete")}
+                    {move || t(i18n.locale.get(), Key::GameDetailConfirmDelete)}
                 </button>
                 <button class="game-action-btn" on:click=move |_| confirming_delete.set(false)>
-                    {move || t(i18n.locale.get(), "games.cancel")}
+                    {move || t(i18n.locale.get(), Key::CommonCancel)}
                 </button>
             </div>
         </Show>
@@ -856,50 +856,50 @@ fn RelatedGamesSection(
                             view! {
                                 <Show when=move || has_variants>
                                     <GameChipRow
-                                        title_key="game_detail.regional_variants"
+                                        title_key=Key::GameDetailRegionalVariants
                                         chips=variant_chips.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_translations>
                                     <GameChipRow
-                                        title_key="game_detail.translations"
+                                        title_key=Key::GameDetailTranslations
                                         chips=translation_chips.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_hacks>
                                     <GameChipRow
-                                        title_key="game_detail.hacks"
+                                        title_key=Key::GameDetailHacks
                                         chips=hack_chips.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_alternates>
                                     <GameChipRow
-                                        title_key="game_detail.alternate_versions"
+                                        title_key=Key::GameDetailAlternateVersions
                                         chips=alternate_chips.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_specials>
                                     <GameChipRow
-                                        title_key="game_detail.special_versions"
+                                        title_key=Key::GameDetailSpecialVersions
                                         chips=special_chips.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_arcade_versions>
                                     <GameChipRow
-                                        title_key="game_detail.arcade_versions"
+                                        title_key=Key::GameDetailArcadeVersions
                                         chips=arcade_version_chips.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_cross_system>
                                     <SimilarGamesRow
                                         games=data.cross_system.clone()
-                                        title_key="game_detail.also_available_on"
+                                        title_key=Key::GameDetailAlsoAvailableOn
                                     />
                                 </Show>
                                 <Show when=move || has_aliases>
                                     <SimilarGamesRow
                                         games=data.alias_variants.clone()
-                                        title_key="game_detail.other_versions"
+                                        title_key=Key::GameDetailOtherVersions
                                     />
                                 </Show>
                                 <Show when=move || has_sequel_nav>
@@ -912,14 +912,14 @@ fn RelatedGamesSection(
                                 <Show when=move || has_series>
                                     <SimilarGamesRow
                                         games=data.series_siblings.clone()
-                                        title_key="game_detail.more_in_series"
+                                        title_key=Key::GameDetailMoreInSeries
                                         custom_title=data.series_name.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_similar>
                                     <SimilarGamesRow
                                         games=data.similar_games.clone()
-                                        title_key="game_detail.more_like_this"
+                                        title_key=Key::GameDetailMoreLikeThis
                                     />
                                 </Show>
                             }.into_any()
@@ -943,7 +943,7 @@ struct ChipItem {
 /// Generic horizontal chip row showing clickable links with a section title.
 /// Reuses `.regional-variants` and `.region-chip` CSS classes.
 #[component]
-fn GameChipRow(title_key: &'static str, chips: Vec<ChipItem>) -> impl IntoView {
+fn GameChipRow(title_key: Key, chips: Vec<ChipItem>) -> impl IntoView {
     let i18n = use_i18n();
 
     view! {
@@ -965,7 +965,7 @@ fn GameChipRow(title_key: &'static str, chips: Vec<ChipItem>) -> impl IntoView {
 #[component]
 fn SimilarGamesRow(
     games: Vec<RecommendedGame>,
-    #[prop(default = "game_detail.more_like_this")] title_key: &'static str,
+    #[prop(default = Key::GameDetailMoreLikeThis)] title_key: Key,
     /// Optional custom title (e.g., series name from Wikidata). When non-empty, displayed
     /// instead of the i18n title_key.
     #[prop(default = String::new())]
@@ -1017,7 +1017,7 @@ fn PlayOrderNav(
 
     view! {
         <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.play_order")}</h2>
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailPlayOrder)}</h2>
             <div class="play-order-nav">
                 // Previous game (left side)
                 {match &prev {
@@ -1035,7 +1035,7 @@ fn PlayOrderNav(
                         view! {
                             <div class="play-order-dimmed prev">
                                 <span>{"\u{2190} "}{title}</span>
-                                <span class="play-order-subtitle">{move || t(i18n.locale.get(), "game_detail.not_in_library")}</span>
+                                <span class="play-order-subtitle">{move || t(i18n.locale.get(), Key::GameDetailNotInLibrary)}</span>
                             </div>
                         }.into_any()
                     }
@@ -1061,7 +1061,7 @@ fn PlayOrderNav(
                         view! {
                             <div class="play-order-dimmed next">
                                 <span>{title}{" \u{2192}"}</span>
-                                <span class="play-order-subtitle">{move || t(i18n.locale.get(), "game_detail.not_in_library")}</span>
+                                <span class="play-order-subtitle">{move || t(i18n.locale.get(), Key::GameDetailNotInLibrary)}</span>
                             </div>
                         }.into_any()
                     }

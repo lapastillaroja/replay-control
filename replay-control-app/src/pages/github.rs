@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns;
 
 #[component]
@@ -14,12 +14,12 @@ pub fn GithubPage() -> impl IntoView {
         <div class="page settings-page">
             <div class="rom-header">
                 <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "github.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::GithubTitle)}</h2>
             </div>
 
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let current = api_key.await?;
                     Ok::<_, ServerFnError>(view! { <ApiKeyForm current /> })
@@ -46,7 +46,7 @@ fn ApiKeyForm(current: String) -> impl IntoView {
             match server_fns::save_github_api_key(value).await {
                 Ok(()) => {
                     let locale = use_i18n().locale.get_untracked();
-                    status.set(Some((true, t(locale, "settings.saved").to_string())));
+                    status.set(Some((true, t(locale, Key::SettingsSaved).to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));
@@ -59,14 +59,14 @@ fn ApiKeyForm(current: String) -> impl IntoView {
     view! {
         <div class="settings-form">
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "github.label")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::GithubLabel)}</label>
                 <input type="password"
                     class="form-input"
                     bind:value=key
                     placeholder="ghp_..."
                     autocomplete="off"
                 />
-                <p class="form-hint">{move || t(i18n.locale.get(), "github.hint")}</p>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::GithubHint)}</p>
             </div>
 
             {move || status.get().map(|(ok, msg)| {
@@ -81,7 +81,7 @@ fn ApiKeyForm(current: String) -> impl IntoView {
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if saving.get() { t(locale, "settings.saving") } else { t(locale, "settings.save") }
+                    if saving.get() { t(locale, Key::SettingsSaving) } else { t(locale, Key::SettingsSave) }
                 }}
             </button>
         </div>

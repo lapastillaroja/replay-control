@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns::{self, GameDocument, LocalManual, ManualRecommendation};
 
 /// Full manual section: in-folder documents, saved manuals, search, and results.
@@ -152,7 +152,7 @@ pub fn ManualSection(
 
     view! {
         <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.manual")}</h2>
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailManual)}</h2>
 
             // In-folder documents
             <Show when=has_docs>
@@ -187,7 +187,7 @@ pub fn ManualSection(
 
             // No manual message
             <Show when=move || !has_content() && !searched.get()>
-                <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_manual")}</p>
+                <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoManual)}</p>
             </Show>
 
             // Search button
@@ -198,9 +198,9 @@ pub fn ManualSection(
             >
                 {move || {
                     if searching.get() {
-                        t(i18n.locale.get(), "game_detail.searching_manual")
+                        t(i18n.locale.get(), Key::CommonSearching)
                     } else {
-                        t(i18n.locale.get(), "game_detail.find_manual")
+                        t(i18n.locale.get(), Key::GameDetailFindManual)
                     }
                 }}
             </button>
@@ -358,13 +358,13 @@ where
                     class="manual-confirm-btn"
                     on:click=on_click_confirm
                 >
-                    {move || t(i18n.locale.get(), "manual.confirm_delete")}
+                    {move || t(i18n.locale.get(), Key::ManualConfirmDelete)}
                 </button>
                 <button
                     class="manual-cancel-btn"
                     on:click=on_click_cancel
                 >
-                    {move || t(i18n.locale.get(), "manual.cancel")}
+                    {move || t(i18n.locale.get(), Key::CommonCancel)}
                 </button>
             </Show>
         </div>
@@ -387,7 +387,7 @@ where
     view! {
         <div class="manual-search-results">
             <Show when=move || !is_searching.get() && results.read().is_empty()>
-                <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_manual_results")}</p>
+                <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoManualResults)}</p>
             </Show>
             <For
                 each=move || results.get()
@@ -458,7 +458,7 @@ where
                     target="_blank"
                     rel="noopener"
                 >
-                    {move || t(i18n.locale.get(), "game_detail.view_manual")}
+                    {move || t(i18n.locale.get(), Key::GameDetailViewManual)}
                 </a>
                 // Only show Save for retrokit results (direct PDF URLs)
                 <Show when=move || is_retrokit>
@@ -469,9 +469,9 @@ where
                     >
                         {move || {
                             if is_downloading() {
-                                t(i18n.locale.get(), "game_detail.downloading")
+                                t(i18n.locale.get(), Key::GameDetailDownloading)
                             } else {
-                                t(i18n.locale.get(), "game_detail.save_manual")
+                                t(i18n.locale.get(), Key::CommonSave)
                             }
                         }}
                     </button>

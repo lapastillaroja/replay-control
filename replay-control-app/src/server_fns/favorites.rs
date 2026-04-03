@@ -266,7 +266,13 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     let db_result = state
         .metadata_pool
         .read(move |conn| {
-            let mut sections: Vec<(String, Vec<replay_control_core::metadata_db::GameEntry>, Option<String>)> = Vec::new();
+            #[allow(clippy::type_complexity)]
+            let mut sections: Vec<(
+                String,
+                Vec<String>,
+                Vec<replay_control_core::metadata_db::GameEntry>,
+                Option<String>,
+            )> = Vec::new();
 
             // Batch lookup: all favorites + seed game (if from recents) in one query.
             let mut all_keys = fav_keys_vec;
@@ -345,8 +351,12 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                             .as_deref()
                             .unwrap_or(&seed_entry.rom_filename);
                         let display = replay_control_core::title_utils::strip_tags(raw_name);
-                        let title = format!("Because You Love {display}");
-                        sections.push((title, similar, None));
+                        sections.push((
+                            "SpotlightBecauseYouLove".to_string(),
+                            vec![display.to_string()],
+                            similar,
+                            None,
+                        ));
                     }
                 }
 
@@ -395,8 +405,12 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                             .collect();
 
                         if non_fav.len() >= 2 {
-                            let title = format!("More from {stitle}");
-                            sections.push((title, non_fav, None));
+                            sections.push((
+                                "SpotlightMoreFrom".to_string(),
+                                vec![stitle.clone()],
+                                non_fav,
+                                None,
+                            ));
                             break;
                         }
                     }
@@ -417,7 +431,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     // Convert GameEntry to RecommendedGame.
     // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
     let mut result_sections = Vec::new();
-    for (title, games, see_all_href) in raw_sections {
+    for (title_key, title_args, games, see_all_href) in raw_sections {
         let picks: Vec<RecommendedGame> = games
             .iter()
             .take(6)
@@ -427,7 +441,8 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
             continue;
         }
         result_sections.push(GameSection {
-            title,
+            title_key,
+            title_args,
             games: picks,
             see_all_href,
         });

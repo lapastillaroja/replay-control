@@ -17,17 +17,22 @@ pub struct RecommendedGame {
     pub label: Option<String>,
 }
 
-/// A pill in the Discover section: label + link.
+/// A pill in the Discover section: translation key + interpolation args + link.
+/// The client resolves `label_key` via `key_from_str` and calls `tf(locale, key, &args)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoverPill {
-    pub label: String,
+    pub label_key: String,
+    pub label_args: Vec<String>,
     pub href: String,
 }
 
 /// A titled row of game recommendations (favorites-based, curated spotlight, etc.).
+/// `title_key` is a `Key` variant name; `title_args` are interpolation arguments.
+/// The client resolves and translates these via `key_from_str` + `tf`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSection {
-    pub title: String,
+    pub title_key: String,
+    pub title_args: Vec<String>,
     pub games: Vec<RecommendedGame>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub see_all_href: Option<String>,
@@ -149,9 +154,11 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             // Fewer than this looks sparse — fall back to global Top Rated.
             let spotlight_min = count;
 
+            #[allow(clippy::type_complexity)]
             let spotlight_result: Option<(
                 Vec<replay_control_core::metadata_db::GameEntry>,
                 String,
+                Vec<String>,
                 Option<String>,
             )> = match spotlight_type {
                 1 if !top_genres.is_empty() => {
@@ -172,12 +179,16 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     if games.len() < spotlight_min {
                         None
                     } else {
-                        let title = format!("Best {genre}");
                         let href = Some(format!(
                             "/search?genre={}&min_rating=3.5",
                             urlencoding::encode(genre)
                         ));
-                        Some((games, title, href))
+                        Some((
+                            games,
+                            "SpotlightBestGenre".to_string(),
+                            vec![genre.clone()],
+                            href,
+                        ))
                     }
                 }
                 2 if !active_systems.is_empty() => {
@@ -210,9 +221,13 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                                 .find(|s| s.0 == *sys)
                                 .map(|s| s.1.clone())
                                 .unwrap_or_else(|| sys.clone());
-                            let title = format!("Best of {display}");
                             let href = Some(format!("/games/{sys}?min_rating=3.5"));
-                            Some((games, title, href))
+                            Some((
+                                games,
+                                "SpotlightBestOf".to_string(),
+                                vec![display],
+                                href,
+                            ))
                         }
                     }
                 }
@@ -234,9 +249,13 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     if games.len() < spotlight_min {
                         None
                     } else {
-                        let title = format!("Games by {dev}");
                         let href = Some(format!("/developer/{}", urlencoding::encode(dev)));
-                        Some((games, title, href))
+                        Some((
+                            games,
+                            "SpotlightGamesBy".to_string(),
+                            vec![dev.clone()],
+                            href,
+                        ))
                     }
                 }
                 4 => {
@@ -271,15 +290,15 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     if pool.len() < spotlight_min {
                         None
                     } else {
-                        Some((pool, "Hidden Gems".to_string(), None))
+                        Some((pool, "SpotlightHiddenGems".to_string(), vec![], None))
                     }
                 }
                 _ => None, // Falls through to global top rated below
             };
 
             // Fall back to global top rated if the selected type returned empty or was type 0.
-            let (spotlight_pool, spotlight_title, spotlight_href) = spotlight_result
-                .unwrap_or_else(|| {
+            let (spotlight_pool, spotlight_title_key, spotlight_title_args, spotlight_href) =
+                spotlight_result.unwrap_or_else(|| {
                     let games = MetadataDb::top_rated_filtered(
                         conn,
                         None,
@@ -290,7 +309,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                         &region_secondary_str,
                     )
                     .unwrap_or_default();
-                    (games, "Top Rated".to_string(), None)
+                    (games, "SpotlightTopRated".to_string(), vec![], None)
                 });
             let fav_roms = favorites_info.as_ref().map(|fi| {
                 // Compute top genre inside this closure instead of a separate DB read.
@@ -341,7 +360,8 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 decades,
                 active_systems,
                 spotlight_pool,
-                spotlight_title,
+                spotlight_title_key,
+                spotlight_title_args,
                 spotlight_href,
                 fav_roms,
             )
@@ -360,14 +380,16 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         decades,
         active_systems,
         spotlight_pool,
-        spotlight_title,
+        spotlight_title_key,
+        spotlight_title_args,
         spotlight_href,
         fav_roms,
     )) = db_data
     else {
         return Ok(RecommendationData {
             random_picks: GameSection {
-                title: String::new(),
+                title_key: String::new(),
+                title_args: Vec::new(),
                 games: Vec::new(),
                 see_all_href: None,
             },
@@ -410,7 +432,8 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             return None;
         }
         Some(GameSection {
-            title: format!("Because You Love {}", fi.system_display),
+            title_key: "SpotlightBecauseYouLove".to_string(),
+            title_args: vec![fi.system_display.clone()],
             games: picks,
             see_all_href: Some(format!("/games/{}", fi.system)),
         })
@@ -438,7 +461,8 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             None
         } else {
             Some(GameSection {
-                title: spotlight_title,
+                title_key: spotlight_title_key,
+                title_args: spotlight_title_args,
                 games,
                 see_all_href: spotlight_href,
             })
@@ -455,7 +479,8 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     );
     let data = RecommendationData {
         random_picks: GameSection {
-            title: "Rediscover Your Library".to_string(),
+            title_key: "SpotlightRediscover".to_string(),
+            title_args: vec![],
             games: random_picks,
             see_all_href: None,
         },
@@ -566,7 +591,8 @@ fn build_discover_pills(
         let idx = rng.random_range(0..top_genres.len());
         let genre = &top_genres[idx];
         pills.push(DiscoverPill {
-            label: genre.clone(),
+            label_key: "SpotlightBestGenre".to_string(),
+            label_args: vec![genre.clone()],
             href: format!("/search?genre={}", urlencoding::encode(genre)),
         });
         used_types.push("genre");
@@ -574,7 +600,8 @@ fn build_discover_pills(
 
     // 2. Always include the multiplayer pill.
     pills.push(DiscoverPill {
-        label: "Multiplayer".to_string(),
+        label_key: "PillMultiplayer".to_string(),
+        label_args: vec![],
         href: "/search?multiplayer=true".to_string(),
     });
     used_types.push("multiplayer");
@@ -584,13 +611,14 @@ fn build_discover_pills(
 
     // Another genre (different from the one already picked).
     for genre in top_genres {
-        if pills.iter().any(|p| p.label == *genre) {
+        if pills.iter().any(|p| p.label_args.first().map(|a| a == genre).unwrap_or(false)) {
             continue;
         }
         candidates.push((
             "genre",
             DiscoverPill {
-                label: genre.clone(),
+                label_key: "SpotlightBestGenre".to_string(),
+                label_args: vec![genre.clone()],
                 href: format!("/search?genre={}", urlencoding::encode(genre)),
             },
         ));
@@ -609,7 +637,8 @@ fn build_discover_pills(
         candidates.push((
             "system",
             DiscoverPill {
-                label: format!("Best of {display}"),
+                label_key: "PillBestOf".to_string(),
+                label_args: vec![display],
                 href: format!("/games/{sys}?min_rating=3.5"),
             },
         ));
@@ -622,7 +651,8 @@ fn build_discover_pills(
         candidates.push((
             "developer",
             DiscoverPill {
-                label: format!("Games by {dev}"),
+                label_key: "PillGamesBy".to_string(),
+                label_args: vec![dev.clone()],
                 href: format!("/developer/{}", urlencoding::encode(dev)),
             },
         ));
@@ -636,7 +666,8 @@ fn build_discover_pills(
         candidates.push((
             "decade",
             DiscoverPill {
-                label: format!("{decade}s Classics"),
+                label_key: "PillClassics".to_string(),
+                label_args: vec![decade.to_string()],
                 href: format!("/search?min_year={decade}&max_year={end}"),
             },
         ));

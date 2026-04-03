@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns;
 
 #[component]
@@ -14,12 +14,12 @@ pub fn SkinPage() -> impl IntoView {
         <div class="page settings-page">
             <div class="rom-header">
                 <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "skin.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::SkinTitle)}</h2>
             </div>
 
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let (current, sync, skins) = skins.await?;
                     Ok::<_, ServerFnError>(view! { <SkinGrid current sync skins /> })
@@ -69,7 +69,7 @@ fn SkinGrid(current: u32, sync: bool, skins: Vec<server_fns::SkinInfo>) -> impl 
 
     view! {
         <div class="form-field form-field-check">
-            <label class="form-label">{move || t(i18n.locale.get(), "skin.sync")}</label>
+            <label class="form-label">{move || t(i18n.locale.get(), Key::SkinSync)}</label>
             <input type="checkbox"
                 class="form-checkbox"
                 prop:checked=move || sync_enabled.get()
@@ -80,9 +80,9 @@ fn SkinGrid(current: u32, sync: bool, skins: Vec<server_fns::SkinInfo>) -> impl 
         <p class="form-hint">{move || {
             let locale = i18n.locale.get();
             if sync_enabled.get() {
-                t(locale, "skin.sync_hint")
+                t(locale, Key::SkinSyncHint)
             } else {
-                t(locale, "skin.hint")
+                t(locale, Key::SkinHint)
             }
         }}</p>
         {move || status.get().map(|(ok, msg)| {
@@ -165,7 +165,7 @@ fn SkinCard(
             </div>
             <div class="skin-name">{skin.name}</div>
             <Show when=is_active>
-                <span class="skin-badge">{move || t(i18n.locale.get(), "skin.current")}</span>
+                <span class="skin-badge">{move || t(i18n.locale.get(), Key::SkinCurrent)}</span>
             </Show>
         </button>
     }

@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns;
 
 #[component]
@@ -23,7 +23,7 @@ pub fn RebootButton() -> impl IntoView {
 
     view! {
         <div class="apply-section">
-            <p class="form-hint">{move || t(i18n.locale.get(), "settings.reboot_hint")}</p>
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsRebootHint)}</p>
             <button
                 class="form-btn form-btn-secondary"
                 on:click=on_reboot
@@ -31,7 +31,7 @@ pub fn RebootButton() -> impl IntoView {
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if rebooting.get() { t(locale, "settings.rebooting") } else { t(locale, "settings.reboot") }
+                    if rebooting.get() { t(locale, Key::SettingsRebooting) } else { t(locale, Key::SettingsReboot) }
                 }}
             </button>
             {move || result.get().map(|(ok, msg)| {

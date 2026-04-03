@@ -2,14 +2,14 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns;
 
 /// Available log sources that map to journalctl unit filters.
-const LOG_SOURCES: &[(&str, &str)] = &[
-    ("all", "logs.source_all"),
-    ("replay-control", "logs.source_companion"),
-    ("replay", "logs.source_replay"),
+const LOG_SOURCES: &[(&str, Key)] = &[
+    ("all", Key::LogsSourceAll),
+    ("replay-control", Key::LogsSourceCompanion),
+    ("replay", Key::LogsSourceReplay),
 ];
 
 const LOG_LINES: usize = 200;
@@ -31,9 +31,9 @@ pub fn LogsPage() -> impl IntoView {
         <div class="page settings-page">
             <div class="rom-header">
                 <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "logs.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::LogsTitle)}</h2>
             </div>
 
             <div class="logs-controls">
@@ -52,11 +52,11 @@ pub fn LogsPage() -> impl IntoView {
                     }).collect::<Vec<_>>()}
                 </select>
                 <button class="form-btn form-btn-secondary" on:click=on_refresh>
-                    {move || t(i18n.locale.get(), "logs.refresh")}
+                    {move || t(i18n.locale.get(), Key::LogsRefresh)}
                 </button>
             </div>
 
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let text = logs.await?;
                     Ok::<_, ServerFnError>(view! {

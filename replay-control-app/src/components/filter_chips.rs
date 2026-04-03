@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::components::genre_dropdown::GenreDropdown;
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 
 /// Rating filter dropdown — "Any", "3+", "3.5+", "4+", "4.5+".
 #[component]
@@ -37,7 +37,7 @@ fn RatingDropdown(min_rating: RwSignal<Option<f32>>) -> impl IntoView {
             on:change=on_change
             prop:value=value
         >
-            <option value="" selected=initial.is_empty()>{move || t(i18n.locale.get(), "filter.rating_any")}</option>
+            <option value="" selected=initial.is_empty()>{move || t(i18n.locale.get(), Key::FilterRatingAny)}</option>
             <option value="3" selected={initial == "3"}>"3+"</option>
             <option value="3.5" selected={initial == "3.5"}>"3.5+"</option>
             <option value="4" selected={initial == "4"}>"4+"</option>
@@ -94,7 +94,7 @@ impl FilterState {
 
 /// A single toggle filter chip.
 #[component]
-fn FilterChip(signal: RwSignal<bool>, label_key: &'static str) -> impl IntoView {
+fn FilterChip(signal: RwSignal<bool>, label_key: Key) -> impl IntoView {
     let i18n = use_i18n();
 
     view! {
@@ -127,13 +127,13 @@ pub fn FilterChips(
     #[prop(optional)] genre_list: Option<Vec<String>>,
 ) -> impl IntoView {
     view! {
-        <FilterChip signal=filters.hide_hacks label_key="filter.hide_hacks" />
-        <FilterChip signal=filters.hide_translations label_key="filter.hide_translations" />
-        <FilterChip signal=filters.hide_betas label_key="filter.hide_betas" />
+        <FilterChip signal=filters.hide_hacks label_key=Key::FilterHideHacks />
+        <FilterChip signal=filters.hide_translations label_key=Key::FilterHideTranslations />
+        <FilterChip signal=filters.hide_betas label_key=Key::FilterHideBetas />
         <Show when=move || show_clones.get()>
-            <FilterChip signal=filters.hide_clones label_key="filter.hide_clones" />
+            <FilterChip signal=filters.hide_clones label_key=Key::FilterHideClones />
         </Show>
-        <FilterChip signal=filters.multiplayer_only label_key="filter.multiplayer" />
+        <FilterChip signal=filters.multiplayer_only label_key=Key::FilterMultiplayer />
         {genre_list.map(|gl| {
             view! { <GenreDropdown genre=filters.genre genre_list=gl /> }
         })}

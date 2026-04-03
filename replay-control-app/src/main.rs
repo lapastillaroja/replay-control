@@ -535,6 +535,8 @@ mod ssr {
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetPreferredLanguages>(
         );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLocale>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveLocale>();
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
             .site_root(cli.site_root.clone())

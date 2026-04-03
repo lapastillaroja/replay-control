@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_location;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 
 #[component]
 pub fn BottomNav() -> impl IntoView {
@@ -10,10 +10,10 @@ pub fn BottomNav() -> impl IntoView {
     let location = use_location();
 
     let tabs = [
-        ("/", "nav.games", "\u{1F3AE}"),
-        ("/favorites", "nav.favorites", "\u{2B50}"),
-        ("/search", "nav.search", "\u{1F50D}"),
-        ("/more", "nav.more", "\u{2261}"),
+        ("/", Key::NavGames, "\u{1F3AE}"),
+        ("/favorites", Key::NavFavorites, "\u{2B50}"),
+        ("/search", Key::NavSearch, "\u{1F50D}"),
+        ("/more", Key::NavMore, "\u{2261}"),
     ];
 
     view! {

@@ -6,7 +6,7 @@ use server_fn::ServerFnError;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, tf, use_i18n, Key};
 use crate::server_fns;
 use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
 
@@ -20,9 +20,9 @@ pub fn FavoritesPage() -> impl IntoView {
     let toggle_label = move || {
         let locale = i18n.locale.get();
         if grouped_view.get() {
-            t(locale, "favorites.view_flat")
+            t(locale, Key::FavoritesViewFlat)
         } else {
-            t(locale, "favorites.view_grouped")
+            t(locale, Key::FavoritesViewGrouped)
         }
     };
 
@@ -156,13 +156,13 @@ where
     view! {
         <Show when=move || !is_empty() fallback=move || view! {
             <div class="page-header">
-                <h2 class="page-title">{move || t(i18n.locale.get(), "favorites.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::FavoritesTitle)}</h2>
             </div>
-            <p class="empty-state">{t(i18n.locale.get(), "favorites.empty")}</p>
+            <p class="empty-state">{t(i18n.locale.get(), Key::FavoritesEmpty)}</p>
         }>
             // Featured / Latest Added — hero card
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.latest_added")}</h2>
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesLatestAdded)}</h2>
                 {move || featured().map(|f| {
                     let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
                     let name = f.fav.game.display_name.clone().unwrap_or_else(|| f.fav.game.rom_filename.clone());
@@ -178,7 +178,7 @@ where
             // Recently Added — horizontal scroll
             <Show when=move || !recent_items().is_empty()>
                 <section class="section">
-                    <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.recently_added")}</h2>
+                    <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesRecentlyAdded)}</h2>
                     <div class="scroll-card-row">
                         {move || recent_items().into_iter().map(|f| {
                             let href = format!("/games/{}/{}", f.fav.game.system, urlencoding::encode(&f.fav.game.rom_filename));
@@ -199,11 +199,11 @@ where
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value">{total_count}</div>
-                        <div class="stat-label">{move || t(i18n.locale.get(), "stats.favorites")}</div>
+                        <div class="stat-label">{move || t(i18n.locale.get(), Key::StatsFavorites)}</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value">{system_count}</div>
-                        <div class="stat-label">{move || t(i18n.locale.get(), "stats.systems")}</div>
+                        <div class="stat-label">{move || t(i18n.locale.get(), Key::CommonSystems)}</div>
                     </div>
                 </div>
             </section>
@@ -228,14 +228,14 @@ where
             // By System — system cards
             <Show when=move || { system_cards().len() > 1 }>
                 <section class="section">
-                    <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.by_system")}</h2>
+                    <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesBySystem)}</h2>
                     <div class="systems-grid">
                         {move || system_cards().into_iter().map(|(display_name, system, count, latest, _)| {
                             let href = format!("/favorites/{system}");
                             let icon_src = format!("/static/icons/systems/{system}.png");
                             let count_label = move || {
                                 let locale = i18n.locale.get();
-                                format!("{count} {}", t(locale, "stats.favorites").to_lowercase())
+                                tf(locale, Key::CountFavorites, &[&count.to_string()])
                             };
                             view! {
                                 <A href=href attr:class="system-card">
@@ -263,7 +263,7 @@ where
             // All Favorites — full list with grouped/flat toggle
             <section class="section">
                 <div class="page-header">
-                    <h2 class="section-title">{move || t(i18n.locale.get(), "favorites.all")}</h2>
+                    <h2 class="section-title">{move || t(i18n.locale.get(), Key::FavoritesAll)}</h2>
                     <button class="toggle-btn" on:click=move |_| grouped_view.update(|v| *v = !*v)>
                         {toggle_label.clone()}
                     </button>
@@ -294,9 +294,9 @@ where
                                 let filtered = filtered_for_count().len();
                                 let total = total_count();
                                 if filter_text.read().is_empty() {
-                                    format!("{total} {}", t(i18n.locale.get(), "stats.favorites").to_lowercase())
+                                    tf(i18n.locale.get(), Key::CountFavorites, &[&total.to_string()])
                                 } else {
-                                    format!("{filtered} / {total} {}", t(i18n.locale.get(), "stats.favorites").to_lowercase())
+                                    tf(i18n.locale.get(), Key::CountFavoritesPartial, &[&filtered.to_string(), &total.to_string()])
                                 }
                             }
                         }
@@ -505,7 +505,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
         let favs = favorites.read();
         let pri = primary.get();
         let sec = secondary.get();
-        let unknown = t(i18n.locale.get(), "organize.preview_unknown").to_string();
+        let unknown = t(i18n.locale.get(), Key::OrganizePreviewUnknown).to_string();
 
         // Helper: extract folder name for a given criterion from a favorite.
         let folder_name = |criteria: &str, f: &FavoriteWithArt| -> Option<String> {
@@ -640,7 +640,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                 match server_fns::organize_favorites(p, s, keep).await {
                     Ok(result) => {
                         let locale = use_i18n().locale.get_untracked();
-                        let msg = format!("{} {}", result.organized, t(locale, "organize.done"));
+                        let msg = format!("{} {}", result.organized, t(locale, Key::OrganizeDone));
                         status.set(Some((true, msg)));
                         // Reload favorites.
                         if let Ok(new_favs) = server_fns::get_favorites().await {
@@ -662,9 +662,9 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                 Ok(count) => {
                     let locale = use_i18n().locale.get_untracked();
                     let msg = if count == 0 {
-                        t(locale, "organize.already_flat").to_string()
+                        t(locale, Key::OrganizeAlreadyFlat).to_string()
                     } else {
-                        format!("{count} {}", t(locale, "organize.flattened"))
+                        format!("{count} {}", t(locale, Key::OrganizeFlattened))
                     };
                     status.set(Some((true, msg)));
                     if let Ok(new_favs) = server_fns::get_favorites().await {
@@ -685,36 +685,36 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
             >
                 <span class="organize-toggle-icon">{move || if expanded.get() { "\u{1F4C2}" } else { "\u{1F4C1}" }}</span>
                 <span class="organize-toggle-text">
-                    <span class="organize-toggle-title">{move || t(i18n.locale.get(), "organize.title")}</span>
-                    <span class="organize-toggle-desc">{move || t(i18n.locale.get(), "organize.description")}</span>
+                    <span class="organize-toggle-title">{move || t(i18n.locale.get(), Key::OrganizeTitle)}</span>
+                    <span class="organize-toggle-desc">{move || t(i18n.locale.get(), Key::OrganizeDescription)}</span>
                 </span>
             </button>
 
             <Show when=move || expanded.get()>
                 <div class="organize-panel">
                     <div class="form-field">
-                        <label class="form-label">{move || t(i18n.locale.get(), "organize.primary")}</label>
+                        <label class="form-label">{move || t(i18n.locale.get(), Key::OrganizePrimary)}</label>
                         <select class="form-input" bind:value=primary>
-                            <option value="genre">{move || t(i18n.locale.get(), "organize.genre")}</option>
-                            <option value="system">{move || t(i18n.locale.get(), "organize.system")}</option>
-                            <option value="players">{move || t(i18n.locale.get(), "organize.players")}</option>
-                            <option value="rating">{move || t(i18n.locale.get(), "organize.rating")}</option>
-                            <option value="developer">{move || t(i18n.locale.get(), "organize.developer")}</option>
-                            <option value="alphabetical">{move || t(i18n.locale.get(), "organize.alphabetical")}</option>
+                            <option value="genre">{move || t(i18n.locale.get(), Key::OrganizeGenre)}</option>
+                            <option value="system">{move || t(i18n.locale.get(), Key::OrganizeSystem)}</option>
+                            <option value="players">{move || t(i18n.locale.get(), Key::OrganizePlayers)}</option>
+                            <option value="rating">{move || t(i18n.locale.get(), Key::OrganizeRating)}</option>
+                            <option value="developer">{move || t(i18n.locale.get(), Key::OrganizeDeveloper)}</option>
+                            <option value="alphabetical">{move || t(i18n.locale.get(), Key::OrganizeAlphabetical)}</option>
                         </select>
                     </div>
 
                     <div class="form-field">
-                        <label class="form-label">{move || t(i18n.locale.get(), "organize.secondary")}</label>
+                        <label class="form-label">{move || t(i18n.locale.get(), Key::OrganizeSecondary)}</label>
                         {move || {
                             let p = primary.get();
-                            let options: Vec<(&str, &str)> = [
-                                ("genre", "organize.genre"),
-                                ("system", "organize.system"),
-                                ("players", "organize.players"),
-                                ("rating", "organize.rating"),
-                                ("developer", "organize.developer"),
-                                ("alphabetical", "organize.alphabetical"),
+                            let options: Vec<(&str, Key)> = [
+                                ("genre", Key::OrganizeGenre),
+                                ("system", Key::OrganizeSystem),
+                                ("players", Key::OrganizePlayers),
+                                ("rating", Key::OrganizeRating),
+                                ("developer", Key::OrganizeDeveloper),
+                                ("alphabetical", Key::OrganizeAlphabetical),
                             ]
                             .into_iter()
                             .filter(|(val, _)| *val != p.as_str())
@@ -722,7 +722,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
 
                             view! {
                                 <select class="form-input" bind:value=secondary>
-                                    <option value="none">{t(i18n.locale.get(), "organize.none")}</option>
+                                    <option value="none">{t(i18n.locale.get(), Key::OrganizeNone)}</option>
                                     {options.into_iter().map(|(val, key)| {
                                         let label = t(i18n.locale.get(), key);
                                         view! { <option value=val>{label}</option> }
@@ -736,8 +736,8 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
 
                     <div class="form-field form-field-check">
                         <div>
-                            <label class="form-label">{move || t(i18n.locale.get(), "organize.keep_originals")}</label>
-                            <p class="form-hint">{move || t(i18n.locale.get(), "organize.keep_hint")}</p>
+                            <label class="form-label">{move || t(i18n.locale.get(), Key::OrganizeKeepOriginals)}</label>
+                            <p class="form-hint">{move || t(i18n.locale.get(), Key::OrganizeKeepHint)}</p>
                         </div>
                         <input type="checkbox"
                             class="form-checkbox"
@@ -758,7 +758,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                         >
                             {move || {
                                 let locale = i18n.locale.get();
-                                if busy.get() { t(locale, "organize.organizing") } else { t(locale, "organize.apply") }
+                                if busy.get() { t(locale, Key::OrganizeOrganizing) } else { t(locale, Key::OrganizeApply) }
                             }}
                         </button>
                         <button
@@ -768,7 +768,7 @@ fn OrganizePanel(favorites: RwSignal<Vec<FavoriteWithArt>>) -> impl IntoView {
                         >
                             {move || {
                                 let locale = i18n.locale.get();
-                                if busy.get() { t(locale, "organize.flattening") } else { t(locale, "organize.flatten") }
+                                if busy.get() { t(locale, Key::OrganizeFlattening) } else { t(locale, Key::OrganizeFlatten) }
                             }}
                         </button>
                     </div>
@@ -843,7 +843,7 @@ where
             }
             Some(view! {
                 <div class="organize-preview">
-                    <div class="organize-preview-label">{t(i18n.locale.get(), "organize.preview")}</div>
+                    <div class="organize-preview-label">{t(i18n.locale.get(), Key::OrganizePreview)}</div>
                     <div class="organize-preview-tree">
                         {lines.into_iter().map(|line| view! {
                             <div>{line}</div>
@@ -942,7 +942,7 @@ pub fn SystemFavoritesPage() -> impl IntoView {
 
     view! {
         <div class="page favorites-page">
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let favs = favorites.await?;
                     Ok::<_ , ServerFnError>(view! { <SystemFavoritesContent favs /> })
@@ -993,7 +993,7 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
     view! {
         <div class="rom-header">
             <A href="/favorites" attr:class="back-btn">
-                {move || t(i18n.locale.get(), "games.back")}
+                {move || t(i18n.locale.get(), Key::GamesBack)}
             </A>
             <h2 class="page-title">
                 <img
@@ -1009,10 +1009,10 @@ fn SystemFavoritesContent(favs: Vec<FavoriteWithArt>) -> impl IntoView {
         <p class="rom-count">{move || {
             let count = total_count();
             let locale = i18n.locale.get();
-            format!("{count} {}", t(locale, "stats.favorites").to_lowercase())
+            tf(locale, Key::CountFavorites, &[&count.to_string()])
         }}</p>
         <Show when=move || !is_empty() fallback=move || view! {
-            <p class="empty-state">{t(i18n.locale.get(), "favorites.empty")}</p>
+            <p class="empty-state">{t(i18n.locale.get(), Key::FavoritesEmpty)}</p>
         }>
             <div class="fav-list">
                 <For

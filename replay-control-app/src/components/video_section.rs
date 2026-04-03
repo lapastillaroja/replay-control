@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns::{self, VideoEntry, VideoRecommendation};
 
 /// Maximum number of embedded videos shown before "Show all".
@@ -35,7 +35,7 @@ pub fn GameVideoSection(
 
     // Add video state
     let add_url = RwSignal::new(String::new());
-    let add_error = RwSignal::new(Option::<String>::None);
+    let add_error = RwSignal::new(Option::<Key>::None);
     let add_success = RwSignal::new(false);
     let adding = RwSignal::new(false);
 
@@ -63,9 +63,9 @@ pub fn GameVideoSection(
                     let msg = e.to_string();
                     // Detect duplicate error
                     if msg.contains("already saved") {
-                        add_error.set(Some("game_detail.add_video_duplicate".to_string()));
+                        add_error.set(Some(Key::GameDetailAddVideoDuplicate));
                     } else {
-                        add_error.set(Some("game_detail.add_video_error".to_string()));
+                        add_error.set(Some(Key::GameDetailAddVideoError));
                     }
                     add_success.set(false);
                 }
@@ -175,11 +175,11 @@ pub fn GameVideoSection(
 
     view! {
         <section class="section game-section">
-            <h2 class="game-section-title">{move || t(i18n.locale.get(), "game_detail.videos")}</h2>
+            <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailVideos)}</h2>
 
             // Saved videos list
             <Show when=has_videos fallback=move || view! {
-                <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_videos")}</p>
+                <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoVideos)}</p>
             }>
                 <div class="video-list">
                     <For
@@ -195,7 +195,7 @@ pub fn GameVideoSection(
                             style="margin-top: 4px"
                             on:click=move |_| show_all.set(true)
                         >
-                            {move || t(i18n.locale.get(), "game_detail.show_all_videos")}
+                            {move || t(i18n.locale.get(), Key::GameDetailShowAllVideos)}
                             {move || format!(" ({})", saved_videos.read().len())}
                         </button>
                     </Show>
@@ -207,7 +207,7 @@ pub fn GameVideoSection(
                 <input
                     type="text"
                     class="form-input"
-                    placeholder=move || t(i18n.locale.get(), "game_detail.add_video_placeholder")
+                    placeholder=move || t(i18n.locale.get(), Key::GameDetailAddVideoPlaceholder)
                     prop:value=move || add_url.get()
                     on:input=move |ev| {
                         add_url.set(event_target_value(&ev));
@@ -225,14 +225,14 @@ pub fn GameVideoSection(
                     prop:disabled=move || adding.get() || add_url.read().trim().is_empty()
                     on:click=move |_| do_add_video()
                 >
-                    {move || t(i18n.locale.get(), "game_detail.add_video")}
+                    {move || t(i18n.locale.get(), Key::GameDetailAddVideo)}
                 </button>
             </div>
             <Show when=move || add_error.get().is_some()>
-                <p class="video-add-error">{move || add_error.get().map(|k| t(i18n.locale.get(), &k)).unwrap_or("")}</p>
+                <p class="video-add-error">{move || add_error.get().map(|k| t(i18n.locale.get(), k)).unwrap_or("")}</p>
             </Show>
             <Show when=move || add_success.get()>
-                <p class="video-add-success">{move || t(i18n.locale.get(), "game_detail.video_added")}</p>
+                <p class="video-add-success">{move || t(i18n.locale.get(), Key::GameDetailVideoAdded)}</p>
             </Show>
 
             // Search buttons
@@ -244,9 +244,9 @@ pub fn GameVideoSection(
                 >
                     {move || {
                         if trailer_searching.get() {
-                            t(i18n.locale.get(), "game_detail.searching")
+                            t(i18n.locale.get(), Key::CommonSearching)
                         } else {
-                            t(i18n.locale.get(), "game_detail.find_trailers")
+                            t(i18n.locale.get(), Key::GameDetailFindTrailers)
                         }
                     }}
                 </button>
@@ -257,9 +257,9 @@ pub fn GameVideoSection(
                 >
                     {move || {
                         if gameplay_searching.get() {
-                            t(i18n.locale.get(), "game_detail.searching")
+                            t(i18n.locale.get(), Key::CommonSearching)
                         } else {
-                            t(i18n.locale.get(), "game_detail.find_gameplay")
+                            t(i18n.locale.get(), Key::GameDetailFindGameplay)
                         }
                     }}
                 </button>
@@ -270,9 +270,9 @@ pub fn GameVideoSection(
                 >
                     {move || {
                         if onecc_searching.get() {
-                            t(i18n.locale.get(), "game_detail.searching")
+                            t(i18n.locale.get(), Key::CommonSearching)
                         } else {
-                            t(i18n.locale.get(), "game_detail.find_1cc")
+                            t(i18n.locale.get(), Key::GameDetailFind1cc)
                         }
                     }}
                 </button>
@@ -353,7 +353,7 @@ where
                     class="video-remove-btn"
                     on:click=move |_| on_remove(video_id.clone(), video_rom_filename.clone())
                 >
-                    {move || t(i18n.locale.get(), "game_detail.remove_video")}
+                    {move || t(i18n.locale.get(), Key::GameDetailRemoveVideo)}
                 </button>
             </div>
             <div class="video-embed">
@@ -386,10 +386,10 @@ where
     view! {
         <div class="video-recommendations">
             <Show when=move || has_error.get()>
-                <p class="video-add-error">{move || t(i18n.locale.get(), "game_detail.search_error")}</p>
+                <p class="video-add-error">{move || t(i18n.locale.get(), Key::GameDetailSearchError)}</p>
             </Show>
             <Show when=move || !is_searching.get() && results.read().is_empty() && !has_error.get()>
-                <p class="game-section-empty">{move || t(i18n.locale.get(), "game_detail.no_results")}</p>
+                <p class="game-section-empty">{move || t(i18n.locale.get(), Key::GameDetailNoResults)}</p>
             </Show>
             <For
                 each=move || results.get()
@@ -488,9 +488,9 @@ where
                 >
                     {move || {
                         if is_pinned() {
-                            t(i18n.locale.get(), "game_detail.pinned")
+                            t(i18n.locale.get(), Key::GameDetailPinned)
                         } else {
-                            t(i18n.locale.get(), "game_detail.pin_video")
+                            t(i18n.locale.get(), Key::GameDetailPinVideo)
                         }
                     }}
                 </button>

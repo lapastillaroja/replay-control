@@ -46,6 +46,7 @@ use pages::wifi::WifiPage;
 #[component]
 pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     use crate::api::AppState;
+    use crate::i18n::InitialLocale;
     use replay_control_core::skins;
 
     let state = expect_context::<AppState>();
@@ -58,10 +59,15 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     } else {
         ""
     };
+    // SSR lang attribute: use the resolved locale (injected from settings/Accept-Language).
+    // After hydration, the App's reactive signal takes over via the <html lang> attribute.
+    let initial_lang = use_context::<InitialLocale>()
+        .map(|il| il.0.code())
+        .unwrap_or("en");
 
     view! {
         <!DOCTYPE html>
-        <html lang="en" class=html_class>
+        <html lang=initial_lang class=html_class>
             <head>
                 <meta charset="UTF-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />

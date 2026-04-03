@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns;
 
 #[component]
@@ -14,12 +14,12 @@ pub fn HostnamePage() -> impl IntoView {
         <div class="page settings-page">
             <div class="rom-header">
                 <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "hostname.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::HostnameTitle)}</h2>
             </div>
 
-            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "common.loading")}</div> }>
+            <Suspense fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                 {move || Suspend::new(async move {
                     let current = hostname.await?;
                     Ok::<_, ServerFnError>(view! { <HostnameForm current /> })
@@ -44,11 +44,19 @@ fn HostnameForm(current: String) -> impl IntoView {
 
         leptos::task::spawn_local(async move {
             match server_fns::save_hostname(value).await {
-                Ok(msg) => {
-                    status.set(Some((true, msg)));
+                Ok(_) => {
+                    let locale = use_i18n().locale.get_untracked();
+                    status.set(Some((true, t(locale, Key::HostnameSaved).to_string())));
                 }
                 Err(e) => {
-                    status.set(Some((false, e.to_string())));
+                    let locale = use_i18n().locale.get_untracked();
+                    let raw = e.to_string();
+                    let msg = if raw.contains("Invalid") || raw.contains("invalid") {
+                        t(locale, Key::HostnameInvalid).to_string()
+                    } else {
+                        raw
+                    };
+                    status.set(Some((false, msg)));
                 }
             }
             saving.set(false);
@@ -58,14 +66,14 @@ fn HostnameForm(current: String) -> impl IntoView {
     view! {
         <div class="settings-form">
             <div class="form-field">
-                <label class="form-label">{move || t(i18n.locale.get(), "hostname.label")}</label>
+                <label class="form-label">{move || t(i18n.locale.get(), Key::HostnameLabel)}</label>
                 <input type="text"
                     class="form-input"
                     bind:value=hostname
                     placeholder="replay"
                     maxlength=63
                 />
-                <p class="form-hint">{move || t(i18n.locale.get(), "hostname.hint")}</p>
+                <p class="form-hint">{move || t(i18n.locale.get(), Key::HostnameHint)}</p>
             </div>
 
             {move || status.get().map(|(ok, msg)| {
@@ -80,7 +88,7 @@ fn HostnameForm(current: String) -> impl IntoView {
             >
                 {move || {
                     let locale = i18n.locale.get();
-                    if saving.get() { t(locale, "settings.saving") } else { t(locale, "settings.save") }
+                    if saving.get() { t(locale, Key::SettingsSaving) } else { t(locale, Key::SettingsSave) }
                 }}
             </button>
         </div>

@@ -6,7 +6,7 @@ use leptos_router::hooks::{query_signal_with_options, use_query_map};
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
 use crate::hooks::{use_debounced, use_infinite_scroll};
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, tf, use_i18n, Key};
 use crate::server_fns::{self, PAGE_SIZE, RomListEntry};
 
 /// ROM list with built-in search, pagination, and infinite scroll.
@@ -200,7 +200,7 @@ pub fn RomList(system: String) -> impl IntoView {
         <div class="search-bar">
             <input
                 type="text"
-                placeholder=move || t(i18n.locale.get(), "games.search_placeholder")
+                placeholder=move || t(i18n.locale.get(), Key::GamesSearchPlaceholder)
                 class="search-input"
                 prop:value=move || search_input.get()
                 on:input=move |ev| search_input.set(event_target_value(&ev))
@@ -222,7 +222,7 @@ pub fn RomList(system: String) -> impl IntoView {
                 })}
             </Suspense>
         </div>
-        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), "games.loading_roms")}</div> }>
+        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::GamesLoadingRoms)}</div> }>
             {move || Suspend::new(async move {
                 let locale = i18n.locale.get();
                 match first_page.await {
@@ -235,9 +235,9 @@ pub fn RomList(system: String) -> impl IntoView {
                         let count_text = move || {
                             let loaded = first_page_len + extra_roms.read().len();
                             if loaded < total {
-                                format!("{loaded} / {total} {}", t(locale, "stats.games").to_lowercase())
+                                tf(locale, Key::CountGamesPartial, &[&loaded.to_string(), &total.to_string()])
                             } else {
-                                format!("{total} {}", t(locale, "stats.games").to_lowercase())
+                                tf(locale, Key::CountGames, &[&total.to_string()])
                             }
                         };
 
@@ -245,7 +245,7 @@ pub fn RomList(system: String) -> impl IntoView {
                         view! {
                             <div class="rom-header">
                                 <A href="/" attr:class="back-btn">
-                                    {t(locale, "games.back")}
+                                    {t(locale, Key::GamesBack)}
                                 </A>
                                 <h2 class="page-title">
                                     <img
@@ -311,9 +311,9 @@ pub fn RomList(system: String) -> impl IntoView {
                                             on:click=move |_| load_more()
                                         >
                                             {move || if loading_more.get() {
-                                                t(i18n.locale.get(), "common.loading")
+                                                t(i18n.locale.get(), Key::CommonLoading)
                                             } else {
-                                                t(i18n.locale.get(), "games.load_more")
+                                                t(i18n.locale.get(), Key::GamesLoadMore)
                                             }}
                                         </button>
                                     </div>
@@ -322,7 +322,7 @@ pub fn RomList(system: String) -> impl IntoView {
                         }.into_any()
                     }
                     Err(e) => {
-                        view! { <p class="error">{format!("{}: {e}", t(locale, "common.error"))}</p> }.into_any()
+                        view! { <p class="error">{format!("{}: {e}", t(locale, Key::CommonError))}</p> }.into_any()
                     }
                 }
             })}

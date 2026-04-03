@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, use_i18n, Key};
 use crate::server_fns::{self, Activity, ImportState, RebuildPhase, ThumbnailPhase};
 use crate::util::{format_number, format_size};
 
@@ -165,14 +165,14 @@ pub fn MetadataPage() -> impl IntoView {
         <div class="page metadata-page">
             <div class="rom-header">
                 <A href="/more" attr:class="back-btn">
-                    {move || t(i18n.locale.get(), "games.back")}
+                    {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
-                <h2 class="page-title">{move || t(i18n.locale.get(), "metadata.title")}</h2>
+                <h2 class="page-title">{move || t(i18n.locale.get(), Key::MetadataTitle)}</h2>
             </div>
 
             // ── System Overview ───────────────────────────────────────
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.system_overview")}</h2>
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::MetadataSystemOverview)}</h2>
                 <Suspense fallback=move || view! { <MetadataTableSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
@@ -182,7 +182,7 @@ pub fn MetadataPage() -> impl IntoView {
 
                         Ok::<_, ServerFnError>(if !has_any_data {
                             view! {
-                                <p class="game-section-empty">{t(locale, "metadata.no_systems")}</p>
+                                <p class="game-section-empty">{t(locale, Key::MetadataNoSystems)}</p>
                             }.into_any()
                         } else {
                             let rows = data.into_iter()
@@ -213,10 +213,10 @@ pub fn MetadataPage() -> impl IntoView {
                                     <table class="overview-table">
                                         <thead>
                                             <tr>
-                                                <th class="overview-system">{t(locale, "metadata.col_system")}</th>
-                                                <th class="overview-num">{t(locale, "metadata.col_games")}</th>
-                                                <th class="overview-num">{t(locale, "metadata.col_desc")}</th>
-                                                <th class="overview-num">{t(locale, "metadata.col_thumb")}</th>
+                                                <th class="overview-system">{t(locale, Key::MetadataColSystem)}</th>
+                                                <th class="overview-num">{t(locale, Key::MetadataColGames)}</th>
+                                                <th class="overview-num">{t(locale, Key::MetadataColDesc)}</th>
+                                                <th class="overview-num">{t(locale, Key::MetadataColThumb)}</th>
                                             </tr>
                                         </thead>
                                         <tbody>{rows}</tbody>
@@ -230,7 +230,7 @@ pub fn MetadataPage() -> impl IntoView {
 
             // ── Data Sources ──────────────────────────────────────────
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.data_sources")}</h2>
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::MetadataDataSources)}</h2>
 
                 // Built-in data info block
                 <Suspense fallback=move || view! { <MetadataCardSkeleton /> }>
@@ -240,25 +240,25 @@ pub fn MetadataPage() -> impl IntoView {
                         Ok::<_, ServerFnError>(view! {
                             <div class="data-source-card builtin-info">
                                 <div class="data-source-header">
-                                    <span class="data-source-name">{t(locale, "metadata.builtin")}</span>
+                                    <span class="data-source-name">{t(locale, Key::MetadataBuiltin)}</span>
                                 </div>
                                 <p class="data-source-summary">
                                     {format!(
                                         "{} {} {} — {} {} {} {} — {} {} {} {}",
                                         format_number(bs.arcade_entries),
-                                        t(locale, "metadata.builtin_arcade_summary"),
+                                        t(locale, Key::MetadataBuiltinArcadeSummary),
                                         bs.arcade_mame_version,
                                         format_number(bs.game_rom_entries),
-                                        t(locale, "metadata.builtin_console_summary_entries"),
+                                        t(locale, Key::MetadataBuiltinConsoleSummaryEntries),
                                         bs.game_system_count,
-                                        t(locale, "metadata.builtin_console_summary_systems"),
+                                        t(locale, Key::MetadataBuiltinConsoleSummarySystems),
                                         format_number(bs.wikidata_series_entries),
-                                        t(locale, "metadata.builtin_wikidata_entries"),
+                                        t(locale, Key::MetadataBuiltinWikidataEntries),
                                         bs.wikidata_series_count,
-                                        t(locale, "metadata.builtin_wikidata_series"),
+                                        t(locale, Key::MetadataBuiltinWikidataSeries),
                                     )}
                                 </p>
-                                <p class="settings-hint">{t(locale, "metadata.builtin_hint")}</p>
+                                <p class="settings-hint">{t(locale, Key::MetadataBuiltinHint)}</p>
                             </div>
                         })
                     })}
@@ -267,7 +267,7 @@ pub fn MetadataPage() -> impl IntoView {
                 // Descriptions & Ratings (LaunchBox)
                 <div class="data-source-card">
                     <div class="data-source-header">
-                        <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.descriptions_launchbox")}</span>
+                        <span class="data-source-name">{move || t(i18n.locale.get(), Key::MetadataDescriptionsLaunchbox)}</span>
                     </div>
                     <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
                         {move || Suspend::new(async move {
@@ -275,7 +275,7 @@ pub fn MetadataPage() -> impl IntoView {
                             let data = stats.await?;
                             Ok::<_, ServerFnError>(if data.total_entries == 0 {
                                 view! {
-                                    <p class="data-source-summary dim">{t(locale, "metadata.no_data")}</p>
+                                    <p class="data-source-summary dim">{t(locale, Key::MetadataNoData)}</p>
                                 }.into_any()
                             } else {
                                 let updated = if data.last_updated_text.is_empty() {
@@ -285,7 +285,7 @@ pub fn MetadataPage() -> impl IntoView {
                                 };
                                 view! {
                                     <p class="data-source-summary">
-                                        {format!("{} {}{}", data.total_entries, t(locale, "metadata.entries_summary"), updated)}
+                                        {format!("{} {}{}", data.total_entries, t(locale, Key::MetadataEntriesSummary), updated)}
                                     </p>
                                 }.into_any()
                             })
@@ -298,9 +298,9 @@ pub fn MetadataPage() -> impl IntoView {
                             disabled=move || is_busy.get()
                         >
                             {move || if is_importing.get() {
-                                t(i18n.locale.get(), "metadata.downloading_metadata")
+                                t(i18n.locale.get(), Key::CommonUpdating)
                             } else {
-                                t(i18n.locale.get(), "metadata.download_metadata")
+                                t(i18n.locale.get(), Key::CommonUpdate)
                             }}
                         </button>
                     </div>
@@ -315,7 +315,7 @@ pub fn MetadataPage() -> impl IntoView {
                 // Thumbnails (libretro)
                 <div class="data-source-card">
                     <div class="data-source-header">
-                        <span class="data-source-name">{move || t(i18n.locale.get(), "metadata.thumbnails_libretro")}</span>
+                        <span class="data-source-name">{move || t(i18n.locale.get(), Key::MetadataThumbnailsLibretro)}</span>
                     </div>
                     <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
                         {move || Suspend::new(async move {
@@ -325,18 +325,18 @@ pub fn MetadataPage() -> impl IntoView {
 
                             Ok::<_, ServerFnError>(if ds.entry_count == 0 && with_boxart == 0 {
                                 view! {
-                                    <p class="data-source-summary dim">{t(locale, "metadata.thumbnail_no_data")}</p>
+                                    <p class="data-source-summary dim">{t(locale, Key::MetadataNoData)}</p>
                                 }.into_any()
                             } else {
                                 let images_line = if with_boxart > 0 || with_snap > 0 {
                                     format!(
                                         "{} {}, {} {} — {} {}",
                                         with_boxart,
-                                        t(locale, "metadata.thumbnail_summary"),
+                                        t(locale, Key::MetadataThumbnailSummary),
                                         with_snap,
-                                        t(locale, "metadata.thumbnail_snaps"),
+                                        t(locale, Key::MetadataThumbnailSnaps),
                                         format_size(media_size),
-                                        t(locale, "metadata.thumbnail_on_disk"),
+                                        t(locale, Key::MetadataThumbnailOnDisk),
                                     )
                                 } else {
                                     String::new()
@@ -350,9 +350,9 @@ pub fn MetadataPage() -> impl IntoView {
                                     format!(
                                         "Index: {} {} {} {}{}",
                                         ds.entry_count,
-                                        t(locale, "metadata.thumbnail_index_summary"),
+                                        t(locale, Key::MetadataThumbnailIndexSummary),
                                         ds.repo_count,
-                                        t(locale, "metadata.thumbnail_systems"),
+                                        t(locale, Key::MetadataThumbnailSystems),
                                         updated,
                                     )
                                 } else {
@@ -380,9 +380,9 @@ pub fn MetadataPage() -> impl IntoView {
                             disabled=move || is_busy.get()
                         >
                             {move || if is_thumb_updating.get() {
-                                t(i18n.locale.get(), "metadata.thumbnail_updating")
+                                t(i18n.locale.get(), Key::CommonUpdating)
                             } else {
-                                t(i18n.locale.get(), "metadata.thumbnail_update")
+                                t(i18n.locale.get(), Key::CommonUpdate)
                             }}
                         </button>
                         <Show when=move || can_cancel.get()>
@@ -392,9 +392,9 @@ pub fn MetadataPage() -> impl IntoView {
                                 disabled=move || thumb_cancelling.get()
                             >
                                 {move || if thumb_cancelling.get() {
-                                    t(i18n.locale.get(), "metadata.thumbnail_cancelling")
+                                    t(i18n.locale.get(), Key::MetadataThumbnailCancelling)
                                 } else {
-                                    t(i18n.locale.get(), "metadata.thumbnail_stop")
+                                    t(i18n.locale.get(), Key::MetadataThumbnailStop)
                                 }}
                             </button>
                         </Show>
@@ -413,8 +413,8 @@ pub fn MetadataPage() -> impl IntoView {
 
             // ── Attribution ───────────────────────────────────────────
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.attribution")}</h2>
-                <p class="settings-hint">{move || t(i18n.locale.get(), "metadata.attribution_text")}</p>
+                <h2 class="section-title">{move || t(i18n.locale.get(), Key::MetadataAttribution)}</h2>
+                <p class="settings-hint">{move || t(i18n.locale.get(), Key::MetadataAttributionText)}</p>
             </section>
         </div>
     }
@@ -587,33 +587,33 @@ fn ImportProgressDisplay(progress: Memo<Option<server_fns::ImportProgress>>) -> 
                                     match p.download_total {
                                         Some(total) if total > 0 => format!(
                                             "{} {} / {}",
-                                            t(locale, "metadata.downloading_file"),
+                                            t(locale, Key::MetadataDownloadingFile),
                                             format_size(p.download_bytes),
                                             format_size(total),
                                         ),
                                         _ => format!(
                                             "{} {}",
-                                            t(locale, "metadata.downloading_file"),
+                                            t(locale, Key::MetadataDownloadingFile),
                                             format_size(p.download_bytes),
                                         ),
                                     }
                                 } else {
-                                    t(locale, "metadata.downloading_file").to_string()
+                                    t(locale, Key::MetadataDownloadingFile).to_string()
                                 }
                             }
-                            ImportState::BuildingIndex => t(locale, "metadata.building_index").to_string(),
+                            ImportState::BuildingIndex => t(locale, Key::MetadataBuildingIndex).to_string(),
                             ImportState::Parsing => format!(
                                 "{} ({} {}, {} {})",
-                                t(locale, "metadata.parsing_xml"),
+                                t(locale, Key::MetadataParsingXml),
                                 p.processed,
-                                t(locale, "metadata.processed"),
+                                t(locale, Key::MetadataProcessed),
                                 p.matched,
-                                t(locale, "metadata.matched"),
+                                t(locale, Key::MetadataMatched),
                             ),
-                            ImportState::Complete => t(locale, "metadata.import_complete").to_string(),
+                            ImportState::Complete => t(locale, Key::MetadataImportComplete).to_string(),
                             ImportState::Failed => format!(
                                 "{}: {}",
-                                t(locale, "metadata.import_failed"),
+                                t(locale, Key::MetadataImportFailed),
                                 p.error.as_deref().unwrap_or(""),
                             ),
                         };
@@ -650,42 +650,42 @@ fn ThumbnailProgressDisplay(
                                 if p.step_total > 0 {
                                     format!(
                                         "{} {}/{} done — {}",
-                                        t(locale, "metadata.thumbnail_phase_indexing"),
+                                        t(locale, Key::MetadataThumbnailPhaseIndexing),
                                         p.step_done,
                                         p.step_total,
                                         p.current_label,
                                     )
                                 } else {
-                                    t(locale, "metadata.thumbnail_phase_indexing").to_string()
+                                    t(locale, Key::MetadataThumbnailPhaseIndexing).to_string()
                                 }
                             }
                             ThumbnailPhase::Downloading => {
                                 format!(
                                     "{} {} ({} {})",
-                                    t(locale, "metadata.thumbnail_phase_downloading"),
+                                    t(locale, Key::MetadataThumbnailPhaseDownloading),
                                     p.current_label,
                                     p.downloaded,
-                                    t(locale, "metadata.thumbnail_downloaded"),
+                                    t(locale, Key::MetadataThumbnailDownloaded),
                                 )
                             }
                             ThumbnailPhase::Complete => format!(
                                 "{}: {} {}, {} {}",
-                                t(locale, "metadata.thumbnail_complete"),
+                                t(locale, Key::MetadataThumbnailComplete),
                                 p.entries_indexed,
-                                t(locale, "metadata.thumbnail_indexed"),
+                                t(locale, Key::MetadataThumbnailIndexed),
                                 p.downloaded,
-                                t(locale, "metadata.thumbnail_downloaded"),
+                                t(locale, Key::MetadataThumbnailDownloaded),
                             ),
                             ThumbnailPhase::Failed => format!(
                                 "{}: {}",
-                                t(locale, "metadata.thumbnail_failed"),
+                                t(locale, Key::MetadataThumbnailFailed),
                                 p.error.as_deref().unwrap_or(""),
                             ),
                             ThumbnailPhase::Cancelled => format!(
                                 "{}: {} {}",
-                                t(locale, "metadata.thumbnail_cancelled"),
+                                t(locale, Key::MetadataThumbnailCancelled),
                                 p.downloaded,
-                                t(locale, "metadata.thumbnail_downloaded"),
+                                t(locale, Key::MetadataThumbnailDownloaded),
                             ),
                         };
                         let elapsed = format!("{}s", p.elapsed_secs);
@@ -812,7 +812,7 @@ fn DataManagementSection(
             match server_fns::clear_images().await {
                 Ok(()) => {
                     images_result.set(Some(
-                        t(i18n.locale.get(), "metadata.cleared_images").to_string(),
+                        t(i18n.locale.get(), Key::MetadataClearedImages).to_string(),
                     ));
                 }
                 Err(e) => {
@@ -857,7 +857,7 @@ fn DataManagementSection(
             match server_fns::clear_thumbnail_index().await {
                 Ok(()) => {
                     index_result.set(Some(
-                        t(i18n.locale.get(), "metadata.index_cleared").to_string(),
+                        t(i18n.locale.get(), Key::MetadataIndexCleared).to_string(),
                     ));
                 }
                 Err(e) => {
@@ -879,7 +879,7 @@ fn DataManagementSection(
             match server_fns::clear_metadata().await {
                 Ok(()) => {
                     metadata_result.set(Some(
-                        t(i18n.locale.get(), "metadata.metadata_cleared").to_string(),
+                        t(i18n.locale.get(), Key::MetadataMetadataCleared).to_string(),
                     ));
                     stats.refetch();
                     coverage.refetch();
@@ -895,16 +895,16 @@ fn DataManagementSection(
 
     view! {
         <section class="section">
-            <h2 class="section-title">{move || t(i18n.locale.get(), "metadata.data_management")}</h2>
+            <h2 class="section-title">{move || t(i18n.locale.get(), Key::MetadataDataManagement)}</h2>
             <div class="manage-actions">
                 // Main actions (always visible)
                 <ClearActionCard
                     confirming=confirming_rebuild
                     clearing=rebuilding
                     result=result_message
-                    label_key="metadata.rebuild_game_library"
-                    clearing_key="metadata.rebuilding_game_library"
-                    confirm_key="metadata.confirm_rebuild_game_library"
+                    label_key=Key::MetadataRebuildGameLibrary
+                    clearing_key=Key::MetadataRebuildingGameLibrary
+                    confirm_key=Key::MetadataConfirmRebuildGameLibrary
                     on_confirm=on_rebuild
                     disabled=is_busy
                     progress_text=rebuild_display
@@ -913,9 +913,9 @@ fn DataManagementSection(
                     confirming=confirming_orphans
                     clearing=cleaning_orphans
                     result=orphans_result
-                    label_key="metadata.cleanup_orphans"
-                    clearing_key="metadata.cleaning_orphans"
-                    confirm_key="metadata.confirm_cleanup_orphans"
+                    label_key=Key::MetadataCleanupOrphans
+                    clearing_key=Key::MetadataCleaningOrphans
+                    confirm_key=Key::MetadataConfirmCleanupOrphans
                     on_confirm=on_cleanup_orphans
                     disabled=is_busy
                 />
@@ -928,7 +928,7 @@ fn DataManagementSection(
                     on:click=move |_| show_advanced.update(|v| *v = !*v)
                 >
                     <span class="advanced-toggle-icon">{move || if show_advanced.get() { "\u{25BC}" } else { "\u{25B6}" }}</span>
-                    {move || t(i18n.locale.get(), "metadata.advanced_actions")}
+                    {move || t(i18n.locale.get(), Key::MetadataAdvancedActions)}
                 </button>
             </div>
             <Show when=move || show_advanced.get()>
@@ -937,9 +937,9 @@ fn DataManagementSection(
                         confirming=confirming_images
                         clearing=clearing_images
                         result=images_result
-                        label_key="metadata.clear_images"
-                        clearing_key="metadata.clearing_images"
-                        confirm_key="metadata.confirm_clear_images"
+                        label_key=Key::MetadataClearImages
+                        clearing_key=Key::CommonClearing
+                        confirm_key=Key::MetadataConfirmClearImages
                         on_confirm=on_clear_images
                         disabled=is_busy
                     />
@@ -947,9 +947,9 @@ fn DataManagementSection(
                         confirming=confirming_metadata
                         clearing=clearing_metadata
                         result=metadata_result
-                        label_key="metadata.clear_metadata"
-                        clearing_key="metadata.clearing_metadata"
-                        confirm_key="metadata.confirm_clear_metadata"
+                        label_key=Key::MetadataClearMetadata
+                        clearing_key=Key::CommonClearing
+                        confirm_key=Key::MetadataConfirmClearMetadata
                         on_confirm=on_clear_metadata
                         disabled=is_busy
                     />
@@ -957,9 +957,9 @@ fn DataManagementSection(
                         confirming=confirming_index
                         clearing=clearing_index
                         result=index_result
-                        label_key="metadata.clear_index"
-                        clearing_key="metadata.clearing_index"
-                        confirm_key="metadata.confirm_clear_index"
+                        label_key=Key::MetadataClearIndex
+                        clearing_key=Key::CommonClearing
+                        confirm_key=Key::MetadataConfirmClearIndex
                         on_confirm=on_clear_index
                         disabled=is_busy
                     />
@@ -975,9 +975,9 @@ fn ClearActionCard(
     confirming: RwSignal<bool>,
     #[prop(into)] clearing: Signal<bool>,
     result: RwSignal<Option<String>>,
-    #[prop(into)] label_key: &'static str,
-    #[prop(into)] clearing_key: &'static str,
-    #[prop(into)] confirm_key: &'static str,
+    label_key: Key,
+    clearing_key: Key,
+    confirm_key: Key,
     on_confirm: Callback<leptos::ev::MouseEvent>,
     #[prop(optional)] disabled: Option<Memo<bool>>,
     /// Live progress text shown while the operation runs (e.g., rebuild per-system progress).
@@ -1014,7 +1014,7 @@ fn ClearActionCard(
                         }}
                     </button>
                     <button class="game-action-btn" on:click=move |_| confirming.set(false)>
-                        {move || t(i18n.locale.get(), "games.cancel")}
+                        {move || t(i18n.locale.get(), Key::CommonCancel)}
                     </button>
                 </div>
             </Show>

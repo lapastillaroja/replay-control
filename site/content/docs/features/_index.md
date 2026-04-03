@@ -164,7 +164,7 @@ Customize how the app displays your library and interacts with external services
 - **Instant page loads** with smart multi-layer caching — back-navigation and rapid reloads feel instant
 - **PWA** — installable as a home screen app on mobile devices; service worker precaches the app shell for offline loading with a fallback page when the device is unreachable. Pull-to-refresh on iOS standalone mode
 - **Responsive design** — mobile-first layout that adapts to phones, tablets, and desktops. Grids, hero cards, screenshots, and navigation adjust at each breakpoint
-- **Internationalization** — i18n infrastructure with English as the default language
+- **Internationalization** — full UI available in English, Spanish, and Japanese. Language auto-detected from browser or manually selected in Preferences. SSR renders in the correct language from the first byte — no flash
 
 ## Libretro Core (Proof of Concept)
 

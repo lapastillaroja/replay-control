@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
-use crate::i18n::{t, use_i18n};
+use crate::i18n::{t, tf, use_i18n, Key};
 use crate::server_fns::SystemSummary;
 use crate::util::format_size;
 
@@ -36,9 +36,9 @@ pub fn SystemCard(system: SystemSummary, href: String) -> impl IntoView {
                         {move || {
                             let locale = i18n.locale.get();
                             if has_games {
-                                format!("{} {}", game_count, t(locale, "stats.games").to_lowercase())
+                                tf(locale, Key::CountGames, &[&game_count.to_string()])
                             } else {
-                                t(locale, "games.no_games").to_string()
+                                t(locale, Key::GamesNoGames).to_string()
                             }
                         }}
                     </div>

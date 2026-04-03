@@ -860,6 +860,42 @@ impl AppState {
     }
 }
 
+/// Parse the `Accept-Language` header and return the best-matching supported locale code.
+/// Supported locales: "en", "es", "ja". Returns "en" as fallback.
+fn resolve_locale_from_accept_language(headers: &axum::http::HeaderMap) -> String {
+    let Some(accept) = headers.get(axum::http::header::ACCEPT_LANGUAGE) else {
+        return "en".to_string();
+    };
+    let Ok(value) = accept.to_str() else {
+        return "en".to_string();
+    };
+    // Parse "es-ES,es;q=0.9,en;q=0.8,ja;q=0.7" style values
+    let mut langs: Vec<(&str, f32)> = value
+        .split(',')
+        .filter_map(|part| {
+            let mut parts = part.trim().splitn(2, ';');
+            let tag = parts.next()?.trim();
+            let q = parts
+                .next()
+                .and_then(|p| p.trim().strip_prefix("q="))
+                .and_then(|q| q.parse::<f32>().ok())
+                .unwrap_or(1.0);
+            Some((tag, q))
+        })
+        .collect();
+    langs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (tag, _) in &langs {
+        let primary = tag.split('-').next().unwrap_or(tag);
+        match primary {
+            "en" => return "en".to_string(),
+            "es" => return "es".to_string(),
+            "ja" => return "ja".to_string(),
+            _ => continue,
+        }
+    }
+    "en".to_string()
+}
+
 /// Build the application router with API routes, server function handler,
 /// and SSR fallback. Extracted from main.rs so integration tests can reuse
 /// the same router construction.
@@ -883,7 +919,26 @@ pub fn build_router(
 
     let ssr_handler = leptos_axum::render_app_to_stream_with_context(
         move || {
-            provide_context(state_for_ssr.clone());
+            use crate::i18n::{InitialLocale, Locale};
+
+            let state = state_for_ssr.clone();
+
+            // Resolve locale: settings.cfg → Accept-Language header → "en"
+            let locale_str = if state.has_storage() {
+                replay_control_core::settings::read_locale(&state.storage().root)
+            } else {
+                None
+            };
+
+            let locale_str = locale_str.unwrap_or_else(|| {
+                // Fall back to Accept-Language header
+                use_context::<axum::http::request::Parts>()
+                    .map(|parts| resolve_locale_from_accept_language(&parts.headers))
+                    .unwrap_or_else(|| "en".to_string())
+            });
+
+            provide_context(InitialLocale(Locale::from_code(&locale_str)));
+            provide_context(state);
         },
         move || {
             let opts = opts_for_ssr.clone();

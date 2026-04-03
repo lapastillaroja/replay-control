@@ -349,6 +349,24 @@ fn write_setting(storage_root: &Path, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Read the UI locale from `.replay-control/settings.cfg`.
+/// Returns `None` if not set (caller should fall back to Accept-Language or "en").
+pub fn read_locale(storage_root: &Path) -> Option<String> {
+    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+    let config = ReplayConfig::from_file(&path).ok()?;
+    let value = config.get("locale")?;
+    match value {
+        "en" | "es" | "ja" => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+/// Write the UI locale to `.replay-control/settings.cfg`.
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_locale(storage_root: &Path, locale: &str) -> Result<()> {
+    write_setting(storage_root, "locale", locale)
+}
+
 /// Read the GitHub API key from `.replay-control/settings.cfg`.
 /// Returns `None` if the file doesn't exist or the key is empty.
 pub fn read_github_api_key(storage_root: &Path) -> Option<String> {
@@ -626,6 +644,51 @@ mod tests {
     fn language_match_score_no_match() {
         let prefs = vec!["es".to_string(), "en".to_string()];
         assert_eq!(language_match_score("ja", &prefs), 3);
+    }
+
+    // --- Locale tests ---
+
+    #[test]
+    fn locale_default_when_no_file() {
+        let tmp = tempdir();
+        assert_eq!(read_locale(&tmp), None);
+    }
+
+    #[test]
+    fn write_and_read_locale_en() {
+        let tmp = tempdir();
+        write_locale(&tmp, "en").unwrap();
+        assert_eq!(read_locale(&tmp), Some("en".to_string()));
+    }
+
+    #[test]
+    fn write_and_read_locale_ja() {
+        let tmp = tempdir();
+        write_locale(&tmp, "ja").unwrap();
+        assert_eq!(read_locale(&tmp), Some("ja".to_string()));
+    }
+
+    #[test]
+    fn write_and_read_locale_es() {
+        let tmp = tempdir();
+        write_locale(&tmp, "es").unwrap();
+        assert_eq!(read_locale(&tmp), Some("es".to_string()));
+    }
+
+    #[test]
+    fn locale_invalid_value_returns_none() {
+        let tmp = tempdir();
+        write_locale(&tmp, "xx").unwrap();
+        assert_eq!(read_locale(&tmp), None);
+    }
+
+    #[test]
+    fn locale_preserves_other_keys() {
+        let tmp = tempdir();
+        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
+        write_locale(&tmp, "ja").unwrap();
+        assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
+        assert_eq!(read_locale(&tmp), Some("ja".to_string()));
     }
 
     #[test]
