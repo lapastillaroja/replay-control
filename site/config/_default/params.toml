@@ -1,6 +1,6 @@
 title = "Replay Control"
 description = "A companion web app for RePlayOS - manage your retro game library from any device"
-images = ["logo-oneline-transparent.png"]
+images = ["og-image.jpg"]
 mainSections = ["docs"]
 math = false
 mathEngine = "KaTeX"
@@ -86,7 +86,7 @@ mathEngine = "KaTeX"
     logo = "favicon-512x512.png"
     name = "Replay Control"
     sameAs = []
-    images = ["logo-oneline-transparent.png"]
+    images = ["og-image.jpg"]
     article = []
     newsArticle = []
     blogPosting = ["blog"]
