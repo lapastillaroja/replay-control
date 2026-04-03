@@ -101,7 +101,7 @@ async fn style_css_endpoint_returns_css() {
     let resp = app
         .oneshot(
             Request::builder()
-                .uri("/style.css")
+                .uri("/static/style.css")
                 .body(Body::empty())
                 .unwrap(),
         )
