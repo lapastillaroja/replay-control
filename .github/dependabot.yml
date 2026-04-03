@@ -6,6 +6,8 @@ updates:
     schedule:
       interval: "weekly"
     # Ignore major bumps for Leptos-ecosystem crates — they must upgrade together
+    # any_spawner uses a process-global OnceLock; two semver-incompatible copies
+    # create separate statics, so it must match the version Leptos pins (0.2)
     ignore:
       - dependency-name: "axum"
         update-types: ["version-update:semver-major"]
@@ -14,6 +16,8 @@ updates:
       - dependency-name: "leptos*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "server_fn"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "any_spawner"
         update-types: ["version-update:semver-major"]
     groups:
       production:
