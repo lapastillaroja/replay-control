@@ -76,7 +76,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
 
     // Pre-roll spotlight type so we can lazily collect Hidden Gems exclusion data.
     let spotlight_type = {
-        use rand::Rng;
+        use rand::RngExt;
         rand::rng().random_range(0u8..5)
     };
 
@@ -156,7 +156,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             )> = match spotlight_type {
                 1 if !top_genres.is_empty() => {
                     // Best by Genre
-                    use rand::Rng;
+                    use rand::RngExt;
                     let idx = rand::rng().random_range(0..top_genres.len());
                     let genre = &top_genres[idx];
                     let games = MetadataDb::top_rated_filtered(
@@ -182,7 +182,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 }
                 2 if !active_systems.is_empty() => {
                     // Best of System — pick from systems excluding favorites system
-                    use rand::Rng;
+                    use rand::RngExt;
                     let candidates: Vec<&String> = active_systems
                         .iter()
                         .filter(|s| fav_system != Some(s.as_str()))
@@ -218,7 +218,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 }
                 3 if !top_developers.is_empty() => {
                     // Games by Developer
-                    use rand::Rng;
+                    use rand::RngExt;
                     let idx = rand::rng().random_range(0..top_developers.len());
                     let dev = &top_developers[idx];
                     let games = MetadataDb::top_rated_filtered(
@@ -519,7 +519,7 @@ fn collect_favorites_info_sync(
     }
 
     // Pick a random entry from the weighted pool.
-    use rand::Rng;
+    use rand::RngExt;
     let idx = rand::rng().random_range(0..weighted.len());
     let (chosen_system, fav_filenames) = weighted[idx];
 
@@ -548,7 +548,7 @@ fn build_discover_pills(
     active_systems: &[String],
     systems: &[SystemSummary],
 ) -> Vec<DiscoverPill> {
-    use rand::Rng;
+    use rand::RngExt;
 
     if top_genres.is_empty() && active_systems.is_empty() {
         return Vec::new();
