@@ -746,28 +746,6 @@ mod ssr {
                 }),
             )
             .route(
-                "/static/sw.js",
-                axum::routing::get(|| async {
-                    // Inject build version so the SW cache name updates on every deploy.
-                    let body = include_str!("../static/sw.js").replace(
-                        "__CACHE_VERSION__",
-                        &format!(
-                            "{}-{}",
-                            replay_control_app::VERSION,
-                            replay_control_app::GIT_HASH
-                        ),
-                    );
-                    (
-                        [
-                            ("content-type", "application/javascript"),
-                            // Short cache so browsers pick up new SW versions quickly.
-                            ("cache-control", "public, max-age=60"),
-                        ],
-                        body,
-                    )
-                }),
-            )
-            .route(
                 "/static/ptr-init.js",
                 axum::routing::get(|| async {
                     (

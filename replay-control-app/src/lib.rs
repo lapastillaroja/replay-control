@@ -77,9 +77,6 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
                 <link rel="stylesheet" href="/static/style.css" />
                 <style id="skin-theme">{skin_css}</style>
                 <HydrationScripts options=options.clone() />
-                <script>
-                    "if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/static/sw.js'); }"
-                </script>
                 <script defer src="/static/ptr-init.js"></script>
             </head>
             <body>

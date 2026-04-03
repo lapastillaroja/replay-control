@@ -5,11 +5,21 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Ignore major bumps for Leptos-ecosystem crates — they must upgrade together
+    ignore:
+      - dependency-name: "axum"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "axum-*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "leptos*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "server_fn"
+        update-types: ["version-update:semver-major"]
     groups:
-      minor-and-patch:
-        update-types:
-          - "minor"
-          - "patch"
+      production:
+        dependency-type: "production"
+      dev:
+        dependency-type: "development"
 
   # Standalone libretro core Cargo dependencies
   - package-ecosystem: "cargo"
@@ -17,21 +27,24 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      minor-and-patch:
-        update-types:
-          - "minor"
-          - "patch"
+      production:
+        dependency-type: "production"
+      dev:
+        dependency-type: "development"
 
   # Site npm dependencies
   - package-ecosystem: "npm"
     directory: "/site"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
     groups:
-      minor-and-patch:
-        update-types:
-          - "minor"
-          - "patch"
+      production:
+        dependency-type: "production"
+      dev:
+        dependency-type: "development"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
