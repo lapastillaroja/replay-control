@@ -1576,7 +1576,7 @@ mod tests {
 /// Returns (system_folder_name, rom_filename).
 #[server(prefix = "/sfn")]
 pub async fn random_game() -> Result<(String, String), ServerFnError> {
-    use rand::Rng;
+    use rand::RngExt;
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
