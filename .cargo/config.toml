@@ -2,5 +2,10 @@
 # Limit parallelism to avoid freezing the machine during compilation.
 jobs = 10
 
+# Use mold linker for faster linking (if available). Falls back to default ld if not installed.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

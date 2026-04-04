@@ -5,7 +5,8 @@ Replay Control is a personal project — I built it for my own retro gaming setu
 ## Prerequisites
 
 - **Rust** (stable) via [rustup](https://rustup.rs/)
-- **wasm-bindgen-cli**: `cargo install wasm-bindgen-cli`
+- **wasm-bindgen-cli**: `cargo binstall wasm-bindgen-cli`
+- **mold** (fast linker): `sudo dnf install mold` (Fedora) / `sudo apt install mold` (Debian/Ubuntu)
 - **Rust targets**:
   ```
   rustup target add wasm32-unknown-unknown
@@ -121,6 +122,19 @@ Pull requests are welcome for bug fixes, documentation improvements, and small e
   ```
 - See [AI_POLICY.md](AI_POLICY.md) for guidelines on AI-assisted contributions
 
+
+### Faster builds (optional)
+
+Install [sccache](https://github.com/mozilla/sccache) for compilation caching. `dev.sh` auto-detects and uses it when available:
+
+```
+cargo binstall sccache
+```
+
+To clear all caches (cargo + sccache):
+```bash
+./dev.sh --clean
+```
 
 ## Development Tips
 

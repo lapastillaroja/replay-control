@@ -11,6 +11,7 @@ set -euo pipefail
 #   ./dev.sh --pi [IP]
 #   ./dev.sh --pi [IP] --watch
 #   ./dev.sh --pi [IP] --deploy-only
+#   ./dev.sh --clean                  # clear cargo + sccache caches before build
 #
 # Local mode (default):
 #   Builds WASM (wasm-dev) + SSR (dev) and runs with cargo-watch auto-reload.
@@ -67,7 +68,14 @@ MODE="local"        # local or pi
 PI_IP=""
 PI_WATCH=false
 DEPLOY_ONLY=false
+CLEAN=false
 SERVER_ARGS=""
+
+# Enable sccache for faster incremental dev builds (if available).
+if command -v sccache &>/dev/null; then
+    export RUSTC_WRAPPER=sccache
+fi
+
 
 # SSH ControlMaster socket for connection reuse
 SSH_CONTROL_DIR=""
@@ -94,6 +102,10 @@ parse_args() {
                 ;;
             --deploy-only)
                 DEPLOY_ONLY=true
+                shift
+                ;;
+            --clean)
+                CLEAN=true
                 shift
                 ;;
             --port)
@@ -471,6 +483,17 @@ pi_build_and_deploy() {
 
 main() {
     parse_args "$@"
+
+    if $CLEAN; then
+        phase "Cleaning build cache"
+        cargo clean 2>/dev/null
+        if command -v sccache &>/dev/null; then
+            sccache --stop-server 2>/dev/null || true
+            rm -rf "${SCCACHE_DIR:-$HOME/.cache/sccache}" 2>/dev/null
+            info "sccache cache cleared"
+        fi
+        success "Clean complete"
+    fi
 
     case "$MODE" in
         local)
