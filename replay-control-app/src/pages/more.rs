@@ -48,6 +48,24 @@ pub fn MorePage() -> impl IntoView {
                     </div>
 
                     <div class="more-inline-setting">
+                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
+                        <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>
+                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                            {move || Suspend::new(async move {
+                                let current = font_size.await?;
+                                Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
+                            })}
+                        </Transition>
+                    </div>
+                </div>
+            </section>
+
+            // ── Game Preferences section ─────────────────────────
+            <section class="more-section">
+                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionGamePreferences)}</h3>
+
+                <div class="more-section-body">
+                    <div class="more-inline-setting">
                         <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::RegionTitle)}</h4>
                         <p class="form-hint">{move || t(i18n.locale.get(), Key::RegionHint)}</p>
                         <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
@@ -69,17 +87,6 @@ pub fn MorePage() -> impl IntoView {
                             })}
                         </Transition>
                     </div>
-
-                    <div class="more-inline-setting">
-                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
-                        <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                            {move || Suspend::new(async move {
-                                let current = font_size.await?;
-                                Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
-                            })}
-                        </Transition>
-                    </div>
                 </div>
             </section>
 
@@ -90,7 +97,6 @@ pub fn MorePage() -> impl IntoView {
                 <div class="more-section-body">
                     <div class="menu-list">
                         <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/more/metadata") />
-                        <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/more/github") />
                     </div>
                 </div>
             </section>
@@ -107,7 +113,14 @@ pub fn MorePage() -> impl IntoView {
                         <MenuItem icon="\u{1F512}" label_key=Key::MorePassword href=Some("/more/password") />
                         <MenuItem icon="\u{1F4DC}" label_key=Key::MoreLogs href=Some("/more/logs") />
                     </div>
+                </div>
+            </section>
 
+            // ── System Info section ──────────────────────────────
+            <section class="more-section">
+                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionSystemInfo)}</h3>
+
+                <div class="more-section-body">
                     <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
@@ -125,6 +138,10 @@ pub fn MorePage() -> impl IntoView {
                             })
                         })}
                     </Transition>
+
+                    <div class="menu-list">
+                        <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/more/github") />
+                    </div>
 
                     <RebootButton />
                 </div>

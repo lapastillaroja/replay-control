@@ -115,8 +115,10 @@ pub fn translate(key: Key) -> &'static str {
         // More page
         Key::MoreTitle => "その他",
         Key::MoreSectionPreferences => "設定",
+        Key::MoreSectionGamePreferences => "ゲーム設定",
         Key::MoreSectionGameData => "ゲームデータ",
         Key::MoreSectionSystem => "システム",
+        Key::MoreSectionSystemInfo => "システム情報",
         Key::MoreUpload => "ROMをアップロード",
         Key::MoreWifi => "Wi-Fi設定",
         Key::MoreNfs => "NFS共有設定",

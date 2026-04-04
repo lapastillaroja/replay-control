@@ -107,8 +107,10 @@ pub enum Key {
     // More page
     MoreTitle,
     MoreSectionPreferences,
+    MoreSectionGamePreferences,
     MoreSectionGameData,
     MoreSectionSystem,
+    MoreSectionSystemInfo,
     MoreUpload,
     MoreWifi,
     MoreNfs,
