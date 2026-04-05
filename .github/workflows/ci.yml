@@ -37,6 +37,11 @@ jobs:
           mkdir -p data/wikidata
           python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 
+      - name: Download TGDB lookup tables
+        env:
+          TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
+        run: ./scripts/download-tgdb-lookups.sh
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 

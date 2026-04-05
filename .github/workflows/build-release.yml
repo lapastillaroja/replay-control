@@ -32,6 +32,11 @@ jobs:
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli@0.2.116
 
+      - name: Download TGDB lookup tables
+        env:
+          TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
+        run: ./scripts/download-tgdb-lookups.sh
+
       - name: Build (WASM + aarch64 server)
         run: ./build.sh aarch64
 

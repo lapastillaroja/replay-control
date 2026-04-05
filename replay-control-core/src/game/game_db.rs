@@ -19,8 +19,14 @@ pub struct CanonicalGame {
     pub genre: &'static str,
     /// Developer name (e.g., "Nintendo"). Empty if unknown.
     pub developer: &'static str,
+    /// Publisher name (e.g., "Nintendo"). Empty if unknown.
+    pub publisher: &'static str,
     /// Max players (0 = unknown).
     pub players: u8,
+    /// Cooperative play: `Some(true)` = coop, `Some(false)` = no coop, `None` = unknown.
+    pub coop: Option<bool>,
+    /// ESRB rating (e.g., "M - Mature 17+"). Empty if unknown.
+    pub rating: &'static str,
     /// Normalized genre from shared taxonomy (e.g., "Platform"). Empty if unknown.
     pub normalized_genre: &'static str,
 }

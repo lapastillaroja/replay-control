@@ -118,6 +118,8 @@ tools/bench-results/
 # Populate with: ./scripts/download-arcade-data.sh
 data/*
 !data/README.md
+# TGDB lookup tables (downloaded via API key, not committed for license reasons)
+# Regenerate with: TGDB_API_KEY=... ./scripts/download-tgdb-lookups.sh
 
 # Generated test fixtures (thousands of empty ROM files)
 # Regenerate with: cargo run -p generate-test-fixtures
@@ -133,3 +135,4 @@ site/public/
 site/resources/
 site/node_modules/
 site/hugo_stats.json
+.env

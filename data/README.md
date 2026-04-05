@@ -36,6 +36,21 @@ After cloning the repo, run both download scripts before building:
 | `mame0285-arcade.xml` | [Progetto-SNAPS](https://www.progettosnaps.net) | MAME 0.285 arcade XML |
 | `catver-mame-current.ini` | [AntoPISA/MAME_SupportFiles](https://github.com/AntoPISA/MAME_SupportFiles) | Current MAME category/genre mappings |
 
+### TGDB lookup tables (`download-tgdb-lookups.sh`)
+
+| File | Source | Description |
+|------|--------|-------------|
+| `tgdb-developers.json` | [TheGamesDB API](https://api.thegamesdb.net/) | Developer ID-to-name map (~8,262 entries) |
+| `tgdb-publishers.json` | [TheGamesDB API](https://api.thegamesdb.net/) | Publisher ID-to-name map (~4,452 entries) |
+| `tgdb-genres.json` | [TheGamesDB API](https://api.thegamesdb.net/) | Genre ID-to-name map (~30 entries) |
+
+These files require a (free) TGDB API key to refresh. They are committed to the repo
+because the API has a 1000 requests/month limit. Only the maintainer needs the key.
+
+```sh
+TGDB_API_KEY=your_key ./scripts/download-tgdb-lookups.sh
+```
+
 ## When to refresh
 
 Re-download when upstream data changes (e.g., a genre fix gets merged):

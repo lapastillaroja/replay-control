@@ -1318,8 +1318,10 @@ struct TgdbEntry {
     year: u16,
     players: u8,
     genre_ids: Vec<u32>,
-    #[allow(dead_code)]
     developer_ids: Vec<u32>,
+    publisher_ids: Vec<u32>,
+    coop: Option<bool>,
+    rating: String,
     /// Alternate names for cross-name variant matching.
     alternates: Vec<String>,
 }
@@ -1330,7 +1332,10 @@ struct CanonicalGameBuild {
     year: u16,
     genre: String,
     developer: String,
+    publisher: String,
     players: u8,
+    coop: Option<bool>,
+    rating: String,
     /// TGDB alternate names for cross-name variant matching.
     alternates: Vec<String>,
 }
@@ -1644,8 +1649,213 @@ fn clean_display_name(name: &str) -> String {
     base.to_string()
 }
 
+/// Load a TGDB ID-to-name lookup table (developers, publishers, or genres).
+/// File format: {"1389": "Bungie", "3423": "Retro Studios", ...}
+/// Returns an empty map if the file doesn't exist or can't be parsed.
+fn load_tgdb_name_map(path: &Path) -> HashMap<u32, String> {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!(
+                "Warning: could not open TGDB lookup at {}: {}",
+                path.display(),
+                e
+            );
+            return HashMap::new();
+        }
+    };
+    let map: HashMap<String, String> = match serde_json::from_reader(BufReader::new(file)) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!(
+                "Warning: failed to parse TGDB lookup {}: {}",
+                path.display(),
+                e
+            );
+            return HashMap::new();
+        }
+    };
+    map.into_iter()
+        .filter_map(|(k, v)| k.parse::<u32>().ok().map(|id| (id, v)))
+        .collect()
+}
+
+// ── Developer normalization (build-time copy) ──────────────────────────
+//
+// SYNC: keep in sync with src/game/developer.rs
+//
+// build.rs can't import from the crate it's building, so we duplicate the
+// core normalization logic here. The algorithm is identical: override table,
+// strip licensing annotations, extract bracket-prefixed developer, strip
+// corporate/regional/division suffixes, split joint ventures, normalize case.
+
+fn developer_override_build(raw: &str) -> Option<&'static str> {
+    match raw {
+        "Strata/Incredible Technologies" => Some("Incredible Technologies"),
+        "Victor / Cave / Capcom" => Some("Cave"),
+        "Capcom / Cave / Victor Interactive Software" => Some("Cave"),
+        "Sony/Capcom" => Some("Capcom"),
+        "SNK Playmore" => Some("SNK"),
+        "Sega Toys" => Some("Sega"),
+        "Nintendo / Capcom" => Some("Capcom"),
+        "Taito Corporation (licensed from Midway)" => Some("Midway"),
+        "IGS / Cave (Tong Li Animation license)" => Some("Cave"),
+        "IGS / Cave" => Some("Cave"),
+        _ => None,
+    }
+}
+
+const BUILD_CORPORATE_SUFFIXES: &[&str] = &[
+    " Computer Entertainment Osaka",
+    " Computer Entertainment Kobe",
+    " Computer Entertainment Tokyo",
+    " Digital Entertainment",
+    " Technical Institute",
+    " Interactive Software",
+    " Entertainment",
+    " Enterprises",
+    " Corporation",
+    " Industry",
+    " of America",
+    " of Japan",
+    " Co., Ltd.",
+    " Co., Ltd",
+    " Corp.",
+    " Corp",
+    " LTD.",
+    " Ltd.",
+    " Ltd",
+    " Inc.",
+    " Inc",
+    " Co.",
+    " Co",
+    " USA",
+];
+
+const BUILD_REGIONAL_QUALIFIERS: &[&str] = &[" America", " Japan", " Europe", " do Brasil"];
+
+const BUILD_DIVISION_SUFFIXES: &[&str] = &[
+    " AM1", " AM2", " AM3", " AM4", " AM5", " CS1", " CS2", " CS3", " R&D 1", " R&D 2",
+    " R&D 3", " R&D 4", " R&D1", " R&D2", " R&D3", " R&D4", " EAD", " SPD",
+];
+
+fn is_noise_build(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    lower == "bootleg"
+        || lower == "<unknown>"
+        || lower == "unknown"
+        || lower.starts_with("bootleg ")
+        || lower.starts_with("bootleg(")
+        || lower.starts_with("hack ")
+        || lower.starts_with("hack(")
+        || lower == "hack"
+}
+
+fn strip_suffixes_ci_build(s: &mut String, suffixes: &[&str]) {
+    loop {
+        let before = s.len();
+        for suffix in suffixes {
+            let s_lower = s.to_ascii_lowercase();
+            let suffix_lower = suffix.to_ascii_lowercase();
+            if s_lower.ends_with(&suffix_lower) {
+                let new_len = s.len() - suffix.len();
+                s.truncate(new_len);
+                *s = s.trim().to_string();
+            }
+        }
+        if s.len() == before {
+            break;
+        }
+    }
+}
+
+fn normalize_case_build(s: &str) -> String {
+    if s.len() <= 1 {
+        return s.to_string();
+    }
+    let alpha_chars: Vec<char> = s.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+    if alpha_chars.is_empty() {
+        return s.to_string();
+    }
+    let all_upper = alpha_chars.iter().all(|c| c.is_ascii_uppercase());
+    if all_upper && alpha_chars.len() > 3 {
+        let mut chars = s.chars();
+        let first = chars.next().unwrap();
+        let mut result = first.to_uppercase().to_string();
+        for c in chars {
+            result.extend(c.to_lowercase());
+        }
+        result
+    } else {
+        s.to_string()
+    }
+}
+
+/// Normalize a developer name at build time.
+/// SYNC: keep in sync with src/game/developer.rs normalize_developer()
+fn normalize_developer_build(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Some(canonical) = developer_override_build(trimmed) {
+        return canonical.to_string();
+    }
+    if is_noise_build(trimmed) {
+        return String::new();
+    }
+    let mut s = trimmed.to_string();
+
+    // Strip licensing annotations
+    if let Some(paren_idx) = s.find('(') {
+        let after_paren = &s[paren_idx..];
+        let lower_paren = after_paren.to_ascii_lowercase();
+        if lower_paren.contains("license") {
+            s = s[..paren_idx].trim().to_string();
+        }
+    }
+
+    // Extract bracket-prefixed developer
+    if s.starts_with('[') {
+        if let Some(close) = s.find(']') {
+            let bracket_name = s[1..close].trim().to_string();
+            if !bracket_name.is_empty() {
+                s = bracket_name;
+            }
+        }
+    }
+
+    strip_suffixes_ci_build(&mut s, BUILD_CORPORATE_SUFFIXES);
+    strip_suffixes_ci_build(&mut s, BUILD_REGIONAL_QUALIFIERS);
+
+    if let Some(idx) = s.find(" / ") {
+        s = s[..idx].trim().to_string();
+    }
+    if let Some(idx) = s.find('/') {
+        s = s[..idx].trim().to_string();
+    } else if let Some(idx) = s.find(" + ") {
+        s = s[..idx].trim().to_string();
+    }
+
+    strip_suffixes_ci_build(&mut s, BUILD_CORPORATE_SUFFIXES);
+    strip_suffixes_ci_build(&mut s, BUILD_REGIONAL_QUALIFIERS);
+    strip_suffixes_ci_build(&mut s, BUILD_DIVISION_SUFFIXES);
+
+    let s = s.trim_end_matches(|c: char| c == '/' || c == '?' || c.is_whitespace());
+    let s = s.trim();
+    if s.is_empty() {
+        return String::new();
+    }
+    let result = normalize_case_build(s);
+    if is_noise_build(&result) {
+        return String::new();
+    }
+    result
+}
+
 /// TheGamesDB genre ID to name mapping.
 /// These are the standard TGDB genre IDs (1-30), which are stable.
+/// Used as fallback when tgdb-genres.json is not available.
 fn tgdb_genre_name(id: u32) -> &'static str {
     match id {
         1 => "Action",
@@ -1754,6 +1964,21 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
             })
             .unwrap_or_default();
 
+        let publisher_ids: Vec<u32> = game["publishers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as u32))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let coop: Option<bool> = game["coop"]
+            .as_str()
+            .map(|s| s.eq_ignore_ascii_case("yes"));
+
+        let rating: String = game["rating"].as_str().unwrap_or("").to_string();
+
         let alternates: Vec<String> = game["alternates"]
             .as_array()
             .map(|arr| {
@@ -1773,6 +1998,9 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
             players,
             genre_ids,
             developer_ids,
+            publisher_ids,
+            coop,
+            rating,
             alternates,
         });
     }
@@ -1822,6 +2050,30 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
         println!("cargo:warning=Game DB: TheGamesDB JSON not found, skipping metadata enrichment");
         HashMap::new()
     };
+
+    // Load TGDB lookup tables (developer/publisher/genre name maps)
+    let tgdb_developers = load_tgdb_name_map(&sources_dir.join("tgdb-developers.json"));
+    let tgdb_publishers = load_tgdb_name_map(&sources_dir.join("tgdb-publishers.json"));
+    let tgdb_genres = load_tgdb_name_map(&sources_dir.join("tgdb-genres.json"));
+
+    println!(
+        "cargo::rerun-if-changed={}",
+        sources_dir.join("tgdb-developers.json").display()
+    );
+    println!(
+        "cargo::rerun-if-changed={}",
+        sources_dir.join("tgdb-publishers.json").display()
+    );
+    println!(
+        "cargo::rerun-if-changed={}",
+        sources_dir.join("tgdb-genres.json").display()
+    );
+    println!(
+        "cargo:warning=Game DB: TGDB lookups: {} developers, {} publishers, {} genres",
+        tgdb_developers.len(),
+        tgdb_publishers.len(),
+        tgdb_genres.len()
+    );
 
     // Track grand totals
     let mut total_roms = 0usize;
@@ -1917,6 +2169,10 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
             let mut tgdb_players: u8 = 0;
             let mut tgdb_genre = String::new();
             let mut tgdb_alternates: Vec<String> = Vec::new();
+            let mut tgdb_developer = String::new();
+            let mut tgdb_publisher = String::new();
+            let mut tgdb_coop: Option<bool> = None;
+            let mut tgdb_rating = String::new();
 
             // Try matching against each TGDB platform ID for this system
             let tgdb_normalized = normalize_title_for_tgdb(&display_name);
@@ -1925,9 +2181,33 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
                     year = tgdb_entry.year;
                     tgdb_players = tgdb_entry.players;
                     if !tgdb_entry.genre_ids.is_empty() {
-                        tgdb_genre = tgdb_genre_name(tgdb_entry.genre_ids[0]).to_string();
+                        // Use genres.json lookup, fall back to hardcoded map
+                        tgdb_genre = tgdb_genres
+                            .get(&tgdb_entry.genre_ids[0])
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                tgdb_genre_name(tgdb_entry.genre_ids[0]).to_string()
+                            });
                     }
                     tgdb_alternates = tgdb_entry.alternates.clone();
+
+                    // Resolve developer from first developer_id
+                    if let Some(&dev_id) = tgdb_entry.developer_ids.first() {
+                        if let Some(name) = tgdb_developers.get(&dev_id) {
+                            tgdb_developer = normalize_developer_build(name);
+                        }
+                    }
+
+                    // Resolve publisher from first publisher_id
+                    if let Some(&pub_id) = tgdb_entry.publisher_ids.first() {
+                        if let Some(name) = tgdb_publishers.get(&pub_id) {
+                            tgdb_publisher = name.clone();
+                        }
+                    }
+
+                    tgdb_coop = tgdb_entry.coop;
+                    tgdb_rating = tgdb_entry.rating.clone();
+
                     tgdb_match_count += 1;
                     break;
                 }
@@ -1996,8 +2276,11 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
                 display_name,
                 year,
                 genre: final_genre,
-                developer: String::new(), // Developer lookup not available in TGDB dump
+                developer: tgdb_developer,
+                publisher: tgdb_publisher,
                 players: final_players,
+                coop: tgdb_coop,
+                rating: tgdb_rating,
                 alternates: tgdb_alternates,
             });
 
@@ -2036,6 +2319,32 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
             .iter()
             .filter(|r| canonical_games[r.game_id].players > 0)
             .count();
+        let dev_coverage = canonical_games
+            .iter()
+            .filter(|g| !g.developer.is_empty())
+            .count();
+        let pub_coverage = canonical_games
+            .iter()
+            .filter(|g| !g.publisher.is_empty())
+            .count();
+        println!(
+            "cargo:warning=Game DB: {} - developer coverage: {}/{} ({:.0}%), publisher coverage: {}/{} ({:.0}%)",
+            sys.folder_name,
+            dev_coverage,
+            canonical_games.len(),
+            if canonical_games.is_empty() {
+                0.0
+            } else {
+                dev_coverage as f64 / canonical_games.len() as f64 * 100.0
+            },
+            pub_coverage,
+            canonical_games.len(),
+            if canonical_games.is_empty() {
+                0.0
+            } else {
+                pub_coverage as f64 / canonical_games.len() as f64 * 100.0
+            },
+        );
         println!(
             "cargo:warning=Game DB: {} - genre coverage: {}/{} ({:.0}%), players coverage: {}/{} ({:.0}%)",
             sys.folder_name,
@@ -2109,14 +2418,22 @@ fn write_system_code(
     writeln!(out, "static {prefix}_GAMES: &[CanonicalGame] = &[").unwrap();
     for game in games {
         let norm_genre = normalize_console_genre(&game.genre);
+        let coop_str = match game.coop {
+            None => "None",
+            Some(true) => "Some(true)",
+            Some(false) => "Some(false)",
+        };
         writeln!(
             out,
-            "    CanonicalGame {{ display_name: \"{}\", year: {}, genre: \"{}\", developer: \"{}\", players: {}, normalized_genre: \"{}\" }},",
+            "    CanonicalGame {{ display_name: \"{}\", year: {}, genre: \"{}\", developer: \"{}\", publisher: \"{}\", players: {}, coop: {}, rating: \"{}\", normalized_genre: \"{}\" }},",
             escape_str(&game.display_name),
             game.year,
             escape_str(&game.genre),
             escape_str(&game.developer),
+            escape_str(&game.publisher),
             game.players,
+            coop_str,
+            escape_str(&game.rating),
             escape_str(norm_genre),
         )
         .unwrap();
