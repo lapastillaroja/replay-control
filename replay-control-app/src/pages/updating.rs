@@ -1,14 +1,15 @@
 use leptos::prelude::*;
-use replay_control_core::update::UpdateState;
 
 use crate::i18n::{Key, t, use_i18n};
-use crate::server_fns;
+#[cfg(feature = "hydrate")]
+use {crate::server_fns, replay_control_core::update::UpdateState};
 
 /// Full-screen updating page. No nav bar.
 /// Owns the entire update lifecycle: dispatch, progress, restart countdown.
 #[component]
 pub fn UpdatingPage() -> impl IntoView {
     let i18n = use_i18n();
+    #[cfg(feature = "hydrate")]
     let update_state =
         use_context::<RwSignal<UpdateState>>().unwrap_or_else(|| RwSignal::new(UpdateState::None));
 
@@ -123,6 +124,7 @@ pub fn UpdatingPage() -> impl IntoView {
 }
 
 #[derive(Clone, Copy, PartialEq)]
+#[allow(dead_code)] // Variants constructed only under #[cfg(feature = "hydrate")]
 enum UpdatingPhase {
     Init,
     Downloading,

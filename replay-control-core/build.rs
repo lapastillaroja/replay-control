@@ -1816,12 +1816,10 @@ fn normalize_developer_build(raw: &str) -> String {
     }
 
     // Extract bracket-prefixed developer
-    if s.starts_with('[') {
-        if let Some(close) = s.find(']') {
-            let bracket_name = s[1..close].trim().to_string();
-            if !bracket_name.is_empty() {
-                s = bracket_name;
-            }
+    if s.starts_with('[') && let Some(close) = s.find(']') {
+        let bracket_name = s[1..close].trim().to_string();
+        if !bracket_name.is_empty() {
+            s = bracket_name;
         }
     }
 
@@ -2190,17 +2188,17 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
                     tgdb_alternates = tgdb_entry.alternates.clone();
 
                     // Resolve developer from first developer_id
-                    if let Some(&dev_id) = tgdb_entry.developer_ids.first() {
-                        if let Some(name) = tgdb_developers.get(&dev_id) {
-                            tgdb_developer = normalize_developer_build(name);
-                        }
+                    if let Some(&dev_id) = tgdb_entry.developer_ids.first()
+                        && let Some(name) = tgdb_developers.get(&dev_id)
+                    {
+                        tgdb_developer = normalize_developer_build(name);
                     }
 
                     // Resolve publisher from first publisher_id
-                    if let Some(&pub_id) = tgdb_entry.publisher_ids.first() {
-                        if let Some(name) = tgdb_publishers.get(&pub_id) {
-                            tgdb_publisher = name.clone();
-                        }
+                    if let Some(&pub_id) = tgdb_entry.publisher_ids.first()
+                        && let Some(name) = tgdb_publishers.get(&pub_id)
+                    {
+                        tgdb_publisher = name.clone();
                     }
 
                     tgdb_coop = tgdb_entry.coop;

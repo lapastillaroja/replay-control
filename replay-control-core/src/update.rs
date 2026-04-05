@@ -15,20 +15,15 @@ pub struct AvailableUpdate {
 
 /// Client-side update lifecycle state.
 /// Single source of truth for all update UI — provided as app-level context.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum UpdateState {
     /// No update available.
+    #[default]
     None,
     /// A newer version was found.
     Available(AvailableUpdate),
     /// Update installed, service is restarting.
     Restarting { expected_version: String },
-}
-
-impl Default for UpdateState {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// Compare two semver version strings.
@@ -51,8 +46,9 @@ pub fn validate_version(version: &str) -> bool {
 }
 
 /// Release channel for update checks.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UpdateChannel {
+    #[default]
     Stable,
     Beta,
 }
@@ -73,11 +69,6 @@ impl UpdateChannel {
     }
 }
 
-impl Default for UpdateChannel {
-    fn default() -> Self {
-        Self::Stable
-    }
-}
 
 /// Temp directory for all update runtime state.
 pub const UPDATE_DIR: &str = "/var/tmp/replay-control-update";
