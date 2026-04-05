@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::config::ReplayConfig;
+use crate::config::SystemConfig;
 use crate::error::{Error, Result};
 
 /// Represents the resolved storage location where ROMs, saves, and config live.
@@ -88,7 +88,7 @@ const MANUALS_DIR: &str = "manuals";
 
 impl StorageLocation {
     /// Detect the active storage location based on the RePlayOS config.
-    pub fn detect(config: &ReplayConfig) -> Result<Self> {
+    pub fn detect(config: &SystemConfig) -> Result<Self> {
         let (root, kind) = match config.storage_mode() {
             "usb" => {
                 let path = find_usb_storage()?;

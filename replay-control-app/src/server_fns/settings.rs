@@ -42,10 +42,10 @@ pub async fn get_wifi_config() -> Result<WifiConfig, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let config = state.config.read().expect("config lock poisoned");
     Ok(WifiConfig {
-        ssid: config.get("wifi_name").unwrap_or("").to_string(),
-        country: config.get("wifi_country").unwrap_or("").to_string(),
-        mode: config.get("wifi_mode").unwrap_or("transition").to_string(),
-        hidden: config.get("wifi_hidden").unwrap_or("false") == "true",
+        ssid: config.wifi_name().unwrap_or("").to_string(),
+        country: config.wifi_country().unwrap_or("").to_string(),
+        mode: config.wifi_mode().unwrap_or("transition").to_string(),
+        hidden: config.wifi_hidden(),
     })
 }
 
@@ -59,13 +59,7 @@ pub async fn save_wifi_config(
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     state
-        .update_config(|config| {
-            config.set("wifi_name", &ssid);
-            config.set("wifi_pwd", &password);
-            config.set("wifi_country", &country);
-            config.set("wifi_mode", &mode);
-            config.set("wifi_hidden", if hidden { "true" } else { "false" });
-        })
+        .update_wifi(&ssid, &password, &country, &mode, hidden)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -74,9 +68,9 @@ pub async fn get_nfs_config() -> Result<NfsConfig, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let config = state.config.read().expect("config lock poisoned");
     Ok(NfsConfig {
-        server: config.get("nfs_server").unwrap_or("").to_string(),
-        share: config.get("nfs_share").unwrap_or("").to_string(),
-        version: config.get("nfs_version").unwrap_or("4").to_string(),
+        server: config.nfs_server().unwrap_or("").to_string(),
+        share: config.nfs_share().unwrap_or("").to_string(),
+        version: config.nfs_version().unwrap_or("4").to_string(),
     })
 }
 
@@ -88,11 +82,7 @@ pub async fn save_nfs_config(
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     state
-        .update_config(|config| {
-            config.set("nfs_server", &server);
-            config.set("nfs_share", &share);
-            config.set("nfs_version", &version);
-        })
+        .update_nfs(&server, &share, &version)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
@@ -376,10 +366,9 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
 pub async fn get_language_preference() -> Result<(String, String), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let primary =
-        replay_control_core::settings::read_language_primary(&storage.root).unwrap_or_default();
-    let secondary =
-        replay_control_core::settings::read_language_secondary(&storage.root).unwrap_or_default();
+    let settings = replay_control_core::settings::load_settings(&storage.root);
+    let primary = settings.language_primary().unwrap_or_default().to_string();
+    let secondary = settings.language_secondary().unwrap_or_default().to_string();
     Ok((primary, secondary))
 }
 
@@ -392,11 +381,12 @@ pub async fn save_language_preference(
 ) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    replay_control_core::settings::write_language_primary(&storage.root, primary.trim())
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    replay_control_core::settings::write_language_secondary(&storage.root, secondary.trim())
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(())
+    replay_control_core::settings::write_language_preferences(
+        &storage.root,
+        primary.trim(),
+        secondary.trim(),
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 /// Change the root password on the Pi.
@@ -518,9 +508,8 @@ pub async fn get_locale() -> Result<String, ServerFnError> {
 /// Validates against the supported locale list before writing.
 #[server(prefix = "/sfn")]
 pub async fn save_locale(locale: String) -> Result<(), ServerFnError> {
-    match locale.as_str() {
-        "en" | "es" | "ja" => {}
-        _ => return Err(ServerFnError::new("Unsupported locale")),
+    if !replay_control_core::config::SUPPORTED_LOCALES.contains(&locale.as_str()) {
+        return Err(ServerFnError::new("Unsupported locale"));
     }
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
@@ -534,12 +523,13 @@ pub async fn save_locale(locale: String) -> Result<(), ServerFnError> {
 pub async fn get_preferred_languages() -> Result<Vec<String>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    let primary = replay_control_core::settings::read_language_primary(&storage.root);
-    let secondary = replay_control_core::settings::read_language_secondary(&storage.root);
+    let settings = replay_control_core::settings::load_settings(&storage.root);
+    let primary = settings.language_primary();
+    let secondary = settings.language_secondary();
     let region = state.region_preference();
     Ok(replay_control_core::settings::preferred_languages(
-        primary.as_deref(),
-        secondary.as_deref(),
+        primary,
+        secondary,
         region,
     ))
 }

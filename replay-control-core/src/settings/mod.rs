@@ -7,63 +7,46 @@ pub mod skins;
 
 use std::path::Path;
 
-use crate::config::ReplayConfig;
+use crate::config::AppSettings;
 use crate::error::Result;
 use crate::rom_tags::RegionPreference;
 use crate::storage::{RC_DIR, SETTINGS_FILE};
 
-/// Read the region preference from `.replay-control/settings.cfg`.
-/// Returns the default (`Usa`) if the file doesn't exist or the key is missing.
-pub fn read_region_preference(storage_root: &Path) -> RegionPreference {
+/// Load settings from disk, returning empty settings if the file doesn't exist.
+/// Use this directly when you need to read multiple settings to avoid repeated file I/O.
+pub fn load_settings(storage_root: &Path) -> AppSettings {
     let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = match ReplayConfig::from_file(&path) {
-        Ok(c) => c,
-        Err(_) => return RegionPreference::default(),
-    };
-    let value = config.get("region_preference").unwrap_or("world");
-    RegionPreference::from_str_value(value)
+    AppSettings::from_file(&path).unwrap_or_else(|_| AppSettings::empty())
+}
+
+/// Save settings to disk, creating the directory if needed.
+pub fn save_settings(storage_root: &Path, settings: &AppSettings) -> Result<()> {
+    let rc_dir = storage_root.join(RC_DIR);
+    std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
+    let path = rc_dir.join(SETTINGS_FILE);
+    settings.save(&path)
+}
+
+/// Read the region preference from `.replay-control/settings.cfg`.
+/// Returns the default (`World`) if the file doesn't exist or the key is missing.
+pub fn read_region_preference(storage_root: &Path) -> RegionPreference {
+    let settings = load_settings(storage_root);
+    RegionPreference::from_str_value(settings.region_preference())
 }
 
 /// Write the region preference to `.replay-control/settings.cfg`.
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_region_preference(storage_root: &Path, pref: RegionPreference) -> Result<()> {
-    let rc_dir = storage_root.join(RC_DIR);
-    if !rc_dir.exists() {
-        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
-    }
-
-    let path = rc_dir.join(SETTINGS_FILE);
-
-    let mut config = if path.exists() {
-        ReplayConfig::from_file(&path)?
-    } else {
-        ReplayConfig::parse("")?
-    };
-
-    config.set("region_preference", pref.as_str());
-
-    // Write the config. If the file exists, preserve comments and order.
-    // If it doesn't exist, write from scratch.
-    if path.exists() {
-        config.write_to_file(&path, &path)?;
-    } else {
-        // Write a fresh file with just this key.
-        let content = format!("region_preference = \"{}\"\n", pref.as_str());
-        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
-    }
-
-    Ok(())
+    let mut settings = load_settings(storage_root);
+    settings.set_region_preference(pref.as_str());
+    save_settings(storage_root, &settings)
 }
 
 /// Read the secondary region preference from `.replay-control/settings.cfg`.
 /// Returns `None` if the file doesn't exist, the key is missing, or the value is empty.
 pub fn read_region_preference_secondary(storage_root: &Path) -> Option<RegionPreference> {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = ReplayConfig::from_file(&path).ok()?;
-    let value = config.get("region_preference_secondary").unwrap_or("");
-    if value.is_empty() {
-        return None;
-    }
+    let settings = load_settings(storage_root);
+    let value = settings.region_preference_secondary()?;
     Some(RegionPreference::from_str_value(value))
 }
 
@@ -74,87 +57,33 @@ pub fn write_region_preference_secondary(
     storage_root: &Path,
     pref: Option<RegionPreference>,
 ) -> Result<()> {
-    let rc_dir = storage_root.join(RC_DIR);
-    if !rc_dir.exists() {
-        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
-    }
-
-    let path = rc_dir.join(SETTINGS_FILE);
-
-    let mut config = if path.exists() {
-        ReplayConfig::from_file(&path)?
-    } else {
-        ReplayConfig::parse("")?
-    };
-
+    let mut settings = load_settings(storage_root);
     let value = pref.map(|p| p.as_str()).unwrap_or("");
-    config.set("region_preference_secondary", value);
-
-    if path.exists() {
-        config.write_to_file(&path, &path)?;
-    } else {
-        let content = format!("region_preference_secondary = \"{value}\"\n");
-        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
-    }
-
-    Ok(())
+    settings.set_region_preference_secondary(value);
+    save_settings(storage_root, &settings)
 }
 
 /// Read the font size preference from `.replay-control/settings.cfg`.
 /// Returns `"normal"` or `"large"`, defaults to `"normal"`.
 pub fn read_font_size(storage_root: &Path) -> String {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = match ReplayConfig::from_file(&path) {
-        Ok(c) => c,
-        Err(_) => return "normal".to_string(),
-    };
-    let value = config.get("font_size").unwrap_or("normal");
-    match value {
-        "large" => "large".to_string(),
-        _ => "normal".to_string(),
-    }
+    let settings = load_settings(storage_root);
+    settings.font_size().to_string()
 }
 
 /// Write the font size preference to `.replay-control/settings.cfg`.
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_font_size(storage_root: &Path, size: &str) -> Result<()> {
-    let rc_dir = storage_root.join(RC_DIR);
-    if !rc_dir.exists() {
-        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
-    }
-
-    let path = rc_dir.join(SETTINGS_FILE);
-
-    let mut config = if path.exists() {
-        ReplayConfig::from_file(&path)?
-    } else {
-        ReplayConfig::parse("")?
-    };
-
-    let value = if size == "large" { "large" } else { "normal" };
-    config.set("font_size", value);
-
-    if path.exists() {
-        config.write_to_file(&path, &path)?;
-    } else {
-        let content = format!("font_size = \"{value}\"\n");
-        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
-    }
-
-    Ok(())
+    let mut settings = load_settings(storage_root);
+    settings.set_font_size(size);
+    save_settings(storage_root, &settings)
 }
 
 /// Read the skin preference from `.replay-control/settings.cfg`.
 /// Returns `Some(index)` if the user has explicitly chosen a skin (sync off),
 /// or `None` if the key is absent (sync on — read from `replay.cfg` instead).
 pub fn read_skin(storage_root: &Path) -> Option<u32> {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = ReplayConfig::from_file(&path).ok()?;
-    let value = config.get("skin")?;
-    if value.is_empty() {
-        return None;
-    }
-    value.parse().ok()
+    let settings = load_settings(storage_root);
+    settings.skin()
 }
 
 /// Write the skin preference to `.replay-control/settings.cfg`.
@@ -162,64 +91,52 @@ pub fn read_skin(storage_root: &Path) -> Option<u32> {
 /// Pass `None` to clear the key (sync on — defer to `replay.cfg`).
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_skin(storage_root: &Path, skin: Option<u32>) -> Result<()> {
-    let rc_dir = storage_root.join(RC_DIR);
-    if !rc_dir.exists() {
-        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
-    }
-
-    let path = rc_dir.join(SETTINGS_FILE);
-
-    let mut config = if path.exists() {
-        ReplayConfig::from_file(&path)?
-    } else {
-        ReplayConfig::parse("")?
-    };
-
-    match skin {
-        Some(index) => config.set("skin", &index.to_string()),
-        None => config.set("skin", ""),
-    }
-
-    if path.exists() {
-        config.write_to_file(&path, &path)?;
-    } else {
-        let value = skin.map(|i| i.to_string()).unwrap_or_default();
-        let content = format!("skin = \"{value}\"\n");
-        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
-    }
-
-    Ok(())
+    let mut settings = load_settings(storage_root);
+    settings.set_skin(skin);
+    save_settings(storage_root, &settings)
 }
 
 /// Read the primary language preference from `.replay-control/settings.cfg`.
 /// Returns `None` if not explicitly set (caller should derive from region).
 pub fn read_language_primary(storage_root: &Path) -> Option<String> {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = ReplayConfig::from_file(&path).ok()?;
-    let value = config.get("language_primary").unwrap_or("").to_string();
-    if value.is_empty() { None } else { Some(value) }
+    let settings = load_settings(storage_root);
+    settings.language_primary().map(|s| s.to_string())
 }
 
 /// Write the primary language preference to `.replay-control/settings.cfg`.
 /// Pass empty string to clear (revert to auto-detection from region).
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_language_primary(storage_root: &Path, lang: &str) -> Result<()> {
-    write_setting(storage_root, "language_primary", lang)
+    let mut settings = load_settings(storage_root);
+    settings.set_language_primary(lang);
+    save_settings(storage_root, &settings)
 }
 
 /// Read the secondary (fallback) language preference from `.replay-control/settings.cfg`.
 /// Returns `None` if not set. Defaults to `"en"` in the UI when not explicitly configured.
 pub fn read_language_secondary(storage_root: &Path) -> Option<String> {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = ReplayConfig::from_file(&path).ok()?;
-    let value = config.get("language_secondary").unwrap_or("").to_string();
-    if value.is_empty() { None } else { Some(value) }
+    let settings = load_settings(storage_root);
+    settings.language_secondary().map(|s| s.to_string())
 }
 
 /// Write the secondary (fallback) language preference to `.replay-control/settings.cfg`.
 /// Pass empty string to clear.
 pub fn write_language_secondary(storage_root: &Path, lang: &str) -> Result<()> {
-    write_setting(storage_root, "language_secondary", lang)
+    let mut settings = load_settings(storage_root);
+    settings.set_language_secondary(lang);
+    save_settings(storage_root, &settings)
+}
+
+/// Write both language preferences in a single load/save cycle.
+pub fn write_language_preferences(
+    storage_root: &Path,
+    primary: &str,
+    secondary: &str,
+) -> Result<()> {
+    let mut settings = load_settings(storage_root);
+    settings.set_language_primary(primary);
+    settings.set_language_secondary(secondary);
+    save_settings(storage_root, &settings)
 }
 
 /// Derive the default primary language from a region preference.
@@ -322,97 +239,40 @@ fn lang_matches(manual_lang: &str, pref_lang: &str) -> bool {
     false
 }
 
-/// Generic helper: write a single key to settings.cfg, creating directory if needed.
-fn write_setting(storage_root: &Path, key: &str, value: &str) -> Result<()> {
-    let rc_dir = storage_root.join(RC_DIR);
-    if !rc_dir.exists() {
-        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
-    }
-
-    let path = rc_dir.join(SETTINGS_FILE);
-
-    let mut config = if path.exists() {
-        ReplayConfig::from_file(&path)?
-    } else {
-        ReplayConfig::parse("")?
-    };
-
-    config.set(key, value);
-
-    if path.exists() {
-        config.write_to_file(&path, &path)?;
-    } else {
-        let content = format!("{key} = \"{value}\"\n");
-        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
-    }
-
-    Ok(())
-}
-
 /// Read the UI locale from `.replay-control/settings.cfg`.
 /// Returns `None` if not set (caller should fall back to Accept-Language or "en").
 pub fn read_locale(storage_root: &Path) -> Option<String> {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = ReplayConfig::from_file(&path).ok()?;
-    let value = config.get("locale")?;
-    match value {
-        "en" | "es" | "ja" => Some(value.to_string()),
-        _ => None,
-    }
+    let settings = load_settings(storage_root);
+    settings.locale().map(|s| s.to_string())
 }
 
 /// Write the UI locale to `.replay-control/settings.cfg`.
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_locale(storage_root: &Path, locale: &str) -> Result<()> {
-    write_setting(storage_root, "locale", locale)
+    let mut settings = load_settings(storage_root);
+    settings.set_locale(locale);
+    save_settings(storage_root, &settings)
 }
 
 /// Read the GitHub API key from `.replay-control/settings.cfg`.
 /// Returns `None` if the file doesn't exist or the key is empty.
 pub fn read_github_api_key(storage_root: &Path) -> Option<String> {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = ReplayConfig::from_file(&path).ok()?;
-    let value = config.get("github_api_key").unwrap_or("").to_string();
-    if value.is_empty() { None } else { Some(value) }
+    let settings = load_settings(storage_root);
+    settings.github_api_key().map(|s| s.to_string())
 }
 
 /// Write the GitHub API key to `.replay-control/settings.cfg`.
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_github_api_key(storage_root: &Path, key: &str) -> Result<()> {
-    let rc_dir = storage_root.join(RC_DIR);
-    if !rc_dir.exists() {
-        std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
-    }
-
-    let path = rc_dir.join(SETTINGS_FILE);
-
-    let mut config = if path.exists() {
-        ReplayConfig::from_file(&path)?
-    } else {
-        ReplayConfig::parse("")?
-    };
-
-    config.set("github_api_key", key);
-
-    if path.exists() {
-        config.write_to_file(&path, &path)?;
-    } else {
-        let content = format!("github_api_key = \"{key}\"\n");
-        std::fs::write(&path, content).map_err(|e| crate::error::Error::io(&path, e))?;
-    }
-
-    Ok(())
+    let mut settings = load_settings(storage_root);
+    settings.set_github_api_key(key);
+    save_settings(storage_root, &settings)
 }
 
 /// Read the update channel from `.replay-control/settings.cfg`.
 pub fn read_update_channel(storage_root: &Path) -> crate::update::UpdateChannel {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = match ReplayConfig::from_file(&path) {
-        Ok(c) => c,
-        Err(_) => return crate::update::UpdateChannel::default(),
-    };
-    let value = config.get("update_channel").unwrap_or("stable");
-    crate::update::UpdateChannel::from_str_value(value)
+    let settings = load_settings(storage_root);
+    crate::update::UpdateChannel::from_str_value(settings.update_channel())
 }
 
 /// Write the update channel to `.replay-control/settings.cfg`.
@@ -420,20 +280,22 @@ pub fn write_update_channel(
     storage_root: &Path,
     channel: crate::update::UpdateChannel,
 ) -> Result<()> {
-    write_setting(storage_root, "update_channel", channel.as_str())
+    let mut settings = load_settings(storage_root);
+    settings.set_update_channel(channel.as_str());
+    save_settings(storage_root, &settings)
 }
 
 /// Read the skipped version from `.replay-control/settings.cfg`.
 pub fn read_skipped_version(storage_root: &Path) -> Option<String> {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    let config = ReplayConfig::from_file(&path).ok()?;
-    let value = config.get("skipped_version").unwrap_or("").to_string();
-    if value.is_empty() { None } else { Some(value) }
+    let settings = load_settings(storage_root);
+    settings.skipped_version().map(|s| s.to_string())
 }
 
 /// Write the skipped version to `.replay-control/settings.cfg`.
 pub fn write_skipped_version(storage_root: &Path, version: &str) -> Result<()> {
-    write_setting(storage_root, "skipped_version", version)
+    let mut settings = load_settings(storage_root);
+    settings.set_skipped_version(version);
+    save_settings(storage_root, &settings)
 }
 
 #[cfg(test)]

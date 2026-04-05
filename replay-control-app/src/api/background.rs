@@ -538,9 +538,11 @@ impl BackgroundManager {
         state: &AppState,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let storage = state.storage();
-        let channel = replay_control_core::settings::read_update_channel(&storage.root);
-        let skipped = replay_control_core::settings::read_skipped_version(&storage.root);
-        let github_key = replay_control_core::settings::read_github_api_key(&storage.root);
+        let settings = replay_control_core::settings::load_settings(&storage.root);
+        let channel = replay_control_core::update::UpdateChannel::from_str_value(settings.update_channel());
+        let skipped = settings.skipped_version().map(|s| s.to_string());
+        let github_key = settings.github_api_key().map(|s| s.to_string());
+        drop(settings);
 
         match Self::check_github_update(
             crate::VERSION,
@@ -587,9 +589,10 @@ impl BackgroundManager {
         Self::nuke_update_dir();
 
         let storage = state.storage();
-        let channel = replay_control_core::settings::read_update_channel(&storage.root);
-        let skipped = replay_control_core::settings::read_skipped_version(&storage.root);
-        let github_key = replay_control_core::settings::read_github_api_key(&storage.root);
+        let settings = replay_control_core::settings::load_settings(&storage.root);
+        let channel = replay_control_core::update::UpdateChannel::from_str_value(settings.update_channel());
+        let skipped = settings.skipped_version().map(|s| s.to_string());
+        let github_key = settings.github_api_key().map(|s| s.to_string());
 
         match Self::check_github_update(
             crate::VERSION,

@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use deadpool_sqlite::rusqlite;
-use replay_control_core::config::ReplayConfig;
+use replay_control_core::config::SystemConfig;
 use replay_control_core::db_common::JournalMode;
 use replay_control_core::storage::{StorageKind, StorageLocation};
 
@@ -523,7 +523,7 @@ pub enum ConfigEvent {
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Arc<std::sync::RwLock<Option<StorageLocation>>>,
-    pub config: Arc<std::sync::RwLock<ReplayConfig>>,
+    pub config: Arc<std::sync::RwLock<SystemConfig>>,
     pub config_path: Option<PathBuf>,
     pub cache: Arc<LibraryService>,
     /// Response-level cache for assembled recommendation payloads.
@@ -583,9 +583,9 @@ impl AppState {
 
             let config = config_path
                 .as_ref()
-                .and_then(|p| ReplayConfig::from_file(p).ok())
-                .or_else(|| ReplayConfig::from_file(&storage_root.join("config/replay.cfg")).ok())
-                .unwrap_or_else(|| ReplayConfig::parse("").unwrap());
+                .and_then(|p| SystemConfig::from_file(p).ok())
+                .or_else(|| SystemConfig::from_file(&storage_root.join("config/replay.cfg")).ok())
+                .unwrap_or_else(|| SystemConfig::parse("").unwrap());
 
             let kind = match config.storage_mode() {
                 "usb" => StorageKind::Usb,
@@ -599,9 +599,9 @@ impl AppState {
             // Auto-detect: try to read config from default location (SD card, always available)
             let default_config = PathBuf::from("/media/sd/config/replay.cfg");
             let config = if default_config.exists() {
-                ReplayConfig::from_file(&default_config)?
+                SystemConfig::from_file(&default_config)?
             } else {
-                ReplayConfig::parse("")?
+                SystemConfig::parse("")?
             };
 
             match StorageLocation::detect(&config) {
@@ -747,14 +747,32 @@ impl AppState {
         }
     }
 
-    /// Update replay.cfg: apply the updater closure, then write back to disk.
-    pub fn update_config<F>(&self, updater: F) -> Result<(), Box<dyn std::error::Error>>
-    where
-        F: FnOnce(&mut ReplayConfig),
-    {
+    /// Update wifi settings in `replay.cfg` and write back to disk.
+    pub fn update_wifi(
+        &self,
+        ssid: &str,
+        password: &str,
+        country: &str,
+        mode: &str,
+        hidden: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let config_path = self.config_file_path();
         let mut config = self.config.write().expect("config lock poisoned");
-        updater(&mut config);
+        config.set_wifi(ssid, password, country, mode, hidden);
+        config.write_to_file(&config_path, &config_path)?;
+        Ok(())
+    }
+
+    /// Update NFS settings in `replay.cfg` and write back to disk.
+    pub fn update_nfs(
+        &self,
+        server: &str,
+        share: &str,
+        version: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let config_path = self.config_file_path();
+        let mut config = self.config.write().expect("config lock poisoned");
+        config.set_nfs(server, share, version);
         config.write_to_file(&config_path, &config_path)?;
         Ok(())
     }
@@ -767,9 +785,9 @@ impl AppState {
         // system_skin for sync mode, etc.) are picked up on next SSR render.
         let config_path = self.config_file_path();
         let config = if config_path.exists() {
-            ReplayConfig::from_file(&config_path)?
+            SystemConfig::from_file(&config_path)?
         } else {
-            ReplayConfig::parse("")?
+            SystemConfig::parse("")?
         };
 
         // Check if the effective skin changed after config re-read.
