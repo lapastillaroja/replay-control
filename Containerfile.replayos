@@ -1,0 +1,85 @@
+# RePlayOS environment container for end-to-end testing.
+#
+# Reproduces the full RePlayOS folder structure, user context (root), and
+# system layout so we can test install.sh, auto-update, storage detection,
+# and settings persistence in a realistic environment.
+#
+# This replaces the previous Containerfile.test which used a minimal
+# bookworm-slim setup. The new container matches the real Pi environment.
+#
+# Build:
+#   podman build -f Containerfile.replayos -t replay-control-replayos .
+#   docker build -f Containerfile.replayos -t replay-control-replayos .
+#
+# Run:
+#   podman run --rm -p 8080:8080 replay-control-replayos
+#
+# Prerequisites:
+#   1. Build the app:  ./build.sh
+#   2. WASM + site:    (build.sh handles this)
+
+FROM debian:trixie
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    iproute2 \
+    procps \
+    coreutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- RePlayOS folder structure ---
+
+# Marker directory — gates is_replayos() checks
+RUN mkdir -p /opt/replay && touch /opt/replay/launcher
+
+# Storage mount points
+RUN mkdir -p /media/usb /media/sd/config
+
+# App install paths (where install.sh places files)
+RUN mkdir -p /usr/local/bin /usr/local/share/replay/site
+
+# Environment config directory
+RUN mkdir -p /etc/default
+
+# Update temp directory
+RUN mkdir -p /var/tmp/replay-control-update
+
+# --- Mock systemctl (replaces real systemd) ---
+COPY tests/container/mock_systemctl.sh /usr/local/bin/systemctl
+RUN chmod +x /usr/local/bin/systemctl
+
+# --- System config ---
+COPY tests/container/fixtures/replay.cfg /media/sd/config/replay.cfg
+
+# --- Environment config ---
+COPY tests/container/fixtures/environment /etc/default/replay-control
+
+# --- Test storage (USB mount equivalent) ---
+# The fixture storage directory is created by the test runner or
+# pre-populated before container build. For now, create the basic structure.
+RUN mkdir -p /media/usb/roms \
+    /media/usb/saves \
+    /media/usb/captures \
+    /media/usb/bios \
+    /media/usb/manuals \
+    /media/usb/_favorites \
+    /media/usb/_recents \
+    /media/usb/.replay-control/media
+
+# --- App binary + site assets ---
+COPY target/release/replay-control-app /usr/local/bin/replay-control-app
+COPY target/site /usr/local/share/replay/site
+
+# --- Environment ---
+ENV RUST_LOG=replay_control_app=info,replay_control_core=info
+
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/api/version || exit 1
+
+EXPOSE 8080
+
+CMD ["/usr/local/bin/replay-control-app", \
+     "--port", "8080", \
+     "--site-root", "/usr/local/share/replay/site", \
+     "--storage-path", "/media/usb"]
