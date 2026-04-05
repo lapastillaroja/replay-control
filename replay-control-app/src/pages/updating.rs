@@ -91,12 +91,6 @@ pub fn UpdatingPage() -> impl IntoView {
                             <p class="update-do-not-navigate">{t(locale, Key::UpdateDoNotNavigate)}</p>
                         }.into_any()
                     }
-                    UpdatingPhase::Installing => {
-                        view! {
-                            <p>{t(locale, Key::UpdateInstalling)}</p>
-                            <p class="update-do-not-navigate">{t(locale, Key::UpdateDoNotNavigate)}</p>
-                        }.into_any()
-                    }
                     UpdatingPhase::Restarting => {
                         let c = countdown.get();
                         let text = if c > 0 {
@@ -116,12 +110,6 @@ pub fn UpdatingPage() -> impl IntoView {
                             <a href="/more" class="form-btn form-btn-secondary">{t(locale, Key::UpdateBackToSettings)}</a>
                         }.into_any()
                     }
-                    UpdatingPhase::Busy => {
-                        view! {
-                            <p>{t(locale, Key::UpdateSystemBusy)}</p>
-                            <a href="/more" class="form-btn form-btn-secondary">{t(locale, Key::UpdateBackToSettings)}</a>
-                        }.into_any()
-                    }
                     UpdatingPhase::NothingToDo => {
                         view! {
                             <p>{t(locale, Key::UpdateUpToDate)}</p>
@@ -138,10 +126,8 @@ pub fn UpdatingPage() -> impl IntoView {
 enum UpdatingPhase {
     Init,
     Downloading,
-    Installing,
     Restarting,
     Failed,
-    Busy,
     NothingToDo,
 }
 
