@@ -161,7 +161,7 @@ replay-control/
 
 ### Embedded Data (build time)
 - **No-Intro DATs** — ROM identification, via [libretro-database](https://github.com/libretro/libretro-database) (MIT)
-- **TheGamesDB** — game metadata, via [TheGamesDB](https://thegamesdb.net/) (GPLv3 codebase)
+- **TheGamesDB** — game metadata (year, genre, developer, publisher, players, coop, rating), via [TheGamesDB](https://thegamesdb.net/) (GPLv3 codebase). Name lookups fetched via API at build time.
 - **MAME / FBNeo** — arcade databases, via [libretro-database](https://github.com/libretro/libretro-database) (MIT/MAME License)
 - **Wikidata** — game series relationships (CC0)
 

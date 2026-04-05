@@ -8,9 +8,9 @@ Source: [libretro-database](https://github.com/libretro/libretro-database)
 License: MIT
 
 ### TheGamesDB
-Game metadata (year, genre, developer, players).
+Game metadata (year, genre, developer, publisher, players, coop, rating).
 Source: [TheGamesDB](https://thegamesdb.net/)
-License: GPLv3 (codebase). Data compiled into PHF maps, not distributed as raw files.
+License: GPLv3 (codebase). Developer/publisher/genre name mappings fetched via API at build time, compiled into PHF maps. Raw API data not redistributed.
 
 ### MAME / FBNeo
 Arcade game databases.

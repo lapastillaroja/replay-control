@@ -381,12 +381,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinWikidataEntries => "件のWikidataシリーズエントリ、",
         Key::MetadataBuiltinWikidataSeries => "シリーズ",
         Key::MetadataBuiltinHint => {
-            "名前、ジャンル、プレイヤー数などのメタデータはアプリに内蔵されています。インポート不要です。"
+            "名前、ジャンル、開発元、発売元、プレイヤー数などのメタデータはアプリに内蔵されています。インポート不要です。"
         }
 
         Key::MetadataAttribution => "出典",
         Key::MetadataAttributionText => {
-            "ゲームの説明・評価はLaunchBox提供。ボックスアート・スクリーンショットはlibretro-thumbnailsから。ゲームシリーズデータはWikidata（CC0）から。データはオフライン利用のためローカルにキャッシュされており、再配布は行っていません。"
+            "ゲームメタデータはTheGamesDB、No-Intro、libretro-databaseから。説明・評価はLaunchBox提供。ボックスアート・スクリーンショットはlibretro-thumbnailsから。シリーズデータはWikidata（CC0）から。データはオフライン利用のためローカルにキャッシュされています。"
         }
 
         // Logs

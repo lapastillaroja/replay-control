@@ -381,12 +381,12 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinWikidataEntries => "Wikidata series entries across",
         Key::MetadataBuiltinWikidataSeries => "series",
         Key::MetadataBuiltinHint => {
-            "Names, genres, player counts, and other metadata compiled into the app. No import needed."
+            "Names, genres, developers, publishers, player counts, and other metadata compiled into the app. No import needed."
         }
 
         Key::MetadataAttribution => "Attribution",
         Key::MetadataAttributionText => {
-            "Game descriptions and ratings provided by LaunchBox. Box art and screenshots from libretro-thumbnails. Game series data from Wikidata (CC0). Data is cached locally for offline use and is not redistributed."
+            "Game metadata from TheGamesDB, No-Intro, and libretro-database. Descriptions and ratings from LaunchBox. Box art and screenshots from libretro-thumbnails. Series data from Wikidata (CC0). Data is cached locally for offline use."
         }
 
         // Logs
