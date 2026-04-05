@@ -64,7 +64,11 @@ pub fn provide_i18n() {
                     .and_then(|d| d.document_element())
                     .and_then(|el| {
                         let lang = el.get_attribute("lang").unwrap_or_default();
-                        if lang.is_empty() { None } else { Some(Locale::from_code(&lang)) }
+                        if lang.is_empty() {
+                            None
+                        } else {
+                            Some(Locale::from_code(&lang))
+                        }
                     })
                     .unwrap_or_default()
             }

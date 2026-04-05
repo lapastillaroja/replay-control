@@ -5,7 +5,7 @@ use leptos_router::hooks::{use_params_map, use_query_map};
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
 use crate::hooks::use_infinite_scroll;
-use crate::i18n::{t, tf, use_i18n, Key};
+use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, DeveloperSystem, PAGE_SIZE, RomListEntry};
 
 /// `/developer/:name` — Game list for a specific developer with system filter chips.

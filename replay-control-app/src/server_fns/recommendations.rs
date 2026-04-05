@@ -222,12 +222,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                                 .map(|s| s.1.clone())
                                 .unwrap_or_else(|| sys.clone());
                             let href = Some(format!("/games/{sys}?min_rating=3.5"));
-                            Some((
-                                games,
-                                "SpotlightBestOf".to_string(),
-                                vec![display],
-                                href,
-                            ))
+                            Some((games, "SpotlightBestOf".to_string(), vec![display], href))
                         }
                     }
                 }
@@ -611,7 +606,10 @@ fn build_discover_pills(
 
     // Another genre (different from the one already picked).
     for genre in top_genres {
-        if pills.iter().any(|p| p.label_args.first().map(|a| a == genre).unwrap_or(false)) {
+        if pills
+            .iter()
+            .any(|p| p.label_args.first().map(|a| a == genre).unwrap_or(false))
+        {
             continue;
         }
         candidates.push((

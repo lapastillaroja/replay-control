@@ -416,7 +416,10 @@ pub fn read_update_channel(storage_root: &Path) -> crate::update::UpdateChannel 
 }
 
 /// Write the update channel to `.replay-control/settings.cfg`.
-pub fn write_update_channel(storage_root: &Path, channel: crate::update::UpdateChannel) -> Result<()> {
+pub fn write_update_channel(
+    storage_root: &Path,
+    channel: crate::update::UpdateChannel,
+) -> Result<()> {
     write_setting(storage_root, "update_channel", channel.as_str())
 }
 

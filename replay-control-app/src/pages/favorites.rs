@@ -6,7 +6,7 @@ use server_fn::ServerFnError;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
-use crate::i18n::{t, tf, use_i18n, Key};
+use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns;
 use crate::server_fns::{FavoriteWithArt, GameSection, OrganizeCriteria};
 

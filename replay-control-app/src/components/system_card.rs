@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
 
-use crate::i18n::{t, tf, use_i18n, Key};
+use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::SystemSummary;
 use crate::util::format_size;
 

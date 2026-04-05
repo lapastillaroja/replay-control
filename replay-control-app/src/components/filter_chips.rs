@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::components::genre_dropdown::GenreDropdown;
-use crate::i18n::{t, use_i18n, Key};
+use crate::i18n::{Key, t, use_i18n};
 
 /// Rating filter dropdown — "Any", "3+", "3.5+", "4+", "4.5+".
 #[component]

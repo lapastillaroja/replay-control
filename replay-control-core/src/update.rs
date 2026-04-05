@@ -45,7 +45,9 @@ pub fn is_newer(current: &str, candidate: &str) -> bool {
 /// Validate that a version/tag string is safe for shell interpolation.
 pub fn validate_version(version: &str) -> bool {
     let v = version.strip_prefix('v').unwrap_or(version);
-    !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    !v.is_empty()
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 /// Release channel for update checks.
@@ -165,9 +167,15 @@ mod tests {
 
     #[test]
     fn update_channel_from_str() {
-        assert_eq!(UpdateChannel::from_str_value("stable"), UpdateChannel::Stable);
+        assert_eq!(
+            UpdateChannel::from_str_value("stable"),
+            UpdateChannel::Stable
+        );
         assert_eq!(UpdateChannel::from_str_value("beta"), UpdateChannel::Beta);
-        assert_eq!(UpdateChannel::from_str_value("invalid"), UpdateChannel::Stable);
+        assert_eq!(
+            UpdateChannel::from_str_value("invalid"),
+            UpdateChannel::Stable
+        );
         assert_eq!(UpdateChannel::from_str_value(""), UpdateChannel::Stable);
     }
 

@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 use crate::components::hero_card::GameScrollCard;
-use crate::i18n::{key_from_str, t, tf, use_i18n, Key};
+use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
 use crate::server_fns::GameSection;
 
 /// A horizontal scroll-card section: title + optional "See all" link + game cards.

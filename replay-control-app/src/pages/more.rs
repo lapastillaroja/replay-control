@@ -3,7 +3,7 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::components::reboot_button::RebootButton;
-use crate::i18n::{t, use_i18n, Key, Locale};
+use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns;
 use crate::util::format_size;
 use replay_control_core::update::UpdateState;
@@ -158,7 +158,8 @@ pub fn MorePage() -> impl IntoView {
 #[component]
 fn UpdatesSection() -> impl IntoView {
     let i18n = use_i18n();
-    let update_state = use_context::<RwSignal<UpdateState>>().unwrap_or_else(|| RwSignal::new(UpdateState::None));
+    let update_state =
+        use_context::<RwSignal<UpdateState>>().unwrap_or_else(|| RwSignal::new(UpdateState::None));
     let channel = Resource::new(|| (), |_| server_fns::get_update_channel());
     let check_error = RwSignal::new(Option::<String>::None);
     let checking = RwSignal::new(false);
@@ -189,7 +190,9 @@ fn UpdatesSection() -> impl IntoView {
     };
 
     let on_check = move |_| {
-        if checking.get_untracked() { return; }
+        if checking.get_untracked() {
+            return;
+        }
         run_check();
     };
 
@@ -213,11 +216,11 @@ fn UpdatesSection() -> impl IntoView {
         }
     };
 
-
     let version_text = move || {
         let locale = i18n.locale.get();
         let tpl = t(locale, Key::UpdateCurrentVersion);
-        tpl.replace("{0}", crate::VERSION).replace("{1}", crate::GIT_HASH)
+        tpl.replace("{0}", crate::VERSION)
+            .replace("{1}", crate::GIT_HASH)
     };
 
     view! {
@@ -483,11 +486,7 @@ fn TextSizeToggle(current: String) -> impl IntoView {
 }
 
 #[component]
-fn MenuItem(
-    icon: &'static str,
-    label_key: Key,
-    href: Option<&'static str>,
-) -> impl IntoView {
+fn MenuItem(icon: &'static str, label_key: Key, href: Option<&'static str>) -> impl IntoView {
     let i18n = use_i18n();
     let content = view! {
         <span class="menu-icon">{icon}</span>

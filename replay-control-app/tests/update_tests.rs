@@ -304,9 +304,9 @@ async fn check_beta_prerelease_not_newer_than_current() {
 async fn mock_github_server_no_stable(
     releases_json: serde_json::Value,
 ) -> (String, tokio::task::JoinHandle<()>) {
+    use axum::Json;
     use axum::http::StatusCode;
     use axum::routing::get;
-    use axum::Json;
 
     let releases = releases_json.clone();
 
@@ -355,9 +355,7 @@ async fn check_stable_no_releases_returns_none() {
 
 #[tokio::test]
 async fn check_beta_with_no_stable_finds_prerelease() {
-    let releases = serde_json::json!([
-        make_release_json("v0.2.0-beta.1", true),
-    ]);
+    let releases = serde_json::json!([make_release_json("v0.2.0-beta.1", true),]);
     let (base_url, handle) = mock_github_server_no_stable(releases).await;
 
     let result = BackgroundManager::check_github_update(

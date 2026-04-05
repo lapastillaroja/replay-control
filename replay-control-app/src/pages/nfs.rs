@@ -3,7 +3,7 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::components::reboot_button::RebootButton;
-use crate::i18n::{t, use_i18n, Key};
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
 #[component]

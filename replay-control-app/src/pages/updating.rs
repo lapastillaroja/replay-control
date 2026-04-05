@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use replay_control_core::update::UpdateState;
 
-use crate::i18n::{t, use_i18n, Key};
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
 /// Full-screen updating page. No nav bar.
@@ -36,17 +36,14 @@ pub fn UpdatingPage() -> impl IntoView {
 
                     // Use replaceState so back button doesn't return here.
                     if let Some(window) = web_sys::window() {
-                        let _ = window
-                            .history()
+                        let _ = window.history().ok().and_then(|h| {
+                            h.replace_state_with_url(
+                                &wasm_bindgen::JsValue::NULL,
+                                "",
+                                Some("/updating"),
+                            )
                             .ok()
-                            .and_then(|h| {
-                                h.replace_state_with_url(
-                                    &wasm_bindgen::JsValue::NULL,
-                                    "",
-                                    Some("/updating"),
-                                )
-                                .ok()
-                            });
+                        });
                     }
 
                     // Dispatch StartUpdate.
@@ -65,8 +62,7 @@ pub fn UpdatingPage() -> impl IntoView {
                                 start_countdown(countdown, phase);
                             }
                             Err(e) => {
-                                error_msg
-                                    .set(Some(server_fns::format_error(e)));
+                                error_msg.set(Some(server_fns::format_error(e)));
                                 phase.set(UpdatingPhase::Failed);
                             }
                         }
@@ -170,10 +166,12 @@ fn start_countdown(countdown: RwSignal<i32>, phase: RwSignal<UpdatingPhase>) {
     });
 
     if let Some(window) = web_sys::window() {
-        let id = window.set_interval_with_callback_and_timeout_and_arguments_0(
-            cb.as_ref().unchecked_ref(),
-            1000,
-        ).unwrap_or(0);
+        let id = window
+            .set_interval_with_callback_and_timeout_and_arguments_0(
+                cb.as_ref().unchecked_ref(),
+                1000,
+            )
+            .unwrap_or(0);
         interval_id.set(id);
     }
     cb.forget();

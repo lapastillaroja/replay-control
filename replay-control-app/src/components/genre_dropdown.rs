@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n, Key};
+use crate::i18n::{Key, t, use_i18n};
 
 /// Genre dropdown filter — shared between ROM list and global search pages.
 #[component]

@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n, Key};
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{self, VideoEntry, VideoRecommendation};
 
 /// Maximum number of embedded videos shown before "Show all".

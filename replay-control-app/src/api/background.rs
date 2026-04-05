@@ -567,9 +567,7 @@ impl BackgroundManager {
                 Self::write_available_update(&available).ok();
                 let _ = state
                     .config_tx
-                    .send(super::ConfigEvent::UpdateAvailable {
-                        update: available,
-                    });
+                    .send(super::ConfigEvent::UpdateAvailable { update: available });
             }
             None => {
                 // No update found — nuke stale state.
@@ -604,11 +602,9 @@ impl BackgroundManager {
         {
             Some(available) => {
                 Self::write_available_update(&available).ok();
-                let _ = state
-                    .config_tx
-                    .send(super::ConfigEvent::UpdateAvailable {
-                        update: available.clone(),
-                    });
+                let _ = state.config_tx.send(super::ConfigEvent::UpdateAvailable {
+                    update: available.clone(),
+                });
                 Ok(Some(available))
             }
             None => Ok(None),
@@ -632,8 +628,7 @@ impl BackgroundManager {
                     .await?
             }
             replay_control_core::update::UpdateChannel::Stable => {
-                Self::fetch_latest_stable(base_url, Self::REPO, github_api_key)
-                    .await?
+                Self::fetch_latest_stable(base_url, Self::REPO, github_api_key).await?
             }
         };
 
@@ -1049,20 +1044,18 @@ exit 1
         tokio::fs::create_dir_all(&update_dir).await?;
 
         // Resolve asset URLs.
-        let assets =
-            Self::resolve_asset_urls(&base_url, tag, github_key.as_deref())
-                .await?;
+        let assets = Self::resolve_asset_urls(&base_url, tag, github_key.as_deref()).await?;
 
         // Use actual sizes from available.json for progress reporting.
         let stored_update = Self::read_available_update();
         let binary_size = stored_update.as_ref().map(|u| u.binary_size).unwrap_or(0);
-        let total_bytes = stored_update.map(|u| u.binary_size + u.site_size).unwrap_or(0);
+        let total_bytes = stored_update
+            .map(|u| u.binary_size + u.site_size)
+            .unwrap_or(0);
 
         // Check disk space (require 2x total for archives + extracted).
         if total_bytes > 0 {
-            let stat = nix::sys::statvfs::statvfs(
-                update_dir.to_str().unwrap_or("/var/tmp"),
-            )?;
+            let stat = nix::sys::statvfs::statvfs(update_dir.to_str().unwrap_or("/var/tmp"))?;
             let available = stat.blocks_available() as u64 * stat.fragment_size() as u64;
             let required = total_bytes * 2;
             if available < required {
@@ -1201,10 +1194,7 @@ exit 1
     }
 
     /// Search for a file by name within an extracted directory tree.
-    async fn find_extracted_file(
-        dir: &std::path::Path,
-        name: &str,
-    ) -> Option<std::path::PathBuf> {
+    async fn find_extracted_file(dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
         // Check direct child first.
         let direct = dir.join(name);
         if direct.exists() {

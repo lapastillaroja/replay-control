@@ -547,8 +547,8 @@ pub async fn get_preferred_languages() -> Result<Vec<String>, ServerFnError> {
 /// Trigger an immediate update check against GitHub API.
 /// Nukes the update dir first, checks, writes available.json if found.
 #[server(prefix = "/sfn")]
-pub async fn check_for_updates(
-) -> Result<Option<replay_control_core::update::AvailableUpdate>, ServerFnError> {
+pub async fn check_for_updates()
+-> Result<Option<replay_control_core::update::AvailableUpdate>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     crate::api::background::BackgroundManager::perform_update_check(&state)
         .await
@@ -560,7 +560,11 @@ pub async fn check_for_updates(
 pub async fn get_update_channel() -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    Ok(replay_control_core::settings::read_update_channel(&storage.root).as_str().to_string())
+    Ok(
+        replay_control_core::settings::read_update_channel(&storage.root)
+            .as_str()
+            .to_string(),
+    )
 }
 
 /// Save the update channel. Nukes the update dir and triggers an immediate re-check.

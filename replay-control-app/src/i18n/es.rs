@@ -255,7 +255,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailFindGameplay => "Buscar gameplay",
         Key::GameDetailFind1cc => "Buscar 1CC",
         Key::GameDetailNoResults => "No se encontraron vídeos",
-        Key::GameDetailSearchError => "Búsqueda de vídeo no disponible. Pega las URLs directamente.",
+        Key::GameDetailSearchError => {
+            "Búsqueda de vídeo no disponible. Pega las URLs directamente."
+        }
         Key::GameDetailPinVideo => "Fijar",
         Key::GameDetailPinned => "Fijado",
         Key::GameDetailShowAllVideos => "Ver todos",
@@ -369,7 +371,9 @@ pub fn translate(key: Key) -> &'static str {
         }
         Key::MetadataClearMetadata => "Borrar metadatos",
         Key::MetadataMetadataCleared => "Metadatos borrados",
-        Key::MetadataConfirmClearMetadata => "¿Eliminar todas las descripciones y valoraciones de juegos?",
+        Key::MetadataConfirmClearMetadata => {
+            "¿Eliminar todas las descripciones y valoraciones de juegos?"
+        }
 
         // Built-in metadata
         Key::MetadataBuiltin => "Datos de juegos integrados",
@@ -485,7 +489,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateReloadingIn => "Recargando en {0} segundos...",
         Key::UpdateWaitingForServer => "Esperando al servidor...",
         Key::UpdateBackToSettings => "Volver a ajustes",
-        Key::UpdateSystemBusy => "El sistema está ocupado. Espera a que termine la operación actual.",
+        Key::UpdateSystemBusy => {
+            "El sistema está ocupado. Espera a que termine la operación actual."
+        }
         Key::UpdatePageTitle => "Actualizando Replay Control",
     }
 }

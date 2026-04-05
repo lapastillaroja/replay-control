@@ -5,7 +5,7 @@ use server_fn::ServerFnError;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::system_card::SystemCard;
-use crate::i18n::{key_from_str, t, tf, use_i18n, Key};
+use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
 use crate::server_fns;
 use crate::util::format_size_short;
 

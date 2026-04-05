@@ -356,12 +356,12 @@ pub fn translate(key: Key) -> &'static str {
         // Data management
         Key::MetadataClearImages => "ダウンロード済み画像を削除",
         Key::MetadataClearedImages => "画像を削除しました",
-        Key::MetadataConfirmClearImages => "ダウンロード済みのボックスアートとスクリーンショットをすべて削除しますか？",
+        Key::MetadataConfirmClearImages => {
+            "ダウンロード済みのボックスアートとスクリーンショットをすべて削除しますか？"
+        }
         Key::MetadataCleanupOrphans => "孤立した画像を削除",
         Key::MetadataCleaningOrphans => "クリーンアップ中...",
-        Key::MetadataConfirmCleanupOrphans => {
-            "存在しないROMの画像とメタデータを削除しますか？"
-        }
+        Key::MetadataConfirmCleanupOrphans => "存在しないROMの画像とメタデータを削除しますか？",
         Key::MetadataClearIndex => "サムネイルインデックスを削除",
         Key::MetadataIndexCleared => "サムネイルインデックスを削除しました",
         Key::MetadataConfirmClearIndex => {

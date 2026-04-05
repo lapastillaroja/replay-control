@@ -6,7 +6,7 @@ use leptos_router::hooks::{query_signal_with_options, use_query_map};
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
 use crate::hooks::{use_debounced, use_infinite_scroll};
-use crate::i18n::{t, tf, use_i18n, Key};
+use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, PAGE_SIZE, RomListEntry};
 
 /// ROM list with built-in search, pagination, and infinite scroll.

@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::i18n::{t, use_i18n, Key};
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{self, Activity};
 
 /// A thin banner shown at the top of the page when any activity is running

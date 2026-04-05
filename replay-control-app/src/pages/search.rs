@@ -5,7 +5,7 @@ use leptos_router::hooks::use_query_map;
 use crate::components::filter_chips::{FilterChips, FilterState};
 use crate::components::game_list_item::GameListItem;
 use crate::hooks::use_debounced;
-use crate::i18n::{t, use_i18n, Key};
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
     self, DeveloperMatch, DeveloperSearchResult, GlobalSearchResults, RomListEntry,
     SystemSearchGroup,

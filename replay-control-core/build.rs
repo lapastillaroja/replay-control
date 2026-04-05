@@ -1735,8 +1735,8 @@ const BUILD_CORPORATE_SUFFIXES: &[&str] = &[
 const BUILD_REGIONAL_QUALIFIERS: &[&str] = &[" America", " Japan", " Europe", " do Brasil"];
 
 const BUILD_DIVISION_SUFFIXES: &[&str] = &[
-    " AM1", " AM2", " AM3", " AM4", " AM5", " CS1", " CS2", " CS3", " R&D 1", " R&D 2",
-    " R&D 3", " R&D 4", " R&D1", " R&D2", " R&D3", " R&D4", " EAD", " SPD",
+    " AM1", " AM2", " AM3", " AM4", " AM5", " CS1", " CS2", " CS3", " R&D 1", " R&D 2", " R&D 3",
+    " R&D 4", " R&D1", " R&D2", " R&D3", " R&D4", " EAD", " SPD",
 ];
 
 fn is_noise_build(s: &str) -> bool {
@@ -1973,9 +1973,7 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
             })
             .unwrap_or_default();
 
-        let coop: Option<bool> = game["coop"]
-            .as_str()
-            .map(|s| s.eq_ignore_ascii_case("yes"));
+        let coop: Option<bool> = game["coop"].as_str().map(|s| s.eq_ignore_ascii_case("yes"));
 
         let rating: String = game["rating"].as_str().unwrap_or("").to_string();
 

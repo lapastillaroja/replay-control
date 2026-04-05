@@ -198,10 +198,9 @@ impl Activity {
                 progress.phase,
                 RebuildPhase::Complete | RebuildPhase::Failed
             ),
-            Self::Update { progress } => matches!(
-                progress.phase,
-                UpdatePhase::Complete | UpdatePhase::Failed
-            ),
+            Self::Update { progress } => {
+                matches!(progress.phase, UpdatePhase::Complete | UpdatePhase::Failed)
+            }
             _ => false,
         }
     }
