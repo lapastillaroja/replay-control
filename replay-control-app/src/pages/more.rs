@@ -6,6 +6,7 @@ use crate::components::reboot_button::RebootButton;
 use crate::i18n::{t, use_i18n, Key, Locale};
 use crate::server_fns;
 use crate::util::format_size;
+use replay_control_core::update::UpdateState;
 
 #[component]
 pub fn MorePage() -> impl IntoView {
@@ -116,6 +117,9 @@ pub fn MorePage() -> impl IntoView {
                 </div>
             </section>
 
+            // ── Updates section ──────────────────────────────────
+            <UpdatesSection />
+
             // ── System Info section ──────────────────────────────
             <section class="more-section">
                 <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionSystemInfo)}</h3>
@@ -147,10 +151,145 @@ pub fn MorePage() -> impl IntoView {
                 </div>
             </section>
 
-            <div class="more-version">
-                {format!("v{} ({})", crate::VERSION, crate::GIT_HASH)}
-            </div>
         </div>
+    }
+}
+
+#[component]
+fn UpdatesSection() -> impl IntoView {
+    let i18n = use_i18n();
+    let update_state = use_context::<RwSignal<UpdateState>>().unwrap_or_else(|| RwSignal::new(UpdateState::None));
+    let channel = Resource::new(|| (), |_| server_fns::get_update_channel());
+    let check_error = RwSignal::new(Option::<String>::None);
+    let checking = RwSignal::new(false);
+    let up_to_date = RwSignal::new(false);
+
+    // Shared check logic — called by both manual check and channel switch.
+    let run_check = move || {
+        checking.set(true);
+        check_error.set(None);
+        up_to_date.set(false);
+        leptos::task::spawn_local(async move {
+            match server_fns::check_for_updates().await {
+                Ok(Some(available)) => {
+                    update_state.set(UpdateState::Available(available));
+                }
+                Ok(None) => {
+                    if matches!(update_state.get_untracked(), UpdateState::Available(_)) {
+                        update_state.set(UpdateState::None);
+                    }
+                    up_to_date.set(true);
+                }
+                Err(e) => {
+                    check_error.set(Some(server_fns::format_error(e)));
+                }
+            }
+            checking.set(false);
+        });
+    };
+
+    let on_check = move |_| {
+        if checking.get_untracked() { return; }
+        run_check();
+    };
+
+    let on_channel_change = move |ev: leptos::ev::Event| {
+        let value = leptos::prelude::event_target_value(&ev);
+        leptos::task::spawn_local(async move {
+            if server_fns::save_update_channel(value).await.is_ok() {
+                run_check();
+            }
+        });
+    };
+
+    let on_skip = move |_| {
+        let state = update_state.get_untracked();
+        if let UpdateState::Available(ref available) = state {
+            let tag = available.tag.clone();
+            leptos::task::spawn_local(async move {
+                let _ = server_fns::skip_version(tag).await;
+                update_state.set(UpdateState::None);
+            });
+        }
+    };
+
+
+    let version_text = move || {
+        let locale = i18n.locale.get();
+        let tpl = t(locale, Key::UpdateCurrentVersion);
+        tpl.replace("{0}", crate::VERSION).replace("{1}", crate::GIT_HASH)
+    };
+
+    view! {
+        <section class="more-section">
+            <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionUpdates)}</h3>
+
+            <div class="more-section-body">
+                // Update banner
+                {move || {
+                    let state = update_state.get();
+                    if let UpdateState::Available(ref available) = state {
+                        let locale = i18n.locale.get();
+                        let banner_text = t(locale, Key::UpdateAvailable).replace("{0}", &available.version);
+                        let release_url = available.release_notes_url.clone();
+                        Some(view! {
+                            <div class="update-banner">
+                                <div class="update-banner-title">{banner_text}</div>
+                                <div class="update-actions">
+                                    <A href="/updating" attr:class="form-btn">
+                                        {move || t(i18n.locale.get(), Key::UpdateNow)}
+                                    </A>
+                                    <a href=release_url target="_blank" rel="noopener" class="form-btn form-btn-secondary">
+                                        {move || t(i18n.locale.get(), Key::UpdateViewRelease)}
+                                    </a>
+                                </div>
+                                <button class="update-skip-link" on:click=on_skip>
+                                    {move || t(i18n.locale.get(), Key::UpdateSkip)}
+                                </button>
+                            </div>
+                        })
+                    } else {
+                        None
+                    }
+                }}
+
+                // Current version
+                <div class="update-version">{version_text}</div>
+
+                // Controls row: channel + check button
+                <div class="update-controls-row">
+                    <select
+                        class="form-input"
+                        on:change=on_channel_change
+                        prop:value=move || channel.get().map(|r| r.unwrap_or_else(|_| "stable".to_string())).unwrap_or_else(|| "stable".to_string())
+                    >
+                        <option value="stable">{move || t(i18n.locale.get(), Key::UpdateChannelStable)}</option>
+                        <option value="beta">{move || t(i18n.locale.get(), Key::UpdateChannelBeta)}</option>
+                    </select>
+                    <button
+                        class="form-btn form-btn-secondary"
+                        on:click=on_check
+                        disabled=move || checking.get()
+                    >
+                        {move || {
+                            if checking.get() {
+                                t(i18n.locale.get(), Key::UpdateChecking).to_string()
+                            } else {
+                                t(i18n.locale.get(), Key::UpdateCheckButton).to_string()
+                            }
+                        }}
+                    </button>
+                </div>
+
+                // Status messages
+                <Show when=move || up_to_date.get()>
+                    <div class="status-msg status-ok">{move || t(i18n.locale.get(), Key::UpdateUpToDate)}</div>
+                </Show>
+                {move || check_error.get().map(|msg| view! {
+                    <div class="status-msg status-err">{msg}</div>
+                })}
+            </div>
+        </section>
     }
 }
 

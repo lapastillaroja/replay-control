@@ -1,5 +1,5 @@
 pub mod activity;
-pub(crate) mod background;
+pub mod background;
 pub(crate) mod core_api;
 pub mod favorites;
 pub mod import;
@@ -513,6 +513,9 @@ pub enum ConfigEvent {
     },
     StorageChanged {
         storage_kind: String,
+    },
+    UpdateAvailable {
+        update: replay_control_core::update::AvailableUpdate,
     },
 }
 

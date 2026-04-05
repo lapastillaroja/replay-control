@@ -12,6 +12,7 @@ pub mod nfs;
 pub mod password;
 pub mod search;
 pub mod skin;
+pub mod updating;
 pub mod wifi;
 
 // Re-export shared error display component.

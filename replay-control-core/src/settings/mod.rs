@@ -404,6 +404,35 @@ pub fn write_github_api_key(storage_root: &Path, key: &str) -> Result<()> {
     Ok(())
 }
 
+/// Read the update channel from `.replay-control/settings.cfg`.
+pub fn read_update_channel(storage_root: &Path) -> crate::update::UpdateChannel {
+    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+    let config = match ReplayConfig::from_file(&path) {
+        Ok(c) => c,
+        Err(_) => return crate::update::UpdateChannel::default(),
+    };
+    let value = config.get("update_channel").unwrap_or("stable");
+    crate::update::UpdateChannel::from_str_value(value)
+}
+
+/// Write the update channel to `.replay-control/settings.cfg`.
+pub fn write_update_channel(storage_root: &Path, channel: crate::update::UpdateChannel) -> Result<()> {
+    write_setting(storage_root, "update_channel", channel.as_str())
+}
+
+/// Read the skipped version from `.replay-control/settings.cfg`.
+pub fn read_skipped_version(storage_root: &Path) -> Option<String> {
+    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+    let config = ReplayConfig::from_file(&path).ok()?;
+    let value = config.get("skipped_version").unwrap_or("").to_string();
+    if value.is_empty() { None } else { Some(value) }
+}
+
+/// Write the skipped version to `.replay-control/settings.cfg`.
+pub fn write_skipped_version(storage_root: &Path, version: &str) -> Result<()> {
+    write_setting(storage_root, "skipped_version", version)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,5 +727,53 @@ mod tests {
             language_match_score("en-gb,de,es,fi,fr,it,nl,sv", &prefs),
             0
         );
+    }
+
+    // --- Update channel tests ---
+
+    #[test]
+    fn update_channel_default_stable() {
+        let tmp = tempdir();
+        assert_eq!(
+            read_update_channel(&tmp),
+            crate::update::UpdateChannel::Stable
+        );
+    }
+
+    #[test]
+    fn write_and_read_update_channel_beta() {
+        let tmp = tempdir();
+        write_update_channel(&tmp, crate::update::UpdateChannel::Beta).unwrap();
+        assert_eq!(
+            read_update_channel(&tmp),
+            crate::update::UpdateChannel::Beta
+        );
+    }
+
+    #[test]
+    fn update_channel_preserves_other_keys() {
+        let tmp = tempdir();
+        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
+        write_update_channel(&tmp, crate::update::UpdateChannel::Beta).unwrap();
+        assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
+        assert_eq!(
+            read_update_channel(&tmp),
+            crate::update::UpdateChannel::Beta
+        );
+    }
+
+    // --- Skipped version tests ---
+
+    #[test]
+    fn skipped_version_default_none() {
+        let tmp = tempdir();
+        assert!(read_skipped_version(&tmp).is_none());
+    }
+
+    #[test]
+    fn write_and_read_skipped_version() {
+        let tmp = tempdir();
+        write_skipped_version(&tmp, "0.3.0").unwrap();
+        assert_eq!(read_skipped_version(&tmp), Some("0.3.0".to_string()));
     }
 }

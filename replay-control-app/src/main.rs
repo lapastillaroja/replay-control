@@ -104,11 +104,15 @@ mod ssr {
             } else {
                 "none".to_string()
             };
+            let available_update = api::background::BackgroundManager::read_available_update();
+            let version = replay_control_app::VERSION;
             yield Ok::<_, Infallible>(Event::default().data(serde_json::json!({
                 "type": "init",
                 "skin_index": skin,
                 "skin_css": skin_css,
                 "storage_kind": storage_kind,
+                "available_update": available_update,
+                "version": version,
             }).to_string()));
 
             // Then wait for broadcast events (no polling).
@@ -537,6 +541,11 @@ mod ssr {
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLocale>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveLocale>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::CheckForUpdates>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetUpdateChannel>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveUpdateChannel>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SkipVersion>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::StartUpdate>();
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
             .site_root(cli.site_root.clone())

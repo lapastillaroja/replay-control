@@ -24,6 +24,7 @@ pub use library::roms;
 
 pub mod settings;
 pub use settings::skins;
+pub mod update;
 
 mod capture;
 pub use capture::screenshots;

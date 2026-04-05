@@ -41,6 +41,12 @@ rand = { version = "0.10", optional = true }
 deadpool-sqlite = { version = "0.13", features = ["rt_tokio_1"], optional = true }
 deadpool = { version = "0.13", optional = true }
 deadpool-sync = { version = "0.2", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"], optional = true }
+semver = { version = "1", optional = true }
+flate2 = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
+libc = { version = "0.2", optional = true }
+nix = { version = "0.29", features = ["fs"], optional = true }
 # Hydrate-only (optional, activated by `hydrate` feature)
 web-sys = { version = "0.3", features = [
     "HtmlInputElement",
@@ -91,6 +97,12 @@ ssr = [
     "dep:deadpool",
     "dep:deadpool-sync",
     "dep:tikv-jemallocator",
+    "dep:reqwest",
+    "dep:semver",
+    "dep:flate2",
+    "dep:tar",
+    "dep:libc",
+    "dep:nix",
 ]
 
 [dev-dependencies]

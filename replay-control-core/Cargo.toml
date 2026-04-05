@@ -20,6 +20,7 @@ tracing = { workspace = true }
 rusqlite = { version = "0.38", features = ["bundled"], optional = true }
 quick-xml = { version = "0.39", optional = true }
 crc32fast = "1"
+semver = "1"
 
 [[bin]]
 name = "metadata_report"

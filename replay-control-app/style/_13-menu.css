@@ -138,3 +138,96 @@
     opacity: 0.6;
     padding: 24px 0 8px;
 }
+
+/* ── Update section ──────────────────────────────────────── */
+
+.update-banner {
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.update-banner-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 12px;
+}
+
+.update-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+
+.update-actions .form-btn {
+    width: auto;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.update-skip-link {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+}
+
+.update-skip-link:hover {
+    color: var(--text-primary);
+}
+
+.update-version {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.update-controls-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.update-controls-row .form-input {
+    min-width: 120px;
+    width: auto;
+    flex-shrink: 0;
+}
+
+.update-controls-row .form-btn {
+    width: auto;
+    flex-shrink: 0;
+}
+
+/* ── /updating page ──────────────────────────────────────── */
+
+.updating-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 24px;
+    text-align: center;
+    gap: 8px;
+}
+
+.updating-page h1 {
+    font-size: 1.3rem;
+    margin-bottom: 12px;
+}
+
+.update-do-not-navigate {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}

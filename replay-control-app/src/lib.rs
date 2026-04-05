@@ -36,6 +36,7 @@ use pages::logs::LogsPage;
 use pages::metadata::MetadataPage;
 use pages::more::MorePage;
 use pages::nfs::NfsPage;
+use pages::updating::UpdatingPage;
 use pages::password::PasswordPage;
 use pages::search::SearchPage;
 use pages::skin::SkinPage;
@@ -96,6 +97,9 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
 pub fn App() -> impl IntoView {
     provide_i18n();
 
+    let update_state = RwSignal::new(replay_control_core::update::UpdateState::None);
+    provide_context(update_state);
+
     view! {
         <Router>
             <SseConfigListener />
@@ -136,6 +140,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/more/skin") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SkinPage /></ErrorBoundary> } />
                         <Route path=path!("/more/logs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><LogsPage /></ErrorBoundary> } />
                         <Route path=path!("/more/github") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GithubPage /></ErrorBoundary> } />
+                        <Route path=path!("/updating") view=|| view! { <UpdatingPage /> } />
                     </Routes>
                 </main>
 
@@ -167,6 +172,9 @@ fn SseConfigListener() -> impl IntoView {
         let last_skin = RwSignal::new(u32::MAX);
         // Track the last storage kind to detect real transitions.
         let last_storage_kind = RwSignal::new(String::new());
+
+        // Capture update_state signal before closures.
+        let update_state_signal = use_context::<RwSignal<replay_control_core::update::UpdateState>>();
 
         Effect::new(move || {
             let es = match web_sys::EventSource::new("/sse/config") {
@@ -200,6 +208,26 @@ fn SseConfigListener() -> impl IntoView {
                             if let Some(kind) = payload.get("storage_kind").and_then(|v| v.as_str())
                             {
                                 last_storage_kind.set(kind.to_string());
+                            }
+                            // Set available update from init payload.
+                            if let Some(signal) = update_state_signal {
+                                if let Some(update_val) = payload.get("available_update") {
+                                    if let Ok(available) = serde_json::from_value::<replay_control_core::update::AvailableUpdate>(update_val.clone()) {
+                                        // Don't overwrite Restarting state.
+                                        let current = signal.get_untracked();
+                                        if !matches!(current, replay_control_core::update::UpdateState::Restarting { .. }) {
+                                            signal.set(replay_control_core::update::UpdateState::Available(available));
+                                        }
+                                    }
+                                }
+                            }
+                            // Version-based reload for stale tabs.
+                            if let Some(server_version) = payload.get("version").and_then(|v| v.as_str()) {
+                                if server_version != crate::VERSION {
+                                    if let Some(window) = web_sys::window() {
+                                        let _ = window.location().reload();
+                                    }
+                                }
                             }
                         }
                         "SkinChanged" => {
@@ -252,6 +280,18 @@ fn SseConfigListener() -> impl IntoView {
                                     }
                                 }
                                 last_storage_kind.set(new_kind.to_string());
+                            }
+                        }
+                        "UpdateAvailable" => {
+                            if let Some(signal) = update_state_signal {
+                                if let Some(update_val) = payload.get("update") {
+                                    if let Ok(available) = serde_json::from_value::<replay_control_core::update::AvailableUpdate>(update_val.clone()) {
+                                        let current = signal.get_untracked();
+                                        if !matches!(current, replay_control_core::update::UpdateState::Restarting { .. }) {
+                                            signal.set(replay_control_core::update::UpdateState::Available(available));
+                                        }
+                                    }
+                                }
                             }
                         }
                         _ => {}

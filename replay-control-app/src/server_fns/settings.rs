@@ -543,3 +543,61 @@ pub async fn get_preferred_languages() -> Result<Vec<String>, ServerFnError> {
         region,
     ))
 }
+
+/// Trigger an immediate update check against GitHub API.
+/// Nukes the update dir first, checks, writes available.json if found.
+#[server(prefix = "/sfn")]
+pub async fn check_for_updates(
+) -> Result<Option<replay_control_core::update::AvailableUpdate>, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    crate::api::background::BackgroundManager::perform_update_check(&state)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Update check failed: {e}")))
+}
+
+/// Read the current update channel from settings.cfg.
+#[server(prefix = "/sfn")]
+pub async fn get_update_channel() -> Result<String, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    Ok(replay_control_core::settings::read_update_channel(&storage.root).as_str().to_string())
+}
+
+/// Save the update channel. Nukes the update dir and triggers an immediate re-check.
+#[server(prefix = "/sfn")]
+pub async fn save_update_channel(channel: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let channel_val = replay_control_core::update::UpdateChannel::from_str_value(&channel);
+    replay_control_core::settings::write_update_channel(&storage.root, channel_val)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    // Nuke stale update state and trigger re-check with new channel.
+    crate::api::background::BackgroundManager::nuke_update_dir();
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        match crate::api::background::BackgroundManager::perform_update_check(&state_clone).await {
+            Ok(_) => {}
+            Err(e) => tracing::debug!("Re-check after channel switch failed: {e}"),
+        }
+    });
+    Ok(())
+}
+
+/// Mark a version as skipped in settings.cfg.
+#[server(prefix = "/sfn")]
+pub async fn skip_version(version: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    replay_control_core::settings::write_skipped_version(&storage.root, &version)
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+/// Start the download + install process for a specific release tag.
+/// Returns Ok after spawning the helper script (server will restart shortly).
+#[server(prefix = "/sfn")]
+pub async fn start_update(tag: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    crate::api::background::BackgroundManager::start_update(&state, &tag)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Update failed: {e}")))
+}

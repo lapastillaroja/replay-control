@@ -180,6 +180,7 @@ pub enum Activity {
     ThumbnailUpdate { progress: ThumbnailProgress },
     Rebuild { progress: RebuildProgress },
     Maintenance { kind: MaintenanceKind },
+    Update { progress: UpdateProgress },
 }
 
 impl Activity {
@@ -196,6 +197,10 @@ impl Activity {
             Self::Rebuild { progress } => matches!(
                 progress.phase,
                 RebuildPhase::Complete | RebuildPhase::Failed
+            ),
+            Self::Update { progress } => matches!(
+                progress.phase,
+                UpdatePhase::Complete | UpdatePhase::Failed
             ),
             _ => false,
         }
@@ -234,6 +239,14 @@ impl Activity {
                 RebuildPhase::Complete => format!("Rebuild complete ({}s)", progress.elapsed_secs,),
                 RebuildPhase::Failed => format!(
                     "Rebuild failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
+            Self::Update { progress } => match progress.phase {
+                UpdatePhase::Complete => format!("Update complete ({}s)", progress.elapsed_secs),
+                UpdatePhase::Failed => format!(
+                    "Update failed: {}",
                     progress.error.as_deref().unwrap_or("unknown error"),
                 ),
                 _ => String::new(),
@@ -292,6 +305,25 @@ pub struct RebuildProgress {
     pub current_system: String,
     pub systems_done: usize,
     pub systems_total: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UpdatePhase {
+    Downloading,
+    Installing,
+    Restarting,
+    Complete,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateProgress {
+    pub phase: UpdatePhase,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub phase_detail: String,
     pub elapsed_secs: u64,
     pub error: Option<String>,
 }

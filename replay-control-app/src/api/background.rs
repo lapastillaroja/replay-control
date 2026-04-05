@@ -9,6 +9,13 @@ use super::library::dir_mtime;
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
 
+/// Download URLs for a specific release, resolved fresh from GitHub API.
+#[derive(Debug)]
+pub struct AssetUrls {
+    pub binary_url: String,
+    pub site_url: String,
+}
+
 /// Orchestrates the ordered background startup pipeline and long-running watchers.
 ///
 /// Pipeline phases (sequential, async):
@@ -22,6 +29,9 @@ pub struct BackgroundManager;
 impl BackgroundManager {
     /// Start the ordered background pipeline.
     pub fn start(state: AppState) {
+        // Clean up stale update temp files from a previous run.
+        Self::nuke_update_dir();
+
         // Spawn the ordered pipeline as an async task.
         let pipeline_state = state.clone();
         tokio::spawn(async move {
@@ -31,6 +41,12 @@ impl BackgroundManager {
         // Start watchers immediately (they're independent of the pipeline).
         state.clone().spawn_storage_watcher();
         state.spawn_rom_watcher();
+
+        // Spawn update checker (independent of pipeline, no activity lock needed).
+        let update_state = state.clone();
+        tokio::spawn(async move {
+            Self::update_check_loop(update_state).await;
+        });
     }
 
     /// Run the ordered startup pipeline (async).
@@ -453,6 +469,775 @@ impl BackgroundManager {
             with_games.len(),
             start.elapsed().as_secs_f64()
         );
+    }
+    // ── Update system ─────────────────────────────────────────────────
+
+    /// GitHub repository for release checks and downloads.
+    const REPO: &'static str = "lapastillaroja/replay-control";
+    /// Maximum time for the entire StartUpdate operation (5 minutes).
+    const UPDATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+    /// GitHub API base URL. Overridable via `REPLAY_GITHUB_API_URL` for testing.
+    pub fn github_api_base_url() -> String {
+        std::env::var("REPLAY_GITHUB_API_URL")
+            .unwrap_or_else(|_| "https://api.github.com".to_string())
+    }
+
+    /// Nuke the update temp directory (idempotent).
+    pub fn nuke_update_dir() {
+        use replay_control_core::update::{UPDATE_DIR, UPDATE_SCRIPT};
+        let dir = std::path::Path::new(UPDATE_DIR);
+        if dir.exists() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        let script = std::path::Path::new(UPDATE_SCRIPT);
+        if script.exists() {
+            let _ = std::fs::remove_file(script);
+        }
+    }
+
+    /// Read `available.json` from the update temp directory.
+    pub fn read_available_update() -> Option<replay_control_core::update::AvailableUpdate> {
+        let path =
+            std::path::Path::new(replay_control_core::update::UPDATE_DIR).join("available.json");
+        let data = std::fs::read_to_string(&path).ok()?;
+        serde_json::from_str(&data).ok()
+    }
+
+    /// Write `available.json` to the update temp directory.
+    fn write_available_update(
+        update: &replay_control_core::update::AvailableUpdate,
+    ) -> std::io::Result<()> {
+        let dir = std::path::Path::new(replay_control_core::update::UPDATE_DIR);
+        std::fs::create_dir_all(dir)?;
+        let path = dir.join("available.json");
+        let json = serde_json::to_string(update).map_err(std::io::Error::other)?;
+        std::fs::write(path, json)
+    }
+
+    /// Periodically checks GitHub for new releases.
+    async fn update_check_loop(state: AppState) {
+        // Delay first check to let WiFi come up on Pi.
+        tokio::time::sleep(Duration::from_secs(60)).await;
+
+        loop {
+            if state.has_storage() {
+                match Self::perform_update_check_background(&state).await {
+                    Ok(_) => {}
+                    Err(e) => tracing::debug!("Background update check failed: {e}"),
+                }
+            }
+
+            tokio::time::sleep(Duration::from_secs(24 * 60 * 60)).await;
+        }
+    }
+
+    /// Background check variant: does NOT nuke before checking (preserves existing
+    /// available.json on error). On success: nuke then write. On no-update: nuke.
+    async fn perform_update_check_background(
+        state: &AppState,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let storage = state.storage();
+        let channel = replay_control_core::settings::read_update_channel(&storage.root);
+        let skipped = replay_control_core::settings::read_skipped_version(&storage.root);
+        let github_key = replay_control_core::settings::read_github_api_key(&storage.root);
+
+        match Self::check_github_update(
+            crate::VERSION,
+            &Self::github_api_base_url(),
+            &channel,
+            skipped.as_deref(),
+            github_key.as_deref(),
+        )
+        .await?
+        {
+            Some(available) => {
+                // Race guard: verify channel still matches before writing.
+                let current_channel =
+                    replay_control_core::settings::read_update_channel(&storage.root);
+                if current_channel != channel {
+                    tracing::debug!(
+                        "Update channel changed during check ({} -> {}), discarding result",
+                        channel.as_str(),
+                        current_channel.as_str()
+                    );
+                    return Ok(());
+                }
+                Self::nuke_update_dir();
+                Self::write_available_update(&available).ok();
+                let _ = state
+                    .config_tx
+                    .send(super::ConfigEvent::UpdateAvailable {
+                        update: available,
+                    });
+            }
+            None => {
+                // No update found — nuke stale state.
+                Self::nuke_update_dir();
+            }
+        }
+        Ok(())
+    }
+
+    /// Manual check: nukes first, checks, writes if found, broadcasts SSE.
+    pub async fn perform_update_check(
+        state: &AppState,
+    ) -> Result<
+        Option<replay_control_core::update::AvailableUpdate>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        Self::nuke_update_dir();
+
+        let storage = state.storage();
+        let channel = replay_control_core::settings::read_update_channel(&storage.root);
+        let skipped = replay_control_core::settings::read_skipped_version(&storage.root);
+        let github_key = replay_control_core::settings::read_github_api_key(&storage.root);
+
+        match Self::check_github_update(
+            crate::VERSION,
+            &Self::github_api_base_url(),
+            &channel,
+            skipped.as_deref(),
+            github_key.as_deref(),
+        )
+        .await?
+        {
+            Some(available) => {
+                Self::write_available_update(&available).ok();
+                let _ = state
+                    .config_tx
+                    .send(super::ConfigEvent::UpdateAvailable {
+                        update: available.clone(),
+                    });
+                Ok(Some(available))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Check GitHub for a newer release than the running version.
+    pub async fn check_github_update(
+        current_version: &str,
+        base_url: &str,
+        channel: &replay_control_core::update::UpdateChannel,
+        skipped_version: Option<&str>,
+        github_api_key: Option<&str>,
+    ) -> Result<
+        Option<replay_control_core::update::AvailableUpdate>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        let release = match channel {
+            replay_control_core::update::UpdateChannel::Beta => {
+                Self::fetch_latest_beta(current_version, base_url, Self::REPO, github_api_key)
+                    .await?
+            }
+            replay_control_core::update::UpdateChannel::Stable => {
+                Self::fetch_latest_stable(base_url, Self::REPO, github_api_key)
+                    .await?
+            }
+        };
+
+        let Some(release) = release else {
+            return Ok(None);
+        };
+
+        if !replay_control_core::update::is_newer(current_version, &release.version) {
+            return Ok(None);
+        }
+
+        if let Some(skipped) = skipped_version {
+            if release.version == skipped {
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(release))
+    }
+
+    /// Fetch the latest stable release via /releases/latest.
+    /// Returns Ok(None) if no stable release exists (GitHub returns 404).
+    async fn fetch_latest_stable(
+        base_url: &str,
+        repo: &str,
+        api_key: Option<&str>,
+    ) -> Result<
+        Option<replay_control_core::update::AvailableUpdate>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        let url = format!("{base_url}/repos/{repo}/releases/latest");
+        match Self::github_get(&url, api_key).await {
+            Ok(json) => Ok(Self::parse_release(&json)),
+            Err(e) => {
+                // 404 means no stable release exists — not an error.
+                if e.to_string().contains("404") {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    /// Fetch the latest beta by querying /releases and picking newest by semver.
+    async fn fetch_latest_beta(
+        current_version: &str,
+        base_url: &str,
+        repo: &str,
+        api_key: Option<&str>,
+    ) -> Result<
+        Option<replay_control_core::update::AvailableUpdate>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        let url = format!("{base_url}/repos/{repo}/releases?per_page=10");
+        let json = Self::github_get(&url, api_key).await?;
+
+        let empty = vec![];
+        let releases = json.as_array().unwrap_or(&empty);
+
+        let mut best: Option<replay_control_core::update::AvailableUpdate> = None;
+        for release in releases {
+            if let Some(parsed) = Self::parse_release(release) {
+                if replay_control_core::update::is_newer(current_version, &parsed.version)
+                    && best.as_ref().map_or(true, |b| {
+                        replay_control_core::update::is_newer(&b.version, &parsed.version)
+                    })
+                {
+                    best = Some(parsed);
+                }
+            }
+        }
+        Ok(best)
+    }
+
+    /// Parse a GitHub release JSON object into an AvailableUpdate.
+    pub fn parse_release(
+        json: &serde_json::Value,
+    ) -> Option<replay_control_core::update::AvailableUpdate> {
+        let tag = json.get("tag_name")?.as_str()?;
+        let version = tag.strip_prefix('v').unwrap_or(tag);
+
+        if semver::Version::parse(version).is_err() {
+            return None;
+        }
+
+        let prerelease = json
+            .get("prerelease")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let html_url = json
+            .get("html_url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let published_at = json
+            .get("published_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let assets = json.get("assets").and_then(|v| v.as_array());
+        let mut binary_size = 0u64;
+        let mut site_size = 0u64;
+        if let Some(assets) = assets {
+            for asset in assets {
+                let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let size = asset.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+                if name.contains("replay-control-app") {
+                    binary_size = size;
+                } else if name.contains("site") {
+                    site_size = size;
+                }
+            }
+        }
+
+        Some(replay_control_core::update::AvailableUpdate {
+            version: version.to_string(),
+            tag: tag.to_string(),
+            prerelease,
+            release_notes_url: html_url,
+            published_at,
+            binary_size,
+            site_size,
+        })
+    }
+
+    /// Shared HTTP client for all GitHub API and download requests.
+    /// Uses a 10s default timeout; callers can override per-request.
+    fn http_client() -> &'static reqwest::Client {
+        use std::sync::OnceLock;
+        static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+        CLIENT.get_or_init(|| {
+            reqwest::Client::builder()
+                .user_agent(format!("replay-control/{}", crate::VERSION))
+                .timeout(Duration::from_secs(10))
+                .build()
+                .expect("Failed to create HTTP client")
+        })
+    }
+
+    /// HTTP GET with optional Authorization for the GitHub API.
+    pub async fn github_get(
+        url: &str,
+        api_key: Option<&str>,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        let mut req = Self::http_client()
+            .get(url)
+            .header("Accept", "application/vnd.github+json");
+
+        if let Some(key) = api_key {
+            req = req.header("Authorization", format!("Bearer {key}"));
+        }
+
+        let resp = req.send().await?.error_for_status()?;
+        Ok(resp.json().await?)
+    }
+
+    /// Resolve fresh download URLs for a given release tag.
+    pub async fn resolve_asset_urls(
+        base_url: &str,
+        tag: &str,
+        api_key: Option<&str>,
+    ) -> Result<AssetUrls, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{base_url}/repos/{}/releases/tags/{tag}", Self::REPO);
+        let release = Self::github_get(&url, api_key).await?;
+
+        let assets = release
+            .get("assets")
+            .and_then(|v| v.as_array())
+            .ok_or("No assets found in release")?;
+
+        let mut binary_url = None;
+        let mut site_url = None;
+
+        for asset in assets {
+            let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let download_url = asset.get("browser_download_url").and_then(|v| v.as_str());
+            if let Some(url) = download_url {
+                if name.contains("replay-control-app") && name.ends_with(".tar.gz") {
+                    binary_url = Some(url.to_string());
+                } else if name.contains("site") && name.ends_with(".tar.gz") {
+                    site_url = Some(url.to_string());
+                }
+            }
+        }
+
+        Ok(AssetUrls {
+            binary_url: binary_url.ok_or("Binary asset not found in release")?,
+            site_url: site_url.ok_or("Site asset not found in release")?,
+        })
+    }
+
+    /// Download a file from a URL to a local path, reporting progress via callback.
+    /// Progress callback is throttled to at most once per 250ms.
+    pub async fn download_asset(
+        url: &str,
+        dest: &std::path::Path,
+        progress_cb: &(dyn Fn(u64) + Send + Sync),
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        use tokio::io::AsyncWriteExt;
+        use tokio_stream::StreamExt;
+
+        let resp = Self::http_client()
+            .get(url)
+            .timeout(Duration::from_secs(300))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let mut file = tokio::fs::File::create(dest).await?;
+        let mut stream = resp.bytes_stream();
+        let mut downloaded = 0u64;
+        let mut last_report = std::time::Instant::now();
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            file.write_all(&chunk).await?;
+            downloaded += chunk.len() as u64;
+
+            if last_report.elapsed() >= std::time::Duration::from_millis(250) {
+                progress_cb(downloaded);
+                last_report = std::time::Instant::now();
+            }
+        }
+
+        progress_cb(downloaded);
+        file.flush().await?;
+        Ok(downloaded)
+    }
+
+    /// Generate the helper shell script that performs the actual file swap + restart.
+    pub fn generate_update_script(
+        binary_path: &std::path::Path,
+        site_path: &std::path::Path,
+        version: &str,
+    ) -> String {
+        format!(
+            r#"#!/bin/bash
+
+# Auto-generated by replay-control {version}
+# Performs file swap, restart, health check, and rollback on failure.
+
+validate_version() {{
+    local v="$1"
+    if ! echo "$v" | grep -qE '^[0-9a-zA-Z._-]+$'; then
+        echo "Invalid version string: $v"
+        exit 1
+    fi
+}}
+
+validate_version "{version}"
+
+# Source environment for PORT variable
+if [ -f /etc/default/replay-control ]; then
+    . /etc/default/replay-control
+fi
+PORT="${{PORT:-8080}}"
+
+BINARY_SRC="{binary_src}"
+SITE_SRC="{site_src}"
+BINARY_DST="/usr/local/bin/replay-control-app"
+SITE_DST="/usr/local/share/replay/site"
+
+# Wait for the HTTP response to reach the client
+sleep 2
+
+# Back up current files
+cp "$BINARY_DST" "${{BINARY_DST}}.bak" 2>/dev/null
+cp -a "$SITE_DST" "${{SITE_DST}}.bak" 2>/dev/null
+
+# Swap files
+mv "$BINARY_SRC" "$BINARY_DST"
+rm -rf "$SITE_DST"
+mv "$SITE_SRC" "$SITE_DST"
+chmod +x "$BINARY_DST"
+
+# Restart service
+systemctl restart replay-control
+
+# Health check: poll every 2s, up to 30 attempts (60s total)
+ATTEMPT=0
+MAX_ATTEMPTS=30
+while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
+    sleep 2
+    ATTEMPT=$((ATTEMPT + 1))
+    if curl -sf --max-time 10 "http://localhost:${{PORT}}/api/version" > /dev/null 2>&1; then
+        # Success: remove backups
+        rm -f "${{BINARY_DST}}.bak"
+        rm -rf "${{SITE_DST}}.bak"
+        rm -rf "{update_dir}"
+        rm -f "$0"
+        exit 0
+    fi
+done
+
+# Failure: restore backups
+if [ -f "${{BINARY_DST}}.bak" ]; then
+    mv "${{BINARY_DST}}.bak" "$BINARY_DST"
+fi
+if [ -d "${{SITE_DST}}.bak" ]; then
+    rm -rf "$SITE_DST"
+    mv "${{SITE_DST}}.bak" "$SITE_DST"
+fi
+systemctl restart replay-control
+rm -rf "{update_dir}"
+rm -f "$0"
+exit 1
+"#,
+            version = version,
+            binary_src = binary_path.display(),
+            site_src = site_path.display(),
+            update_dir = replay_control_core::update::UPDATE_DIR,
+        )
+    }
+
+    /// Execute the full update flow: resolve URLs, download, extract, generate + spawn helper.
+    pub async fn start_update(
+        state: &super::AppState,
+        tag: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if !replay_control_core::update::validate_version(tag) {
+            return Err(format!("Invalid version tag: {tag}").into());
+        }
+
+        match tokio::time::timeout(Self::UPDATE_TIMEOUT, Self::start_update_inner(state, tag)).await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                Self::nuke_update_dir();
+                Err("Update timed out after 5 minutes".into())
+            }
+        }
+    }
+
+    async fn start_update_inner(
+        state: &super::AppState,
+        tag: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use super::activity::{UpdatePhase, UpdateProgress};
+
+        let start_time = std::time::Instant::now();
+
+        // Acquire activity lock.
+        let guard = state
+            .try_start_activity(super::activity::Activity::Update {
+                progress: UpdateProgress {
+                    phase: UpdatePhase::Downloading,
+                    downloaded_bytes: 0,
+                    total_bytes: 0,
+                    phase_detail: "Resolving download URLs...".to_string(),
+                    elapsed_secs: 0,
+                    error: None,
+                },
+            })
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+
+        let result = Self::start_update_download(state, tag, &guard, start_time).await;
+
+        match result {
+            Ok(()) => {
+                // Set Restarting and leak guard — process will be killed by helper script.
+                state.update_activity(|act| {
+                    if let super::activity::Activity::Update { progress } = act {
+                        progress.phase = UpdatePhase::Restarting;
+                        progress.phase_detail = "Restarting service...".to_string();
+                        progress.elapsed_secs = start_time.elapsed().as_secs();
+                    }
+                });
+                std::mem::forget(guard);
+                Ok(())
+            }
+            Err(ref e) => {
+                let error_msg = e.to_string();
+                guard.update(|act| {
+                    if let super::activity::Activity::Update { progress } = act {
+                        progress.phase = UpdatePhase::Failed;
+                        progress.phase_detail = error_msg.clone();
+                        progress.error = Some(error_msg.clone());
+                        progress.elapsed_secs = start_time.elapsed().as_secs();
+                    }
+                });
+                Self::nuke_update_dir();
+                result
+            }
+        }
+    }
+
+    async fn start_update_download(
+        state: &super::AppState,
+        tag: &str,
+        guard: &super::activity::ActivityGuard,
+        start_time: std::time::Instant,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use super::activity::UpdatePhase;
+        use replay_control_core::update::{UPDATE_DIR, UPDATE_LOCK, UPDATE_SCRIPT};
+
+        let storage = state.storage();
+        let github_key = replay_control_core::settings::read_github_api_key(&storage.root);
+        let base_url = Self::github_api_base_url();
+        let update_dir = std::path::PathBuf::from(UPDATE_DIR);
+
+        // Acquire file lock (outside update dir, survives nukes).
+        let lock_file = std::fs::File::create(UPDATE_LOCK)?;
+        use std::os::unix::io::AsRawFd;
+        let fd = lock_file.as_raw_fd();
+        if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return Err("Another update is already in progress".into());
+        }
+
+        // Nuke update dir before starting.
+        Self::nuke_update_dir();
+        tokio::fs::create_dir_all(&update_dir).await?;
+
+        // Resolve asset URLs.
+        let assets =
+            Self::resolve_asset_urls(&base_url, tag, github_key.as_deref())
+                .await?;
+
+        // Use actual sizes from available.json for progress reporting.
+        let stored_update = Self::read_available_update();
+        let binary_size = stored_update.as_ref().map(|u| u.binary_size).unwrap_or(0);
+        let total_bytes = stored_update.map(|u| u.binary_size + u.site_size).unwrap_or(0);
+
+        // Check disk space (require 2x total for archives + extracted).
+        if total_bytes > 0 {
+            let stat = nix::sys::statvfs::statvfs(
+                update_dir.to_str().unwrap_or("/var/tmp"),
+            )?;
+            let available = stat.blocks_available() as u64 * stat.fragment_size() as u64;
+            let required = total_bytes * 2;
+            if available < required {
+                return Err(format!(
+                    "Insufficient disk space: need {} MB, have {} MB",
+                    required / (1024 * 1024),
+                    available / (1024 * 1024),
+                )
+                .into());
+            }
+        }
+
+        // Download binary.
+        let binary_archive = update_dir.join("binary.tar.gz");
+        {
+            let activity_state = state.activity.clone();
+            let activity_tx = state.activity_tx.clone();
+            let start = start_time;
+
+            Self::download_asset(&assets.binary_url, &binary_archive, &move |bytes| {
+                let mut act = activity_state.write().expect("activity lock");
+                if let super::activity::Activity::Update { progress } = &mut *act {
+                    progress.downloaded_bytes = bytes;
+                    progress.total_bytes = total_bytes;
+                    progress.phase_detail = "Downloading binary...".to_string();
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                }
+                let activity = act.clone();
+                drop(act);
+                let _ = activity_tx.send(activity);
+            })
+            .await?;
+        }
+
+        // Download site archive.
+        let site_archive = update_dir.join("site.tar.gz");
+        {
+            let activity_state = state.activity.clone();
+            let activity_tx = state.activity_tx.clone();
+            let start = start_time;
+
+            Self::download_asset(&assets.site_url, &site_archive, &move |bytes| {
+                let mut act = activity_state.write().expect("activity lock");
+                if let super::activity::Activity::Update { progress } = &mut *act {
+                    progress.downloaded_bytes = binary_size + bytes;
+                    progress.total_bytes = total_bytes;
+                    progress.phase_detail = "Downloading site assets...".to_string();
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                }
+                let activity = act.clone();
+                drop(act);
+                let _ = activity_tx.send(activity);
+            })
+            .await?;
+        }
+
+        // Extract archives.
+        guard.update(|act| {
+            if let super::activity::Activity::Update { progress } = act {
+                progress.phase = UpdatePhase::Installing;
+                progress.phase_detail = "Extracting archives...".to_string();
+                progress.elapsed_secs = start_time.elapsed().as_secs();
+            }
+        });
+
+        let binary_dir = update_dir.join("binary");
+        let site_dir = update_dir.join("site");
+        tokio::fs::create_dir_all(&binary_dir).await?;
+        tokio::fs::create_dir_all(&site_dir).await?;
+
+        // Extract binary tarball.
+        let binary_archive_path = binary_archive.clone();
+        let binary_dir_path = binary_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&binary_archive_path)?;
+            let gz = flate2::read::GzDecoder::new(file);
+            let mut archive = tar::Archive::new(gz);
+            archive.unpack(&binary_dir_path)?;
+            Ok::<_, std::io::Error>(())
+        })
+        .await??;
+
+        // Extract site tarball.
+        let site_archive_path = site_archive.clone();
+        let site_dir_path = site_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&site_archive_path)?;
+            let gz = flate2::read::GzDecoder::new(file);
+            let mut archive = tar::Archive::new(gz);
+            archive.unpack(&site_dir_path)?;
+            Ok::<_, std::io::Error>(())
+        })
+        .await??;
+
+        // Resilient: search for the binary within extracted contents.
+        let binary_path = Self::find_extracted_file(&binary_dir, "replay-control-app")
+            .await
+            .ok_or("Extracted binary not found")?;
+
+        // Resilient: search for pkg/ directory within extracted site.
+        let actual_site_dir = Self::find_extracted_dir_containing(&site_dir, "pkg")
+            .await
+            .ok_or("Extracted site directory does not contain pkg/")?;
+
+        // Generate helper script.
+        let version = tag.strip_prefix('v').unwrap_or(tag);
+        let script = Self::generate_update_script(&binary_path, &actual_site_dir, version);
+        let script_path = std::path::PathBuf::from(UPDATE_SCRIPT);
+        tokio::fs::write(&script_path, &script).await?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+                .await?;
+        }
+
+        // Spawn the helper script via systemd-run so it survives our restart.
+        std::process::Command::new("systemd-run")
+            .args([
+                "--scope",
+                "--unit=replay-control-update",
+                "--quiet",
+                "/bin/bash",
+                script_path.to_str().unwrap(),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+
+        // Keep lock_file alive until here.
+        drop(lock_file);
+
+        Ok(())
+    }
+
+    /// Search for a file by name within an extracted directory tree.
+    async fn find_extracted_file(
+        dir: &std::path::Path,
+        name: &str,
+    ) -> Option<std::path::PathBuf> {
+        // Check direct child first.
+        let direct = dir.join(name);
+        if direct.exists() {
+            return Some(direct);
+        }
+        // Search one level deep.
+        let mut entries = tokio::fs::read_dir(dir).await.ok()?;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if entry.file_type().await.ok()?.is_dir() {
+                let candidate = entry.path().join(name);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
+    }
+
+    /// Search for a directory containing a specific subdirectory.
+    async fn find_extracted_dir_containing(
+        dir: &std::path::Path,
+        subdir: &str,
+    ) -> Option<std::path::PathBuf> {
+        if dir.join(subdir).exists() {
+            return Some(dir.to_path_buf());
+        }
+        let mut entries = tokio::fs::read_dir(dir).await.ok()?;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if entry.file_type().await.ok()?.is_dir() && entry.path().join(subdir).exists() {
+                return Some(entry.path());
+            }
+        }
+        None
     }
 }
 

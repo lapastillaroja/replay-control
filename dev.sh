@@ -331,6 +331,7 @@ deploy_to_pi() {
     # Stop service before overwriting binary
     info "Stopping service..."
     run_ssh "systemctl stop $PI_SERVICE 2>/dev/null || true"
+    run_ssh "rm -rf /var/tmp/replay-control-update /var/tmp/replay-control-update.lock /var/tmp/replay-control-do-update.sh 2>/dev/null || true"
 
     # Transfer binary
     info "Syncing binary ($(human_size "$bin_size"))..."

@@ -117,6 +117,13 @@ pub fn MetadataBusyBanner() -> impl IntoView {
                     MaintenanceKind::CleanupOrphans => "Cleaning up orphaned images...".to_string(),
                 }
             }
+            Activity::Update { progress } => {
+                if progress.phase_detail.is_empty() {
+                    "Updating software...".to_string()
+                } else {
+                    progress.phase_detail.clone()
+                }
+            }
         }
     };
 

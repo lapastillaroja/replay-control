@@ -36,6 +36,10 @@ pub enum Activity {
     /// A short DB/filesystem operation (clear, cleanup) that still requires
     /// exclusive access. No detailed progress -- just a kind discriminant.
     Maintenance { kind: MaintenanceKind },
+
+    /// Software update (download + install). No cancel token — the 5-minute
+    /// timeout is the only abort mechanism.
+    Update { progress: UpdateProgress },
 }
 
 fn default_cancel() -> Arc<AtomicBool> {
@@ -57,6 +61,10 @@ impl Activity {
             Self::Rebuild { progress } => matches!(
                 progress.phase,
                 RebuildPhase::Complete | RebuildPhase::Failed
+            ),
+            Self::Update { progress } => matches!(
+                progress.phase,
+                UpdatePhase::Complete | UpdatePhase::Failed
             ),
             _ => false,
         }
@@ -97,6 +105,14 @@ impl Activity {
                 RebuildPhase::Complete => format!("Rebuild complete ({}s)", progress.elapsed_secs,),
                 RebuildPhase::Failed => format!(
                     "Rebuild failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
+            Self::Update { progress } => match progress.phase {
+                UpdatePhase::Complete => format!("Update complete ({}s)", progress.elapsed_secs),
+                UpdatePhase::Failed => format!(
+                    "Update failed: {}",
                     progress.error.as_deref().unwrap_or("unknown error"),
                 ),
                 _ => String::new(),
@@ -172,6 +188,27 @@ pub struct RebuildProgress {
     pub current_system: String,
     pub systems_done: usize,
     pub systems_total: usize,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
+/// Phase of the software update operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UpdatePhase {
+    Downloading,
+    Installing,
+    Restarting,
+    Complete,
+    Failed,
+}
+
+/// Progress for the software update operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateProgress {
+    pub phase: UpdatePhase,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub phase_detail: String,
     pub elapsed_secs: u64,
     pub error: Option<String>,
 }
