@@ -645,10 +645,10 @@ impl BackgroundManager {
             return Ok(None);
         }
 
-        if let Some(skipped) = skipped_version {
-            if release.version == skipped {
-                return Ok(None);
-            }
+        if let Some(skipped) = skipped_version
+            && release.version == skipped
+        {
+            return Ok(None);
         }
 
         Ok(Some(release))
@@ -696,14 +696,13 @@ impl BackgroundManager {
 
         let mut best: Option<replay_control_core::update::AvailableUpdate> = None;
         for release in releases {
-            if let Some(parsed) = Self::parse_release(release) {
-                if replay_control_core::update::is_newer(current_version, &parsed.version)
-                    && best.as_ref().map_or(true, |b| {
-                        replay_control_core::update::is_newer(&b.version, &parsed.version)
-                    })
-                {
-                    best = Some(parsed);
-                }
+            if let Some(parsed) = Self::parse_release(release)
+                && replay_control_core::update::is_newer(current_version, &parsed.version)
+                && best.as_ref().is_none_or(|b| {
+                    replay_control_core::update::is_newer(&b.version, &parsed.version)
+                })
+            {
+                best = Some(parsed);
             }
         }
         Ok(best)
