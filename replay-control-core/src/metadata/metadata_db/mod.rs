@@ -236,6 +236,39 @@ pub struct SystemMeta {
     pub total_size_bytes: u64,
 }
 
+/// Expected columns in the `game_library` table.
+///
+/// Keep in sync with the CREATE TABLE statement in [`MetadataDb::init_tables`].
+/// Used by [`MetadataDb::validate_game_library_schema`] to detect stale schemas.
+const GAME_LIBRARY_COLUMNS: &[&str] = &[
+    "system",
+    "rom_filename",
+    "rom_path",
+    "display_name",
+    "base_title",
+    "series_key",
+    "region",
+    "developer",
+    "search_text",
+    "genre",
+    "genre_group",
+    "rating",
+    "rating_count",
+    "players",
+    "is_clone",
+    "is_m3u",
+    "is_translation",
+    "is_hack",
+    "is_special",
+    "box_art_url",
+    "driver_status",
+    "size_bytes",
+    "crc32",
+    "hash_mtime",
+    "hash_matched_name",
+    "release_year",
+];
+
 /// Stateless query namespace for the metadata SQLite database.
 ///
 /// All methods are associated functions that take `conn: &Connection` as their
@@ -265,6 +298,7 @@ impl MetadataDb {
 
         let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
         Self::init_tables(&conn)?;
+        Self::validate_game_library_schema(&conn);
 
         if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
             tracing::warn!("Metadata DB corrupt ({detail}), deleting and recreating");
@@ -272,6 +306,7 @@ impl MetadataDb {
             crate::db_common::delete_db_files(&db_path);
             let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
             Self::init_tables(&conn)?;
+            // Fresh DB after corruption recovery — no need to validate schema.
             return Ok((conn, db_path));
         }
 
@@ -437,16 +472,101 @@ impl MetadataDb {
         )
         .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
 
-        // ── Schema migrations for existing databases ──────────────────
-
-        // Add release_year column to game_library (added for TOSEC tag parsing).
-        let _ = conn.execute_batch("ALTER TABLE game_library ADD COLUMN release_year INTEGER");
+        // ── Legacy index cleanup ─────────────────────────────────────
+        // (Column migrations are now handled by validate_game_library_schema.)
 
         // Replace single-column developer index with compound (developer, base_title)
         // to cover top_developers query (COUNT(DISTINCT base_title) GROUP BY developer).
         let _ = conn.execute_batch("DROP INDEX IF EXISTS idx_game_library_developer");
 
         Ok(())
+    }
+
+    /// Check that the `game_library` table has all expected columns.
+    ///
+    /// If any column is missing (schema outdated), drops the table and its
+    /// companion `game_library_meta` so the next scan rebuilds them.
+    /// This is safe because game_library is entirely derived data.
+    fn validate_game_library_schema(conn: &Connection) {
+        let actual: std::collections::HashSet<String> =
+            match conn.prepare("PRAGMA table_info(game_library)") {
+                Ok(mut stmt) => match stmt
+                    .query_map([], |row| row.get::<_, String>(1))
+                    .and_then(|rows| rows.collect::<std::result::Result<_, _>>())
+                {
+                    Ok(cols) => cols,
+                    Err(e) => {
+                        tracing::warn!("Failed to read game_library schema: {e}");
+                        return;
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to prepare PRAGMA table_info: {e}");
+                    return;
+                }
+            };
+
+        if actual.is_empty() {
+            // Table doesn't exist yet — nothing to validate.
+            return;
+        }
+
+        let missing: Vec<&str> = GAME_LIBRARY_COLUMNS
+            .iter()
+            .filter(|col| !actual.contains(**col))
+            .copied()
+            .collect();
+
+        if missing.is_empty() {
+            return;
+        }
+
+        tracing::warn!(
+            "game_library schema outdated, rebuilding table (missing columns: {})",
+            missing.join(", ")
+        );
+        let _ = conn.execute_batch(
+            "DROP TABLE IF EXISTS game_library; DROP TABLE IF EXISTS game_library_meta;",
+        );
+        // Recreate with current schema.
+        let _ = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS game_library (
+                system TEXT NOT NULL,
+                rom_filename TEXT NOT NULL,
+                rom_path TEXT NOT NULL,
+                display_name TEXT,
+                base_title TEXT NOT NULL DEFAULT '',
+                series_key TEXT NOT NULL DEFAULT '',
+                region TEXT NOT NULL DEFAULT '',
+                developer TEXT NOT NULL DEFAULT '',
+                search_text TEXT NOT NULL DEFAULT '',
+                genre TEXT,
+                genre_group TEXT NOT NULL DEFAULT '',
+                rating REAL,
+                rating_count INTEGER,
+                players INTEGER,
+                is_clone INTEGER NOT NULL DEFAULT 0,
+                is_m3u INTEGER NOT NULL DEFAULT 0,
+                is_translation INTEGER NOT NULL DEFAULT 0,
+                is_hack INTEGER NOT NULL DEFAULT 0,
+                is_special INTEGER NOT NULL DEFAULT 0,
+                box_art_url TEXT,
+                driver_status TEXT,
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                crc32 INTEGER,
+                hash_mtime INTEGER,
+                hash_matched_name TEXT,
+                release_year INTEGER,
+                PRIMARY KEY (system, rom_filename)
+            );
+            CREATE TABLE IF NOT EXISTS game_library_meta (
+                system TEXT PRIMARY KEY,
+                dir_mtime_secs INTEGER,
+                scanned_at INTEGER NOT NULL,
+                rom_count INTEGER NOT NULL DEFAULT 0,
+                total_size_bytes INTEGER NOT NULL DEFAULT 0
+            );",
+        );
     }
 
     /// Helper: convert a row to GameEntry (used by multiple queries).
