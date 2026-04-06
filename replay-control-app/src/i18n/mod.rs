@@ -4,42 +4,9 @@ mod ja;
 mod keys;
 
 pub use keys::Key;
+pub use replay_control_core::locale::Locale;
 
 use leptos::prelude::*;
-use serde::{Deserialize, Serialize};
-
-/// Supported UI locales. English is the default.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-pub enum Locale {
-    #[default]
-    En,
-    Es,
-    Ja,
-}
-
-impl Locale {
-    pub fn code(&self) -> &'static str {
-        match self {
-            Locale::En => "en",
-            Locale::Es => "es",
-            Locale::Ja => "ja",
-        }
-    }
-
-    pub fn from_code(code: &str) -> Self {
-        match code {
-            "es" => Locale::Es,
-            "ja" => Locale::Ja,
-            _ => Locale::En,
-        }
-    }
-}
-
-impl std::fmt::Display for Locale {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.code())
-    }
-}
 
 /// Wrapper so SSR can inject the starting locale before `App` renders.
 #[derive(Clone, Copy)]
@@ -96,9 +63,10 @@ pub struct I18nContext {
 /// All locales are exhaustive — every key must be handled in every locale file.
 pub fn t(locale: Locale, key: Key) -> &'static str {
     match locale {
-        Locale::En => en::translate(key),
         Locale::Es => es::translate(key),
         Locale::Ja => ja::translate(key),
+        // Auto and En both fall back to English
+        _ => en::translate(key),
     }
 }
 

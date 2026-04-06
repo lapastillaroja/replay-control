@@ -240,17 +240,23 @@ fn lang_matches(manual_lang: &str, pref_lang: &str) -> bool {
 }
 
 /// Read the UI locale from `.replay-control/settings.cfg`.
-/// Returns `None` if not set (caller should fall back to Accept-Language or "en").
-pub fn read_locale(storage_root: &Path) -> Option<String> {
+/// Returns `None` if not set or "auto" (caller should fall back to Accept-Language).
+pub fn read_locale(storage_root: &Path) -> Option<crate::locale::Locale> {
     let settings = load_settings(storage_root);
-    settings.locale().map(|s| s.to_string())
+    settings.locale()
+}
+
+/// Read the stored locale preference including `Auto`.
+pub fn read_locale_preference(storage_root: &Path) -> crate::locale::Locale {
+    let settings = load_settings(storage_root);
+    settings.locale_preference()
 }
 
 /// Write the UI locale to `.replay-control/settings.cfg`.
 /// Creates the directory and file if they don't exist. Preserves other keys.
-pub fn write_locale(storage_root: &Path, locale: &str) -> Result<()> {
+pub fn write_locale(storage_root: &Path, locale: crate::locale::Locale) -> Result<()> {
     let mut settings = load_settings(storage_root);
-    settings.set_locale(locale);
+    settings.set_locale(locale.code());
     save_settings(storage_root, &settings)
 }
 
@@ -550,39 +556,47 @@ mod tests {
 
     #[test]
     fn write_and_read_locale_en() {
+        use crate::locale::Locale;
         let tmp = tempdir();
-        write_locale(&tmp, "en").unwrap();
-        assert_eq!(read_locale(&tmp), Some("en".to_string()));
+        write_locale(&tmp, Locale::En).unwrap();
+        assert_eq!(read_locale(&tmp), Some(Locale::En));
     }
 
     #[test]
     fn write_and_read_locale_ja() {
+        use crate::locale::Locale;
         let tmp = tempdir();
-        write_locale(&tmp, "ja").unwrap();
-        assert_eq!(read_locale(&tmp), Some("ja".to_string()));
+        write_locale(&tmp, Locale::Ja).unwrap();
+        assert_eq!(read_locale(&tmp), Some(Locale::Ja));
     }
 
     #[test]
     fn write_and_read_locale_es() {
+        use crate::locale::Locale;
         let tmp = tempdir();
-        write_locale(&tmp, "es").unwrap();
-        assert_eq!(read_locale(&tmp), Some("es".to_string()));
+        write_locale(&tmp, Locale::Es).unwrap();
+        assert_eq!(read_locale(&tmp), Some(Locale::Es));
     }
 
     #[test]
-    fn locale_invalid_value_returns_none() {
+    fn write_auto_returns_none_for_read_locale() {
+        use crate::locale::Locale;
         let tmp = tempdir();
-        write_locale(&tmp, "xx").unwrap();
+        write_locale(&tmp, Locale::Auto).unwrap();
+        // read_locale filters out Auto
         assert_eq!(read_locale(&tmp), None);
+        // but read_locale_preference returns Auto
+        assert_eq!(read_locale_preference(&tmp), Locale::Auto);
     }
 
     #[test]
     fn locale_preserves_other_keys() {
+        use crate::locale::Locale;
         let tmp = tempdir();
         write_region_preference(&tmp, RegionPreference::Japan).unwrap();
-        write_locale(&tmp, "ja").unwrap();
+        write_locale(&tmp, Locale::Ja).unwrap();
         assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
-        assert_eq!(read_locale(&tmp), Some("ja".to_string()));
+        assert_eq!(read_locale(&tmp), Some(Locale::Ja));
     }
 
     #[test]

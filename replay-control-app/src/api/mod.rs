@@ -883,14 +883,18 @@ impl AppState {
     }
 }
 
-/// Parse the `Accept-Language` header and return the best-matching supported locale code.
-/// Supported locales: "en", "es", "ja". Returns "en" as fallback.
-fn resolve_locale_from_accept_language(headers: &axum::http::HeaderMap) -> String {
+/// Parse the `Accept-Language` header and return the best-matching supported locale.
+/// Returns `Locale::En` as fallback.
+fn resolve_locale_from_accept_language(
+    headers: &axum::http::HeaderMap,
+) -> replay_control_core::locale::Locale {
+    use replay_control_core::locale::Locale;
+
     let Some(accept) = headers.get(axum::http::header::ACCEPT_LANGUAGE) else {
-        return "en".to_string();
+        return Locale::En;
     };
     let Ok(value) = accept.to_str() else {
-        return "en".to_string();
+        return Locale::En;
     };
     // Parse "es-ES,es;q=0.9,en;q=0.8,ja;q=0.7" style values
     let mut langs: Vec<(&str, f32)> = value
@@ -910,13 +914,13 @@ fn resolve_locale_from_accept_language(headers: &axum::http::HeaderMap) -> Strin
     for (tag, _) in &langs {
         let primary = tag.split('-').next().unwrap_or(tag);
         match primary {
-            "en" => return "en".to_string(),
-            "es" => return "es".to_string(),
-            "ja" => return "ja".to_string(),
+            "en" => return Locale::En,
+            "es" => return Locale::Es,
+            "ja" => return Locale::Ja,
             _ => continue,
         }
     }
-    "en".to_string()
+    Locale::En
 }
 
 /// Build the application router with API routes, server function handler,
@@ -942,25 +946,26 @@ pub fn build_router(
 
     let ssr_handler = leptos_axum::render_app_to_stream_with_context(
         move || {
-            use crate::i18n::{InitialLocale, Locale};
+            use crate::i18n::InitialLocale;
+            use replay_control_core::locale::Locale;
 
             let state = state_for_ssr.clone();
 
-            // Resolve locale: settings.cfg → Accept-Language header → "en"
-            let locale_str = if state.has_storage() {
+            // Resolve locale: settings.cfg → Accept-Language header → En
+            let locale = if state.has_storage() {
                 replay_control_core::settings::read_locale(&state.storage().root)
             } else {
                 None
             };
 
-            let locale_str = locale_str.unwrap_or_else(|| {
+            let locale = locale.unwrap_or_else(|| {
                 // Fall back to Accept-Language header
                 use_context::<axum::http::request::Parts>()
                     .map(|parts| resolve_locale_from_accept_language(&parts.headers))
-                    .unwrap_or_else(|| "en".to_string())
+                    .unwrap_or(Locale::En)
             });
 
-            provide_context(InitialLocale(Locale::from_code(&locale_str)));
+            provide_context(InitialLocale(locale));
             provide_context(state);
         },
         move || {

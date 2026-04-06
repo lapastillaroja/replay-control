@@ -498,25 +498,27 @@ pub async fn change_root_password(
 }
 
 /// Get the UI locale from `.replay-control/settings.cfg`.
-/// Returns the explicit setting, or empty string if not set
-/// (client uses the SSR-resolved locale as the effective value).
+/// Returns the stored locale preference code (including "auto").
 #[server(prefix = "/sfn")]
 pub async fn get_locale() -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    Ok(replay_control_core::settings::read_locale(&storage.root).unwrap_or_default())
+    let locale = replay_control_core::settings::read_locale_preference(&storage.root);
+    Ok(locale.code().to_string())
 }
 
 /// Save the UI locale to `.replay-control/settings.cfg`.
 /// Validates against the supported locale list before writing.
 #[server(prefix = "/sfn")]
 pub async fn save_locale(locale: String) -> Result<(), ServerFnError> {
-    if !replay_control_core::config::SUPPORTED_LOCALES.contains(&locale.as_str()) {
+    use replay_control_core::locale::Locale;
+    if !Locale::all_codes().contains(&locale.as_str()) {
         return Err(ServerFnError::new("Unsupported locale"));
     }
+    let parsed = Locale::from_code(&locale);
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
-    replay_control_core::settings::write_locale(&storage.root, &locale)
+    replay_control_core::settings::write_locale(&storage.root, parsed)
         .map_err(|e| ServerFnError::new(e.to_string()))
 }
 

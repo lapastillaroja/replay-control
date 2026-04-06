@@ -31,8 +31,7 @@ pub fn MorePage() -> impl IntoView {
                         <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::LocaleTitle)}</h4>
                         <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                             {move || Suspend::new(async move {
-                                // get_locale returns the explicit setting or empty string;
-                                // empty means "auto-detect from browser".
+                                // get_locale returns the stored locale ("auto", "en", "es", "ja").
                                 let current = locale_res.await.unwrap_or_default();
                                 Ok::<_, ServerFnError>(view! { <LocaleSelector current /> })
                             })}
@@ -662,10 +661,10 @@ fn LocaleSelector(current: String) -> impl IntoView {
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
     // Language options: (locale_code, i18n_key)
-    // Empty string = "auto-detect from browser". Language names are shown in their
-    // own script so users can find their language regardless of the current UI locale.
+    // "auto" = detect from browser Accept-Language header. Language names are shown
+    // in their own script so users can find their language regardless of the current UI locale.
     let options: &[(&str, Key)] = &[
-        ("", Key::LocaleAuto),
+        ("auto", Key::LocaleAuto),
         ("en", Key::LocaleEn),
         ("es", Key::LocaleEs),
         ("ja", Key::LocaleJa),
@@ -682,7 +681,7 @@ fn LocaleSelector(current: String) -> impl IntoView {
         leptos::task::spawn_local(async move {
             match server_fns::save_locale(v.clone()).await {
                 Ok(()) => {
-                    if v.is_empty() {
+                    if v == "auto" {
                         // "Same as browser" — reload so the server re-detects
                         // the locale from the Accept-Language header.
                         #[cfg(target_arch = "wasm32")]

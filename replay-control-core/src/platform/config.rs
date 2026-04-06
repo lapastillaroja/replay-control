@@ -225,9 +225,6 @@ impl SystemConfig {
     }
 }
 
-/// Supported UI locales. Used for validation on both read and write.
-pub const SUPPORTED_LOCALES: &[&str] = &["en", "es", "ja"];
-
 // ── AppSettings: typed access to settings.cfg ────────────────────
 
 /// App-specific settings stored in `.replay-control/settings.cfg`.
@@ -291,10 +288,20 @@ impl AppSettings {
         self.inner.get_non_empty("language_secondary")
     }
 
-    pub fn locale(&self) -> Option<&str> {
+    /// Returns the effective locale for rendering (None = auto-detect from browser).
+    /// Returns `None` when the stored value is "auto", missing, or unrecognized.
+    pub fn locale(&self) -> Option<crate::locale::Locale> {
+        let code = self.inner.get_non_empty("locale")?;
+        crate::locale::Locale::from_code(code).effective()
+    }
+
+    /// Returns the stored locale preference including `Auto`.
+    /// Defaults to `Auto` when no value is stored.
+    pub fn locale_preference(&self) -> crate::locale::Locale {
         self.inner
             .get_non_empty("locale")
-            .filter(|v| SUPPORTED_LOCALES.contains(v))
+            .map(crate::locale::Locale::from_code)
+            .unwrap_or(crate::locale::Locale::Auto)
     }
 
     pub fn github_api_key(&self) -> Option<&str> {
@@ -469,7 +476,7 @@ mod tests {
         assert_eq!(settings.skin(), None);
         assert_eq!(settings.language_primary(), None);
         assert_eq!(settings.language_secondary(), None);
-        assert_eq!(settings.locale(), None);
+        assert!(settings.locale().is_none());
         assert_eq!(settings.github_api_key(), None);
         assert_eq!(settings.update_channel(), "stable");
         assert_eq!(settings.skipped_version(), None);

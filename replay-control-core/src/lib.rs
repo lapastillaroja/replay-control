@@ -1,5 +1,6 @@
 pub mod error;
 pub mod launch;
+pub mod locale;
 pub mod search_scoring;
 
 mod platform;
