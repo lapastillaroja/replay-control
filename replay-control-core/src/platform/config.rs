@@ -196,12 +196,20 @@ impl SystemConfig {
     // ── Write methods (only wifi + NFS) ──────────────────────────
 
     /// Update wifi settings. Only these keys may be written to `replay.cfg`.
-    pub fn set_wifi(&mut self, ssid: &str, password: &str, country: &str, mode: &str, hidden: bool) {
+    pub fn set_wifi(
+        &mut self,
+        ssid: &str,
+        password: &str,
+        country: &str,
+        mode: &str,
+        hidden: bool,
+    ) {
         self.inner.set("wifi_name", ssid);
         self.inner.set("wifi_pwd", password);
         self.inner.set("wifi_country", country);
         self.inner.set("wifi_mode", mode);
-        self.inner.set("wifi_hidden", if hidden { "true" } else { "false" });
+        self.inner
+            .set("wifi_hidden", if hidden { "true" } else { "false" });
     }
 
     /// Update NFS settings. Only these keys may be written to `replay.cfg`.
@@ -469,10 +477,8 @@ mod tests {
 
     #[test]
     fn app_settings_roundtrip() {
-        let tmp_dir = std::env::temp_dir().join(format!(
-            "replay-settings-rt-{}",
-            std::process::id()
-        ));
+        let tmp_dir =
+            std::env::temp_dir().join(format!("replay-settings-rt-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp_dir);
         std::fs::create_dir_all(&tmp_dir).unwrap();
         let path = tmp_dir.join("settings.cfg");
@@ -493,10 +499,8 @@ mod tests {
 
     #[test]
     fn app_settings_save_preserves_existing() {
-        let tmp_dir = std::env::temp_dir().join(format!(
-            "replay-settings-preserve-{}",
-            std::process::id()
-        ));
+        let tmp_dir =
+            std::env::temp_dir().join(format!("replay-settings-preserve-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp_dir);
         std::fs::create_dir_all(&tmp_dir).unwrap();
         let path = tmp_dir.join("settings.cfg");
@@ -510,7 +514,10 @@ mod tests {
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("# My settings"), "comment preserved");
-        assert!(content.contains("region_preference = \"usa\""), "existing key preserved");
+        assert!(
+            content.contains("region_preference = \"usa\""),
+            "existing key preserved"
+        );
         assert!(content.contains("skin = \"3\""), "new key added");
     }
 }

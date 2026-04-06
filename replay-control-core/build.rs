@@ -1817,7 +1817,9 @@ fn normalize_developer_build(raw: &str) -> String {
     }
 
     // Extract bracket-prefixed developer
-    if s.starts_with('[') && let Some(close) = s.find(']') {
+    if s.starts_with('[')
+        && let Some(close) = s.find(']')
+    {
         let bracket_name = s[1..close].trim().to_string();
         if !bracket_name.is_empty() {
             s = bracket_name;

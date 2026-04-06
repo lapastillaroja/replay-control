@@ -539,7 +539,8 @@ impl BackgroundManager {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let storage = state.storage();
         let settings = replay_control_core::settings::load_settings(&storage.root);
-        let channel = replay_control_core::update::UpdateChannel::from_str_value(settings.update_channel());
+        let channel =
+            replay_control_core::update::UpdateChannel::from_str_value(settings.update_channel());
         let skipped = settings.skipped_version().map(|s| s.to_string());
         let github_key = settings.github_api_key().map(|s| s.to_string());
         drop(settings);
@@ -590,7 +591,8 @@ impl BackgroundManager {
 
         let storage = state.storage();
         let settings = replay_control_core::settings::load_settings(&storage.root);
-        let channel = replay_control_core::update::UpdateChannel::from_str_value(settings.update_channel());
+        let channel =
+            replay_control_core::update::UpdateChannel::from_str_value(settings.update_channel());
         let skipped = settings.skipped_version().map(|s| s.to_string());
         let github_key = settings.github_api_key().map(|s| s.to_string());
 

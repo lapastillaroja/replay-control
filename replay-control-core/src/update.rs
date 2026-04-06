@@ -69,7 +69,6 @@ impl UpdateChannel {
     }
 }
 
-
 /// Temp directory for all update runtime state.
 pub const UPDATE_DIR: &str = "/var/tmp/replay-control-update";
 /// Lock file outside the update directory (survives nukes).

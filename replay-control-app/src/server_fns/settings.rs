@@ -368,7 +368,10 @@ pub async fn get_language_preference() -> Result<(String, String), ServerFnError
     let storage = state.storage();
     let settings = replay_control_core::settings::load_settings(&storage.root);
     let primary = settings.language_primary().unwrap_or_default().to_string();
-    let secondary = settings.language_secondary().unwrap_or_default().to_string();
+    let secondary = settings
+        .language_secondary()
+        .unwrap_or_default()
+        .to_string();
     Ok((primary, secondary))
 }
 
@@ -528,9 +531,7 @@ pub async fn get_preferred_languages() -> Result<Vec<String>, ServerFnError> {
     let secondary = settings.language_secondary();
     let region = state.region_preference();
     Ok(replay_control_core::settings::preferred_languages(
-        primary,
-        secondary,
-        region,
+        primary, secondary, region,
     ))
 }
 
