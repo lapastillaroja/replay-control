@@ -1,13 +1,15 @@
-{{/* Put your custom <script></script> tags here */}}
-
-{{/* EXAMPLE - only load script for production
-{{ if eq (hugo.Environment) "production" -}}
-  {{ partial "footer/esbuild" (dict "src" "js/instantpage.js" "load" "async" "transpile" false) -}}
-{{ end -}}
-*/}}
-
-{{/* EXAMPLE - only load script for a page type e.g. contact or gallery
-{{ if eq .Type "gallery" -}}
-  {{ partial "footer/esbuild" (dict "src" "js/gallery.js" "load" "async" "transpile" false) -}}
-{{ end -}}
-*/}}
+<!-- Global image lightbox: click any img in .content to view fullscreen -->
+<div id="img-lightbox" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.9); cursor:pointer; align-items:center; justify-content:center; flex-direction:column;" onclick="this.style.display='none'">
+  <img id="img-lightbox-img" src="" alt="" style="max-width:90vw; max-height:90vh; border-radius:8px;" />
+</div>
+<script>
+  document.querySelectorAll('.content img, .screenshot-thumb img').forEach(function(img) {
+    if (img.closest('#img-lightbox')) return;
+    img.style.cursor = 'pointer';
+    img.addEventListener('click', function(e) {
+      e.stopPropagation();
+      document.getElementById('img-lightbox-img').src = this.src;
+      document.getElementById('img-lightbox').style.display = 'flex';
+    });
+  });
+</script>

@@ -1,11 +1,11 @@
 [[main]]
   name = "Docs"
-  url = "/docs/features/"
+  url = "docs/features/"
   weight = 10
 
 [[main]]
   name = "Architecture"
-  url = "/docs/architecture/"
+  url = "docs/architecture/"
   weight = 20
 
 [[social]]
@@ -16,5 +16,5 @@
 
 [[footer]]
   name = "Privacy Policy"
-  url = "/privacy/"
+  url = "privacy/"
   weight = 10

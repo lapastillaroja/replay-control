@@ -1,3 +1,6 @@
+{{/* OVERRIDE: @thulite/doks-core home.html — completely custom home page with
+     screenshot gallery, lightbox, feature pills, and install commands.
+     The theme's default home page is generic Doks boilerplate. */}}
 {{ define "main" }}
 <section class="section container-fluid mt-n3 pb-3">
   <div class="row justify-content-center">
@@ -37,30 +40,25 @@
       }}
       <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; padding: 1rem 0;">
         {{ range $screenshots }}
-        <figure class="screenshot-thumb" data-bs-toggle="modal" data-bs-target="#lightbox" data-src="{{ .src | relURL }}" data-caption="{{ .caption }}" style="margin: 0; cursor: pointer;">
+        <figure class="screenshot-thumb" data-src="{{ .src | relURL }}" data-caption="{{ .caption }}" style="margin: 0; cursor: pointer;">
           <img src="{{ .src | relURL }}" alt="{{ .alt }}" style="height: 280px; object-fit: cover; border-radius: 8px; border: 1px solid #333;" loading="lazy" />
           <figcaption style="text-align: center; color: #888; font-size: 0.85rem; margin-top: 0.5rem;">{{ .caption }}</figcaption>
         </figure>
         {{ end }}
       </div>
 
-      <!-- Lightbox modal -->
-      <div class="modal fade" id="lightbox" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-centered">
-          <div class="modal-content" style="background: transparent; border: none;">
-            <div class="text-end p-2">
-              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <img id="lightbox-img" src="" alt="" style="width: 100%; border-radius: 8px;" />
-            <p id="lightbox-caption" class="text-center mt-2" style="color: #ccc; font-size: 0.9rem;"></p>
-          </div>
-        </div>
+      <!-- Lightbox overlay (no Bootstrap dependency) -->
+      <div id="lightbox" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.9); cursor:pointer; align-items:center; justify-content:center; flex-direction:column;" onclick="this.style.display='none'">
+        <img id="lightbox-img" src="" alt="" style="max-width:90vw; max-height:85vh; border-radius:8px;" />
+        <p id="lightbox-caption" style="color:#ccc; font-size:0.9rem; margin-top:0.5rem; text-align:center;"></p>
       </div>
       <script>
-        document.getElementById('lightbox').addEventListener('show.bs.modal', function(e) {
-          var trigger = e.relatedTarget;
-          document.getElementById('lightbox-img').src = trigger.dataset.src;
-          document.getElementById('lightbox-caption').textContent = trigger.dataset.caption;
+        document.querySelectorAll('.screenshot-thumb').forEach(function(thumb) {
+          thumb.addEventListener('click', function() {
+            document.getElementById('lightbox-img').src = this.dataset.src;
+            document.getElementById('lightbox-caption').textContent = this.dataset.caption;
+            document.getElementById('lightbox').style.display = 'flex';
+          });
         });
       </script>
     </div>
