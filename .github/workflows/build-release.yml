@@ -36,6 +36,8 @@ jobs:
             mold \
             p7zip-full \
             unzip
+          # Make mold discoverable by aarch64 cross-compiler
+          sudo ln -sf /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
 
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli@0.2.116
