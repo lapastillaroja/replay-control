@@ -142,38 +142,6 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Get genre counts across the entire library.
-    pub fn genre_counts(conn: &Connection) -> Result<Vec<(String, usize)>> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT genre_group, COUNT(*) as cnt FROM game_library
-                 WHERE genre_group != ''
-                 GROUP BY genre_group ORDER BY cnt DESC",
-            )
-            .map_err(|e| Error::Other(format!("Prepare genre_counts: {e}")))?;
-
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1).map(|v| v as usize)?,
-                ))
-            })
-            .map_err(|e| Error::Other(format!("Query genre_counts: {e}")))?;
-
-        Ok(rows.flatten().collect())
-    }
-
-    /// Count multiplayer games (players >= 2) across the entire library.
-    pub fn multiplayer_count(conn: &Connection) -> Result<usize> {
-        conn.query_row(
-            "SELECT COUNT(*) FROM game_library WHERE players IS NOT NULL AND players >= 2",
-            [],
-            |row| row.get::<_, i64>(0).map(|v| v as usize),
-        )
-        .map_err(|e| Error::Other(format!("Query multiplayer_count: {e}")))
-    }
-
     /// Get all distinct genre groups across the entire game library.
     /// Returns sorted genre group names (excludes empty strings).
     pub fn all_genre_groups(conn: &Connection) -> Result<Vec<String>> {
@@ -533,19 +501,8 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Whether any games have 4+ players.
-    pub fn has_4player_games(conn: &Connection) -> Result<bool> {
-        conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM game_library WHERE players >= 4)",
-            [],
-            |row| row.get::<_, bool>(0),
-        )
-        .map_err(|e| Error::Other(format!("Query has_4player_games: {e}")))
-    }
-
     /// Top genre names by game count (ordered descending).
-    /// Returns genre names only — no counts. Cheaper than `genre_counts`
-    /// since we only need the names for pill selection.
+    /// Returns genre names only — no counts, just names for pill selection.
     pub fn top_genre_names(conn: &Connection, limit: usize) -> Result<Vec<String>> {
         let mut stmt = conn
             .prepare(
