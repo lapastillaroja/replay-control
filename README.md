@@ -86,9 +86,14 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 <details>
 <summary>More install options</summary>
 
+**Latest beta (recommended until v1.0):**
+```bash
+REPLAY_CONTROL_VERSION=beta curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+```
+
 **Specific version:**
 ```bash
-REPLAY_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+REPLAY_CONTROL_VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
 ```
 
 **Custom IP and password:**

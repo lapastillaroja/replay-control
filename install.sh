@@ -10,7 +10,8 @@ set -euo pipefail
 #   bash install.sh --sdcard
 #   bash install.sh --ip 192.168.1.50
 #   bash install.sh --dry-run
-#   REPLAY_VERSION=v0.2.0 bash install.sh
+#   REPLAY_CONTROL_VERSION=v0.2.0 bash install.sh
+#   REPLAY_CONTROL_VERSION=beta bash install.sh
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ DRY_RUN=false
 LOCAL=false
 LOCAL_DIR=""
 PI_ADDR="${REPLAY_PI_ADDR:-}"
-VERSION="${REPLAY_VERSION:-latest}"
+VERSION="${REPLAY_CONTROL_VERSION:-latest}"
 SDCARD_PATH=""
 TMPDIR_WORK=""
 
@@ -91,12 +92,15 @@ ${BOLD}FLAGS${RESET}
                         (default: project root, expects target/release/ and target/site/)
 
 ${BOLD}ENVIRONMENT VARIABLES${RESET}
-    REPLAY_VERSION      Release tag to install (default: latest)
-    REPLAY_PI_ADDR      Pi address, same as --ip
+    REPLAY_CONTROL_VERSION  Release to install: tag, "latest" (default), or "beta"
+    REPLAY_PI_ADDR          Pi address, same as --ip
 
 ${BOLD}EXAMPLES${RESET}
-    ${BOLD}Install via SSH (auto-discover Pi):${RESET}
+    ${BOLD}Install latest stable via SSH:${RESET}
         bash install.sh
+
+    ${BOLD}Install latest beta:${RESET}
+        REPLAY_CONTROL_VERSION=beta bash install.sh
 
     ${BOLD}Install via SSH to a known IP:${RESET}
         bash install.sh --ip 192.168.1.50
@@ -105,7 +109,7 @@ ${BOLD}EXAMPLES${RESET}
         bash install.sh --sdcard /run/media/user/rootfs
 
     ${BOLD}Install a specific version:${RESET}
-        REPLAY_VERSION=v0.2.0 bash install.sh
+        REPLAY_CONTROL_VERSION=v0.2.0 bash install.sh
 
     ${BOLD}Install from local build:${RESET}
         bash install.sh --local
@@ -169,7 +173,20 @@ parse_args() {
 resolve_download_urls() {
     local base_url
 
-    if [[ "$VERSION" == "latest" ]]; then
+    if [[ "$VERSION" == "beta" ]]; then
+        info "Querying GitHub for latest beta release..."
+        local tag
+        tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" \
+            | grep -o '"tag_name": *"[^"]*"' \
+            | head -1 \
+            | sed 's/.*"\(v[^"]*\)".*/\1/')
+        if [[ -z "$tag" ]]; then
+            fatal "No releases found. Check https://github.com/$REPO/releases"
+        fi
+        info "Found: $tag"
+        VERSION="$tag"
+        base_url="https://github.com/$REPO/releases/download/$tag"
+    elif [[ "$VERSION" == "latest" ]]; then
         base_url="https://github.com/$REPO/releases/latest/download"
     else
         base_url="https://github.com/$REPO/releases/download/$VERSION"
