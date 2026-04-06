@@ -140,9 +140,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreLocale => "Language",
         Key::LocaleTitle => "App Language",
         Key::LocaleSaved => "Language saved",
+        Key::LocaleAuto => "Same as browser",
         Key::LocaleEn => "English",
-        Key::LocaleEs => "Español",
-        Key::LocaleJa => "日本語",
+        Key::LocaleEs => "Spanish - Español",
+        Key::LocaleJa => "Japanese - 日本語",
 
         // Text size
         Key::MoreTextSize => "Text Size",

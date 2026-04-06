@@ -32,13 +32,8 @@ pub fn MorePage() -> impl IntoView {
                         <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
                             {move || Suspend::new(async move {
                                 // get_locale returns the explicit setting or empty string;
-                                // fall back to the current SSR-resolved locale from context.
-                                let saved = locale_res.await.unwrap_or_default();
-                                let current = if saved.is_empty() {
-                                    i18n.locale.get_untracked().code().to_string()
-                                } else {
-                                    saved
-                                };
+                                // empty means "auto-detect from browser".
+                                let current = locale_res.await.unwrap_or_default();
                                 Ok::<_, ServerFnError>(view! { <LocaleSelector current /> })
                             })}
                         </Transition>
@@ -666,9 +661,11 @@ fn LocaleSelector(current: String) -> impl IntoView {
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
-    // Language options: (locale_code, native_name)
-    // Names are shown in their own script — not translated — so they're always readable.
+    // Language options: (locale_code, i18n_key)
+    // Empty string = "auto-detect from browser". Language names are shown in their
+    // own script so users can find their language regardless of the current UI locale.
     let options: &[(&str, Key)] = &[
+        ("", Key::LocaleAuto),
         ("en", Key::LocaleEn),
         ("es", Key::LocaleEs),
         ("ja", Key::LocaleJa),
@@ -685,20 +682,32 @@ fn LocaleSelector(current: String) -> impl IntoView {
         leptos::task::spawn_local(async move {
             match server_fns::save_locale(v.clone()).await {
                 Ok(()) => {
-                    let locale = Locale::from_code(&v);
-                    i18n.set_locale.set(locale);
-                    active.set(v);
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        if let Some(html) = web_sys::window()
-                            .and_then(|w| w.document())
-                            .and_then(|d| d.document_element())
+                    if v.is_empty() {
+                        // "Same as browser" — reload so the server re-detects
+                        // the locale from the Accept-Language header.
+                        #[cfg(target_arch = "wasm32")]
                         {
-                            let _ = html.set_attribute("lang", locale.code());
+                            if let Some(window) = web_sys::window() {
+                                let _ = window.location().reload();
+                            }
                         }
+                        active.set(v);
+                    } else {
+                        let locale = Locale::from_code(&v);
+                        i18n.set_locale.set(locale);
+                        active.set(v);
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            if let Some(html) = web_sys::window()
+                                .and_then(|w| w.document())
+                                .and_then(|d| d.document_element())
+                            {
+                                let _ = html.set_attribute("lang", locale.code());
+                            }
+                        }
+                        let new_locale = i18n.locale.get_untracked();
+                        status.set(Some((true, t(new_locale, Key::LocaleSaved).to_string())));
                     }
-                    let new_locale = i18n.locale.get_untracked();
-                    status.set(Some((true, t(new_locale, Key::LocaleSaved).to_string())));
                 }
                 Err(e) => {
                     status.set(Some((false, e.to_string())));

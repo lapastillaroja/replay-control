@@ -132,6 +132,7 @@ pub enum Key {
     MoreLocale,
     LocaleTitle,
     LocaleSaved,
+    LocaleAuto,
     LocaleEn,
     LocaleEs,
     LocaleJa,
