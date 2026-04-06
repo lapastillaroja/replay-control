@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://lapastillaroja.github.io/replay-control/">Documentation</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/lapastillaroja/replay-control/actions"><img src="https://github.com/lapastillaroja/replay-control/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue.svg" alt="License: GPLv3"></a>
 </p>

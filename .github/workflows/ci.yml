@@ -42,6 +42,9 @@ jobs:
           TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
         run: ./scripts/download-tgdb-lookups.sh
 
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -67,11 +70,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
+
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli@0.2.116
 
       - name: Install binaryen (wasm-opt)
-        run: sudo apt-get update && sudo apt-get install -y binaryen
+        run: sudo apt-get install -y binaryen
 
       - name: Build (x86_64)
         run: ./build.sh
@@ -99,6 +105,9 @@ jobs:
           bash scripts/download-metadata.sh
           mkdir -p data/wikidata
           python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
+
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
 
       - name: Generate CSS for integration tests
         run: |

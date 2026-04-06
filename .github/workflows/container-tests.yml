@@ -31,6 +31,9 @@ jobs:
           key: data-${{ hashFiles('data/**') }}
           restore-keys: data-
 
+      - name: Install mold linker
+        run: sudo apt-get update && sudo apt-get install -y mold
+
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --locked
 

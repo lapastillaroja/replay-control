@@ -26,6 +26,7 @@ jobs:
             gcc-aarch64-linux-gnu \
             libc6-dev-arm64-cross \
             binaryen \
+            mold \
             p7zip-full \
             unzip
 
