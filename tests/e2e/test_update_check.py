@@ -5,12 +5,18 @@ These tests verify the update banner, check button, channel switching,
 and skip functionality on the More page.
 """
 
+import sys
 import time
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
 from conftest import PI_URL, clean_update_state, get_pi_version, set_channel
+
+# Import mock version dynamically so the test always matches the mock server
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "container"))
+from mock_github import MOCK_BETA_VERSION, MOCK_STABLE_VERSION
 
 
 class TestUpdateBanner:
@@ -33,8 +39,8 @@ class TestUpdateBanner:
             banner = page.locator(".update-banner")
             expect(banner).to_be_visible(timeout=30000)
 
-            # Should mention beta.4
-            assert "0.1.0-beta.4" in banner.text_content()
+            # Should mention the beta mock version
+            assert MOCK_BETA_VERSION in banner.text_content()
 
             browser.close()
 
@@ -100,8 +106,8 @@ class TestSkipVersion:
 class TestChannelSwitch:
     """Tests for switching between stable and beta channels."""
 
-    def test_switch_to_stable_hides_prerelease(self, clean_pi):
-        """Switching from beta to stable hides prerelease update banners."""
+    def test_switch_to_stable_shows_stable_update(self, clean_pi):
+        """Switching from beta to stable shows the stable update instead."""
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
@@ -111,22 +117,24 @@ class TestChannelSwitch:
 
             # Get update on beta
             page.locator("button").filter(has_text="Check").click()
-            page.locator(".update-banner").wait_for(timeout=30000)
+            banner = page.locator(".update-banner")
+            banner.wait_for(timeout=30000)
+            assert MOCK_BETA_VERSION in banner.text_content()
 
             # Switch to stable
             channel_select = page.locator("select.form-input").last
             channel_select.select_option("stable")
 
-            # Wait for re-check to complete
+            # Wait for re-check to complete, banner should show stable version
             time.sleep(5)
-
-            # Banner should be gone (no stable releases exist)
-            expect(page.locator(".update-banner")).not_to_be_visible(timeout=10000)
+            banner = page.locator(".update-banner")
+            expect(banner).to_be_visible(timeout=30000)
+            assert MOCK_STABLE_VERSION in banner.text_content()
 
             browser.close()
 
-    def test_switch_to_beta_shows_prerelease(self, clean_pi):
-        """Switching from stable to beta triggers a check and shows prereleases."""
+    def test_switch_to_beta_shows_higher_version(self, clean_pi):
+        """Switching from stable to beta shows the higher beta version."""
         set_channel("stable")
 
         with sync_playwright() as p:
@@ -136,17 +144,21 @@ class TestChannelSwitch:
             page.goto(f"{PI_URL}/more", wait_until="load", timeout=30000)
             time.sleep(3)
 
-            # No banner on stable (no stable releases)
-            expect(page.locator(".update-banner")).not_to_be_visible(timeout=5000)
+            # Check on stable — should find the stable update
+            page.locator("button").filter(has_text="Check").click()
+            banner = page.locator(".update-banner")
+            expect(banner).to_be_visible(timeout=30000)
+            assert MOCK_STABLE_VERSION in banner.text_content()
 
             # Switch to beta
             channel_select = page.locator("select.form-input").last
             channel_select.select_option("beta")
 
-            # Banner should appear after re-check
+            # Banner should show the higher beta version after re-check
+            time.sleep(5)
             banner = page.locator(".update-banner")
             expect(banner).to_be_visible(timeout=30000)
-            assert "beta" in banner.text_content().lower()
+            assert MOCK_BETA_VERSION in banner.text_content()
 
             browser.close()
 
@@ -172,8 +184,8 @@ class TestCheckButton:
 
             browser.close()
 
-    def test_check_on_stable_no_banner(self, clean_pi):
-        """Checking on stable channel with no releases shows no banner."""
+    def test_check_on_stable_shows_stable_update(self, clean_pi):
+        """Checking on stable channel finds the stable release."""
         set_channel("stable")
 
         with sync_playwright() as p:
@@ -184,10 +196,12 @@ class TestCheckButton:
             time.sleep(3)
 
             page.locator("button").filter(has_text="Check").click()
-            time.sleep(10)
 
-            # No banner should appear (no stable releases exist)
-            expect(page.locator(".update-banner")).not_to_be_visible()
+            # Stable update banner should appear
+            banner = page.locator(".update-banner")
+            expect(banner).to_be_visible(timeout=30000)
+            assert MOCK_STABLE_VERSION in banner.text_content()
+            assert "beta" not in banner.text_content().lower()
 
             browser.close()
 
@@ -213,11 +227,11 @@ class TestVersionDisplay:
             browser.close()
 
 
-class TestUpToDateMessage:
-    """Tests for the 'up to date' message after checking."""
+class TestStableUpdate:
+    """Tests for stable channel update behavior."""
 
-    def test_up_to_date_shown_on_stable(self, clean_pi):
-        """Checking on stable with no releases shows 'up to date' message."""
+    def test_stable_banner_shows_version(self, clean_pi):
+        """Checking on stable shows a banner with the stable version (not beta)."""
         set_channel("stable")
 
         with sync_playwright() as p:
@@ -228,11 +242,13 @@ class TestUpToDateMessage:
             time.sleep(5)
 
             page.locator("button").filter(has_text="Check").click()
-            time.sleep(15)
 
-            # Should show up-to-date status
-            status = page.locator(".status-msg.status-ok")
-            expect(status).to_be_visible(timeout=5000)
+            banner = page.locator(".update-banner")
+            expect(banner).to_be_visible(timeout=30000)
+            text = banner.text_content()
+            assert MOCK_STABLE_VERSION in text
+            # Should NOT show the beta version
+            assert MOCK_BETA_VERSION not in text
 
             browser.close()
 

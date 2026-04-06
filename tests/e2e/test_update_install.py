@@ -5,11 +5,12 @@ These tests exercise the full update flow including the /updating page,
 download progress, service restart, and auto-reload.
 
 WARNING: These tests trigger a real service restart on the Pi.
-The Pi must be running a version lower than v0.1.0-beta.4 for the
-update to be offered (set Cargo.toml version to 0.0.1 for testing).
+The Pi must be running a version lower than the mock server's version
+(derived dynamically from Cargo.toml) for the update to be offered.
 """
 
 import json
+import os
 import time
 
 import pytest
@@ -56,7 +57,7 @@ class TestUpdatingPage:
             time.sleep(5)  # Wait for hydration
 
             # Should show the "nothing to do" content inside the updating page
-            expect(page.locator(".updating-page a[href='/']")).to_be_visible(timeout=5000)
+            expect(page.locator(".updating-page a[href='/more']")).to_be_visible(timeout=5000)
 
             browser.close()
 
@@ -125,12 +126,6 @@ class TestUpdatingPage:
 
             browser.close()
 
-    def test_system_busy_shows_error(self, clean_pi):
-        """If the startup pipeline is running, /updating shows a busy message."""
-        # This is hard to trigger reliably — would need to restart the service
-        # and immediately navigate to /updating before the pipeline completes.
-        # Skipped for now.
-        pytest.skip("Requires precise timing with startup pipeline")
 
 
 class TestUpdateCleanup:
@@ -176,14 +171,38 @@ class TestUpdateCleanup:
 class TestUpdateError:
     """Tests for update error handling."""
 
-    def test_error_shown_on_updating_page(self, clean_pi):
-        """If StartUpdate fails, the error is shown on /updating with a back link."""
-        # Trigger an error by trying to update a non-existent tag
-        # This requires navigating to /updating when UpdateState has a fake tag
-        # Hard to trigger from UI — skip for manual testing
-        pytest.skip("Requires fake update state injection")
-
     def test_network_error_during_download(self, clean_pi):
-        """If the network fails during download, an error is shown."""
-        # Would need to block network access mid-download
-        pytest.skip("Requires network manipulation")
+        """If downloads fail (503), an error is shown on the updating page."""
+        from urllib.request import urlopen
+
+        mock_port = os.environ.get("MOCK_PORT", "9999")
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            page.goto(f"{PI_URL}/more", wait_until="load", timeout=30000)
+            time.sleep(3)
+
+            # Check for update (mock server is still up)
+            page.locator("button").filter(has_text="Check").click()
+            page.locator(".update-banner").wait_for(timeout=30000)
+
+            # Tell mock server to fail all downloads
+            urlopen(f"http://127.0.0.1:{mock_port}/mock/downloads/fail", timeout=5)
+
+            # Click Update Now — download should fail with 503
+            page.locator("a").filter(has_text="Update Now").click()
+            page.wait_for_url("**/updating", timeout=5000)
+
+            # Error should be visible on the updating page
+            error_el = page.locator(".updating-page .error")
+            expect(error_el).to_be_visible(timeout=30000)
+
+            # Restore downloads for subsequent tests
+            try:
+                urlopen(f"http://127.0.0.1:{mock_port}/mock/downloads/ok", timeout=5)
+            except Exception:
+                pass
+
+            browser.close()

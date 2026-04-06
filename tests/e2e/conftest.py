@@ -27,7 +27,7 @@ CONTAINER_ENGINE = os.environ.get("CONTAINER_ENGINE", "")
 
 # App URL
 PI_IP = os.environ.get("PI_IP", "192.168.10.30")
-PI_URL = os.environ.get("APP_URL", f"http://{PI_IP}:8080" if not CONTAINER else "http://localhost:8080")
+PI_URL = os.environ.get("APP_URL", f"http://{PI_IP}:8080" if not CONTAINER else "http://127.0.0.1:8080")
 
 # SSH settings (Pi mode only)
 PI_HOST = os.environ.get("PI_HOST", "replay.local")

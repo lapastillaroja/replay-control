@@ -77,7 +77,7 @@ MOCK_PID=$!
 
 # Wait for mock server to be ready
 for i in $(seq 1 10); do
-    if curl -sf "http://localhost:$MOCK_PORT/health" >/dev/null 2>&1; then
+    if curl -sf "http://127.0.0.1:$MOCK_PORT/health" >/dev/null 2>&1; then
         echo "Mock server ready."
         break
     fi
@@ -99,7 +99,7 @@ $ENGINE run -d \
 # --- Step 5: Wait for health check ---
 echo "Waiting for app to be ready..."
 for i in $(seq 1 30); do
-    if curl -sf "http://localhost:$APP_PORT/api/version" >/dev/null 2>&1; then
+    if curl -sf "http://127.0.0.1:$APP_PORT/api/version" >/dev/null 2>&1; then
         echo "App is ready on port $APP_PORT."
         break
     fi
@@ -116,8 +116,10 @@ echo "Running Playwright tests..."
 cd "$PROJECT_ROOT"
 
 RESULT=0
-APP_URL="http://localhost:$APP_PORT" \
-    python3 -m pytest tests/e2e/ -v --timeout=120 || RESULT=$?
+APP_URL="http://127.0.0.1:$APP_PORT" \
+CONTAINER="$CONTAINER_NAME" \
+CONTAINER_ENGINE="$ENGINE" \
+    python3 -m pytest tests/e2e/ -v || RESULT=$?
 
 # --- Step 7: Report results ---
 if [[ $RESULT -eq 0 ]]; then
