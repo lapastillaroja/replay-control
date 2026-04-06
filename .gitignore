@@ -136,3 +136,4 @@ site/resources/
 site/node_modules/
 site/hugo_stats.json
 .env
+site/static/pagefind/

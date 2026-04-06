@@ -12,7 +12,7 @@
     "create": "hugo new",
     "dev": "hugo server --disableFastRender --noHTTPCache",
     "format": "prettier **/** -w -c",
-    "build": "hugo --minify --gc",
+    "build": "hugo --minify --gc && npx -y pagefind --site public",
     "preview": "vite preview --outDir public"
   },
   "dependencies": {

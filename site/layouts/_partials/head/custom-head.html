@@ -1,1 +1,58 @@
-<!-- Custom head -->
+<!-- Pagefind search -->
+<link href="{{ "pagefind/pagefind-ui.css" | relURL }}" rel="stylesheet">
+<style>
+  /* Pagefind modal overlay */
+  #pagefind-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(0,0,0,0.6);
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 10vh;
+  }
+  #pagefind-modal.active {
+    display: flex;
+  }
+  #pagefind-modal .pagefind-container {
+    background: var(--bs-body-bg, #fff);
+    color: var(--bs-body-color, #212529);
+    border-radius: 8px;
+    padding: 1.5rem;
+    width: 90vw;
+    max-width: 640px;
+    max-height: 70vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  /* Override Pagefind default colors for dark mode */
+  .pagefind-ui {
+    --pagefind-ui-text: var(--bs-body-color, #212529);
+    --pagefind-ui-background: var(--bs-body-bg, #fff);
+    --pagefind-ui-border: var(--bs-border-color, #dee2e6);
+    --pagefind-ui-primary: var(--bs-link-color, #0d6efd);
+  }
+  .pagefind-ui .pagefind-ui__search-input {
+    background: var(--bs-body-bg, #fff);
+    color: var(--bs-body-color, #212529);
+    border-color: var(--bs-border-color, #dee2e6);
+  }
+  .pagefind-ui .pagefind-ui__result {
+    border-color: var(--bs-border-color, #dee2e6);
+  }
+  .pagefind-ui .pagefind-ui__result-link {
+    color: var(--bs-link-color, #0d6efd);
+  }
+  .pagefind-ui .pagefind-ui__result-excerpt {
+    color: var(--bs-body-color, #212529);
+  }
+  .pagefind-ui .pagefind-ui__message {
+    color: var(--bs-secondary-color, #6c757d);
+  }
+  .pagefind-ui .pagefind-ui__button {
+    background: var(--bs-secondary-bg, #e9ecef);
+    color: var(--bs-body-color, #212529);
+  }
+</style>
