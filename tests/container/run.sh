@@ -90,10 +90,16 @@ done
 
 # --- Step 4: Start the container ---
 echo "Starting container..."
+EXTRA_ARGS=()
+if [[ "$ENGINE" == "docker" ]]; then
+    EXTRA_ARGS+=(--add-host=host.docker.internal:host-gateway)
+fi
+
 $ENGINE run -d \
     --name "$CONTAINER_NAME" \
     -p "$APP_PORT:8080" \
     -e "REPLAY_GITHUB_API_URL=http://$HOST_GATEWAY:$MOCK_PORT" \
+    "${EXTRA_ARGS[@]}" \
     "$IMAGE_NAME"
 
 # --- Step 5: Wait for health check ---

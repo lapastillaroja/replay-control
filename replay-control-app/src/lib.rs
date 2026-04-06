@@ -211,37 +211,32 @@ fn SseConfigListener() -> impl IntoView {
                                 last_storage_kind.set(kind.to_string());
                             }
                             // Set available update from init payload.
-                            if let Some(signal) = update_state_signal {
-                                if let Some(update_val) = payload.get("available_update") {
-                                    if let Ok(available) =
-                                        serde_json::from_value::<
-                                            replay_control_core::update::AvailableUpdate,
-                                        >(update_val.clone())
-                                    {
-                                        // Don't overwrite Restarting state.
-                                        let current = signal.get_untracked();
-                                        if !matches!(
-                                            current,
-                                            replay_control_core::update::UpdateState::Restarting { .. }
-                                        ) {
-                                            signal.set(
-                                                replay_control_core::update::UpdateState::Available(
-                                                    available,
-                                                ),
-                                            );
-                                        }
-                                    }
+                            if let Some(signal) = update_state_signal
+                                && let Some(update_val) = payload.get("available_update")
+                                && let Ok(available) =
+                                    serde_json::from_value::<
+                                        replay_control_core::update::AvailableUpdate,
+                                    >(update_val.clone())
+                            {
+                                let current = signal.get_untracked();
+                                if !matches!(
+                                    current,
+                                    replay_control_core::update::UpdateState::Restarting { .. }
+                                ) {
+                                    signal.set(
+                                        replay_control_core::update::UpdateState::Available(
+                                            available,
+                                        ),
+                                    );
                                 }
                             }
                             // Version-based reload for stale tabs.
                             if let Some(server_version) =
                                 payload.get("version").and_then(|v| v.as_str())
+                                && server_version != crate::VERSION
+                                && let Some(window) = web_sys::window()
                             {
-                                if server_version != crate::VERSION {
-                                    if let Some(window) = web_sys::window() {
-                                        let _ = window.location().reload();
-                                    }
-                                }
+                                let _ = window.location().reload();
                             }
                         }
                         "SkinChanged" => {
@@ -297,25 +292,23 @@ fn SseConfigListener() -> impl IntoView {
                             }
                         }
                         "UpdateAvailable" => {
-                            if let Some(signal) = update_state_signal {
-                                if let Some(update_val) = payload.get("update") {
-                                    if let Ok(available) =
-                                        serde_json::from_value::<
-                                            replay_control_core::update::AvailableUpdate,
-                                        >(update_val.clone())
-                                    {
-                                        let current = signal.get_untracked();
-                                        if !matches!(
-                                            current,
-                                            replay_control_core::update::UpdateState::Restarting { .. }
-                                        ) {
-                                            signal.set(
-                                                replay_control_core::update::UpdateState::Available(
-                                                    available,
-                                                ),
-                                            );
-                                        }
-                                    }
+                            if let Some(signal) = update_state_signal
+                                && let Some(update_val) = payload.get("update")
+                                && let Ok(available) =
+                                    serde_json::from_value::<
+                                        replay_control_core::update::AvailableUpdate,
+                                    >(update_val.clone())
+                            {
+                                let current = signal.get_untracked();
+                                if !matches!(
+                                    current,
+                                    replay_control_core::update::UpdateState::Restarting { .. }
+                                ) {
+                                    signal.set(
+                                        replay_control_core::update::UpdateState::Available(
+                                            available,
+                                        ),
+                                    );
                                 }
                             }
                         }

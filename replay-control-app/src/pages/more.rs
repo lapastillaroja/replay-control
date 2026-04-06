@@ -690,10 +690,11 @@ fn LocaleSelector(current: String) -> impl IntoView {
                     active.set(v);
                     #[cfg(target_arch = "wasm32")]
                     {
-                        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-                            if let Some(html) = doc.document_element() {
-                                let _ = html.set_attribute("lang", locale.code());
-                            }
+                        if let Some(html) = web_sys::window()
+                            .and_then(|w| w.document())
+                            .and_then(|d| d.document_element())
+                        {
+                            let _ = html.set_attribute("lang", locale.code());
                         }
                     }
                     let new_locale = i18n.locale.get_untracked();
