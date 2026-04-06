@@ -238,9 +238,53 @@ pub struct SystemMeta {
     pub total_size_bytes: u64,
 }
 
+/// SQL to create the `game_library` table. Single source of truth used by
+/// `init_tables()`, `validate_game_library_schema()`, and tests.
+const CREATE_GAME_LIBRARY_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS game_library (
+        system TEXT NOT NULL,
+        rom_filename TEXT NOT NULL,
+        rom_path TEXT NOT NULL,
+        display_name TEXT,
+        base_title TEXT NOT NULL DEFAULT '',
+        series_key TEXT NOT NULL DEFAULT '',
+        region TEXT NOT NULL DEFAULT '',
+        developer TEXT NOT NULL DEFAULT '',
+        search_text TEXT NOT NULL DEFAULT '',
+        genre TEXT,
+        genre_group TEXT NOT NULL DEFAULT '',
+        rating REAL,
+        rating_count INTEGER,
+        players INTEGER,
+        is_clone INTEGER NOT NULL DEFAULT 0,
+        is_m3u INTEGER NOT NULL DEFAULT 0,
+        is_translation INTEGER NOT NULL DEFAULT 0,
+        is_hack INTEGER NOT NULL DEFAULT 0,
+        is_special INTEGER NOT NULL DEFAULT 0,
+        box_art_url TEXT,
+        driver_status TEXT,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        crc32 INTEGER,
+        hash_mtime INTEGER,
+        hash_matched_name TEXT,
+        release_year INTEGER,
+        cooperative INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (system, rom_filename)
+    );
+";
+
+/// SQL to create the `game_library_meta` table.
+const CREATE_GAME_LIBRARY_META_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS game_library_meta (
+        system TEXT PRIMARY KEY,
+        dir_mtime_secs INTEGER,
+        scanned_at INTEGER NOT NULL,
+        rom_count INTEGER NOT NULL DEFAULT 0,
+        total_size_bytes INTEGER NOT NULL DEFAULT 0
+    );
+";
+
 /// Expected columns in the `game_library` table.
-///
-/// Keep in sync with the CREATE TABLE statement in [`MetadataDb::init_tables`].
 /// Used by [`MetadataDb::validate_game_library_schema`] to detect stale schemas.
 const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "system",
@@ -358,47 +402,17 @@ impl MetadataDb {
                 );
                 -- PK (repo_name, kind, filename) already covers repo_name-only lookups,
                 -- so no separate idx_thumbidx_repo index is needed.
+            ",
+        )
+        .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
 
-                CREATE TABLE IF NOT EXISTS game_library (
-                    system TEXT NOT NULL,
-                    rom_filename TEXT NOT NULL,
-                    rom_path TEXT NOT NULL,
-                    display_name TEXT,
-                    base_title TEXT NOT NULL DEFAULT '',
-                    series_key TEXT NOT NULL DEFAULT '',
-                    region TEXT NOT NULL DEFAULT '',
-                    developer TEXT NOT NULL DEFAULT '',
-                    search_text TEXT NOT NULL DEFAULT '',
-                    genre TEXT,
-                    genre_group TEXT NOT NULL DEFAULT '',
-                    rating REAL,
-                    rating_count INTEGER,
-                    players INTEGER,
-                    is_clone INTEGER NOT NULL DEFAULT 0,
-                    is_m3u INTEGER NOT NULL DEFAULT 0,
-                    is_translation INTEGER NOT NULL DEFAULT 0,
-                    is_hack INTEGER NOT NULL DEFAULT 0,
-                    is_special INTEGER NOT NULL DEFAULT 0,
-                    box_art_url TEXT,
-                    driver_status TEXT,
-                    size_bytes INTEGER NOT NULL DEFAULT 0,
-                    crc32 INTEGER,
-                    hash_mtime INTEGER,
-                    hash_matched_name TEXT,
-                    release_year INTEGER,
-                    cooperative INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (system, rom_filename)
-                );
+        conn.execute_batch(CREATE_GAME_LIBRARY_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create game_library: {e}")))?;
+        conn.execute_batch(CREATE_GAME_LIBRARY_META_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create game_library_meta: {e}")))?;
 
-                CREATE TABLE IF NOT EXISTS game_library_meta (
-                    system TEXT PRIMARY KEY,
-                    dir_mtime_secs INTEGER,
-                    scanned_at INTEGER NOT NULL,
-                    rom_count INTEGER NOT NULL DEFAULT 0,
-                    total_size_bytes INTEGER NOT NULL DEFAULT 0
-                );
-
-                -- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,
+        conn.execute_batch(
+            "-- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,
                 -- developer_genre_groups with system filter
                 CREATE INDEX IF NOT EXISTS idx_game_library_genre
                   ON game_library (system, genre)
@@ -538,45 +552,8 @@ impl MetadataDb {
             "DROP TABLE IF EXISTS game_library; DROP TABLE IF EXISTS game_library_meta;",
         );
         // Recreate with current schema.
-        let _ = conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS game_library (
-                system TEXT NOT NULL,
-                rom_filename TEXT NOT NULL,
-                rom_path TEXT NOT NULL,
-                display_name TEXT,
-                base_title TEXT NOT NULL DEFAULT '',
-                series_key TEXT NOT NULL DEFAULT '',
-                region TEXT NOT NULL DEFAULT '',
-                developer TEXT NOT NULL DEFAULT '',
-                search_text TEXT NOT NULL DEFAULT '',
-                genre TEXT,
-                genre_group TEXT NOT NULL DEFAULT '',
-                rating REAL,
-                rating_count INTEGER,
-                players INTEGER,
-                is_clone INTEGER NOT NULL DEFAULT 0,
-                is_m3u INTEGER NOT NULL DEFAULT 0,
-                is_translation INTEGER NOT NULL DEFAULT 0,
-                is_hack INTEGER NOT NULL DEFAULT 0,
-                is_special INTEGER NOT NULL DEFAULT 0,
-                box_art_url TEXT,
-                driver_status TEXT,
-                size_bytes INTEGER NOT NULL DEFAULT 0,
-                crc32 INTEGER,
-                hash_mtime INTEGER,
-                hash_matched_name TEXT,
-                release_year INTEGER,
-                cooperative INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (system, rom_filename)
-            );
-            CREATE TABLE IF NOT EXISTS game_library_meta (
-                system TEXT PRIMARY KEY,
-                dir_mtime_secs INTEGER,
-                scanned_at INTEGER NOT NULL,
-                rom_count INTEGER NOT NULL DEFAULT 0,
-                total_size_bytes INTEGER NOT NULL DEFAULT 0
-            );",
-        );
+        let _ = conn.execute_batch(CREATE_GAME_LIBRARY_SQL);
+        let _ = conn.execute_batch(CREATE_GAME_LIBRARY_META_SQL);
     }
 
     /// Helper: convert a row to GameEntry (used by multiple queries).
@@ -716,6 +693,54 @@ mod tests {
             release_year: None,
             cooperative: false,
         }
+    }
+
+    #[test]
+    fn schema_rebuild_on_missing_column() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("metadata.db");
+
+        // Intentionally incomplete schema (missing most columns) to simulate
+        // an outdated DB. Does NOT use CREATE_GAME_LIBRARY_SQL.
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE game_library (
+                    system TEXT NOT NULL,
+                    rom_filename TEXT NOT NULL,
+                    rom_path TEXT NOT NULL,
+                    PRIMARY KEY (system, rom_filename)
+                );
+                INSERT INTO game_library (system, rom_filename, rom_path)
+                VALUES ('snes', 'Mario.sfc', '/roms/snes/Mario.sfc');",
+            )
+            .unwrap();
+
+            // Verify the row exists.
+            let count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM game_library", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(count, 1);
+        }
+
+        // Open via MetadataDb — this runs validate_game_library_schema.
+        let (conn, _path) = MetadataDb::open(dir.path()).unwrap();
+
+        // The old row should be gone (table was dropped and recreated).
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM game_library", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "old rows should be gone after schema rebuild");
+
+        // The table should have the cooperative column now.
+        let has_cooperative: bool = conn
+            .prepare("PRAGMA table_info(game_library)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .flatten()
+            .any(|col| col == "cooperative");
+        assert!(has_cooperative, "rebuilt table should have cooperative column");
     }
 
     pub(crate) fn make_game_entry_with_genre(

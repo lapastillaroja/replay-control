@@ -489,13 +489,3 @@ impl ImportPipeline {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn import_pipeline_creates_without_panicking() {
-        let _import = ImportPipeline::new();
-    }
-}

@@ -2702,4 +2702,35 @@ mod tests {
         assert!(result.contains_key(&("snes".into(), "mario.sfc".into())));
         assert!(result.contains_key(&("nes".into(), "contra.nes".into())));
     }
+
+    #[test]
+    fn search_filter_coop_only() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut coop_game = make_game_entry("snes", "Contra.sfc", false);
+        coop_game.cooperative = true;
+        let solo_game1 = make_game_entry("snes", "Mario.sfc", false);
+        let solo_game2 = make_game_entry("snes", "Zelda.sfc", false);
+
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[coop_game, solo_game1, solo_game2],
+            None,
+        )
+        .unwrap();
+
+        let filter = SearchFilter {
+            coop_only: true,
+            ..SearchFilter::default()
+        };
+        let (entries, total) =
+            MetadataDb::search_game_library(&conn, Some("snes"), None, &[], &filter, 0, 50)
+                .unwrap();
+
+        assert_eq!(total, 1);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].rom_filename, "Contra.sfc");
+        assert!(entries[0].cooperative);
+    }
 }

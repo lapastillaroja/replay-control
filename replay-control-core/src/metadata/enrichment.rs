@@ -471,6 +471,114 @@ mod tests {
     }
 
     #[test]
+    fn cooperative_or_merge_from_launchbox() {
+        let (mut conn, _dir) = open_temp_db();
+
+        // Insert a game into game_library with cooperative = false.
+        let mut entry = make_entry_with_base_title("sega_smd", "Streets (USA).md", "streets");
+        entry.cooperative = false;
+        MetadataDb::save_system_entries(&mut conn, "sega_smd", &[entry], None).unwrap();
+
+        // Insert same game into game_metadata with cooperative = true.
+        let meta = crate::metadata_db::GameMetadata {
+            cooperative: true,
+            ..crate::metadata_db::tests::make_metadata(None)
+        };
+        MetadataDb::bulk_upsert(
+            &mut conn,
+            &[("sega_smd".into(), "Streets (USA).md".into(), meta)],
+        )
+        .unwrap();
+
+        // Verify game_library starts with cooperative = false.
+        let before = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        assert!(!before[0].cooperative, "should start non-cooperative");
+
+        // Simulate the enrichment cooperative update (the enrich_system pipeline
+        // reads game_metadata cooperative and produces cooperative_updates).
+        let coop_set = MetadataDb::system_metadata_cooperative(&conn, "sega_smd").unwrap();
+        assert!(coop_set.contains("Streets (USA).md"));
+
+        let existing = MetadataDb::system_rom_cooperative(&conn, "sega_smd").unwrap();
+        let updates: Vec<String> = coop_set
+            .into_iter()
+            .filter(|f| !existing.contains(f))
+            .collect();
+        MetadataDb::update_cooperative(&mut conn, "sega_smd", &updates).unwrap();
+
+        let after = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        assert!(after[0].cooperative, "should be cooperative after enrichment (OR merge)");
+    }
+
+    #[test]
+    fn enrichment_fills_genre_gap_but_does_not_overwrite() {
+        let (mut conn, _dir) = open_temp_db();
+
+        // Game with existing genre "Action".
+        let mut entry_with_genre =
+            make_entry_with_base_title("sega_smd", "Sonic (USA).md", "sonic");
+        entry_with_genre.genre = Some("Action".into());
+        entry_with_genre.genre_group = crate::genre::normalize_genre("Action").to_string();
+
+        // Game with no genre.
+        let entry_no_genre = make_entry_with_base_title("sega_smd", "Streets (USA).md", "streets");
+
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "sega_smd",
+            &[entry_with_genre, entry_no_genre],
+            None,
+        )
+        .unwrap();
+
+        // Enrichment tries to set genre for both.
+        MetadataDb::update_box_art_genre_rating(
+            &mut conn,
+            "sega_smd",
+            &[
+                crate::metadata_db::BoxArtGenreRating {
+                    rom_filename: "Sonic (USA).md".into(),
+                    box_art_url: None,
+                    genre: Some("Adventure".into()),
+                    players: None,
+                    rating: None,
+                    rating_count: None,
+                },
+                crate::metadata_db::BoxArtGenreRating {
+                    rom_filename: "Streets (USA).md".into(),
+                    box_art_url: None,
+                    genre: Some("Adventure".into()),
+                    players: None,
+                    rating: None,
+                    rating_count: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        let roms = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        let sonic = roms
+            .iter()
+            .find(|r| r.rom_filename == "Sonic (USA).md")
+            .unwrap();
+        let streets = roms
+            .iter()
+            .find(|r| r.rom_filename == "Streets (USA).md")
+            .unwrap();
+
+        assert_eq!(
+            sonic.genre.as_deref(),
+            Some("Action"),
+            "existing genre should NOT be overwritten"
+        );
+        assert_eq!(
+            streets.genre.as_deref(),
+            Some("Adventure"),
+            "NULL genre should be filled"
+        );
+    }
+
+    #[test]
     fn base_title_fallback_adds_entry_for_rom_without_any_enrichment() {
         let (mut conn, _dir) = open_temp_db();
 
