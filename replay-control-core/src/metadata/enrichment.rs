@@ -15,7 +15,7 @@ use crate::thumbnail_manifest::ManifestMatch;
 
 // Re-export image resolution types so existing `use enrichment::*` paths keep working.
 pub use crate::image_resolution::{
-    build_image_index, format_box_art_url, resolve_box_art, BoxArtResult, ImageIndex,
+    BoxArtResult, ImageIndex, build_image_index, format_box_art_url, resolve_box_art,
 };
 
 /// Batched metadata from LaunchBox import, keyed by ROM filename.
@@ -507,7 +507,10 @@ mod tests {
         MetadataDb::update_cooperative(&mut conn, "sega_smd", &updates).unwrap();
 
         let after = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
-        assert!(after[0].cooperative, "should be cooperative after enrichment (OR merge)");
+        assert!(
+            after[0].cooperative,
+            "should be cooperative after enrichment (OR merge)"
+        );
     }
 
     #[test]
@@ -621,5 +624,4 @@ mod tests {
             "Japan should get USA's art via base_title fallback (new entry)"
         );
     }
-
 }

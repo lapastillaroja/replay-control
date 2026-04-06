@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use replay_control_core::metadata_db::MetadataDb;
 
@@ -7,7 +7,10 @@ use super::AppState;
 use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
 
 /// Acquire a write lock, panicking on poison with a standard message.
-fn write_lock<'a, T>(lock: &'a std::sync::RwLock<T>, label: &str) -> std::sync::RwLockWriteGuard<'a, T> {
+fn write_lock<'a, T>(
+    lock: &'a std::sync::RwLock<T>,
+    label: &str,
+) -> std::sync::RwLockWriteGuard<'a, T> {
     lock.write()
         .unwrap_or_else(|e| panic!("{label} write lock poisoned: {e}"))
 }

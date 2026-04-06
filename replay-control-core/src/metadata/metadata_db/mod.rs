@@ -740,7 +740,10 @@ mod tests {
             .unwrap()
             .flatten()
             .any(|col| col == "cooperative");
-        assert!(has_cooperative, "rebuilt table should have cooperative column");
+        assert!(
+            has_cooperative,
+            "rebuilt table should have cooperative column"
+        );
     }
 
     pub(crate) fn make_game_entry_with_genre(
