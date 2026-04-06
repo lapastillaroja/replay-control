@@ -29,6 +29,7 @@ jobs:
         with:
           path: data/
           key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
+          restore-keys: data-
 
       - name: Download data files
         run: |
@@ -107,6 +108,7 @@ jobs:
         with:
           path: data/
           key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
+          restore-keys: data-
 
       - name: Download data files
         run: |

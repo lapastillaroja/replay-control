@@ -19,6 +19,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Cache data files
+        uses: actions/cache@v5
+        with:
+          path: data/
+          key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
+          restore-keys: data-
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
