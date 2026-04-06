@@ -32,6 +32,8 @@ fn developer_override(raw: &str) -> Option<&'static str> {
         "SNK Playmore" => Some("SNK"),
         // Subsidiary collapsed to parent.
         "Sega Toys" => Some("Sega"),
+        // Pre-1990 rebrand: Lucasfilm Games → LucasArts.
+        "Lucasfilm Games" => Some("LucasArts"),
         // Capcom developed (e.g., Zelda Oracle games); Nintendo published.
         "Nintendo / Capcom" => Some("Capcom"),
         // Taito published Midway's game in Japan.

@@ -1697,6 +1697,7 @@ fn developer_override_build(raw: &str) -> Option<&'static str> {
         "Sony/Capcom" => Some("Capcom"),
         "SNK Playmore" => Some("SNK"),
         "Sega Toys" => Some("Sega"),
+        "Lucasfilm Games" => Some("LucasArts"),
         "Nintendo / Capcom" => Some("Capcom"),
         "Taito Corporation (licensed from Midway)" => Some("Midway"),
         "IGS / Cave (Tong Li Animation license)" => Some("Cave"),
