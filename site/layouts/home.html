@@ -25,22 +25,20 @@
   <section class="section section-md">
     <div class="container">
       
-      <div style="display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 1rem; padding: 1rem 0; -webkit-overflow-scrolling: touch; align-items: flex-start;">
-        {{ $screenshots := slice
-          (dict "src" "screenshots/home-desktop.png" "alt" "Home page - Desktop" "caption" "Home page")
-          (dict "src" "screenshots/detail-sonic2.png" "alt" "Game detail - Sonic the Hedgehog 2" "caption" "Game detail")
-          (dict "src" "screenshots/search-zelda.png" "alt" "Search results - Zelda" "caption" "Search")
-          (dict "src" "screenshots/system-megadrive.png" "alt" "System browser - Mega Drive" "caption" "System browser")
-          (dict "src" "screenshots/favorites-crop.png" "alt" "Favorites collection" "caption" "Favorites")
-          (dict "src" "screenshots/skin-astro-home.png" "alt" "Astro skin - Home" "caption" "Astro skin")
-          (dict "src" "screenshots/home-unicolors-skin.png" "alt" "Unicolors skin - Home" "caption" "Unicolors skin")
-          (dict "src" "screenshots/search-capcom.png" "alt" "Developer search - Capcom" "caption" "Developer search")
-          (dict "src" "screenshots/home-mobile-ja.png" "alt" "Home page - Japanese" "caption" "日本語")
-          (dict "src" "screenshots/home-mobile-es.png" "alt" "Home page - Spanish" "caption" "Español")
-        }}
+      {{ $screenshots := slice
+        (dict "src" "screenshots/detail-sonic2-mobile.png" "alt" "Game detail - Sonic the Hedgehog 2" "caption" "Game detail")
+        (dict "src" "screenshots/recommendations-mobile.png" "alt" "Personalized recommendations" "caption" "Recommendations")
+        (dict "src" "screenshots/home-desktop.png" "alt" "Home page" "caption" "Home page")
+        (dict "src" "screenshots/search-zelda.png" "alt" "Search results - Zelda" "caption" "Search")
+        (dict "src" "screenshots/system-megadrive-mobile.png" "alt" "System browser - Mega Drive" "caption" "System browser")
+        (dict "src" "screenshots/favorites-organized-mobile.png" "alt" "Favorites organized by system" "caption" "Favorites")
+        (dict "src" "screenshots/home-mobile-es.png" "alt" "Home page - Spanish" "caption" "Spanish")
+        (dict "src" "screenshots/home-mobile-ja.png" "alt" "Home page - Japanese" "caption" "Japanese")
+      }}
+      <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; padding: 1rem 0;">
         {{ range $screenshots }}
-        <figure class="screenshot-thumb" data-bs-toggle="modal" data-bs-target="#lightbox" data-src="{{ .src | relURL }}" data-caption="{{ .caption }}" style="flex: 0 0 auto; scroll-snap-align: center; margin: 0; cursor: pointer;">
-          <img src="{{ .src | relURL }}" alt="{{ .alt }}" style="height: 300px; object-fit: cover; border-radius: 8px; border: 1px solid #333;" loading="lazy" />
+        <figure class="screenshot-thumb" data-bs-toggle="modal" data-bs-target="#lightbox" data-src="{{ .src | relURL }}" data-caption="{{ .caption }}" style="margin: 0; cursor: pointer;">
+          <img src="{{ .src | relURL }}" alt="{{ .alt }}" style="height: 280px; object-fit: cover; border-radius: 8px; border: 1px solid #333;" loading="lazy" />
           <figcaption style="text-align: center; color: #888; font-size: 0.85rem; margin-top: 0.5rem;">{{ .caption }}</figcaption>
         </figure>
         {{ end }}
@@ -91,9 +89,14 @@
       <h2 class="text-center mb-4">Quick Install</h2>
       <div class="row justify-content-center">
         <div class="col-lg-8">
-          <p class="text-center" style="color: #f0ad4e; font-size: 0.9rem;">⚠️ Beta — use this command until v1.0.0 is released:</p>
-<div class="highlight"><pre class="chroma"><code class="language-bash">REPLAY_VERSION=v0.1.0-beta.4 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+          <p class="text-center mb-2" style="color: #f0ad4e; font-size: 0.9rem;">⚠️ Pre-release — install the latest beta until v1.0 is ready:</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash">REPLAY_CONTROL_VERSION=beta curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
 </code></pre></div>
+          <details style="margin-top: 0.5rem;">
+            <summary style="color: #888; font-size: 0.85rem; cursor: pointer;">Or install the latest stable release</summary>
+<div class="highlight mt-2"><pre class="chroma"><code class="language-bash">curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+</code></pre></div>
+          </details>
           <p class="text-center mt-3">Then open <code>http://replay.local:8080</code> in your browser.</p>
         </div>
       </div>

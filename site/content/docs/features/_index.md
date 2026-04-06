@@ -191,8 +191,8 @@ Customize how the app displays your library and interacts with external services
 | [Thumbnails](thumbnails.md) | Box art, screenshots, title screens, image matching, box art swap |
 | [WiFi, NFS & Pi Setup](configuration.md) | WiFi setup, NFS shares, hostname, password, system info, logs |
 | [Preferences](settings.md) | Region, language, text size, skin/theme, GitHub API key |
+| [Auto-Updates](updates.md) | Update channels, check & install, rollback, skip version |
 | [Libretro Core](libretro-core.md) | Recently played viewer, TV display |
-| [Benchmarks](benchmarks.md) | Performance measurements on Raspberry Pi 5 |
 
 ## Architecture Documentation
 

@@ -1,7 +1,7 @@
 # Performance Benchmarks
 
-Last updated: 2026-04-03
-Build: v0.1.0-beta.4 (release profile)
+Last updated: 2026-04-06
+Build: v0.2.0 (release profile)
 
 All measurements taken on Raspberry Pi 5, 2GB RAM, USB storage, ~23K ROMs across 30+ systems.
 
@@ -86,8 +86,19 @@ All measurements taken on Raspberry Pi 5, 2GB RAM, USB storage, ~23K ROMs across
 | Memory after load test | 324 MB (glibc) | 67 MB (jemalloc) | **-79%** |
 | Mixed load: homepage req/s | 0.60 | 8.3 | **14x higher** |
 
+## Asset Sizes (v0.2.0)
+
+| Asset | Raw | Gzip |
+|---|---|---|
+| WASM bundle | 13,394 KB | 1,778 KB |
+| CSS | 82 KB | 13 KB |
+| Home HTML | 60 KB | — |
+| System page HTML | 21 KB | — |
+
+WASM is served gzip-compressed by the server.
+
 ## Test Methodology
 
-- Tool: [Apache Bench](https://httpd.apache.org/docs/current/programs/ab.html) (`ab`) via `tools/load-test.sh`
+- Tool: [Apache Bench](https://httpd.apache.org/docs/current/programs/ab.html) (`ab`) via `tools/bench.sh`
 - 50 requests per test with warmup pass
 - Raw results in `tools/bench-results/`
