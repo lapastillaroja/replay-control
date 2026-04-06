@@ -85,7 +85,7 @@ PI_PASS=mypassword curl -fsSL https://raw.githubusercontent.com/lapastillaroja/r
 Install a particular release instead of the latest:
 
 ```bash
-REPLAY_VERSION=v0.2.0 bash install.sh
+REPLAY_CONTROL_VERSION=v0.2.0 bash install.sh
 ```
 
 ### Pi Address via Environment Variable
@@ -143,7 +143,7 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 To update to a specific version:
 
 ```bash
-REPLAY_VERSION=v0.3.0 bash install.sh
+REPLAY_CONTROL_VERSION=v0.3.0 bash install.sh
 ```
 
 ## Uninstall
