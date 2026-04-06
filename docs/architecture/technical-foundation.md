@@ -96,9 +96,23 @@ See [Design Decisions #13](design-decisions.md) for why the project uses a custo
 
 See [Libretro Core](../features/libretro-core.md) for the API contract.
 
+## Auto-Update System
+
+The app checks GitHub releases for new versions and handles the full download-install-restart cycle from the web UI.
+
+**Update check**: A background task runs 60 seconds after startup and every 24 hours. It queries the GitHub releases API, comparing against the current version. The update channel (stable or beta) determines whether prereleases are considered. Results are broadcast to all connected browsers via the `/sse/config` SSE endpoint as `UpdateAvailable` events.
+
+**Update state**: The `UpdateState` enum (`None` → `Available` → `Restarting`) is provided as app-level context and drives the update banner on the More page. The banner shows "Update Now", "View on GitHub", and "Skip this version" actions.
+
+**Install flow**: Clicking "Update Now" navigates to `/updating`, which triggers `start_update()`. This downloads the binary and site tarballs from the GitHub release, verifies them, writes a shell script (`/var/tmp/replay-control-do-update.sh`) that replaces the binary and restarts the service, then executes it. The updating page shows a countdown and auto-reloads when the new version responds. Rollback is supported via `.bak` of the previous binary.
+
+**Configuration**: `UpdateChannel` (stable/beta) is stored in `AppSettings`. An optional GitHub API key raises the rate limit from 60 to 5,000 requests/hour.
+
+Key types: `UpdateState`, `AvailableUpdate`, `UpdateChannel` in `replay-control-core/src/update.rs`. Server functions in `replay-control-app/src/server_fns/`. Background logic in `replay-control-app/src/api/background.rs`. UI in `replay-control-app/src/pages/updating.rs` and `replay-control-app/src/pages/more.rs`.
+
 ## Internationalization
 
-Runtime i18n infrastructure with locale-keyed translation strings. English is the default language. Translation keys are defined in the app crate and resolved at render time based on the user's language preference.
+Full UI available in English, Spanish, and Japanese. Translation keys are defined as an enum in `replay-control-app/src/i18n/keys.rs` with per-language match arms. Locale is auto-detected from the browser or manually selected in Preferences. SSR renders in the correct language from the first byte — the `<html lang>` attribute is set server-side.
 
 ## PWA and Service Worker
 

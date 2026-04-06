@@ -17,8 +17,8 @@ mkdir -p "$FEATURES_DIR"
 declare -A FEATURE_WEIGHTS=(
     ["getting-started"]=1 ["install"]=2 ["game-library"]=3 ["search"]=4
     ["game-series"]=5 ["recommendations"]=6 ["metadata"]=7 ["thumbnails"]=8
-    ["configuration"]=9 ["settings"]=10 ["storage"]=11 ["benchmarks"]=12
-    ["libretro-core"]=13
+    ["configuration"]=9 ["settings"]=10 ["updates"]=11 ["storage"]=12 ["benchmarks"]=13
+    ["libretro-core"]=14
 )
 
 for f in "$REPO_ROOT/docs/features/"*.md; do
