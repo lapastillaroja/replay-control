@@ -82,7 +82,16 @@ jobs:
       - name: Build (x86_64)
         run: ./build.sh
 
-  # ── Tests ───────────────────────────────────────────────────────────
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          retention-days: 1
+          path: |
+            target/release/replay-control-app
+            target/site/
+
+  # ── Unit tests ─────────────────────────────────────────────────────
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -119,3 +128,44 @@ jobs:
 
       - name: Unit tests (app)
         run: cargo test -p replay-control-app --features ssr
+
+  # ── Container E2E tests ────────────────────────────────────────────
+  e2e:
+    name: E2E
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: .
+
+      - name: Restore artifact permissions
+        run: chmod +x target/release/replay-control-app
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          pip install playwright pytest
+          playwright install chromium --with-deps
+
+      - name: Run container tests
+        run: SKIP_BUILD=1 CONTAINER_ENGINE=docker ./tests/container/run.sh
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: |
+            tests/e2e/test-results/
+            tests/e2e/*.xml
+          retention-days: 7
