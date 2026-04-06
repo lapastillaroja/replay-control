@@ -1046,8 +1046,9 @@ fn PlayOrderNav(
                     None => view! { <div class="play-order-spacer" /> }.into_any(),
                 }}
                 // Position indicator (center)
-                {position.map(|(n, m)| view! {
-                    <span class="play-order-position">{format!("{n} / {m}")}</span>
+                {position.map(|(n, m)| {
+                    let text = crate::i18n::tf(i18n.locale.get(), Key::GameDetailNOfM, &[&n.to_string(), &m.to_string()]);
+                    view! { <span class="play-order-position">{text}</span> }
                 })}
                 // Next game (right side)
                 {match &next {
