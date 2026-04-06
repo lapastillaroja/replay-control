@@ -4,6 +4,7 @@ pub mod enrichment;
 pub mod game_docs;
 pub mod game_entry_builder;
 pub mod image_matching;
+pub mod image_resolution;
 pub mod launchbox;
 pub mod metadata_db;
 pub mod metadata_matching;

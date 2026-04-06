@@ -1,5 +1,6 @@
 pub mod error;
 pub mod launch;
+pub mod search_scoring;
 
 mod platform;
 pub use platform::config;
@@ -42,6 +43,8 @@ pub use metadata::enrichment;
 pub use metadata::game_entry_builder;
 #[cfg(feature = "metadata")]
 pub use metadata::image_matching;
+#[cfg(feature = "metadata")]
+pub use metadata::image_resolution;
 #[cfg(feature = "metadata")]
 pub use metadata::launchbox;
 #[cfg(feature = "metadata")]

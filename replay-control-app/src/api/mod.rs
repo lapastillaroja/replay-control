@@ -4,6 +4,7 @@ pub(crate) mod core_api;
 pub mod favorites;
 pub mod import;
 pub(crate) mod library;
+pub mod thumbnail_pipeline;
 pub mod recents;
 pub mod response_cache;
 pub mod roms;
@@ -12,7 +13,8 @@ pub mod upload;
 
 pub use activity::{Activity, ActivityGuard, MaintenanceKind, StartupPhase};
 pub use background::BackgroundManager;
-pub use import::{ImportPipeline, ThumbnailPipeline};
+pub use import::ImportPipeline;
+pub use thumbnail_pipeline::ThumbnailPipeline;
 pub use library::LibraryService;
 
 /// Cache-control header values for static asset responses.
