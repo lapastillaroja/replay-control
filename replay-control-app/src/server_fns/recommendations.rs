@@ -82,7 +82,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // Pre-roll spotlight type so we can lazily collect Hidden Gems exclusion data.
     let spotlight_type = {
         use rand::RngExt;
-        rand::rng().random_range(0u8..5)
+        rand::rng().random_range(0u8..6)
     };
 
     // Only collect recent + favorite keys when Hidden Gems is selected (type 4).
@@ -286,6 +286,22 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                         None
                     } else {
                         Some((pool, "SpotlightHiddenGems".to_string(), vec![], None))
+                    }
+                }
+                5 => {
+                    // Co-op Games — best rated cooperative games
+                    let games = MetadataDb::random_coop_games(
+                        conn,
+                        count * 3,
+                        &region_str,
+                        &region_secondary_str,
+                    )
+                    .unwrap_or_default();
+                    if games.len() < spotlight_min {
+                        None
+                    } else {
+                        let href = Some("/search?coop=true".to_string());
+                        Some((games, "SpotlightCoOp".to_string(), vec![], href))
                     }
                 }
                 _ => None, // Falls through to global top rated below
@@ -601,8 +617,18 @@ fn build_discover_pills(
     });
     used_types.push("multiplayer");
 
-    // 3. Build a pool of candidate pills for the remaining 3 slots.
+    // 3. Build a pool of candidate pills for the remaining slots.
+    // Co-op pill as a candidate (not always shown — competes with other types).
     let mut candidates: Vec<(&str, DiscoverPill)> = Vec::new();
+
+    candidates.push((
+        "coop",
+        DiscoverPill {
+            label_key: "PillCoOp".to_string(),
+            label_args: vec![],
+            href: "/search?coop=true".to_string(),
+        },
+    ));
 
     // Another genre (different from the one already picked).
     for genre in top_genres {

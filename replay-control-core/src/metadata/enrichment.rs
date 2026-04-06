@@ -40,6 +40,7 @@ struct LaunchBoxMetadata {
     rating_counts: HashMap<String, u32>,
     developers: HashMap<String, String>,
     release_years: HashMap<String, u16>,
+    cooperative: HashSet<String>,
 }
 
 /// All enrichment updates produced for a single system.
@@ -52,6 +53,8 @@ pub struct EnrichmentResult {
     pub developer_updates: Vec<(String, String)>,
     /// Release year updates: (rom_filename, year).
     pub year_updates: Vec<(String, u16)>,
+    /// Cooperative flag updates: rom_filenames that should be set to cooperative=1.
+    pub cooperative_updates: Vec<String>,
     /// On-demand manifest matches that need background downloads.
     /// Each entry is (rom_filename, ManifestMatch).
     pub manifest_downloads: Vec<(String, ManifestMatch)>,
@@ -307,6 +310,9 @@ pub fn enrich_system(
         release_years: MetadataDb::system_metadata_release_years(conn, system)
             .ok()
             .unwrap_or_default(),
+        cooperative: MetadataDb::system_metadata_cooperative(conn, system)
+            .ok()
+            .unwrap_or_default(),
     };
 
     // Load existing game_library values to know which are already set.
@@ -335,6 +341,7 @@ pub fn enrich_system(
             enrichments: Vec::new(),
             developer_updates: Vec::new(),
             year_updates: Vec::new(),
+            cooperative_updates: Vec::new(),
             manifest_downloads: Vec::new(),
         };
     }
@@ -408,10 +415,22 @@ pub fn enrich_system(
         .filter_map(|f| lb.release_years.get(f).map(|&year| (f.clone(), year)))
         .collect();
 
+    // Cooperative enrichment: set cooperative=1 for ROMs flagged by LaunchBox.
+    // Only update ROMs that are not already cooperative (existing_cooperative tracks those).
+    let existing_cooperative: HashSet<String> =
+        MetadataDb::system_rom_cooperative(conn, system).unwrap_or_default();
+    let cooperative_updates: Vec<String> = rom_filenames
+        .iter()
+        .filter(|f| !existing_cooperative.contains(*f))
+        .filter(|f| lb.cooperative.contains(*f))
+        .cloned()
+        .collect();
+
     EnrichmentResult {
         enrichments,
         developer_updates,
         year_updates,
+        cooperative_updates,
         manifest_downloads,
     }
 }
@@ -667,6 +686,7 @@ mod tests {
             series_key: String::new(),
             developer: String::new(),
             release_year: None,
+            cooperative: false,
         }
     }
 

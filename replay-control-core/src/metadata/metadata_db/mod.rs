@@ -170,6 +170,8 @@ pub struct GameEntry {
     /// Release year extracted from TOSEC filename tags or baked-in game_db.
     /// Enrichment may upgrade with LaunchBox release_year.
     pub release_year: Option<u16>,
+    /// Cooperative play flag (from LaunchBox or TGDB).
+    pub cooperative: bool,
 }
 
 /// Full enrichment update for a ROM in game_library (including driver_status).
@@ -267,6 +269,7 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "hash_mtime",
     "hash_matched_name",
     "release_year",
+    "cooperative",
 ];
 
 /// Stateless query namespace for the metadata SQLite database.
@@ -383,6 +386,7 @@ impl MetadataDb {
                     hash_mtime INTEGER,
                     hash_matched_name TEXT,
                     release_year INTEGER,
+                    cooperative INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (system, rom_filename)
                 );
 
@@ -423,6 +427,11 @@ impl MetadataDb {
                 CREATE INDEX IF NOT EXISTS idx_game_library_base_title
                   ON game_library (system, base_title)
                   WHERE base_title != '';
+
+                -- Covers: search filter coop_only, random_coop_games recommendation
+                CREATE INDEX IF NOT EXISTS idx_game_library_cooperative
+                  ON game_library (system, cooperative)
+                  WHERE cooperative = 1;
 
                 -- Covers: data_sources queries by source_type (get_data_source_stats,
                 -- clear_thumbnail_index)
@@ -557,6 +566,7 @@ impl MetadataDb {
                 hash_mtime INTEGER,
                 hash_matched_name TEXT,
                 release_year INTEGER,
+                cooperative INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (system, rom_filename)
             );
             CREATE TABLE IF NOT EXISTS game_library_meta (
@@ -576,7 +586,7 @@ impl MetadataDb {
     ///   region, developer, genre, genre_group, rating, rating_count, players,
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
     ///   driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-    ///   release_year
+    ///   release_year, cooperative
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
             system: row.get(0)?,
@@ -619,6 +629,7 @@ impl MetadataDb {
                 .get::<_, Option<i32>>(24)
                 .unwrap_or_default()
                 .map(|y| y as u16),
+            cooperative: row.get::<_, bool>(25).unwrap_or_default(),
         })
     }
 }
@@ -703,6 +714,7 @@ mod tests {
             series_key: String::new(),
             developer: String::new(),
             release_year: None,
+            cooperative: false,
         }
     }
 

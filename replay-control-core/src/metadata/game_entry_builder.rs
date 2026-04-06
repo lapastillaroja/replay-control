@@ -12,7 +12,7 @@ use crate::{arcade_db, developer, game_db, genre, rom_tags, systems, title_utils
 
 /// Intermediate metadata extracted from game/arcade databases and filename tags.
 ///
-/// Fields: (genre_detail, genre_group, players, is_clone, base_title, developer, release_year)
+/// Fields: (genre_detail, genre_group, players, is_clone, base_title, developer, release_year, cooperative)
 type RomMetadata = (
     Option<String>,
     String,
@@ -21,6 +21,7 @@ type RomMetadata = (
     String,
     String,
     Option<u16>,
+    bool,
 );
 
 /// Build `GameEntry` records from scanned ROM entries.
@@ -71,12 +72,20 @@ fn build_single_entry(
     // Two-tier genre: `genre` = detail/original, `genre_group` = normalized.
     // Also extract developer (manufacturer for arcade, empty for console — enriched later).
     // release_year comes from game_db (baked-in) or TOSEC tags (fallback).
-    let (genre_detail, genre_group, players_lookup, is_clone, base_title, dev, release_year) =
-        if is_arcade {
-            build_arcade_metadata(rom_filename, stem)
-        } else {
-            build_console_metadata(system, r, rom_filename, stem, hash_results)
-        }?;
+    let (
+        genre_detail,
+        genre_group,
+        players_lookup,
+        is_clone,
+        base_title,
+        dev,
+        release_year,
+        cooperative,
+    ) = if is_arcade {
+        build_arcade_metadata(rom_filename, stem)
+    } else {
+        build_console_metadata(system, r, rom_filename, stem, hash_results)
+    }?;
 
     // Extract TOSEC structured metadata (year, publisher) from filename tags.
     // Used as fallback when baked-in DBs don't provide the data.
@@ -140,6 +149,7 @@ fn build_single_entry(
         series_key,
         developer: developer_name,
         release_year,
+        cooperative,
     })
 }
 
@@ -168,6 +178,7 @@ fn build_arcade_metadata(rom_filename: &str, stem: &str) -> Option<RomMetadata> 
                 title_utils::base_title(info.display_name),
                 dev,
                 year,
+                false,
             ))
         }
         None => Some((
@@ -178,6 +189,7 @@ fn build_arcade_metadata(rom_filename: &str, stem: &str) -> Option<RomMetadata> 
             title_utils::base_title(stem),
             String::new(),
             None,
+            false,
         )),
     }
 }
@@ -217,6 +229,7 @@ fn build_console_metadata(
             };
             let group = genre::normalize_genre(g.genre).to_string();
             let year: Option<u16> = if g.year > 0 { Some(g.year) } else { None };
+            let cooperative = g.coop.unwrap_or(false);
             Some((
                 detail,
                 group,
@@ -225,9 +238,19 @@ fn build_console_metadata(
                 bt,
                 String::new(),
                 year,
+                cooperative,
             ))
         }
-        None => Some((None, String::new(), None, false, bt, String::new(), None)),
+        None => Some((
+            None,
+            String::new(),
+            None,
+            false,
+            bt,
+            String::new(),
+            None,
+            false,
+        )),
     }
 }
 

@@ -54,6 +54,7 @@ pub struct FilterState {
     pub hide_betas: RwSignal<bool>,
     pub hide_clones: RwSignal<bool>,
     pub multiplayer_only: RwSignal<bool>,
+    pub coop_only: RwSignal<bool>,
     pub genre: RwSignal<String>,
     pub min_rating: RwSignal<Option<f32>>,
     pub min_year: RwSignal<Option<u16>>,
@@ -79,6 +80,7 @@ impl FilterState {
             hide_betas: RwSignal::new(bool_param("hide_betas")),
             hide_clones: RwSignal::new(bool_param("hide_clones")),
             multiplayer_only: RwSignal::new(bool_param("multiplayer")),
+            coop_only: RwSignal::new(bool_param("coop")),
             genre: RwSignal::new(genre.clone()),
             min_rating: RwSignal::new(min_rating),
             min_year: RwSignal::new(min_year),
@@ -134,6 +136,7 @@ pub fn FilterChips(
             <FilterChip signal=filters.hide_clones label_key=Key::FilterHideClones />
         </Show>
         <FilterChip signal=filters.multiplayer_only label_key=Key::FilterMultiplayer />
+        <FilterChip signal=filters.coop_only label_key=Key::FilterCoOp />
         {genre_list.map(|gl| {
             view! { <GenreDropdown genre=filters.genre genre_list=gl /> }
         })}

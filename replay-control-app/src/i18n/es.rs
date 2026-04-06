@@ -423,6 +423,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::FilterHideBetas => "Ocultar betas",
         Key::FilterHideClones => "Ocultar clones",
         Key::FilterMultiplayer => "Multijugador",
+        Key::FilterCoOp => "Cooperativo",
         Key::FilterRatingAny => "Cualquier valoración",
         Key::FilterClearFilters => "Borrar filtros",
         Key::FilterActiveSearch => "Buscar",
@@ -466,6 +467,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillBestOf => "Lo mejor de {0}",
         Key::PillGamesBy => "Juegos de {0}",
         Key::PillMultiplayer => "Multijugador",
+        Key::PillCoOp => "Juegos cooperativos",
+        Key::SpotlightCoOp => "Juegos cooperativos",
 
         // Updates
         Key::MoreSectionUpdates => "Actualizaciones",

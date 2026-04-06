@@ -194,6 +194,8 @@ pub struct GameInfo {
     pub genre: String,
     pub developer: String,
     pub players: u8,
+    /// Whether this game supports cooperative play.
+    pub cooperative: bool,
 
     // --- Arcade-specific (None for non-arcade) ---
     pub rotation: Option<String>,
@@ -303,6 +305,7 @@ pub(crate) async fn resolve_game_info(
                     },
                     developer: info.manufacturer.to_string(),
                     players: info.players,
+                    cooperative: false,
                     rotation: Some(rotation.to_string()),
                     driver_status: Some(driver_status.to_string()),
                     is_clone: Some(info.is_clone),
@@ -335,6 +338,7 @@ pub(crate) async fn resolve_game_info(
                 genre: String::new(),
                 developer: String::new(),
                 players: 0,
+                cooperative: false,
                 rotation: None,
                 driver_status: None,
                 is_clone: None,
@@ -438,6 +442,7 @@ pub(crate) async fn resolve_game_info(
                 .unwrap_or_default(),
             developer,
             players: game_meta.map(|g| g.players).unwrap_or(0),
+            cooperative: game_meta.and_then(|g| g.coop).unwrap_or(false),
             rotation: None,
             driver_status: None,
             is_clone: None,
@@ -540,6 +545,10 @@ pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
                     && let Some(year) = meta.release_year
                 {
                     info.year = year.to_string();
+                }
+                // OR merge: if either source says co-op, set cooperative.
+                if meta.cooperative {
+                    info.cooperative = true;
                 }
                 // Use LaunchBox genre as fallback when baked-in DB has none.
                 if info.genre.is_empty() && meta.genre.is_some() {

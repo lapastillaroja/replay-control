@@ -80,6 +80,7 @@ pub fn SearchPage() -> impl IntoView {
                 hide_betas: filters.hide_betas.get_untracked(),
                 hide_clones: filters.hide_clones.get_untracked(),
                 multiplayer: filters.multiplayer_only.get_untracked(),
+                coop: filters.coop_only.get_untracked(),
                 genre: &filters.genre.get_untracked(),
                 min_rating: filters.min_rating.get_untracked(),
                 min_year: filters.min_year.get_untracked(),
@@ -98,6 +99,7 @@ pub fn SearchPage() -> impl IntoView {
             let hb = filters.hide_betas.get();
             let hc = filters.hide_clones.get();
             let mp = filters.multiplayer_only.get();
+            let co = filters.coop_only.get();
             let g = filters.genre.get();
             let mr = filters.min_rating.get();
             let miny = filters.min_year.get();
@@ -116,6 +118,7 @@ pub fn SearchPage() -> impl IntoView {
                 hide_betas: hb,
                 hide_clones: hc,
                 multiplayer: mp,
+                coop: co,
                 genre: &g,
                 min_rating: mr,
                 min_year: miny,
@@ -134,14 +137,15 @@ pub fn SearchPage() -> impl IntoView {
                 filters.hide_betas.get(),
                 filters.hide_clones.get(),
                 filters.multiplayer_only.get(),
+                filters.coop_only.get(),
                 debounced_genre.get(),
                 filters.min_rating.get(),
                 filters.min_year.get(),
                 filters.max_year.get(),
             )
         },
-        |(q, hh, ht, hb, hc, mp, g, mr, miny, maxy)| {
-            server_fns::global_search(q, hh, ht, hb, hc, mp, mr, g, 3, miny, maxy)
+        |(q, hh, ht, hb, hc, mp, co, g, mr, miny, maxy)| {
+            server_fns::global_search(q, hh, ht, hb, hc, mp, co, mr, g, 3, miny, maxy)
         },
     );
 
@@ -171,6 +175,7 @@ pub fn SearchPage() -> impl IntoView {
             hide_betas: filters.hide_betas.get_untracked(),
             hide_clones: filters.hide_clones.get_untracked(),
             multiplayer: filters.multiplayer_only.get_untracked(),
+            coop: filters.coop_only.get_untracked(),
             genre: &filters.genre.get_untracked(),
             min_rating: filters.min_rating.get_untracked(),
             min_year: filters.min_year.get_untracked(),
@@ -299,12 +304,13 @@ pub fn SearchPage() -> impl IntoView {
                     let hb = filters.hide_betas.get_untracked();
                     let hc = filters.hide_clones.get_untracked();
                     let mp = filters.multiplayer_only.get_untracked();
+                    let co = filters.coop_only.get_untracked();
                     let mr = filters.min_rating.get_untracked();
                     let g = debounced_genre.get_untracked();
                     let miny = filters.min_year.get_untracked();
                     let maxy = filters.max_year.get_untracked();
                     Ok::<_, server_fn::ServerFnError>(view! {
-                        <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc multiplayer_only=mp min_rating=mr genre=g min_year=miny max_year=maxy />
+                        <SearchResults data locale query=q hide_hacks=hh hide_translations=ht hide_betas=hb hide_clones=hc multiplayer_only=mp coop_only=co min_rating=mr genre=g min_year=miny max_year=maxy />
                     })
                 })}
             </Suspense>
@@ -376,6 +382,7 @@ fn SearchResults(
     hide_betas: bool,
     hide_clones: bool,
     multiplayer_only: bool,
+    coop_only: bool,
     min_rating: Option<f32>,
     genre: String,
     min_year: Option<u16>,
@@ -428,6 +435,9 @@ fn SearchResults(
         }
         if multiplayer_only {
             params.push("multiplayer=true".to_string());
+        }
+        if coop_only {
+            params.push("coop=true".to_string());
         }
         if !genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(&genre)));
@@ -595,6 +605,7 @@ struct UrlParams<'a> {
     hide_clones: bool,
     genre: &'a str,
     multiplayer: bool,
+    coop: bool,
     min_rating: Option<f32>,
     min_year: Option<u16>,
     max_year: Option<u16>,
@@ -622,6 +633,9 @@ fn update_url_params(p: &UrlParams<'_>) {
         }
         if p.multiplayer {
             params.push("multiplayer=true".to_string());
+        }
+        if p.coop {
+            params.push("coop=true".to_string());
         }
         if !p.genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(p.genre)));

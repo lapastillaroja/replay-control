@@ -419,6 +419,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::FilterHideBetas => "Hide Betas",
         Key::FilterHideClones => "Hide Clones",
         Key::FilterMultiplayer => "Multiplayer",
+        Key::FilterCoOp => "Co-op",
         Key::FilterRatingAny => "Any Rating",
         Key::FilterClearFilters => "Clear Filters",
         Key::FilterActiveSearch => "Search",
@@ -462,6 +463,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillBestOf => "Best of {0}",
         Key::PillGamesBy => "Games by {0}",
         Key::PillMultiplayer => "Multiplayer",
+        Key::PillCoOp => "Co-op Games",
+        Key::SpotlightCoOp => "Co-op Games",
 
         // Updates
         Key::MoreSectionUpdates => "Updates",

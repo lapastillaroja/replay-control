@@ -80,6 +80,7 @@ pub fn RomList(system: String) -> impl IntoView {
             let hb = filters.hide_betas.get();
             let hc = filters.hide_clones.get();
             let mp = filters.multiplayer_only.get();
+            let co = filters.coop_only.get();
             let g = filters.genre.get();
             let mr = filters.min_rating.get();
             let miny = filters.min_year.get();
@@ -96,6 +97,7 @@ pub fn RomList(system: String) -> impl IntoView {
                 hide_betas: hb,
                 hide_clones: hc,
                 multiplayer_only: mp,
+                coop_only: co,
                 genre: &g,
                 min_rating: mr,
                 min_year: miny,
@@ -123,14 +125,15 @@ pub fn RomList(system: String) -> impl IntoView {
                 filters.hide_clones.get(),
                 debounced_genre.get(),
                 filters.multiplayer_only.get(),
+                filters.coop_only.get(),
                 filters.min_rating.get(),
                 filters.min_year.get(),
                 filters.max_year.get(),
             )
         },
-        move |(system, query, hh, ht, hb, hc, gf, mp, mr, miny, maxy)| {
+        move |(system, query, hh, ht, hb, hc, gf, mp, co, mr, miny, maxy)| {
             server_fns::get_roms_page(
-                system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, mr, miny, maxy,
+                system, 0, PAGE_SIZE, query, hh, ht, hb, hc, gf, mp, co, mr, miny, maxy,
             )
         },
     );
@@ -160,6 +163,7 @@ pub fn RomList(system: String) -> impl IntoView {
         let hc = filters.hide_clones.get_untracked();
         let gf = debounced_genre.get_untracked();
         let mp = filters.multiplayer_only.get_untracked();
+        let co = filters.coop_only.get_untracked();
         let mr = filters.min_rating.get_untracked();
         let miny = filters.min_year.get_untracked();
         let maxy = filters.max_year.get_untracked();
@@ -175,6 +179,7 @@ pub fn RomList(system: String) -> impl IntoView {
                 hc,
                 gf,
                 mp,
+                co,
                 mr,
                 miny,
                 maxy,
@@ -339,6 +344,7 @@ struct FilterUrlParams<'a> {
     hide_betas: bool,
     hide_clones: bool,
     multiplayer_only: bool,
+    coop_only: bool,
     genre: &'a str,
     min_rating: Option<f32>,
     min_year: Option<u16>,
@@ -369,6 +375,9 @@ fn update_filter_url(p: FilterUrlParams<'_>) {
         }
         if p.multiplayer_only {
             params.push("multiplayer=true".to_string());
+        }
+        if p.coop_only {
+            params.push("coop=true".to_string());
         }
         if !p.genre.is_empty() {
             params.push(format!("genre={}", urlencoding::encode(p.genre)));

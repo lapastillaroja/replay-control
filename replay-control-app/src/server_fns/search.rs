@@ -348,6 +348,7 @@ pub async fn global_search(
     hide_betas: bool,
     hide_clones: bool,
     #[server(default)] multiplayer_only: bool,
+    #[server(default)] coop_only: bool,
     #[server(default)] min_rating: Option<f32>,
     genre: String,
     per_system_limit: usize,
@@ -367,10 +368,11 @@ pub async fn global_search(
         per_system_limit
     };
 
-    // Empty query with no genre/multiplayer/year filter: no results.
+    // Empty query with no genre/multiplayer/coop/year filter: no results.
     if q.is_empty()
         && genre.is_empty()
         && !multiplayer_only
+        && !coop_only
         && min_year.is_none()
         && max_year.is_none()
     {
@@ -424,6 +426,7 @@ pub async fn global_search(
                 hide_clones,
                 genre: &genre_owned,
                 multiplayer_only,
+                coop_only,
                 min_rating: min_rating_f64,
                 min_year,
                 max_year,
@@ -737,6 +740,7 @@ pub async fn get_developer_games(
                 hide_betas,
                 hide_clones,
                 multiplayer_only,
+                coop_only: false,
                 genre: &genre,
                 min_rating: min_rating_f64,
                 min_year,

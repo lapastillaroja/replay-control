@@ -419,6 +419,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::FilterHideBetas => "ベータ版を非表示",
         Key::FilterHideClones => "クローンを非表示",
         Key::FilterMultiplayer => "マルチプレイ",
+        Key::FilterCoOp => "協力プレイ",
         Key::FilterRatingAny => "評価を問わない",
         Key::FilterClearFilters => "フィルターをクリア",
         Key::FilterActiveSearch => "検索",
@@ -462,6 +463,8 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillBestOf => "{0}のベスト",
         Key::PillGamesBy => "{0}のゲーム",
         Key::PillMultiplayer => "マルチプレイ",
+        Key::PillCoOp => "協力プレイ",
+        Key::SpotlightCoOp => "協力プレイ",
 
         // Updates
         Key::MoreSectionUpdates => "アップデート",

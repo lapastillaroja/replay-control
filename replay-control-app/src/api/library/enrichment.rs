@@ -59,6 +59,20 @@ impl LibraryService {
             tracing::debug!("L2 enrichment: {system} — {dev_count} ROMs updated with developer");
         }
 
+        // Write cooperative updates to DB.
+        if !result.cooperative_updates.is_empty() {
+            let coop_count = result.cooperative_updates.len();
+            let sys = system.clone();
+            let updates = result.cooperative_updates;
+            db.write(move |conn| {
+                if let Err(e) = MetadataDb::update_cooperative(conn, &sys, &updates) {
+                    tracing::warn!("Cooperative enrichment failed for {sys}: {e}");
+                }
+            })
+            .await;
+            tracing::debug!("L2 enrichment: {system} — {coop_count} ROMs updated with cooperative");
+        }
+
         // Write release year updates to DB.
         if !result.year_updates.is_empty() {
             let year_count = result.year_updates.len();

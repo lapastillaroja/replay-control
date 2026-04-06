@@ -13,7 +13,7 @@ const GAME_ENTRY_COLS: &str = "system, rom_filename, rom_path, display_name, bas
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year";
+                        release_year, cooperative";
 
 impl MetadataDb {
     /// Get random cached ROMs with box art from all systems.
@@ -455,6 +455,56 @@ impl MetadataDb {
         let rows = stmt
             .query_map(&*params_refs, Self::row_to_game_entry)
             .map_err(|e| Error::Other(format!("Query top_rated_filtered: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get random co-op games across all systems, best rated first.
+    /// Deduplicates regional variants, preferring the user's region preference.
+    pub fn random_coop_games(
+        conn: &Connection,
+        count: usize,
+        region_pref: &str,
+        region_secondary: &str,
+    ) -> Result<Vec<GameEntry>> {
+        let pool_size = (count * 4).max(40) as i64;
+        let sql = format!(
+            "WITH deduped AS (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY system, base_title
+                    ORDER BY CASE
+                        WHEN region = ?2 THEN 0
+                        WHEN region = ?3 THEN 1
+                        WHEN region = 'world' THEN 2
+                        ELSE 3
+                    END
+                ) AS rn
+                FROM game_library
+                WHERE is_clone = 0 AND is_translation = 0 AND is_hack = 0 AND is_special = 0
+                  AND cooperative = 1
+            )
+            SELECT {GAME_ENTRY_COLS}
+            FROM (
+                SELECT * FROM deduped WHERE rn = 1
+                ORDER BY CASE
+                    WHEN COALESCE(rating_count, 0) >= 10 THEN rating
+                    WHEN COALESCE(rating_count, 0) >= 3 THEN rating * 0.9
+                    ELSE rating * 0.7
+                END DESC NULLS LAST
+                LIMIT ?1
+            )
+            ORDER BY RANDOM()"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Other(format!("Prepare random_coop_games: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![pool_size, region_pref, region_secondary],
+                Self::row_to_game_entry,
+            )
+            .map_err(|e| Error::Other(format!("Query random_coop_games: {e}")))?;
 
         Ok(rows.flatten().collect())
     }

@@ -14,7 +14,7 @@ const GAME_ENTRY_COLUMNS: &str = "\
     region, developer, genre, genre_group, rating, rating_count, players, \
     is_clone, is_m3u, is_translation, is_hack, is_special, \
     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name, \
-    release_year";
+    release_year, cooperative";
 
 /// Build the pre-computed, lowercased search index value for a game_library row.
 ///
@@ -55,6 +55,7 @@ pub struct SearchFilter<'a> {
     pub hide_clones: bool,
     pub genre: &'a str,
     pub multiplayer_only: bool,
+    pub coop_only: bool,
     pub min_rating: Option<f64>,
     pub min_year: Option<u16>,
     pub max_year: Option<u16>,
@@ -202,9 +203,9 @@ impl MetadataDb {
                      genre, genre_group, rating, rating_count, players,
                      is_clone, is_m3u, is_translation, is_hack, is_special,
                      box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                     release_year)
+                     release_year, cooperative)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                             ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+                             ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -243,6 +244,7 @@ impl MetadataDb {
                     rom.hash_mtime,
                     &rom.hash_matched_name,
                     rom.release_year.map(|y| y as i32),
+                    rom.cooperative,
                 ])
                 .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
             }
@@ -868,6 +870,61 @@ impl MetadataDb {
         Ok(set)
     }
 
+    /// Fetch rom_filenames that already have cooperative=1 in `game_library` for a system.
+    pub fn system_rom_cooperative(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<std::collections::HashSet<String>> {
+        use std::collections::HashSet;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename FROM game_library
+                 WHERE system = ?1 AND cooperative = 1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_rom_cooperative: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("System rom cooperative query: {e}")))?;
+
+        let mut set = HashSet::new();
+        for row in rows.flatten() {
+            set.insert(row);
+        }
+        Ok(set)
+    }
+
+    /// Batch update `cooperative` flag for entries in game_library.
+    pub fn update_cooperative(
+        conn: &mut Connection,
+        system: &str,
+        filenames: &[String],
+    ) -> Result<()> {
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE game_library SET cooperative = 1
+                     WHERE system = ?2 AND rom_filename = ?1
+                       AND cooperative = 0",
+                )
+                .map_err(|e| Error::Other(format!("Prepare cooperative update: {e}")))?;
+
+            for filename in filenames {
+                stmt.execute(params![filename, system])
+                    .map_err(|e| Error::Other(format!("Update cooperative: {e}")))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
+        Ok(())
+    }
+
     /// Find developer names that match the given query (case-insensitive).
     pub fn find_developer_matches(conn: &Connection, query: &str) -> Result<Vec<(String, usize)>> {
         let q = query.to_lowercase();
@@ -1115,6 +1172,9 @@ impl MetadataDb {
         }
         if filter.multiplayer_only {
             where_clauses.push("players >= 2".to_string());
+        }
+        if filter.coop_only {
+            where_clauses.push("cooperative = 1".to_string());
         }
 
         // Genre filter (parameterized).

@@ -150,7 +150,11 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let developer = StoredValue::new(game.developer.clone());
     let genre = StoredValue::new(game.genre.clone());
     let players_str = if game.players > 0 {
-        game.players.to_string()
+        if game.cooperative && game.players > 1 {
+            format!("{} (Co-op)", game.players)
+        } else {
+            game.players.to_string()
+        }
     } else {
         String::new()
     };

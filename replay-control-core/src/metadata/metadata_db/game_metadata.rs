@@ -255,6 +255,32 @@ impl MetadataDb {
         Ok(map)
     }
 
+    /// Fetch rom_filenames with cooperative=1 from `game_metadata` for a single system.
+    /// Returns a set of filenames that have cooperative play.
+    pub fn system_metadata_cooperative(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<std::collections::HashSet<String>> {
+        use std::collections::HashSet;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename FROM game_metadata
+                 WHERE system = ?1 AND cooperative = 1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare system_metadata_cooperative: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system], |row| row.get::<_, String>(0))
+            .map_err(|e| Error::Other(format!("System metadata cooperative query: {e}")))?;
+
+        let mut set = HashSet::new();
+        for row in rows.flatten() {
+            set.insert(row);
+        }
+        Ok(set)
+    }
+
     /// Fetch all non-empty developers from `game_metadata` for a single system.
     /// Returns a map of `rom_filename -> developer`.
     /// Used to fill empty developer entries during enrichment.

@@ -394,6 +394,7 @@ pub enum Key {
     FilterHideBetas,
     FilterHideClones,
     FilterMultiplayer,
+    FilterCoOp,
     FilterRatingAny,
     FilterClearFilters,
     FilterActiveSearch,
@@ -435,6 +436,8 @@ pub enum Key {
     PillBestOf,
     PillGamesBy,
     PillMultiplayer,
+    PillCoOp,
+    SpotlightCoOp,
 
     // Updates
     MoreSectionUpdates,
