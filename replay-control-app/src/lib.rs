@@ -54,7 +54,12 @@ pub fn Shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     let skin_index = state.effective_skin();
     let theme_color = skins::theme_color(skin_index);
     let skin_css = skins::theme_css(skin_index).unwrap_or_default();
-    let font_size = replay_control_core::settings::read_font_size(&state.storage().root);
+    let font_size = state
+        .prefs
+        .read()
+        .expect("prefs lock poisoned")
+        .font_size
+        .clone();
     let html_class = if font_size == "large" {
         "font-large"
     } else {

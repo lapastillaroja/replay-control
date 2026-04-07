@@ -9,8 +9,50 @@ use std::path::Path;
 
 use crate::config::AppSettings;
 use crate::error::Result;
+use crate::locale::Locale;
 use crate::rom_tags::RegionPreference;
 use crate::storage::{RC_DIR, SETTINGS_FILE};
+
+/// Cached snapshot of frequently-read user preferences.
+///
+/// Loaded once at startup and updated in-memory whenever a preference changes,
+/// avoiding repeated file I/O on every SSR render or server function call.
+#[derive(Debug, Clone)]
+pub struct UserPreferences {
+    pub skin: Option<u32>,
+    pub locale: Option<Locale>,
+    pub region: RegionPreference,
+    pub region_secondary: Option<RegionPreference>,
+    pub font_size: String,
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self {
+            skin: None,
+            locale: None,
+            region: RegionPreference::default(),
+            region_secondary: None,
+            font_size: "normal".to_string(),
+        }
+    }
+}
+
+impl UserPreferences {
+    /// Load all preferences from `settings.cfg` in a single file read.
+    pub fn load(storage_root: &Path) -> Self {
+        let settings = load_settings(storage_root);
+        Self {
+            skin: settings.skin(),
+            locale: settings.locale(),
+            region: RegionPreference::from_str_value(settings.region_preference()),
+            region_secondary: settings
+                .region_preference_secondary()
+                .map(RegionPreference::from_str_value),
+            font_size: settings.font_size().to_string(),
+        }
+    }
+}
 
 /// Load settings from disk, returning empty settings if the file doesn't exist.
 /// Use this directly when you need to read multiple settings to avoid repeated file I/O.

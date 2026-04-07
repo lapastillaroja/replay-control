@@ -197,12 +197,15 @@ pub async fn save_hostname(hostname: String) -> Result<String, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_skins() -> Result<(u32, bool, Vec<SkinInfo>), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let current = state.effective_skin();
-    let sync = state
-        .skin_override
-        .read()
-        .expect("skin lock poisoned")
-        .is_none();
+    let skin_pref = state.prefs.read().expect("prefs lock poisoned").skin;
+    let current = skin_pref.unwrap_or_else(|| {
+        state
+            .config
+            .read()
+            .expect("config lock poisoned")
+            .system_skin()
+    });
+    let sync = skin_pref.is_none();
 
     let skins = replay_control_core::skins::SKIN_NAMES
         .iter()
@@ -234,10 +237,7 @@ pub async fn set_skin(index: u32) -> Result<(), ServerFnError> {
     let storage = state.storage();
     replay_control_core::settings::write_skin(&storage.root, Some(index))
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    // When setting a skin manually, disable sync and store the override.
-    let mut guard = state.skin_override.write().expect("skin lock poisoned");
-    *guard = Some(index);
-    drop(guard);
+    state.prefs.write().expect("prefs lock poisoned").skin = Some(index);
 
     let skin_css = replay_control_core::skins::theme_css(index);
     let _ = state.config_tx.send(crate::api::ConfigEvent::SkinChanged {
@@ -255,16 +255,12 @@ pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
         // Clear the skin from settings.cfg so we defer to replay.cfg.
         replay_control_core::settings::write_skin(&storage.root, None)
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        let mut guard = state.skin_override.write().expect("skin lock poisoned");
-        *guard = None;
+        state.prefs.write().expect("prefs lock poisoned").skin = None;
     } else {
-        // Read the current effective skin before acquiring the write lock.
         let current = state.effective_skin();
-        // Persist the current skin to settings.cfg.
         replay_control_core::settings::write_skin(&storage.root, Some(current))
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        let mut guard = state.skin_override.write().expect("skin lock poisoned");
-        *guard = Some(current);
+        state.prefs.write().expect("prefs lock poisoned").skin = Some(current);
     }
 
     let effective = state.effective_skin();
@@ -276,12 +272,16 @@ pub async fn set_skin_sync(enabled: bool) -> Result<(), ServerFnError> {
     Ok(())
 }
 
-/// Get the font size preference from `.replay-control/settings.cfg`.
+/// Get the font size preference from cached preferences.
 #[server(prefix = "/sfn")]
 pub async fn get_font_size() -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
-    Ok(replay_control_core::settings::read_font_size(&storage.root))
+    Ok(state
+        .prefs
+        .read()
+        .expect("prefs lock poisoned")
+        .font_size
+        .clone())
 }
 
 /// Save the font size preference to `.replay-control/settings.cfg`.
@@ -290,7 +290,9 @@ pub async fn save_font_size(size: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     replay_control_core::settings::write_font_size(&storage.root, &size)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state.prefs.write().expect("prefs lock poisoned").font_size = size;
+    Ok(())
 }
 
 /// Get the GitHub API key from `.replay-control/settings.cfg`.
@@ -327,7 +329,7 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     let storage = state.storage();
     replay_control_core::settings::write_region_preference(&storage.root, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    // Invalidate cache so ROM lists are re-sorted with the new preference.
+    state.prefs.write().expect("prefs lock poisoned").region = pref;
     state.cache.invalidate(&state.metadata_pool).await;
     state.response_cache.invalidate_all();
     Ok(())
@@ -355,6 +357,11 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
     };
     replay_control_core::settings::write_region_preference_secondary(&storage.root, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state
+        .prefs
+        .write()
+        .expect("prefs lock poisoned")
+        .region_secondary = pref;
     state.cache.invalidate(&state.metadata_pool).await;
     state.response_cache.invalidate_all();
     Ok(())
@@ -497,14 +504,20 @@ pub async fn change_root_password(
     }
 }
 
-/// Get the UI locale from `.replay-control/settings.cfg`.
+/// Get the UI locale from cached preferences.
 /// Returns the stored locale preference code (including "auto").
 #[server(prefix = "/sfn")]
 pub async fn get_locale() -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let storage = state.storage();
-    let locale = replay_control_core::settings::read_locale_preference(&storage.root);
-    Ok(locale.code().to_string())
+    use replay_control_core::locale::Locale;
+    let locale = state
+        .prefs
+        .read()
+        .expect("prefs lock poisoned")
+        .locale
+        .map(|l| l.code())
+        .unwrap_or(Locale::Auto.code());
+    Ok(locale.to_string())
 }
 
 /// Save the UI locale to `.replay-control/settings.cfg`.
@@ -519,7 +532,9 @@ pub async fn save_locale(locale: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
     replay_control_core::settings::write_locale(&storage.root, parsed)
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state.prefs.write().expect("prefs lock poisoned").locale = parsed.effective();
+    Ok(())
 }
 
 /// Get the user's preferred languages as a priority-ordered list.

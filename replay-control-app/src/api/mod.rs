@@ -532,9 +532,9 @@ pub struct AppState {
     pub response_cache: Arc<response_cache::ResponseCache>,
     /// When set, --storage-path was given on the CLI and auto-detection is skipped.
     pub storage_path_override: Option<PathBuf>,
-    /// When Some, the app uses this skin index (persisted in `settings.cfg`).
-    /// When None, defers to `replay.cfg`'s `system_skin` (sync mode).
-    pub skin_override: Arc<std::sync::RwLock<Option<u32>>>,
+    /// Cached user preferences (skin, locale, region, font size).
+    /// Loaded once at startup; updated in-memory on every settings change.
+    pub prefs: Arc<std::sync::RwLock<replay_control_core::settings::UserPreferences>>,
     /// Metadata DB pool (deadpool-backed, concurrent reads).
     pub metadata_pool: DbPool,
     /// User data DB pool (deadpool-backed, concurrent reads).
@@ -658,10 +658,11 @@ impl AppState {
         let import = Arc::new(ImportPipeline::new());
         let thumbnails = Arc::new(ThumbnailPipeline::new());
 
-        // Read skin preference from `.replay-control/settings.cfg` if storage is available.
-        let initial_skin = storage
+        // Load all user preferences from `.replay-control/settings.cfg` once at startup.
+        let prefs = storage
             .as_ref()
-            .and_then(|s| replay_control_core::settings::read_skin(&s.root));
+            .map(|s| replay_control_core::settings::UserPreferences::load(&s.root))
+            .unwrap_or_default();
 
         let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
         let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
@@ -673,7 +674,7 @@ impl AppState {
             cache: Arc::new(LibraryService::new()),
             response_cache: Arc::new(response_cache::ResponseCache::new()),
             storage_path_override,
-            skin_override: Arc::new(std::sync::RwLock::new(initial_skin)),
+            prefs: Arc::new(std::sync::RwLock::new(prefs)),
             metadata_pool,
             user_data_pool,
             import,
@@ -716,30 +717,25 @@ impl AppState {
         )
     }
 
-    /// Get the user's region preference from `.replay-control/settings.cfg`.
-    /// Returns the default preference when storage is unavailable.
+    /// Get the user's region preference from cached preferences.
     pub fn region_preference(&self) -> replay_control_core::rom_tags::RegionPreference {
-        let guard = self.storage.read().expect("storage lock poisoned");
-        match guard.as_ref() {
-            Some(storage) => replay_control_core::settings::read_region_preference(&storage.root),
-            None => replay_control_core::rom_tags::RegionPreference::default(),
-        }
+        self.prefs.read().expect("prefs lock poisoned").region
     }
 
-    /// Get the user's secondary (fallback) region preference from `.replay-control/settings.cfg`.
-    /// Returns `None` if not set or if storage is unavailable.
+    /// Get the user's secondary (fallback) region preference from cached preferences.
     pub fn region_preference_secondary(
         &self,
     ) -> Option<replay_control_core::rom_tags::RegionPreference> {
-        let guard = self.storage.read().expect("storage lock poisoned");
-        let storage = guard.as_ref()?;
-        replay_control_core::settings::read_region_preference_secondary(&storage.root)
+        self.prefs
+            .read()
+            .expect("prefs lock poisoned")
+            .region_secondary
     }
 
-    /// Get the effective skin index: app preference from `settings.cfg` if set,
+    /// Get the effective skin index: app preference if set,
     /// otherwise fall back to `replay.cfg`'s `system_skin` (sync mode).
     pub fn effective_skin(&self) -> u32 {
-        if let Some(index) = *self.skin_override.read().expect("skin lock poisoned") {
+        if let Some(index) = self.prefs.read().expect("prefs lock poisoned").skin {
             index
         } else {
             self.config
@@ -856,6 +852,11 @@ impl AppState {
             self.cache.invalidate(&self.metadata_pool).await;
             self.response_cache.invalidate_all();
 
+            // Reload user preferences from the new storage location.
+            let new_prefs =
+                replay_control_core::settings::UserPreferences::load(&new_storage_ref.root);
+            *self.prefs.write().expect("prefs lock poisoned") = new_prefs;
+
             let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();
             let _ = self
                 .config_tx
@@ -951,12 +952,8 @@ pub fn build_router(
 
             let state = state_for_ssr.clone();
 
-            // Resolve locale: settings.cfg → Accept-Language header → En
-            let locale = if state.has_storage() {
-                replay_control_core::settings::read_locale(&state.storage().root)
-            } else {
-                None
-            };
+            // Resolve locale: cached prefs → Accept-Language header → En
+            let locale = state.prefs.read().expect("prefs lock poisoned").locale;
 
             let locale = locale.unwrap_or_else(|| {
                 // Fall back to Accept-Language header
