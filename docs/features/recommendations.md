@@ -2,6 +2,8 @@
 
 How the recommendation engine works across the home page, favorites page, and game detail page.
 
+{{< screenshot "recommendations-mobile.png" "Personalized recommendations on the home page" >}}
+
 ## Home Page
 
 The home page shows several recommendation blocks, each tailored to your library:
@@ -13,6 +15,14 @@ Genre-diverse random picks from your collection, shuffled on each visit.
 ### Top Rated
 
 Highest-rated games weighted by community vote count. Games with few votes are penalized to avoid low-confidence entries dominating the list.
+
+### Top Genres
+
+A rotating spotlight that picks one of your library's most represented genres and shows the highest-rated games in that genre. Requires a minimum of 6 qualifying games.
+
+### Multiplayer
+
+Games in your library that support 2+ players, for when you have friends over.
 
 ### Because You Love
 
@@ -28,6 +38,7 @@ One section per page load, randomly picked from several types:
 | Best of System | "Best of Mega Drive" |
 | Games by Developer | "Games by Capcom" |
 | Hidden Gems | Highly rated games you haven't played yet |
+| Co-op Games | Best rated cooperative games |
 
 Requires a minimum of 6 games to show. Falls back to a global "Top Rated" section if the chosen type has too few results. Minimum rating threshold: 3.5.
 

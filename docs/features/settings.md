@@ -2,6 +2,8 @@
 
 How user preferences work — the settings that customize your app experience without affecting the Pi.
 
+{{< screenshot "more-page-mobile.png" "More page with preferences" >}}
+
 ## Overview
 
 User preferences are accessible from the **More** page and control how the app displays information, which regional variants you prefer, and how it communicates with external services.
@@ -24,10 +26,22 @@ Normal or large text. Applied across the entire app.
 
 ## Skin / Theme
 
-Browse and apply skins from the [RePlayOS](https://www.replayos.com/) skin collection. Two modes:
+The app ships with 11 built-in skins that control the color scheme of the web UI: REPLAY (default), MEGA TECH, PLAY CHOICE, ASTRO, SUPER VIDEO, MVS, RPG, FANTASY, SIMPLE PURPLE, METAL, and UNICOLORS. Each skin defines a full color palette — background, surface, text, accent, and border colors — applied via CSS custom properties.
 
-- **Sync mode** (default) -- the app matches the skin active on the TV interface. Changes on either side are reflected immediately across all connected browsers.
-- **Manual override** -- pick a specific skin for the web UI, independent of the TV skin.
+{{< screenshot "skins-page-mobile.png" "Skin selection page" >}}
+
+Browse and apply skins from **More > Skin**. The skin page shows all available skins with color previews, the currently active skin marked, and a one-tap apply.
+
+### Sync Mode vs Manual Override
+
+- **Sync mode** (default) -- the app follows the skin active on the RePlayOS TV interface. When someone changes the skin on the TV (via the RePlayOS menu), the web UI updates to match automatically — and vice versa. This keeps the TV and companion app visually consistent.
+- **Manual override** -- pick a specific skin for the web UI, independent of the TV skin. Useful if you prefer a different color scheme on your phone or tablet than what is displayed on the TV.
+
+A toggle at the top of the skin page controls the mode.
+
+### Live Push to All Browsers
+
+Skin changes are broadcast instantly to all connected browsers via server-sent events (SSE). If you change the skin from your phone, every other open tab or device sees the new theme immediately — no refresh needed. This also applies when the skin changes on the TV side in sync mode.
 
 ## GitHub API Key
 

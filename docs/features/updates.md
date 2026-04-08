@@ -2,6 +2,8 @@
 
 Keep Replay Control up to date directly from the web UI. The update system checks GitHub releases for new versions and handles the full download-install-restart cycle without SSH or manual file transfers.
 
+{{< screenshot "update-banner-mobile.png" "Update banner with channel selector" >}}
+
 ## Overview
 
 Updates are managed from the **More** page under the **Updates** section. The app checks for new releases automatically in the background and displays a banner when an update is available.

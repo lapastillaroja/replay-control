@@ -60,3 +60,35 @@
     });
   });
 </script>
+
+<!-- Copy button on all code blocks (appears on hover) -->
+<style>
+  .highlight { position: relative; }
+  .copy-code-btn {
+    position: absolute; top: 0.3rem; right: 0.3rem;
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #aaa; border-radius: 4px; padding: 0.15rem 0.4rem;
+    font-size: 0.7rem; cursor: pointer; transition: all 0.2s;
+    opacity: 0;
+  }
+  .highlight:hover .copy-code-btn { opacity: 1; }
+  .copy-code-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+  .copy-code-btn.copied { opacity: 1; background: #198754; border-color: #198754; color: #fff; }
+</style>
+<script>
+  document.querySelectorAll('.highlight').forEach(function(block) {
+    var code = block.querySelector('code');
+    if (!code) return;
+    var btn = document.createElement('button');
+    btn.className = 'copy-code-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', function() {
+      navigator.clipboard.writeText(code.textContent.trim()).then(function() {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+      });
+    });
+    block.appendChild(btn);
+  });
+</script>

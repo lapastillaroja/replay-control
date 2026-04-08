@@ -1,0 +1,7 @@
+<figure style="margin: 1.5rem 0; text-align: center;">
+  <img src="{{ printf "screenshots/%s" (.Get 0) | relURL }}"
+       alt="{{ .Get 1 | default (.Get 0) }}"
+       style="max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--bs-border-color, #333);"
+       loading="lazy" />
+  {{ with .Get 1 }}<figcaption style="color: var(--bs-secondary-color, #888); font-size: 0.85rem; margin-top: 0.5rem;">{{ . }}</figcaption>{{ end }}
+</figure>

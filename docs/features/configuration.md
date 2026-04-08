@@ -44,8 +44,8 @@ View and change your Raspberry Pi's hostname — the network name others use to 
 **What it does:** Sets the mDNS address (e.g., `replay.local`) used to connect to the Pi from phones, tablets, and computers.
 
 **How to use it:**
-1. Navigate to **More** > **System Info** to view current hostname
-2. From **More** > **WiFi** or another settings section, change hostname to a new name
+1. Navigate to **More** > **Hostname**
+2. Enter a new hostname
 3. Changes take effect immediately for mDNS
 
 **Example:** Change hostname from `replay` to `replay-living-room` so you can access it at `replay-living-room.local` on your network.

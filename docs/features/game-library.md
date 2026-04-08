@@ -2,6 +2,8 @@
 
 How the game library works from a user perspective: browsing systems, managing ROMs, and keeping your library up to date.
 
+{{< screenshot "system-megadrive-mobile.png" "System browser" >}}
+
 ## Systems Grid
 
 The main library view shows all known systems as cards, each with the system display name, manufacturer, game count, and total size. Systems with no ROMs appear dimmed.
@@ -44,14 +46,32 @@ Arcade ROMs use internal codenames (e.g., `sf2.zip`). The app automatically show
 
 ## Favorites
 
-- **Add/remove favorites** from any game card or the game detail page
-- **Favorites page** with featured card, recently added scroll, per-system cards, and flat/grouped views
-- **Organize by criteria** -- group favorites into subfolders by developer, genre, system, players, or alphabetically (up to 2 levels of nesting)
-- **Remove confirmation** -- tapping the star shows "Remove?" before acting
-- **Sorted by date added** -- newest first, consistent across subfolders
-- **Favorites-based recommendations** on the favorites page:
-  - "Because You Love [Game]" -- similar games by genre and developer
-  - "More from [Series]" -- unfavorited series siblings across all your favorites
+Favorites let you build a personal shortlist of the games you care about most. Star any game from its card or detail page and it appears in a dedicated Favorites section — a curated view of your collection that cuts through the noise of thousands of ROMs.
+
+{{< screenshot "favorites-grouped-mobile.png" "Favorites organized by system" >}}
+
+The favorites page shows a **featured card** for your most recent favorite, a **recently added** horizontal scroll, and **per-system cards** summarizing your favorites across systems. You can switch between a flat list and grouped views at any time. Games are sorted by date added (newest first) across all views.
+
+### Organizing Favorites
+
+As your favorites grow, the organize feature helps you make sense of them. Choose one or two grouping criteria — developer, genre, system, player count, rating, or alphabetical — and your favorites are sorted into subfolders automatically. For example, grouping by genre and then by system creates folders like "Action > Mega Drive" and "RPG > PlayStation".
+
+{{< screenshot "favorites-organize-ui-mobile.png" "Organize favorites by developer" >}}
+
+Before applying, a **preview** shows exactly how your favorites will be grouped so you can adjust criteria without committing. Organized views are persistent — they stay until you change or clear them.
+
+### Managing Favorites
+
+- **Add/remove** from any game card or the game detail page
+- **Remove confirmation** -- tapping the star shows "Remove?" before acting, so you don't accidentally lose a favorite
+- **Recursive unfavorite** -- removing a favorite from within an organized subfolder unfavorites the game and removes it from the view immediately
+
+### Favorites-Based Recommendations
+
+The favorites page includes personalized recommendations based on what you've favorited:
+
+- **"Because You Love [Game]"** -- discovers similar games by matching genre and developer
+- **"More from [Series]"** -- surfaces unfavorited series siblings across all your favorites
 
 ## Recents
 

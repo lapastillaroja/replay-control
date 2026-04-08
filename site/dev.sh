@@ -2,19 +2,20 @@
 # Serve the docs site locally.
 #
 # Usage:
-#   ./dev.sh              # localhost (SRI/CORS safe)
-#   ./dev.sh --lan        # LAN IP (accessible from other devices, SRI may break)
+#   ./dev.sh              # LAN IP (accessible from other devices)
+#   ./dev.sh --localhost   # localhost only (SRI/CORS safe)
 #   ./dev.sh --port 8000  # custom port
 set -euo pipefail
 
 PORT="1313"
-MODE="local"
+MODE="lan"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --lan)  MODE="lan"; shift ;;
-        --port) PORT="$2"; shift 2 ;;
-        *)      PORT="$1"; shift ;;
+        --lan)       MODE="lan"; shift ;;
+        --localhost) MODE="local"; shift ;;
+        --port)      PORT="$2"; shift 2 ;;
+        *)           PORT="$1"; shift ;;
     esac
 done
 

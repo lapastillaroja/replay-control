@@ -2,6 +2,8 @@
 
 How global search, developer search, and the developer game list work.
 
+{{< screenshot "search-zelda.png" "Cross-system search results" >}}
+
 ## Global Search
 
 Cross-system search accessible from the bottom nav Search tab, the home page search bar, or the `/` keyboard shortcut.
@@ -23,6 +25,13 @@ All filters are persisted in the URL, so you can share or bookmark filtered sear
 | Driver Status | Working, Imperfect, Preliminary (arcade only) |
 | Favorites Only | Show only favorited games |
 | Min Rating | Minimum community rating threshold |
+| Year Range | Filter by release year (min/max) |
+| Multiplayer | Show only multiplayer games (2+ players) |
+| Co-op | Show only cooperative games |
+| Hide Hacks | Exclude hack ROMs from results |
+| Hide Translations | Exclude fan translations |
+| Hide Betas | Exclude pre-release/beta ROMs |
+| Hide Clones | Exclude clone/parent duplicates (arcade) |
 
 ### Recent Searches
 
@@ -44,6 +53,6 @@ When your search query matches a developer or manufacturer name, a "Games by Dev
 Each developer has a dedicated page (`/developer/:name`) with:
 
 - **System filter chips** across the top (all systems the developer has games on, with counts)
-- **Content filters** -- hide hacks, hide translations, hide clones, multiplayer only, genre filter, minimum rating
+- **Content filters** -- hide hacks, hide translations, hide betas, hide clones, multiplayer only, co-op only, genre filter, minimum rating, year range
 - **Infinite scroll** with pagination
 - **Cross-system game list** with system badges on each card
