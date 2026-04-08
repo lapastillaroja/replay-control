@@ -2,6 +2,8 @@
 
 A quick guide to get Replay Control running on your Pi.
 
+{{< screenshot "home-desktop.png" "Replay Control home page" >}}
+
 ## Prerequisites
 
 - A Raspberry Pi running [RePlayOS](https://www.replayos.com/)
@@ -10,13 +12,15 @@ A quick guide to get Replay Control running on your Pi.
 
 ## Install
 
-From any computer on the same network:
+From any computer on the same network, or directly on the Pi:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-The installer downloads the latest release and sets everything up. If `replay.local` doesn't work, replace it with your Pi's IP address (e.g., `your-pi-ip` — check your router's admin page to find it). For more install options (SD card, specific version, custom password), see the [Installation guide](install.md).
+No arguments needed -- the installer auto-discovers your Pi on the network, or installs locally when run on the Pi itself. If no stable release exists yet, it falls back to the latest beta.
+
+If auto-discovery doesn't find your Pi, specify the address directly with `--ip your-pi-ip`. For more install options (SD card, specific version, custom password), see the [Installation guide](install.md).
 
 ## First Launch
 
@@ -70,5 +74,6 @@ Both are optional and require an internet connection on the Pi.
 
 - [Game Library](game-library.md) -- browsing, favorites, multi-disc handling
 - [Search](search.md) -- cross-system search and developer pages
-- [Settings](settings.md) -- Wi-Fi, themes, hostname, and more
+- [Preferences](settings.md) -- region, skins, font size
+- [WiFi, NFS & Pi Setup](configuration.md) -- Wi-Fi, hostname, NFS shares, password
 - [Feature overview](index.md) -- full list of features

@@ -84,30 +84,37 @@ This is a personal project born from my love for retro gaming on real hardware. 
 ## Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
+
+No arguments needed — the installer auto-discovers your Pi on the network via mDNS, or installs locally when run directly on the Pi. If no stable release exists yet, it falls back to the latest beta.
 
 <details>
 <summary>More install options</summary>
 
-**Latest beta (recommended until v1.0):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | REPLAY_CONTROL_VERSION=beta bash -s -- --ip replay.local
-```
-
 **Specific version:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | REPLAY_CONTROL_VERSION=v0.2.0 bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --version v0.2.0
 ```
 
-**Custom IP and password:**
+**Skip discovery (specify Pi address):**
 ```bash
-PI_PASS=mypassword curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+```
+
+**Custom password:**
+```bash
+PI_PASS=mypassword curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
 **Install to SD card (before first boot):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --sd /path/to/mounted/sdcard
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --sdcard /path/to/mounted/sdcard
+```
+
+**Dry run (preview without changes):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --dry-run
 ```
 
 > **Windows users:** Run these commands in [WSL](https://learn.microsoft.com/en-us/windows/wsl/).

@@ -4,25 +4,26 @@ How to install, update, and uninstall Replay Control on a Raspberry Pi running R
 
 ## Quick Install
 
-From any computer on the same network as the Pi:
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-The installer downloads the latest release from GitHub and deploys to the Pi over SSH. If `replay.local` doesn't work, replace it with your Pi's IP address (e.g., `your-pi-ip`).
+No arguments needed. The installer:
+
+- **Auto-discovers** your Pi on the network via mDNS
+- **Installs locally** when run directly on the Pi (auto-detected)
+- **Falls back to beta** if no stable release exists yet
+- Downloads the latest release from GitHub and deploys over SSH
 
 ## Install Methods
 
-### SSH Install (from another computer)
+### Remote Install (from another computer)
 
-The default method. Downloads the latest release and deploys to the Pi over SSH.
+The default method. Run the one-liner above from any computer on the same network. The installer finds the Pi automatically via mDNS.
+
+If auto-discovery doesn't work, specify the address:
 
 ```bash
-# Using replay.local (default mDNS hostname)
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip replay.local
-
-# Using a specific IP address
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip your-pi-ip
 ```
 
@@ -31,13 +32,13 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 If you already downloaded `install.sh`:
 
 ```bash
-bash install.sh --ip replay.local
+bash install.sh
 bash install.sh --ip your-pi-ip
 ```
 
-### SSH Install (already on the Pi)
+### Local Install (on the Pi itself)
 
-If you are logged into the Pi via SSH, the same script works:
+When run on a RePlayOS Pi, the installer auto-detects that it's running locally and installs without SSH:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
@@ -83,6 +84,13 @@ PI_PASS=mypassword curl -fsSL https://raw.githubusercontent.com/lapastillaroja/r
 ### Specific Version
 
 Install a particular release instead of the latest:
+
+```bash
+bash install.sh --version v0.2.0
+bash install.sh --version beta
+```
+
+The environment variable `REPLAY_CONTROL_VERSION` also works:
 
 ```bash
 REPLAY_CONTROL_VERSION=v0.2.0 bash install.sh
@@ -143,7 +151,7 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 To update to a specific version:
 
 ```bash
-REPLAY_CONTROL_VERSION=v0.3.0 bash install.sh
+bash install.sh --version v0.3.0
 ```
 
 ## Uninstall

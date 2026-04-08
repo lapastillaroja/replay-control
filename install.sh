@@ -52,7 +52,7 @@ dry()     { echo "${YELLOW}[DRY RUN]${RESET} $*"; }
 
 # ── Globals ─────────────────────────────────────────────────────────────────
 
-MODE="ssh"           # ssh or sdcard
+MODE="ssh"           # ssh, sdcard, or local
 ACTION="install"     # install or uninstall
 DRY_RUN=false
 LOCAL=false
@@ -78,6 +78,7 @@ usage() {
 ${BOLD}Replay Control Installer${RESET}
 
 Installs the Replay Control on a Raspberry Pi running RePlayOS.
+When run directly on a RePlayOS Pi, installs locally without SSH.
 
 ${BOLD}USAGE${RESET}
     install.sh [FLAGS]
@@ -87,6 +88,7 @@ ${BOLD}FLAGS${RESET}
     --uninstall         Remove the app from a connected Pi via SSH
     --sdcard [PATH]     Write directly to a mounted RePlayOS SD card
     --ip ADDRESS        Skip Pi discovery, use this IP address
+    --version VERSION   Version to install: tag (v0.2.0), "latest", or "beta"
     --dry-run           Show what would be done without making changes
     --local [DIR]       Use locally built artifacts instead of downloading
                         (default: project root, expects target/release/ and target/site/)
@@ -117,7 +119,7 @@ ${BOLD}EXAMPLES${RESET}
     ${BOLD}Preview what would happen:${RESET}
         bash install.sh --dry-run
 
-    ${BOLD}Pipe from curl:${RESET}
+    ${BOLD}Pipe from curl (auto-detects if running on Pi):${RESET}
         curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash
 EOF
 }
@@ -157,6 +159,12 @@ parse_args() {
                     shift
                 fi
                 ;;
+            --version)
+                shift
+                [[ $# -eq 0 ]] && fatal "Missing version after --version"
+                VERSION="$1"
+                shift
+                ;;
             --dry-run)
                 DRY_RUN=true
                 shift
@@ -187,7 +195,21 @@ resolve_download_urls() {
         VERSION="$tag"
         base_url="https://github.com/$REPO/releases/download/$tag"
     elif [[ "$VERSION" == "latest" ]]; then
-        base_url="https://github.com/$REPO/releases/latest/download"
+        # Check if a stable (non-prerelease) release exists via the API.
+        local stable_tag
+        stable_tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+            | grep -o '"tag_name": *"[^"]*"' \
+            | sed 's/.*"\(v[^"]*\)".*/\1/' || true)
+        if [[ -n "$stable_tag" ]]; then
+            info "Found stable release: $stable_tag"
+            VERSION="$stable_tag"
+            base_url="https://github.com/$REPO/releases/download/$stable_tag"
+        else
+            warn "No stable release found — falling back to latest beta"
+            VERSION="beta"
+            resolve_download_urls
+            return
+        fi
     else
         base_url="https://github.com/$REPO/releases/download/$VERSION"
     fi
@@ -279,6 +301,12 @@ fetch_artifacts() {
         resolve_download_urls
         download_artifacts
     fi
+}
+
+# ── Local Pi detection ──────────────────────────────────────────────────────
+
+is_running_on_pi() {
+    [[ -f /media/sd/config/replay.cfg ]]
 }
 
 # ── Pi discovery ────────────────────────────────────────────────────────────
@@ -445,7 +473,69 @@ avahi_service_content() {
 AVAHI
 }
 
-# ── SSH install ─────────────────────────────────────────────────────────────
+# ── Local install (running directly on the Pi) ─────────────────────────────
+
+install_local() {
+    fetch_artifacts
+
+    if $DRY_RUN; then
+        dry "Would extract binary to ${INSTALL_DIR}/replay-control-app"
+        dry "Would extract site assets to ${SITE_DIR}/site/"
+        dry "Would write systemd service to ${SERVICE_FILE}"
+        dry "Would write environment file to ${ENV_FILE} (only if not present)"
+        dry "Would write Avahi service to ${AVAHI_FILE} (if Avahi is available)"
+        dry "Would run: systemctl daemon-reload && systemctl enable && systemctl restart"
+        return
+    fi
+
+    info "Installing locally..."
+
+    # Extract binary
+    tar -xzf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C /tmp/
+    mkdir -p "$INSTALL_DIR"
+    install -m755 /tmp/replay-control-app "$INSTALL_DIR/replay-control-app"
+
+    # Extract site assets
+    rm -rf "$SITE_DIR/site"
+    mkdir -p "$SITE_DIR"
+    tar -xzf "$TMPDIR_WORK/replay-site.tar.gz" -C "$SITE_DIR/"
+
+    # Write systemd service + env + avahi (reuse shared helpers)
+    systemd_service_content > "$SERVICE_FILE"
+    if [[ ! -f "$ENV_FILE" ]]; then
+        env_file_content > "$ENV_FILE"
+    fi
+    if command -v avahi-daemon &>/dev/null; then
+        systemctl enable avahi-daemon 2>/dev/null || true
+        systemctl start avahi-daemon 2>/dev/null || true
+        [[ -d /etc/avahi/services ]] && avahi_service_content > "$AVAHI_FILE"
+    fi
+
+    # Reload and start
+    systemctl daemon-reload
+    systemctl enable "$SERVICE_NAME"
+    systemctl restart "$SERVICE_NAME"
+
+    # Cleanup
+    rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
+
+    success "Installation complete"
+
+    # Verify
+    info "Verifying service..."
+    if systemctl is-active "$SERVICE_NAME" &>/dev/null; then
+        success "Service is running"
+    else
+        warn "Service may not have started yet. Check with: systemctl status ${SERVICE_NAME}"
+    fi
+
+    echo ""
+    success "${BOLD}Replay Control installed!${RESET}"
+    echo "  Open ${GREEN}http://$(hostname).local:${DEFAULT_PORT}${RESET} in your browser."
+    echo ""
+}
+
+# ── SSH install ────────────────────────────────────────────────────────────
 
 install_ssh() {
     discover_pi
@@ -945,12 +1035,37 @@ main() {
     fi
     echo ""
 
+    # Auto-detect: if running on a RePlayOS Pi and no explicit mode was chosen, install locally.
+    if [[ "$MODE" == "ssh" ]] && [[ -z "$PI_ADDR" ]] && is_running_on_pi; then
+        MODE="local"
+        info "Detected RePlayOS — installing locally (no SSH needed)"
+    fi
+
     case "${ACTION}-${MODE}" in
+        install-local)
+            install_local
+            ;;
         install-ssh)
             install_ssh
             ;;
         install-sdcard)
             install_sdcard
+            ;;
+        uninstall-local)
+            if $DRY_RUN; then
+                dry "Would stop and disable ${SERVICE_NAME}"
+                dry "Would remove: ${SERVICE_FILE} ${AVAHI_FILE} ${INSTALL_DIR}/replay-control-app"
+                dry "Would remove: ${SITE_DIR}"
+                dry "Would run: systemctl daemon-reload"
+            else
+                info "Uninstalling locally..."
+                systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+                systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+                rm -f "$SERVICE_FILE" "$AVAHI_FILE" "$INSTALL_DIR/replay-control-app"
+                rm -rf "$SITE_DIR"
+                systemctl daemon-reload
+                success "Replay Control uninstalled"
+            fi
             ;;
         uninstall-ssh)
             uninstall_ssh
