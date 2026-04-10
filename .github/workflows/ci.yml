@@ -84,7 +84,7 @@ jobs:
         run: ./build.sh
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts
           retention-days: 1
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts
           path: target/
@@ -150,7 +150,7 @@ jobs:
         run: chmod +x target/release/replay-control-app
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-test-results
           path: |
