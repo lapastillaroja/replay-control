@@ -546,6 +546,10 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveUpdateChannel>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SkipVersion>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::StartUpdate>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetAnalyticsPreference>(
+        );
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveAnalyticsPreference>(
+        );
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
             .site_root(cli.site_root.clone())

@@ -471,6 +471,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillCoOp => "Juegos cooperativos",
         Key::SpotlightCoOp => "Juegos cooperativos",
 
+        // Analytics
+        Key::MoreSectionPrivacy => "Privacidad",
+        Key::AnalyticsTitle => "Estadísticas de uso anónimas",
+        Key::AnalyticsDescription => {
+            "Ayuda a mejorar Replay Control enviando estadísticas de instalación anónimas"
+        }
+        Key::AnalyticsSaved => "Preferencia guardada",
+        Key::AnalyticsWhatSent => "¿Qué datos se envían?",
+        Key::AnalyticsFieldInstallId => {
+            "ID de instalación aleatorio (no vinculado a ti ni a tu dispositivo)"
+        }
+        Key::AnalyticsFieldVersion => "Versión de la aplicación",
+        Key::AnalyticsFieldArch => "Arquitectura de CPU",
+        Key::AnalyticsFieldChannel => "Canal de actualización",
+        Key::AnalyticsNotCollected => {
+            "No se recopila: direcciones IP, biblioteca de juegos, patrones de uso ni información personal."
+        }
+        Key::AnalyticsPrivacyLink => "Leer la política de privacidad completa",
+
         // Updates
         Key::MoreSectionUpdates => "Actualizaciones",
         Key::UpdateAvailable => "La versión {0} está disponible",

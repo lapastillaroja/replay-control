@@ -552,6 +552,26 @@ pub async fn get_preferred_languages() -> Result<Vec<String>, ServerFnError> {
     ))
 }
 
+/// Get the analytics preference from `.replay-control/settings.cfg`.
+/// Returns `true` if analytics is enabled (default).
+#[server(prefix = "/sfn")]
+pub async fn get_analytics_preference() -> Result<bool, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    Ok(replay_control_core::settings::read_analytics_enabled(
+        &storage.root,
+    ))
+}
+
+/// Save the analytics preference to `.replay-control/settings.cfg`.
+#[server(prefix = "/sfn")]
+pub async fn save_analytics_preference(enabled: bool) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    replay_control_core::settings::write_analytics(&storage.root, enabled)
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
 /// Trigger an immediate update check against GitHub API.
 /// Nukes the update dir first, checks, writes available.json if found.
 #[server(prefix = "/sfn")]

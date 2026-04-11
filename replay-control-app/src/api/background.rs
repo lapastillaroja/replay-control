@@ -345,14 +345,16 @@ impl BackgroundManager {
                         replay_control_core::thumbnail_manifest::default_branch(repo_display);
                     let entry_count = data.entries.len();
 
-                    let _ = MetadataDb::upsert_data_source(
+                    if let Err(e) = MetadataDb::upsert_data_source(
                         db,
                         &source_name,
                         "libretro-thumbnails",
                         "disk-rebuild",
                         branch,
                         entry_count,
-                    );
+                    ) {
+                        tracing::warn!("Failed to upsert data source {source_name}: {e}");
+                    }
 
                     match MetadataDb::bulk_insert_thumbnail_index(db, &source_name, &data.entries) {
                         Ok(_) => w_total_entries += entry_count,
@@ -368,14 +370,16 @@ impl BackgroundManager {
                             replay_control_core::thumbnails::libretro_source_name(extra_repo);
                         let extra_branch =
                             replay_control_core::thumbnail_manifest::default_branch(extra_repo);
-                        let _ = MetadataDb::upsert_data_source(
+                        if let Err(e) = MetadataDb::upsert_data_source(
                             db,
                             &extra_source,
                             "libretro-thumbnails",
                             "disk-rebuild",
                             extra_branch,
                             0,
-                        );
+                        ) {
+                            tracing::warn!("Failed to upsert data source {extra_source}: {e}");
+                        }
                     }
                     w_total_repos += data.repo_names.len();
                 }
@@ -520,11 +524,27 @@ impl BackgroundManager {
         // Delay first check to let WiFi come up on Pi.
         tokio::time::sleep(Duration::from_secs(60)).await;
 
+        let analytics = super::analytics::AnalyticsClient::new(
+            Self::http_client().clone(),
+            super::analytics::ENDPOINT,
+        );
+
         loop {
             if state.has_storage() {
                 match Self::perform_update_check_background(&state).await {
                     Ok(_) => {}
                     Err(e) => tracing::debug!("Background update check failed: {e}"),
+                }
+
+                // Analytics ping — independent from update check, same 24h cadence.
+                let storage = state.storage();
+                if let Some((ping, is_install)) =
+                    super::analytics::build_analytics_ping(&storage.root)
+                {
+                    let success = analytics.send(&ping).await;
+                    if is_install && success {
+                        super::analytics::mark_version_reported(&storage.root);
+                    }
                 }
             }
 

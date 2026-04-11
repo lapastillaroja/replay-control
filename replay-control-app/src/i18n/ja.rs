@@ -467,6 +467,23 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillCoOp => "協力プレイ",
         Key::SpotlightCoOp => "協力プレイ",
 
+        // Analytics
+        Key::MoreSectionPrivacy => "プライバシー",
+        Key::AnalyticsTitle => "匿名の使用統計",
+        Key::AnalyticsDescription => "匿名のインストール統計を送信してReplay Controlの改善に貢献",
+        Key::AnalyticsSaved => "設定を保存しました",
+        Key::AnalyticsWhatSent => "送信されるデータは？",
+        Key::AnalyticsFieldInstallId => {
+            "ランダムなインストールID（あなたやデバイスに紐付けられません）"
+        }
+        Key::AnalyticsFieldVersion => "アプリのバージョン",
+        Key::AnalyticsFieldArch => "CPUアーキテクチャ",
+        Key::AnalyticsFieldChannel => "アップデートチャンネル",
+        Key::AnalyticsNotCollected => {
+            "収集されないもの：IPアドレス、ゲームライブラリ、使用パターン、個人情報。"
+        }
+        Key::AnalyticsPrivacyLink => "プライバシーポリシー全文を読む",
+
         // Updates
         Key::MoreSectionUpdates => "アップデート",
         Key::UpdateAvailable => "バージョン {0} が利用可能です",

@@ -316,6 +316,19 @@ impl AppSettings {
         self.inner.get_non_empty("skipped_version")
     }
 
+    pub fn install_id(&self) -> Option<&str> {
+        self.inner.get_non_empty("install_id")
+    }
+
+    pub fn version_last_reported(&self) -> Option<&str> {
+        self.inner.get_non_empty("version_last_reported")
+    }
+
+    /// Whether analytics is enabled. Default: true (opt-out model).
+    pub fn analytics_enabled(&self) -> bool {
+        self.inner.get("analytics").map_or(true, |v| v != "false")
+    }
+
     // ── Write accessors ──────────────────────────────────────────
 
     pub fn set_region_preference(&mut self, value: &str) {
@@ -360,6 +373,19 @@ impl AppSettings {
 
     pub fn set_skipped_version(&mut self, version: &str) {
         self.inner.set("skipped_version", version);
+    }
+
+    pub fn set_install_id(&mut self, id: &str) {
+        self.inner.set("install_id", id);
+    }
+
+    pub fn set_version_last_reported(&mut self, version: &str) {
+        self.inner.set("version_last_reported", version);
+    }
+
+    pub fn set_analytics(&mut self, enabled: bool) {
+        self.inner
+            .set("analytics", if enabled { "true" } else { "false" });
     }
 }
 

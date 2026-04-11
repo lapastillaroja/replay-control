@@ -440,6 +440,19 @@ pub enum Key {
     PillCoOp,
     SpotlightCoOp,
 
+    // Analytics
+    MoreSectionPrivacy,
+    AnalyticsTitle,
+    AnalyticsDescription,
+    AnalyticsSaved,
+    AnalyticsWhatSent,
+    AnalyticsFieldInstallId,
+    AnalyticsFieldVersion,
+    AnalyticsFieldArch,
+    AnalyticsFieldChannel,
+    AnalyticsNotCollected,
+    AnalyticsPrivacyLink,
+
     // Updates
     MoreSectionUpdates,
     UpdateAvailable,

@@ -333,6 +333,34 @@ pub fn write_update_channel(
     save_settings(storage_root, &settings)
 }
 
+/// Read the analytics preference from `.replay-control/settings.cfg`.
+/// Returns `true` if analytics is enabled (default).
+pub fn read_analytics_enabled(storage_root: &Path) -> bool {
+    let settings = load_settings(storage_root);
+    settings.analytics_enabled()
+}
+
+/// Write the analytics preference to `.replay-control/settings.cfg`.
+pub fn write_analytics(storage_root: &Path, enabled: bool) -> Result<()> {
+    let mut settings = load_settings(storage_root);
+    settings.set_analytics(enabled);
+    save_settings(storage_root, &settings)
+}
+
+/// Write the install ID to `.replay-control/settings.cfg`.
+pub fn write_install_id(storage_root: &Path, id: &str) -> Result<()> {
+    let mut settings = load_settings(storage_root);
+    settings.set_install_id(id);
+    save_settings(storage_root, &settings)
+}
+
+/// Write the last-reported version to `.replay-control/settings.cfg`.
+pub fn write_version_last_reported(storage_root: &Path, version: &str) -> Result<()> {
+    let mut settings = load_settings(storage_root);
+    settings.set_version_last_reported(version);
+    save_settings(storage_root, &settings)
+}
+
 /// Read the skipped version from `.replay-control/settings.cfg`.
 pub fn read_skipped_version(storage_root: &Path) -> Option<String> {
     let settings = load_settings(storage_root);

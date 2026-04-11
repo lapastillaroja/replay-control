@@ -114,6 +114,9 @@ pub fn MorePage() -> impl IntoView {
             // ── Updates section ──────────────────────────────────
             <UpdatesSection />
 
+            // ── Privacy section ──────────────────────────────────
+            <AnalyticsSection />
+
             // ── System Info section ──────────────────────────────
             <section class="more-section">
                 <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionSystemInfo)}</h3>
@@ -287,6 +290,88 @@ fn UpdatesSection() -> impl IntoView {
                 })}
             </div>
         </section>
+    }
+}
+
+#[component]
+fn AnalyticsSection() -> impl IntoView {
+    let i18n = use_i18n();
+    let analytics = Resource::new(|| (), |_| server_fns::get_analytics_preference());
+
+    view! {
+        <section class="more-section">
+            <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionPrivacy)}</h3>
+
+            <div class="more-section-body">
+                <div class="more-inline-setting">
+                    <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::AnalyticsTitle)}</h4>
+                    <p class="form-hint">{move || t(i18n.locale.get(), Key::AnalyticsDescription)}</p>
+                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                        {move || Suspend::new(async move {
+                            let current = analytics.await.unwrap_or(true);
+                            Ok::<_, ServerFnError>(view! { <AnalyticsToggle current /> })
+                        })}
+                    </Transition>
+                </div>
+
+                <details class="analytics-details">
+                    <summary>{move || t(i18n.locale.get(), Key::AnalyticsWhatSent)}</summary>
+                    <ul class="analytics-fields">
+                        <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldInstallId)}</li>
+                        <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldVersion)}</li>
+                        <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldArch)}</li>
+                        <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldChannel)}</li>
+                    </ul>
+                    <p class="analytics-not-collected">{move || t(i18n.locale.get(), Key::AnalyticsNotCollected)}</p>
+                </details>
+            </div>
+        </section>
+    }
+}
+
+#[component]
+fn AnalyticsToggle(current: bool) -> impl IntoView {
+    let i18n = use_i18n();
+    let active = RwSignal::new(current);
+    let saving = RwSignal::new(false);
+    let status = RwSignal::new(Option::<(bool, String)>::None);
+
+    let on_change = move |_| {
+        if saving.get_untracked() {
+            return;
+        }
+        let new_value = !active.get_untracked();
+        saving.set(true);
+        status.set(None);
+        leptos::task::spawn_local(async move {
+            match server_fns::save_analytics_preference(new_value).await {
+                Ok(()) => {
+                    active.set(new_value);
+                    let locale = use_i18n().locale.get_untracked();
+                    status.set(Some((true, t(locale, Key::AnalyticsSaved).to_string())));
+                }
+                Err(e) => {
+                    status.set(Some((false, e.to_string())));
+                }
+            }
+            saving.set(false);
+        });
+    };
+
+    view! {
+        <div class="form-field form-field-check">
+            <label class="form-label">{move || t(i18n.locale.get(), Key::AnalyticsTitle)}</label>
+            <input type="checkbox"
+                class="form-checkbox"
+                prop:checked=move || active.get()
+                on:change=on_change
+                disabled=move || saving.get()
+            />
+        </div>
+        {move || status.get().map(|(ok, msg)| {
+            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
+            view! { <div class=class>{msg}</div> }
+        })}
     }
 }
 

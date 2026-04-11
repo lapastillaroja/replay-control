@@ -231,3 +231,29 @@
     color: var(--text-secondary);
     font-style: italic;
 }
+
+.analytics-inline-setting {
+    border-bottom: none;
+}
+
+.analytics-details {
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.analytics-details summary {
+    cursor: pointer;
+    color: var(--text-tertiary);
+    user-select: none;
+}
+
+.analytics-fields {
+    margin: 6px 0 6px 16px;
+    padding: 0;
+}
+
+.analytics-not-collected {
+    margin-top: 4px;
+    font-style: italic;
+}

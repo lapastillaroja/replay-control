@@ -467,6 +467,23 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillCoOp => "Co-op Games",
         Key::SpotlightCoOp => "Co-op Games",
 
+        // Analytics
+        Key::MoreSectionPrivacy => "Privacy",
+        Key::AnalyticsTitle => "Anonymous usage statistics",
+        Key::AnalyticsDescription => {
+            "Help improve Replay Control by sending anonymous install statistics"
+        }
+        Key::AnalyticsSaved => "Preference saved",
+        Key::AnalyticsWhatSent => "What data is sent?",
+        Key::AnalyticsFieldInstallId => "Random install ID (not tied to you or your device)",
+        Key::AnalyticsFieldVersion => "App version",
+        Key::AnalyticsFieldArch => "CPU architecture",
+        Key::AnalyticsFieldChannel => "Update channel",
+        Key::AnalyticsNotCollected => {
+            "Not collected: IP addresses, game library, usage patterns, or any personal information."
+        }
+        Key::AnalyticsPrivacyLink => "Read the full privacy policy",
+
         // Updates
         Key::MoreSectionUpdates => "Updates",
         Key::UpdateAvailable => "Version {0} is available",
