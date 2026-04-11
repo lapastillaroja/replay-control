@@ -273,10 +273,12 @@ fn queue_on_demand_download(
                     let rom = rom_filename.clone();
                     let _ = rt_handle.block_on(
                         metadata_pool.write(move |conn| {
-                            let _ = conn.execute(
+                            if let Err(e) = conn.execute(
                                 "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
                                 [&url, &sys, &rom],
-                            );
+                            ) {
+                                tracing::error!("Failed to save box art URL for {sys}/{rom}: {e}");
+                            }
                         }),
                     );
                     // Clear response cache so next page load picks up the new art.

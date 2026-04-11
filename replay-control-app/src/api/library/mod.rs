@@ -228,13 +228,18 @@ impl LibraryService {
                         .ok()
                         .map(|d| d.as_secs() as i64)
                 });
-                let _ = MetadataDb::save_system_meta(
+                if let Err(e) = MetadataDb::save_system_meta(
                     conn,
                     &summary.folder_name,
                     mtime_secs,
                     summary.game_count,
                     summary.total_size_bytes,
-                );
+                ) {
+                    tracing::warn!(
+                        "Failed to save system meta for {}: {e}",
+                        summary.folder_name
+                    );
+                }
             }
         })
         .await;
@@ -436,7 +441,9 @@ impl LibraryService {
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library.
         db.write(|conn| {
-            let _ = MetadataDb::clear_all_game_library(conn);
+            if let Err(e) = MetadataDb::clear_all_game_library(conn) {
+                tracing::error!("Failed to clear game library: {e}");
+            }
         })
         .await;
     }
@@ -450,7 +457,9 @@ impl LibraryService {
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library for this system.
         db.write(move |conn| {
-            let _ = MetadataDb::clear_system_game_library(conn, &system);
+            if let Err(e) = MetadataDb::clear_system_game_library(conn, &system) {
+                tracing::error!("Failed to clear game library for {system}: {e}");
+            }
         })
         .await;
     }
