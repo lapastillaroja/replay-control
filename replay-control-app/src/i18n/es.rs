@@ -9,6 +9,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavFavorites => "Favs",
         Key::NavSearch => "Buscar",
         Key::NavMore => "Más",
+        Key::NavSettings => "Ajustes",
 
         // Home page
         Key::HomeLastPlayed => "Último jugado",
@@ -112,7 +113,13 @@ pub fn translate(key: Key) -> &'static str {
             "Opcional. Aumenta el límite de la API de GitHub de 60 a 5.000 solicitudes/hora para la indexación de miniaturas. Crea un token en github.com/settings/tokens (no se necesitan permisos)."
         }
 
-        // More page
+        // Settings page
+        Key::SettingsTitle => "Ajustes",
+        Key::SettingsSectionAppearance => "Apariencia",
+        Key::SettingsSectionNetwork => "Red y seguridad",
+        Key::SettingsSectionSystem => "Sistema",
+
+        // More page (legacy keys)
         Key::MoreTitle => "Más",
         Key::MoreSectionPreferences => "Preferencias",
         Key::MoreSectionGamePreferences => "Preferencias de juego",

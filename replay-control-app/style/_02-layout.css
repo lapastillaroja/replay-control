@@ -78,7 +78,6 @@
 /* Content area */
 .content {
     flex: 1;
-    overflow-x: hidden;
     padding-bottom: var(--nav-height);
 }
 
@@ -86,7 +85,6 @@
     padding: 16px;
     max-width: 1200px;
     margin: 0 auto;
-    overflow-x: hidden;
 }
 
 /* Bottom nav */

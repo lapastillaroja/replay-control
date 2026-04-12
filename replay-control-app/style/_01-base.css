@@ -40,7 +40,7 @@ body {
     color: var(--text);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
+    overflow-x: clip;
 }
 
 html.font-large {

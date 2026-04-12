@@ -11,7 +11,7 @@ pub fn PasswordPage() -> impl IntoView {
     view! {
         <div class="page settings-page">
             <div class="rom-header">
-                <A href="/more" attr:class="back-btn">
+                <A href="/settings" attr:class="back-btn">
                     {move || t(i18n.locale.get(), Key::GamesBack)}
                 </A>
                 <h2 class="page-title">{move || t(i18n.locale.get(), Key::PasswordTitle)}</h2>

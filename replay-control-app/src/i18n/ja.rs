@@ -9,6 +9,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavFavorites => "お気に入り",
         Key::NavSearch => "検索",
         Key::NavMore => "その他",
+        Key::NavSettings => "設定",
 
         // Home page
         Key::HomeLastPlayed => "最後にプレイ",
@@ -112,7 +113,13 @@ pub fn translate(key: Key) -> &'static str {
             "任意。サムネイルのインデックス作成時のGitHub APIレート制限を60から5,000リクエスト/時間に増やします。github.com/settings/tokensでトークンを作成してください（スコープ不要）。"
         }
 
-        // More page
+        // Settings page
+        Key::SettingsTitle => "設定",
+        Key::SettingsSectionAppearance => "外観",
+        Key::SettingsSectionNetwork => "ネットワークとセキュリティ",
+        Key::SettingsSectionSystem => "システム",
+
+        // More page (legacy keys)
         Key::MoreTitle => "その他",
         Key::MoreSectionPreferences => "設定",
         Key::MoreSectionGamePreferences => "ゲーム設定",

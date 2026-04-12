@@ -34,10 +34,10 @@ use pages::home::HomePage;
 use pages::hostname::HostnamePage;
 use pages::logs::LogsPage;
 use pages::metadata::MetadataPage;
-use pages::more::MorePage;
 use pages::nfs::NfsPage;
 use pages::password::PasswordPage;
 use pages::search::SearchPage;
+use pages::settings::SettingsPage;
 use pages::skin::SkinPage;
 use pages::updating::UpdatingPage;
 use pages::wifi::WifiPage;
@@ -136,15 +136,15 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />
-                        <Route path=path!("/more") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MorePage /></ErrorBoundary> } />
-                        <Route path=path!("/more/wifi") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><WifiPage /></ErrorBoundary> } />
-                        <Route path=path!("/more/nfs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><NfsPage /></ErrorBoundary> } />
-                        <Route path=path!("/more/hostname") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HostnamePage /></ErrorBoundary> } />
-                        <Route path=path!("/more/password") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><PasswordPage /></ErrorBoundary> } />
-                        <Route path=path!("/more/metadata") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MetadataPage /></ErrorBoundary> } />
-                        <Route path=path!("/more/skin") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SkinPage /></ErrorBoundary> } />
-                        <Route path=path!("/more/logs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><LogsPage /></ErrorBoundary> } />
-                        <Route path=path!("/more/github") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GithubPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SettingsPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/wifi") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><WifiPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/nfs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><NfsPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/hostname") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HostnamePage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/password") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><PasswordPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/metadata") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><MetadataPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/skin") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SkinPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/logs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><LogsPage /></ErrorBoundary> } />
+                        <Route path=path!("/settings/github") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GithubPage /></ErrorBoundary> } />
                         <Route path=path!("/updating") view=|| view! { <UpdatingPage /> } />
                     </Routes>
                 </main>

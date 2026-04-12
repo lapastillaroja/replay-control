@@ -9,6 +9,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavFavorites => "Favs",
         Key::NavSearch => "Search",
         Key::NavMore => "More",
+        Key::NavSettings => "Settings",
 
         // Home page
         Key::HomeLastPlayed => "Last Played",
@@ -112,7 +113,13 @@ pub fn translate(key: Key) -> &'static str {
             "Optional. Increases the GitHub API rate limit from 60 to 5,000 requests/hour for thumbnail indexing. Create a token at github.com/settings/tokens (no scopes needed)."
         }
 
-        // More page
+        // Settings page
+        Key::SettingsTitle => "Settings",
+        Key::SettingsSectionAppearance => "Appearance",
+        Key::SettingsSectionNetwork => "Network & Security",
+        Key::SettingsSectionSystem => "System",
+
+        // More page (legacy keys)
         Key::MoreTitle => "More",
         Key::MoreSectionPreferences => "Preferences",
         Key::MoreSectionGamePreferences => "Game Preferences",

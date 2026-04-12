@@ -8,8 +8,23 @@ use crate::server_fns;
 use crate::util::format_size;
 use replay_control_core::update::UpdateState;
 
+/// Section definitions: (ID, i18n key) — single source of truth for sidebar + scroll-spy.
+const SECTIONS: [(&str, Key); 5] = [
+    ("settings-appearance", Key::SettingsSectionAppearance),
+    ("settings-game-preferences", Key::MoreSectionGamePreferences),
+    ("settings-network", Key::SettingsSectionNetwork),
+    ("settings-updates", Key::MoreSectionUpdates),
+    ("settings-system", Key::SettingsSectionSystem),
+];
+
+const SECTION_APPEARANCE: &str = SECTIONS[0].0;
+const SECTION_GAME_PREFS: &str = SECTIONS[1].0;
+const SECTION_NETWORK: &str = SECTIONS[2].0;
+const SECTION_UPDATES: &str = SECTIONS[3].0;
+const SECTION_SYSTEM: &str = SECTIONS[4].0;
+
 #[component]
-pub fn MorePage() -> impl IntoView {
+pub fn SettingsPage() -> impl IntoView {
     let i18n = use_i18n();
     let info = Resource::new(|| (), |_| server_fns::get_info());
     let locale_res = Resource::new(|| (), |_| server_fns::get_locale());
@@ -18,152 +33,270 @@ pub fn MorePage() -> impl IntoView {
     let language = Resource::new(|| (), |_| server_fns::get_language_preference());
     let font_size = Resource::new(|| (), |_| server_fns::get_font_size());
 
+    let active_section = RwSignal::new(SECTION_APPEARANCE.to_string());
+
     view! {
-        <div class="page more-page">
-            <h2 class="page-title">{move || t(i18n.locale.get(), Key::MoreTitle)}</h2>
+        <div class="page settings-page">
+            <h2 class="page-title">{move || t(i18n.locale.get(), Key::SettingsTitle)}</h2>
 
-            // ── Preferences section ──────────────────────────────
-            <section class="more-section">
-                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionPreferences)}</h3>
+            <div class="settings-layout">
+                <SettingsSidebar active_section />
 
-                <div class="more-section-body">
-                    <div class="more-inline-setting">
-                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::LocaleTitle)}</h4>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                            {move || Suspend::new(async move {
-                                // get_locale returns the stored locale ("auto", "en", "es", "ja").
-                                let current = locale_res.await.unwrap_or_default();
-                                Ok::<_, ServerFnError>(view! { <LocaleSelector current /> })
-                            })}
-                        </Transition>
-                    </div>
+                <div class="settings-content">
+                    // ── Appearance ───────────────────────────────────
+                    <section class="settings-section" id=SECTION_APPEARANCE>
+                        <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::SettingsSectionAppearance)}</h3>
 
-                    <div class="menu-list">
-                        <MenuItem icon="\u{1F3A8}" label_key=Key::MoreSkin href=Some("/more/skin") />
-                    </div>
+                        <div class="settings-section-body">
+                            <div class="menu-list">
+                                <MenuItem icon="\u{1F3A8}" label_key=Key::MoreSkin href=Some("/settings/skin") />
+                            </div>
 
-                    <div class="more-inline-setting">
-                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
-                        <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                            {move || Suspend::new(async move {
-                                let current = font_size.await?;
-                                Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
-                            })}
-                        </Transition>
-                    </div>
+                            <div class="settings-inline-setting">
+                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
+                                <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>
+                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                                    {move || Suspend::new(async move {
+                                        let current = font_size.await?;
+                                        Ok::<_, ServerFnError>(view! { <TextSizeToggle current /> })
+                                    })}
+                                </Transition>
+                            </div>
+
+                            <div class="settings-inline-setting">
+                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::LocaleTitle)}</h4>
+                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                                    {move || Suspend::new(async move {
+                                        let current = locale_res.await.unwrap_or_default();
+                                        Ok::<_, ServerFnError>(view! { <LocaleSelector current /> })
+                                    })}
+                                </Transition>
+                            </div>
+                        </div>
+                    </section>
+
+                    // ── Game Preferences ─────────────────────────────
+                    <section class="settings-section" id=SECTION_GAME_PREFS>
+                        <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::MoreSectionGamePreferences)}</h3>
+
+                        <div class="settings-section-body">
+                            <div class="settings-inline-setting">
+                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::RegionTitle)}</h4>
+                                <p class="form-hint">{move || t(i18n.locale.get(), Key::RegionHint)}</p>
+                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                                    {move || Suspend::new(async move {
+                                        let current = region.await?;
+                                        let current_secondary = region_secondary.await?;
+                                        Ok::<_, ServerFnError>(view! { <RegionSelector current current_secondary /> })
+                                    })}
+                                </Transition>
+                            </div>
+
+                            <div class="settings-inline-setting">
+                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::LanguageTitle)}</h4>
+                                <p class="form-hint">{move || t(i18n.locale.get(), Key::LanguageHint)}</p>
+                                <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                                    {move || Suspend::new(async move {
+                                        let (primary, secondary) = language.await?;
+                                        Ok::<_, ServerFnError>(view! { <LanguageSelector current_primary=primary current_secondary=secondary /> })
+                                    })}
+                                </Transition>
+                            </div>
+
+                            <div class="menu-list">
+                                <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/metadata") />
+                            </div>
+                        </div>
+                    </section>
+
+                    // ── Network ──────────────────────────────────────
+                    <section class="settings-section" id=SECTION_NETWORK>
+                        <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::SettingsSectionNetwork)}</h3>
+
+                        <div class="settings-section-body">
+                            <div class="menu-list">
+                                <MenuItem icon="\u{1F4F6}" label_key=Key::MoreWifi href=Some("/settings/wifi") />
+                                <MenuItem icon="\u{1F4C1}" label_key=Key::MoreNfs href=Some("/settings/nfs") />
+                                <MenuItem icon="\u{1F4BB}" label_key=Key::MoreHostname href=Some("/settings/hostname") />
+                                <MenuItem icon="\u{1F512}" label_key=Key::MorePassword href=Some("/settings/password") />
+                            </div>
+                        </div>
+                    </section>
+
+                    // ── Updates ──────────────────────────────────────
+                    <UpdatesSection />
+
+                    // ── System ───────────────────────────────────────
+                    <section class="settings-section" id=SECTION_SYSTEM>
+                        <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::SettingsSectionSystem)}</h3>
+
+                        <div class="settings-section-body">
+                            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                                {move || Suspend::new(async move {
+                                    let locale = i18n.locale.get();
+                                    let info = info.await?;
+                                    Ok::<_, ServerFnError>(view! {
+                                        <div class="info-grid">
+                                            <InfoRow label=t(locale, Key::MoreStorage) value=info.storage_kind.to_uppercase() />
+                                            <InfoRow label=t(locale, Key::MorePath) value=info.storage_root.clone() />
+                                            <InfoRow label=t(locale, Key::MoreDiskTotal) value=format_size(info.disk_total_bytes) />
+                                            <InfoRow label=t(locale, Key::MoreDiskUsed) value=format_size(info.disk_used_bytes) />
+                                            <InfoRow label=t(locale, Key::MoreDiskAvailable) value=format_size(info.disk_available_bytes) />
+                                            <InfoRow label=t(locale, Key::MoreEthernetIp) value=info.ethernet_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
+                                            <InfoRow label=t(locale, Key::MoreWifiIp) value=info.wifi_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
+                                        </div>
+                                    })
+                                })}
+                            </Transition>
+
+                            <div class="menu-list">
+                                <MenuItem icon="\u{1F4DC}" label_key=Key::MoreLogs href=Some("/settings/logs") />
+                                <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/settings/github") />
+                            </div>
+
+                            <AnalyticsInline />
+
+                            <div class="settings-reboot">
+                                <RebootButton />
+                            </div>
+                        </div>
+                    </section>
                 </div>
-            </section>
-
-            // ── Game Preferences section ─────────────────────────
-            <section class="more-section">
-                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionGamePreferences)}</h3>
-
-                <div class="more-section-body">
-                    <div class="more-inline-setting">
-                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::RegionTitle)}</h4>
-                        <p class="form-hint">{move || t(i18n.locale.get(), Key::RegionHint)}</p>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                            {move || Suspend::new(async move {
-                                let current = region.await?;
-                                let current_secondary = region_secondary.await?;
-                                Ok::<_, ServerFnError>(view! { <RegionSelector current current_secondary /> })
-                            })}
-                        </Transition>
-                    </div>
-
-                    <div class="more-inline-setting">
-                        <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::LanguageTitle)}</h4>
-                        <p class="form-hint">{move || t(i18n.locale.get(), Key::LanguageHint)}</p>
-                        <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                            {move || Suspend::new(async move {
-                                let (primary, secondary) = language.await?;
-                                Ok::<_, ServerFnError>(view! { <LanguageSelector current_primary=primary current_secondary=secondary /> })
-                            })}
-                        </Transition>
-                    </div>
-                </div>
-            </section>
-
-            // ── Game Data section ────────────────────────────────
-            <section class="more-section">
-                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionGameData)}</h3>
-
-                <div class="more-section-body">
-                    <div class="menu-list">
-                        <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/more/metadata") />
-                    </div>
-                </div>
-            </section>
-
-            // ── System section ───────────────────────────────────
-            <section class="more-section">
-                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionSystem)}</h3>
-
-                <div class="more-section-body">
-                    <div class="menu-list">
-                        <MenuItem icon="\u{1F4F6}" label_key=Key::MoreWifi href=Some("/more/wifi") />
-                        <MenuItem icon="\u{1F4C1}" label_key=Key::MoreNfs href=Some("/more/nfs") />
-                        <MenuItem icon="\u{1F4BB}" label_key=Key::MoreHostname href=Some("/more/hostname") />
-                        <MenuItem icon="\u{1F512}" label_key=Key::MorePassword href=Some("/more/password") />
-                        <MenuItem icon="\u{1F4DC}" label_key=Key::MoreLogs href=Some("/more/logs") />
-                    </div>
-                </div>
-            </section>
-
-            // ── Updates section ──────────────────────────────────
-            <UpdatesSection />
-
-            // ── System Info section ──────────────────────────────
-            <section class="more-section">
-                <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionSystemInfo)}</h3>
-
-                <div class="more-section-body">
-                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                        {move || Suspend::new(async move {
-                            let locale = i18n.locale.get();
-                            let info = info.await?;
-                            Ok::<_, ServerFnError>(view! {
-                                <div class="info-grid">
-                                    <InfoRow label=t(locale, Key::MoreStorage) value=info.storage_kind.to_uppercase() />
-                                    <InfoRow label=t(locale, Key::MorePath) value=info.storage_root.clone() />
-                                    <InfoRow label=t(locale, Key::MoreDiskTotal) value=format_size(info.disk_total_bytes) />
-                                    <InfoRow label=t(locale, Key::MoreDiskUsed) value=format_size(info.disk_used_bytes) />
-                                    <InfoRow label=t(locale, Key::MoreDiskAvailable) value=format_size(info.disk_available_bytes) />
-                                    <InfoRow label=t(locale, Key::MoreEthernetIp) value=info.ethernet_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
-                                    <InfoRow label=t(locale, Key::MoreWifiIp) value=info.wifi_ip.unwrap_or_else(|| t(locale, Key::MoreNotConnected).to_string()) />
-                                </div>
-                            })
-                        })}
-                    </Transition>
-
-                    <div class="menu-list">
-                        <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/more/github") />
-                    </div>
-
-                </div>
-            </section>
-
-            // ── Privacy section ──────────────────────────────────
-            <AnalyticsSection />
-
-            <RebootButton />
-
+            </div>
         </div>
+
+        <ScrollSpy active_section />
     }
 }
+
+// ── Shared helpers ──────────────────────────────────────────────
+
+/// Inline status message (ok/error) used by settings controls after save.
+#[component]
+fn SaveStatus(status: RwSignal<Option<(bool, String)>>) -> impl IntoView {
+    move || {
+        status.get().map(|(ok, msg)| {
+            let class = if ok {
+                "status-msg status-ok"
+            } else {
+                "status-msg status-err"
+            };
+            view! { <div class=class>{msg}</div> }
+        })
+    }
+}
+
+// ── Sidebar ─────────────────────────────────────────────────────
+
+#[component]
+fn SettingsSidebar(active_section: RwSignal<String>) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <nav class="settings-sidebar">
+            {SECTIONS.into_iter().map(|(id, label_key)| {
+                let class = move || {
+                    if active_section.read().as_str() == id {
+                        "settings-sidebar-item active"
+                    } else {
+                        "settings-sidebar-item"
+                    }
+                };
+
+                let on_click = move |ev: leptos::ev::MouseEvent| {
+                    ev.prevent_default();
+                    #[cfg(feature = "hydrate")]
+                    {
+                        if let Some(el) = web_sys::window()
+                            .and_then(|w| w.document())
+                            .and_then(|doc| doc.get_element_by_id(id))
+                        {
+                            let opts = web_sys::ScrollIntoViewOptions::new();
+                            opts.set_behavior(web_sys::ScrollBehavior::Smooth);
+                            opts.set_block(web_sys::ScrollLogicalPosition::Start);
+                            el.scroll_into_view_with_scroll_into_view_options(&opts);
+                        }
+                    }
+                };
+
+                view! {
+                    <a href=format!("#{id}") class=class on:click=on_click>
+                        {move || t(i18n.locale.get(), label_key)}
+                    </a>
+                }
+            }).collect::<Vec<_>>()}
+        </nav>
+    }
+}
+
+// ── Scroll-spy (hydrate only) ───────────────────────────────────
+
+#[component]
+fn ScrollSpy(#[allow(unused_variables)] active_section: RwSignal<String>) -> impl IntoView {
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::prelude::*;
+
+        Effect::new(move || {
+            let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+                return;
+            };
+
+            let callback = Closure::<dyn Fn(js_sys::Array, web_sys::IntersectionObserver)>::new(
+                move |entries: js_sys::Array, _observer: web_sys::IntersectionObserver| {
+                    for entry in entries.iter() {
+                        let entry: web_sys::IntersectionObserverEntry =
+                            JsCast::unchecked_into(entry);
+                        if entry.is_intersecting()
+                            && let Some(target) = entry.target().get_attribute("id")
+                        {
+                            active_section.set(target);
+                        }
+                    }
+                },
+            );
+
+            let options = web_sys::IntersectionObserverInit::new();
+            options.set_threshold(&JsValue::from_f64(0.1));
+            options.set_root_margin("-10% 0px -80% 0px");
+
+            if let Ok(obs) = web_sys::IntersectionObserver::new_with_options(
+                callback.as_ref().unchecked_ref(),
+                &options,
+            ) {
+                for (id, _) in SECTIONS {
+                    if let Some(el) = doc.get_element_by_id(id) {
+                        obs.observe(&el);
+                    }
+                }
+                // Leak intentionally — WASM is single-threaded, component is route-level
+                // and rarely re-mounts. Leptos on_cleanup can't hold !Send Closure.
+                std::mem::forget(obs);
+            }
+
+            callback.forget();
+        });
+    }
+}
+
+// ── Updates section ─────────────────────────────────────────────
 
 #[component]
 fn UpdatesSection() -> impl IntoView {
     let i18n = use_i18n();
     let update_state =
         use_context::<RwSignal<UpdateState>>().unwrap_or_else(|| RwSignal::new(UpdateState::None));
+    let channel_value = RwSignal::new("stable".to_string());
     let channel = Resource::new(|| (), |_| server_fns::get_update_channel());
+    Effect::new(move || {
+        if let Some(Ok(val)) = channel.get() {
+            channel_value.set(val);
+        }
+    });
     let check_error = RwSignal::new(Option::<String>::None);
     let checking = RwSignal::new(false);
     let up_to_date = RwSignal::new(false);
 
-    // Shared check logic — called by both manual check and channel switch.
     let run_check = move || {
         checking.set(true);
         check_error.set(None);
@@ -222,10 +355,10 @@ fn UpdatesSection() -> impl IntoView {
     };
 
     view! {
-        <section class="more-section">
-            <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionUpdates)}</h3>
+        <section class="settings-section" id=SECTION_UPDATES>
+            <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::MoreSectionUpdates)}</h3>
 
-            <div class="more-section-body">
+            <div class="settings-section-body">
                 // Update banner
                 {move || {
                     let state = update_state.get();
@@ -262,7 +395,7 @@ fn UpdatesSection() -> impl IntoView {
                     <select
                         class="form-input"
                         on:change=on_channel_change
-                        prop:value=move || channel.get().map(|r| r.unwrap_or_else(|_| "stable".to_string())).unwrap_or_else(|| "stable".to_string())
+                        prop:value=move || channel_value.get()
                     >
                         <option value="stable">{move || t(i18n.locale.get(), Key::UpdateChannelStable)}</option>
                         <option value="beta">{move || t(i18n.locale.get(), Key::UpdateChannelBeta)}</option>
@@ -294,39 +427,35 @@ fn UpdatesSection() -> impl IntoView {
     }
 }
 
+// ── Analytics (inline within System section) ────────────────────
+
 #[component]
-fn AnalyticsSection() -> impl IntoView {
+fn AnalyticsInline() -> impl IntoView {
     let i18n = use_i18n();
     let analytics = Resource::new(|| (), |_| server_fns::get_analytics_preference());
 
     view! {
-        <section class="more-section">
-            <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionPrivacy)}</h3>
+        <div class="analytics-section">
+            <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::AnalyticsTitle)}</h4>
+            <p class="form-hint">{move || t(i18n.locale.get(), Key::AnalyticsDescription)}</p>
+            <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
+                {move || Suspend::new(async move {
+                    let current = analytics.await.unwrap_or(true);
+                    Ok::<_, ServerFnError>(view! { <AnalyticsToggle current /> })
+                })}
+            </Transition>
 
-            <div class="more-section-body">
-                <div class="more-inline-setting analytics-inline-setting">
-                    <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::AnalyticsTitle)}</h4>
-                    <p class="form-hint">{move || t(i18n.locale.get(), Key::AnalyticsDescription)}</p>
-                    <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
-                        {move || Suspend::new(async move {
-                            let current = analytics.await.unwrap_or(true);
-                            Ok::<_, ServerFnError>(view! { <AnalyticsToggle current /> })
-                        })}
-                    </Transition>
-                </div>
-
-                <details class="analytics-details">
-                    <summary>{move || t(i18n.locale.get(), Key::AnalyticsWhatSent)}</summary>
-                    <ul class="analytics-fields">
-                        <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldInstallId)}</li>
-                        <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldVersion)}</li>
-                        <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldArch)}</li>
-                        <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldChannel)}</li>
-                    </ul>
-                    <p class="analytics-not-collected">{move || t(i18n.locale.get(), Key::AnalyticsNotCollected)}</p>
-                </details>
-            </div>
-        </section>
+            <details class="analytics-details">
+                <summary>{move || t(i18n.locale.get(), Key::AnalyticsWhatSent)}</summary>
+                <ul class="analytics-fields">
+                    <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldInstallId)}</li>
+                    <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldVersion)}</li>
+                    <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldArch)}</li>
+                    <li>{move || t(i18n.locale.get(), Key::AnalyticsFieldChannel)}</li>
+                </ul>
+                <p class="analytics-not-collected">{move || t(i18n.locale.get(), Key::AnalyticsNotCollected)}</p>
+            </details>
+        </div>
     }
 }
 
@@ -369,12 +498,11 @@ fn AnalyticsToggle(current: bool) -> impl IntoView {
                 disabled=move || saving.get()
             />
         </div>
-        {move || status.get().map(|(ok, msg)| {
-            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-            view! { <div class=class>{msg}</div> }
-        })}
+        <SaveStatus status />
     }
 }
+
+// ── Shared child components ─────────────────────────────────────
 
 #[component]
 fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
@@ -402,7 +530,6 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
         leptos::task::spawn_local(async move {
             match server_fns::save_region_preference(v.clone()).await {
                 Ok(()) => {
-                    // If secondary was set to the new primary value, reset secondary.
                     if active_secondary.get_untracked() == v {
                         active_secondary.set(String::new());
                         let _ = server_fns::save_region_preference_secondary(String::new()).await;
@@ -456,7 +583,6 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
         })
         .collect::<Vec<_>>();
 
-    // Secondary dropdown: "None" + all regions except the currently selected primary.
     let secondary_option_views = options
         .iter()
         .map(|(value, label_key)| {
@@ -497,10 +623,7 @@ fn RegionSelector(current: String, current_secondary: String) -> impl IntoView {
                 {secondary_option_views}
             </select>
         </div>
-        {move || status.get().map(|(ok, msg)| {
-            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-            view! { <div class=class>{msg}</div> }
-        })}
+        <SaveStatus status />
     }
 }
 
@@ -517,7 +640,6 @@ fn TextSizeToggle(current: String) -> impl IntoView {
         leptos::task::spawn_local(async move {
             if server_fns::save_font_size(size.to_string()).await.is_ok() {
                 active.set(size.to_string());
-                // Reload the page so the SSR body class updates.
                 #[cfg(feature = "hydrate")]
                 {
                     let _ = web_sys::window().and_then(|w| w.location().reload().ok());
@@ -599,7 +721,6 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
-    // Language options: (value, i18n_key)
     let options: &[(&str, Key)] = &[
         ("", Key::LanguageAuto),
         ("en", Key::LanguageEn),
@@ -720,10 +841,7 @@ fn LanguageSelector(current_primary: String, current_secondary: String) -> impl 
                 {secondary_option_views}
             </select>
         </div>
-        {move || status.get().map(|(ok, msg)| {
-            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-            view! { <div class=class>{msg}</div> }
-        })}
+        <SaveStatus status />
     }
 }
 
@@ -746,9 +864,6 @@ fn LocaleSelector(current: String) -> impl IntoView {
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
-    // Language options: (locale_code, i18n_key)
-    // "auto" = detect from browser Accept-Language header. Language names are shown
-    // in their own script so users can find their language regardless of the current UI locale.
     let options: &[(&str, Key)] = &[
         ("auto", Key::LocaleAuto),
         ("en", Key::LocaleEn),
@@ -768,8 +883,6 @@ fn LocaleSelector(current: String) -> impl IntoView {
             match server_fns::save_locale(v.clone()).await {
                 Ok(()) => {
                     if v == "auto" {
-                        // "Same as browser" — reload so the server re-detects
-                        // the locale from the Accept-Language header.
                         #[cfg(target_arch = "wasm32")]
                         {
                             if let Some(window) = web_sys::window() {
@@ -822,9 +935,6 @@ fn LocaleSelector(current: String) -> impl IntoView {
                 {option_views}
             </select>
         </div>
-        {move || status.get().map(|(ok, msg)| {
-            let class = if ok { "status-msg status-ok" } else { "status-msg status-err" };
-            view! { <div class=class>{msg}</div> }
-        })}
+        <SaveStatus status />
     }
 }

@@ -2380,6 +2380,7 @@ dependencies = [
  "gloo-timers",
  "http",
  "http-body-util",
+ "js-sys",
  "leptos",
  "leptos_axum",
  "leptos_router",

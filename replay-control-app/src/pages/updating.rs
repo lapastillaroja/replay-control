@@ -108,13 +108,13 @@ pub fn UpdatingPage() -> impl IntoView {
                         view! {
                             <p class="error">{t(locale, Key::UpdateFailed)}</p>
                             {move || error_msg.get().map(|msg| view! { <p class="error">{msg}</p> })}
-                            <a href="/more" class="form-btn form-btn-secondary">{t(locale, Key::UpdateBackToSettings)}</a>
+                            <a href="/settings" class="form-btn form-btn-secondary">{t(locale, Key::UpdateBackToSettings)}</a>
                         }.into_any()
                     }
                     UpdatingPhase::NothingToDo => {
                         view! {
                             <p>{t(locale, Key::UpdateUpToDate)}</p>
-                            <a href="/more" class="form-btn form-btn-secondary">{t(locale, Key::UpdateBackToSettings)}</a>
+                            <a href="/settings" class="form-btn form-btn-secondary">{t(locale, Key::UpdateBackToSettings)}</a>
                         }.into_any()
                     }
                 }

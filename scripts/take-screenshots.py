@@ -22,25 +22,44 @@ DESKTOP = {"width": 1280, "height": 800}
 MOBILE = {"width": 375, "height": 812}
 
 PAGES = [
+    # Home & navigation
     {"name": "home", "path": "/", "wait": "main"},
-    {"name": "system-megadrive", "path": "/systems/sega_smd", "wait": ".content", "extra_wait": 8000},
-    {"name": "detail-sonic2", "path": "/game/sega_smd/Sonic%20The%20Hedgehog%202%20(World).md", "wait": ".content", "extra_wait": 8000},
+    # System browser
+    {"name": "system-megadrive", "path": "/games/sega_smd", "wait": ".content", "extra_wait": 8000},
+    # Game detail
+    {"name": "detail-sonic2", "path": "/games/sega_smd/Sonic%20The%20Hedgehog%202%20(World)%20(Rev%20A).md", "wait": ".content", "extra_wait": 8000},
+    # Game detail scrolled to info card
+    {"name": "detail-info", "path": "/games/sega_smd/Sonic%20The%20Hedgehog%202%20(World)%20(Rev%20A).md", "wait": ".content", "extra_wait": 8000, "scroll": 350},
+    # Search
     {"name": "search-zelda", "path": "/search?q=zelda", "wait": ".content", "extra_wait": 8000},
     {"name": "search-capcom", "path": "/search?q=capcom", "wait": ".content", "extra_wait": 8000},
     {"name": "search-mario", "path": "/search?q=mario", "wait": ".content", "extra_wait": 8000},
+    # Favorites
     {"name": "favorites", "path": "/favorites", "wait": "main"},
+    # Favorites scrolled to stats + organize button
+    {"name": "favorites-stats", "path": "/favorites", "wait": "main", "scroll": 400},
+    # Favorites grouped by system view
+    {"name": "favorites-grouped", "path": "/favorites", "wait": "main", "scroll": 1400},
+    # Home page recommendations (scrolled)
+    {"name": "recommendations", "path": "/", "wait": "main", "scroll": 500},
+    # More / settings page
     {"name": "more-page", "path": "/more", "wait": "main"},
-    {"name": "more-settings", "path": "/more", "wait": "main"},
+    # Skin selection page
+    {"name": "skins-page", "path": "/more/skin", "wait": "main", "extra_wait": 5000},
+    # Metadata page
     {"name": "metadata", "path": "/metadata", "wait": "main"},
 ]
 
 
-def capture(page, name, url, wait, extra_wait, viewport, output_dir):
+def capture(page, name, url, wait, extra_wait, viewport, output_dir, scroll=0):
     page.set_viewport_size(viewport)
     print(f"  {name}: {url} ...", end=" ", flush=True)
     page.goto(url, wait_until="load", timeout=30000)
     page.wait_for_selector(wait, timeout=30000)
     page.wait_for_timeout(extra_wait)
+    if scroll:
+        page.evaluate(f"window.scrollBy(0, {scroll})")
+        page.wait_for_timeout(1500)
     page.screenshot(path=str(output_dir / f"{name}.png"), full_page=False)
     print("ok")
 
@@ -77,14 +96,15 @@ def main():
             url = f"{APP_URL}{p['path']}"
             wait = p["wait"]
             extra_wait = p.get("extra_wait", 2000)
+            scroll = p.get("scroll", 0)
 
             try:
-                capture(page, p["name"], url, wait, extra_wait, DESKTOP, output_dir)
+                capture(page, p["name"], url, wait, extra_wait, DESKTOP, output_dir, scroll)
             except Exception as e:
                 print(f"FAILED: {e}")
 
             try:
-                capture(page, f"{p['name']}-mobile", url, wait, extra_wait, MOBILE, output_dir)
+                capture(page, f"{p['name']}-mobile", url, wait, extra_wait, MOBILE, output_dir, scroll)
             except Exception as e:
                 print(f"FAILED: {e}")
 

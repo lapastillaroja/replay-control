@@ -11,6 +11,7 @@ pub enum Key {
     NavFavorites,
     NavSearch,
     NavMore,
+    NavSettings,
 
     // Home page
     HomeLastPlayed,
@@ -104,7 +105,13 @@ pub enum Key {
     GithubLabel,
     GithubHint,
 
-    // More page
+    // Settings page
+    SettingsTitle,
+    SettingsSectionAppearance,
+    SettingsSectionNetwork,
+    SettingsSectionSystem,
+
+    // More page (legacy keys still used for sub-items)
     MoreTitle,
     MoreSectionPreferences,
     MoreSectionGamePreferences,

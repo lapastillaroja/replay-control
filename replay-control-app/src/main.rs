@@ -706,6 +706,20 @@ mod ssr {
 
         let app = api::build_router(app_state, leptos_options)
             .route("/waiting", waiting_handler)
+            // DEPRECATED: Remove /more redirects in next-next beta release
+            // Redirect legacy /more/* routes to /settings/*
+            .route(
+                "/more",
+                axum::routing::get(|| async { axum::response::Redirect::permanent("/settings") }),
+            )
+            .route(
+                "/more/*rest",
+                axum::routing::get(
+                    |axum::extract::Path(rest): axum::extract::Path<String>| async move {
+                        axum::response::Redirect::permanent(&format!("/settings/{rest}"))
+                    },
+                ),
+            )
             .route(
                 "/api/version",
                 axum::routing::get(|| async {

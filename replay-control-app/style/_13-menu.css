@@ -1,17 +1,70 @@
 /* ================================================================
-   Menu — More page sections, menu list, info grid
+   Menu — Settings page sections, sidebar, menu list, info grid
    ================================================================ */
 
-/* More page sections */
-.more-section {
+/* ── Two-pane layout (desktop) ───────────────────────────────── */
+
+.settings-layout {
+    display: block;
+}
+
+.settings-sidebar {
+    display: none;
+}
+
+@media (min-width: 900px) {
+    .settings-page {
+        max-width: 1060px;
+    }
+
+    .settings-layout {
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        gap: 32px;
+        align-items: start;
+    }
+
+    .settings-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        position: sticky;
+        top: 16px;
+    }
+
+    .settings-sidebar-item {
+        padding: 8px 12px;
+        border-radius: var(--radius-sm);
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        text-decoration: none;
+        border-left: 3px solid transparent;
+        transition: color 0.15s, border-left-color 0.15s, background 0.15s;
+    }
+
+    .settings-sidebar-item:hover {
+        color: var(--text);
+        background: var(--surface-hover);
+    }
+
+    .settings-sidebar-item.active {
+        color: var(--text);
+        border-left-color: var(--accent);
+        background: var(--surface-hover);
+    }
+}
+
+/* ── Settings sections ───────────────────────────────────────── */
+
+.settings-section {
     margin-bottom: 28px;
 }
 
-.more-section:last-child {
+.settings-section:last-child {
     margin-bottom: 0;
 }
 
-.more-section-header {
+.settings-section-header {
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -22,32 +75,42 @@
     border-bottom: 1px solid var(--border);
 }
 
-.more-section-body {
+.settings-section-body {
     padding-top: 4px;
 }
 
-.more-section-body > .menu-list {
+.settings-section-body > .menu-list {
     margin-bottom: 16px;
 }
 
-.more-section-body > .menu-list:last-child {
+.settings-section-body > .menu-list:last-child {
     margin-bottom: 0;
 }
 
-/* Inline settings within the More page (region, text size) */
-.more-inline-setting {
+/* Keep bottom border on last menu item when other content follows in the section */
+.settings-section-body > .menu-list:not(:last-child) .menu-item:last-child {
+    border-bottom: 1px solid var(--border);
+}
+
+/* Inline settings (region, text size, locale, analytics) */
+.settings-inline-setting {
     padding: 12px 0;
     border-bottom: 1px solid var(--border);
 }
 
-.more-inline-setting:last-child {
+.settings-inline-setting:last-child {
     border-bottom: none;
 }
 
-.more-setting-title {
+.settings-setting-title {
     font-size: 0.9rem;
     font-weight: 600;
     margin-bottom: 4px;
+}
+
+/* Reboot button visual separation */
+.settings-reboot {
+    margin-top: 16px;
 }
 
 /* Menu list */
@@ -130,8 +193,8 @@
     font-weight: 500;
 }
 
-/* Version footer on More page */
-.more-version {
+/* Version footer on Settings page */
+.settings-version {
     text-align: center;
     font-size: 0.75rem;
     color: var(--text-secondary);
@@ -232,7 +295,8 @@
     font-style: italic;
 }
 
-.analytics-inline-setting {
+/* Analytics section within System — no bottom border */
+.settings-section-body > .settings-inline-setting:last-of-type {
     border-bottom: none;
 }
 
@@ -256,4 +320,8 @@
 .analytics-not-collected {
     margin-top: 4px;
     font-style: italic;
+}
+
+.analytics-section {
+    padding-top: 12px;
 }

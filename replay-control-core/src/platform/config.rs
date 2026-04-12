@@ -326,7 +326,7 @@ impl AppSettings {
 
     /// Whether analytics is enabled. Default: true (opt-out model).
     pub fn analytics_enabled(&self) -> bool {
-        self.inner.get("analytics").map_or(true, |v| v != "false")
+        self.inner.get("analytics") != Some("false")
     }
 
     // ── Write accessors ──────────────────────────────────────────
