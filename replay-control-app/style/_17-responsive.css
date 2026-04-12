@@ -152,10 +152,6 @@
         padding: 14px 20px;
     }
 
-    /* More page: limit form width */
-    .more-inline-setting {
-        max-width: 480px;
-    }
 }
 
 /* ── Medium tablet / small desktop (900px) ────────────────────── */
