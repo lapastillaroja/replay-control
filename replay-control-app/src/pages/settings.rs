@@ -237,6 +237,7 @@ fn ScrollSpy(#[allow(unused_variables)] active_section: RwSignal<String>) -> imp
     {
         use wasm_bindgen::prelude::*;
 
+        // Set up IntersectionObserver once on mount.
         Effect::new(move || {
             let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
                 return;
@@ -269,12 +270,68 @@ fn ScrollSpy(#[allow(unused_variables)] active_section: RwSignal<String>) -> imp
                         obs.observe(&el);
                     }
                 }
-                // Leak intentionally — WASM is single-threaded, component is route-level
-                // and rarely re-mounts. Leptos on_cleanup can't hold !Send Closure.
                 std::mem::forget(obs);
             }
 
             callback.forget();
+        });
+
+        // Re-check visible section on route changes (back-navigation from sub-pages).
+        // IntersectionObserver doesn't fire for elements already in the viewport.
+        let pathname = leptos_router::hooks::use_location().pathname;
+        Effect::new(move || {
+            let path = pathname.get();
+            if path != "/settings" {
+                return;
+            }
+
+            let Some(window) = web_sys::window() else {
+                return;
+            };
+            let Some(doc) = window.document() else {
+                return;
+            };
+
+            let raf_callback = Closure::<dyn Fn()>::new(move || {
+                let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+                    return;
+                };
+                let vh = web_sys::window()
+                    .and_then(|w| w.inner_height().ok())
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(800.0);
+                let threshold_top = vh * 0.1;
+                let threshold_bottom = vh * 0.2;
+                for (id, _) in SECTIONS {
+                    if let Some(el) = doc.get_element_by_id(id) {
+                        let get_rect: js_sys::Function = match js_sys::Reflect::get(
+                            &el,
+                            &JsValue::from_str("getBoundingClientRect"),
+                        )
+                        .ok()
+                        .and_then(|v| v.dyn_into().ok())
+                        {
+                            Some(f) => f,
+                            None => continue,
+                        };
+                        let rect = get_rect.call0(&el).unwrap_or(JsValue::UNDEFINED);
+                        let top = js_sys::Reflect::get(&rect, &JsValue::from_str("top"))
+                            .ok()
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(f64::MAX);
+                        let bottom = js_sys::Reflect::get(&rect, &JsValue::from_str("bottom"))
+                            .ok()
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(f64::MIN);
+                        if top < threshold_bottom && bottom > threshold_top {
+                            active_section.set(id.to_string());
+                            break;
+                        }
+                    }
+                }
+            });
+            let _ = window.request_animation_frame(raf_callback.as_ref().unchecked_ref());
+            raf_callback.forget();
         });
     }
 }
