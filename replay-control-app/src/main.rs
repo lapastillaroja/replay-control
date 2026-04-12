@@ -35,6 +35,11 @@ mod ssr {
         #[arg(long)]
         config_path: Option<String>,
 
+        /// Override the settings directory (default: /etc/replay-control on Pi,
+        /// <storage>/.replay-control with --storage-path)
+        #[arg(long)]
+        settings_path: Option<String>,
+
         /// Path to the site root (where pkg/ and style.css live)
         #[arg(long, default_value = "target/site")]
         site_root: String,
@@ -415,14 +420,17 @@ mod ssr {
 
         let cli = Cli::parse();
 
-        let app_state = match api::AppState::new(cli.storage_path, cli.config_path) {
-            Ok(state) => state,
-            Err(e) => {
-                tracing::error!("Failed to initialize: {e}");
-                tracing::info!("Hint: use --storage-path to point to a RePlayOS storage location");
-                std::process::exit(1);
-            }
-        };
+        let app_state =
+            match api::AppState::new(cli.storage_path, cli.config_path, cli.settings_path) {
+                Ok(state) => state,
+                Err(e) => {
+                    tracing::error!("Failed to initialize: {e}");
+                    tracing::info!(
+                        "Hint: use --storage-path to point to a RePlayOS storage location"
+                    );
+                    std::process::exit(1);
+                }
+            };
 
         // Start background pipeline only if storage is available.
         // When no storage, the storage watcher polls every 10s and starts

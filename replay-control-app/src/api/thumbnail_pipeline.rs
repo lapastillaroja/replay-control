@@ -102,7 +102,7 @@ impl ThumbnailPipeline {
         let activity_lock = state.activity.clone();
 
         // Read GitHub API key from settings (if configured).
-        let api_key = replay_control_core::settings::read_github_api_key(&storage_root);
+        let api_key = replay_control_core::settings::read_github_api_key(&state.settings);
 
         let index_result = {
             let cancel_flag = cancel.clone();

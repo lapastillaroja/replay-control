@@ -533,6 +533,8 @@ pub struct AppState {
     pub response_cache: Arc<response_cache::ResponseCache>,
     /// When set, --storage-path was given on the CLI and auto-detection is skipped.
     pub storage_path_override: Option<PathBuf>,
+    /// Resolved settings store (owns the directory path for settings.cfg).
+    pub settings: replay_control_core::settings::SettingsStore,
     /// Cached user preferences (skin, locale, region, font size).
     /// Loaded once at startup; updated in-memory on every settings change.
     pub prefs: Arc<std::sync::RwLock<replay_control_core::settings::UserPreferences>>,
@@ -570,10 +572,33 @@ fn open_user_data_db(
     Ok((conn, path))
 }
 
+/// Resolve the settings directory from CLI arguments.
+///
+/// Priority:
+/// 1. `--settings-path` explicit override
+/// 2. `--storage-path` given -> `<storage>/.replay-control` (local dev backwards compat)
+/// 3. Pi production fallback -> `/etc/replay-control`
+fn resolve_settings_dir(
+    settings_path: Option<&str>,
+    storage_path: Option<&str>,
+) -> replay_control_core::settings::SettingsStore {
+    use replay_control_core::settings::SettingsStore;
+    use replay_control_core::storage::RC_DIR;
+
+    if let Some(p) = settings_path {
+        return SettingsStore::new(p);
+    }
+    if let Some(s) = storage_path {
+        return SettingsStore::new(PathBuf::from(s).join(RC_DIR));
+    }
+    SettingsStore::new("/etc/replay-control")
+}
+
 impl AppState {
     pub fn new(
         storage_path: Option<String>,
         config_path: Option<String>,
+        settings_path: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config_path = config_path.map(PathBuf::from);
         let storage_path_override = storage_path.as_ref().map(PathBuf::from);
@@ -659,11 +684,23 @@ impl AppState {
         let import = Arc::new(ImportPipeline::new());
         let thumbnails = Arc::new(ThumbnailPipeline::new());
 
-        // Load all user preferences from `.replay-control/settings.cfg` once at startup.
-        let prefs = storage
-            .as_ref()
-            .map(|s| replay_control_core::settings::UserPreferences::load(&s.root))
-            .unwrap_or_default();
+        // Resolve settings directory from CLI args.
+        let settings = resolve_settings_dir(
+            settings_path.as_deref(),
+            storage_path_override
+                .as_ref()
+                .map(|p| p.to_str().unwrap_or_default()),
+        );
+
+        // On Pi (no --storage-path): migrate old per-storage settings if needed.
+        if storage_path_override.is_none() {
+            if let Some(ref s) = storage {
+                let _ = settings.migrate_from_storage(&s.root);
+            }
+        }
+
+        // Load all user preferences from settings.cfg once at startup.
+        let prefs = replay_control_core::settings::UserPreferences::load(&settings);
 
         let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
         let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
@@ -675,6 +712,7 @@ impl AppState {
             cache: Arc::new(LibraryService::new()),
             response_cache: Arc::new(response_cache::ResponseCache::new()),
             storage_path_override,
+            settings,
             prefs: Arc::new(std::sync::RwLock::new(prefs)),
             metadata_pool,
             user_data_pool,
@@ -853,9 +891,8 @@ impl AppState {
             self.cache.invalidate(&self.metadata_pool).await;
             self.response_cache.invalidate_all();
 
-            // Reload user preferences from the new storage location.
-            let new_prefs =
-                replay_control_core::settings::UserPreferences::load(&new_storage_ref.root);
+            // Reload user preferences from the settings store.
+            let new_prefs = replay_control_core::settings::UserPreferences::load(&self.settings);
             *self.prefs.write().expect("prefs lock poisoned") = new_prefs;
 
             let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();

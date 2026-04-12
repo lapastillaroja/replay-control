@@ -1,4 +1,4 @@
-use replay_control_core::settings;
+use replay_control_core::settings::{self, SettingsStore};
 
 pub const ENDPOINT: &str = "https://replay-control-analytics.bubbleb.workers.dev/ping";
 
@@ -57,11 +57,8 @@ impl AnalyticsClient {
 ///
 /// Returns `Some((ping, is_install))` where `is_install` is `true` when this is a new version.
 /// Generates and persists a new install ID if one doesn't exist or is invalid.
-///
-/// NOTE: `storage_root` is a temporary parameter — after the Pi-level settings migration
-/// this function will take no arguments (settings live at `/etc/replay-control/settings.cfg`).
-pub fn build_analytics_ping(storage_root: &std::path::Path) -> Option<(PingRequest, bool)> {
-    let mut app_settings = settings::load_settings(storage_root);
+pub fn build_analytics_ping(store: &SettingsStore) -> Option<(PingRequest, bool)> {
+    let mut app_settings = store.load();
 
     if !app_settings.analytics_enabled() {
         return None;
@@ -75,7 +72,7 @@ pub fn build_analytics_ping(storage_root: &std::path::Path) -> Option<(PingReque
         None => {
             let id = uuid::Uuid::new_v4().to_string();
             app_settings.set_install_id(&id);
-            let _ = settings::save_settings(storage_root, &app_settings);
+            let _ = store.save(&app_settings);
             id
         }
     };
@@ -98,89 +95,89 @@ pub fn build_analytics_ping(storage_root: &std::path::Path) -> Option<(PingReque
 }
 
 /// Persist the current version as `version_last_reported`.
-///
-/// NOTE: `storage_root` is a temporary parameter — after the Pi-level settings migration
-/// this function will take no arguments.
-pub fn mark_version_reported(storage_root: &std::path::Path) {
-    let _ = settings::write_version_last_reported(storage_root, crate::VERSION);
+pub fn mark_version_reported(store: &SettingsStore) {
+    let _ = settings::write_version_last_reported(store, crate::VERSION);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AnalyticsClient, PingRequest, build_analytics_ping, mark_version_reported};
+    use super::{
+        AnalyticsClient, PingRequest, SettingsStore, build_analytics_ping, mark_version_reported,
+    };
 
-    fn settings_path(tmp: &std::path::Path) -> std::path::PathBuf {
-        tmp.join(".replay-control/settings.cfg")
+    fn settings_path(store: &SettingsStore) -> std::path::PathBuf {
+        store.dir().join("settings.cfg")
     }
 
-    fn write_settings(tmp: &std::path::Path, content: &str) {
-        let path = settings_path(tmp);
+    fn write_settings(store: &SettingsStore, content: &str) {
+        let path = settings_path(store);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, content).unwrap();
     }
 
-    fn read_settings(tmp: &std::path::Path) -> String {
-        std::fs::read_to_string(settings_path(tmp)).unwrap_or_default()
+    fn read_settings(store: &SettingsStore) -> String {
+        std::fs::read_to_string(settings_path(store)).unwrap_or_default()
     }
 
-    fn make_tmp() -> std::path::PathBuf {
+    fn make_store() -> SettingsStore {
         let dir =
             std::env::temp_dir().join(format!("replay-analytics-test-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        dir
+        SettingsStore::new(dir)
     }
 
     #[test]
     fn build_ping_returns_install_on_new_version() {
-        let tmp = make_tmp();
-        let (ping, is_install) = build_analytics_ping(&tmp).unwrap();
+        let store = make_store();
+        let (ping, is_install) = build_analytics_ping(&store).unwrap();
         assert!(is_install);
         assert_eq!(ping.event, "install");
-        std::fs::remove_dir_all(&tmp).ok();
+        std::fs::remove_dir_all(store.dir()).ok();
     }
 
     #[test]
     fn build_ping_returns_heartbeat_after_version_reported() {
-        let tmp = make_tmp();
+        let store = make_store();
         write_settings(
-            &tmp,
+            &store,
             &format!("version_last_reported = \"{}\"\n", crate::VERSION),
         );
-        let (ping, is_install) = build_analytics_ping(&tmp).unwrap();
+        let (ping, is_install) = build_analytics_ping(&store).unwrap();
         assert!(!is_install);
         assert_eq!(ping.event, "heartbeat");
-        std::fs::remove_dir_all(&tmp).ok();
+        std::fs::remove_dir_all(store.dir()).ok();
     }
 
     #[test]
     fn build_ping_returns_none_when_opted_out() {
-        let tmp = make_tmp();
-        write_settings(&tmp, "analytics = \"false\"\n");
-        assert!(build_analytics_ping(&tmp).is_none());
-        std::fs::remove_dir_all(&tmp).ok();
+        let store = make_store();
+        write_settings(&store, "analytics = \"false\"\n");
+        assert!(build_analytics_ping(&store).is_none());
+        std::fs::remove_dir_all(store.dir()).ok();
     }
 
     #[test]
     fn build_ping_replaces_invalid_uuid() {
-        let tmp = make_tmp();
-        write_settings(&tmp, "install_id = \"not-a-uuid\"\n");
-        let (ping, _) = build_analytics_ping(&tmp).unwrap();
+        let store = make_store();
+        write_settings(&store, "install_id = \"not-a-uuid\"\n");
+        let (ping, _) = build_analytics_ping(&store).unwrap();
         uuid::Uuid::parse_str(&ping.install_id).expect("install_id should be a valid UUID");
         assert!(
-            !read_settings(&tmp).contains("not-a-uuid"),
+            !read_settings(&store).contains("not-a-uuid"),
             "invalid UUID should have been replaced"
         );
-        std::fs::remove_dir_all(&tmp).ok();
+        std::fs::remove_dir_all(store.dir()).ok();
     }
 
     #[test]
     fn mark_version_reported_persists_version() {
-        let tmp = make_tmp();
-        mark_version_reported(&tmp);
-        let content = read_settings(&tmp);
+        let store = make_store();
+        mark_version_reported(&store);
+        let content = read_settings(&store);
         assert!(content.contains("version_last_reported"));
         assert!(content.contains(crate::VERSION));
-        std::fs::remove_dir_all(&tmp).ok();
+        std::fs::remove_dir_all(store.dir()).ok();
     }
 
     #[tokio::test]

@@ -537,13 +537,12 @@ impl BackgroundManager {
                 }
 
                 // Analytics ping — independent from update check, same 24h cadence.
-                let storage = state.storage();
                 if let Some((ping, is_install)) =
-                    super::analytics::build_analytics_ping(&storage.root)
+                    super::analytics::build_analytics_ping(&state.settings)
                 {
                     let success = analytics.send(&ping).await;
                     if is_install && success {
-                        super::analytics::mark_version_reported(&storage.root);
+                        super::analytics::mark_version_reported(&state.settings);
                     }
                 }
             }
@@ -557,8 +556,7 @@ impl BackgroundManager {
     async fn perform_update_check_background(
         state: &AppState,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let storage = state.storage();
-        let settings = replay_control_core::settings::load_settings(&storage.root);
+        let settings = state.settings.load();
         let channel =
             replay_control_core::update::UpdateChannel::from_str_value(settings.update_channel());
         let skipped = settings.skipped_version().map(|s| s.to_string());
@@ -577,7 +575,7 @@ impl BackgroundManager {
             Some(available) => {
                 // Race guard: verify channel still matches before writing.
                 let current_channel =
-                    replay_control_core::settings::read_update_channel(&storage.root);
+                    replay_control_core::settings::read_update_channel(&state.settings);
                 if current_channel != channel {
                     tracing::debug!(
                         "Update channel changed during check ({} -> {}), discarding result",
@@ -609,8 +607,7 @@ impl BackgroundManager {
     > {
         Self::nuke_update_dir();
 
-        let storage = state.storage();
-        let settings = replay_control_core::settings::load_settings(&storage.root);
+        let settings = state.settings.load();
         let channel =
             replay_control_core::update::UpdateChannel::from_str_value(settings.update_channel());
         let skipped = settings.skipped_version().map(|s| s.to_string());
@@ -1050,8 +1047,7 @@ exit 1
         use super::activity::UpdatePhase;
         use replay_control_core::update::{UPDATE_DIR, UPDATE_LOCK, UPDATE_SCRIPT};
 
-        let storage = state.storage();
-        let github_key = replay_control_core::settings::read_github_api_key(&storage.root);
+        let github_key = replay_control_core::settings::read_github_api_key(&state.settings);
         let base_url = Self::github_api_base_url();
         let update_dir = std::path::PathBuf::from(UPDATE_DIR);
 

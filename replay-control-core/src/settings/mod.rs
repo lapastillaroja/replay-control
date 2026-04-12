@@ -1,17 +1,105 @@
-//! App-specific settings stored in `.replay-control/settings.cfg`.
+//! App-specific settings stored in `settings.cfg`.
 //!
 //! Uses the same `key = "value"` format as `replay.cfg` but is kept separate
 //! to avoid modifying the RePlayOS system configuration.
+//!
+//! Settings are accessed through [`SettingsStore`], which owns the resolved
+//! directory path. On Pi production this is `/etc/replay-control/`; in local
+//! dev it is `<storage>/.replay-control/`; in tests it is a tempdir.
 
 pub mod skins;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::AppSettings;
 use crate::error::Result;
 use crate::locale::Locale;
 use crate::rom_tags::RegionPreference;
 use crate::storage::{RC_DIR, SETTINGS_FILE};
+
+/// Resolved settings directory. Contains `settings.cfg`.
+#[derive(Debug, Clone)]
+pub struct SettingsStore {
+    dir: PathBuf,
+}
+
+impl SettingsStore {
+    /// Create a store pointing at the given directory.
+    /// Does NOT create the directory -- that happens on first write.
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
+        Self { dir: dir.into() }
+    }
+
+    /// Path to the settings directory.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    fn settings_path(&self) -> PathBuf {
+        self.dir.join(SETTINGS_FILE)
+    }
+
+    /// Load settings from disk, returning empty settings if absent/corrupt.
+    pub fn load(&self) -> AppSettings {
+        AppSettings::from_file(&self.settings_path()).unwrap_or_else(|_| AppSettings::empty())
+    }
+
+    /// Save settings to disk, creating the directory if needed.
+    ///
+    /// Note: no synchronization — concurrent writes from different threads may
+    /// race (last writer wins). Acceptable for this single-user app; the
+    /// in-memory `UserPreferences` cache in `AppState` avoids repeated reads.
+    pub fn save(&self, settings: &AppSettings) -> Result<()> {
+        std::fs::create_dir_all(&self.dir).map_err(|e| crate::error::Error::io(&self.dir, e))?;
+        settings.save(&self.settings_path())
+    }
+
+    /// One-time migration from old storage-level settings to this store.
+    /// Moves settings.cfg from `<storage_root>/.replay-control/` to this
+    /// store's directory. Uses atomic rename when possible, falls back to
+    /// copy + delete for cross-filesystem moves.
+    pub fn migrate_from_storage(&self, storage_root: &Path) -> Result<()> {
+        let old_path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
+
+        if self.settings_path().exists() {
+            tracing::debug!(
+                "Settings already at {}, skipping migration",
+                self.settings_path().display()
+            );
+            return Ok(());
+        }
+
+        if !old_path.exists() {
+            tracing::debug!(
+                "No old settings at {}, nothing to migrate",
+                old_path.display()
+            );
+            return Ok(());
+        }
+
+        std::fs::create_dir_all(&self.dir).map_err(|e| crate::error::Error::io(&self.dir, e))?;
+
+        // Try atomic rename first; falls back to copy+delete across filesystems.
+        let dest = self.settings_path();
+        if std::fs::rename(&old_path, &dest).is_err() {
+            std::fs::copy(&old_path, &dest).map_err(|e| crate::error::Error::io(&dest, e))?;
+            if let Err(e) = std::fs::remove_file(&old_path) {
+                tracing::warn!(
+                    "Failed to delete old settings at {}: {e}",
+                    old_path.display()
+                );
+            }
+        }
+
+        tracing::info!(
+            "Settings migrated: {} -> {}",
+            old_path.display(),
+            dest.display()
+        );
+
+        Ok(())
+    }
+}
 
 /// Cached snapshot of frequently-read user preferences.
 ///
@@ -40,8 +128,8 @@ impl Default for UserPreferences {
 
 impl UserPreferences {
     /// Load all preferences from `settings.cfg` in a single file read.
-    pub fn load(storage_root: &Path) -> Self {
-        let settings = load_settings(storage_root);
+    pub fn load(store: &SettingsStore) -> Self {
+        let settings = store.load();
         Self {
             skin: settings.skin(),
             locale: settings.locale(),
@@ -54,131 +142,111 @@ impl UserPreferences {
     }
 }
 
-/// Load settings from disk, returning empty settings if the file doesn't exist.
-/// Use this directly when you need to read multiple settings to avoid repeated file I/O.
-pub fn load_settings(storage_root: &Path) -> AppSettings {
-    let path = storage_root.join(RC_DIR).join(SETTINGS_FILE);
-    AppSettings::from_file(&path).unwrap_or_else(|_| AppSettings::empty())
-}
-
-/// Save settings to disk, creating the directory if needed.
-pub fn save_settings(storage_root: &Path, settings: &AppSettings) -> Result<()> {
-    let rc_dir = storage_root.join(RC_DIR);
-    std::fs::create_dir_all(&rc_dir).map_err(|e| crate::error::Error::io(&rc_dir, e))?;
-    let path = rc_dir.join(SETTINGS_FILE);
-    settings.save(&path)
-}
-
-/// Read the region preference from `.replay-control/settings.cfg`.
+/// Read the region preference from settings.
 /// Returns the default (`World`) if the file doesn't exist or the key is missing.
-pub fn read_region_preference(storage_root: &Path) -> RegionPreference {
-    let settings = load_settings(storage_root);
-    RegionPreference::from_str_value(settings.region_preference())
+pub fn read_region_preference(store: &SettingsStore) -> RegionPreference {
+    RegionPreference::from_str_value(store.load().region_preference())
 }
 
-/// Write the region preference to `.replay-control/settings.cfg`.
+/// Write the region preference to settings.
 /// Creates the directory and file if they don't exist. Preserves other keys.
-pub fn write_region_preference(storage_root: &Path, pref: RegionPreference) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+pub fn write_region_preference(store: &SettingsStore, pref: RegionPreference) -> Result<()> {
+    let mut settings = store.load();
     settings.set_region_preference(pref.as_str());
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the secondary region preference from `.replay-control/settings.cfg`.
+/// Read the secondary region preference from settings.
 /// Returns `None` if the file doesn't exist, the key is missing, or the value is empty.
-pub fn read_region_preference_secondary(storage_root: &Path) -> Option<RegionPreference> {
-    let settings = load_settings(storage_root);
+pub fn read_region_preference_secondary(store: &SettingsStore) -> Option<RegionPreference> {
+    let settings = store.load();
     let value = settings.region_preference_secondary()?;
     Some(RegionPreference::from_str_value(value))
 }
 
-/// Write the secondary region preference to `.replay-control/settings.cfg`.
+/// Write the secondary region preference to settings.
 /// Pass `None` to clear the secondary preference (removes the key value).
 /// Creates the directory and file if they don't exist. Preserves other keys.
 pub fn write_region_preference_secondary(
-    storage_root: &Path,
+    store: &SettingsStore,
     pref: Option<RegionPreference>,
 ) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+    let mut settings = store.load();
     let value = pref.map(|p| p.as_str()).unwrap_or("");
     settings.set_region_preference_secondary(value);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the font size preference from `.replay-control/settings.cfg`.
+/// Read the font size preference from settings.
 /// Returns `"normal"` or `"large"`, defaults to `"normal"`.
-pub fn read_font_size(storage_root: &Path) -> String {
-    let settings = load_settings(storage_root);
-    settings.font_size().to_string()
+pub fn read_font_size(store: &SettingsStore) -> String {
+    store.load().font_size().to_string()
 }
 
-/// Write the font size preference to `.replay-control/settings.cfg`.
+/// Write the font size preference to settings.
 /// Creates the directory and file if they don't exist. Preserves other keys.
-pub fn write_font_size(storage_root: &Path, size: &str) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+pub fn write_font_size(store: &SettingsStore, size: &str) -> Result<()> {
+    let mut settings = store.load();
     settings.set_font_size(size);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the skin preference from `.replay-control/settings.cfg`.
+/// Read the skin preference from settings.
 /// Returns `Some(index)` if the user has explicitly chosen a skin (sync off),
 /// or `None` if the key is absent (sync on — read from `replay.cfg` instead).
-pub fn read_skin(storage_root: &Path) -> Option<u32> {
-    let settings = load_settings(storage_root);
-    settings.skin()
+pub fn read_skin(store: &SettingsStore) -> Option<u32> {
+    store.load().skin()
 }
 
-/// Write the skin preference to `.replay-control/settings.cfg`.
+/// Write the skin preference to settings.
 /// Pass `Some(index)` to store a specific skin (sync off).
 /// Pass `None` to clear the key (sync on — defer to `replay.cfg`).
 /// Creates the directory and file if they don't exist. Preserves other keys.
-pub fn write_skin(storage_root: &Path, skin: Option<u32>) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+pub fn write_skin(store: &SettingsStore, skin: Option<u32>) -> Result<()> {
+    let mut settings = store.load();
     settings.set_skin(skin);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the primary language preference from `.replay-control/settings.cfg`.
+/// Read the primary language preference from settings.
 /// Returns `None` if not explicitly set (caller should derive from region).
-pub fn read_language_primary(storage_root: &Path) -> Option<String> {
-    let settings = load_settings(storage_root);
-    settings.language_primary().map(|s| s.to_string())
+pub fn read_language_primary(store: &SettingsStore) -> Option<String> {
+    store.load().language_primary().map(|s| s.to_string())
 }
 
-/// Write the primary language preference to `.replay-control/settings.cfg`.
+/// Write the primary language preference to settings.
 /// Pass empty string to clear (revert to auto-detection from region).
 /// Creates the directory and file if they don't exist. Preserves other keys.
-pub fn write_language_primary(storage_root: &Path, lang: &str) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+pub fn write_language_primary(store: &SettingsStore, lang: &str) -> Result<()> {
+    let mut settings = store.load();
     settings.set_language_primary(lang);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the secondary (fallback) language preference from `.replay-control/settings.cfg`.
+/// Read the secondary (fallback) language preference from settings.
 /// Returns `None` if not set. Defaults to `"en"` in the UI when not explicitly configured.
-pub fn read_language_secondary(storage_root: &Path) -> Option<String> {
-    let settings = load_settings(storage_root);
-    settings.language_secondary().map(|s| s.to_string())
+pub fn read_language_secondary(store: &SettingsStore) -> Option<String> {
+    store.load().language_secondary().map(|s| s.to_string())
 }
 
-/// Write the secondary (fallback) language preference to `.replay-control/settings.cfg`.
+/// Write the secondary (fallback) language preference to settings.
 /// Pass empty string to clear.
-pub fn write_language_secondary(storage_root: &Path, lang: &str) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+pub fn write_language_secondary(store: &SettingsStore, lang: &str) -> Result<()> {
+    let mut settings = store.load();
     settings.set_language_secondary(lang);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
 /// Write both language preferences in a single load/save cycle.
 pub fn write_language_preferences(
-    storage_root: &Path,
+    store: &SettingsStore,
     primary: &str,
     secondary: &str,
 ) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+    let mut settings = store.load();
     settings.set_language_primary(primary);
     settings.set_language_secondary(secondary);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
 /// Derive the default primary language from a region preference.
@@ -281,97 +349,91 @@ fn lang_matches(manual_lang: &str, pref_lang: &str) -> bool {
     false
 }
 
-/// Read the UI locale from `.replay-control/settings.cfg`.
+/// Read the UI locale from settings.
 /// Returns `None` if not set or "auto" (caller should fall back to Accept-Language).
-pub fn read_locale(storage_root: &Path) -> Option<crate::locale::Locale> {
-    let settings = load_settings(storage_root);
-    settings.locale()
+pub fn read_locale(store: &SettingsStore) -> Option<crate::locale::Locale> {
+    store.load().locale()
 }
 
 /// Read the stored locale preference including `Auto`.
-pub fn read_locale_preference(storage_root: &Path) -> crate::locale::Locale {
-    let settings = load_settings(storage_root);
-    settings.locale_preference()
+pub fn read_locale_preference(store: &SettingsStore) -> crate::locale::Locale {
+    store.load().locale_preference()
 }
 
-/// Write the UI locale to `.replay-control/settings.cfg`.
+/// Write the UI locale to settings.
 /// Creates the directory and file if they don't exist. Preserves other keys.
-pub fn write_locale(storage_root: &Path, locale: crate::locale::Locale) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+pub fn write_locale(store: &SettingsStore, locale: crate::locale::Locale) -> Result<()> {
+    let mut settings = store.load();
     settings.set_locale(locale.code());
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the GitHub API key from `.replay-control/settings.cfg`.
+/// Read the GitHub API key from settings.
 /// Returns `None` if the file doesn't exist or the key is empty.
-pub fn read_github_api_key(storage_root: &Path) -> Option<String> {
-    let settings = load_settings(storage_root);
-    settings.github_api_key().map(|s| s.to_string())
+pub fn read_github_api_key(store: &SettingsStore) -> Option<String> {
+    store.load().github_api_key().map(|s| s.to_string())
 }
 
-/// Write the GitHub API key to `.replay-control/settings.cfg`.
+/// Write the GitHub API key to settings.
 /// Creates the directory and file if they don't exist. Preserves other keys.
-pub fn write_github_api_key(storage_root: &Path, key: &str) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+pub fn write_github_api_key(store: &SettingsStore, key: &str) -> Result<()> {
+    let mut settings = store.load();
     settings.set_github_api_key(key);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the update channel from `.replay-control/settings.cfg`.
-pub fn read_update_channel(storage_root: &Path) -> crate::update::UpdateChannel {
-    let settings = load_settings(storage_root);
-    crate::update::UpdateChannel::from_str_value(settings.update_channel())
+/// Read the update channel from settings.
+pub fn read_update_channel(store: &SettingsStore) -> crate::update::UpdateChannel {
+    crate::update::UpdateChannel::from_str_value(store.load().update_channel())
 }
 
-/// Write the update channel to `.replay-control/settings.cfg`.
+/// Write the update channel to settings.
 pub fn write_update_channel(
-    storage_root: &Path,
+    store: &SettingsStore,
     channel: crate::update::UpdateChannel,
 ) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+    let mut settings = store.load();
     settings.set_update_channel(channel.as_str());
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the analytics preference from `.replay-control/settings.cfg`.
+/// Read the analytics preference from settings.
 /// Returns `true` if analytics is enabled (default).
-pub fn read_analytics_enabled(storage_root: &Path) -> bool {
-    let settings = load_settings(storage_root);
-    settings.analytics_enabled()
+pub fn read_analytics_enabled(store: &SettingsStore) -> bool {
+    store.load().analytics_enabled()
 }
 
-/// Write the analytics preference to `.replay-control/settings.cfg`.
-pub fn write_analytics(storage_root: &Path, enabled: bool) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+/// Write the analytics preference to settings.
+pub fn write_analytics(store: &SettingsStore, enabled: bool) -> Result<()> {
+    let mut settings = store.load();
     settings.set_analytics(enabled);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Write the install ID to `.replay-control/settings.cfg`.
-pub fn write_install_id(storage_root: &Path, id: &str) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+/// Write the install ID to settings.
+pub fn write_install_id(store: &SettingsStore, id: &str) -> Result<()> {
+    let mut settings = store.load();
     settings.set_install_id(id);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Write the last-reported version to `.replay-control/settings.cfg`.
-pub fn write_version_last_reported(storage_root: &Path, version: &str) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+/// Write the last-reported version to settings.
+pub fn write_version_last_reported(store: &SettingsStore, version: &str) -> Result<()> {
+    let mut settings = store.load();
     settings.set_version_last_reported(version);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
-/// Read the skipped version from `.replay-control/settings.cfg`.
-pub fn read_skipped_version(storage_root: &Path) -> Option<String> {
-    let settings = load_settings(storage_root);
-    settings.skipped_version().map(|s| s.to_string())
+/// Read the skipped version from settings.
+pub fn read_skipped_version(store: &SettingsStore) -> Option<String> {
+    store.load().skipped_version().map(|s| s.to_string())
 }
 
-/// Write the skipped version to `.replay-control/settings.cfg`.
-pub fn write_skipped_version(storage_root: &Path, version: &str) -> Result<()> {
-    let mut settings = load_settings(storage_root);
+/// Write the skipped version to settings.
+pub fn write_skipped_version(store: &SettingsStore, version: &str) -> Result<()> {
+    let mut settings = store.load();
     settings.set_skipped_version(version);
-    save_settings(storage_root, &settings)
+    store.save(&settings)
 }
 
 #[cfg(test)]
@@ -381,60 +443,60 @@ mod tests {
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-    fn tempdir() -> std::path::PathBuf {
+    fn test_store() -> SettingsStore {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
         let dir =
             std::env::temp_dir().join(format!("replay-settings-test-{}-{id}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        dir
+        SettingsStore::new(dir)
     }
 
     #[test]
     fn default_when_no_file() {
-        let tmp = tempdir();
-        let pref = read_region_preference(&tmp);
+        let store = test_store();
+        let pref = read_region_preference(&store);
         assert_eq!(pref, RegionPreference::World);
     }
 
     #[test]
     fn write_and_read_europe() {
-        let tmp = tempdir();
-        write_region_preference(&tmp, RegionPreference::Europe).unwrap();
-        let pref = read_region_preference(&tmp);
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::Europe).unwrap();
+        let pref = read_region_preference(&store);
         assert_eq!(pref, RegionPreference::Europe);
     }
 
     #[test]
     fn write_and_read_japan() {
-        let tmp = tempdir();
-        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
-        let pref = read_region_preference(&tmp);
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::Japan).unwrap();
+        let pref = read_region_preference(&store);
         assert_eq!(pref, RegionPreference::Japan);
     }
 
     #[test]
     fn write_and_read_world() {
-        let tmp = tempdir();
-        write_region_preference(&tmp, RegionPreference::World).unwrap();
-        let pref = read_region_preference(&tmp);
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::World).unwrap();
+        let pref = read_region_preference(&store);
         assert_eq!(pref, RegionPreference::World);
     }
 
     #[test]
     fn overwrite_preserves_other_keys() {
-        let tmp = tempdir();
-        let rc = tmp.join(RC_DIR);
-        std::fs::create_dir_all(&rc).unwrap();
+        let store = test_store();
+        let dir = store.dir();
+        std::fs::create_dir_all(dir).unwrap();
         std::fs::write(
-            rc.join(SETTINGS_FILE),
+            dir.join(SETTINGS_FILE),
             "other_key = \"value\"\nregion_preference = \"usa\"\n",
         )
         .unwrap();
 
-        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
+        write_region_preference(&store, RegionPreference::Japan).unwrap();
 
-        let content = std::fs::read_to_string(rc.join(SETTINGS_FILE)).unwrap();
+        let content = std::fs::read_to_string(dir.join(SETTINGS_FILE)).unwrap();
         assert!(content.contains("other_key = \"value\""));
         assert!(content.contains("region_preference = \"japan\""));
     }
@@ -443,49 +505,48 @@ mod tests {
 
     #[test]
     fn secondary_default_when_no_file() {
-        let tmp = tempdir();
-        let pref = read_region_preference_secondary(&tmp);
+        let store = test_store();
+        let pref = read_region_preference_secondary(&store);
         assert_eq!(pref, None);
     }
 
     #[test]
     fn write_and_read_secondary_usa() {
-        let tmp = tempdir();
-        write_region_preference_secondary(&tmp, Some(RegionPreference::Usa)).unwrap();
-        let pref = read_region_preference_secondary(&tmp);
+        let store = test_store();
+        write_region_preference_secondary(&store, Some(RegionPreference::Usa)).unwrap();
+        let pref = read_region_preference_secondary(&store);
         assert_eq!(pref, Some(RegionPreference::Usa));
     }
 
     #[test]
     fn write_and_read_secondary_japan() {
-        let tmp = tempdir();
-        write_region_preference_secondary(&tmp, Some(RegionPreference::Japan)).unwrap();
-        let pref = read_region_preference_secondary(&tmp);
+        let store = test_store();
+        write_region_preference_secondary(&store, Some(RegionPreference::Japan)).unwrap();
+        let pref = read_region_preference_secondary(&store);
         assert_eq!(pref, Some(RegionPreference::Japan));
     }
 
     #[test]
     fn write_secondary_none_clears() {
-        let tmp = tempdir();
-        // Write a value, then clear it.
-        write_region_preference_secondary(&tmp, Some(RegionPreference::Europe)).unwrap();
+        let store = test_store();
+        write_region_preference_secondary(&store, Some(RegionPreference::Europe)).unwrap();
         assert_eq!(
-            read_region_preference_secondary(&tmp),
+            read_region_preference_secondary(&store),
             Some(RegionPreference::Europe)
         );
-        write_region_preference_secondary(&tmp, None).unwrap();
-        assert_eq!(read_region_preference_secondary(&tmp), None);
+        write_region_preference_secondary(&store, None).unwrap();
+        assert_eq!(read_region_preference_secondary(&store), None);
     }
 
     #[test]
     fn secondary_preserves_primary() {
-        let tmp = tempdir();
-        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
-        write_region_preference_secondary(&tmp, Some(RegionPreference::Usa)).unwrap();
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::Japan).unwrap();
+        write_region_preference_secondary(&store, Some(RegionPreference::Usa)).unwrap();
 
-        assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
+        assert_eq!(read_region_preference(&store), RegionPreference::Japan);
         assert_eq!(
-            read_region_preference_secondary(&tmp),
+            read_region_preference_secondary(&store),
             Some(RegionPreference::Usa)
         );
     }
@@ -494,78 +555,78 @@ mod tests {
 
     #[test]
     fn skin_none_when_no_file() {
-        let tmp = tempdir();
-        assert_eq!(read_skin(&tmp), None);
+        let store = test_store();
+        assert_eq!(read_skin(&store), None);
     }
 
     #[test]
     fn write_and_read_skin() {
-        let tmp = tempdir();
-        write_skin(&tmp, Some(5)).unwrap();
-        assert_eq!(read_skin(&tmp), Some(5));
+        let store = test_store();
+        write_skin(&store, Some(5)).unwrap();
+        assert_eq!(read_skin(&store), Some(5));
     }
 
     #[test]
     fn write_skin_none_clears() {
-        let tmp = tempdir();
-        write_skin(&tmp, Some(3)).unwrap();
-        assert_eq!(read_skin(&tmp), Some(3));
-        write_skin(&tmp, None).unwrap();
-        assert_eq!(read_skin(&tmp), None);
+        let store = test_store();
+        write_skin(&store, Some(3)).unwrap();
+        assert_eq!(read_skin(&store), Some(3));
+        write_skin(&store, None).unwrap();
+        assert_eq!(read_skin(&store), None);
     }
 
     #[test]
     fn skin_preserves_other_keys() {
-        let tmp = tempdir();
-        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
-        write_skin(&tmp, Some(7)).unwrap();
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::Japan).unwrap();
+        write_skin(&store, Some(7)).unwrap();
 
-        assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
-        assert_eq!(read_skin(&tmp), Some(7));
+        assert_eq!(read_region_preference(&store), RegionPreference::Japan);
+        assert_eq!(read_skin(&store), Some(7));
     }
 
     // --- Language preference tests ---
 
     #[test]
     fn language_default_when_no_file() {
-        let tmp = tempdir();
-        assert_eq!(read_language_primary(&tmp), None);
-        assert_eq!(read_language_secondary(&tmp), None);
+        let store = test_store();
+        assert_eq!(read_language_primary(&store), None);
+        assert_eq!(read_language_secondary(&store), None);
     }
 
     #[test]
     fn write_and_read_language_primary() {
-        let tmp = tempdir();
-        write_language_primary(&tmp, "es").unwrap();
-        assert_eq!(read_language_primary(&tmp), Some("es".to_string()));
+        let store = test_store();
+        write_language_primary(&store, "es").unwrap();
+        assert_eq!(read_language_primary(&store), Some("es".to_string()));
     }
 
     #[test]
     fn write_and_read_language_secondary() {
-        let tmp = tempdir();
-        write_language_secondary(&tmp, "fr").unwrap();
-        assert_eq!(read_language_secondary(&tmp), Some("fr".to_string()));
+        let store = test_store();
+        write_language_secondary(&store, "fr").unwrap();
+        assert_eq!(read_language_secondary(&store), Some("fr".to_string()));
     }
 
     #[test]
     fn language_clear_by_empty_string() {
-        let tmp = tempdir();
-        write_language_primary(&tmp, "ja").unwrap();
-        assert_eq!(read_language_primary(&tmp), Some("ja".to_string()));
-        write_language_primary(&tmp, "").unwrap();
-        assert_eq!(read_language_primary(&tmp), None);
+        let store = test_store();
+        write_language_primary(&store, "ja").unwrap();
+        assert_eq!(read_language_primary(&store), Some("ja".to_string()));
+        write_language_primary(&store, "").unwrap();
+        assert_eq!(read_language_primary(&store), None);
     }
 
     #[test]
     fn language_preserves_other_keys() {
-        let tmp = tempdir();
-        write_region_preference(&tmp, RegionPreference::Europe).unwrap();
-        write_language_primary(&tmp, "es").unwrap();
-        write_language_secondary(&tmp, "en").unwrap();
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::Europe).unwrap();
+        write_language_primary(&store, "es").unwrap();
+        write_language_secondary(&store, "en").unwrap();
 
-        assert_eq!(read_region_preference(&tmp), RegionPreference::Europe);
-        assert_eq!(read_language_primary(&tmp), Some("es".to_string()));
-        assert_eq!(read_language_secondary(&tmp), Some("en".to_string()));
+        assert_eq!(read_region_preference(&store), RegionPreference::Europe);
+        assert_eq!(read_language_primary(&store), Some("es".to_string()));
+        assert_eq!(read_language_secondary(&store), Some("en".to_string()));
     }
 
     #[test]
@@ -620,53 +681,53 @@ mod tests {
 
     #[test]
     fn locale_default_when_no_file() {
-        let tmp = tempdir();
-        assert_eq!(read_locale(&tmp), None);
+        let store = test_store();
+        assert_eq!(read_locale(&store), None);
     }
 
     #[test]
     fn write_and_read_locale_en() {
         use crate::locale::Locale;
-        let tmp = tempdir();
-        write_locale(&tmp, Locale::En).unwrap();
-        assert_eq!(read_locale(&tmp), Some(Locale::En));
+        let store = test_store();
+        write_locale(&store, Locale::En).unwrap();
+        assert_eq!(read_locale(&store), Some(Locale::En));
     }
 
     #[test]
     fn write_and_read_locale_ja() {
         use crate::locale::Locale;
-        let tmp = tempdir();
-        write_locale(&tmp, Locale::Ja).unwrap();
-        assert_eq!(read_locale(&tmp), Some(Locale::Ja));
+        let store = test_store();
+        write_locale(&store, Locale::Ja).unwrap();
+        assert_eq!(read_locale(&store), Some(Locale::Ja));
     }
 
     #[test]
     fn write_and_read_locale_es() {
         use crate::locale::Locale;
-        let tmp = tempdir();
-        write_locale(&tmp, Locale::Es).unwrap();
-        assert_eq!(read_locale(&tmp), Some(Locale::Es));
+        let store = test_store();
+        write_locale(&store, Locale::Es).unwrap();
+        assert_eq!(read_locale(&store), Some(Locale::Es));
     }
 
     #[test]
     fn write_auto_returns_none_for_read_locale() {
         use crate::locale::Locale;
-        let tmp = tempdir();
-        write_locale(&tmp, Locale::Auto).unwrap();
+        let store = test_store();
+        write_locale(&store, Locale::Auto).unwrap();
         // read_locale filters out Auto
-        assert_eq!(read_locale(&tmp), None);
+        assert_eq!(read_locale(&store), None);
         // but read_locale_preference returns Auto
-        assert_eq!(read_locale_preference(&tmp), Locale::Auto);
+        assert_eq!(read_locale_preference(&store), Locale::Auto);
     }
 
     #[test]
     fn locale_preserves_other_keys() {
         use crate::locale::Locale;
-        let tmp = tempdir();
-        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
-        write_locale(&tmp, Locale::Ja).unwrap();
-        assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
-        assert_eq!(read_locale(&tmp), Some(Locale::Ja));
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::Japan).unwrap();
+        write_locale(&store, Locale::Ja).unwrap();
+        assert_eq!(read_region_preference(&store), RegionPreference::Japan);
+        assert_eq!(read_locale(&store), Some(Locale::Ja));
     }
 
     #[test]
@@ -682,31 +743,31 @@ mod tests {
 
     #[test]
     fn update_channel_default_stable() {
-        let tmp = tempdir();
+        let store = test_store();
         assert_eq!(
-            read_update_channel(&tmp),
+            read_update_channel(&store),
             crate::update::UpdateChannel::Stable
         );
     }
 
     #[test]
     fn write_and_read_update_channel_beta() {
-        let tmp = tempdir();
-        write_update_channel(&tmp, crate::update::UpdateChannel::Beta).unwrap();
+        let store = test_store();
+        write_update_channel(&store, crate::update::UpdateChannel::Beta).unwrap();
         assert_eq!(
-            read_update_channel(&tmp),
+            read_update_channel(&store),
             crate::update::UpdateChannel::Beta
         );
     }
 
     #[test]
     fn update_channel_preserves_other_keys() {
-        let tmp = tempdir();
-        write_region_preference(&tmp, RegionPreference::Japan).unwrap();
-        write_update_channel(&tmp, crate::update::UpdateChannel::Beta).unwrap();
-        assert_eq!(read_region_preference(&tmp), RegionPreference::Japan);
+        let store = test_store();
+        write_region_preference(&store, RegionPreference::Japan).unwrap();
+        write_update_channel(&store, crate::update::UpdateChannel::Beta).unwrap();
+        assert_eq!(read_region_preference(&store), RegionPreference::Japan);
         assert_eq!(
-            read_update_channel(&tmp),
+            read_update_channel(&store),
             crate::update::UpdateChannel::Beta
         );
     }
@@ -715,14 +776,99 @@ mod tests {
 
     #[test]
     fn skipped_version_default_none() {
-        let tmp = tempdir();
-        assert!(read_skipped_version(&tmp).is_none());
+        let store = test_store();
+        assert!(read_skipped_version(&store).is_none());
     }
 
     #[test]
     fn write_and_read_skipped_version() {
-        let tmp = tempdir();
-        write_skipped_version(&tmp, "0.3.0").unwrap();
-        assert_eq!(read_skipped_version(&tmp), Some("0.3.0".to_string()));
+        let store = test_store();
+        write_skipped_version(&store, "0.3.0").unwrap();
+        assert_eq!(read_skipped_version(&store), Some("0.3.0".to_string()));
+    }
+
+    // --- Migration tests ---
+
+    #[test]
+    fn migrate_copies_and_deletes_old() {
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let base =
+            std::env::temp_dir().join(format!("replay-migrate-test-{}-{id}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+
+        // Set up old-style storage layout
+        let storage_root = base.join("storage");
+        let old_dir = storage_root.join(RC_DIR);
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::write(
+            old_dir.join(SETTINGS_FILE),
+            "locale = \"ja\"\ninstall_id = \"abc\"\n",
+        )
+        .unwrap();
+
+        // Create destination store
+        let dest_dir = base.join("etc");
+        let store = SettingsStore::new(&dest_dir);
+
+        store.migrate_from_storage(&storage_root).unwrap();
+
+        // Destination has the file
+        let content = std::fs::read_to_string(dest_dir.join(SETTINGS_FILE)).unwrap();
+        assert!(content.contains("locale = \"ja\""));
+        assert!(content.contains("install_id = \"abc\""));
+
+        // Old file is deleted
+        assert!(!old_dir.join(SETTINGS_FILE).exists());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn migrate_skips_if_dest_exists() {
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let base =
+            std::env::temp_dir().join(format!("replay-migrate-test-{}-{id}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+
+        let storage_root = base.join("storage");
+        let old_dir = storage_root.join(RC_DIR);
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::write(old_dir.join(SETTINGS_FILE), "locale = \"ja\"\n").unwrap();
+
+        let dest_dir = base.join("etc");
+        std::fs::create_dir_all(&dest_dir).unwrap();
+        std::fs::write(dest_dir.join(SETTINGS_FILE), "locale = \"en\"\n").unwrap();
+
+        let store = SettingsStore::new(&dest_dir);
+        store.migrate_from_storage(&storage_root).unwrap();
+
+        // Destination unchanged
+        let content = std::fs::read_to_string(dest_dir.join(SETTINGS_FILE)).unwrap();
+        assert!(content.contains("locale = \"en\""));
+
+        // Old file still exists (not touched)
+        assert!(old_dir.join(SETTINGS_FILE).exists());
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn migrate_noop_when_no_old_file() {
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let base =
+            std::env::temp_dir().join(format!("replay-migrate-test-{}-{id}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+
+        let storage_root = base.join("storage");
+        std::fs::create_dir_all(&storage_root).unwrap();
+
+        let dest_dir = base.join("etc");
+        let store = SettingsStore::new(&dest_dir);
+        store.migrate_from_storage(&storage_root).unwrap();
+
+        // No file created at destination
+        assert!(!dest_dir.join(SETTINGS_FILE).exists());
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

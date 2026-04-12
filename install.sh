@@ -490,6 +490,9 @@ install_local() {
 
     info "Installing locally..."
 
+    # Create settings directory (Pi-level settings live here after migration)
+    mkdir -p /etc/replay-control
+
     # Extract binary
     tar -xzf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C /tmp/
     mkdir -p "$INSTALL_DIR"
@@ -583,6 +586,9 @@ install_ssh() {
 
     run_ssh bash -s <<'REMOTE_INSTALL'
 set -euo pipefail
+
+# Create settings directory (Pi-level settings live here after migration)
+mkdir -p /etc/replay-control
 
 # Extract binary
 tar -xzf /tmp/replay-control-app-aarch64-linux.tar.gz -C /tmp/
@@ -978,6 +984,9 @@ install_sdcard() {
     fi
 
     info "Installing to SD card at $sd..."
+
+    # Create settings directory (Pi-level settings live here after migration)
+    mkdir -p "${sd}/etc/replay-control"
 
     # Extract binary
     tar -xzf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C "$TMPDIR_WORK/"

@@ -174,9 +174,8 @@ pub async fn search_game_manuals(
     // Load user's language preferences for sorting results
     let preferred_langs = {
         let state = expect_context::<crate::api::AppState>();
-        let storage = state.storage();
-        let primary = replay_control_core::settings::read_language_primary(&storage.root);
-        let secondary = replay_control_core::settings::read_language_secondary(&storage.root);
+        let primary = replay_control_core::settings::read_language_primary(&state.settings);
+        let secondary = replay_control_core::settings::read_language_secondary(&state.settings);
         let region = state.region_preference();
         replay_control_core::settings::preferred_languages(
             primary.as_deref(),
