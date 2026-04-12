@@ -4,7 +4,7 @@ use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
 #[component]
-pub fn RebootButton() -> impl IntoView {
+pub fn RebootButton(#[prop(optional)] hint: Option<Key>) -> impl IntoView {
     let i18n = use_i18n();
     let rebooting = RwSignal::new(false);
     let result = RwSignal::new(Option::<(bool, String)>::None);
@@ -23,7 +23,7 @@ pub fn RebootButton() -> impl IntoView {
 
     view! {
         <div class="apply-section">
-            <p class="form-hint">{move || t(i18n.locale.get(), Key::SettingsRebootHint)}</p>
+            {hint.map(|key| view! { <p class="form-hint">{move || t(i18n.locale.get(), key)}</p> })}
             <button
                 class="form-btn form-btn-secondary"
                 on:click=on_reboot

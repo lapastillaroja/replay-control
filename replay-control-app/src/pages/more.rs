@@ -114,9 +114,6 @@ pub fn MorePage() -> impl IntoView {
             // ── Updates section ──────────────────────────────────
             <UpdatesSection />
 
-            // ── Privacy section ──────────────────────────────────
-            <AnalyticsSection />
-
             // ── System Info section ──────────────────────────────
             <section class="more-section">
                 <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionSystemInfo)}</h3>
@@ -144,9 +141,13 @@ pub fn MorePage() -> impl IntoView {
                         <MenuItem icon="\u{1F511}" label_key=Key::MoreGithub href=Some("/more/github") />
                     </div>
 
-                    <RebootButton />
                 </div>
             </section>
+
+            // ── Privacy section ──────────────────────────────────
+            <AnalyticsSection />
+
+            <RebootButton />
 
         </div>
     }
@@ -303,7 +304,7 @@ fn AnalyticsSection() -> impl IntoView {
             <h3 class="more-section-header">{move || t(i18n.locale.get(), Key::MoreSectionPrivacy)}</h3>
 
             <div class="more-section-body">
-                <div class="more-inline-setting">
+                <div class="more-inline-setting analytics-inline-setting">
                     <h4 class="more-setting-title">{move || t(i18n.locale.get(), Key::AnalyticsTitle)}</h4>
                     <p class="form-hint">{move || t(i18n.locale.get(), Key::AnalyticsDescription)}</p>
                     <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>

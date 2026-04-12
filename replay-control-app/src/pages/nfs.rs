@@ -106,7 +106,7 @@ fn NfsForm(config: server_fns::NfsConfig) -> impl IntoView {
                 }}
             </button>
 
-            <RebootButton />
+            <RebootButton hint=Key::SettingsRebootHint />
         </div>
     }
 }

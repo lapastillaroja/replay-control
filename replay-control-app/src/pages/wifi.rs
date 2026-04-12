@@ -140,7 +140,7 @@ fn WifiForm(config: server_fns::WifiConfig) -> impl IntoView {
                 }}
             </button>
 
-            <RebootButton />
+            <RebootButton hint=Key::SettingsRebootHint />
         </div>
     }
 }
