@@ -80,13 +80,12 @@ jobs:
               > checksums.sha256
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          files: |
-            replay-control-app-aarch64-linux.tar.gz
-            replay-site.tar.gz
-            install.sh
-            checksums.sha256
-          prerelease: ${{ contains(inputs.tag || github.ref_name, 'beta') || contains(inputs.tag || github.ref_name, 'alpha') }}
-          generate_release_notes: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release upload "${{ inputs.tag || github.ref_name }}"
+          replay-control-app-aarch64-linux.tar.gz
+          replay-site.tar.gz
+          install.sh
+          checksums.sha256
+          --clobber
