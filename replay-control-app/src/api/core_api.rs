@@ -11,6 +11,7 @@ use replay_control_core::metadata_db::MetadataDb;
 use serde::Serialize;
 
 use super::AppState;
+use replay_control_core::game_ref::GameRef;
 
 /// Minimal game entry returned by recents/favorites list endpoints.
 /// Matches the shape expected by the libretro core's JSON parser.
@@ -39,18 +40,11 @@ struct CoreGameDetail {
     region: Option<String>,
 }
 
-/// GET /api/core/recents — returns JSON array of recently played games.
-async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry>>, StatusCode> {
-    let storage = state.storage();
-    let entries = state
-        .cache
-        .get_recents(&storage)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Batch-lookup box_art_url from game_library DB.
-    let keys: Vec<(String, String)> = entries
+/// Batch-lookup box art URLs and convert a list of `GameRef`s into `CoreGameEntry`s.
+async fn game_refs_to_core_entries(state: &AppState, games: Vec<GameRef>) -> Vec<CoreGameEntry> {
+    let keys: Vec<(String, String)> = games
         .iter()
-        .map(|e| (e.game.system.clone(), e.game.rom_filename.clone()))
+        .map(|g| (g.system.clone(), g.rom_filename.clone()))
         .collect();
     let db_entries = state
         .metadata_pool
@@ -58,59 +52,47 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
         .await
         .unwrap_or_default();
 
-    let result: Vec<CoreGameEntry> = entries
+    games
         .into_iter()
-        .map(|entry| {
+        .map(|g| {
             let box_art_url = db_entries
-                .get(&(entry.game.system.clone(), entry.game.rom_filename.clone()))
+                .get(&(g.system.clone(), g.rom_filename.clone()))
                 .and_then(|e| e.box_art_url.clone());
             CoreGameEntry {
-                system: entry.game.system,
-                system_display: entry.game.system_display,
-                rom_filename: entry.game.rom_filename.clone(),
-                display_name: entry.game.display_name.unwrap_or(entry.game.rom_filename),
+                system: g.system,
+                system_display: g.system_display,
+                rom_filename: g.rom_filename.clone(),
+                display_name: g.display_name.unwrap_or(g.rom_filename),
                 box_art_url,
             }
         })
+        .collect()
+}
+
+/// GET /api/core/recents — returns JSON array of recently played games.
+async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry>>, StatusCode> {
+    let storage = state.storage();
+    let games: Vec<GameRef> = state
+        .cache
+        .get_recents(&storage)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter()
+        .map(|e| e.game)
         .collect();
 
-    Ok(Json(result))
+    Ok(Json(game_refs_to_core_entries(&state, games).await))
 }
 
 /// GET /api/core/favorites — returns JSON array of favorites.
 async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry>>, StatusCode> {
     let storage = state.storage();
-    let favs = replay_control_core::favorites::list_favorites(&storage)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Batch-lookup box_art_url from game_library DB.
-    let keys: Vec<(String, String)> = favs
-        .iter()
-        .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
-        .collect();
-    let db_entries = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
-        .await
-        .unwrap_or_default();
-
-    let result: Vec<CoreGameEntry> = favs
+    let games: Vec<GameRef> = replay_control_core::favorites::list_favorites(&storage)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()
-        .map(|fav| {
-            let box_art_url = db_entries
-                .get(&(fav.game.system.clone(), fav.game.rom_filename.clone()))
-                .and_then(|e| e.box_art_url.clone());
-            CoreGameEntry {
-                system: fav.game.system,
-                system_display: fav.game.system_display,
-                rom_filename: fav.game.rom_filename.clone(),
-                display_name: fav.game.display_name.unwrap_or(fav.game.rom_filename),
-                box_art_url,
-            }
-        })
+        .map(|f| f.game)
         .collect();
 
-    Ok(Json(result))
+    Ok(Json(game_refs_to_core_entries(&state, games).await))
 }
 
 /// GET /api/core/game/:system/:filename — returns JSON game detail.
@@ -118,157 +100,29 @@ async fn game_detail(
     State(state): State<AppState>,
     Path((system, filename)): Path<(String, String)>,
 ) -> Result<Json<CoreGameDetail>, StatusCode> {
-    use replay_control_core::arcade_db;
-    use replay_control_core::game_db;
-    use replay_control_core::rom_tags;
-    use replay_control_core::systems::{self, SystemCategory};
-
-    let storage = state.storage();
-
-    // Verify the ROM exists in the library (single-row lookup, no full system load).
-    state
-        .cache
-        .get_single_rom(&storage, &system, &filename, &state.metadata_pool)
+    let sys_owned = system.clone();
+    let fname_owned = filename.clone();
+    let entry = state
+        .metadata_pool
+        .read(move |conn| MetadataDb::load_single_entry(conn, &sys_owned, &fname_owned))
         .await
+        .and_then(|r| r.ok())
+        .flatten()
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Resolve base metadata from baked-in databases (arcade_db / game_db).
-    let sys_info = systems::find_system(&system);
-    let system_display = sys_info
-        .map(|s| s.display_name.to_string())
-        .unwrap_or_else(|| system.clone());
-    let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
-
-    let (display_name, year, genre, developer, players, region) = if is_arcade {
-        let stem = filename.strip_suffix(".zip").unwrap_or(&filename);
-        match arcade_db::lookup_arcade_game(stem) {
-            Some(info) => (
-                info.display_name.to_string(),
-                info.year.to_string(),
-                if info.category.is_empty() {
-                    info.normalized_genre.to_string()
-                } else {
-                    info.category.to_string()
-                },
-                info.manufacturer.to_string(),
-                info.players,
-                None,
-            ),
-            None => (
-                filename.clone(),
-                String::new(),
-                String::new(),
-                String::new(),
-                0,
-                None,
-            ),
-        }
-    } else {
-        let stem = filename
-            .rfind('.')
-            .map(|i| &filename[..i])
-            .unwrap_or(&filename);
-        let entry = game_db::lookup_game(&system, stem);
-        let game = entry.map(|e| e.game);
-        let region = entry.map(|e| e.region).unwrap_or("");
-
-        let display_name = if let Some(g) = game {
-            rom_tags::display_name_with_tags(g.display_name, &filename)
-        } else if let Some(dn) = game_db::game_display_name(&system, &filename) {
-            rom_tags::display_name_with_tags(dn, &filename)
-        } else {
-            let stem = filename
-                .rfind('.')
-                .map(|i| &filename[..i])
-                .unwrap_or(&filename);
-            let base = stem
-                .find(" (")
-                .or_else(|| stem.find(" ["))
-                .map(|i| stem[..i].trim())
-                .unwrap_or(stem);
-            let name = if base.is_empty() { stem } else { base };
-            rom_tags::display_name_with_tags(name, &filename)
-        };
-
-        let game_meta = game.or_else(|| {
-            let normalized = game_db::normalize_filename(stem);
-            game_db::lookup_by_normalized_title(&system, &normalized)
-        });
-
-        (
-            display_name,
-            game_meta
-                .map(|g| {
-                    if g.year > 0 {
-                        g.year.to_string()
-                    } else {
-                        String::new()
-                    }
-                })
-                .unwrap_or_default(),
-            game_meta
-                .map(|g| {
-                    if g.genre.is_empty() {
-                        g.normalized_genre
-                    } else {
-                        g.genre
-                    }
-                    .to_string()
-                })
-                .unwrap_or_default(),
-            game_meta
-                .map(|g| g.developer.to_string())
-                .unwrap_or_default(),
-            game_meta.map(|g| g.players).unwrap_or(0),
-            if region.is_empty() {
-                None
-            } else {
-                Some(region.to_string())
-            },
-        )
-    };
-
-    // Enrich from metadata DB (description, rating, publisher).
-    let (mut description, mut rating, mut publisher, mut enriched_genre, mut enriched_developer) =
-        (None, None, None, String::new(), String::new());
-
-    let system_owned = system.clone();
-    let filename_owned = filename.clone();
-    if let Some(Ok(Some(meta))) = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::lookup(conn, &system_owned, &filename_owned))
-        .await
-    {
-        description = meta.description;
-        rating = meta.rating.map(|r| r as f32);
-        publisher = meta.publisher;
-        if meta.developer.is_some() {
-            enriched_developer = meta.developer.unwrap_or_default();
-        }
-        if meta.genre.is_some() {
-            enriched_genre = meta.genre.unwrap_or_default();
-        }
-    }
+    let game = crate::server_fns::build_game_detail(&state, &entry).await;
 
     Ok(Json(CoreGameDetail {
-        display_name,
-        system_display,
-        year,
-        developer: if developer.is_empty() && !enriched_developer.is_empty() {
-            enriched_developer
-        } else {
-            developer
-        },
-        genre: if genre.is_empty() && !enriched_genre.is_empty() {
-            enriched_genre
-        } else {
-            genre
-        },
-        players,
-        rating,
-        description,
-        publisher,
-        region,
+        display_name: game.display_name,
+        system_display: game.system_display,
+        year: game.year,
+        developer: game.developer,
+        genre: game.genre,
+        players: game.players,
+        rating: game.rating,
+        description: game.description,
+        publisher: game.publisher,
+        region: game.region,
     }))
 }
 

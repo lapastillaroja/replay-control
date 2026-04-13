@@ -217,10 +217,15 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
 
-    let rom = state
-        .cache
-        .get_single_rom(&storage, &system, &filename, &state.metadata_pool)
+    // Fetch the full GameEntry from game_library (source of truth for all metadata).
+    let sys_owned = system.clone();
+    let fname_owned = filename.clone();
+    let entry = state
+        .metadata_pool
+        .read(move |conn| MetadataDb::load_single_entry(conn, &sys_owned, &fname_owned))
         .await
+        .and_then(|r| r.ok())
+        .flatten()
         .ok_or_else(|| {
             if !state.is_idle() {
                 ServerFnError::new("Game data is temporarily unavailable while the library is being rebuilt. Please try again in a moment.")
@@ -231,15 +236,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);
 
-    let mut game = resolve_game_info(&system, &filename, &rom.game.rom_path).await;
+    let game = build_game_detail(&state, &entry).await;
 
-    // Prefer the DB display_name (enriched with hash_matched_name) over the
-    // filename-derived one from resolve_game_info, when they differ.
-    if let Some(ref db_name) = rom.game.display_name
-        && db_name != &game.display_name
-    {
-        game.display_name = db_name.clone();
-    }
     #[cfg(feature = "ssr")]
     tracing::debug!(
         elapsed_ms = fn_start.elapsed().as_millis(),
@@ -279,7 +277,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let (rename_allowed, rename_reason) = replay_control_core::roms::check_rename_allowed(
         &storage,
         &system,
-        rom.game.rom_path.trim_start_matches('/'),
+        entry.rom_path.trim_start_matches('/'),
     );
 
     // Detect multi-disc set.
@@ -299,8 +297,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     );
     Ok(RomDetail {
         game,
-        size_bytes: rom.size_bytes,
-        is_m3u: rom.is_m3u,
+        size_bytes: entry.size_bytes,
+        is_m3u: entry.is_m3u,
         is_favorite,
         user_screenshots,
         variant_count,

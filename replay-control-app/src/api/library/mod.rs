@@ -245,42 +245,6 @@ impl LibraryService {
         .await;
     }
 
-    /// Look up a single ROM entry from L2 (SQLite) DB.
-    /// Never triggers a full L3 filesystem scan.
-    pub async fn get_single_rom(
-        &self,
-        _storage: &StorageLocation,
-        system: &str,
-        filename: &str,
-        db: &DbPool,
-    ) -> Option<RomEntry> {
-        // L2: direct single-row DB lookup.
-        let sys = system.to_string();
-        let fname = filename.to_string();
-        let game_entry = db
-            .read(move |conn| MetadataDb::load_single_entry(conn, &sys, &fname))
-            .await?
-            .ok()??;
-
-        // Convert GameEntry -> RomEntry (same as load_roms_from_db).
-        use replay_control_core::game_ref::GameRef;
-        Some(RomEntry {
-            game: GameRef::new_with_display(
-                &game_entry.system,
-                game_entry.rom_filename,
-                game_entry.rom_path,
-                game_entry.display_name,
-            ),
-            size_bytes: game_entry.size_bytes,
-            is_m3u: game_entry.is_m3u,
-            is_favorite: false,
-            box_art_url: game_entry.box_art_url,
-            driver_status: game_entry.driver_status,
-            rating: game_entry.rating,
-            players: game_entry.players,
-        })
-    }
-
     /// Scan a system from filesystem and write to L2 (SQLite).
     /// Called by the background pipeline during warmup and by REST API on L2 miss.
     pub async fn scan_and_cache_system(

@@ -257,27 +257,32 @@ pub fn format_error(e: server_fn::ServerFnError) -> String {
         .to_string()
 }
 
-/// Resolve full game metadata for any system.
-/// This is the single function that bridges arcade_db and game_db.
+/// Build full game metadata for the detail page from a `GameEntry` (DB source of truth).
+///
+/// Unlike the old `resolve_game_info()` which re-derived metadata from baked-in
+/// databases, this reads directly from the enriched `GameEntry` stored in
+/// `game_library`. Arcade-only fields (rotation, parent_rom, arcade_category)
+/// are supplemented from `arcade_db` (cheap static lookups).
 #[cfg(feature = "ssr")]
-pub(crate) async fn resolve_game_info(
-    system: &str,
-    rom_filename: &str,
-    rom_path: &str,
+pub(crate) async fn build_game_detail(
+    state: &crate::api::AppState,
+    entry: &replay_control_core::metadata_db::GameEntry,
 ) -> GameInfo {
     use replay_control_core::arcade_db;
-    use replay_control_core::game_db;
-    use replay_control_core::rom_tags;
     use replay_control_core::systems::{self, SystemCategory};
 
-    let sys_info = systems::find_system(system);
+    let sys_info = systems::find_system(&entry.system);
     let system_display = sys_info
         .map(|s| s.display_name.to_string())
-        .unwrap_or_else(|| system.to_string());
+        .unwrap_or_else(|| entry.system.clone());
     let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
 
-    let mut info = if is_arcade {
-        let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
+    // Arcade-only fields from static arcade_db lookup.
+    let (rotation, parent_rom, arcade_category) = if is_arcade {
+        let stem = entry
+            .rom_filename
+            .strip_suffix(".zip")
+            .unwrap_or(&entry.rom_filename);
         match arcade_db::lookup_arcade_game(stem) {
             Some(info) => {
                 let rotation = match info.rotation {
@@ -285,204 +290,85 @@ pub(crate) async fn resolve_game_info(
                     arcade_db::Rotation::Vertical => "Vertical",
                     arcade_db::Rotation::Unknown => "Unknown",
                 };
-                let driver_status = match info.status {
-                    arcade_db::DriverStatus::Working => "Working",
-                    arcade_db::DriverStatus::Imperfect => "Imperfect",
-                    arcade_db::DriverStatus::Preliminary => "Preliminary",
-                    arcade_db::DriverStatus::Unknown => "Unknown",
+                let parent = if info.is_clone {
+                    Some(info.parent.to_string())
+                } else {
+                    None
                 };
-                GameInfo {
-                    system: system.to_string(),
-                    system_display,
-                    rom_filename: rom_filename.to_string(),
-                    rom_path: rom_path.to_string(),
-                    display_name: info.display_name.to_string(),
-                    year: info.year.to_string(),
-                    genre: if info.category.is_empty() {
-                        info.normalized_genre.to_string()
-                    } else {
-                        info.category.to_string()
-                    },
-                    developer: info.manufacturer.to_string(),
-                    players: info.players,
-                    cooperative: false,
-                    rotation: Some(rotation.to_string()),
-                    driver_status: Some(driver_status.to_string()),
-                    is_clone: Some(info.is_clone),
-                    parent_rom: if info.is_clone {
-                        Some(info.parent.to_string())
-                    } else {
-                        None
-                    },
-                    arcade_category: if info.category.is_empty() {
-                        None
-                    } else {
-                        Some(info.category.to_string())
-                    },
-                    region: None,
-                    description: None,
-                    rating: None,
-                    publisher: None,
-                    box_art_url: None,
-                    screenshot_url: None,
-                    title_url: None,
-                }
+                let category = if info.category.is_empty() {
+                    None
+                } else {
+                    Some(info.category.to_string())
+                };
+                (Some(rotation.to_string()), parent, category)
             }
-            None => GameInfo {
-                system: system.to_string(),
-                system_display,
-                rom_filename: rom_filename.to_string(),
-                rom_path: rom_path.to_string(),
-                display_name: rom_filename.to_string(),
-                year: String::new(),
-                genre: String::new(),
-                developer: String::new(),
-                players: 0,
-                cooperative: false,
-                rotation: None,
-                driver_status: None,
-                is_clone: None,
-                parent_rom: None,
-                arcade_category: None,
-                region: None,
-                description: None,
-                rating: None,
-                publisher: None,
-                box_art_url: None,
-                screenshot_url: None,
-                title_url: None,
-            },
+            None => (None, None, None),
         }
     } else {
-        let stem = rom_filename
-            .rfind('.')
-            .map(|i| &rom_filename[..i])
-            .unwrap_or(rom_filename);
-
-        // Try exact match, then normalized title fallback
-        let entry = game_db::lookup_game(system, stem);
-        let game = entry.map(|e| e.game);
-        let region = entry.map(|e| e.region).unwrap_or("");
-
-        // If exact match failed, try normalized title for display name
-        let display_name = if let Some(g) = game {
-            rom_tags::display_name_with_tags(g.display_name, rom_filename)
-        } else if let Some(dn) = game_db::game_display_name(system, rom_filename) {
-            rom_tags::display_name_with_tags(dn, rom_filename)
-        } else {
-            // No DB match — derive a clean display name from the filename.
-            // Strip extension and parenthesized/bracketed tags for the base name,
-            // then let display_name_with_tags re-append the useful tags.
-            let stem = rom_filename
-                .rfind('.')
-                .map(|i| &rom_filename[..i])
-                .unwrap_or(rom_filename);
-            let base = stem
-                .find(" (")
-                .or_else(|| stem.find(" ["))
-                .map(|i| stem[..i].trim())
-                .unwrap_or(stem);
-            let name = if base.is_empty() { stem } else { base };
-            rom_tags::display_name_with_tags(name, rom_filename)
-        };
-
-        // For metadata, also try normalized title fallback
-        let game_meta = game.or_else(|| {
-            let normalized = game_db::normalize_filename(stem);
-            game_db::lookup_by_normalized_title(system, &normalized)
-        });
-
-        // Extract TOSEC metadata as fallback for year/developer when game_db has none.
-        let tosec = rom_tags::extract_tosec_metadata(rom_filename);
-
-        let db_year = game_meta
-            .map(|g| {
-                if g.year > 0 {
-                    g.year.to_string()
-                } else {
-                    String::new()
-                }
-            })
-            .unwrap_or_default();
-        let year = if db_year.is_empty() {
-            tosec.year.map(|y| y.to_string()).unwrap_or_default()
-        } else {
-            db_year
-        };
-
-        let db_developer = game_meta
-            .map(|g| g.developer.to_string())
-            .unwrap_or_default();
-        let developer = if db_developer.is_empty() {
-            tosec
-                .publisher
-                .as_deref()
-                .map(replay_control_core::developer::normalize_developer)
-                .unwrap_or_default()
-        } else {
-            db_developer
-        };
-
-        GameInfo {
-            system: system.to_string(),
-            system_display,
-            rom_filename: rom_filename.to_string(),
-            rom_path: rom_path.to_string(),
-            display_name,
-            year,
-            genre: game_meta
-                .map(|g| {
-                    if g.genre.is_empty() {
-                        g.normalized_genre
-                    } else {
-                        g.genre
-                    }
-                    .to_string()
-                })
-                .unwrap_or_default(),
-            developer,
-            players: game_meta.map(|g| g.players).unwrap_or(0),
-            cooperative: game_meta.and_then(|g| g.coop).unwrap_or(false),
-            rotation: None,
-            driver_status: None,
-            is_clone: None,
-            parent_rom: None,
-            arcade_category: None,
-            region: if region.is_empty() {
-                None
-            } else {
-                Some(region.to_string())
-            },
-            description: None,
-            rating: None,
-            publisher: None,
-            box_art_url: None,
-            screenshot_url: None,
-            title_url: None,
-        }
+        (None, None, None)
     };
 
-    // Enrich with external metadata from local cache.
-    enrich_from_metadata_cache(&mut info).await;
+    let mut info = GameInfo {
+        system: entry.system.clone(),
+        system_display,
+        rom_filename: entry.rom_filename.clone(),
+        rom_path: entry.rom_path.clone(),
+        display_name: entry
+            .display_name
+            .clone()
+            .unwrap_or_else(|| entry.rom_filename.clone()),
+        year: entry
+            .release_year
+            .map(|y| y.to_string())
+            .unwrap_or_default(),
+        genre: entry
+            .genre
+            .clone()
+            .unwrap_or_else(|| entry.genre_group.clone()),
+        developer: entry.developer.clone(),
+        players: entry.players.unwrap_or(0),
+        cooperative: entry.cooperative,
+        rotation,
+        driver_status: entry.driver_status.clone(),
+        is_clone: if is_arcade {
+            Some(entry.is_clone)
+        } else {
+            None
+        },
+        parent_rom,
+        arcade_category,
+        region: if entry.region.is_empty() {
+            None
+        } else {
+            Some(entry.region.clone())
+        },
+        description: None,
+        rating: entry.rating,
+        publisher: None,
+        box_art_url: entry.box_art_url.clone(),
+        screenshot_url: None,
+        title_url: None,
+    };
+
+    // Enrich with detail-only fields not stored in GameEntry.
+    enrich_detail_fields(state, &mut info).await;
 
     info
 }
 
-/// Look up cached external metadata and enrich the GameInfo.
+/// Enrich a `GameInfo` with detail-page-only fields not stored in `GameEntry`.
+///
+/// Fetches from `game_metadata` table: description, publisher, screenshot/title paths.
+/// Handles box art override from `user_data_db` and filesystem fallback for
+/// screenshots/title screens.
 #[cfg(feature = "ssr")]
-pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
-    let state = leptos::prelude::expect_context::<crate::api::AppState>();
-
-    // Clone strings for use in `move` closures (must be Send + 'static).
-    let system = info.system.clone();
-    let rom_filename = info.rom_filename.clone();
-
+async fn enrich_detail_fields(state: &crate::api::AppState, info: &mut GameInfo) {
     // Check user_data_db for box art override FIRST (highest priority).
     if let Some(override_path) = state
         .user_data_pool
         .read({
-            let system = system.clone();
-            let rom_filename = rom_filename.clone();
+            let system = info.system.clone();
+            let rom_filename = info.rom_filename.clone();
             move |conn| {
                 UserDataDb::get_override(conn, &system, &rom_filename)
                     .ok()
@@ -503,28 +389,9 @@ pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
         }
     }
 
-    // Use game_library.box_art_url as the primary box art source (set by enrichment).
-    if info.box_art_url.is_none() {
-        let sys = info.system.clone();
-        let rom = info.rom_filename.clone();
-        if let Some(url) = state
-            .metadata_pool
-            .read(move |conn| {
-                conn.query_row(
-                    "SELECT box_art_url FROM game_library WHERE system = ?1 AND rom_filename = ?2",
-                    [&sys, &rom],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .ok()
-                .flatten()
-            })
-            .await
-            .flatten()
-        {
-            info.box_art_url = Some(url);
-        }
-    }
-
+    // Fetch detail-only fields from game_metadata table.
+    let system = info.system.clone();
+    let rom_filename = info.rom_filename.clone();
     if let Some(lookup_result) = state
         .metadata_pool
         .read(move |conn| MetadataDb::lookup(conn, &system, &rom_filename))
@@ -533,28 +400,10 @@ pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
         match lookup_result {
             Ok(Some(meta)) => {
                 info.description = meta.description;
-                info.rating = meta.rating.map(|r| r as f32);
-                if meta.publisher.is_some() {
-                    info.publisher = meta.publisher;
-                }
-                if info.developer.is_empty() && meta.developer.is_some() {
-                    info.developer = meta.developer.unwrap_or_default();
-                }
-                // Use LaunchBox release_year as fallback when baked-in DB has none.
-                if info.year.is_empty()
-                    && let Some(year) = meta.release_year
-                {
-                    info.year = year.to_string();
-                }
-                // OR merge: if either source says co-op, set cooperative.
-                if meta.cooperative {
-                    info.cooperative = true;
-                }
-                // Use LaunchBox genre as fallback when baked-in DB has none.
-                if info.genre.is_empty() && meta.genre.is_some() {
-                    info.genre = meta.genre.unwrap_or_default();
-                }
-                // Only set box_art_url from metadata if no override was set above.
+                info.publisher = meta.publisher;
+
+                // Box art fallback from game_metadata when GameEntry has none
+                // and no user override was set above.
                 if info.box_art_url.is_none()
                     && let Some(ref path) = meta.box_art_path
                 {
@@ -603,9 +452,6 @@ pub(crate) async fn enrich_from_metadata_cache(info: &mut GameInfo) {
     }
 
     // Filesystem fallback for screenshots and title screens.
-    // Box art uses the DB `box_art_url` only (set by enrichment pipeline).
-    // For screenshots and title screens, use resolve_image_on_disk() which handles
-    // arcade MAME codename → display name translation automatically.
     if info.screenshot_url.is_none() || info.title_url.is_none() {
         let media_base = state.storage().rc_dir().join("media").join(&info.system);
         if info.screenshot_url.is_none()
