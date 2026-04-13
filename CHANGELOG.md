@@ -4,6 +4,319 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.2.0](https://github.com/lapastillaroja/replay-control/releases/tag/v0.2.0) - 2026-04-10
+
+### Added
+
+- add "Same as browser" locale option and bilingual locale names
+- add cooperative (co-op) play as search filter and game detail field
+- add auto-update system (check, download, install, rollback)
+- add i18n support with Spanish and Japanese translations
+- box art placeholders for games without cover art
+- arcade clone fallback + aggressive normalization for box art
+- fuzzy manifest matching + fix on-demand download panic
+- metadata page streaming SSR with skeleton loaders
+- add tracing instrumentation to server functions
+- improve organize favorites UX
+- skeleton loaders for streaming SSR
+- response cache (10s TTL) + query cache for recommendations
+- Phase 3 recommendations — Hidden Gems, Similar, Series Spotlight
+- Phase 2 recommendations — rotating curated spotlights
+- Phase 1 recommendation improvements — smart rotating pills
+- change root password from web UI
+- update PWA icons with arcade logo
+- add rotating gaming icon to top bar
+- add system controller icons to game lists and system cards
+- improve change cover variant labels and layout
+- PWA app shell caching and offline fallback
+- add Search tab to bottom nav, system category icons, unfixed header
+- graceful startup when storage unavailable + move assets to /static/
+- show app version in More page footer, /api/version endpoint, and HTML meta tag
+- alternate versions and cross-system sections on game detail page
+- resolve 95% of TOSEC CPC duplicate display names
+- show TOSEC bracket flag labels in display names
+- TOSEC bracket flag classification and duplicate disambiguation
+- TOSEC structured tag parsing (year, publisher, side/disk)
+- broadcast SSE for skin and storage change notifications
+- organize favorites by developer
+- runtime SQLite corruption detection with recovery UI
+- auto-generate M3U playlists for multi-part TOSEC games
+- streaming download progress for LaunchBox metadata import
+- developer name normalization for search and grouping
+- unified metadata page — SSE rebuild, any_busy signal, on-load resume
+- improve driver_status UX + gitignore load test raw files
+- genre badges in favorites, CSS cleanup, fix favorites hydration bug
+- multi-file ROM management — safe delete, rename restrictions, orphan cascade
+- deadpool-sqlite connection pool for concurrent DB reads
+- inline delete confirmation for downloaded manuals
+- language preferences + manual fixes
+- game manuals — in-folder detection + archive.org on-demand download
+- share videos across regional variants via base_title
+- add GameListItem shared component
+- add REST API endpoints for libretro core
+- responsive tablet/desktop CSS breakpoints
+- parse CommunityRatingCount + weighted top-rated scoring
+- developer search UI and game list page
+- developer column, search, and game list page backend
+- add Named_Titles support and screenshot gallery
+- sequel/prequel play order navigation
+- restructure More page + declutter game detail
+- unify region preferences into single settings section
+- show arcade clone siblings as "Arcade Versions" on game detail
+- add pull-to-refresh for iOS PWA standalone mode
+- concise labels for Other Versions and clippy cleanup
+- add Wikidata series data with arcade support
+- add game series and cross-name variant relationship system
+- add CRC32 hash-based ROM identification for cartridge systems
+- add secondary region preference with Strategy C sort order
+- add text size toggle (normal/large) to settings page
+- add pull-to-refresh for PWA standalone mode
+- redesign metadata page layout with embedded DB stats
+- add unified GameInfo API with lightweight RomListEntry
+- parse developer, release year, and cooperative from LaunchBox XML
+- filter non-playable MAME entries, preserve BIOS with flag
+- parse MaxPlayers from LaunchBox XML for player count enrichment
+- add orphaned image cleanup with manual UI button
+- two-tier genre system with genre_group for unified filtering
+- block DB operations during game library rebuild, add completion feedback
+- auto-detect new/changed ROMs via filesystem watcher
+- add is_special flag and genre fallback from LaunchBox
+- add is_hack support — filter hacks from variants/dedup, show Hacks section
+- parse genre from LaunchBox XML as fallback for baked-in game_db
+- add translations section and filter translations from variants/dedup
+- add related games section and improve recommendation diversity
+- deduplicate recommendations by filtering clones and regional variants
+- randomize top rated and "because you love" recommendations
+- switch thumbnail indexing from git clone to GitHub REST API
+- metadata busy banner and graceful DB unavailability handling
+- auto-match metadata for externally added ROMs
+- box art swap — pick alternate cover art per ROM
+- prevent parallel metadata operations + SSE fixes + git-based thumbnail indexing
+- libretro-thumbnails manifest-based pipeline + metadata page redesign
+- integrate launch recents tracking into game launch flow
+- SSR recommendations with L2 warmup, enrichment, and race condition fixes
+- enable recommendations on home page with client-side loading
+- persistent SQLite ROM cache (L2) with nolock-first DB open
+- favorites/rating recommendations, fix ScummVM dedup
+- game recommendations on home page (Phase 1)
+- metadata-enriched search (genre, year) and min-rating filter
+- word-level fuzzy search, word-boundary scoring, CPU mitigations
+- region preference setting on /more page
+- megabit size display for cartridge systems, split CSS into modules
+- rating display, multiplayer filter, re-match images, git freshness check
+- arcade driver badges, favorites filter, image matching improvements
+- unified game list patterns, search navigation fixes, hide Alpha Player
+- box art on home/favorites, ROM list filters, storage bar, and search fixes
+- extended search filters and ROM list filter persistence
+- merge Games tab into Home, rename to Games
+- user screenshots with lightbox viewer
+- game launch with health check recovery
+- search icon in top bar, recent searches, random game, and / shortcut
+- global search with filters and home page search bar
+- game videos with search, inline preview, and multi-API fallback
+- responsive image import UX with SSE and cancellable clone
+- search, thumbnails, logs page, image import cancel, and UX fixes
+- game images, metadata download, and metadata page redesign
+- background metadata import with progress, auto-import, per-system coverage
+- add game metadata system with LaunchBox import
+- unified GameInfo type, skin sync toggle, theme->skin rename
+- interactive skin selection and CSS theming fixes
+
+### Fixed
+
+- use i18n key for series position indicator instead of hardcoded format
+- clippy warnings (hydrate target) and Docker e2e networking
+- resolve clippy warnings and CI artifact path
+- remove unused UpdatingPhase variants (clippy dead_code warning)
+- correct style.css test URI to match /static/style.css route
+- add /style.css endpoint for integration tests
+- move ErrorBoundary to route level, fix metadata result messages
+- Suspense must wrap ErrorBoundary for non-blocking resources
+- organize favorites preview — all combinations, correct labels
+- organize preview shows nested folders and uses genre_group
+- organize preview uses genre_group instead of raw genre
+- developer page reactive signals and URL filter persistence
+- URL-encode # in box art paths, fix reactive signal warning
+- search filter persistence, highlights, and back button
+- search page back button navigation
+- pull-to-refresh visible below Dynamic Island on iPhone
+- search page width and input height consistency
+- prevent DB corruption on exFAT with write gate
+- enrichment reads filenames from L2 instead of L1 cache
+- startup pipeline detects incomplete scans, improved cache clarity
+- detect external skin changes from replay.cfg and broadcast SkinChanged
+- include clone entries in display name disambiguation
+- use 1h cache for pkg assets (no content hash in filenames)
+- show system display name in startup scanning banner
+- show phase, system, and progress count in rebuild banner
+- use read_untracked for system display name in favorites page
+- unfavorite from any page, recursive search, mtime sort
+- resolve all clippy warnings
+- add pool timeout and increase DELETE mode readers to 3
+- use deadpool async API to prevent tokio worker starvation
+- add CSS for rebuild progress text inside action card
+- tablet text overflow — hero titles wrap, scroll cards 2-line clamp
+- simplify skin change to page reload, fix disabled cursor
+- move Clear Downloaded Images to Advanced section
+- move 9 write operations from read pool to write pool
+- explicit WAL checkpoints after bulk writes, scanning flag for ROM lookups
+- filesystem-aware SQLite journal mode — WAL only on POSIX filesystems
+- check server busy state before starting metadata/thumbnail operations
+- remove hydration mismatch in GameListItem + improve curl_get_json
+- batch player lookups to eliminate N+1 in multiplayer filter
+- resolve clippy warnings, add path traversal protection, and reduce Closure leaks
+- remove param_key Memo causing WASM panic on game navigation
+- wrap manual server functions in spawn_blocking + register DeleteManual
+- persist skin preference in settings.cfg, not replay.cfg
+- resolve code review items — dead code, system display, WhereBuilder
+- arcade snap/title resolution via unified resolve_image_on_disk
+- prevent tokio worker starvation during image index build
+- compact developer search block, arcade box art, query text
+- merge developer from LaunchBox metadata into game detail
+- use Suspense for game detail to fix sequel link navigation
+- clear thumbnail progress after completion
+- filesystem-aware SQLite locking + thumbnail auto-rebuild
+- review fixes for startup refactoring
+- eliminate rogue DB connections causing corruption
+- non-blocking startup when game library is empty
+- unify box art resolution between cards and detail page
+- unify alias resolution with fuzzy matching for colon/dash variants
+- metadata page horizontal overflow on mobile
+- on-demand thumbnail download panics outside Tokio runtime
+- thumbnail download counter starts at 1 instead of 0
+- version-stripped box art matching checks fuzzy index too
+- prevent orphan cleanup from deleting all images
+- path traversal check blocks filenames containing ".."
+- resolve Leptos hydration warnings on games page
+- guarantee metadata_operation_in_progress is cleared after rebuild
+- improve variant labels, filter arcade clones, skip broken symlink previews
+- populate rom_cache after import when cache is empty
+- stop event propagation on boxart picker close button
+- re-enrich rom_cache after metadata/thumbnail imports
+- case-ininternal exact matching for thumbnail resolution
+- add arcade_db translation for thumbnail matching
+- resolve recommendation box art from filesystem
+- use fuzzy matching in update_image_paths_from_disk
+- invalidate image cache after metadata import
+- fall back to log files when journald is disabled
+- auto-reopen DB connections when file is deleted externally
+- resolve all clippy warnings across codebase
+- region preference styling, SSR genres, and box art swap design
+- auto-delete image repos after match, add cache management
+- keep cloned image repos on disk, add staleness check to Download All
+- validate metadata DB image paths against disk to catch fake-symlink artifacts
+- search input focus on client-side navigation, inline genre loading
+- revert dropdown arrow to SVG data URI for reliable positioning
+
+### Other
+
+- *(deps)* bump the production group across 1 directory with 3 updates ([#15](https://github.com/lapastillaroja/replay-control/pull/15))
+- cache user preferences in memory to avoid per-request file I/O
+- move Locale enum to core crate, eliminate hardcoded strings
+- apply cargo fmt
+- add integration tests for enrichment, schema rebuild, and co-op filter
+- extract image resolution, thumbnail pipeline, and search scoring
+- apply cargo fmt
+- bump app and core version to 0.2.0
+- fix clippy warnings across workspace
+- split ReplayConfig into SystemConfig and AppSettings
+- apply cargo fmt
+- update attribution for TGDB developer/publisher/coop/rating data
+- reorganize More page into five distinct sections
+- *(deps)* bump the production group with 1 update ([#13](https://github.com/lapastillaroja/replay-control/pull/13))
+- remove service worker offline support, update dependabot grouping
+- Revert "fix: add /style.css endpoint for integration tests"
+- update benchmarks to beta.4, rename Pi Configuration
+- cargo fmt
+- fix clippy warnings — collapsible ifs, dead code, too-many-args
+- fix formatting in generate-test-fixtures
+- simplify post-refactoring — type alias, Default impl, comments
+- restructure cache module — rename, split, simplify
+- remove remaining unnecessary #[allow] attributes
+- fix clippy warnings and add #[allow] comments
+- add skeleton loader CSS for favorites page
+- move enrichment pipeline to core crate
+- reduce SQLite page cache and read pool to 1 connection
+- add jemalloc allocator for better memory management
+- remove ImageIndex from request path, use DB box_art_url only
+- Revert "fix: organize preview uses genre_group instead of raw genre"
+- remove L1 ROM cache — unused after search unification
+- review round 2 — GameSection for random picks, fix region format
+- simplify review — shared component, remove duplication
+- extract shared enrichment, unify GlobalSearchResult into RomListEntry
+- use DB box_art_url, skip ImageIndex when possible
+- optimize recommendations — eliminate DB round-trip, fix i64 overflow
+- unify search backend — single query, shared enrichment
+- update dependencies to latest compatible versions
+- add license and repository metadata to Cargo.toml files
+- unify home search bar with search page input
+- add accent-colored logo to top bar, remove system card icons
+- use replay.local instead of hardcoded IP, remove stale M3U comment
+- fix clippy warnings and remove allow annotations
+- extract cache-control header values to constants
+- LaunchBoxMetadata tuple to named struct fields
+- remove auto M3U generation (should not modify user romset)
+- restore blocking SSR for homepage (streaming broke hydration)
+- convert activity SSE from polling to broadcast
+- SQL pre-filter with search_text column (search 220ms → 14ms)
+- parallelize global search across systems via tokio::spawn
+- add Cache-Control headers for static assets
+- convert homepage to streaming SSR (TTFB 169ms → 7ms)
+- limit get_recents to 15 entries (homepage only shows 11)
+- apply cargo fmt
+- SQL-level pagination for system ROM list
+- apply cargo fmt
+- single-row DB lookup for game detail pages
+- unified Activity enum replacing busy/scanning/rebuild_progress
+- unified any_busy signal for metadata page, fix SSE cleanup
+- remove is_local from DB layer, use JournalMode enum
+- upgrade rusqlite 0.32→0.38, SQLite 3.46.0→3.51.1
+- full SSR for all pages — eliminate loading spinner flash
+- remove clippy suppressions, extract param structs, consolidate helpers
+- remove cache TTL for local storage, extract shared Freshness struct
+- split global_search into focused helper functions
+- deduplicate SSE handlers with generic sse_progress_stream builder
+- extract rom_docs_handler into serve_rom_doc function
+- standardize lock expect() messages in import.rs
+- deduplicate MEGABIT_SYSTEMS — SSR delegates to core crate
+- add integration tests for search helpers, ROM path parsing, and batch player lookup
+- add Copy derive to qualifying types
+- increase default text size to 110%, large to 140%
+- remove all legacy DB Mutex shims, use pool exclusively
+- simplify developer query + add 12 tests
+- extract reusable hooks and reduce duplication
+- remove redundant developer matching from global_search
+- limit cargo parallelism to 8 jobs to prevent OOM during builds
+- replace RomItem with unified GameListItem across all game lists
+- replace remaining tuples with named structs + fix clippy
+- cleanup dead code and minor fixes
+- extract matching logic to core crate (#2-4)
+- unify image matching into single core path
+- eliminate hardcoded thumbnail strings across codebase
+- consolidate thumbnail logic into core crate
+- add Wikidata attribution to metadata page
+- unify busy flags, fix startup bugs, per-batch DB locking
+- split cache.rs, extract image matching, Arc-wrap ROM cache
+- address code review findings — perf, safety, dedup
+- sequenced startup pipeline, extract AppState, single DB connection
+- split metadata_db.rs into sub-modules and consolidate utils
+- Revert "feat: add pull-to-refresh for PWA standalone mode"
+- derive thumbnail counts from game_library.box_art_url
+- migrate video storage from videos.json to SQLite user_data.db
+- rename rom_cache → game_library across codebase
+- move find_image_on_disk and helpers to core crate
+- shared DB initialization with eager open and corruption recovery
+- replace reqwest with curl for video search API calls
+- tier 1+2 optimizations — 98% faster page loads
+- remove genre/year from search scoring, add min-rating UI filter
+- add integration tests, extract router builder
+- SSE metadata progress, .replay-control renames, box art dedup, tests
+- extract game_detail sub-components, typed filter state, update docs
+- split server_fns.rs and api/mod.rs into domain modules
+- extract RebootButton, unify Transition, auto-close SSE stream
+- rename log prefix from replay-companion to replay-control
+- rename crates to replay-control-app/core, add hostname page, NFS reboot
+
 ## 2026-03-30
 
 ### Features
