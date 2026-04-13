@@ -32,6 +32,17 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     replay_control_core::thumbnails::clear_media(&storage.root)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Clear box_art_url from game_library so the UI doesn't show 404 placeholders.
+    if let Some(Err(e)) = state
+        .metadata_pool
+        .write(|conn| MetadataDb::clear_all_box_art_urls(conn))
+        .await
+    {
+        tracing::warn!("Failed to clear box_art_url after image clear: {e}");
+    }
+
+    state.response_cache.invalidate_all();
+
     // _guard drops → Idle
     Ok(())
 }

@@ -659,6 +659,14 @@ impl MetadataDb {
         Ok(())
     }
 
+    /// Clear all `box_art_url` values from `game_library`.
+    /// Used after clearing images from disk so the UI doesn't show 404 placeholders.
+    pub fn clear_all_box_art_urls(conn: &Connection) -> Result<()> {
+        conn.execute("UPDATE game_library SET box_art_url = NULL", [])
+            .map_err(|e| Error::Other(format!("Clear box_art_url: {e}")))?;
+        Ok(())
+    }
+
     /// Delete the `game_library` entry for a specific ROM.
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(
