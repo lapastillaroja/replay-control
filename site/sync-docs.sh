@@ -23,7 +23,7 @@ declare -A FEATURE_WEIGHTS=(
 
 for f in "$REPO_ROOT/docs/features/"*.md; do
     base=$(basename "$f" .md)
-    [[ "$base" == "index" ]] && base="overview"
+    [[ "$base" == "index" ]] && continue  # _index.md handles the section page
     weight="${FEATURE_WEIGHTS[$base]:-50}"
     title=$(head -1 "$f" | sed 's/^# //')
     
@@ -49,14 +49,14 @@ ARCH_DIR="$CONTENT/architecture"
 mkdir -p "$ARCH_DIR"
 
 declare -A ARCH_WEIGHTS=(
-    ["technical-foundation"]=1 ["design-decisions"]=2 ["startup-pipeline"]=3
-    ["database-schema"]=4 ["server-functions"]=5 ["connection-pooling"]=6
-    ["enrichment"]=7 ["rom-classification"]=8 ["activity-system"]=9
+    ["technical-foundation"]=101 ["design-decisions"]=102 ["startup-pipeline"]=103
+    ["database-schema"]=104 ["server-functions"]=105 ["connection-pooling"]=106
+    ["enrichment"]=107 ["rom-classification"]=108 ["activity-system"]=109
 )
 
 for f in "$REPO_ROOT/docs/architecture/"*.md; do
     base=$(basename "$f" .md)
-    [[ "$base" == "index" ]] && base="overview"
+    [[ "$base" == "index" ]] && continue  # _index.md handles the section page
     weight="${ARCH_WEIGHTS[$base]:-50}"
     title=$(head -1 "$f" | sed 's/^# //')
     

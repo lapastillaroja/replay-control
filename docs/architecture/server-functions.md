@@ -35,6 +35,13 @@ server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystems>
 
 This is necessary because the server functions are defined in the library crate (`replay-control-app`), not the binary crate (`main.rs`). Rust's `inventory` crate auto-registration relies on linker magic that gets stripped when the functions are in a library -- the linker sees no direct references from `main` to the inventory items and discards them.
 
+## First-Run Setup
+
+Two server functions support the setup checklist:
+
+- **`get_setup_status(force)`** — returns which setup steps are pending (metadata downloaded, thumbnail index updated). When `force` is true, re-checks even if previously dismissed.
+- **`dismiss_setup()`** — sets the `setup_dismissed` preference so the banner no longer appears on the home page.
+
 ## Resource Patterns
 
 ### Resource::new_blocking (critical path)

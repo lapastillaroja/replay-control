@@ -36,6 +36,13 @@ If `replay.local` does not resolve, use your Pi's IP address instead (e.g., `htt
 
 On first launch, you will see a "Scanning game library..." banner while the app indexes your ROMs. This runs in the background -- the UI is usable immediately, and your library fills in as systems are scanned.
 
+A **setup checklist** will also appear on the home page, recommending two optional downloads to enrich your library:
+
+- **Game descriptions & ratings** (LaunchBox, ~100 MB)
+- **Box art index** (libretro-thumbnails)
+
+Both are optional — skip and do it later from the [Settings](settings.md) page anytime.
+
 ## Add ROMs
 
 Place ROM files in the `roms/` directory on your storage device (SD card, USB drive, or NFS share), organized by system folder. RePlayOS expects a folder per system:
@@ -63,7 +70,7 @@ You can install the app as a PWA (home screen app) on your phone for quick acces
 
 ## Enrich Your Library
 
-The app includes built-in data for game names, genres, and player counts. For richer metadata (descriptions, ratings, box art), go to **More > Game Data**:
+The app includes built-in data for game names, genres, and player counts. For richer metadata (descriptions, ratings, box art), go to **Settings > Game Data**:
 
 - **Download Metadata** -- imports game descriptions, ratings, and genres from LaunchBox
 - **Download Images** -- fetches box art and screenshots from libretro-thumbnails
@@ -74,6 +81,6 @@ Both are optional and require an internet connection on the Pi.
 
 - [Game Library](game-library.md) -- browsing, favorites, multi-disc handling
 - [Search](search.md) -- cross-system search and developer pages
-- [Preferences](settings.md) -- region, skins, font size
+- [Settings](settings.md) -- region, skins, font size
 - [WiFi, NFS & Pi Setup](configuration.md) -- Wi-Fi, hostname, NFS shares, password
 - [Feature overview](index.md) -- full list of features

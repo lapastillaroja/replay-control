@@ -1,7 +1,7 @@
 ---
 title: "Architecture"
 description: "Replay Control architecture and implementation details."
-weight: 20
+weight: 100
 toc: true
 layout: single
 ---

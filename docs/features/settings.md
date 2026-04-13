@@ -1,12 +1,16 @@
-# Preferences
+# Settings
 
-How user preferences work — the settings that customize your app experience without affecting the Pi.
+How user settings work — the preferences that customize your app experience without affecting the Pi.
 
-{{< screenshot "more-page-mobile.png" "More page with preferences" >}}
+{{< screenshot "settings-mobile.png" "Settings page" >}}
 
 ## Overview
 
-User preferences are accessible from the **More** page and control how the app displays information, which regional variants you prefer, and how it communicates with external services.
+User settings are accessible from the **Settings** page (`/settings`) and control how the app displays information, which regional variants you prefer, and how it communicates with external services.
+
+On desktop, the page uses a two-pane layout: a sticky sidebar with scroll-spy navigation on the left, and the settings content on the right. The sidebar highlights the current section as you scroll. On mobile, the sidebar collapses and sections stack vertically.
+
+The five sections are: **Appearance**, **Game Preferences**, **Network & Security**, **Updates**, and **System**.
 
 ## Region Preference
 
@@ -30,7 +34,7 @@ The app ships with 11 built-in skins that control the color scheme of the web UI
 
 {{< screenshot "skins-page-mobile.png" "Skin selection page" >}}
 
-Browse and apply skins from **More > Skin**. The skin page shows all available skins with color previews, the currently active skin marked, and a one-tap apply.
+Browse and apply skins from **Settings > Skin**. The skin page shows all available skins with color previews, the currently active skin marked, and a one-tap apply.
 
 ### Sync Mode vs Manual Override
 
@@ -47,6 +51,14 @@ Skin changes are broadcast instantly to all connected browsers via server-sent e
 
 Optional [GitHub](https://github.com/) personal access token for downloading thumbnails. Without a key, GitHub API requests are rate-limited to 60/hour; with one, the limit is 5,000/hour.
 
+## Update Channel
+
+Choose between **Stable** (default) and **Beta** release channels. See [Auto-Updates](updates.md) for details.
+
+## Analytics
+
+Optional anonymous usage analytics. Opt in or out from the Settings page. When enabled, the app collects anonymous usage data to help improve the product. No personal information or game library contents are transmitted.
+
 ## Version Display
 
-The app version and git hash are shown in the More page footer.
+The app version and git hash are shown in the Settings page footer.

@@ -2,6 +2,54 @@
 
 The core technical stack and infrastructure that powers Replay Control. For performance-specific design decisions, see [Design Decisions](design-decisions.md).
 
+## Crates
+
+The codebase is split into three crates inside a Cargo workspace.
+
+### replay-control-core (library)
+
+Pure Rust library with no web framework dependency. Contains:
+
+- **Game databases**: embedded arcade_db, game_db (genres, ratings, players) compiled via `phf` at build time
+- **ROM parsing**: filename tag extraction, tier classification, region detection, base title extraction, series key computation
+- **Metadata storage**: SQLite schema and queries for `metadata.db` (game library, metadata cache, thumbnail index) and `user_data.db` (user customizations)
+- **Image matching**: multi-tier fuzzy matching (exact, case-insensitive, base_title, version-stripped) for resolving ROM filenames to thumbnail paths
+- **Configuration**: `replay.cfg` parser, settings reader/writer
+- **Systems catalog**: static list of supported systems with display names, folder names, core assignments
+- **Thumbnails**: libretro-thumbnails repo mapping, on-demand download logic, manifest parsing
+
+Feature-gated: the `metadata` feature enables SQLite (`rusqlite`) and XML parsing (`quick-xml`).
+
+### replay-control-app (web application)
+
+Leptos 0.7 SSR + WASM hydration app built on Axum. Contains:
+
+- **Server functions**: ~70 registered server functions for all UI data needs
+- **API layer** (`src/api/`): AppState, connection pools, background pipeline, activity system, game library cache, enrichment, import/thumbnail pipelines
+- **Pages** (`src/pages/`): home, system browser, game detail, favorites, settings, metadata management, search
+- **Components** (`src/components/`): reusable UI components (hero cards, game rows, skeleton loaders, modals)
+- **Internationalization**: runtime i18n with locale-keyed translation strings
+
+### replay-control-libretro (TV display core)
+
+Standalone cdylib (not in the workspace) that implements the libretro API. Runs as a RetroArch core on the TV, fetching game detail data from the companion app's HTTP API via `minreq`. Renders box art using the `png` crate. Lightweight by design -- no web framework, no SQLite.
+
+## Key File Paths
+
+| Concern | Path |
+|---------|------|
+| App entry point | `replay-control-app/src/main.rs` |
+| AppState + pools | `replay-control-app/src/api/mod.rs` |
+| Background pipeline | `replay-control-app/src/api/background.rs` |
+| Activity system | `replay-control-app/src/api/activity.rs` |
+| Enrichment | `replay-control-app/src/api/cache/enrichment.rs` |
+| Image resolution | `replay-control-app/src/api/cache/images.rs` |
+| DB schema | `replay-control-core/src/metadata/metadata_db/mod.rs` |
+| User data DB | `replay-control-core/src/metadata/user_data_db.rs` |
+| ROM tag parsing | `replay-control-core/src/game/rom_tags.rs` |
+| Image matching | `replay-control-core/src/metadata/image_matching.rs` |
+| HTTP client | `replay-control-core/src/http.rs` |
+
 ## Stack
 
 **Leptos 0.7 SSR with WASM hydration** — the server renders full HTML pages on the Pi, then the browser hydrates with a lightweight WASM bundle for client-side interactivity. Four compilation profiles handle the dual-target build:
@@ -80,6 +128,14 @@ Two SSE endpoints provide real-time push notifications:
 
 See [Activity System](activity-system.md) for the mutual exclusion and progress broadcasting design.
 
+## Shared HTTP Client
+
+All outbound HTTP requests use a shared `reqwest` client (`replay-control-core/src/http.rs`, `shared_client()`). The client is initialized once with sensible defaults (timeouts, connection pooling) and reused across the app. This replaced earlier curl subprocess calls, reducing overhead and enabling connection reuse for GitHub API, LaunchBox downloads, and thumbnail fetches.
+
+## Analytics Infrastructure
+
+Optional anonymous usage analytics. When the user opts in via Settings, the app collects anonymous usage data (feature usage, library stats) to help improve the product. No personal information or game library contents are transmitted.
+
 ## Cross-Compilation
 
 `./build.sh aarch64` produces an ARM binary for Raspberry Pi deployment. The build is a two-step process:
@@ -102,17 +158,17 @@ The app checks GitHub releases for new versions and handles the full download-in
 
 **Update check**: A background task runs 60 seconds after startup and every 24 hours. It queries the GitHub releases API, comparing against the current version. The update channel (stable or beta) determines whether prereleases are considered. Results are broadcast to all connected browsers via the `/sse/config` SSE endpoint as `UpdateAvailable` events.
 
-**Update state**: The `UpdateState` enum (`None` → `Available` → `Restarting`) is provided as app-level context and drives the update banner on the More page. The banner shows "Update Now", "View on GitHub", and "Skip this version" actions.
+**Update state**: The `UpdateState` enum (`None` → `Available` → `Restarting`) is provided as app-level context and drives the update banner on the Settings page. The banner shows "Update Now", "View on GitHub", and "Skip this version" actions.
 
 **Install flow**: Clicking "Update Now" navigates to `/updating`, which triggers `start_update()`. This downloads the binary and site tarballs from the GitHub release, verifies them, writes a shell script (`/var/tmp/replay-control-do-update.sh`) that replaces the binary and restarts the service, then executes it. The updating page shows a countdown and auto-reloads when the new version responds. Rollback is supported via `.bak` of the previous binary.
 
 **Configuration**: `UpdateChannel` (stable/beta) is stored in `AppSettings`. An optional GitHub API key raises the rate limit from 60 to 5,000 requests/hour.
 
-Key types: `UpdateState`, `AvailableUpdate`, `UpdateChannel` in `replay-control-core/src/update.rs`. Server functions in `replay-control-app/src/server_fns/`. Background logic in `replay-control-app/src/api/background.rs`. UI in `replay-control-app/src/pages/updating.rs` and `replay-control-app/src/pages/more.rs`.
+Key types: `UpdateState`, `AvailableUpdate`, `UpdateChannel` in `replay-control-core/src/update.rs`. Server functions in `replay-control-app/src/server_fns/`. Background logic in `replay-control-app/src/api/background.rs`. UI in `replay-control-app/src/pages/updating.rs` and `replay-control-app/src/pages/settings.rs`.
 
 ## Internationalization
 
-Full UI available in English, Spanish, and Japanese. Translation keys are defined as an enum in `replay-control-app/src/i18n/keys.rs` with per-language match arms. Locale is auto-detected from the browser or manually selected in Preferences. SSR renders in the correct language from the first byte — the `<html lang>` attribute is set server-side.
+Full UI available in English, Spanish, and Japanese. Translation keys are defined as an enum in `replay-control-app/src/i18n/keys.rs` with per-language match arms. Locale is auto-detected from the browser or manually selected in Settings. SSR renders in the correct language from the first byte — the `<html lang>` attribute is set server-side.
 
 ## PWA and Service Worker
 

@@ -6,7 +6,7 @@ Keep Replay Control up to date directly from the web UI. The update system check
 
 ## Overview
 
-Updates are managed from the **More** page under the **Updates** section. The app checks for new releases automatically in the background and displays a banner when an update is available.
+Updates are managed from the **Settings** page under the **Updates** section. The current app version and git commit hash are shown there. The app checks for new releases automatically in the background and displays a banner when an update is available.
 
 ## Update Channels
 
@@ -24,7 +24,7 @@ The app checks for updates automatically:
 - **60 seconds after startup** -- first check after the service starts
 - **Every 24 hours** -- periodic background checks
 
-No action is needed -- if an update is available, a banner appears on the More page.
+No action is needed -- if an update is available, a banner appears on the Settings page.
 
 ## Manual Check
 
@@ -59,10 +59,6 @@ GitHub's public API allows 60 requests per hour. If you check frequently or shar
 
 To increase the limit to 5,000 requests per hour, add a GitHub personal access token:
 
-1. Navigate to **More** > **GitHub API Key**
+1. Navigate to **Settings** > **GitHub API Key**
 2. Enter a token (no special scopes required -- public repo access is sufficient)
 3. The token is used for both update checks and metadata downloads
-
-## Version Display
-
-The current app version and git commit hash are shown in the Updates section on the More page. This is useful for confirming which version is running after an update.

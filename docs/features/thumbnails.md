@@ -12,7 +12,7 @@ All images come from [libretro-thumbnails](https://github.com/libretro-thumbnail
 
 ## Downloading Images
 
-From the metadata page (**More > Game Data**):
+From the metadata page (**Settings > Game Data**):
 
 - **Per-system download** -- download images for a single system
 - **Download All** -- batch download images for all systems
@@ -22,6 +22,8 @@ From the metadata page (**More > Game Data**):
 ## Image Matching
 
 The app uses smart multi-tier matching to connect ROM files with their images:
+
+Both PNG and JPG images are supported. The matching logic checks for both extensions.
 
 1. **Exact match** -- ROM display name matches an image filename directly
 2. **Tag-stripped match** -- region and revision tags are stripped for looser matching (e.g., "Super Mario World (USA)" matches "Super Mario World")
@@ -40,6 +42,8 @@ The game detail page displays a screenshot gallery with labeled images:
 ## Box Art Swap
 
 On the game detail page, you can pick alternate region-variant cover art. The feature shows all available boxart variants for the game (e.g., US, European, Japanese covers) and lets you choose which one to display. Your choice is preserved across metadata clears.
+
+{{< screenshot "boxart-picker-mobile.png" "Box art variant picker" >}}
 
 ## Thumbnail Counts
 
