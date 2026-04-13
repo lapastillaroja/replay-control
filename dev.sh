@@ -10,7 +10,7 @@ set -euo pipefail
 #   ./dev.sh [--storage-path /path/to/roms] [--port 8091]
 #   ./dev.sh --pi [IP]
 #   ./dev.sh --pi [IP] --watch
-#   ./dev.sh --pi [IP] --deploy-only
+#
 #   ./dev.sh --clean                  # clear cargo + sccache caches before build
 #
 # Local mode (default):
@@ -19,7 +19,7 @@ set -euo pipefail
 # Pi mode (--pi):
 #   Cross-compiles for aarch64 using dev profiles (fast!), deploys to Pi.
 #   --watch: auto-rebuild + redeploy on file changes.
-#   --deploy-only: skip build, just deploy existing artifacts.
+#
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -67,8 +67,8 @@ fatal()   { error "$@"; exit 1; }
 MODE="local"        # local or pi
 PI_IP=""
 PI_WATCH=false
-DEPLOY_ONLY=false
 CLEAN=false
+
 SERVER_ARGS=""
 
 # Enable sccache for faster incremental dev builds (if available).
@@ -100,14 +100,11 @@ parse_args() {
                 PI_WATCH=true
                 shift
                 ;;
-            --deploy-only)
-                DEPLOY_ONLY=true
-                shift
-                ;;
             --clean)
                 CLEAN=true
                 shift
                 ;;
+
             --port)
                 [[ $# -lt 2 ]] && fatal "Missing value after --port"
                 PORT="$2"
@@ -122,10 +119,8 @@ parse_args() {
 
     # Validate flag combinations
     if [[ "$MODE" != "pi" ]]; then
-        $DEPLOY_ONLY && fatal "--deploy-only requires --pi"
         $PI_WATCH && fatal "--watch requires --pi"
     fi
-    $DEPLOY_ONLY && $PI_WATCH && fatal "--deploy-only and --watch are mutually exclusive"
 
     # Default Pi IP
     if [[ "$MODE" == "pi" ]] && [[ -z "$PI_IP" ]]; then
@@ -167,6 +162,10 @@ human_size() {
 
 # ── Build functions ──────────────────────────────────────────────────────────
 
+ssr_features() {
+    echo "ssr"
+}
+
 build_wasm() {
     phase "Building WASM (wasm-dev)"
     cargo build -p "$CRATE" --lib \
@@ -196,9 +195,11 @@ build_wasm() {
 }
 
 build_ssr_local() {
+    local features
+    features=$(ssr_features)
     phase "Building server (dev)"
     cargo build -p "$CRATE" --bin "$CRATE" \
-        --features ssr \
+        --features "$features" \
         --no-default-features
 
     local bin="target/debug/$CRATE"
@@ -210,12 +211,14 @@ build_ssr_local() {
 }
 
 build_ssr_aarch64() {
+    local features
+    features=$(ssr_features)
     phase "Building server (dev, aarch64)"
     check_aarch64_sysroot
 
     cargo build -p "$CRATE" --bin "$CRATE" \
         --target "$TARGET_TRIPLE" \
-        --features ssr \
+        --features "$features" \
         --no-default-features
 
     local bin="target/$TARGET_TRIPLE/debug/$CRATE"
@@ -317,10 +320,10 @@ deploy_to_pi() {
     local bin_path="target/$TARGET_TRIPLE/debug/$CRATE"
 
     if [[ ! -f "$bin_path" ]]; then
-        fatal "Binary not found: $bin_path — build first or remove --deploy-only"
+        fatal "Binary not found: $bin_path"
     fi
     if [[ ! -d "$OUT_DIR" ]]; then
-        fatal "Site assets not found: $OUT_DIR — build first or remove --deploy-only"
+        fatal "Site assets not found: $OUT_DIR"
     fi
 
     local bin_size
@@ -376,6 +379,9 @@ run_local() {
     info "Press Ctrl+C to stop."
     echo ""
 
+    local features
+    features=$(ssr_features)
+
     exec cargo watch \
         -w replay-control-app/src \
         -w replay-control-core/src \
@@ -387,12 +393,12 @@ cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile wasm-dev -
 wasm-bindgen target/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
 rm -f $PKG_DIR/${CRATE//-/_}_bg.wasm.gz
 cat replay-control-app/style/_*.css > $OUT_DIR/style.css
-cargo build -p $CRATE --bin $CRATE --features ssr --no-default-features
+cargo build -p $CRATE --bin $CRATE --features $features --no-default-features
 BUILD_END=\$(date +%s)
 echo ""
 echo "    Rebuilt in \$(( BUILD_END - BUILD_START ))s"
 echo ""
-cargo run -p $CRATE --features ssr --no-default-features -- --port $PORT $SERVER_ARGS
+cargo run -p $CRATE --features $features --no-default-features -- --port $PORT $SERVER_ARGS
 INNER
 )"
 }
@@ -403,11 +409,6 @@ run_pi() {
     trap teardown_ssh EXIT
     setup_ssh
     check_pi_connectivity
-
-    if $DEPLOY_ONLY; then
-        deploy_to_pi
-        return
-    fi
 
     # Build + deploy
     pi_build_and_deploy
@@ -443,7 +444,7 @@ cp -r replay-control-app/static/branding $OUT_DIR/branding 2>/dev/null || true
 
 echo "${BOLD}${BLUE}==> Rebuilding server (dev, aarch64)${RESET}"
 export CFLAGS_aarch64_unknown_linux_gnu="$resolved_cflags"
-cargo build -p $CRATE --bin $CRATE --target $TARGET_TRIPLE --features ssr --no-default-features
+cargo build -p $CRATE --bin $CRATE --target $TARGET_TRIPLE --features $(ssr_features) --no-default-features
 
 BUILD_END=\$(date +%s)
 echo ""

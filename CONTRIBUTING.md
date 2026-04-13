@@ -83,9 +83,6 @@ The storage path should point to a directory with ROMs organized by system (e.g.
 
 # Watch mode: auto-rebuild + redeploy on file changes
 ./dev.sh --pi [IP] --watch
-
-# Skip build, just redeploy existing artifacts
-./dev.sh --pi [IP] --deploy-only
 ```
 
 If no IP is specified, defaults to `replay.local`.
