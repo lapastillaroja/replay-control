@@ -238,42 +238,56 @@ fn ScrollSpy(#[allow(unused_variables)] active_section: RwSignal<String>) -> imp
         use wasm_bindgen::prelude::*;
 
         // Set up IntersectionObserver once on mount.
+        // Deferred via requestAnimationFrame because Effect::new runs before
+        // the component's DOM nodes are inserted into the document.  On SSR
+        // hydration the elements already exist, but on client-side navigation
+        // they don't yet — so getElementById would return None for every
+        // section and the observer would observe nothing.
         Effect::new(move || {
-            let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+            let Some(window) = web_sys::window() else {
                 return;
             };
 
-            let callback = Closure::<dyn Fn(js_sys::Array, web_sys::IntersectionObserver)>::new(
-                move |entries: js_sys::Array, _observer: web_sys::IntersectionObserver| {
-                    for entry in entries.iter() {
-                        let entry: web_sys::IntersectionObserverEntry =
-                            JsCast::unchecked_into(entry);
-                        if entry.is_intersecting()
-                            && let Some(target) = entry.target().get_attribute("id")
-                        {
-                            active_section.set(target);
+            let setup = Closure::<dyn FnMut()>::new(move || {
+                let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+                    return;
+                };
+
+                let callback = Closure::<dyn Fn(js_sys::Array, web_sys::IntersectionObserver)>::new(
+                    move |entries: js_sys::Array, _observer: web_sys::IntersectionObserver| {
+                        for entry in entries.iter() {
+                            let entry: web_sys::IntersectionObserverEntry =
+                                JsCast::unchecked_into(entry);
+                            if entry.is_intersecting()
+                                && let Some(target) = entry.target().get_attribute("id")
+                            {
+                                active_section.set(target);
+                            }
+                        }
+                    },
+                );
+
+                let options = web_sys::IntersectionObserverInit::new();
+                options.set_threshold(&JsValue::from_f64(0.1));
+                options.set_root_margin("-10% 0px -80% 0px");
+
+                if let Ok(obs) = web_sys::IntersectionObserver::new_with_options(
+                    callback.as_ref().unchecked_ref(),
+                    &options,
+                ) {
+                    for (id, _) in SECTIONS {
+                        if let Some(el) = doc.get_element_by_id(id) {
+                            obs.observe(&el);
                         }
                     }
-                },
-            );
-
-            let options = web_sys::IntersectionObserverInit::new();
-            options.set_threshold(&JsValue::from_f64(0.1));
-            options.set_root_margin("-10% 0px -80% 0px");
-
-            if let Ok(obs) = web_sys::IntersectionObserver::new_with_options(
-                callback.as_ref().unchecked_ref(),
-                &options,
-            ) {
-                for (id, _) in SECTIONS {
-                    if let Some(el) = doc.get_element_by_id(id) {
-                        obs.observe(&el);
-                    }
+                    std::mem::forget(obs);
                 }
-                std::mem::forget(obs);
-            }
 
-            callback.forget();
+                callback.forget();
+            });
+
+            let _ = window.request_animation_frame(setup.as_ref().unchecked_ref());
+            setup.forget();
         });
 
         // Re-check visible section on route changes (back-navigation from sub-pages).
