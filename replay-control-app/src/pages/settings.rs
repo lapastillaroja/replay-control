@@ -80,6 +80,10 @@ pub fn SettingsPage() -> impl IntoView {
                         <h3 class="settings-section-header">{move || t(i18n.locale.get(), Key::MoreSectionGamePreferences)}</h3>
 
                         <div class="settings-section-body">
+                            <div class="menu-list">
+                                <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/metadata") />
+                            </div>
+
                             <div class="settings-inline-setting">
                                 <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::RegionTitle)}</h4>
                                 <p class="form-hint">{move || t(i18n.locale.get(), Key::RegionHint)}</p>
@@ -101,10 +105,6 @@ pub fn SettingsPage() -> impl IntoView {
                                         Ok::<_, ServerFnError>(view! { <LanguageSelector current_primary=primary current_secondary=secondary /> })
                                     })}
                                 </Transition>
-                            </div>
-
-                            <div class="menu-list">
-                                <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/metadata") />
                             </div>
                         </div>
                     </section>
