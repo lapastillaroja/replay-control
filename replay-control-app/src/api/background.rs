@@ -92,43 +92,44 @@ impl BackgroundManager {
         }
     }
 
-    /// Phase 1: Auto-import metadata on startup if `launchbox-metadata.xml` exists and DB is empty.
+    /// Phase 1: Auto-import metadata on startup if metadata file exists and DB is empty.
+    ///
+    /// Imports LaunchBox XML if the file exists on disk.
     async fn phase_auto_import(state: &AppState) {
-        use replay_control_core::metadata_db::LAUNCHBOX_XML;
-
-        let storage = state.storage();
-        let rc_dir = storage.rc_dir();
-        let xml_path = rc_dir.join(LAUNCHBOX_XML);
-        // Backwards-compat: fall back to old upstream name if user placed it manually.
-        let xml_path = if xml_path.exists() {
-            xml_path
-        } else {
-            let old_path = rc_dir.join("Metadata.xml");
-            if old_path.exists() {
-                old_path
-            } else {
-                xml_path
-            }
-        };
-
-        if !xml_path.exists() {
-            tracing::debug!(
-                "No {} at {}, skipping auto-import",
-                LAUNCHBOX_XML,
-                xml_path.display()
-            );
-            return;
-        }
-
         let should_import = state
             .metadata_pool
             .read(|conn| MetadataDb::is_empty(conn).unwrap_or(false))
             .await
             .unwrap_or(false);
 
-        if should_import {
-            tracing::info!("Auto-importing metadata from {}", xml_path.display());
-            state.import.start_import_no_enrich(xml_path, state.clone());
+        if !should_import {
+            return;
+        }
+
+        let storage = state.storage();
+        let rc_dir = storage.rc_dir();
+
+        // Try LaunchBox XML.
+        {
+            use replay_control_core::metadata_db::LAUNCHBOX_XML;
+
+            let xml_path = rc_dir.join(LAUNCHBOX_XML);
+            // Backwards-compat: fall back to old upstream name if user placed it manually.
+            let xml_path = if xml_path.exists() {
+                xml_path
+            } else {
+                let old_path = rc_dir.join("Metadata.xml");
+                if old_path.exists() {
+                    old_path
+                } else {
+                    xml_path
+                }
+            };
+
+            if xml_path.exists() {
+                tracing::info!("Auto-importing metadata from {}", xml_path.display());
+                state.import.start_import_no_enrich(xml_path, state.clone());
+            }
         }
     }
 
