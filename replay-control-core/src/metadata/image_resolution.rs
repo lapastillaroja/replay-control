@@ -134,32 +134,35 @@ pub fn build_image_index(
     }
 
     // Load raw manifest data and build the manifest fuzzy index.
-    let manifest = if let Some(repo_names) = thumbnails::thumbnail_repo_names(system) {
-        let mut repo_data = Vec::new();
-        for display_name in repo_names {
-            let url_name = thumbnails::repo_url_name(display_name);
-            let source_name = thumbnails::libretro_source_name(display_name);
-            let branch = MetadataDb::get_data_source(conn, &source_name)
-                .ok()
-                .flatten()
-                .and_then(|s| s.branch)
-                .unwrap_or_else(|| "master".to_string());
-            let entries = MetadataDb::query_thumbnail_index(
-                conn,
-                &source_name,
-                ThumbnailKind::Boxart.repo_dir(),
-            )
-            .unwrap_or_default();
-            repo_data.push((url_name, branch, entries));
-        }
-        let idx = thumbnail_manifest::build_manifest_fuzzy_index_from_raw(&repo_data);
-        if idx.exact.is_empty() {
-            None
+    // Returns None when no libretro thumbnail data exists.
+    let manifest: Option<ManifestFuzzyIndex> = {
+        if let Some(repo_names) = thumbnails::thumbnail_repo_names(system) {
+            let mut repo_data = Vec::new();
+            for display_name in repo_names {
+                let url_name = thumbnails::repo_url_name(display_name);
+                let source_name = thumbnails::libretro_source_name(display_name);
+                let branch = MetadataDb::get_data_source(conn, &source_name)
+                    .ok()
+                    .flatten()
+                    .and_then(|s| s.branch)
+                    .unwrap_or_else(|| "master".to_string());
+                let entries = MetadataDb::query_thumbnail_index(
+                    conn,
+                    &source_name,
+                    ThumbnailKind::Boxart.repo_dir(),
+                )
+                .unwrap_or_default();
+                repo_data.push((url_name, branch, entries));
+            }
+            let idx = thumbnail_manifest::build_manifest_fuzzy_index_from_raw(&repo_data);
+            if idx.exact.is_empty() {
+                None
+            } else {
+                Some(idx)
+            }
         } else {
-            Some(idx)
+            None
         }
-    } else {
-        None
     };
 
     ImageIndex {

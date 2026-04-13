@@ -860,11 +860,15 @@ pub struct BoxArtVariant {
     pub branch: String,
 }
 
-/// Find all box art variants for a ROM by querying the thumbnail index.
+/// Find all box art variants for a ROM.
 ///
-/// Computes the ROM's base title via `strip_tags(thumbnail_filename(stem))`, then
-/// collects all `Named_Boxarts` entries with the same base title. De-duplicates
-/// by symlink target so entries pointing to the same image appear only once.
+/// Two-layer discovery:
+/// 1. **Filesystem scan** (source-agnostic): finds all downloaded `.png`/`.jpg`
+///    images in the boxart directory whose base title matches the ROM.
+/// 2. **Manifest index** (libretro): finds undownloaded variants from
+///    `thumbnail_index` with preview URLs pointing to GitHub raw content.
+///
+/// Results from both layers are de-duplicated by filename stem.
 pub fn find_boxart_variants(
     conn: &Connection,
     system: &str,
@@ -875,18 +879,12 @@ pub fn find_boxart_variants(
     use crate::thumbnails::{self, strip_tags, thumbnail_filename};
     use std::collections::HashSet;
 
-    let repo_names = match thumbnails::thumbnail_repo_names(system) {
-        Some(names) => names,
-        None => return Vec::new(),
-    };
-
     // Compute the ROM's base title for matching.
     let stem = rom_filename
         .rfind('.')
         .map(|i| &rom_filename[..i])
         .unwrap_or(rom_filename);
 
-    // For arcade ROMs, translate MAME codename to display name.
     let is_arcade = matches!(
         system,
         "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
@@ -911,87 +909,119 @@ pub fn find_boxart_variants(
         .join(ThumbnailKind::Boxart.media_dir());
 
     let mut variants = Vec::new();
-    let mut seen_targets: HashSet<String> = HashSet::new();
+    let mut seen_stems: HashSet<String> = HashSet::new();
 
-    for display_name in repo_names {
-        let url_name = thumbnails::repo_url_name(display_name);
-        let source_name = thumbnails::libretro_source_name(display_name);
+    // ── Layer 1: Filesystem scan (downloaded images, any source) ─────
+    if let Ok(entries) = std::fs::read_dir(&media_base) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            let img_stem = if let Some(s) = name_str.strip_suffix(".png") {
+                s
+            } else if let Some(s) = name_str.strip_suffix(".jpg") {
+                s
+            } else {
+                continue;
+            };
 
-        let branch = MetadataDb::get_data_source(conn, &source_name)
-            .ok()
-            .flatten()
-            .and_then(|s| s.branch)
-            .unwrap_or_else(|| "master".to_string());
+            if !thumbnails::is_valid_image(&entry.path()) {
+                continue;
+            }
 
-        let entries =
-            MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
-                .unwrap_or_default();
-
-        for entry in &entries {
-            let entry_base = strip_tags(&entry.filename).to_lowercase();
+            let entry_base = strip_tags(img_stem).to_lowercase();
             if entry_base != base_title
                 && !tilde_halves.contains(&entry_base)
                 && !super::image_matching::base_titles_match_with_tags(
                     &base_title,
                     &thumb_name,
                     &entry_base,
-                    &entry.filename,
+                    img_stem,
                 )
             {
                 continue;
             }
 
-            // De-duplicate by resolved image (symlink target or filename).
-            let resolved = entry
-                .symlink_target
-                .as_deref()
-                .filter(|t| !t.is_empty())
-                .unwrap_or(&entry.filename);
-            if !seen_targets.insert(resolved.to_string()) {
+            if !seen_stems.insert(img_stem.to_string()) {
                 continue;
             }
 
-            let is_symlink = entry.symlink_target.is_some();
-            let local_path = media_base.join(format!("{}.png", entry.filename));
-            let is_downloaded = thumbnails::is_valid_image(&local_path);
-
-            // Skip undownloaded symlinks — GitHub raw serves the symlink text
-            // content (a filename) instead of the actual PNG, producing a
-            // broken image. The real file is already in the list as its own entry.
-            if is_symlink && !is_downloaded {
-                continue;
-            }
-
-            let image_url = if is_downloaded {
-                format!("/media/{system}/boxart/{}.png", entry.filename)
-            } else {
-                // Preview from GitHub raw content for undownloaded variants.
-                let encoded_name = encode_uri_component(&entry.filename);
-                format!(
-                    "https://raw.githubusercontent.com/libretro-thumbnails/{}/{}/Named_Boxarts/{encoded_name}.png",
-                    url_name, branch
-                )
-            };
-
-            // Check if this variant is the currently active one.
+            let image_url = format!("/media/{system}/boxart/{name_str}");
             let is_active = active_box_art_url
-                .map(|url| {
-                    let expected = format!("/media/{system}/boxart/{}.png", entry.filename);
-                    url == expected
-                })
+                .map(|url| url == image_url)
                 .unwrap_or(false);
 
-            let region_label = extract_region_label(&entry.filename);
-
             variants.push(BoxArtVariant {
-                filename: entry.filename.clone(),
-                region_label,
-                is_downloaded,
+                filename: img_stem.to_string(),
+                region_label: extract_region_label(img_stem),
+                is_downloaded: true,
                 image_url,
                 is_active,
-                repo_url_name: url_name.clone(),
-                branch: branch.clone(),
+                repo_url_name: String::new(),
+                branch: String::new(),
             });
+        }
+    }
+
+    // ── Layer 2: Manifest index (undownloaded libretro variants) ─────
+    if let Some(repo_names) = thumbnails::thumbnail_repo_names(system) {
+        for repo_display in repo_names {
+            let url_name = thumbnails::repo_url_name(repo_display);
+            let source_name = thumbnails::libretro_source_name(repo_display);
+
+            let branch = MetadataDb::get_data_source(conn, &source_name)
+                .ok()
+                .flatten()
+                .and_then(|s| s.branch)
+                .unwrap_or_else(|| "master".to_string());
+
+            let entries = MetadataDb::query_thumbnail_index(
+                conn,
+                &source_name,
+                ThumbnailKind::Boxart.repo_dir(),
+            )
+            .unwrap_or_default();
+
+            for entry in &entries {
+                let entry_base = strip_tags(&entry.filename).to_lowercase();
+                if entry_base != base_title
+                    && !tilde_halves.contains(&entry_base)
+                    && !super::image_matching::base_titles_match_with_tags(
+                        &base_title,
+                        &thumb_name,
+                        &entry_base,
+                        &entry.filename,
+                    )
+                {
+                    continue;
+                }
+
+                // Skip symlinks — GitHub raw serves the symlink text, not the image.
+                if entry.symlink_target.is_some() {
+                    continue;
+                }
+
+                // Skip if already found on disk in Layer 1.
+                if !seen_stems.insert(entry.filename.clone()) {
+                    continue;
+                }
+
+                // Undownloaded variant — preview from GitHub raw.
+                let encoded_name = encode_uri_component(&entry.filename);
+                let image_url = format!(
+                    "https://raw.githubusercontent.com/libretro-thumbnails/{}/{}/Named_Boxarts/{encoded_name}.png",
+                    url_name, branch
+                );
+
+                variants.push(BoxArtVariant {
+                    filename: entry.filename.clone(),
+                    region_label: extract_region_label(&entry.filename),
+                    is_downloaded: false,
+                    image_url,
+                    is_active: false,
+                    repo_url_name: url_name.clone(),
+                    branch: branch.clone(),
+                });
+            }
         }
     }
 
@@ -999,7 +1029,11 @@ pub fn find_boxart_variants(
 }
 
 /// Count distinct box art variants for a ROM without building the full list.
-/// Faster than `find_boxart_variants()` when only the count is needed.
+/// Faster than `find_boxart_variants()` — queries manifest index only (no filesystem scan).
+///
+/// Used in game list views where per-ROM filesystem scans would be an N+1 problem.
+/// The full `find_boxart_variants()` (with filesystem scan) is only called on the
+/// game detail page.
 pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str) -> usize {
     use crate::thumbnails::{self, strip_tags, thumbnail_filename};
     use std::collections::HashSet;
@@ -1027,13 +1061,12 @@ pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str
     let thumb_name = thumbnail_filename(source);
     let base_title = strip_tags(&thumb_name).to_lowercase();
 
-    // For tilde dual-title ROMs, also match either half individually.
     let tilde_halves = super::image_matching::tilde_halves(source);
 
     let mut seen_targets: HashSet<String> = HashSet::new();
 
-    for display_name in repo_names {
-        let source_name = thumbnails::libretro_source_name(display_name);
+    for repo_display in repo_names {
+        let source_name = thumbnails::libretro_source_name(repo_display);
 
         let entries =
             MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
@@ -1053,18 +1086,11 @@ pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str
                 continue;
             }
 
-            // Skip symlink entries — they are duplicates of real entries and
-            // can't be previewed from GitHub raw (serves symlink text, not PNG).
             if entry.symlink_target.is_some() {
                 continue;
             }
 
-            let resolved = entry
-                .symlink_target
-                .as_deref()
-                .filter(|t| !t.is_empty())
-                .unwrap_or(&entry.filename);
-            seen_targets.insert(resolved.to_string());
+            seen_targets.insert(entry.filename.clone());
         }
     }
 

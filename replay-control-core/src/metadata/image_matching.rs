@@ -31,7 +31,7 @@ pub struct DirIndex {
 /// `dir` is the full path to the image directory.
 /// `kind` is the subdirectory label used in relative paths (e.g., "boxart", "snap").
 ///
-/// Only indexes `.png` files that are at least 200 bytes (to skip fake symlinks/stubs).
+/// Only indexes `.png` and `.jpg` files that are at least 200 bytes (to skip fake symlinks/stubs).
 pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
     let mut exact = HashMap::new();
     let mut exact_ci = HashMap::new();
@@ -43,7 +43,10 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if let Some(img_stem) = name_str.strip_suffix(".png") {
+            if let Some(img_stem) = name_str
+                .strip_suffix(".png")
+                .or_else(|| name_str.strip_suffix(".jpg"))
+            {
                 // Skip tiny files (fake symlinks / stubs).
                 if !is_valid_image(&entry.path()) {
                     continue;
@@ -127,11 +130,11 @@ pub fn find_best_match(
     if let Some(db_paths) = db_paths
         && let Some(db_path) = db_paths.get(rom_filename)
     {
-        let stem = db_path
-            .strip_prefix("boxart/")
-            .unwrap_or(db_path)
+        let without_prefix = db_path.strip_prefix("boxart/").unwrap_or(db_path);
+        let stem = without_prefix
             .strip_suffix(".png")
-            .unwrap_or(db_path);
+            .or_else(|| without_prefix.strip_suffix(".jpg"))
+            .unwrap_or(without_prefix);
         if index.exact.contains_key(stem) {
             return Some(db_path.clone());
         }
