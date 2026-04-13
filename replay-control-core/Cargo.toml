@@ -10,6 +10,7 @@ repository.workspace = true
 default = []
 metadata = ["dep:rusqlite", "dep:quick-xml"]
 
+
 [dependencies]
 phf = "0.13"
 serde = { workspace = true }

@@ -101,7 +101,6 @@ pub struct GameMetadata {
     pub players: Option<u8>,
     pub release_year: Option<u16>,
     pub cooperative: bool,
-    pub source: String,
     pub fetched_at: i64,
     pub box_art_path: Option<String>,
     pub screenshot_path: Option<String>,
@@ -170,7 +169,7 @@ pub struct GameEntry {
     /// Release year extracted from TOSEC filename tags or baked-in game_db.
     /// Enrichment may upgrade with LaunchBox release_year.
     pub release_year: Option<u16>,
-    /// Cooperative play flag (from LaunchBox or TGDB).
+    /// Cooperative play flag (from imported metadata).
     pub cooperative: bool,
 }
 
@@ -237,6 +236,29 @@ pub struct SystemMeta {
     pub rom_count: usize,
     pub total_size_bytes: u64,
 }
+
+/// SQL to create the `game_metadata` table. Single source of truth used by
+/// `init_tables()` and `validate_game_metadata_schema()`.
+const CREATE_GAME_METADATA_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS game_metadata (
+        system TEXT NOT NULL,
+        rom_filename TEXT NOT NULL,
+        description TEXT,
+        genre TEXT,
+        developer TEXT,
+        publisher TEXT,
+        release_year INTEGER,
+        rating REAL,
+        rating_count INTEGER,
+        cooperative INTEGER NOT NULL DEFAULT 0,
+        players INTEGER,
+        box_art_path TEXT,
+        screenshot_path TEXT,
+        title_path TEXT,
+        fetched_at INTEGER NOT NULL,
+        PRIMARY KEY (system, rom_filename)
+    );
+";
 
 /// SQL to create the `game_library` table. Single source of truth used by
 /// `init_tables()`, `validate_game_library_schema()`, and tests.
@@ -316,6 +338,26 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "cooperative",
 ];
 
+/// Expected columns in the `game_metadata` table.
+/// Used by [`MetadataDb::validate_game_metadata_schema`] to detect stale schemas.
+const GAME_METADATA_COLUMNS: &[&str] = &[
+    "system",
+    "rom_filename",
+    "description",
+    "genre",
+    "developer",
+    "publisher",
+    "release_year",
+    "rating",
+    "rating_count",
+    "cooperative",
+    "players",
+    "box_art_path",
+    "screenshot_path",
+    "title_path",
+    "fetched_at",
+];
+
 /// Stateless query namespace for the metadata SQLite database.
 ///
 /// All methods are associated functions that take `conn: &Connection` as their
@@ -345,7 +387,6 @@ impl MetadataDb {
 
         let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
         Self::init_tables(&conn)?;
-        Self::validate_game_library_schema(&conn);
 
         if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
             tracing::warn!("Metadata DB corrupt ({detail}), deleting and recreating");
@@ -361,29 +402,25 @@ impl MetadataDb {
     }
 
     /// Create all tables if they don't exist.
+    ///
+    /// Also validates existing schemas: if a table has missing or extra columns
+    /// (stale schema from a previous version), it's dropped and recreated.
     pub fn init_tables(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS game_metadata (
-                    system TEXT NOT NULL,
-                    rom_filename TEXT NOT NULL,
-                    description TEXT,
-                    genre TEXT,
-                    developer TEXT,
-                    publisher TEXT,
-                    release_year INTEGER,
-                    rating REAL,
-                    rating_count INTEGER,
-                    cooperative INTEGER NOT NULL DEFAULT 0,
-                    players INTEGER,
-                    box_art_path TEXT,
-                    screenshot_path TEXT,
-                    title_path TEXT,
-                    source TEXT NOT NULL,
-                    fetched_at INTEGER NOT NULL,
-                    PRIMARY KEY (system, rom_filename)
-                );
+        // Drop stale tables so CREATE TABLE IF NOT EXISTS recreates them.
+        if Self::table_needs_rebuild(conn, "game_library", GAME_LIBRARY_COLUMNS) {
+            let _ = conn.execute_batch(
+                "DROP TABLE IF EXISTS game_library; DROP TABLE IF EXISTS game_library_meta;",
+            );
+        }
+        if Self::table_needs_rebuild(conn, "game_metadata", GAME_METADATA_COLUMNS) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_metadata;");
+        }
 
-                CREATE TABLE IF NOT EXISTS data_sources (
+        conn.execute_batch(CREATE_GAME_METADATA_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create game_metadata: {e}")))?;
+
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS data_sources (
                     source_name TEXT PRIMARY KEY,
                     source_type TEXT NOT NULL,
                     version_hash TEXT,
@@ -505,55 +542,54 @@ impl MetadataDb {
         Ok(())
     }
 
-    /// Check that the `game_library` table has all expected columns.
-    ///
-    /// If any column is missing (schema outdated), drops the table and its
-    /// companion `game_library_meta` so the next scan rebuilds them.
-    /// This is safe because game_library is entirely derived data.
-    fn validate_game_library_schema(conn: &Connection) {
+    /// Check if a table's schema matches the expected columns.
+    /// Returns `true` if the table needs to be dropped and recreated.
+    fn table_needs_rebuild(conn: &Connection, table: &str, expected: &[&str]) -> bool {
         let actual: std::collections::HashSet<String> =
-            match conn.prepare("PRAGMA table_info(game_library)") {
+            match conn.prepare(&format!("PRAGMA table_info({table})")) {
                 Ok(mut stmt) => match stmt
                     .query_map([], |row| row.get::<_, String>(1))
                     .and_then(|rows| rows.collect::<std::result::Result<_, _>>())
                 {
                     Ok(cols) => cols,
                     Err(e) => {
-                        tracing::warn!("Failed to read game_library schema: {e}");
-                        return;
+                        tracing::warn!("Failed to read {table} schema: {e}");
+                        return false;
                     }
                 },
                 Err(e) => {
-                    tracing::warn!("Failed to prepare PRAGMA table_info: {e}");
-                    return;
+                    tracing::warn!("Failed to prepare PRAGMA table_info({table}): {e}");
+                    return false;
                 }
             };
 
         if actual.is_empty() {
-            // Table doesn't exist yet — nothing to validate.
-            return;
+            return false; // Table doesn't exist yet.
         }
 
-        let missing: Vec<&str> = GAME_LIBRARY_COLUMNS
+        let missing: Vec<&str> = expected
             .iter()
             .filter(|col| !actual.contains(**col))
             .copied()
             .collect();
 
-        if missing.is_empty() {
-            return;
+        if missing.is_empty() && actual.len() == expected.len() {
+            return false; // Schema matches exactly.
         }
 
-        tracing::warn!(
-            "game_library schema outdated, rebuilding table (missing columns: {})",
-            missing.join(", ")
-        );
-        let _ = conn.execute_batch(
-            "DROP TABLE IF EXISTS game_library; DROP TABLE IF EXISTS game_library_meta;",
-        );
-        // Recreate with current schema.
-        let _ = conn.execute_batch(CREATE_GAME_LIBRARY_SQL);
-        let _ = conn.execute_batch(CREATE_GAME_LIBRARY_META_SQL);
+        if missing.is_empty() {
+            tracing::warn!(
+                "{table} schema has extra columns ({} actual vs {} expected), rebuilding",
+                actual.len(),
+                expected.len(),
+            );
+        } else {
+            tracing::warn!(
+                "{table} schema outdated, rebuilding (missing: {})",
+                missing.join(", ")
+            );
+        }
+        true
     }
 
     /// Helper: convert a row to GameEntry (used by multiple queries).
@@ -641,7 +677,6 @@ mod tests {
             players: None,
             release_year: None,
             cooperative: false,
-            source: "test".into(),
             fetched_at: 0,
             box_art_path: box_art.map(String::from),
             screenshot_path: None,

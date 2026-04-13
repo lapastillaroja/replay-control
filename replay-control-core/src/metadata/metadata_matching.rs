@@ -103,7 +103,6 @@ pub fn match_roms_to_metadata(
                     players: donor_meta.players,
                     release_year: donor_meta.release_year,
                     cooperative: donor_meta.cooperative,
-                    source: "launchbox-auto".to_string(),
                     fetched_at: now,
                     box_art_path: None,
                     screenshot_path: None,
@@ -131,7 +130,6 @@ mod tests {
             players: None,
             release_year: None,
             cooperative: false,
-            source: "launchbox".to_string(),
             fetched_at: 0,
             box_art_path: None,
             screenshot_path: None,
@@ -180,7 +178,6 @@ mod tests {
             result[0].metadata.description.as_deref(),
             Some("A classic platformer")
         );
-        assert_eq!(result[0].metadata.source, "launchbox-auto");
     }
 
     #[test]

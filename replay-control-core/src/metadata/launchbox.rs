@@ -178,7 +178,6 @@ pub fn import_launchbox(
                     players: game.max_players,
                     release_year: game.release_year,
                     cooperative: game.cooperative,
-                    source: "launchbox".to_string(),
                     fetched_at: now,
                     box_art_path: None,
                     screenshot_path: None,
