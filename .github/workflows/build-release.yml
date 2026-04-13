@@ -3,6 +3,12 @@ name: Build Release
 on:
   push:
     tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag to build and release (e.g. v0.3.0)'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
@@ -82,5 +88,5 @@ jobs:
             replay-site.tar.gz
             install.sh
             checksums.sha256
-          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
+          prerelease: ${{ contains(inputs.tag || github.ref_name, 'beta') || contains(inputs.tag || github.ref_name, 'alpha') }}
           generate_release_notes: true

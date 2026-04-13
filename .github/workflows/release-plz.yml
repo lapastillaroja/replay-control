@@ -34,6 +34,9 @@ jobs:
   # Release-plz checks if the current version already has a tag — if so, no-op.
   release:
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release-plz.outputs.releases_created }}
+      tag: ${{ steps.release-plz.outputs.releases_created && fromJSON(steps.release-plz.outputs.releases)[0].tag || '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -41,8 +44,18 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: release-plz/action@v0.5
+      - id: release-plz
+        uses: release-plz/action@v0.5
         with:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Chain the build workflow — tags created via GitHub API don't trigger push:tags events
+  build:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    uses: ./.github/workflows/build-release.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
