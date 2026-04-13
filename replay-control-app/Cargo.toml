@@ -5,7 +5,6 @@ edition = "2024"
 description = "Replay Control web app for RePlayOS"
 license.workspace = true
 repository.workspace = true
-publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]

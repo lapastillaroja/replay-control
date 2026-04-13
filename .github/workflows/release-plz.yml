@@ -9,28 +9,31 @@ permissions:
   contents: write
 
 jobs:
-  # On every push to main: create/update a Release PR with changelog + version bump
-  release-pr:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+  # DISABLED: release-plz release-pr fails with cargo package on workspaces
+  # with internal path dependencies in git_only mode.
+  # Tracking: https://github.com/release-plz/release-plz/issues/2595
+  # Fix PR: https://github.com/release-plz/release-plz/pull/2789
+  # Re-enable once the fix is released.
+  #
+  # release-pr:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #       with:
+  #         fetch-depth: 0
+  #
+  #     - uses: dtolnay/rust-toolchain@stable
+  #
+  #     - uses: release-plz/action@v0.5
+  #       with:
+  #         command: release-pr
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: release-plz/action@v0.5
-        with:
-          command: release-pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # On every push to main: create git tag + GitHub Release if version was bumped.
-  # Release-plz checks internally whether the current version already has a tag —
-  # if so, it's a no-op. No commit message filtering needed.
+  # Create git tag + GitHub Release when version is bumped manually.
+  # Release-plz checks if the current version already has a tag — if so, no-op.
   release:
     runs-on: ubuntu-latest
-    needs: release-pr
     steps:
       - uses: actions/checkout@v6
         with:

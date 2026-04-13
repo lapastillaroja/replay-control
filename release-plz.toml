@@ -19,7 +19,6 @@ name = "replay-control-app"
 name = "replay-control-core"
 # Core is a workspace dependency, not released independently
 release = false
-publish = false
 
 [[package]]
 name = "generate-test-fixtures"
