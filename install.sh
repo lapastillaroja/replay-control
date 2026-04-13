@@ -431,6 +431,12 @@ check_ssh_connectivity() {
 # ── SSH askpass setup ───────────────────────────────────────────────────────
 
 setup_askpass() {
+    if command -v sshpass &>/dev/null; then
+        USE_SSHPASS=true
+        return
+    fi
+
+    USE_SSHPASS=false
     ASKPASS_FILE="$(mktemp)"
     printf '#!/bin/sh\necho "%s"\n' "$PI_PASSWORD" > "$ASKPASS_FILE"
     chmod +x "$ASKPASS_FILE"
@@ -451,12 +457,20 @@ teardown_askpass() {
 
 run_ssh() {
     # shellcheck disable=SC2086
-    ssh $SSH_OPTS "${PI_USER}@${PI_ADDR}" "$@"
+    if ${USE_SSHPASS:-false}; then
+        sshpass -p "$PI_PASSWORD" ssh $SSH_OPTS "${PI_USER}@${PI_ADDR}" "$@"
+    else
+        ssh $SSH_OPTS "${PI_USER}@${PI_ADDR}" "$@"
+    fi
 }
 
 run_scp() {
     # shellcheck disable=SC2086
-    scp $SSH_OPTS "$@"
+    if ${USE_SSHPASS:-false}; then
+        sshpass -p "$PI_PASSWORD" scp $SSH_OPTS "$@"
+    else
+        scp $SSH_OPTS "$@"
+    fi
 }
 
 # ── Systemd unit contents ──────────────────────────────────────────────────
@@ -620,6 +634,7 @@ install_local() {
 install_ssh() {
     discover_pi
     check_ssh_connectivity
+    setup_askpass
     fetch_artifacts
 
     if $DRY_RUN; then
@@ -642,8 +657,6 @@ install_ssh() {
         dry "App would be available at: http://${PI_ADDR}:${DEFAULT_PORT}"
         return
     fi
-
-    setup_askpass
 
     info "Transferring files to Pi..."
 
