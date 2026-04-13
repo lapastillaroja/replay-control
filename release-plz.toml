@@ -1,6 +1,8 @@
 [workspace]
 # Don't publish to crates.io — this is a private application
 publish = false
+# Skip cargo package verification — path-only workspace deps fail verification
+publish_no_verify = true
 # Use git tags (not crates.io) to determine the current version
 git_only = true
 # Create git tags and GitHub Releases
