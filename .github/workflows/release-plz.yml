@@ -25,10 +25,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # When a release PR is merged (version bump committed): create git tag + GitHub Release
+  # On every push to main: create git tag + GitHub Release if version was bumped.
+  # Release-plz checks internally whether the current version already has a tag —
+  # if so, it's a no-op. No commit message filtering needed.
   release:
     runs-on: ubuntu-latest
-    if: "contains(github.event.head_commit.message, 'chore(release)') || contains(github.event.head_commit.message, 'chore: release')"
+    needs: release-pr
     steps:
       - uses: actions/checkout@v6
         with:
