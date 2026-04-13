@@ -3,6 +3,11 @@ name: Build Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and release (e.g. v0.3.0)'
+        required: true
 
 permissions:
   contents: write
@@ -12,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -69,6 +76,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: |
             replay-control-app-aarch64-linux.tar.gz
             replay-site.tar.gz
