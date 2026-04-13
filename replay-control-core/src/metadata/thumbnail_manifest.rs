@@ -916,18 +916,11 @@ pub fn find_boxart_variants(
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            let img_stem = if let Some(s) = name_str.strip_suffix(".png") {
-                s
-            } else if let Some(s) = name_str.strip_suffix(".jpg") {
-                s
-            } else {
+            let Some(img_stem) = thumbnails::strip_image_ext(&name_str) else {
                 continue;
             };
 
-            if !thumbnails::is_valid_image(&entry.path()) {
-                continue;
-            }
-
+            // Check title match before stat (avoid I/O for non-matching files).
             let entry_base = strip_tags(img_stem).to_lowercase();
             if entry_base != base_title
                 && !tilde_halves.contains(&entry_base)
@@ -938,6 +931,11 @@ pub fn find_boxart_variants(
                     img_stem,
                 )
             {
+                continue;
+            }
+
+            // Stat only after title matched (avoids thousands of stat calls on exFAT).
+            if !thumbnails::is_valid_image(&entry.path()) {
                 continue;
             }
 

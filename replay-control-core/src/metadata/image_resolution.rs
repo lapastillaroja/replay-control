@@ -69,7 +69,7 @@ pub fn build_image_index(
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if let Some(img_stem) = name_str.strip_suffix(".png") {
+            if let Some(img_stem) = thumbnails::strip_image_ext(&name_str) {
                 if dir_index.exact.contains_key(img_stem) {
                     continue; // Already indexed by build_dir_index.
                 }

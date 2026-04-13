@@ -101,7 +101,7 @@ pub fn scan_system_images(
         for file in files.flatten() {
             let name = file.file_name();
             let name_str = name.to_string_lossy();
-            if let Some(stem) = name_str.strip_suffix(".png")
+            if let Some(stem) = strip_image_ext(&name_str)
                 && is_valid_image(&file.path())
             {
                 entries.push((kind.repo_dir().to_string(), stem.to_string(), None));
@@ -184,6 +184,12 @@ pub fn thumbnail_filename(rom_stem: &str) -> String {
 // Re-export title utilities from their canonical home in `title_utils`.
 // These were originally defined here but moved to `title_utils` for broader reuse.
 pub use crate::title_utils::{base_title, strip_tags, strip_version};
+
+/// Strip a `.png` or `.jpg` extension from a filename, returning the stem.
+pub fn strip_image_ext(name: &str) -> Option<&str> {
+    name.strip_suffix(".png")
+        .or_else(|| name.strip_suffix(".jpg"))
+}
 
 /// Quick check that a file is likely a real image (not a git fake-symlink text file).
 pub fn is_valid_image(path: &Path) -> bool {
@@ -272,7 +278,7 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if let Some(img_stem) = name.strip_suffix(".png") {
+            if let Some(img_stem) = strip_image_ext(&name) {
                 // 1b. Case-insensitive exact match (preserves region tags)
                 if img_stem.to_lowercase() == thumb_lower {
                     let path = entry.path();

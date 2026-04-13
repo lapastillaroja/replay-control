@@ -6,7 +6,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::thumbnails::{base_title, is_valid_image, strip_version, thumbnail_filename};
+use crate::thumbnails::{
+    base_title, is_valid_image, strip_image_ext, strip_version, thumbnail_filename,
+};
 use crate::title_utils::{normalize_aggressive, strip_n64dd_prefix, strip_tags};
 
 /// Directory index for matching ROM filenames to image files.
@@ -43,10 +45,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if let Some(img_stem) = name_str
-                .strip_suffix(".png")
-                .or_else(|| name_str.strip_suffix(".jpg"))
-            {
+            if let Some(img_stem) = strip_image_ext(&name_str) {
                 // Skip tiny files (fake symlinks / stubs).
                 if !is_valid_image(&entry.path()) {
                     continue;
@@ -131,10 +130,7 @@ pub fn find_best_match(
         && let Some(db_path) = db_paths.get(rom_filename)
     {
         let without_prefix = db_path.strip_prefix("boxart/").unwrap_or(db_path);
-        let stem = without_prefix
-            .strip_suffix(".png")
-            .or_else(|| without_prefix.strip_suffix(".jpg"))
-            .unwrap_or(without_prefix);
+        let stem = strip_image_ext(without_prefix).unwrap_or(without_prefix);
         if index.exact.contains_key(stem) {
             return Some(db_path.clone());
         }
