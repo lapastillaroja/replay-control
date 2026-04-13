@@ -44,14 +44,19 @@ async fn home_page_returns_200_with_replay_control() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn more_page_returns_200() {
+async fn settings_page_returns_200() {
     setup();
     let tmp = create_test_storage();
     let state = test_app_state(&tmp);
     let app = test_router(state);
 
     let resp = app
-        .oneshot(Request::builder().uri("/more").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/settings")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 

@@ -22,7 +22,7 @@ from conftest import (
     click_check,
     click_update_now,
     get_pi_version,
-    goto_more,
+    goto_settings,
     set_channel,
     set_mock_downloads,
     ssh_cmd,
@@ -33,7 +33,7 @@ from conftest import (
 class TestUpdateNow:
 
     def test_update_now_navigates_to_updating(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
         wait_for_banner(page)
         click_update_now(page)
@@ -45,12 +45,12 @@ class TestUpdatingPage:
         set_channel("stable")
         page.goto(f"{PI_URL}/updating", wait_until="load", timeout=30000)
 
-        expect(page.locator(f"{SEL_UPDATING_PAGE} a[href='/more']")).to_be_visible(timeout=10000)
+        expect(page.locator(f"{SEL_UPDATING_PAGE} a[href='/settings']")).to_be_visible(timeout=10000)
 
     @pytest.mark.slow
     def test_updating_shows_downloading(self, clean_pi, page):
         """WARNING: This triggers a real update and replaces the Pi binary."""
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
         wait_for_banner(page)
         click_update_now(page)
@@ -73,7 +73,7 @@ class TestUpdatingPage:
         """
         initial_version = get_pi_version()["version"]
 
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
         wait_for_banner(page)
         click_update_now(page)
@@ -88,7 +88,7 @@ class TestUpdatingPage:
 class TestUpdateCleanup:
 
     def test_temp_files_cleaned_after_update(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
         wait_for_banner(page)
         click_update_now(page)
@@ -116,7 +116,7 @@ class TestUpdateCleanup:
 class TestUpdateError:
 
     def test_network_error_during_download(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
         wait_for_banner(page)
 

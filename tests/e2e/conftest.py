@@ -125,10 +125,14 @@ def set_mock_downloads(fail: bool):
 # ── Helpers for tests ────────────────────────────────────────────
 
 
-def goto_more(page):
-    """Navigate to /more and wait for the update controls to be ready."""
-    page.goto(f"{PI_URL}/more", wait_until="load", timeout=30000)
+def goto_settings(page):
+    """Navigate to /settings and wait for the update controls to be ready."""
+    page.goto(f"{PI_URL}/settings", wait_until="load", timeout=30000)
     page.locator(SEL_CHANNEL_SELECT).wait_for(timeout=10000)
+
+
+# Backward-compatible alias
+goto_more = goto_settings
 
 
 def click_check(page):

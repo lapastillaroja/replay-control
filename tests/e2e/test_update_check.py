@@ -2,7 +2,7 @@
 Tests for Phase 1: Update check + notification.
 
 Verifies the update banner, check button, channel switching,
-and skip functionality on the More page.
+and skip functionality on the Settings page.
 """
 
 from playwright.sync_api import expect
@@ -14,7 +14,7 @@ from conftest import (
     SEL_CHANNEL_SELECT,
     click_check,
     get_pi_version,
-    goto_more,
+    goto_settings,
     set_channel,
     wait_for_banner,
 )
@@ -23,21 +23,21 @@ from conftest import (
 class TestUpdateBanner:
 
     def test_banner_appears_after_check(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
 
         banner = wait_for_banner(page)
         assert MOCK_BETA_VERSION in banner.text_content()
 
     def test_banner_appears_from_background_check(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
 
         # Wait for background check (up to 70s)
         banner = page.locator(SEL_BANNER)
         expect(banner).to_be_visible(timeout=70000)
 
     def test_banner_has_all_actions(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
         wait_for_banner(page)
 
@@ -49,7 +49,7 @@ class TestUpdateBanner:
 class TestSkipVersion:
 
     def test_skip_hides_banner(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
         banner = wait_for_banner(page)
 
@@ -60,7 +60,7 @@ class TestSkipVersion:
 class TestChannelSwitch:
 
     def test_switch_to_stable_shows_stable_update(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
         banner = wait_for_banner(page)
         assert MOCK_BETA_VERSION in banner.text_content()
@@ -73,7 +73,7 @@ class TestChannelSwitch:
 
     def test_switch_to_beta_shows_higher_version(self, clean_pi, page):
         set_channel("stable")
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
 
         banner = wait_for_banner(page)
@@ -89,7 +89,7 @@ class TestChannelSwitch:
 class TestCheckButton:
 
     def test_button_shows_checking_state(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
 
         # Verify check completes without error (banner appears)
@@ -97,7 +97,7 @@ class TestCheckButton:
 
     def test_check_on_stable_shows_stable_update(self, clean_pi, page):
         set_channel("stable")
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
 
         banner = wait_for_banner(page)
@@ -109,7 +109,7 @@ class TestVersionDisplay:
 
     def test_current_version_shown(self, clean_pi, page):
         version_info = get_pi_version()
-        goto_more(page)
+        goto_settings(page)
 
         version_el = page.locator(".update-version")
         expect(version_el).to_be_visible()
@@ -120,7 +120,7 @@ class TestStableUpdate:
 
     def test_stable_banner_shows_version(self, clean_pi, page):
         set_channel("stable")
-        goto_more(page)
+        goto_settings(page)
         click_check(page)
 
         banner = wait_for_banner(page)
@@ -132,7 +132,7 @@ class TestStableUpdate:
 class TestChannelDropdown:
 
     def test_channel_dropdown_visible(self, clean_pi, page):
-        goto_more(page)
+        goto_settings(page)
 
         select = page.locator(SEL_CHANNEL_SELECT)
         expect(select).to_be_visible(timeout=5000)
@@ -141,7 +141,7 @@ class TestChannelDropdown:
 
     def test_channel_switch_triggers_recheck(self, clean_pi, page):
         set_channel("stable")
-        goto_more(page)
+        goto_settings(page)
 
         expect(page.locator(SEL_BANNER)).not_to_be_visible(timeout=3000)
 
