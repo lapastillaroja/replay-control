@@ -112,6 +112,7 @@ pub struct UserPreferences {
     pub region: RegionPreference,
     pub region_secondary: Option<RegionPreference>,
     pub font_size: String,
+    pub setup_dismissed: bool,
 }
 
 impl Default for UserPreferences {
@@ -122,6 +123,7 @@ impl Default for UserPreferences {
             region: RegionPreference::default(),
             region_secondary: None,
             font_size: "normal".to_string(),
+            setup_dismissed: false,
         }
     }
 }
@@ -138,6 +140,7 @@ impl UserPreferences {
                 .region_preference_secondary()
                 .map(RegionPreference::from_str_value),
             font_size: settings.font_size().to_string(),
+            setup_dismissed: settings.setup_dismissed(),
         }
     }
 }
@@ -365,6 +368,20 @@ pub fn read_locale_preference(store: &SettingsStore) -> crate::locale::Locale {
 pub fn write_locale(store: &SettingsStore, locale: crate::locale::Locale) -> Result<()> {
     let mut settings = store.load();
     settings.set_locale(locale.code());
+    store.save(&settings)
+}
+
+/// Read the setup dismissed flag from settings.
+/// Returns `false` if the file doesn't exist or the key is missing.
+pub fn read_setup_dismissed(store: &SettingsStore) -> bool {
+    store.load().setup_dismissed()
+}
+
+/// Write the setup dismissed flag to settings.
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_setup_dismissed(store: &SettingsStore, dismissed: bool) -> Result<()> {
+    let mut settings = store.load();
+    settings.set_setup_dismissed(dismissed);
     store.save(&settings)
 }
 

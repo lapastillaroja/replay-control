@@ -151,3 +151,68 @@ async fn sfn_nonexistent_function_returns_error() {
 
     cleanup_test_storage(&tmp);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_get_setup_status_returns_200() {
+    setup();
+    let tmp = create_test_storage();
+    let state = test_app_state(&tmp);
+    let app = test_router(state);
+
+    let path = <server_fns::GetSetupStatus as ServerFn>::PATH;
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(path)
+                .header("content-type", "application/x-www-form-urlencoded")
+                .header("accept", "application/x-www-form-urlencoded")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "GetSetupStatus should return 200"
+    );
+
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(!body.is_empty(), "response body should not be empty");
+
+    cleanup_test_storage(&tmp);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sfn_dismiss_setup_returns_200() {
+    setup();
+    let tmp = create_test_storage();
+    let state = test_app_state(&tmp);
+    let app = test_router(state);
+
+    let path = <server_fns::DismissSetup as ServerFn>::PATH;
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(path)
+                .header("content-type", "application/x-www-form-urlencoded")
+                .header("accept", "application/x-www-form-urlencoded")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "DismissSetup should return 200"
+    );
+
+    cleanup_test_storage(&tmp);
+}

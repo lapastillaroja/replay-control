@@ -387,6 +387,17 @@ impl AppSettings {
         self.inner
             .set("analytics", if enabled { "true" } else { "false" });
     }
+
+    /// Whether the first-run setup checklist has been dismissed.
+    /// Default: false (show the setup banner on first run).
+    pub fn setup_dismissed(&self) -> bool {
+        self.inner.get("setup_dismissed") == Some("true")
+    }
+
+    pub fn set_setup_dismissed(&mut self, dismissed: bool) {
+        self.inner
+            .set("setup_dismissed", if dismissed { "true" } else { "false" });
+    }
 }
 
 #[cfg(test)]
@@ -528,6 +539,22 @@ mod tests {
         assert_eq!(loaded.skin(), Some(5));
         assert_eq!(loaded.language_primary(), Some("ja"));
         assert_eq!(loaded.update_channel(), "beta");
+    }
+
+    #[test]
+    fn setup_dismissed_defaults_to_false() {
+        let settings = AppSettings::empty();
+        assert!(!settings.setup_dismissed());
+    }
+
+    #[test]
+    fn setup_dismissed_roundtrip() {
+        let mut settings = AppSettings::empty();
+        assert!(!settings.setup_dismissed());
+        settings.set_setup_dismissed(true);
+        assert!(settings.setup_dismissed());
+        settings.set_setup_dismissed(false);
+        assert!(!settings.setup_dismissed());
     }
 
     #[test]

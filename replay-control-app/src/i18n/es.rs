@@ -523,5 +523,23 @@ pub fn translate(key: Key) -> &'static str {
             "El sistema está ocupado. Espera a que termine la operación actual."
         }
         Key::UpdatePageTitle => "Actualizando Replay Control",
+
+        // Setup checklist (first-run)
+        Key::SetupWelcome => "\u{00a1}Bienvenido a Replay Control!",
+        Key::SetupIntro => {
+            "Saca el m\u{00e1}ximo partido a tu biblioteca con estas descargas opcionales. Siempre puedes hacerlo despu\u{00e9}s desde la p\u{00e1}gina de Metadatos."
+        }
+        Key::SetupMetadataTitle => "Descargar descripciones y valoraciones",
+        Key::SetupMetadataHint => {
+            "~100 MB \u{2014} a\u{00f1}ade descripciones, g\u{00e9}neros, valoraciones y fechas"
+        }
+        Key::SetupThumbnailTitle => "Actualizar \u{00ed}ndice de car\u{00e1}tulas",
+        Key::SetupThumbnailHint => "Permite la descarga autom\u{00e1}tica de car\u{00e1}tulas",
+        Key::SetupSkip => "Omitir",
+        Key::SetupDismiss => "Cerrar",
+        Key::SetupComplete => "\u{00a1}Configuraci\u{00f3}n completada!",
+        Key::SetupInProgress => "En progreso\u{2026}",
+        Key::SetupTaskDone => "Hecho",
+        Key::SetupStart => "Iniciar",
     }
 }

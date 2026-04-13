@@ -4,6 +4,7 @@ use server_fn::ServerFnError;
 
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
+use crate::components::setup_checklist::SetupChecklist;
 use crate::components::system_card::SystemCard;
 use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
 use crate::server_fns;
@@ -19,6 +20,7 @@ pub fn HomePage() -> impl IntoView {
     let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations(6));
     view! {
         <div class="page home-page">
+            <SetupChecklist />
             <section class="section home-search-section">
                 <A href="/search" attr:class="search-page-input home-search-link">
                     <span class="home-search-placeholder">

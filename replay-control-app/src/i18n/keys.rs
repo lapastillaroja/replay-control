@@ -484,4 +484,18 @@ pub enum Key {
     UpdateBackToSettings,
     UpdateSystemBusy,
     UpdatePageTitle,
+
+    // Setup checklist (first-run)
+    SetupWelcome,
+    SetupIntro,
+    SetupMetadataTitle,
+    SetupMetadataHint,
+    SetupThumbnailTitle,
+    SetupThumbnailHint,
+    SetupSkip,
+    SetupDismiss,
+    SetupComplete,
+    SetupInProgress,
+    SetupTaskDone,
+    SetupStart,
 }

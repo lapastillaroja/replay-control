@@ -2,6 +2,133 @@
    Home — Hero card, recent scroll, stats grid, home search
    ================================================================ */
 
+/* Setup Checklist (first-run banner) */
+.setup-checklist {
+    background: var(--surface);
+    border: 1px solid var(--accent-border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 12px;
+}
+
+.setup-welcome {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 4px;
+}
+
+.setup-intro {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0 0 12px;
+}
+
+.setup-complete {
+    font-size: 0.9rem;
+    color: var(--success);
+    margin: 0;
+}
+
+.setup-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.setup-task {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+}
+
+.setup-task.done {
+    opacity: 0.6;
+}
+
+.setup-task-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.setup-task-title {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.setup-task-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.setup-task-action {
+    flex-shrink: 0;
+}
+
+.setup-task-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.setup-task-done {
+    font-size: 0.8rem;
+    color: var(--success);
+    font-weight: 500;
+}
+
+.setup-checklist .btn-accent {
+    padding: 6px 16px;
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-family: inherit;
+}
+
+.setup-checklist .btn-accent:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.setup-checklist .btn-accent:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.setup-checklist .btn-text {
+    padding: 6px 12px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.setup-checklist .btn-text:hover {
+    color: var(--text);
+}
+
+.setup-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
 /* Hero card (last played) */
 .hero-card {
     display: flex;

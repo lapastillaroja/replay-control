@@ -515,5 +515,23 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateBackToSettings => "Back to settings",
         Key::UpdateSystemBusy => "System is busy. Please wait for the current operation to finish.",
         Key::UpdatePageTitle => "Updating Replay Control",
+
+        // Setup checklist (first-run)
+        Key::SetupWelcome => "Welcome to Replay Control!",
+        Key::SetupIntro => {
+            "Get the most out of your library with these optional downloads. You can always do this later from the Metadata page."
+        }
+        Key::SetupMetadataTitle => "Download game descriptions & ratings",
+        Key::SetupMetadataHint => {
+            "~100 MB \u{2014} adds descriptions, genres, ratings, and release dates"
+        }
+        Key::SetupThumbnailTitle => "Update box art index",
+        Key::SetupThumbnailHint => "Enables automatic box art downloads",
+        Key::SetupSkip => "Skip",
+        Key::SetupDismiss => "Dismiss",
+        Key::SetupComplete => "Setup complete!",
+        Key::SetupInProgress => "In progress\u{2026}",
+        Key::SetupTaskDone => "Done",
+        Key::SetupStart => "Start",
     }
 }

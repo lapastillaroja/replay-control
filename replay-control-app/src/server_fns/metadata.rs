@@ -2,6 +2,87 @@ use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core::metadata_db::MetadataDb;
 
+/// Status of the first-run setup checklist.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupStatus {
+    /// Whether the setup card should be shown.
+    pub show_setup: bool,
+    /// LaunchBox metadata has been imported.
+    pub has_metadata: bool,
+    /// Thumbnail index has entries.
+    pub has_thumbnail_index: bool,
+}
+
+/// Check whether the first-run setup card should be displayed.
+/// Fast path: if the user has dismissed it, returns immediately (no DB I/O).
+/// Pass `force: true` (via `/?setup` query param) to always show the card.
+#[server(prefix = "/sfn")]
+pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+
+    if force {
+        return Ok(SetupStatus {
+            show_setup: true,
+            has_metadata: false,
+            has_thumbnail_index: false,
+        });
+    }
+
+    // Fast path: check cached prefs (in-memory, no file/DB I/O).
+    let dismissed = state
+        .prefs
+        .read()
+        .expect("prefs lock poisoned")
+        .setup_dismissed;
+    if dismissed {
+        return Ok(SetupStatus {
+            show_setup: false,
+            has_metadata: true,
+            has_thumbnail_index: true,
+        });
+    }
+
+    // Slow path: check DB for metadata and thumbnail index presence.
+    let has_metadata = state
+        .metadata_pool
+        .read(|conn| !MetadataDb::is_empty(conn).unwrap_or(true))
+        .await
+        .unwrap_or(false);
+
+    let has_thumbnail_index = state
+        .metadata_pool
+        .read(|conn| {
+            MetadataDb::get_data_source_stats(conn, "libretro-thumbnails")
+                .map(|s| s.total_entries > 0)
+                .unwrap_or(false)
+        })
+        .await
+        .unwrap_or(false);
+
+    let show_setup = !has_metadata || !has_thumbnail_index;
+
+    Ok(SetupStatus {
+        show_setup,
+        has_metadata,
+        has_thumbnail_index,
+    })
+}
+
+/// Dismiss the first-run setup checklist. Persists to settings.cfg and
+/// updates the in-memory cached prefs so subsequent SSR renders skip the DB check.
+#[server(prefix = "/sfn")]
+pub async fn dismiss_setup() -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    replay_control_core::settings::write_setup_dismissed(&state.settings, true)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    state
+        .prefs
+        .write()
+        .expect("prefs lock poisoned")
+        .setup_dismissed = true;
+    Ok(())
+}
+
 // Re-export progress types from the activity module (SSR) or types module (WASM).
 #[cfg(feature = "ssr")]
 pub use crate::api::activity::{

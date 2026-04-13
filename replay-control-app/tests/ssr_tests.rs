@@ -122,3 +122,30 @@ async fn style_css_endpoint_returns_css() {
 
     cleanup_test_storage(&tmp);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn home_page_contains_setup_checklist_on_fresh_storage() {
+    setup();
+    let tmp = create_test_storage();
+    let state = test_app_state(&tmp);
+    let app = test_router(state);
+
+    let resp = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    // The setup checklist should be rendered on a fresh storage
+    // (no metadata imported, no thumbnail index).
+    assert!(
+        html.contains("setup-checklist"),
+        "home page on fresh storage should contain the setup checklist"
+    );
+
+    cleanup_test_storage(&tmp);
+}

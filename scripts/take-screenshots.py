@@ -22,6 +22,8 @@ DESKTOP = {"width": 1280, "height": 800}
 MOBILE = {"width": 375, "height": 812}
 
 PAGES = [
+    # First-run setup checklist (force-shown via ?setup)
+    {"name": "setup", "path": "/?setup", "wait": ".setup-checklist", "extra_wait": 3000},
     # Home & navigation
     {"name": "home", "path": "/", "wait": "main"},
     # System browser

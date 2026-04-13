@@ -515,5 +515,21 @@ pub fn translate(key: Key) -> &'static str {
         Key::UpdateBackToSettings => "設定に戻る",
         Key::UpdateSystemBusy => "システムがビジーです。現在の操作が完了するまでお待ちください。",
         Key::UpdatePageTitle => "Replay Controlをアップデート中",
+
+        // Setup checklist (first-run)
+        Key::SetupWelcome => "Replay Controlへようこそ！",
+        Key::SetupIntro => {
+            "オプションのダウンロードでライブラリを最大限に活用しましょう。メタデータページからいつでも実行できます。"
+        }
+        Key::SetupMetadataTitle => "ゲーム情報と評価をダウンロード",
+        Key::SetupMetadataHint => "約100 MB — 説明、ジャンル、評価、発売日を追加",
+        Key::SetupThumbnailTitle => "カバーアートのインデックスを更新",
+        Key::SetupThumbnailHint => "カバーアートの自動ダウンロードを有効にします",
+        Key::SetupSkip => "スキップ",
+        Key::SetupDismiss => "閉じる",
+        Key::SetupComplete => "セットアップ完了！",
+        Key::SetupInProgress => "処理中\u{2026}",
+        Key::SetupTaskDone => "完了",
+        Key::SetupStart => "開始",
     }
 }
