@@ -1,5 +1,7 @@
 //! Operations on the `game_library` and `game_library_meta` tables.
 
+use std::collections::HashMap;
+
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{Error, Result};
@@ -646,6 +648,27 @@ impl MetadataDb {
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
         let rows = stmt
             .query_map(params![system], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+        Ok(rows.flatten().collect())
+    }
+
+    /// Get `rom_filename → hash_matched_name` for ROMs that have a CRC match.
+    ///
+    /// Used by enrichment to try No-Intro canonical names as thumbnail lookup keys.
+    pub fn visible_hash_matched_names(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<HashMap<String, String>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename, hash_matched_name FROM game_library
+                 WHERE system = ?1 AND hash_matched_name IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(|e| Error::Other(format!("Query failed: {e}")))?;
         Ok(rows.flatten().collect())
     }

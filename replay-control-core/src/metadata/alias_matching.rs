@@ -356,6 +356,7 @@ mod tests {
             series_key: String::new(),
             developer: String::new(),
             release_year: None,
+            cooperative: false,
         }
     }
 

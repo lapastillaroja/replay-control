@@ -120,6 +120,20 @@ fn build_single_entry(
     // Look up hash result for this ROM file.
     let hash = hash_results.get(rom_filename);
 
+    // Override display_name with the No-Intro canonical name from CRC hash matching.
+    // More authoritative than filename-derived names (e.g., "Dongguri Techi Jakjeon (Korea)"
+    // instead of "Dong Gu Ri Te Chi Jak Jeon (Korea)"). Excluded for translations/hacks/specials
+    // whose filename-derived names carry useful tags (e.g., "PT-BR Translation").
+    let display_name = if !is_translation
+        && !is_hack
+        && !is_special
+        && let Some(matched) = hash.and_then(|h| h.matched_name.as_deref())
+    {
+        Some(matched.to_string())
+    } else {
+        r.game.display_name.clone()
+    };
+
     // Compute series_key from base_title for franchise grouping.
     let series_key = title_utils::series_key(&base_title);
 
@@ -127,7 +141,7 @@ fn build_single_entry(
         system: r.game.system.clone(),
         rom_filename: rom_filename.clone(),
         rom_path: r.game.rom_path.clone(),
-        display_name: r.game.display_name.clone(),
+        display_name,
         size_bytes: r.size_bytes,
         is_m3u: r.is_m3u,
         box_art_url: r.box_art_url.clone(),

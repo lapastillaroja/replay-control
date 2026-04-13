@@ -16,6 +16,7 @@ use crate::thumbnail_manifest::ManifestMatch;
 // Re-export image resolution types so existing `use enrichment::*` paths keep working.
 pub use crate::image_resolution::{
     BoxArtResult, ImageIndex, build_image_index, format_box_art_url, resolve_box_art,
+    resolve_box_art_with_hash,
 };
 
 /// Batched metadata from LaunchBox import, keyed by ROM filename.
@@ -118,13 +119,18 @@ pub fn enrich_system(
         };
     }
 
+    // Load hash_matched_names for No-Intro-based thumbnail fallback.
+    let hash_matched_names: HashMap<String, String> =
+        MetadataDb::visible_hash_matched_names(conn, system).unwrap_or_default();
+
     // Build enrichment entries + collect manifest download requests.
     let mut manifest_downloads: Vec<(String, ManifestMatch)> = Vec::new();
 
     let enrichments: Vec<BoxArtGenreRating> = rom_filenames
         .iter()
         .filter_map(|filename| {
-            let art = match resolve_box_art(index, system, filename) {
+            let hash_name = hash_matched_names.get(filename).map(|s| s.as_str());
+            let art = match resolve_box_art_with_hash(index, system, filename, hash_name) {
                 BoxArtResult::Found(path) => Some(format_box_art_url(system, &path)),
                 BoxArtResult::ManifestHit(m) => {
                     manifest_downloads.push((filename.clone(), m.clone()));
@@ -482,7 +488,18 @@ mod tests {
         // Insert same game into game_metadata with cooperative = true.
         let meta = crate::metadata_db::GameMetadata {
             cooperative: true,
-            ..crate::metadata_db::tests::make_metadata(None)
+            description: None,
+            rating: None,
+            rating_count: None,
+            publisher: None,
+            developer: None,
+            genre: None,
+            players: None,
+            release_year: None,
+            fetched_at: 0,
+            box_art_path: None,
+            screenshot_path: None,
+            title_path: None,
         };
         MetadataDb::bulk_upsert(
             &mut conn,

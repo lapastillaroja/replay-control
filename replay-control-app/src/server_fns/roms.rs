@@ -231,7 +231,15 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);
 
-    let game = resolve_game_info(&system, &filename, &rom.game.rom_path).await;
+    let mut game = resolve_game_info(&system, &filename, &rom.game.rom_path).await;
+
+    // Prefer the DB display_name (enriched with hash_matched_name) over the
+    // filename-derived one from resolve_game_info, when they differ.
+    if let Some(ref db_name) = rom.game.display_name
+        && db_name != &game.display_name
+    {
+        game.display_name = db_name.clone();
+    }
     #[cfg(feature = "ssr")]
     tracing::debug!(
         elapsed_ms = fn_start.elapsed().as_millis(),

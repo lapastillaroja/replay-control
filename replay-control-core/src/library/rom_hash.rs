@@ -33,6 +33,8 @@ const HASH_ELIGIBLE_SYSTEMS: &[&str] = &[
     "sega_sms",
     "sega_smd",
     "sega_gg",
+    "sega_sg",
+    "sega_32x",
 ];
 
 /// Check whether a system is eligible for CRC32 hash-based identification.
@@ -234,6 +236,8 @@ mod tests {
         assert!(is_hash_eligible("sega_sms"));
         assert!(is_hash_eligible("sega_smd"));
         assert!(is_hash_eligible("sega_gg"));
+        assert!(is_hash_eligible("sega_sg"));
+        assert!(is_hash_eligible("sega_32x"));
     }
 
     #[test]

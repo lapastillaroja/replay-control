@@ -185,6 +185,20 @@ pub fn resolve_box_art<'a>(
     system: &str,
     rom_filename: &str,
 ) -> BoxArtResult<'a> {
+    resolve_box_art_with_hash(index, system, rom_filename, None)
+}
+
+/// Resolve box art with an optional `hash_matched_name` fallback.
+///
+/// When the filename-based lookup fails but a No-Intro `hash_matched_name` is available,
+/// retries the lookup using that name. This works well because libretro-thumbnails repos
+/// use No-Intro naming, so the hash_matched_name will often match directly.
+pub fn resolve_box_art_with_hash<'a>(
+    index: &'a ImageIndex,
+    system: &str,
+    rom_filename: &str,
+    hash_matched_name: Option<&str>,
+) -> BoxArtResult<'a> {
     let stem = rom_filename
         .rfind('.')
         .map(|i| &rom_filename[..i])
@@ -238,6 +252,25 @@ pub fn resolve_box_art<'a>(
         if let Some(ref manifest) = index.manifest
             && let Some(m) =
                 thumbnail_manifest::find_in_manifest(manifest, &parent_filename, system)
+        {
+            return BoxArtResult::ManifestHit(m);
+        }
+    }
+
+    // Hash-matched name fallback: if we have a No-Intro canonical name from CRC matching,
+    // try it as an alternative ROM filename. This works for all ROMs (including translations/
+    // hacks/specials — showing the original game's box art is correct).
+    if let Some(matched_name) = hash_matched_name {
+        let synthetic_filename = format!("{matched_name}.rom");
+        if let Some(path) =
+            image_matching::find_best_match(&index.dir_index, &synthetic_filename, None, db_paths)
+        {
+            return BoxArtResult::Found(path);
+        }
+        // Also try manifest with hash_matched_name.
+        if let Some(ref manifest) = index.manifest
+            && let Some(m) =
+                thumbnail_manifest::find_in_manifest(manifest, &synthetic_filename, system)
         {
             return BoxArtResult::ManifestHit(m);
         }
@@ -376,6 +409,62 @@ mod tests {
             }
             _ => panic!("Expected clone fallback to find parent art for pacman → puckman"),
         }
+    }
+
+    #[test]
+    fn hash_matched_name_finds_art_when_filename_misses() {
+        // ROM "Dong Gu Ri Te Chi Jak Jeon (Korea).md" doesn't match any thumbnail,
+        // but hash_matched_name "Dongguri Techi Jakjeon (Korea)" does.
+        let thumb_stem = "Dongguri Techi Jakjeon (Korea)";
+        let path = format!("boxart/{thumb_stem}.png");
+        let index = image_index_from(&[(thumb_stem, &path)]);
+
+        // Without hash: no match.
+        let result = resolve_box_art(&index, "sega_smd", "Dong Gu Ri Te Chi Jak Jeon (Korea).md");
+        assert!(
+            matches!(result, BoxArtResult::NotFound),
+            "Filename alone should not match"
+        );
+
+        // With hash: finds art via fallback.
+        let result = resolve_box_art_with_hash(
+            &index,
+            "sega_smd",
+            "Dong Gu Ri Te Chi Jak Jeon (Korea).md",
+            Some("Dongguri Techi Jakjeon (Korea)"),
+        );
+        match result {
+            BoxArtResult::Found(found_path) => assert_eq!(found_path, path),
+            _ => panic!("Hash fallback should find art for mismatched filename"),
+        }
+    }
+
+    #[test]
+    fn hash_matched_name_not_used_when_filename_matches() {
+        // When the filename already matches, the hash fallback shouldn't change the result.
+        let thumb_stem = "Sonic the Hedgehog (USA)";
+        let path = format!("boxart/{thumb_stem}.png");
+        let index = image_index_from(&[(thumb_stem, &path)]);
+
+        let result = resolve_box_art_with_hash(
+            &index,
+            "sega_smd",
+            "Sonic the Hedgehog (USA).md",
+            Some("Sonic the Hedgehog (USA)"),
+        );
+        match result {
+            BoxArtResult::Found(found_path) => assert_eq!(found_path, path),
+            _ => panic!("Direct filename match should still work"),
+        }
+    }
+
+    #[test]
+    fn hash_matched_name_none_returns_not_found() {
+        // No art on disk, no hash — should be NotFound.
+        let index = image_index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
+
+        let result = resolve_box_art_with_hash(&index, "sega_smd", "Unknown ROM (Korea).md", None);
+        assert!(matches!(result, BoxArtResult::NotFound));
     }
 
     #[test]
