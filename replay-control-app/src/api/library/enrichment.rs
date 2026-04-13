@@ -20,7 +20,7 @@ impl LibraryService {
         // Build a temporary image index for this enrichment run (not cached).
         let index = build_image_index(state, &system).await;
 
-        // Auto-match new ROMs against existing LaunchBox metadata.
+        // Auto-match new ROMs against existing metadata by normalized title.
         let auto_matched_ratings = self.auto_match_metadata(state, &system).await;
 
         // Run the pure enrichment pipeline in a single DB read.

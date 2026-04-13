@@ -314,7 +314,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreMetadata => "Game Metadata",
         Key::MetadataTitle => "Game Data",
         Key::MetadataDataSources => "Data Sources",
-        Key::MetadataDescriptionsLaunchbox => "Descriptions & Ratings (LaunchBox)",
+        Key::MetadataDescriptionsRatings => "Descriptions & Ratings",
         Key::MetadataNoData => "Not imported yet",
         Key::MetadataEntriesSummary => "entries",
         Key::MetadataLastUpdated => "last updated",

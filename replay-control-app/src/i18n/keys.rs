@@ -299,7 +299,7 @@ pub enum Key {
     MoreMetadata,
     MetadataTitle,
     MetadataDataSources,
-    MetadataDescriptionsLaunchbox,
+    MetadataDescriptionsRatings,
     MetadataNoData,
     MetadataEntriesSummary,
     MetadataLastUpdated,

@@ -264,10 +264,10 @@ pub fn MetadataPage() -> impl IntoView {
                     })}
                 </Suspense>
 
-                // Descriptions & Ratings (LaunchBox)
+                // Descriptions & Ratings
                 <div class="data-source-card">
                     <div class="data-source-header">
-                        <span class="data-source-name">{move || t(i18n.locale.get(), Key::MetadataDescriptionsLaunchbox)}</span>
+                        <span class="data-source-name">{move || t(i18n.locale.get(), Key::MetadataDescriptionsRatings)}</span>
                     </div>
                     <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
                         {move || Suspend::new(async move {
@@ -811,9 +811,8 @@ fn DataManagementSection(
         leptos::task::spawn_local(async move {
             match server_fns::clear_images().await {
                 Ok(()) => {
-                    images_result.set(Some(
-                        t(i18n.locale.get(), Key::MetadataClearedImages).to_string(),
-                    ));
+                    let locale = i18n.locale.get_untracked();
+                    images_result.set(Some(t(locale, Key::MetadataClearedImages).to_string()));
                 }
                 Err(e) => {
                     images_result.set(Some(format!("Error: {e}")));

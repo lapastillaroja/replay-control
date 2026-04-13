@@ -247,7 +247,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
             })
             .collect();
 
-    // Count box art variants (lightweight — only needs the thumbnail index).
+    // Count box art variants (manifest index only — no filesystem scan to avoid N+1).
     let variant_count = state
         .metadata_pool
         .read({
