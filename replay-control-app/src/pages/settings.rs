@@ -288,7 +288,7 @@ fn ScrollSpy(#[allow(unused_variables)] active_section: RwSignal<String>) -> imp
             let Some(window) = web_sys::window() else {
                 return;
             };
-            let Some(doc) = window.document() else {
+            let Some(_doc) = window.document() else {
                 return;
             };
 

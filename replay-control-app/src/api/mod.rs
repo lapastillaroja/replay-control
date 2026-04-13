@@ -693,10 +693,10 @@ impl AppState {
         );
 
         // On Pi (no --storage-path): migrate old per-storage settings if needed.
-        if storage_path_override.is_none() {
-            if let Some(ref s) = storage {
-                let _ = settings.migrate_from_storage(&s.root);
-            }
+        if storage_path_override.is_none()
+            && let Some(ref s) = storage
+        {
+            let _ = settings.migrate_from_storage(&s.root);
         }
 
         // Load all user preferences from settings.cfg once at startup.
