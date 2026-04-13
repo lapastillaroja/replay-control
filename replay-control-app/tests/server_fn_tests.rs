@@ -168,7 +168,7 @@ async fn sfn_get_setup_status_returns_200() {
                 .uri(path)
                 .header("content-type", "application/x-www-form-urlencoded")
                 .header("accept", "application/x-www-form-urlencoded")
-                .body(Body::empty())
+                .body(Body::from("force=false"))
                 .unwrap(),
         )
         .await
