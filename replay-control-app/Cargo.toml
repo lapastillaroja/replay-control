@@ -1,6 +1,6 @@
 [package]
 name = "replay-control-app"
-version = "0.3.0"
+version = "0.3.1-beta.1"
 edition = "2024"
 description = "Replay Control web app for RePlayOS"
 license.workspace = true
