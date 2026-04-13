@@ -248,10 +248,9 @@ fn queue_on_demand_download(
     let pending = state.pending_downloads.clone();
     let metadata_pool = state.metadata_pool.clone();
     let response_cache = state.response_cache.clone();
-    let rt_handle = tokio::runtime::Handle::current();
 
-    std::thread::spawn(move || {
-        match download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir()) {
+    tokio::spawn(async move {
+        match download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir()).await {
             Ok(bytes) => {
                 if let Err(e) = save_thumbnail(
                     &storage_root,
@@ -271,16 +270,14 @@ fn queue_on_demand_download(
                     );
                     let sys = system.clone();
                     let rom = rom_filename.clone();
-                    let _ = rt_handle.block_on(
-                        metadata_pool.write(move |conn| {
-                            if let Err(e) = conn.execute(
-                                "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
-                                [&url, &sys, &rom],
-                            ) {
-                                tracing::error!("Failed to save box art URL for {sys}/{rom}: {e}");
-                            }
-                        }),
-                    );
+                    let _ = metadata_pool.write(move |conn| {
+                        if let Err(e) = conn.execute(
+                            "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
+                            [&url, &sys, &rom],
+                        ) {
+                            tracing::error!("Failed to save box art URL for {sys}/{rom}: {e}");
+                        }
+                    }).await;
                     // Clear response cache so next page load picks up the new art.
                     response_cache.invalidate_all();
                 }

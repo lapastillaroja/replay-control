@@ -28,6 +28,9 @@ pub mod settings;
 pub use settings::skins;
 pub mod update;
 
+#[cfg(feature = "http")]
+pub mod http;
+
 mod capture;
 pub use capture::screenshots;
 pub use capture::video_url;

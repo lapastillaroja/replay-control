@@ -181,7 +181,7 @@ pub async fn search_game_videos(
     // Try Piped instances
     for base_url in &piped_instances {
         let api_url = format!("{base_url}/search?q={encoded_query}&filter=videos");
-        match curl_get_json(&api_url, 8).await {
+        match http_get_json(&api_url, 8).await {
             Ok(body) => {
                 let items = body
                     .get("items")
@@ -206,7 +206,7 @@ pub async fn search_game_videos(
     // Try Invidious instances
     for base_url in &invidious_instances {
         let api_url = format!("{base_url}/api/v1/search?q={encoded_query}&type=video");
-        match curl_get_json(&api_url, 8).await {
+        match http_get_json(&api_url, 8).await {
             Ok(body) => {
                 let items = match body.as_array() {
                     Some(arr) => arr.clone(),
@@ -233,31 +233,15 @@ pub async fn search_game_videos(
     ))
 }
 
-/// Fetch a URL with curl and parse the response as JSON.
+/// Fetch a URL and parse the response as JSON.
 #[cfg(feature = "ssr")]
-async fn curl_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
-    let output = tokio::process::Command::new("curl")
-        .args([
-            "-sSL", // silent, show errors, follow redirects
-            "--connect-timeout",
-            "5", // connection timeout
-            "--max-time",
-            &timeout_secs.to_string(), // total timeout
-            "-H",
-            "Accept: application/json", // explicit accept header
-            url,
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("curl spawn failed: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("curl failed (exit {}): {stderr}", output.status));
-    }
-    if output.stdout.is_empty() {
-        return Err("empty response".to_string());
-    }
-    serde_json::from_slice(&output.stdout).map_err(|e| format!("JSON parse error: {e}"))
+async fn http_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
+    replay_control_core::http::get_json_with_timeout(
+        url,
+        std::time::Duration::from_secs(timeout_secs),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(feature = "ssr")]

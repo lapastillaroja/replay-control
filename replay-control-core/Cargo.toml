@@ -9,6 +9,7 @@ repository.workspace = true
 [features]
 default = []
 metadata = ["dep:rusqlite", "dep:quick-xml"]
+http = ["dep:reqwest", "dep:tokio"]
 
 
 [dependencies]
@@ -20,6 +21,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 rusqlite = { version = "0.38", features = ["bundled"], optional = true }
 quick-xml = { version = "0.39", optional = true }
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["fs", "sync"], optional = true }
 crc32fast = "1"
 semver = "1"
 

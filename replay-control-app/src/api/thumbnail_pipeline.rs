@@ -109,10 +109,12 @@ impl ThumbnailPipeline {
             let api_key_owned = api_key.clone();
             let activity_ref = activity_lock.clone();
             let activity_tx = state.activity_tx.clone();
+            let rt = tokio::runtime::Handle::current();
             state
                 .metadata_pool
                 .write(move |db| {
-                    thumbnail_manifest::import_all_manifests(
+                    // pool.interact() runs on a blocking thread, so block_on is safe.
+                    rt.block_on(thumbnail_manifest::import_all_manifests(
                         db,
                         &|repos_done, repos_total, current_repo| {
                             let mut guard = write_lock(&activity_ref, "activity");
@@ -129,7 +131,7 @@ impl ThumbnailPipeline {
                         },
                         &cancel_flag,
                         api_key_owned.as_deref(),
-                    )
+                    ))
                 })
                 .await
                 .unwrap_or_else(|| {
@@ -276,52 +278,75 @@ impl ThumbnailPipeline {
                 if cancel.load(Ordering::Relaxed) {
                     break;
                 }
+
+                // Phase 1: Plan downloads (sync DB read, then release connection).
+                let storage_root_plan = storage_root.clone();
+                let system_plan = system.clone();
+                let plan = state
+                    .metadata_pool
+                    .read(move |conn| {
+                        thumbnail_manifest::plan_system_thumbnails(
+                            conn,
+                            &storage_root_plan,
+                            &system_plan,
+                            *kind,
+                        )
+                    })
+                    .await;
+
+                let plan = match plan {
+                    Some(Ok(p)) => p,
+                    Some(Err(e)) => {
+                        let kind_name = kind.media_dir();
+                        tracing::warn!("{kind_name} plan failed for {system}: {e}");
+                        continue;
+                    }
+                    None => continue,
+                };
+
+                // Phase 2: Execute downloads (async, no DB connection held).
                 let prev_downloaded = total_downloaded;
                 let cancel_flag = cancel.clone();
                 let activity_ref2 = activity_ref.clone();
                 let activity_tx = state.activity_tx.clone();
                 let system_display_owned = system_display.clone();
-                let storage_root = storage_root.clone();
-                let system_owned = system.clone();
-                if let Some(result) = state
-                    .metadata_pool
-                    .read(move |conn| {
-                        thumbnail_manifest::download_system_thumbnails(
-                            conn,
-                            &storage_root,
-                            &system_owned,
-                            *kind,
-                            &|processed, total, downloaded| {
-                                let mut guard = write_lock(&activity_ref2, "activity");
-                                if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
-                                    progress.step_done = i;
-                                    progress.step_total = total_systems;
-                                    progress.downloaded = prev_downloaded + downloaded;
-                                    progress.elapsed_secs = start.elapsed().as_secs();
-                                    if total > 0 {
-                                        let display_n = (processed + 1).min(total);
-                                        progress.current_label =
-                                            format!("{system_display_owned}: {display_n}/{total}");
-                                    }
-                                }
-                                let activity = guard.clone();
-                                drop(guard);
-                                let _ = activity_tx.send(activity);
-                            },
-                            &cancel_flag,
-                        )
-                    })
-                    .await
-                {
-                    match result {
-                        Ok(stats) => {
-                            total_downloaded += stats.downloaded;
-                            total_failed += stats.failed;
+                let storage_root_dl = storage_root.clone();
+                let system_dl = system.clone();
+
+                let result = thumbnail_manifest::download_system_thumbnails(
+                    &plan,
+                    &storage_root_dl,
+                    &system_dl,
+                    *kind,
+                    &|processed, total, downloaded| {
+                        let mut guard = write_lock(&activity_ref2, "activity");
+                        if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
+                            progress.step_done = i;
+                            progress.step_total = total_systems;
+                            progress.downloaded = prev_downloaded + downloaded;
+                            progress.elapsed_secs = start.elapsed().as_secs();
+                            if total > 0 {
+                                let display_n = (processed + 1).min(total);
+                                progress.current_label =
+                                    format!("{system_display_owned}: {display_n}/{total}");
+                            }
                         }
-                        Err(e) => {
-                            let kind_name = kind.media_dir();
-                            tracing::warn!("{kind_name} download failed for {system}: {e}");
-                        }
+                        let activity = guard.clone();
+                        drop(guard);
+                        let _ = activity_tx.send(activity);
+                    },
+                    &cancel_flag,
+                )
+                .await;
+
+                match result {
+                    Ok(stats) => {
+                        total_downloaded += stats.downloaded;
+                        total_failed += stats.failed;
+                    }
+                    Err(e) => {
+                        let kind_name = kind.media_dir();
+                        tracing::warn!("{kind_name} download failed for {system}: {e}");
                     }
                 }
             }

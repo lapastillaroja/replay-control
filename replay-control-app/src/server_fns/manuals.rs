@@ -245,7 +245,7 @@ pub async fn search_game_manuals(
 
     tracing::info!("Manual search: Archive.org query=\"{query}\"");
 
-    match curl_get_json(&api_url, 15).await {
+    match http_get_json(&api_url, 15).await {
         Ok(body) => {
             let docs = body
                 .pointer("/response/docs")
@@ -349,39 +349,27 @@ pub async fn download_manual(
         .map_err(|e| ServerFnError::new(format!("Task failed: {e}")))?
         .map_err(|e| ServerFnError::new(format!("Failed to create manuals directory: {e}")))?;
 
-    // Download with curl
+    // Download with reqwest
     tracing::info!(
         "Downloading manual: {encoded_url} -> {}",
         target_path.display()
     );
 
-    let output = tokio::process::Command::new("curl")
-        .args([
-            "-sSL",
-            "--max-time",
-            "120",
-            "-o",
-            &target_path.to_string_lossy(),
-            &encoded_url,
-        ])
-        .output()
-        .await
-        .map_err(|e| ServerFnError::new(format!("curl spawn failed: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Clean up partial download
-        let tp = target_path.clone();
-        let _ = tokio::task::spawn_blocking(move || std::fs::remove_file(&tp)).await;
-        return Err(ServerFnError::new(format!("Download failed: {stderr}")));
-    }
-
-    // Verify the downloaded file exists and is not empty (blocking I/O)
-    let tp = target_path.clone();
-    let size =
-        tokio::task::spawn_blocking(move || std::fs::metadata(&tp).map(|m| m.len()).unwrap_or(0))
-            .await
-            .unwrap_or(0);
+    let size = match replay_control_core::http::download_to_file(
+        &encoded_url,
+        &target_path,
+        std::time::Duration::from_secs(120),
+    )
+    .await
+    {
+        Ok(size) => size,
+        Err(e) => {
+            // Clean up partial download
+            let tp = target_path.clone();
+            let _ = tokio::task::spawn_blocking(move || std::fs::remove_file(&tp)).await;
+            return Err(ServerFnError::new(format!("Download failed: {e}")));
+        }
+    };
 
     if size == 0 {
         let tp = target_path.clone();
@@ -456,19 +444,10 @@ async fn load_retrokit_index(
         format!("https://archive.org/download/retrokit-manuals/{folder}/{folder}-sources.tsv");
     tracing::info!("Fetching retrokit TSV: {url}");
 
-    let output = tokio::process::Command::new("curl")
-        .args(["-sSL", "--max-time", "30", &url])
-        .output()
-        .await
-        .map_err(|e| format!("curl spawn failed: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("TSV fetch failed: {stderr}"));
-    }
-
     let tsv_data =
-        String::from_utf8(output.stdout).map_err(|e| format!("TSV decode failed: {e}"))?;
+        replay_control_core::http::get_text_with_timeout(&url, std::time::Duration::from_secs(30))
+            .await
+            .map_err(|e| e.to_string())?;
 
     let index = replay_control_core::retrokit_manuals::parse_retrokit_tsv(&tsv_data);
     tracing::info!("Retrokit TSV loaded: {folder} ({} titles)", index.len());
@@ -488,19 +467,15 @@ async fn load_retrokit_index(
     Ok(index)
 }
 
-/// Fetch a URL with curl and parse the response as JSON.
+/// Fetch a URL and parse the response as JSON.
 #[cfg(feature = "ssr")]
-async fn curl_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
-    let output = tokio::process::Command::new("curl")
-        .args(["-sS", "--max-time", &timeout_secs.to_string(), url])
-        .output()
-        .await
-        .map_err(|e| format!("curl spawn failed: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("curl failed: {stderr}"));
-    }
-    serde_json::from_slice(&output.stdout).map_err(|e| format!("JSON parse error: {e}"))
+async fn http_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
+    replay_control_core::http::get_json_with_timeout(
+        url,
+        std::time::Duration::from_secs(timeout_secs),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Percent-encode unsafe characters in the path portion of a URL.

@@ -86,12 +86,13 @@ pub fn default_branch(repo_display_name: &str) -> &'static str {
 }
 
 /// Fetch the full tree listing for a libretro-thumbnails repo via GitHub REST API.
-/// Returns `(commit_sha, entries)`. Blocking (uses std::process::Command).
+/// Returns `(commit_sha, entries)`.
 ///
 /// Uses `GET /repos/libretro-thumbnails/{url_name}/git/trees/{branch}?recursive=1`.
 /// Filters and parses the response inline, returning only Named_Boxarts and Named_Snaps
 /// entries as `ThumbnailEntry` values.
-pub fn fetch_repo_tree(
+#[cfg(feature = "http")]
+pub async fn fetch_repo_tree(
     url_name: &str,
     branch: &str,
     api_key: Option<&str>,
@@ -100,39 +101,16 @@ pub fn fetch_repo_tree(
         "https://api.github.com/repos/libretro-thumbnails/{url_name}/git/trees/{branch}?recursive=1"
     );
 
+    let mut headers = vec![("Accept", "application/vnd.github+json")];
     let auth_header;
-    let mut args = vec![
-        "-fsSL",
-        "--max-time",
-        "60",
-        "-H",
-        "Accept: application/vnd.github+json",
-        "-H",
-        "User-Agent: replay-control",
-    ];
     if let Some(key) = api_key {
-        auth_header = format!("Authorization: token {key}");
-        args.extend(["-H", auth_header.as_str()]);
-    }
-    args.push(&url);
-
-    let output = std::process::Command::new("curl")
-        .args(&args)
-        .output()
-        .map_err(|e| Error::Other(format!("Failed to run curl: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Other(format!(
-            "GitHub API request failed for {url_name}/{branch}: {stderr}"
-        )));
+        auth_header = format!("Bearer {key}");
+        headers.push(("Authorization", auth_header.as_str()));
     }
 
-    let body = String::from_utf8(output.stdout)
-        .map_err(|e| Error::Other(format!("Invalid UTF-8 in API response: {e}")))?;
-
-    let json: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| Error::Other(format!("Failed to parse API response: {e}")))?;
+    let json =
+        crate::http::get_json_with_headers(&url, &headers, std::time::Duration::from_secs(60))
+            .await?;
 
     // Check for API error responses (e.g. rate limit, not found).
     if let Some(msg) = json.get("message").and_then(|v| v.as_str()) {
@@ -230,7 +208,8 @@ pub fn insert_thumbnail_entries(
 /// Orchestrate the full manifest import for all repos.
 /// Calls `on_progress(repos_done, repos_total, current_repo_display_name)`.
 /// Returns import stats. Skips repos whose commit SHA hasn't changed.
-pub fn import_all_manifests(
+#[cfg(feature = "http")]
+pub async fn import_all_manifests(
     conn: &mut Connection,
     on_progress: &dyn Fn(usize, usize, &str),
     cancel: &AtomicBool,
@@ -255,7 +234,7 @@ pub fn import_all_manifests(
         if let Ok(Some(status)) = MetadataDb::get_data_source(conn, &source_name) {
             let existing_hash = status.version_hash.as_deref().unwrap_or("");
             if !existing_hash.is_empty() {
-                match check_repo_freshness(&repo.url_name, existing_hash, api_key) {
+                match check_repo_freshness(&repo.url_name, existing_hash, api_key).await {
                     Ok(false) => {
                         // Repo unchanged -- skip.
                         total_entries += status.entry_count;
@@ -273,12 +252,12 @@ pub fn import_all_manifests(
 
         let branch = default_branch(&repo.display_name);
         let (commit_sha, entries, actual_branch) =
-            match fetch_repo_tree(&repo.url_name, branch, api_key) {
+            match fetch_repo_tree(&repo.url_name, branch, api_key).await {
                 Ok((sha, entries)) => (sha, entries, branch),
                 Err(_) => {
                     // Try the other branch before giving up.
                     let alt = if branch == "master" { "main" } else { "master" };
-                    match fetch_repo_tree(&repo.url_name, alt, api_key) {
+                    match fetch_repo_tree(&repo.url_name, alt, api_key).await {
                         Ok((sha, entries)) => (sha, entries, alt),
                         Err(e) => {
                             errors.push(format!("{}: {e}", repo.display_name));
@@ -345,38 +324,26 @@ pub fn import_all_manifests(
 ///
 /// Uses `GET /repos/libretro-thumbnails/{url_name}/commits/HEAD` with
 /// `Accept: application/vnd.github.sha` which returns just the SHA as plain text.
-fn check_repo_freshness(url_name: &str, stored_hash: &str, api_key: Option<&str>) -> Result<bool> {
+#[cfg(feature = "http")]
+async fn check_repo_freshness(
+    url_name: &str,
+    stored_hash: &str,
+    api_key: Option<&str>,
+) -> Result<bool> {
     let url = format!("https://api.github.com/repos/libretro-thumbnails/{url_name}/commits/HEAD");
 
+    let mut headers = vec![("Accept", "application/vnd.github.sha")];
     let auth_header;
-    let mut args = vec![
-        "-fsSL",
-        "--max-time",
-        "15",
-        "-H",
-        "Accept: application/vnd.github.sha",
-        "-H",
-        "User-Agent: replay-control",
-    ];
     if let Some(key) = api_key {
-        auth_header = format!("Authorization: token {key}");
-        args.extend(["-H", auth_header.as_str()]);
-    }
-    args.push(&url);
-
-    let output = std::process::Command::new("curl")
-        .args(&args)
-        .output()
-        .map_err(|e| Error::Other(format!("Failed to run curl: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Other(format!(
-            "GitHub API freshness check failed for {url_name}: {stderr}"
-        )));
+        auth_header = format!("Bearer {key}");
+        headers.push(("Authorization", auth_header.as_str()));
     }
 
-    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let sha =
+        crate::http::get_text_with_headers(&url, &headers, std::time::Duration::from_secs(15))
+            .await?;
+
+    let sha = sha.trim();
     if sha.is_empty() {
         return Ok(true); // Can't tell -- assume changed.
     }
@@ -758,10 +725,11 @@ fn url_encode_path_component(s: &str) -> String {
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
 /// Download a thumbnail image, handling symlink resolution transparently.
-/// Returns the raw PNG bytes on success. Blocking.
-pub fn download_thumbnail(m: &ManifestMatch, kind: &str) -> Result<Vec<u8>> {
+/// Returns the raw PNG bytes on success.
+#[cfg(feature = "http")]
+pub async fn download_thumbnail(m: &ManifestMatch, kind: &str) -> Result<Vec<u8>> {
     let url = thumbnail_download_url(m, kind);
-    let bytes = curl_download_bytes(&url)?;
+    let bytes = download_bytes(&url).await?;
 
     // Check if this is a symlink (text content instead of PNG).
     if bytes.len() < 200 && !bytes.starts_with(&PNG_MAGIC) {
@@ -778,7 +746,7 @@ pub fn download_thumbnail(m: &ManifestMatch, kind: &str) -> Result<Vec<u8>> {
             m.repo_url_name, m.branch, kind, encoded,
         );
 
-        let real_bytes = curl_download_bytes(&target_url)?;
+        let real_bytes = download_bytes(&target_url).await?;
 
         if real_bytes.len() < 200 && !real_bytes.starts_with(&PNG_MAGIC) {
             return Err(Error::Other(format!(
@@ -793,28 +761,10 @@ pub fn download_thumbnail(m: &ManifestMatch, kind: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Download raw bytes from a URL using curl (blocking).
-pub fn curl_download_bytes(url: &str) -> Result<Vec<u8>> {
-    let output = std::process::Command::new("curl")
-        .args([
-            "-fsSL",
-            "--max-time",
-            "15",
-            "--retry",
-            "2",
-            "--retry-delay",
-            "1",
-            url,
-        ])
-        .output()
-        .map_err(|e| Error::Other(format!("Failed to run curl: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Other(format!("Download failed for {url}: {stderr}")));
-    }
-
-    Ok(output.stdout)
+/// Download raw bytes from a URL.
+#[cfg(feature = "http")]
+pub async fn download_bytes(url: &str) -> Result<Vec<u8>> {
+    crate::http::get_bytes_with_timeout(url, std::time::Duration::from_secs(15)).await
 }
 
 /// Save a downloaded PNG to the media directory.
@@ -1138,25 +1088,24 @@ pub struct DownloadStats {
     pub failed: usize,
 }
 
-/// Download thumbnails for a single system. Runs blocking downloads in a thread pool
-/// using `std::thread::scope` for parallelism (since we're in a `spawn_blocking` context,
-/// not a tokio async context).
-///
-/// `on_progress(processed, total, downloaded)` is called periodically.
-pub fn download_system_thumbnails(
+/// Result of planning which thumbnails need downloading.
+pub struct DownloadPlan {
+    pub work: Vec<ManifestMatch>,
+    pub total: usize,
+    pub skipped: usize,
+}
+
+/// Plan which thumbnails need downloading for a system (sync, needs DB).
+pub fn plan_system_thumbnails(
     conn: &Connection,
     storage_root: &Path,
     system: &str,
     kind: ThumbnailKind,
-    on_progress: &dyn Fn(usize, usize, usize),
-    cancel: &AtomicBool,
-) -> Result<DownloadStats> {
+) -> Result<DownloadPlan> {
     let repo_names = thumbnails::thumbnail_repo_names(system)
         .ok_or_else(|| Error::Other(format!("No thumbnail repo for {system}")))?;
 
     let display_names: Vec<&str> = repo_names.to_vec();
-
-    // Build the fuzzy index from the manifest.
     let manifest_index = build_manifest_fuzzy_index(conn, &display_names, kind.repo_dir());
 
     let rom_filenames = thumbnails::list_rom_filenames(storage_root, system);
@@ -1168,26 +1117,53 @@ pub fn download_system_thumbnails(
         .join(system)
         .join(kind.media_dir());
 
-    // Phase 1: Collect work items (ROMs that need a download).
     let mut work: Vec<(String, ManifestMatch)> = Vec::new();
     let mut skipped = 0usize;
     for rom_filename in &rom_filenames {
         if let Some(m) = find_in_manifest(&manifest_index, rom_filename, system) {
             let local_path = media_dir.join(format!("{}.png", m.filename));
             if local_path.exists() {
-                skipped += 1; // Already downloaded.
+                skipped += 1;
             } else {
                 work.push((rom_filename.clone(), m.clone()));
             }
         }
-        // ROMs with no manifest match are silently ignored.
     }
 
-    // Deduplicate work by manifest filename (multiple ROMs can match the same thumbnail).
+    // Deduplicate by manifest filename (multiple ROMs can match the same thumbnail).
     {
         let mut seen = std::collections::HashSet::new();
         work.retain(|(_, m)| seen.insert(m.filename.clone()));
     }
+
+    let matches: Vec<ManifestMatch> = work.into_iter().map(|(_, m)| m).collect();
+    Ok(DownloadPlan {
+        work: matches,
+        total,
+        skipped,
+    })
+}
+
+/// Execute planned thumbnail downloads with async concurrency.
+/// Does not need a DB connection — call `plan_system_thumbnails` first.
+///
+/// `on_progress(processed, total, downloaded)` is called periodically.
+#[cfg(feature = "http")]
+pub async fn download_system_thumbnails(
+    plan: &DownloadPlan,
+    storage_root: &Path,
+    system: &str,
+    kind: ThumbnailKind,
+    on_progress: &(dyn Fn(usize, usize, usize) + Send + Sync),
+    cancel: &AtomicBool,
+) -> Result<DownloadStats> {
+    let DownloadPlan {
+        work,
+        total,
+        skipped,
+    } = plan;
+    let total = *total;
+    let skipped = *skipped;
 
     on_progress(skipped, total, 0);
 
@@ -1200,82 +1176,68 @@ pub fn download_system_thumbnails(
         });
     }
 
-    // Phase 2: Download with limited concurrency using thread::scope.
+    // Download with limited concurrency using tokio semaphore.
     let downloaded = AtomicUsize::new(0);
     let failed = AtomicUsize::new(0);
     let processed = AtomicUsize::new(0);
-    let concurrency = 10usize;
-
-    // Use a simple semaphore via a channel for concurrency control.
-    let (tx, rx) = std::sync::mpsc::sync_channel::<()>(concurrency);
-    // Pre-fill the channel to act as permits.
-    for _ in 0..concurrency {
-        let _ = tx.send(());
-    }
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
 
     let kind_dir = kind.repo_dir().to_string();
     let root = storage_root.to_path_buf();
     let sys = system.to_string();
 
-    std::thread::scope(|scope| {
-        let downloaded = &downloaded;
-        let failed = &failed;
-        let processed = &processed;
-        let tx = &tx;
-        let rx_mutex = std::sync::Mutex::new(&rx);
+    let mut handles = Vec::with_capacity(work.len());
 
-        for (_rom_filename, m) in &work {
-            if cancel.load(Ordering::Relaxed) {
-                break;
-            }
+    for m in work {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
 
-            // Acquire a permit (blocks until one is available).
-            {
-                let rx_guard = rx_mutex.lock().unwrap();
-                let _ = rx_guard.recv();
-            }
+        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let m = m.clone();
+        let kind_dir = kind_dir.clone();
 
-            if cancel.load(Ordering::Relaxed) {
-                let _ = tx.send(()); // Release permit.
-                break;
-            }
+        let handle = tokio::spawn(async move {
+            let result = download_thumbnail(&m, &kind_dir).await;
+            drop(permit); // Release semaphore permit.
+            result.map(|bytes| (m, bytes))
+        });
 
-            let m = m.clone();
-            let kind_dir = kind_dir.clone();
-            let root = root.clone();
-            let sys = sys.clone();
-            let kind_enum = kind;
+        handles.push(handle);
+    }
 
-            scope.spawn(move || {
-                match download_thumbnail(&m, &kind_dir) {
-                    Ok(bytes) => {
-                        match save_thumbnail(&root, &sys, kind_enum, &m.filename, &bytes) {
-                            Ok(_) => {
-                                downloaded.fetch_add(1, Ordering::Relaxed);
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to save {}: {e}", m.filename);
-                                failed.fetch_add(1, Ordering::Relaxed);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::debug!("Failed to download {}: {e}", m.filename);
-                        failed.fetch_add(1, Ordering::Relaxed);
-                    }
+    // Collect results and save to disk (I/O-bound, done sequentially).
+    for handle in handles {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+
+        match handle.await {
+            Ok(Ok((m, bytes))) => match save_thumbnail(&root, &sys, kind, &m.filename, &bytes) {
+                Ok(_) => {
+                    downloaded.fetch_add(1, Ordering::Relaxed);
                 }
-                processed.fetch_add(1, Ordering::Relaxed);
-                // Release permit.
-                let _ = tx.send(());
-            });
-
-            // Report progress periodically.
-            let done = processed.load(Ordering::Relaxed);
-            if done.is_multiple_of(5) {
-                on_progress(skipped + done, total, downloaded.load(Ordering::Relaxed));
+                Err(e) => {
+                    tracing::warn!("Failed to save {}: {e}", m.filename);
+                    failed.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+            Ok(Err(e)) => {
+                tracing::debug!("Failed to download: {e}");
+                failed.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(e) => {
+                tracing::debug!("Download task panicked: {e}");
+                failed.fetch_add(1, Ordering::Relaxed);
             }
         }
-    });
+
+        processed.fetch_add(1, Ordering::Relaxed);
+        let done = processed.load(Ordering::Relaxed);
+        if done.is_multiple_of(5) {
+            on_progress(skipped + done, total, downloaded.load(Ordering::Relaxed));
+        }
+    }
 
     let downloaded_count = downloaded.load(Ordering::Relaxed);
     let failed_count = failed.load(Ordering::Relaxed);

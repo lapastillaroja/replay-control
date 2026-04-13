@@ -526,7 +526,7 @@ impl BackgroundManager {
         tokio::time::sleep(Duration::from_secs(60)).await;
 
         let analytics = super::analytics::AnalyticsClient::new(
-            Self::http_client().clone(),
+            replay_control_core::http::shared_client().clone(),
             super::analytics::ENDPOINT,
         );
 
@@ -778,26 +778,12 @@ impl BackgroundManager {
         })
     }
 
-    /// Shared HTTP client for all GitHub API and download requests.
-    /// Uses a 10s default timeout; callers can override per-request.
-    fn http_client() -> &'static reqwest::Client {
-        use std::sync::OnceLock;
-        static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-        CLIENT.get_or_init(|| {
-            reqwest::Client::builder()
-                .user_agent(format!("replay-control/{}", crate::VERSION))
-                .timeout(Duration::from_secs(10))
-                .build()
-                .expect("Failed to create HTTP client")
-        })
-    }
-
     /// HTTP GET with optional Authorization for the GitHub API.
     pub async fn github_get(
         url: &str,
         api_key: Option<&str>,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let mut req = Self::http_client()
+        let mut req = replay_control_core::http::shared_client()
             .get(url)
             .header("Accept", "application/vnd.github+json");
 
@@ -854,7 +840,7 @@ impl BackgroundManager {
         use tokio::io::AsyncWriteExt;
         use tokio_stream::StreamExt;
 
-        let resp = Self::http_client()
+        let resp = replay_control_core::http::shared_client()
             .get(url)
             .timeout(Duration::from_secs(300))
             .send()

@@ -137,27 +137,28 @@ pub async fn set_boxart_override(
     let is_valid = replay_control_core::thumbnails::is_valid_image(&local_path);
 
     if !is_valid {
-        let m = manifest_match.clone();
+        let bytes = thumbnail_manifest::download_thumbnail(
+            &manifest_match,
+            ThumbnailKind::Boxart.repo_dir(),
+        )
+        .await
+        .map_err(|e| ServerFnError::new(format!("Download failed: {e}")))?;
+
         let storage_root = storage.root.clone();
         let sys = system.clone();
-
-        // Run the blocking download in a spawn_blocking context.
-        let result = tokio::task::spawn_blocking(move || {
-            let bytes =
-                thumbnail_manifest::download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir())?;
+        let filename = manifest_match.filename.clone();
+        tokio::task::spawn_blocking(move || {
             thumbnail_manifest::save_thumbnail(
                 &storage_root,
                 &sys,
                 ThumbnailKind::Boxart,
-                &m.filename,
+                &filename,
                 &bytes,
-            )?;
-            Ok::<_, replay_control_core::error::Error>(())
+            )
         })
         .await
-        .map_err(|e| ServerFnError::new(format!("Download task failed: {e}")))?;
-
-        result.map_err(|e| ServerFnError::new(format!("Download failed: {e}")))?;
+        .map_err(|e| ServerFnError::new(format!("Save task failed: {e}")))?
+        .map_err(|e| ServerFnError::new(format!("Save failed: {e}")))?;
     }
 
     // Persist the override in user_data.db.
