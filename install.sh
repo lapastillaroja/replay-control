@@ -61,6 +61,7 @@ PI_ADDR="${REPLAY_PI_ADDR:-}"
 VERSION="${REPLAY_CONTROL_VERSION:-latest}"
 SDCARD_PATH=""
 TMPDIR_WORK=""
+SKIP_METADATA=false
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 
@@ -92,6 +93,7 @@ ${BOLD}FLAGS${RESET}
     --dry-run           Show what would be done without making changes
     --local [DIR]       Use locally built artifacts instead of downloading
                         (default: project root, expects target/release/ and target/site/)
+    --no-metadata       Skip LaunchBox metadata download
 
 ${BOLD}ENVIRONMENT VARIABLES${RESET}
     REPLAY_CONTROL_VERSION  Release to install: tag, "latest" (default), or "beta"
@@ -167,6 +169,10 @@ parse_args() {
                 ;;
             --dry-run)
                 DRY_RUN=true
+                shift
+                ;;
+            --no-metadata)
+                SKIP_METADATA=true
                 shift
                 ;;
             *)
@@ -294,6 +300,44 @@ download_artifacts() {
     success "Downloaded release artifacts"
 }
 
+LAUNCHBOX_URL="https://gamesdb.launchbox-app.com/Metadata.zip"
+LAUNCHBOX_XML="launchbox-metadata.xml"
+
+# Download LaunchBox metadata locally (build machine has internet).
+# Saves the zip to TMPDIR_WORK for later transfer/extraction.
+download_launchbox_metadata() {
+    if $SKIP_METADATA; then
+        info "Skipping metadata download (--no-metadata)"
+        return
+    fi
+
+    # For SSH installs, check if the file already exists on the Pi.
+    if [[ "$MODE" == "ssh" ]] && [[ -n "${PI_ADDR:-}" ]]; then
+        if run_ssh "test -f /media/usb/.replay-control/$LAUNCHBOX_XML -o \
+                         -f /media/nvme/.replay-control/$LAUNCHBOX_XML -o \
+                         -f /media/nfs/.replay-control/$LAUNCHBOX_XML -o \
+                         -f /media/sd/.replay-control/$LAUNCHBOX_XML" 2>/dev/null; then
+            info "LaunchBox metadata already exists on Pi, skipping download"
+            return
+        fi
+    fi
+
+    info "Downloading LaunchBox metadata..."
+
+    if $DRY_RUN; then
+        dry "Would download: $LAUNCHBOX_URL"
+        return
+    fi
+
+    if ! curl -fSL --progress-bar -o "$TMPDIR_WORK/Metadata.zip" "$LAUNCHBOX_URL"; then
+        warn "Could not download LaunchBox metadata. The app will work without it."
+        warn "You can download it later from the Settings page."
+        return
+    fi
+
+    success "Downloaded LaunchBox metadata"
+}
+
 fetch_artifacts() {
     if $LOCAL; then
         prepare_local_artifacts
@@ -301,6 +345,7 @@ fetch_artifacts() {
         resolve_download_urls
         download_artifacts
     fi
+    download_launchbox_metadata
 }
 
 # ── Local Pi detection ──────────────────────────────────────────────────────
@@ -519,6 +564,38 @@ install_local() {
     systemctl enable "$SERVICE_NAME"
     systemctl restart "$SERVICE_NAME"
 
+    # Extract LaunchBox metadata (skip if already exists)
+    if [[ -f "$TMPDIR_WORK/Metadata.zip" ]]; then
+        local rc_dir=""
+        for candidate in /media/usb /media/nvme /media/nfs /media/sd; do
+            if [[ -d "$candidate/.replay-control" ]]; then
+                rc_dir="$candidate/.replay-control"
+                break
+            fi
+        done
+        if [[ -z "$rc_dir" ]]; then
+            for candidate in /media/usb /media/nvme /media/nfs /media/sd; do
+                if [[ -d "$candidate" ]]; then
+                    rc_dir="$candidate/.replay-control"
+                    break
+                fi
+            done
+        fi
+        if [[ -n "$rc_dir" ]]; then
+            if [[ -f "$rc_dir/$LAUNCHBOX_XML" ]]; then
+                info "LaunchBox metadata already exists, skipping"
+            else
+                mkdir -p "$rc_dir"
+                if unzip -o -j "$TMPDIR_WORK/Metadata.zip" Metadata.xml -d "$rc_dir" >/dev/null 2>&1; then
+                    mv -f "$rc_dir/Metadata.xml" "$rc_dir/$LAUNCHBOX_XML" 2>/dev/null
+                    success "Installed LaunchBox metadata"
+                else
+                    warn "Could not extract LaunchBox metadata"
+                fi
+            fi
+        fi
+    fi
+
     # Cleanup
     rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
 
@@ -579,6 +656,12 @@ install_ssh() {
         teardown_askpass
         fatal "Failed to transfer site archive."
     }
+
+    if [[ -f "$TMPDIR_WORK/Metadata.zip" ]]; then
+        run_scp "$TMPDIR_WORK/Metadata.zip" "${PI_USER}@${PI_ADDR}:/tmp/" || {
+            warn "Failed to transfer LaunchBox metadata. Continuing without it."
+        }
+    fi
 
     success "Files transferred"
 
@@ -667,6 +750,42 @@ fi
 systemctl daemon-reload
 systemctl enable replay-control
 systemctl restart replay-control
+
+# Extract LaunchBox metadata if the zip was transferred.
+# Place it in .replay-control/ on whichever storage device is mounted.
+# Extract LaunchBox metadata if the zip was transferred.
+# Place it in .replay-control/ on the active storage device.
+# Skip if launchbox-metadata.xml already exists (preserve user's version).
+if [ -f /tmp/Metadata.zip ]; then
+    RC_DIR=""
+    for candidate in /media/usb /media/nvme /media/nfs /media/sd; do
+        if [ -d "$candidate/.replay-control" ]; then
+            RC_DIR="$candidate/.replay-control"
+            break
+        fi
+    done
+    # If .replay-control doesn't exist yet (first install), use first available mount.
+    if [ -z "$RC_DIR" ]; then
+        for candidate in /media/usb /media/nvme /media/nfs /media/sd; do
+            if [ -d "$candidate" ]; then
+                RC_DIR="$candidate/.replay-control"
+                break
+            fi
+        done
+    fi
+    if [ -n "$RC_DIR" ]; then
+        if [ -f "$RC_DIR/launchbox-metadata.xml" ]; then
+            echo "LaunchBox metadata already exists, skipping"
+        else
+            mkdir -p "$RC_DIR"
+            cd "$RC_DIR"
+            unzip -o -j /tmp/Metadata.zip Metadata.xml -d . >/dev/null 2>&1 && \
+                mv -f Metadata.xml launchbox-metadata.xml 2>/dev/null
+            cd /
+        fi
+    fi
+    rm -f /tmp/Metadata.zip
+fi
 
 # Cleanup
 rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
@@ -1023,6 +1142,22 @@ install_sdcard() {
     if [[ -d "${sd}/etc/avahi/services" ]]; then
         avahi_service_content > "${sd}${AVAHI_FILE}"
         success "Wrote Avahi service"
+    fi
+
+    # Extract LaunchBox metadata to the data partition (skip if already exists)
+    if [[ -f "$TMPDIR_WORK/Metadata.zip" ]] && [[ -n "${REPLAYOS_DATA_PATH:-}" ]]; then
+        local rc_dir="${REPLAYOS_DATA_PATH}/.replay-control"
+        if [[ -f "$rc_dir/$LAUNCHBOX_XML" ]]; then
+            info "LaunchBox metadata already exists, skipping"
+        else
+            mkdir -p "$rc_dir"
+            if unzip -o -j "$TMPDIR_WORK/Metadata.zip" Metadata.xml -d "$rc_dir" >/dev/null 2>&1; then
+                mv -f "$rc_dir/Metadata.xml" "$rc_dir/$LAUNCHBOX_XML" 2>/dev/null
+                success "Installed LaunchBox metadata"
+            else
+                warn "Could not extract LaunchBox metadata"
+            fi
+        fi
     fi
 
     echo ""
