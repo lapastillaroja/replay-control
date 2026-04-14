@@ -4,6 +4,72 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.3.1-beta.3](https://github.com/lapastillaroja/replay-control/releases/tag/v0.3.1-beta.3) - 2026-04-14
+
+### Other
+
+- fix CHANGELOG.md to include proper per-release sections (was causing release-plz to dump full history into release notes)
+
+---
+
+## [0.3.1-beta.2](https://github.com/lapastillaroja/replay-control/releases/tag/v0.3.1-beta.2) - 2026-04-14
+
+### Other
+
+- replace softprops/action-gh-release with `gh release upload` CLI
+
+---
+
+## [0.3.1-beta.1](https://github.com/lapastillaroja/replay-control/releases/tag/v0.3.1-beta.1) - 2026-04-14
+
+### Fixed
+
+- restore settings sidebar highlight on back-navigation — IntersectionObserver deferred via requestAnimationFrame
+- use sshpass for automatic SSH authentication in installer, with SSH_ASKPASS fallback
+- send required `force` body param in GetSetupStatus integration test
+- update E2E and SSR tests for `/more` → `/settings` page rename
+
+### Other
+
+- chain build-release from release-plz via workflow_call to fix missing binary assets
+- add workflow_dispatch trigger to build-release for manual builds
+
+---
+
+## [0.3.0](https://github.com/lapastillaroja/replay-control/releases/tag/v0.3.0) - 2026-04-13
+
+### Added
+
+- CRC hash-matched display names and thumbnails — ROMs with non-standard filenames now show correct canonical name and box art (~1,105 name fixes, ~1,682 thumbnail fixes)
+- redesigned settings page with two-pane layout, scroll-spy sidebar, and five sections
+- anonymous usage analytics with opt-out from Settings > Privacy
+- first-run setup checklist on home page for LaunchBox metadata and thumbnail index
+- LaunchBox metadata download at install time (skip with `--no-metadata`)
+- JPG image support and improved box art variant picker with filesystem scan
+- local Pi install auto-detection and `--version` flag in installer
+
+### Fixed
+
+- Clear Images now correctly removes `box_art_url` references from the database
+- settings sidebar highlight on back-navigation
+- reactivity warning in play order navigation (sequel/prequel links)
+- silent DB errors in library and enrichment operations now logged
+- install script env var positioning for piped commands
+- desktop settings layout max-width on inline items
+
+### Performance
+
+- in-memory user preferences cache (skin, locale, region, font size loaded once at startup)
+
+### Other
+
+- HTTP client migration from curl subprocesses to reqwest with shared async client
+- settings architecture moved to system-level with SettingsStore abstraction
+- game_metadata table schema validation with column count checks and COALESCE upserts
+- image matching fixes for JPG symlinks, filesystem media scan, and exFAT stat ordering
+
+---
+
 ## [0.2.0](https://github.com/lapastillaroja/replay-control/releases/tag/v0.2.0) - 2026-04-10
 
 ### Added
