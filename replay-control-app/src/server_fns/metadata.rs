@@ -96,10 +96,14 @@ pub use crate::types::{
 };
 
 #[cfg(not(feature = "ssr"))]
-pub use crate::types::{ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage};
+pub use crate::types::{
+    DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
+    SystemCoverage,
+};
 #[cfg(feature = "ssr")]
 pub use replay_control_core::metadata_db::{
-    ImportProgress, ImportState, ImportStats, MetadataStats, SystemCoverage,
+    DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
+    SystemCoverage,
 };
 
 /// Create an `Activity::ThumbnailUpdate` for client-side placeholder use.
@@ -165,19 +169,36 @@ pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnE
     Ok(())
 }
 
+/// Get aggregate library summary stats for the metadata page summary cards.
+#[server(prefix = "/sfn")]
+pub async fn get_library_summary() -> Result<LibrarySummary, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let result = state.metadata_pool.read(MetadataDb::library_summary).await;
+    match result {
+        Some(Ok(summary)) => Ok(summary),
+        Some(Err(e)) => {
+            tracing::warn!("get_library_summary failed: {e:?}");
+            Ok(LibrarySummary::default())
+        }
+        None => Ok(LibrarySummary::default()),
+    }
+}
+
 /// Get per-system metadata coverage stats.
 #[server(prefix = "/sfn")]
 pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    // Get metadata entries and thumbnail counts per system from DB.
-    // Return empty data when DB is unavailable (e.g., during import).
-    let (entries_per_system, thumbnails_per_system) = state
+    // Get metadata entries, thumbnail counts, coverage stats, and driver status
+    // per system from DB. Return empty data when DB is unavailable (e.g., during import).
+    let (entries_per_system, thumbnails_per_system, coverage_stats, driver_status) = state
         .metadata_pool
         .read(|conn| {
             let entries = MetadataDb::entries_per_system(conn).unwrap_or_default();
             let thumbnails = MetadataDb::thumbnails_per_system(conn).unwrap_or_default();
-            (entries, thumbnails)
+            let stats = MetadataDb::system_coverage_stats(conn).unwrap_or_default();
+            let drivers = MetadataDb::driver_status_per_system(conn).unwrap_or_default();
+            (entries, thumbnails, stats, drivers)
         })
         .await
         .unwrap_or_default();
@@ -193,6 +214,14 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         entries_per_system.into_iter().collect();
     let mut thumb_map: std::collections::HashMap<String, usize> =
         thumbnails_per_system.into_iter().collect();
+    let mut stats_map: std::collections::HashMap<
+        String,
+        replay_control_core::metadata_db::SystemCoverageStats,
+    > = coverage_stats
+        .into_iter()
+        .map(|s| (s.system.clone(), s))
+        .collect();
+    let mut driver_map = driver_status;
 
     let mut coverage: Vec<SystemCoverage> = systems
         .into_iter()
@@ -200,12 +229,27 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         .map(|s| {
             let with_metadata = meta_map.remove(&s.folder_name).unwrap_or(0);
             let with_thumbnail = thumb_map.remove(&s.folder_name).unwrap_or(0);
+            let stats = stats_map.remove(&s.folder_name).unwrap_or_default();
+            let driver_status = driver_map.remove(&s.folder_name);
             SystemCoverage {
                 system: s.folder_name,
                 display_name: s.display_name,
                 total_games: s.game_count,
-                with_metadata: with_metadata.min(s.game_count),
                 with_thumbnail: with_thumbnail.min(s.game_count),
+                with_genre: stats.with_genre,
+                with_developer: stats.with_developer,
+                with_rating: stats.with_rating,
+                size_bytes: stats.size_bytes,
+                with_description: with_metadata.min(s.game_count),
+                clone_count: stats.clone_count,
+                hack_count: stats.hack_count,
+                translation_count: stats.translation_count,
+                special_count: stats.special_count,
+                coop_count: stats.coop_count,
+                verified_count: stats.verified_count,
+                min_year: stats.min_year,
+                max_year: stats.max_year,
+                driver_status,
             }
         })
         .collect();

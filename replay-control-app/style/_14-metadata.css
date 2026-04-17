@@ -75,46 +75,139 @@
     animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
-/* ── System Overview Table ─────────────────────────────────────── */
+/* ── System Overview Accordion ─────────────────────────────────── */
 
-.overview-table-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+.system-overview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 10px;
 }
 
-.overview-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-}
-
-.overview-table thead th {
-    text-align: left;
-    padding: 8px 10px;
-    font-weight: 600;
+.system-overview-toggle-all {
+    background: none;
+    border: none;
     color: var(--text-secondary);
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px 0;
+    transition: color 0.2s;
 }
 
-.overview-table tbody td {
-    padding: 7px 10px;
+.system-overview-toggle-all:hover {
+    color: var(--text);
+}
+
+.system-accordion-list {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.system-accordion-row {
+    padding: 12px 14px;
+    cursor: pointer;
     border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.04));
+    transition: background 0.15s;
 }
 
-.overview-table tbody tr:last-child td {
+.system-accordion-row:last-child {
     border-bottom: none;
 }
 
-.overview-table th.overview-num,
-.overview-num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+.system-accordion-row:hover {
+    background: rgba(255, 255, 255, 0.02);
 }
 
-.overview-system {
+.system-accordion-row .system-row-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.system-row-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text);
     word-break: break-word;
+}
+
+.system-row-chevron {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+}
+
+.system-accordion-row.expanded .system-row-chevron {
+    transform: rotate(90deg);
+}
+
+.system-row-summary {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+.system-row-overall-bar {
+    display: block;
+    width: 100%;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+.system-row-overall-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.system-row-details {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.04));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.coverage-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 48px;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+.coverage-row-label {
+    word-break: break-word;
+}
+
+.coverage-row-pct {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+.composition-row,
+.driver-row,
+.footer-row {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    padding-top: 8px;
+    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.04));
+    font-variant-numeric: tabular-nums;
 }
 
 /* ── Data Management Actions ───────────────────────────────────── */
@@ -233,6 +326,38 @@
     height: 0.75rem;
     border-radius: 3px;
     background: var(--border);
+}
+
+/* ── Coverage bar (reused in accordion expanded rows) ──────────── */
+
+.coverage-bar {
+    display: block;
+    width: 100%;
+    height: 6px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.coverage-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+/* ── Summary cards skeleton ──────────────────────────────────────── */
+
+.meta-skeleton-cards {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.meta-skeleton-card {
+    height: 64px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
 }
 
 .meta-skeleton-bar-wide {

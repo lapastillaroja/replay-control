@@ -560,6 +560,7 @@ mod ssr {
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSetupStatus>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DismissSetup>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLibrarySummary>();
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
             .site_root(cli.site_root.clone())

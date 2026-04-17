@@ -119,8 +119,59 @@ pub struct SystemCoverage {
     pub system: String,
     pub display_name: String,
     pub total_games: usize,
-    pub with_metadata: usize,
     pub with_thumbnail: usize,
+    #[serde(default)]
+    pub with_genre: usize,
+    #[serde(default)]
+    pub with_developer: usize,
+    #[serde(default)]
+    pub with_rating: usize,
+    #[serde(default)]
+    pub size_bytes: u64,
+    #[serde(default)]
+    pub with_description: usize,
+    #[serde(default)]
+    pub clone_count: usize,
+    #[serde(default)]
+    pub hack_count: usize,
+    #[serde(default)]
+    pub translation_count: usize,
+    #[serde(default)]
+    pub special_count: usize,
+    #[serde(default)]
+    pub coop_count: usize,
+    #[serde(default)]
+    pub verified_count: usize,
+    #[serde(default)]
+    pub min_year: Option<u16>,
+    #[serde(default)]
+    pub max_year: Option<u16>,
+    #[serde(default)]
+    pub driver_status: Option<DriverStatusCounts>,
+}
+
+/// Per-system counts for arcade `driver_status` values.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DriverStatusCounts {
+    pub working: usize,
+    pub imperfect: usize,
+    pub preliminary: usize,
+    pub unknown: usize,
+}
+
+/// Aggregate summary of the entire game library.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LibrarySummary {
+    pub total_games: usize,
+    pub system_count: usize,
+    pub with_genre: usize,
+    pub with_developer: usize,
+    pub with_rating: usize,
+    pub with_box_art: usize,
+    pub coop_games: usize,
+    pub min_year: Option<u16>,
+    pub max_year: Option<u16>,
+    pub total_size_bytes: u64,
 }
 
 /// Mirror of `replay_control_core::game_docs::GameDocument` for WASM.

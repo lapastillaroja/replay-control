@@ -327,11 +327,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataImportFailed => "Import failed",
         Key::MetadataProcessed => "processed",
         Key::MetadataSystemOverview => "System Overview",
-        Key::MetadataColSystem => "System",
-        Key::MetadataColGames => "Games",
-        Key::MetadataColDesc => "Desc.",
-        Key::MetadataColThumb => "Thumb.",
-        Key::MetadataNoSystems => "No systems with data yet.",
 
         // Thumbnails
         Key::MetadataThumbnailsLibretro => "Thumbnails (libretro)",
@@ -391,6 +386,36 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinHint => {
             "Names, genres, developers, publishers, player counts, and other metadata compiled into the app. No import needed."
         }
+
+        // Library summary cards
+        Key::MetadataSummaryTotalGames => "Total Games",
+        Key::MetadataSummaryEnrichment => "Enrichment",
+        Key::MetadataSummaryCoOp => "Co-op Games",
+        Key::MetadataSummaryYearSpan => "Year Span",
+        Key::MetadataSummaryLibrarySize => "Library Size",
+        Key::MetadataSummarySystems => "Systems",
+
+        // System accordion rows
+        Key::MetadataSystemCoverage => "coverage",
+        Key::MetadataRowGenre => "Genre",
+        Key::MetadataRowDeveloper => "Developer",
+        Key::MetadataRowRating => "Rating",
+        Key::MetadataRowDescription => "Description",
+        Key::MetadataRowBoxArt => "Box Art",
+        Key::MetadataRowUnique => "unique",
+        Key::MetadataRowClones => "clones",
+        Key::MetadataRowHacks => "hacks",
+        Key::MetadataRowTranslations => "trans",
+        Key::MetadataRowSpecial => "special",
+        Key::MetadataRowVerified => "verified",
+        Key::MetadataRowCoOp => "co-op",
+        Key::MetadataRowDrivers => "Drivers:",
+        Key::MetadataDriverWorking => "working",
+        Key::MetadataDriverImperfect => "imperfect",
+        Key::MetadataDriverPreliminary => "preliminary",
+        Key::MetadataDriverUnknown => "unknown",
+        Key::MetadataExpandAll => "Expand all",
+        Key::MetadataCollapseAll => "Collapse all",
 
         Key::MetadataAttribution => "Attribution",
         Key::MetadataAttributionText => {

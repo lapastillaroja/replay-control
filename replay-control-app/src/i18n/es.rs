@@ -329,11 +329,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataImportFailed => "Error en la importación",
         Key::MetadataProcessed => "procesados",
         Key::MetadataSystemOverview => "Resumen por sistema",
-        Key::MetadataColSystem => "Sistema",
-        Key::MetadataColGames => "Juegos",
-        Key::MetadataColDesc => "Desc.",
-        Key::MetadataColThumb => "Min.",
-        Key::MetadataNoSystems => "Aún no hay sistemas con datos.",
 
         // Thumbnails
         Key::MetadataThumbnailsLibretro => "Miniaturas (libretro)",
@@ -395,6 +390,36 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinHint => {
             "Nombres, géneros, desarrolladores, distribuidores, número de jugadores y otros metadatos incluidos en la app. No se necesita importar nada."
         }
+
+        // Library summary cards
+        Key::MetadataSummaryTotalGames => "Total de juegos",
+        Key::MetadataSummaryEnrichment => "Enriquecimiento",
+        Key::MetadataSummaryCoOp => "Juegos coop.",
+        Key::MetadataSummaryYearSpan => "Rango de años",
+        Key::MetadataSummaryLibrarySize => "Tamaño",
+        Key::MetadataSummarySystems => "Sistemas",
+
+        // System accordion rows
+        Key::MetadataSystemCoverage => "cobertura",
+        Key::MetadataRowGenre => "Género",
+        Key::MetadataRowDeveloper => "Desarrollador",
+        Key::MetadataRowRating => "Valoración",
+        Key::MetadataRowDescription => "Descripción",
+        Key::MetadataRowBoxArt => "Carátula",
+        Key::MetadataRowUnique => "únicos",
+        Key::MetadataRowClones => "clones",
+        Key::MetadataRowHacks => "hacks",
+        Key::MetadataRowTranslations => "trad.",
+        Key::MetadataRowSpecial => "especiales",
+        Key::MetadataRowVerified => "verificados",
+        Key::MetadataRowCoOp => "coop.",
+        Key::MetadataRowDrivers => "Controladores:",
+        Key::MetadataDriverWorking => "funcionan",
+        Key::MetadataDriverImperfect => "imperfectos",
+        Key::MetadataDriverPreliminary => "preliminares",
+        Key::MetadataDriverUnknown => "desconocidos",
+        Key::MetadataExpandAll => "Expandir todo",
+        Key::MetadataCollapseAll => "Contraer todo",
 
         Key::MetadataAttribution => "Atribución",
         Key::MetadataAttributionText => {

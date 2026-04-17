@@ -11,6 +11,24 @@ pub fn format_number(n: usize) -> String {
     result
 }
 
+/// Compute integer percentage, returning 0 if `total` is zero.
+pub fn pct(count: usize, total: usize) -> u32 {
+    if total == 0 {
+        0
+    } else {
+        (count as f64 / total as f64 * 100.0) as u32
+    }
+}
+
+/// Format a min/max year pair as "1985–1999" (or single year, or empty).
+pub fn format_year_range(min: Option<u16>, max: Option<u16>) -> Option<String> {
+    match (min, max) {
+        (Some(a), Some(b)) if a != b => Some(format!("{a}\u{2013}{b}")),
+        (Some(y), _) | (_, Some(y)) => Some(y.to_string()),
+        _ => None,
+    }
+}
+
 /// Format a byte count as a human-readable string (KB / MB / GB).
 pub fn format_size(bytes: u64) -> String {
     const GB: u64 = 1_073_741_824;

@@ -5,6 +5,7 @@ use server_fn::ServerFnError;
 use crate::components::game_section_row::GameSectionRow;
 use crate::components::hero_card::{GameScrollCard, HeroCard};
 use crate::components::setup_checklist::SetupChecklist;
+use crate::components::stat_card::StatCard;
 use crate::components::system_card::SystemCard;
 use crate::i18n::{Key, key_from_str, t, tf, use_i18n};
 use crate::server_fns;
@@ -142,21 +143,6 @@ pub fn HomePage() -> impl IntoView {
                     })}
                 </Suspense>
             </section>
-        </div>
-    }
-}
-
-#[component]
-fn StatCard(value: String, label: &'static str, #[prop(optional)] compact: bool) -> impl IntoView {
-    let class = if compact {
-        "stat-card compact"
-    } else {
-        "stat-card"
-    };
-    view! {
-        <div class=class>
-            <div class="stat-value">{value}</div>
-            <div class="stat-label">{label}</div>
         </div>
     }
 }

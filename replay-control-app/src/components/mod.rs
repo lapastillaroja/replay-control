@@ -13,5 +13,6 @@ pub mod nav;
 pub mod reboot_button;
 pub mod rom_list;
 pub mod setup_checklist;
+pub mod stat_card;
 pub mod system_card;
 pub mod video_section;

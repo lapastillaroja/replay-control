@@ -176,6 +176,146 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Aggregate library-wide summary stats from `game_library` + `game_library_meta`.
+    ///
+    /// Total size comes from pre-computed per-system totals in `game_library_meta`
+    /// via a scalar subquery, so this is a single statement.
+    pub fn library_summary(conn: &Connection) -> Result<super::LibrarySummary> {
+        conn.query_row(
+            "SELECT
+                COUNT(*) as total_games,
+                COUNT(DISTINCT system) as system_count,
+                SUM(CASE WHEN genre IS NOT NULL AND genre != '' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN developer != '' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN rating IS NOT NULL THEN 1 ELSE 0 END),
+                SUM(CASE WHEN box_art_url IS NOT NULL THEN 1 ELSE 0 END),
+                SUM(CASE WHEN cooperative = 1 THEN 1 ELSE 0 END),
+                MIN(CASE WHEN release_year IS NOT NULL AND release_year > 0 THEN release_year END),
+                MAX(CASE WHEN release_year IS NOT NULL AND release_year > 0 THEN release_year END),
+                (SELECT COALESCE(SUM(total_size_bytes), 0) FROM game_library_meta) AS total_size
+             FROM game_library",
+            [],
+            |row| {
+                Ok(super::LibrarySummary {
+                    total_games: row.get::<_, i64>(0).unwrap_or(0) as usize,
+                    system_count: row.get::<_, i64>(1).unwrap_or(0) as usize,
+                    with_genre: row.get::<_, i64>(2).unwrap_or(0) as usize,
+                    with_developer: row.get::<_, i64>(3).unwrap_or(0) as usize,
+                    with_rating: row.get::<_, i64>(4).unwrap_or(0) as usize,
+                    with_box_art: row.get::<_, i64>(5).unwrap_or(0) as usize,
+                    coop_games: row.get::<_, i64>(6).unwrap_or(0) as usize,
+                    min_year: row
+                        .get::<_, Option<i32>>(7)
+                        .unwrap_or(None)
+                        .map(|y| y as u16),
+                    max_year: row
+                        .get::<_, Option<i32>>(8)
+                        .unwrap_or(None)
+                        .map(|y| y as u16),
+                    total_size_bytes: row.get::<_, i64>(9).unwrap_or(0) as u64,
+                })
+            },
+        )
+        .map_err(|e| Error::Other(format!("library_summary query failed: {e}")))
+    }
+
+    /// Per-system coverage stats from `game_library` for the metadata overview.
+    ///
+    /// Returns one `SystemCoverageStats` per distinct `system`. Does not include
+    /// the total game count — that's already pre-computed in `game_library_meta`
+    /// and exposed via `SystemSummary`.
+    pub fn system_coverage_stats(conn: &Connection) -> Result<Vec<super::SystemCoverageStats>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system,
+                    SUM(CASE WHEN genre IS NOT NULL AND genre != '' THEN 1 ELSE 0 END) AS with_genre,
+                    SUM(CASE WHEN developer != '' THEN 1 ELSE 0 END) AS with_developer,
+                    SUM(CASE WHEN rating IS NOT NULL THEN 1 ELSE 0 END) AS with_rating,
+                    SUM(size_bytes) AS size_bytes,
+                    SUM(CASE WHEN is_clone = 1 THEN 1 ELSE 0 END) AS clone_count,
+                    SUM(CASE WHEN is_hack = 1 THEN 1 ELSE 0 END) AS hack_count,
+                    SUM(CASE WHEN is_translation = 1 THEN 1 ELSE 0 END) AS translation_count,
+                    SUM(CASE WHEN is_special = 1 THEN 1 ELSE 0 END) AS special_count,
+                    SUM(CASE WHEN cooperative = 1 THEN 1 ELSE 0 END) AS coop_count,
+                    SUM(CASE WHEN hash_matched_name IS NOT NULL THEN 1 ELSE 0 END) AS verified_count,
+                    MIN(CASE WHEN release_year IS NOT NULL AND release_year > 0 THEN release_year END) AS min_year,
+                    MAX(CASE WHEN release_year IS NOT NULL AND release_year > 0 THEN release_year END) AS max_year
+                 FROM game_library
+                 GROUP BY system",
+            )
+            .map_err(|e| Error::Other(format!("system_coverage_stats query failed: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(super::SystemCoverageStats {
+                    system: row.get::<_, String>(0)?,
+                    with_genre: row.get::<_, i64>(1).unwrap_or(0) as usize,
+                    with_developer: row.get::<_, i64>(2).unwrap_or(0) as usize,
+                    with_rating: row.get::<_, i64>(3).unwrap_or(0) as usize,
+                    size_bytes: row.get::<_, i64>(4).unwrap_or(0) as u64,
+                    clone_count: row.get::<_, i64>(5).unwrap_or(0) as usize,
+                    hack_count: row.get::<_, i64>(6).unwrap_or(0) as usize,
+                    translation_count: row.get::<_, i64>(7).unwrap_or(0) as usize,
+                    special_count: row.get::<_, i64>(8).unwrap_or(0) as usize,
+                    coop_count: row.get::<_, i64>(9).unwrap_or(0) as usize,
+                    verified_count: row.get::<_, i64>(10).unwrap_or(0) as usize,
+                    min_year: row
+                        .get::<_, Option<i32>>(11)
+                        .unwrap_or(None)
+                        .map(|y| y as u16),
+                    max_year: row
+                        .get::<_, Option<i32>>(12)
+                        .unwrap_or(None)
+                        .map(|y| y as u16),
+                })
+            })
+            .map_err(|e| Error::Other(format!("system_coverage_stats query failed: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Per-system counts of `driver_status` values. Only populated for arcade
+    /// systems (where the field is non-null). Systems with no driver_status
+    /// rows do not appear in the returned map.
+    pub fn driver_status_per_system(
+        conn: &Connection,
+    ) -> Result<HashMap<String, super::DriverStatusCounts>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, driver_status, COUNT(*)
+                 FROM game_library
+                 WHERE driver_status IS NOT NULL
+                 GROUP BY system, driver_status",
+            )
+            .map_err(|e| Error::Other(format!("driver_status_per_system query failed: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2).unwrap_or(0) as usize,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("driver_status_per_system query failed: {e}")))?;
+
+        let mut result: HashMap<String, super::DriverStatusCounts> = HashMap::new();
+        for row in rows.flatten() {
+            let (system, status, count) = row;
+            let entry = result.entry(system).or_default();
+            // Stored values are the `DriverStatus` debug names ("Working", "Imperfect",
+            // "Preliminary", "Unknown"). Accept lowercase MAME status strings too for
+            // robustness in case any direct writes use them.
+            match status.as_str() {
+                "Working" | "good" | "working" => entry.working += count,
+                "Imperfect" | "imperfect" => entry.imperfect += count,
+                "Preliminary" | "preliminary" | "protection" => entry.preliminary += count,
+                _ => entry.unknown += count,
+            }
+        }
+        Ok(result)
+    }
+
     // ── Game Library (L2 persistent cache) ─────────────────────────────
 
     /// Save a system's game list to the game_library table.
@@ -2766,5 +2906,128 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].rom_filename, "Contra.sfc");
         assert!(entries[0].cooperative);
+    }
+
+    #[test]
+    fn system_coverage_stats_computes_all_fields() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut sonic = make_game_entry("snes", "Sonic.sfc", false);
+        sonic.genre = Some("Platform".into());
+        sonic.developer = "Sega".into();
+        sonic.rating = Some(4.5);
+        sonic.box_art_url = Some("/img/sonic.png".into());
+        sonic.release_year = Some(1991);
+        sonic.hash_matched_name = Some("Sonic (USA)".into());
+        sonic.cooperative = true;
+
+        let mut mario_clone = make_game_entry("snes", "Mario (J).sfc", false);
+        mario_clone.is_clone = true;
+        mario_clone.release_year = Some(1999);
+
+        let mut zelda_hack = make_game_entry("snes", "Zelda.hack.sfc", false);
+        zelda_hack.is_hack = true;
+
+        let mut contra_trans = make_game_entry("snes", "Contra.trans.sfc", false);
+        contra_trans.is_translation = true;
+
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[sonic, mario_clone, zelda_hack, contra_trans],
+            None,
+        )
+        .unwrap();
+
+        let stats = MetadataDb::system_coverage_stats(&conn).unwrap();
+        assert_eq!(stats.len(), 1);
+        let s = &stats[0];
+        assert_eq!(s.system, "snes");
+        assert_eq!(s.with_genre, 1);
+        assert_eq!(s.with_developer, 1);
+        assert_eq!(s.with_rating, 1);
+        assert_eq!(s.clone_count, 1);
+        assert_eq!(s.hack_count, 1);
+        assert_eq!(s.translation_count, 1);
+        assert_eq!(s.coop_count, 1);
+        assert_eq!(s.verified_count, 1);
+        assert_eq!(s.min_year, Some(1991));
+        assert_eq!(s.max_year, Some(1999));
+    }
+
+    #[test]
+    fn system_coverage_stats_empty_library_returns_empty() {
+        let (conn, _dir) = open_temp_db();
+        let stats = MetadataDb::system_coverage_stats(&conn).unwrap();
+        assert!(stats.is_empty());
+    }
+
+    #[test]
+    fn driver_status_per_system_counts_by_status() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut working = make_game_entry("arcade_mame", "sf2.zip", false);
+        working.driver_status = Some("Working".into());
+        let mut working2 = make_game_entry("arcade_mame", "kof.zip", false);
+        working2.driver_status = Some("Working".into());
+        let mut imperfect = make_game_entry("arcade_mame", "mk.zip", false);
+        imperfect.driver_status = Some("Imperfect".into());
+        let mut preliminary = make_game_entry("arcade_mame", "obscure.zip", false);
+        preliminary.driver_status = Some("Preliminary".into());
+        let no_status = make_game_entry("arcade_mame", "nostatus.zip", false);
+
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "arcade_mame",
+            &[working, working2, imperfect, preliminary, no_status],
+            None,
+        )
+        .unwrap();
+
+        let drivers = MetadataDb::driver_status_per_system(&conn).unwrap();
+        assert_eq!(drivers.len(), 1);
+        let counts = drivers.get("arcade_mame").expect("arcade_mame present");
+        assert_eq!(counts.working, 2);
+        assert_eq!(counts.imperfect, 1);
+        assert_eq!(counts.preliminary, 1);
+        assert_eq!(counts.unknown, 0);
+    }
+
+    #[test]
+    fn driver_status_per_system_skips_systems_without_status() {
+        let (mut conn, _dir) = open_temp_db();
+        MetadataDb::save_system_entries(
+            &mut conn,
+            "snes",
+            &[make_game_entry("snes", "Mario.sfc", false)],
+            None,
+        )
+        .unwrap();
+        let drivers = MetadataDb::driver_status_per_system(&conn).unwrap();
+        assert!(drivers.is_empty());
+    }
+
+    #[test]
+    fn library_summary_single_query_includes_total_size() {
+        let (mut conn, _dir) = open_temp_db();
+
+        let mut g1 = make_game_entry("snes", "Mario.sfc", false);
+        g1.size_bytes = 2 * 1024 * 1024;
+        g1.genre = Some("Platform".into());
+        g1.developer = "Nintendo".into();
+        let mut g2 = make_game_entry("snes", "Zelda.sfc", false);
+        g2.size_bytes = 4 * 1024 * 1024;
+
+        // save_system_entries updates game_library_meta.total_size_bytes from the
+        // sum of size_bytes in the batch.
+        MetadataDb::save_system_entries(&mut conn, "snes", &[g1, g2], None).unwrap();
+
+        let summary = MetadataDb::library_summary(&conn).unwrap();
+        assert_eq!(summary.total_games, 2);
+        assert_eq!(summary.system_count, 1);
+        assert_eq!(summary.with_genre, 1);
+        assert_eq!(summary.with_developer, 1);
+        // total_size_bytes comes from game_library_meta, populated by save_system_entries.
+        assert_eq!(summary.total_size_bytes, 6 * 1024 * 1024);
     }
 }

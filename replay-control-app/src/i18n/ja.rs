@@ -327,11 +327,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataImportFailed => "インポート失敗",
         Key::MetadataProcessed => "件処理済み",
         Key::MetadataSystemOverview => "システム概要",
-        Key::MetadataColSystem => "システム",
-        Key::MetadataColGames => "ゲーム",
-        Key::MetadataColDesc => "説明",
-        Key::MetadataColThumb => "サムネ",
-        Key::MetadataNoSystems => "データのあるシステムはまだありません。",
 
         // Thumbnails
         Key::MetadataThumbnailsLibretro => "サムネイル（libretro）",
@@ -391,6 +386,36 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataBuiltinHint => {
             "名前、ジャンル、開発元、発売元、プレイヤー数などのメタデータはアプリに内蔵されています。インポート不要です。"
         }
+
+        // Library summary cards
+        Key::MetadataSummaryTotalGames => "総ゲーム数",
+        Key::MetadataSummaryEnrichment => "データ充実度",
+        Key::MetadataSummaryCoOp => "協力プレイ",
+        Key::MetadataSummaryYearSpan => "年代",
+        Key::MetadataSummaryLibrarySize => "ライブラリ容量",
+        Key::MetadataSummarySystems => "システム数",
+
+        // System accordion rows
+        Key::MetadataSystemCoverage => "充実度",
+        Key::MetadataRowGenre => "ジャンル",
+        Key::MetadataRowDeveloper => "開発元",
+        Key::MetadataRowRating => "評価",
+        Key::MetadataRowDescription => "説明",
+        Key::MetadataRowBoxArt => "カバー",
+        Key::MetadataRowUnique => "オリジナル",
+        Key::MetadataRowClones => "クローン",
+        Key::MetadataRowHacks => "改造版",
+        Key::MetadataRowTranslations => "翻訳",
+        Key::MetadataRowSpecial => "特別版",
+        Key::MetadataRowVerified => "検証済み",
+        Key::MetadataRowCoOp => "協力プレイ",
+        Key::MetadataRowDrivers => "ドライバ:",
+        Key::MetadataDriverWorking => "動作",
+        Key::MetadataDriverImperfect => "不完全",
+        Key::MetadataDriverPreliminary => "予備",
+        Key::MetadataDriverUnknown => "不明",
+        Key::MetadataExpandAll => "すべて展開",
+        Key::MetadataCollapseAll => "すべて折りたたむ",
 
         Key::MetadataAttribution => "出典",
         Key::MetadataAttributionText => {

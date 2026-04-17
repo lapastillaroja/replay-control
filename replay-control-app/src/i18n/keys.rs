@@ -312,11 +312,6 @@ pub enum Key {
     MetadataImportFailed,
     MetadataProcessed,
     MetadataSystemOverview,
-    MetadataColSystem,
-    MetadataColGames,
-    MetadataColDesc,
-    MetadataColThumb,
-    MetadataNoSystems,
 
     // Thumbnails
     MetadataThumbnailsLibretro,
@@ -368,6 +363,36 @@ pub enum Key {
     MetadataBuiltinWikidataEntries,
     MetadataBuiltinWikidataSeries,
     MetadataBuiltinHint,
+
+    // Library summary cards
+    MetadataSummaryTotalGames,
+    MetadataSummaryEnrichment,
+    MetadataSummaryCoOp,
+    MetadataSummaryYearSpan,
+    MetadataSummaryLibrarySize,
+    MetadataSummarySystems,
+
+    // System accordion rows
+    MetadataSystemCoverage,
+    MetadataRowGenre,
+    MetadataRowDeveloper,
+    MetadataRowRating,
+    MetadataRowDescription,
+    MetadataRowBoxArt,
+    MetadataRowUnique,
+    MetadataRowClones,
+    MetadataRowHacks,
+    MetadataRowTranslations,
+    MetadataRowSpecial,
+    MetadataRowVerified,
+    MetadataRowCoOp,
+    MetadataRowDrivers,
+    MetadataDriverWorking,
+    MetadataDriverImperfect,
+    MetadataDriverPreliminary,
+    MetadataDriverUnknown,
+    MetadataExpandAll,
+    MetadataCollapseAll,
 
     MetadataAttribution,
     MetadataAttributionText,

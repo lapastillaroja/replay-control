@@ -2,9 +2,13 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use server_fn::ServerFnError;
 
+use crate::components::stat_card::StatCard;
 use crate::i18n::{Key, t, use_i18n};
-use crate::server_fns::{self, Activity, ImportState, RebuildPhase, ThumbnailPhase};
-use crate::util::{format_number, format_size};
+use crate::server_fns::{
+    self, Activity, DriverStatusCounts, ImportState, LibrarySummary, RebuildPhase, SystemCoverage,
+    ThumbnailPhase,
+};
+use crate::util::{format_number, format_size, format_year_range, pct};
 
 #[component]
 pub fn MetadataPage() -> impl IntoView {
@@ -15,6 +19,7 @@ pub fn MetadataPage() -> impl IntoView {
     let data_source = Resource::new(|| (), |_| server_fns::get_thumbnail_data_source());
     let image_stats = Resource::new(|| (), |_| server_fns::get_image_stats());
     let builtin_stats = Resource::new(|| (), |_| server_fns::get_builtin_db_stats());
+    let library_summary = Resource::new(|| (), |_| server_fns::get_library_summary());
 
     // Single activity signal (replaces importing + thumb_updating + rebuilding).
     let activity = RwSignal::new(Activity::Idle);
@@ -69,6 +74,7 @@ pub fn MetadataPage() -> impl IntoView {
                     coverage,
                     data_source,
                     image_stats,
+                    library_summary,
                 );
             }
         });
@@ -105,6 +111,7 @@ pub fn MetadataPage() -> impl IntoView {
                         coverage,
                         data_source,
                         image_stats,
+                        library_summary,
                     );
                 }
                 Err(e) => {
@@ -145,6 +152,7 @@ pub fn MetadataPage() -> impl IntoView {
                         coverage,
                         data_source,
                         image_stats,
+                        library_summary,
                     );
                 }
                 Err(e) => {
@@ -170,63 +178,22 @@ pub fn MetadataPage() -> impl IntoView {
                 <h2 class="page-title">{move || t(i18n.locale.get(), Key::MetadataTitle)}</h2>
             </div>
 
-            // ── System Overview ───────────────────────────────────────
+            // ── Library Summary Cards ────────────────────────────────
             <section class="section">
-                <h2 class="section-title">{move || t(i18n.locale.get(), Key::MetadataSystemOverview)}</h2>
-                <Suspense fallback=move || view! { <MetadataTableSkeleton /> }>
+                <Suspense fallback=move || view! { <SummaryCardsSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
-                        let data = coverage.await?;
-
-                        let has_any_data = data.iter().any(|c| c.with_metadata > 0 || c.with_thumbnail > 0);
-
-                        Ok::<_, ServerFnError>(if !has_any_data {
-                            view! {
-                                <p class="game-section-empty">{t(locale, Key::MetadataNoSystems)}</p>
-                            }.into_any()
+                        let s = library_summary.await?;
+                        Ok::<_, ServerFnError>(if s.total_games == 0 {
+                            view! { <span></span> }.into_any()
                         } else {
-                            let rows = data.into_iter()
-                                .filter(|c| c.with_metadata > 0 || c.with_thumbnail > 0)
-                                .map(|c| {
-                                    let desc_pct = if c.total_games > 0 && c.with_metadata > 0 {
-                                        format!("{}%", (c.with_metadata as f64 / c.total_games as f64 * 100.0) as u32)
-                                    } else {
-                                        "--".to_string()
-                                    };
-                                    let thumb_pct = if c.total_games > 0 && c.with_thumbnail > 0 {
-                                        format!("{}%", (c.with_thumbnail as f64 / c.total_games as f64 * 100.0) as u32)
-                                    } else {
-                                        "--".to_string()
-                                    };
-                                    view! {
-                                        <tr>
-                                            <td class="overview-system">{c.display_name}</td>
-                                            <td class="overview-num">{c.total_games}</td>
-                                            <td class="overview-num">{desc_pct}</td>
-                                            <td class="overview-num">{thumb_pct}</td>
-                                        </tr>
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-                            view! {
-                                <div class="overview-table-wrap">
-                                    <table class="overview-table">
-                                        <thead>
-                                            <tr>
-                                                <th class="overview-system">{t(locale, Key::MetadataColSystem)}</th>
-                                                <th class="overview-num">{t(locale, Key::MetadataColGames)}</th>
-                                                <th class="overview-num">{t(locale, Key::MetadataColDesc)}</th>
-                                                <th class="overview-num">{t(locale, Key::MetadataColThumb)}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>{rows}</tbody>
-                                    </table>
-                                </div>
-                            }.into_any()
+                            view! { <SummaryCards summary=s locale /> }.into_any()
                         })
                     })}
                 </Suspense>
             </section>
+
+            <SystemOverviewSection coverage />
 
             // ── Data Sources ──────────────────────────────────────────
             <section class="section">
@@ -409,7 +376,7 @@ pub fn MetadataPage() -> impl IntoView {
             </section>
 
             // ── Data Management ───────────────────────────────────────
-            <DataManagementSection stats coverage activity result_message=rebuild_result is_busy />
+            <DataManagementSection stats coverage library_summary activity result_message=rebuild_result is_busy />
 
             // ── Attribution ───────────────────────────────────────────
             <section class="section">
@@ -450,6 +417,7 @@ fn watch_activity(
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
     data_source: Resource<Result<server_fns::DataSourceSummary, ServerFnError>>,
     image_stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
+    library_summary: Resource<Result<server_fns::LibrarySummary, ServerFnError>>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     let _ = (
@@ -462,6 +430,7 @@ fn watch_activity(
         &coverage,
         &data_source,
         &image_stats,
+        &library_summary,
     );
 
     #[cfg(target_arch = "wasm32")]
@@ -494,55 +463,47 @@ fn watch_activity(
                 };
 
                 if act.is_terminal() {
-                    // Extract completion text before resetting to Idle.
                     let message = act.terminal_message();
 
-                    // Reset cancelling state if this was a thumbnail operation.
                     if matches!(act, Activity::ThumbnailUpdate { .. }) {
                         thumb_cancelling.set(false);
                     }
 
-                    // 1. Set activity to Idle immediately (buttons re-enable).
                     activity.set(Activity::Idle);
 
-                    // 2. Set result message on the correct per-operation signal.
                     if !message.is_empty() {
                         let target = match &act {
                             Activity::Import { .. } => import_result,
                             Activity::ThumbnailUpdate { .. } => thumb_result,
                             Activity::Rebuild { .. } => rebuild_result,
-                            _ => import_result, // fallback
+                            _ => import_result,
                         };
                         target.set(Some(message));
 
-                        // 3. Start client-side timer to clear the message after 5s.
                         gloo_timers::callback::Timeout::new(5_000, move || {
                             target.set(None);
                         })
                         .forget();
                     }
 
-                    // Refetch relevant resources.
                     stats.refetch();
                     coverage.refetch();
                     data_source.refetch();
                     image_stats.refetch();
+                    library_summary.refetch();
 
-                    // Close SSE — operation is done.
                     es_clone.close();
                     ACTIVITY_ES.with(|cell| {
                         cell.borrow_mut().take();
                     });
                 } else if matches!(act, Activity::Idle) {
-                    // Server went Idle (guard dropped). Update activity signal.
                     activity.set(Activity::Idle);
-                    // Refetch in case we missed a terminal event.
                     stats.refetch();
                     coverage.refetch();
                     data_source.refetch();
                     image_stats.refetch();
+                    library_summary.refetch();
 
-                    // Close SSE.
                     es_clone.close();
                     ACTIVITY_ES.with(|cell| {
                         cell.borrow_mut().take();
@@ -708,6 +669,7 @@ fn ThumbnailProgressDisplay(
 fn DataManagementSection(
     stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
     coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
+    library_summary: Resource<Result<server_fns::LibrarySummary, ServerFnError>>,
     activity: RwSignal<Activity>,
     result_message: RwSignal<Option<String>>,
     is_busy: Memo<bool>,
@@ -785,14 +747,15 @@ fn DataManagementSection(
                     }
                     watch_activity(
                         activity,
-                        RwSignal::new(None), // import_result (unused for rebuild)
-                        RwSignal::new(None), // thumb_result (unused for rebuild)
-                        result_message,      // rebuild_result
-                        RwSignal::new(false), // no cancelling for rebuild
+                        RwSignal::new(None),
+                        RwSignal::new(None),
+                        result_message,
+                        RwSignal::new(false),
                         stats,
                         coverage,
                         Resource::new_blocking(|| (), |_| server_fns::get_thumbnail_data_source()),
                         Resource::new_blocking(|| (), |_| server_fns::get_image_stats()),
+                        library_summary,
                     );
                 }
                 Err(e) => {
@@ -882,6 +845,7 @@ fn DataManagementSection(
                     ));
                     stats.refetch();
                     coverage.refetch();
+                    library_summary.refetch();
                 }
                 Err(e) => {
                     metadata_result.set(Some(format!("Error: {e}")));
@@ -1027,18 +991,333 @@ fn ClearActionCard(
     }
 }
 
-// ── Skeleton components ──────────────────────────────────────────────────
-
-/// Skeleton for the system overview table (4 shimmer rows).
+/// Renders the six library summary stat cards.
 #[component]
-fn MetadataTableSkeleton() -> impl IntoView {
+fn SummaryCards(summary: LibrarySummary, locale: crate::i18n::Locale) -> impl IntoView {
+    let s = summary;
+
+    // Enrichment: weighted average of genre/developer/rating/art coverage.
+    let enrichment_value = if s.total_games > 0 {
+        let avg = (pct(s.with_genre, s.total_games)
+            + pct(s.with_developer, s.total_games)
+            + pct(s.with_rating, s.total_games)
+            + pct(s.with_box_art, s.total_games))
+            / 4;
+        format!("{avg}%")
+    } else {
+        "--".to_string()
+    };
+
+    let year_value = format_year_range(s.min_year, s.max_year).unwrap_or_else(|| "--".to_string());
+
+    view! {
+        <div class="stats-grid">
+            <StatCard compact=true
+                value=format_number(s.total_games)
+                label=t(locale, Key::MetadataSummaryTotalGames) />
+            <StatCard compact=true
+                value=enrichment_value
+                label=t(locale, Key::MetadataSummaryEnrichment) />
+            <StatCard compact=true
+                value=format_number(s.system_count)
+                label=t(locale, Key::MetadataSummarySystems) />
+            <StatCard compact=true
+                value=format_number(s.coop_games)
+                label=t(locale, Key::MetadataSummaryCoOp) />
+            <StatCard compact=true
+                value=year_value
+                label=t(locale, Key::MetadataSummaryYearSpan) />
+            <StatCard compact=true
+                value=format_size(s.total_size_bytes)
+                label=t(locale, Key::MetadataSummaryLibrarySize) />
+        </div>
+    }
+}
+
+// ── System overview accordion ────────────────────────────────────────────
+
+#[component]
+fn SystemOverviewSection(
+    coverage: Resource<Result<Vec<SystemCoverage>, ServerFnError>>,
+) -> impl IntoView {
+    let i18n = use_i18n();
+    let expand_all = RwSignal::new(false);
+    let toggle_all = move |_: leptos::ev::MouseEvent| expand_all.update(|v| *v = !*v);
+
+    view! {
+        <section class="section">
+            <div class="system-overview-header">
+                <h2 class="section-title" style="margin:0">
+                    {move || t(i18n.locale.get(), Key::MetadataSystemOverview)}
+                </h2>
+                <button class="system-overview-toggle-all" on:click=toggle_all>
+                    {move || if expand_all.get() {
+                        t(i18n.locale.get(), Key::MetadataCollapseAll)
+                    } else {
+                        t(i18n.locale.get(), Key::MetadataExpandAll)
+                    }}
+                </button>
+            </div>
+            <Suspense fallback=move || view! { <AccordionSkeleton /> }>
+                {move || Suspend::new(async move {
+                    let data = coverage.await?;
+                    let rows = data
+                        .into_iter()
+                        .filter(|c| c.total_games > 0)
+                        .map(|c| view! {
+                            <SystemAccordionRow coverage=c expand_all />
+                        })
+                        .collect::<Vec<_>>();
+                    Ok::<_, ServerFnError>(view! {
+                        <div class="system-accordion-list">{rows}</div>
+                    })
+                })}
+            </Suspense>
+        </section>
+    }
+}
+
+#[component]
+fn SystemAccordionRow(coverage: SystemCoverage, expand_all: RwSignal<bool>) -> impl IntoView {
+    let cov = StoredValue::new(coverage);
+    let expanded = RwSignal::new(false);
+
+    Effect::new(move |prev: Option<bool>| {
+        let v = expand_all.get();
+        if prev.is_some() && prev != Some(v) {
+            expanded.set(v);
+        }
+        v
+    });
+
+    let toggle = move |_| expanded.update(|e| *e = !*e);
+
+    view! {
+        <div
+            class="system-accordion-row"
+            class:expanded=move || expanded.get()
+            on:click=toggle
+        >
+            <SystemRowHeader cov />
+            <Show when=move || expanded.get()>
+                <SystemRowDetails cov />
+            </Show>
+        </div>
+    }
+}
+
+#[component]
+fn SystemRowHeader(cov: StoredValue<SystemCoverage>) -> impl IntoView {
+    let i18n = use_i18n();
+
+    let (display_name, size_bytes, overall, games_text) = cov.with_value(|c| {
+        let g = pct(c.with_genre, c.total_games);
+        let d = pct(c.with_developer, c.total_games);
+        let r = pct(c.with_rating, c.total_games);
+        let desc = pct(c.with_description, c.total_games);
+        let art = pct(c.with_thumbnail, c.total_games);
+        let overall = (g + d + r + desc + art) / 5;
+        (
+            c.display_name.clone(),
+            c.size_bytes,
+            overall,
+            format_number(c.total_games),
+        )
+    });
+
+    let width = format!("width:{overall}%");
+    let size_text = format_size(size_bytes);
+
+    view! {
+        <>
+            <div class="system-row-header">
+                <span class="system-row-name">{display_name}</span>
+                <span class="system-row-chevron" aria-hidden="true">"▸"</span>
+            </div>
+            <div class="system-row-summary">
+                {move || {
+                    let locale = i18n.locale.get();
+                    format!(
+                        "{} {} \u{00B7} {} \u{00B7} {}% {}",
+                        games_text,
+                        t(locale, Key::StatsGames).to_lowercase(),
+                        size_text,
+                        overall,
+                        t(locale, Key::MetadataSystemCoverage),
+                    )
+                }}
+            </div>
+            <div class="system-row-overall-bar">
+                <div class="system-row-overall-bar-fill" style=width></div>
+            </div>
+        </>
+    }
+}
+
+#[component]
+fn SystemRowDetails(cov: StoredValue<SystemCoverage>) -> impl IntoView {
+    let i18n = use_i18n();
+
+    view! {
+        <div class="system-row-details" on:click=|ev| ev.stop_propagation()>
+            <CoverageBarRow cov field=CoverageField::Genre />
+            <CoverageBarRow cov field=CoverageField::Developer />
+            <CoverageBarRow cov field=CoverageField::Rating />
+            <CoverageBarRow cov field=CoverageField::Description />
+            <CoverageBarRow cov field=CoverageField::BoxArt />
+
+            <div class="composition-row">
+                {move || composition_text(cov, i18n.locale.get())}
+            </div>
+
+            {move || driver_row_view(cov, i18n.locale.get())}
+
+            {move || footer_row_view(cov, i18n.locale.get())}
+        </div>
+    }
+}
+
+#[derive(Copy, Clone)]
+enum CoverageField {
+    Genre,
+    Developer,
+    Rating,
+    Description,
+    BoxArt,
+}
+
+#[component]
+fn CoverageBarRow(cov: StoredValue<SystemCoverage>, field: CoverageField) -> impl IntoView {
+    let i18n = use_i18n();
+    let (count, total, label_key) = cov.with_value(|c| match field {
+        CoverageField::Genre => (c.with_genre, c.total_games, Key::MetadataRowGenre),
+        CoverageField::Developer => (c.with_developer, c.total_games, Key::MetadataRowDeveloper),
+        CoverageField::Rating => (c.with_rating, c.total_games, Key::MetadataRowRating),
+        CoverageField::Description => (
+            c.with_description,
+            c.total_games,
+            Key::MetadataRowDescription,
+        ),
+        CoverageField::BoxArt => (c.with_thumbnail, c.total_games, Key::MetadataRowBoxArt),
+    });
+    let value = pct(count, total);
+    let width = format!("width:{value}%");
+    let pct_text = format!("{value}%");
+
+    view! {
+        <div class="coverage-row">
+            <span class="coverage-row-label">{move || t(i18n.locale.get(), label_key)}</span>
+            <div class="coverage-bar">
+                <div class="coverage-bar-fill" style=width></div>
+            </div>
+            <span class="coverage-row-pct">{pct_text}</span>
+        </div>
+    }
+}
+
+fn composition_text(cov: StoredValue<SystemCoverage>, locale: crate::i18n::Locale) -> String {
+    cov.with_value(|c| {
+        let total = c.total_games.max(1);
+        let unique = total
+            .saturating_sub(c.clone_count + c.hack_count + c.translation_count + c.special_count);
+        let optional = [
+            (c.clone_count, Key::MetadataRowClones),
+            (c.hack_count, Key::MetadataRowHacks),
+            (c.translation_count, Key::MetadataRowTranslations),
+            (c.special_count, Key::MetadataRowSpecial),
+        ];
+        std::iter::once(format!(
+            "{}% {}",
+            pct(unique, total),
+            t(locale, Key::MetadataRowUnique)
+        ))
+        .chain(
+            optional
+                .into_iter()
+                .filter(|(n, _)| *n > 0)
+                .map(|(n, key)| format!("{}% {}", pct(n, total), t(locale, key))),
+        )
+        .collect::<Vec<_>>()
+        .join(" \u{00B7} ")
+    })
+}
+
+fn driver_row_view(
+    cov: StoredValue<SystemCoverage>,
+    locale: crate::i18n::Locale,
+) -> Option<leptos::prelude::AnyView> {
+    let text = cov.with_value(|c| {
+        c.driver_status.as_ref().map(|d: &DriverStatusCounts| {
+            format!(
+                "{} {} {} \u{00B7} {} {} \u{00B7} {} {} \u{00B7} {} {}",
+                t(locale, Key::MetadataRowDrivers),
+                format_number(d.working),
+                t(locale, Key::MetadataDriverWorking),
+                format_number(d.imperfect),
+                t(locale, Key::MetadataDriverImperfect),
+                format_number(d.preliminary),
+                t(locale, Key::MetadataDriverPreliminary),
+                format_number(d.unknown),
+                t(locale, Key::MetadataDriverUnknown),
+            )
+        })
+    })?;
+    Some(view! { <div class="driver-row">{text}</div> }.into_any())
+}
+
+fn footer_row_view(
+    cov: StoredValue<SystemCoverage>,
+    locale: crate::i18n::Locale,
+) -> Option<leptos::prelude::AnyView> {
+    let text = cov.with_value(|c| {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(yr) = format_year_range(c.min_year, c.max_year) {
+            parts.push(yr);
+        }
+        if c.verified_count > 0 {
+            parts.push(format!(
+                "{}/{} {}",
+                format_number(c.verified_count),
+                format_number(c.total_games),
+                t(locale, Key::MetadataRowVerified),
+            ));
+        }
+        if c.coop_count > 0 {
+            parts.push(format!(
+                "{} {}",
+                format_number(c.coop_count),
+                t(locale, Key::MetadataRowCoOp)
+            ));
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" \u{00B7} "))
+        }
+    })?;
+    Some(view! { <div class="footer-row">{text}</div> }.into_any())
+}
+
+// ── Skeletons ────────────────────────────────────────────────────────────
+
+#[component]
+fn SummaryCardsSkeleton() -> impl IntoView {
+    view! {
+        <div class="meta-skeleton-cards">
+            {(0..6).map(|_| view! {
+                <div class="meta-skeleton-card skeleton-shimmer"></div>
+            }).collect::<Vec<_>>()}
+        </div>
+    }
+}
+
+#[component]
+fn AccordionSkeleton() -> impl IntoView {
     view! {
         <div class="meta-skeleton-table">
             {(0..4).map(|_| view! {
                 <div class="meta-skeleton-row skeleton-shimmer">
                     <div class="meta-skeleton-cell-wide"></div>
-                    <div class="meta-skeleton-cell"></div>
-                    <div class="meta-skeleton-cell"></div>
                     <div class="meta-skeleton-cell"></div>
                 </div>
             }).collect::<Vec<_>>()}
@@ -1046,7 +1325,6 @@ fn MetadataTableSkeleton() -> impl IntoView {
     }
 }
 
-/// Skeleton for a data-source card (builtin info block).
 #[component]
 fn MetadataCardSkeleton() -> impl IntoView {
     view! {
@@ -1057,7 +1335,6 @@ fn MetadataCardSkeleton() -> impl IntoView {
     }
 }
 
-/// Skeleton for a single summary line inside a data-source card.
 #[component]
 fn MetadataLineSkeleton() -> impl IntoView {
     view! {

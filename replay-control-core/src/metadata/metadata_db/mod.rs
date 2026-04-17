@@ -85,8 +85,84 @@ pub struct SystemCoverage {
     pub system: String,
     pub display_name: String,
     pub total_games: usize,
-    pub with_metadata: usize,
     pub with_thumbnail: usize,
+    /// Games with a non-empty genre in game_library.
+    #[serde(default)]
+    pub with_genre: usize,
+    /// Games with a non-empty developer in game_library.
+    #[serde(default)]
+    pub with_developer: usize,
+    /// Games with a non-null rating in game_library.
+    #[serde(default)]
+    pub with_rating: usize,
+    /// Total ROM size in bytes for this system (from game_library).
+    #[serde(default)]
+    pub size_bytes: u64,
+    /// Games with a description in game_metadata.
+    #[serde(default)]
+    pub with_description: usize,
+    #[serde(default)]
+    pub clone_count: usize,
+    #[serde(default)]
+    pub hack_count: usize,
+    #[serde(default)]
+    pub translation_count: usize,
+    #[serde(default)]
+    pub special_count: usize,
+    #[serde(default)]
+    pub coop_count: usize,
+    /// Games with `hash_matched_name IS NOT NULL` (No-Intro verified).
+    #[serde(default)]
+    pub verified_count: usize,
+    #[serde(default)]
+    pub min_year: Option<u16>,
+    #[serde(default)]
+    pub max_year: Option<u16>,
+    /// Driver status counts for arcade systems. `None` for non-arcade systems.
+    #[serde(default)]
+    pub driver_status: Option<DriverStatusCounts>,
+}
+
+/// Per-system coverage stats from a single `GROUP BY system` pass over `game_library`.
+#[derive(Debug, Clone, Default)]
+pub struct SystemCoverageStats {
+    pub system: String,
+    pub with_genre: usize,
+    pub with_developer: usize,
+    pub with_rating: usize,
+    pub size_bytes: u64,
+    pub clone_count: usize,
+    pub hack_count: usize,
+    pub translation_count: usize,
+    pub special_count: usize,
+    pub coop_count: usize,
+    pub verified_count: usize,
+    pub min_year: Option<u16>,
+    pub max_year: Option<u16>,
+}
+
+/// Per-system counts for arcade `driver_status` values.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct DriverStatusCounts {
+    pub working: usize,
+    pub imperfect: usize,
+    pub preliminary: usize,
+    pub unknown: usize,
+}
+
+/// Aggregate summary of the entire game library.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct LibrarySummary {
+    pub total_games: usize,
+    pub system_count: usize,
+    pub with_genre: usize,
+    pub with_developer: usize,
+    pub with_rating: usize,
+    pub with_box_art: usize,
+    pub coop_games: usize,
+    pub min_year: Option<u16>,
+    pub max_year: Option<u16>,
+    pub total_size_bytes: u64,
 }
 
 /// Cached metadata for a single game.
