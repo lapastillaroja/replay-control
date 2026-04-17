@@ -8,9 +8,28 @@ use replay_control_app::api::AppState;
 
 static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// Create a temp directory with a minimal ROM storage layout for integration tests.
-/// Returns the temp directory path. Caller must call `cleanup_test_storage` when done.
-pub fn create_test_storage() -> PathBuf {
+/// RAII test environment: creates a temp ROM layout + `AppState`, removes
+/// the tmpdir on drop.
+pub struct TestEnv {
+    pub tmp: PathBuf,
+    pub state: AppState,
+}
+
+impl TestEnv {
+    pub fn new() -> Self {
+        let tmp = create_test_storage();
+        let state = test_app_state(&tmp);
+        Self { tmp, state }
+    }
+}
+
+impl Drop for TestEnv {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.tmp);
+    }
+}
+
+fn create_test_storage() -> PathBuf {
     let id = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp = std::env::temp_dir().join(format!("replay-integ-{}-{id}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
@@ -42,8 +61,7 @@ pub fn create_test_storage() -> PathBuf {
     tmp
 }
 
-/// Create an AppState pointing at the given test storage directory.
-pub fn test_app_state(tmp: &std::path::Path) -> AppState {
+fn test_app_state(tmp: &std::path::Path) -> AppState {
     AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None).unwrap()
 }
 
@@ -114,11 +132,6 @@ pub fn register_server_fns() {
 /// Safe to call multiple times (only the first call takes effect).
 pub fn init_executor() {
     let _ = any_spawner::Executor::init_tokio();
-}
-
-/// Clean up a test storage directory.
-pub fn cleanup_test_storage(tmp: &std::path::Path) {
-    let _ = std::fs::remove_dir_all(tmp);
 }
 
 /// Helper to assert a response has status 200 and parse the JSON body.

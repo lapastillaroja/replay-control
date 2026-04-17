@@ -7,10 +7,7 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
-use common::{
-    cleanup_test_storage, create_test_storage, init_executor, register_server_fns, test_app_state,
-    test_router,
-};
+use common::{TestEnv, init_executor, register_server_fns, test_router};
 
 /// SSR tests require the Leptos executor and server function registration.
 fn setup() {
@@ -21,9 +18,8 @@ fn setup() {
 #[tokio::test(flavor = "multi_thread")]
 async fn home_page_returns_200_with_replay_control() {
     setup();
-    let tmp = create_test_storage();
-    let state = test_app_state(&tmp);
-    let app = test_router(state);
+    let env = TestEnv::new();
+    let app = test_router(env.state.clone());
 
     let resp = app
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -39,16 +35,13 @@ async fn home_page_returns_200_with_replay_control() {
         html.contains("Replay Control"),
         "home page should contain 'Replay Control'"
     );
-
-    cleanup_test_storage(&tmp);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_page_returns_200() {
     setup();
-    let tmp = create_test_storage();
-    let state = test_app_state(&tmp);
-    let app = test_router(state);
+    let env = TestEnv::new();
+    let app = test_router(env.state.clone());
 
     let resp = app
         .oneshot(
@@ -61,16 +54,13 @@ async fn settings_page_returns_200() {
         .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-
-    cleanup_test_storage(&tmp);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn nonexistent_page_returns_200_with_not_found_message() {
     setup();
-    let tmp = create_test_storage();
-    let state = test_app_state(&tmp);
-    let app = test_router(state);
+    let env = TestEnv::new();
+    let app = test_router(env.state.clone());
 
     let resp = app
         .oneshot(
@@ -82,7 +72,6 @@ async fn nonexistent_page_returns_200_with_not_found_message() {
         .await
         .unwrap();
 
-    // SSR fallback returns 200 even for unknown routes (SPA-style routing).
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body = resp.into_body().collect().await.unwrap().to_bytes();
@@ -92,16 +81,13 @@ async fn nonexistent_page_returns_200_with_not_found_message() {
         html.contains("Page not found"),
         "non-existent page should contain 'Page not found'"
     );
-
-    cleanup_test_storage(&tmp);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn style_css_endpoint_returns_css() {
     setup();
-    let tmp = create_test_storage();
-    let state = test_app_state(&tmp);
-    let app = test_router(state);
+    let env = TestEnv::new();
+    let app = test_router(env.state.clone());
 
     let resp = app
         .oneshot(
@@ -124,16 +110,13 @@ async fn style_css_endpoint_returns_css() {
         content_type.contains("text/css"),
         "style.css should have text/css content type, got: {content_type}"
     );
-
-    cleanup_test_storage(&tmp);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn home_page_contains_setup_checklist_on_fresh_storage() {
     setup();
-    let tmp = create_test_storage();
-    let state = test_app_state(&tmp);
-    let app = test_router(state);
+    let env = TestEnv::new();
+    let app = test_router(env.state.clone());
 
     let resp = app
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -145,12 +128,8 @@ async fn home_page_contains_setup_checklist_on_fresh_storage() {
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     let html = String::from_utf8(body.to_vec()).unwrap();
 
-    // The setup checklist should be rendered on a fresh storage
-    // (no metadata imported, no thumbnail index).
     assert!(
         html.contains("setup-checklist"),
         "home page on fresh storage should contain the setup checklist"
     );
-
-    cleanup_test_storage(&tmp);
 }
