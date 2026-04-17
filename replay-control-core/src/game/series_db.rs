@@ -59,13 +59,7 @@ pub fn entry_count() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Whether this test binary was built against the committed `fixtures/` stubs
-    /// rather than the real `data/` sources. The value of `REPLAY_BUILD_STUB` is
-    /// captured at compile time via `option_env!`.
-    fn using_stub_data() -> bool {
-        matches!(option_env!("REPLAY_BUILD_STUB"), Some("1") | Some("true"))
-    }
+    use crate::game::using_stub_data;
 
     #[test]
     fn series_db_not_empty() {

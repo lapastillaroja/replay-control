@@ -200,6 +200,7 @@ pub fn system_games(system: &str) -> Option<&'static [CanonicalGame]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::using_stub_data;
 
     #[test]
     fn supported_systems_not_empty() {
@@ -535,13 +536,6 @@ mod tests {
     }
 
     // --- Total entry count test ---
-
-    /// Whether this test binary was built against the committed `fixtures/` stubs
-    /// rather than the real `data/` sources. The value of `REPLAY_BUILD_STUB` is
-    /// captured at compile time via `option_env!`.
-    fn using_stub_data() -> bool {
-        matches!(option_env!("REPLAY_BUILD_STUB"), Some("1") | Some("true"))
-    }
 
     #[test]
     fn total_entry_count() {

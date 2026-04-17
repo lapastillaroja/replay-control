@@ -72,6 +72,7 @@ pub fn arcade_display_name(filename: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::using_stub_data;
 
     #[test]
     fn lookup_known_game() {
@@ -250,13 +251,6 @@ mod tests {
     fn regular_game_not_bios() {
         let info = lookup_arcade_game("mslug6").expect("mslug6 should exist");
         assert!(!info.is_bios, "mslug6 should not be flagged as BIOS");
-    }
-
-    /// Whether this test binary was built against the committed `fixtures/` stubs
-    /// rather than the real `data/` sources. The value of `REPLAY_BUILD_STUB` is
-    /// captured at compile time via `option_env!`.
-    fn using_stub_data() -> bool {
-        matches!(option_env!("REPLAY_BUILD_STUB"), Some("1") | Some("true"))
     }
 
     #[test]
