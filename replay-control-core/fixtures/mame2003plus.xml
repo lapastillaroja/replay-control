@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<mame>
+  <game name="puckman">
+    <description>Puck Man</description>
+    <year>1980</year>
+    <manufacturer>Namco</manufacturer>
+    <video orientation="horizontal"/>
+    <input players="1"/>
+    <driver status="good"/>
+  </game>
+  <game name="pacman" cloneof="puckman">
+    <description>Pac-Man (Midway)</description>
+    <year>1980</year>
+    <manufacturer>Midway</manufacturer>
+    <video orientation="horizontal"/>
+    <input players="1"/>
+    <driver status="good"/>
+  </game>
+  <game name="dkong">
+    <description>Donkey Kong (US set 1)</description>
+    <year>1981</year>
+    <manufacturer>Nintendo</manufacturer>
+    <video orientation="vertical"/>
+    <input players="2"/>
+    <driver status="good"/>
+  </game>
+</mame>

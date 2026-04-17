@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<datafile>
+  <game name="capsnk">
+    <description>Captain Commando</description>
+    <year>1991</year>
+    <manufacturer>Capcom</manufacturer>
+  </game>
+  <game name="capsnka" cloneof="capsnk">
+    <description>Captain Commando (Clone)</description>
+    <year>1991</year>
+    <manufacturer>Capcom</manufacturer>
+  </game>
+  <game name="3countb">
+    <description>3 Count Bout</description>
+    <year>1993</year>
+    <manufacturer>SNK</manufacturer>
+  </game>
+  <game name="3countba" cloneof="3countb">
+    <description>3 Count Bout / Fire Suplex (NGM-043)</description>
+    <year>1993</year>
+    <manufacturer>SNK</manufacturer>
+  </game>
+  <game name="1941">
+    <description>1941: Counter Attack (World) FBNeo</description>
+    <year>1990</year>
+    <manufacturer>Capcom</manufacturer>
+  </game>
+  <game name="1941r1" cloneof="1941">
+    <description>1941: Counter Attack (World) FBNeo clone</description>
+    <year>1990</year>
+    <manufacturer>Capcom</manufacturer>
+  </game>
+  <game name="neogeo" isbios="yes">
+    <description>Neo Geo BIOS</description>
+    <year>1990</year>
+    <manufacturer>SNK</manufacturer>
+  </game>
+</datafile>

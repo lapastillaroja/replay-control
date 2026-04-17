@@ -1,0 +1,10 @@
+game (
+	name "Super Mario Bros. (World)"
+	region "World"
+	rom ( name "Super Mario Bros. (World).nes" crc 11111111 )
+)
+game (
+	name "Legend of Zelda, The (USA)"
+	region "USA"
+	rom ( name "Legend of Zelda, The (USA).nes" crc 22222222 )
+)

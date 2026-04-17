@@ -1,0 +1,10 @@
+[
+  {"game_title":"Mega Man","system":"nintendo_nes","series_name":"Mega Man","series_order":1,"followed_by":"Mega Man 2"},
+  {"game_title":"Mega Man 2","system":"nintendo_nes","series_name":"Mega Man","series_order":2,"follows":"Mega Man","followed_by":"Mega Man 3"},
+  {"game_title":"Mega Man 3","system":"nintendo_nes","series_name":"Mega Man","series_order":3,"follows":"Mega Man 2"},
+  {"game_title":"Sonic the Hedgehog","system":"sega_smd","series_name":"Sonic the Hedgehog","series_order":1,"followed_by":"Sonic the Hedgehog 2"},
+  {"game_title":"Streets of Rage","system":"sega_smd","series_name":"Streets of Rage","series_order":1,"followed_by":"Streets of Rage 2"},
+  {"game_title":"Streets of Rage 2","system":"sega_smd","series_name":"Streets of Rage","series_order":2,"follows":"Streets of Rage"},
+  {"game_title":"DonPachi","system":"arcade_fbneo","series_name":"DonPachi","series_order":1,"followed_by":"DoDonPachi"},
+  {"game_title":"DoDonPachi","system":"arcade_fbneo","series_name":"DonPachi","series_order":2,"follows":"DonPachi"}
+]

@@ -60,6 +60,13 @@ pub fn entry_count() -> usize {
 mod tests {
     use super::*;
 
+    /// Whether this test binary was built against the committed `fixtures/` stubs
+    /// rather than the real `data/` sources. The value of `REPLAY_BUILD_STUB` is
+    /// captured at compile time via `option_env!`.
+    fn using_stub_data() -> bool {
+        matches!(option_env!("REPLAY_BUILD_STUB"), Some("1") | Some("true"))
+    }
+
     #[test]
     fn series_db_not_empty() {
         assert!(
@@ -96,9 +103,11 @@ mod tests {
     #[test]
     fn system_entries_nes() {
         let entries = system_series_entries("nintendo_nes");
+        let min_expected = if using_stub_data() { 2 } else { 50 };
         assert!(
-            entries.len() > 50,
-            "NES should have 50+ series entries, got {}",
+            entries.len() > min_expected,
+            "NES should have {}+ series entries, got {}",
+            min_expected,
             entries.len()
         );
     }
@@ -116,9 +125,11 @@ mod tests {
     #[test]
     fn system_entries_arcade_fbneo() {
         let entries = system_series_entries("arcade_fbneo");
+        let min_expected = if using_stub_data() { 1 } else { 400 };
         assert!(
-            entries.len() > 400,
-            "arcade_fbneo should have 400+ series entries, got {}",
+            entries.len() > min_expected,
+            "arcade_fbneo should have {}+ series entries, got {}",
+            min_expected,
             entries.len()
         );
     }

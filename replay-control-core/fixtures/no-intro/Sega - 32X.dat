@@ -1,0 +1,5 @@
+game (
+	name "Doom (Europe)"
+	region "Europe"
+	rom ( name "Doom (Europe).32x" crc 99999999 )
+)

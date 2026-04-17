@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,6 +15,8 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    env:
+      REPLAY_BUILD_STUB: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -23,25 +26,6 @@ jobs:
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Cache data files
-        uses: actions/cache@v5
-        with:
-          path: data/
-          key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
-          restore-keys: data-
-
-      - name: Download data files
-        run: |
-          bash scripts/download-arcade-data.sh
-          bash scripts/download-metadata.sh
-          mkdir -p data/wikidata
-          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
-
-      - name: Download TGDB lookup tables
-        env:
-          TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
-        run: ./scripts/download-tgdb-lookups.sh
 
       - name: Install mold linker
         run: sudo apt-get update && sudo apt-get install -y mold
@@ -96,26 +80,14 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      REPLAY_BUILD_STUB: "1"
     steps:
       - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Cache data files
-        uses: actions/cache@v5
-        with:
-          path: data/
-          key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
-          restore-keys: data-
-
-      - name: Download data files
-        run: |
-          bash scripts/download-arcade-data.sh
-          bash scripts/download-metadata.sh
-          mkdir -p data/wikidata
-          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 
       - name: Install mold linker
         run: sudo apt-get update && sudo apt-get install -y mold
@@ -130,6 +102,61 @@ jobs:
 
       - name: Unit tests (app)
         run: cargo test -p replay-control-app --features ssr
+
+  # ── Unit tests against real upstream data ─────────────────────────
+  # Runs the same tests as `test`, but without REPLAY_BUILD_STUB, so the
+  # embedded PHF maps are built from the real (downloaded) source files.
+  # This keeps the strict entry-count thresholds honest and catches
+  # regressions that the stub build would silently swallow.
+  #
+  # Only runs on pushes to main and manual dispatch to avoid pulling ~180MB
+  # of upstream data on every PR.
+  test-full:
+    name: Test (full data)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y mold p7zip-full
+
+      - name: Cache upstream data sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/catver.ini
+            data/catver-mame-current.ini
+            data/fbneo-arcade.dat
+            data/mame2003plus.xml
+            data/mame0285-arcade.xml
+            data/nplayers.ini
+            data/no-intro
+            data/libretro-meta
+            data/thegamesdb-latest.json
+            data/wikidata
+          key: upstream-data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/extract-mame-arcade.py', 'scripts/merge-catver.py', 'scripts/wikidata-series-extract.py') }}
+
+      - name: Download arcade data
+        run: ./scripts/download-arcade-data.sh
+
+      - name: Download metadata
+        run: ./scripts/download-metadata.sh
+
+      - name: Extract Wikidata series
+        run: |
+          mkdir -p data/wikidata
+          if [[ ! -s data/wikidata/series.json ]]; then
+            python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
+          fi
+
+      - name: Unit tests (core, full data)
+        run: cargo test -p replay-control-core
 
   # ── Container E2E tests ────────────────────────────────────────────
   e2e:

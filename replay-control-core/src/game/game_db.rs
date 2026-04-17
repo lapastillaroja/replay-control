@@ -536,21 +536,28 @@ mod tests {
 
     // --- Total entry count test ---
 
+    /// Whether this test binary was built against the committed `fixtures/` stubs
+    /// rather than the real `data/` sources. The value of `REPLAY_BUILD_STUB` is
+    /// captured at compile time via `option_env!`.
+    fn using_stub_data() -> bool {
+        matches!(option_env!("REPLAY_BUILD_STUB"), Some("1") | Some("true"))
+    }
+
     #[test]
     fn total_entry_count() {
-        // We should have a substantial number of entries across all systems.
-        // Build output shows ~34K ROM entries but some are deduplicated (same filename
-        // stem, different ROM format), so the PHF maps contain fewer.
-        // This is a smoke test to catch data loading failures.
+        // Against real data we expect ~20K+ ROM entries across all systems (some dedup
+        // happens because the same filename stem can appear in multiple ROM formats).
+        // Against committed fixtures we only have a handful, so the threshold drops.
         let mut total = 0usize;
         for system in supported_systems() {
             if let Some(db) = get_system_db(system) {
                 total += db.len();
             }
         }
+        let min_expected = if using_stub_data() { 8 } else { 20000 };
         assert!(
-            total >= 20000,
-            "Expected 20000+ total ROM entries across all systems, got {total}"
+            total >= min_expected,
+            "Expected {min_expected}+ total ROM entries across all systems, got {total}"
         );
     }
 }
