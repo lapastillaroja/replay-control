@@ -51,7 +51,7 @@ pub fn list_favorites(storage: &StorageLocation) -> Result<Vec<Favorite>> {
 
     // Sort by date added (newest first) so the favorites page shows
     // the most recently favorited games at the top, regardless of subfolder.
-    favorites.sort_by(|a, b| b.date_added.cmp(&a.date_added));
+    favorites.sort_by_key(|f| std::cmp::Reverse(f.date_added));
 
     Ok(favorites)
 }

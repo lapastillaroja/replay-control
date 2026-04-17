@@ -362,7 +362,7 @@ fn pct(n: usize, total: usize) -> f64 {
 
 fn bar(n: usize, total: usize) -> String {
     let width = 20;
-    let filled = if total == 0 { 0 } else { (width * n) / total };
+    let filled = (width * n).checked_div(total).unwrap_or(0);
     let empty = width - filled;
     format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
 }

@@ -54,7 +54,7 @@ pub fn find_screenshots_for_rom(
 
     // Sort by timestamp descending (newest first). Screenshots without a
     // timestamp (legacy format) sort last.
-    screenshots.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    screenshots.sort_by_key(|s| std::cmp::Reverse(s.timestamp));
     screenshots
 }
 

@@ -333,10 +333,8 @@ fn parse_xml<R: BufRead>(
                                 max_players = Some(n);
                             }
                         }
-                        "ReleaseDate" => {
-                            if text.len() >= 4 {
-                                release_year = text[..4].parse::<u16>().ok();
-                            }
+                        "ReleaseDate" if text.len() >= 4 => {
+                            release_year = text[..4].parse::<u16>().ok();
                         }
                         "Cooperative" => {
                             cooperative = text.trim().eq_ignore_ascii_case("true");

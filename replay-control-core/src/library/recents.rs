@@ -72,7 +72,7 @@ pub fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>> {
     }
 
     // Sort by most recently played
-    recents.sort_by(|a, b| b.last_played.cmp(&a.last_played));
+    recents.sort_by_key(|r| std::cmp::Reverse(r.last_played));
 
     // Deduplicate: a game launched via .fav symlink and directly produces
     // two .rec markers with the same underlying ROM. Keep only the most

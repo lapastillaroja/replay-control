@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+#[cfg(feature = "http")]
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use rusqlite::Connection;
@@ -722,6 +723,7 @@ fn url_encode_path_component(s: &str) -> String {
     result
 }
 
+#[cfg(feature = "http")]
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
 /// Download a thumbnail image, handling symlink resolution transparently.
