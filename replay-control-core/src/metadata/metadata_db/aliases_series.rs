@@ -166,9 +166,20 @@ impl MetadataDb {
     ) -> Result<Vec<(GameEntry, Option<i32>)>> {
         let mut stmt = conn
             .prepare(
-                "WITH current_series AS (
+                "WITH candidates AS (
+                    SELECT ?2 AS bt
+                    UNION SELECT base_title FROM game_alias
+                        WHERE system = ?1 AND alias_name = ?2
+                    UNION SELECT alias_name FROM game_alias
+                        WHERE system = ?1 AND base_title = ?2
+                    UNION SELECT ga2.alias_name FROM game_alias ga
+                        JOIN game_alias ga2 ON ga2.system = ga.system
+                            AND ga2.base_title = ga.base_title
+                        WHERE ga.system = ?1 AND ga.alias_name = ?2
+                ),
+                current_series AS (
                     SELECT series_name FROM game_series
-                    WHERE system = ?1 AND base_title = ?2
+                    WHERE system = ?1 AND base_title IN (SELECT bt FROM candidates)
                     LIMIT 1
                 ),
                 series_games AS (
@@ -219,22 +230,53 @@ impl MetadataDb {
         Ok(rows.flatten().collect())
     }
 
-    /// Check if a game has Wikidata series data in the `game_series` table.
+    /// Check if a game (or any of its aliases) has Wikidata series data.
     pub fn has_wikidata_series(conn: &Connection, system: &str, base_title: &str) -> bool {
         conn.query_row(
-            "SELECT 1 FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
+            "WITH candidates AS (
+                 SELECT ?2 AS bt
+                 UNION SELECT base_title FROM game_alias
+                     WHERE system = ?1 AND alias_name = ?2
+                 UNION SELECT alias_name FROM game_alias
+                     WHERE system = ?1 AND base_title = ?2
+                 UNION SELECT ga2.alias_name FROM game_alias ga
+                     JOIN game_alias ga2 ON ga2.system = ga.system
+                         AND ga2.base_title = ga.base_title
+                     WHERE ga.system = ?1 AND ga.alias_name = ?2
+             )
+             SELECT 1 FROM game_series
+             WHERE system = ?1 AND base_title IN (SELECT bt FROM candidates)
+             LIMIT 1",
             params![system, base_title],
             |_| Ok(()),
         )
         .is_ok()
     }
 
-    /// Get the series name for a game from the `game_series` table.
+    /// Get the series name for a game (or any of its aliases).
+    ///
+    /// Direct matches on `base_title` are preferred over alias-resolved ones so
+    /// callers get the same answer for an aliased input as they would for the
+    /// canonical.
     pub fn lookup_series_name(conn: &Connection, system: &str, base_title: &str) -> Option<String> {
         conn.query_row(
-            "SELECT series_name FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
+            "WITH candidates AS (
+                 SELECT ?2 AS bt
+                 UNION SELECT base_title FROM game_alias
+                     WHERE system = ?1 AND alias_name = ?2
+                 UNION SELECT alias_name FROM game_alias
+                     WHERE system = ?1 AND base_title = ?2
+                 UNION SELECT ga2.alias_name FROM game_alias ga
+                     JOIN game_alias ga2 ON ga2.system = ga.system
+                         AND ga2.base_title = ga.base_title
+                     WHERE ga.system = ?1 AND ga.alias_name = ?2
+             )
+             SELECT series_name FROM game_series
+             WHERE system = ?1 AND base_title IN (SELECT bt FROM candidates)
+             ORDER BY CASE WHEN base_title = ?2 THEN 0 ELSE 1 END
+             LIMIT 1",
             params![system, base_title],
-            |row| row.get(0),
+            |row| row.get::<_, String>(0),
         )
         .ok()
     }
@@ -254,12 +296,24 @@ impl MetadataDb {
         base_title: &str,
         region_pref: &str,
     ) -> Result<SequelChainInfo> {
-        // Step 1: Get series data for this game.
+        // Step 1: Get series data for this game (alias-aware).
         let row = conn.query_row(
-            "SELECT follows_base_title, followed_by_base_title, series_order, series_name
+            "WITH candidates AS (
+                 SELECT ?2 AS bt
+                 UNION SELECT base_title FROM game_alias
+                     WHERE system = ?1 AND alias_name = ?2
+                 UNION SELECT alias_name FROM game_alias
+                     WHERE system = ?1 AND base_title = ?2
+                 UNION SELECT ga2.alias_name FROM game_alias ga
+                     JOIN game_alias ga2 ON ga2.system = ga.system
+                         AND ga2.base_title = ga.base_title
+                     WHERE ga.system = ?1 AND ga.alias_name = ?2
+             )
+             SELECT follows_base_title, followed_by_base_title, series_order, series_name
              FROM game_series
-             WHERE system = ?1 AND base_title = ?2
+             WHERE system = ?1 AND base_title IN (SELECT bt FROM candidates)
                AND series_name <> ''
+             ORDER BY CASE WHEN base_title = ?2 THEN 0 ELSE 1 END
              LIMIT 1",
             params![system, base_title],
             |row| {
@@ -441,6 +495,102 @@ pub struct SequelChainInfo {
 mod tests {
     use super::super::SeriesInsert;
     use super::super::tests::*;
+
+    #[test]
+    fn series_via_alias_finds_siblings() {
+        let (mut conn, _dir) = open_temp_db();
+
+        // "hoshi no kirby super deluxe" is an alias for "kirby super star".
+        // Only "kirby super star" has a game_series entry.
+        let mut kirby_jp = make_game_entry("nintendo_snes", "Hoshi no Kirby (J).sfc", false);
+        kirby_jp.base_title = "hoshi no kirby super deluxe".into();
+        let mut kirby_us = make_game_entry("nintendo_snes", "Kirby Super Star (USA).sfc", false);
+        kirby_us.base_title = "kirby super star".into();
+        let mut kirby3 = make_game_entry("nintendo_snes", "Kirby's Dream Land 3 (USA).sfc", false);
+        kirby3.base_title = "kirby's dream land 3".into();
+
+        super::super::MetadataDb::save_system_entries(
+            &mut conn,
+            "nintendo_snes",
+            &[kirby_jp, kirby_us, kirby3],
+            None,
+        )
+        .unwrap();
+
+        // Insert alias: hoshi no kirby super deluxe -> kirby super star
+        super::super::MetadataDb::upsert_alias(
+            &conn,
+            "nintendo_snes",
+            "kirby super star",
+            "hoshi no kirby super deluxe",
+            "japan",
+            "test",
+        )
+        .unwrap();
+
+        // Insert series entries for the canonical titles only.
+        super::super::MetadataDb::bulk_insert_series(
+            &mut conn,
+            &[
+                SeriesInsert {
+                    system: "nintendo_snes".into(),
+                    base_title: "kirby super star".into(),
+                    series_name: "Kirby".into(),
+                    series_order: Some(1),
+                    source: "wikidata".into(),
+                    follows_base_title: None,
+                    followed_by_base_title: None,
+                },
+                SeriesInsert {
+                    system: "nintendo_snes".into(),
+                    base_title: "kirby's dream land 3".into(),
+                    series_name: "Kirby".into(),
+                    series_order: Some(2),
+                    source: "wikidata".into(),
+                    follows_base_title: None,
+                    followed_by_base_title: None,
+                },
+            ],
+        )
+        .unwrap();
+
+        // Query siblings for the aliased title — should find Kirby series.
+        let siblings = super::super::MetadataDb::wikidata_series_siblings(
+            &conn,
+            "nintendo_snes",
+            "hoshi no kirby super deluxe",
+            "usa",
+            20,
+        )
+        .unwrap();
+
+        let titles: Vec<&str> = siblings
+            .iter()
+            .map(|(e, _)| e.base_title.as_str())
+            .collect();
+        assert!(
+            titles.contains(&"kirby's dream land 3"),
+            "Should find series siblings via alias. Got: {titles:?}",
+        );
+
+        // has_wikidata_series should also work via alias.
+        assert!(
+            super::super::MetadataDb::has_wikidata_series(
+                &conn,
+                "nintendo_snes",
+                "hoshi no kirby super deluxe"
+            ),
+            "has_wikidata_series should return true for aliased game"
+        );
+
+        // lookup_series_name should also work via alias.
+        let series = super::super::MetadataDb::lookup_series_name(
+            &conn,
+            "nintendo_snes",
+            "hoshi no kirby super deluxe",
+        );
+        assert_eq!(series.as_deref(), Some("Kirby"));
+    }
 
     #[test]
     fn series_siblings_excludes_current_game() {

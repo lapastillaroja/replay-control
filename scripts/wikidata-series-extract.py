@@ -244,7 +244,7 @@ WHERE {
   }
 
   SERVICE wikibase:label {
-    bd:serviceParam wikibase:language "en,ja" .
+    bd:serviceParam wikibase:language "en,mul" .
   }
 }
 ORDER BY ?seriesLabel ?ordinal ?gameLabel
@@ -283,7 +283,7 @@ WHERE {
   }
 
   SERVICE wikibase:label {
-    bd:serviceParam wikibase:language "en" .
+    bd:serviceParam wikibase:language "en,mul" .
   }
 }
 ORDER BY ?gameLabel

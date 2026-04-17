@@ -277,106 +277,101 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
             // Batch lookup: all favorites + seed game (if from recents) in one query.
             let mut all_keys = fav_keys_vec;
             if let Some(ref seed) = seed_game
-                && !fav_keys.contains(seed) {
-                    all_keys.push(seed.clone());
-                }
+                && !fav_keys.contains(seed)
+            {
+                all_keys.push(seed.clone());
+            }
             let all_entries = MetadataDb::lookup_game_entries(conn, &all_keys).unwrap_or_default();
 
             // --- "Because You Love [Game]" ---
             if let Some(ref seed) = seed_game
-                && let Some(seed_entry) = all_entries.get(seed) {
-                    let genre = if seed_entry.genre_group.is_empty() {
-                        None
-                    } else {
-                        Some(seed_entry.genre_group.as_str())
-                    };
-                    let developer = if seed_entry.developer.is_empty() {
-                        None
-                    } else {
-                        Some(seed_entry.developer.as_str())
-                    };
+                && let Some(seed_entry) = all_entries.get(seed)
+            {
+                let genre = if seed_entry.genre_group.is_empty() {
+                    None
+                } else {
+                    Some(seed_entry.genre_group.as_str())
+                };
+                let developer = if seed_entry.developer.is_empty() {
+                    None
+                } else {
+                    Some(seed_entry.developer.as_str())
+                };
 
-                    // Find similar games by genre (cross-system) excluding favorites and seed.
-                    let mut similar = Vec::new();
-                    if let Some(genre) = genre {
-                        let by_genre = MetadataDb::top_rated_filtered(
-                            conn,
-                            None,
-                            Some(genre),
-                            None,
-                            30,
-                            &region_str,
-                            &region_secondary_str,
-                        )
-                        .unwrap_or_default();
-                        for g in by_genre {
-                            if !fav_keys.contains(&(g.system.clone(), g.rom_filename.clone()))
-                                && g.rom_filename != seed.1
-                            {
-                                similar.push(g);
-                            }
+                // Find similar games by genre (cross-system) excluding favorites and seed.
+                let mut similar = Vec::new();
+                if let Some(genre) = genre {
+                    let by_genre = MetadataDb::top_rated_filtered(
+                        conn,
+                        None,
+                        Some(genre),
+                        None,
+                        30,
+                        &region_str,
+                        &region_secondary_str,
+                    )
+                    .unwrap_or_default();
+                    for g in by_genre {
+                        if !fav_keys.contains(&(g.system.clone(), g.rom_filename.clone()))
+                            && g.rom_filename != seed.1
+                        {
+                            similar.push(g);
                         }
                     }
-                    // Fill with developer matches if not enough genre matches.
-                    if similar.len() < 6
-                        && let Some(dev) = developer {
-                            let by_dev = MetadataDb::top_rated_filtered(
-                                conn,
-                                None,
-                                None,
-                                Some(dev),
-                                20,
-                                &region_str,
-                                &region_secondary_str,
-                            )
-                            .unwrap_or_default();
-                            let have: std::collections::HashSet<String> =
-                                similar.iter().map(|g| g.rom_filename.clone()).collect();
-                            for g in by_dev {
-                                if similar.len() >= 12 {
-                                    break;
-                                }
-                                if !fav_keys.contains(&(g.system.clone(), g.rom_filename.clone()))
-                                    && g.rom_filename != seed.1
-                                    && !have.contains(&g.rom_filename)
-                                {
-                                    similar.push(g);
-                                }
-                            }
+                }
+                // Fill with developer matches if not enough genre matches.
+                if similar.len() < 6
+                    && let Some(dev) = developer
+                {
+                    let by_dev = MetadataDb::top_rated_filtered(
+                        conn,
+                        None,
+                        None,
+                        Some(dev),
+                        20,
+                        &region_str,
+                        &region_secondary_str,
+                    )
+                    .unwrap_or_default();
+                    let have: std::collections::HashSet<String> =
+                        similar.iter().map(|g| g.rom_filename.clone()).collect();
+                    for g in by_dev {
+                        if similar.len() >= 12 {
+                            break;
                         }
-
-                    if similar.len() >= 3 {
-                        let raw_name = seed_entry
-                            .display_name
-                            .as_deref()
-                            .unwrap_or(&seed_entry.rom_filename);
-                        let display = replay_control_core::title_utils::strip_tags(raw_name);
-                        sections.push((
-                            "SpotlightBecauseYouLove".to_string(),
-                            vec![display.to_string()],
-                            similar,
-                            None,
-                        ));
+                        if !fav_keys.contains(&(g.system.clone(), g.rom_filename.clone()))
+                            && g.rom_filename != seed.1
+                            && !have.contains(&g.rom_filename)
+                        {
+                            similar.push(g);
+                        }
                     }
                 }
 
+                if similar.len() >= 3 {
+                    let raw_name = seed_entry
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&seed_entry.rom_filename);
+                    let display = replay_control_core::title_utils::strip_tags(raw_name);
+                    sections.push((
+                        "SpotlightBecauseYouLove".to_string(),
+                        vec![display.to_string()],
+                        similar,
+                        None,
+                    ));
+                }
+            }
+
             // --- "More from [Series]" ---
             if !all_entries.is_empty() {
-                // Collect distinct series keys from favorites with proper display names.
-                // series_key is a normalized key — look up the real series_name from game_series
-                // via (system, base_title) join.
                 let mut series_map: std::collections::HashMap<String, String> =
                     std::collections::HashMap::new();
                 for entry in all_entries.values() {
                     if !entry.series_key.is_empty() && !series_map.contains_key(&entry.series_key) {
-                        let display = conn
-                            .query_row(
-                                "SELECT series_name FROM game_series WHERE system = ?1 AND base_title = ?2 LIMIT 1",
-                                [&entry.system, &entry.base_title],
-                                |row| row.get::<_, String>(0),
-                            )
-                            .ok()
-                            .unwrap_or_else(|| title_case(&entry.series_key));
+                        let display =
+                            MetadataDb::lookup_series_name(conn, &entry.system, &entry.base_title)
+                                .unwrap_or_else(|| title_case(&entry.series_key));
                         series_map.insert(entry.series_key.clone(), display);
                     }
                 }
