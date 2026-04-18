@@ -1,0 +1,5 @@
+game (
+	name "Alex Kidd in Miracle World (USA, Europe)"
+	region "USA, Europe"
+	rom ( name "Alex Kidd in Miracle World (USA, Europe).sms" crc EEEEEEEE )
+)

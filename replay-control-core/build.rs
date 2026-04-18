@@ -9,14 +9,30 @@ use quick_xml::reader::Reader;
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("arcade_db.rs");
-    let mut out = BufWriter::new(File::create(&dest_path).unwrap());
-
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let manifest_path = Path::new(&manifest_dir);
-    let arcade_dir = manifest_path.join("data").join("arcade");
-    // Source data files live in data/ at the project root (one level up from replay-core/)
-    let sources_dir = manifest_path.join("..").join("data");
+
+    // Cargo does not re-run build scripts on env var changes unless we opt in.
+    // Without this, toggling REPLAY_BUILD_STUB in the same checkout would serve
+    // stale PHF maps from OUT_DIR.
+    println!("cargo::rerun-if-env-changed=REPLAY_BUILD_STUB");
+
+    // When REPLAY_BUILD_STUB=1 (or "true") use committed fixture data in
+    // replay-control-core/fixtures/ so CI lint and test jobs compile without
+    // downloading the large upstream data files.
+    let sources_dir = if matches!(
+        env::var("REPLAY_BUILD_STUB").as_deref(),
+        Ok("1") | Ok("true")
+    ) {
+        manifest_path.join("fixtures")
+    } else {
+        // Source data files live in data/ at the project root (one level up from the crate).
+        manifest_path.join("..").join("data")
+    };
+    let arcade_dir = sources_dir.join("arcade");
+
+    let dest_path = Path::new(&out_dir).join("arcade_db.rs");
+    let mut out = BufWriter::new(File::create(&dest_path).unwrap());
 
     // --- Game DB generation (non-arcade systems) ---
     generate_game_db(&out_dir, &sources_dir);
@@ -299,7 +315,11 @@ fn main() {
         "cargo:warning=Arcade DB: Player coverage: {}/{} ({:.1}%), missing: {}",
         with_players,
         entries.len(),
-        with_players as f64 / entries.len() as f64 * 100.0,
+        if entries.is_empty() {
+            0.0
+        } else {
+            with_players as f64 / entries.len() as f64 * 100.0
+        },
         without_players
     );
 

@@ -1,0 +1,76 @@
+name: Test (full data)
+
+# Runs the same unit tests as the `test` job in ci.yml, but without
+# REPLAY_BUILD_STUB — so the embedded PHF maps are built from the real
+# (downloaded) source files. This keeps the strict entry-count thresholds
+# honest and catches regressions the stub build would silently swallow.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Nightly at 06:00 UTC — surfaces upstream-data drift (moved URLs,
+    # schema changes, fixture-vs-reality skew) without waiting for a push.
+    - cron: '0 6 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-full:
+    name: Test (full data)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y mold p7zip-full
+
+      - name: Cache upstream data sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/catver.ini
+            data/catver-mame-current.ini
+            data/fbneo-arcade.dat
+            data/mame2003plus.xml
+            data/mame0285-arcade.xml
+            data/nplayers.ini
+            data/no-intro
+            data/libretro-meta
+            data/thegamesdb-latest.json
+            data/tgdb-developers.json
+            data/tgdb-genres.json
+            data/tgdb-publishers.json
+            data/wikidata
+          key: upstream-data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/download-tgdb-lookups.sh', 'scripts/extract-mame-arcade.py', 'scripts/merge-catver.py', 'scripts/wikidata-series-extract.py') }}
+
+      - name: Download arcade data
+        run: ./scripts/download-arcade-data.sh
+
+      - name: Download metadata
+        run: ./scripts/download-metadata.sh
+
+      - name: Download TGDB lookup tables
+        env:
+          TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
+        run: |
+          if [[ ! -s data/tgdb-developers.json ]]; then
+            ./scripts/download-tgdb-lookups.sh
+          fi
+
+      - name: Extract Wikidata series
+        run: |
+          mkdir -p data/wikidata
+          if [[ ! -s data/wikidata/series.json ]]; then
+            python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
+          fi
+
+      - name: Unit tests (core, full data)
+        run: cargo test -p replay-control-core

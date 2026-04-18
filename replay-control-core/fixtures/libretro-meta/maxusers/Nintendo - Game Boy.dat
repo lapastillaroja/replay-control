@@ -1,0 +1,10 @@
+clrmamepro (
+	name "Nintendo - Game Boy"
+	description "Nintendo - Game Boy"
+)
+
+game (
+	comment "Tetris (World) (Rev 1)"
+	users 2
+	rom ( crc AAAAAAAA )
+)

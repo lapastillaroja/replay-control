@@ -1,0 +1,6 @@
+rom_name,display_name,year,manufacturer,players,rotation,status,is_clone,parent,category
+ikaruga,Ikaruga,2001,Treasure,1,90,good,false,,Shooter / Vertical
+kofxi,The King of Fighters XI,2005,SNK Playmore,2,0,good,false,,Fighter / Versus
+crzytaxi,Crazy Taxi,1999,Sega,1,0,good,false,,Driving / Race
+anmlbskt,Animal Basket,2004,Examu,2,270,good,false,,Fighter / Versus
+mslug6,Metal Slug 6,2006,SNK Playmore,2,0,good,false,,Shooter / Run and Gun

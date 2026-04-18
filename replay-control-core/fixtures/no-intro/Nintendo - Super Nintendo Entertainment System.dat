@@ -1,0 +1,15 @@
+game (
+	name "Super Mario World (USA)"
+	region "USA"
+	rom ( name "Super Mario World (USA).sfc" crc 33333333 )
+)
+game (
+	name "Super Mario World (Europe)"
+	region "Europe"
+	rom ( name "Super Mario World (Europe).sfc" crc 44444444 )
+)
+game (
+	name "Legend of Zelda, The - A Link to the Past (USA)"
+	region "USA"
+	rom ( name "Legend of Zelda, The - A Link to the Past (USA).sfc" crc 55555555 )
+)

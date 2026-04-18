@@ -1,0 +1,5 @@
+game (
+	name "Sonic The Hedgehog (USA, Europe)"
+	region "USA"
+	rom ( name "Sonic The Hedgehog (USA, Europe).md" crc 66666666 )
+)

@@ -153,7 +153,7 @@ def load_arcade_names(script_dir):
     """Load display names from all arcade data sources.
     Returns a set of fuzzy-normalized display names."""
     data_dir = os.path.join(script_dir, '..', 'data')
-    core_data_dir = os.path.join(script_dir, '..', 'replay-control-core', 'data', 'arcade')
+    core_data_dir = os.path.join(script_dir, '..', 'data', 'arcade')
     names = set()
 
     # 1. FBNeo DAT (ClrMame Pro XML)

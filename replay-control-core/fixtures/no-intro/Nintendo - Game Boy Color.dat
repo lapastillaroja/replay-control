@@ -1,0 +1,5 @@
+game (
+	name "Pokemon Crystal Version (USA, Europe) (Rev 1)"
+	region "USA, Europe"
+	rom ( name "Pokemon Crystal Version (USA, Europe) (Rev 1).gbc" crc BBBBBBBB )
+)

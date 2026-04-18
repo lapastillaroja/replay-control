@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,6 +15,8 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    env:
+      REPLAY_BUILD_STUB: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -23,25 +26,6 @@ jobs:
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Cache data files
-        uses: actions/cache@v5
-        with:
-          path: data/
-          key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
-          restore-keys: data-
-
-      - name: Download data files
-        run: |
-          bash scripts/download-arcade-data.sh
-          bash scripts/download-metadata.sh
-          mkdir -p data/wikidata
-          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
-
-      - name: Download TGDB lookup tables
-        env:
-          TGDB_API_KEY: ${{ secrets.TGDB_API_KEY }}
-        run: ./scripts/download-tgdb-lookups.sh
 
       - name: Install mold linker
         run: sudo apt-get update && sudo apt-get install -y mold
@@ -96,26 +80,14 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      REPLAY_BUILD_STUB: "1"
     steps:
       - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Cache data files
-        uses: actions/cache@v5
-        with:
-          path: data/
-          key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
-          restore-keys: data-
-
-      - name: Download data files
-        run: |
-          bash scripts/download-arcade-data.sh
-          bash scripts/download-metadata.sh
-          mkdir -p data/wikidata
-          python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
 
       - name: Install mold linker
         run: sudo apt-get update && sudo apt-get install -y mold

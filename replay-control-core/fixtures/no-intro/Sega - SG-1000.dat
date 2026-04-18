@@ -1,0 +1,10 @@
+game (
+	name "Flicky (Japan) (Rev 1)"
+	region "Japan"
+	rom ( name "Flicky (Japan) (Rev 1).sg" crc 77777777 )
+)
+game (
+	name "Congo Bongo (Japan)"
+	region "Japan"
+	rom ( name "Congo Bongo (Japan).sg" crc 88888888 )
+)

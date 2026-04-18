@@ -72,6 +72,7 @@ pub fn arcade_display_name(filename: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::using_stub_data;
 
     #[test]
     fn lookup_known_game() {
@@ -255,9 +256,15 @@ mod tests {
     #[test]
     fn total_entry_count() {
         // After merging Flycast + FBNeo + MAME 2003+ + MAME current and filtering non-game
-        // machines (slot machines, gambling, computers, handhelds, etc.), we should have 15K+ entries.
+        // machines (slot machines, gambling, computers, handhelds, etc.), we expect ~15K+
+        // entries against the real upstream data. Against the small committed fixtures
+        // only a handful of curated entries survive, so we drop the threshold accordingly.
         // BIOS entries are preserved (with is_bios flag) but non-game machines are excluded.
+        let min_expected = if using_stub_data() { 14 } else { 15000 };
         let count = ARCADE_DB.len();
-        assert!(count >= 15000, "Expected 15000+ entries, got {count}");
+        assert!(
+            count >= min_expected,
+            "Expected {min_expected}+ entries, got {count}"
+        );
     }
 }

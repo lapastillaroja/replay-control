@@ -118,6 +118,9 @@ tools/bench-results/
 # Populate with: ./scripts/download-arcade-data.sh
 data/*
 !data/README.md
+# Hand-curated arcade sources (e.g. Flycast Naomi/Atomiswave CSV) live in data/arcade/
+# and ARE tracked in git.
+!data/arcade
 # TGDB lookup tables (downloaded via API key, not committed for license reasons)
 # Regenerate with: TGDB_API_KEY=... ./scripts/download-tgdb-lookups.sh
 

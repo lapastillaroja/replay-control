@@ -1,0 +1,5 @@
+game (
+	name "Sonic the Hedgehog (World)"
+	region "World"
+	rom ( name "Sonic the Hedgehog (World).gg" crc FFFFFFFF )
+)

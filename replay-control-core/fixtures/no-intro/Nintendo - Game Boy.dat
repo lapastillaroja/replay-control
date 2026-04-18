@@ -1,0 +1,5 @@
+game (
+	name "Tetris (World) (Rev 1)"
+	region "World"
+	rom ( name "Tetris (World) (Rev 1).gb" crc AAAAAAAA )
+)

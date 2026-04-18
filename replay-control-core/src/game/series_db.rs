@@ -59,6 +59,7 @@ pub fn entry_count() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::using_stub_data;
 
     #[test]
     fn series_db_not_empty() {
@@ -96,9 +97,11 @@ mod tests {
     #[test]
     fn system_entries_nes() {
         let entries = system_series_entries("nintendo_nes");
+        let min_expected = if using_stub_data() { 2 } else { 50 };
         assert!(
-            entries.len() > 50,
-            "NES should have 50+ series entries, got {}",
+            entries.len() > min_expected,
+            "NES should have {}+ series entries, got {}",
+            min_expected,
             entries.len()
         );
     }
@@ -116,9 +119,11 @@ mod tests {
     #[test]
     fn system_entries_arcade_fbneo() {
         let entries = system_series_entries("arcade_fbneo");
+        let min_expected = if using_stub_data() { 1 } else { 400 };
         assert!(
-            entries.len() > 400,
-            "arcade_fbneo should have 400+ series entries, got {}",
+            entries.len() > min_expected,
+            "arcade_fbneo should have {}+ series entries, got {}",
+            min_expected,
             entries.len()
         );
     }

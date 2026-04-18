@@ -1,0 +1,22 @@
+<mame version="0.285">
+  <m name="sf2" rotate="0" players="2" status="good">
+    <d>Street Fighter II: The World Warrior (World 910522)</d>
+    <y>1991</y>
+    <f>Capcom</f>
+  </m>
+  <m name="1941">
+    <d>1941: Counter Attack (World) parent</d>
+    <y>1990</y>
+    <f>Capcom</f>
+  </m>
+  <m name="1941r1" cloneof="1941" rotate="90" players="1" status="good">
+    <d>1941: Counter Attack (World)</d>
+    <y>1990</y>
+    <f>Capcom</f>
+  </m>
+  <m name="timecris" rotate="0" players="1" status="imperfect">
+    <d>Time Crisis (World, TS2 Ver.B)</d>
+    <y>1996</y>
+    <f>Namco</f>
+  </m>
+</mame>

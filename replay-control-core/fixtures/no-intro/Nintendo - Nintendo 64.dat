@@ -1,0 +1,5 @@
+game (
+	name "Super Mario 64 (USA)"
+	region "USA"
+	rom ( name "Super Mario 64 (USA).z64" crc DDDDDDDD )
+)

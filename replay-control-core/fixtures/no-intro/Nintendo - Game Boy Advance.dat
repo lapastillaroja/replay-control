@@ -1,0 +1,5 @@
+game (
+	name "Metroid Fusion (USA, Australia)"
+	region "USA, Australia"
+	rom ( name "Metroid Fusion (USA, Australia).gba" crc CCCCCCCC )
+)

@@ -1,0 +1,6 @@
+{"data":{"games":[
+  {"game_title":"Super Mario Bros.","platform":7,"release_date":"1985-10-18","players":2,"genres":[17],"developers":[],"publishers":[],"coop":"No"},
+  {"game_title":"Super Mario World","platform":6,"release_date":"1990-11-21","players":2,"genres":[17],"developers":[],"publishers":[],"coop":"No"},
+  {"game_title":"Congo Bongo","platform":4949,"release_date":"1983-01-01","players":2,"genres":[1],"developers":[],"publishers":[],"coop":"No"},
+  {"game_title":"Doom","platform":33,"release_date":"1994-11-21","players":2,"genres":[8],"developers":[],"publishers":[],"coop":"No"}
+]}}
