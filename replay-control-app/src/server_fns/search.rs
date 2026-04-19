@@ -236,7 +236,7 @@ pub async fn global_search(
         })
         .collect();
 
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.sort_by_key(|s| std::cmp::Reverse(s.0));
 
     // Group scored results by system.
     let mut system_groups: std::collections::HashMap<String, Vec<(u32, GameEntry)>> =
@@ -254,7 +254,7 @@ pub async fn global_search(
     let mut total_results = 0usize;
 
     for (system, mut system_scored) in system_groups {
-        system_scored.sort_by(|a, b| b.0.cmp(&a.0));
+        system_scored.sort_by_key(|s| std::cmp::Reverse(s.0));
         let match_count = system_scored.len();
         total_results += match_count;
 
@@ -301,7 +301,7 @@ pub async fn global_search(
         .collect();
 
     // Sort systems by match count descending.
-    groups.sort_by(|a, b| b.total_matches.cmp(&a.total_matches));
+    groups.sort_by_key(|g| std::cmp::Reverse(g.total_matches));
     let total_systems = groups.len();
 
     Ok(GlobalSearchResults {

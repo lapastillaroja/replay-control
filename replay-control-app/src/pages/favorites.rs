@@ -110,7 +110,7 @@ where
     let by_date = move || {
         let favs = favorites.read();
         let mut sorted: Vec<_> = favs.iter().cloned().collect();
-        sorted.sort_by(|a, b| b.fav.date_added.cmp(&a.fav.date_added));
+        sorted.sort_by_key(|f| std::cmp::Reverse(f.fav.date_added));
         sorted
     };
 
