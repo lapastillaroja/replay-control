@@ -282,6 +282,7 @@ pub enum Key {
     GameDetailMoreLikeThis,
     GameDetailOtherVersions,
     GameDetailMoreInSeries,
+    GameDetailMoreOfSeries,
     GameDetailPlayOrder,
     GameDetailNotInLibrary,
     GameDetailNOfM,

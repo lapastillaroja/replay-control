@@ -297,6 +297,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailMoreLikeThis => "似たゲーム",
         Key::GameDetailOtherVersions => "他のバージョン",
         Key::GameDetailMoreInSeries => "同シリーズの作品",
+        Key::GameDetailMoreOfSeries => "{0}シリーズの作品",
         Key::GameDetailPlayOrder => "プレイ順",
         Key::GameDetailNotInLibrary => "ライブラリにありません",
         Key::GameDetailNOfM => "{1}中{0}",

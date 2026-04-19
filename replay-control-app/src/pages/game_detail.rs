@@ -9,7 +9,7 @@ use crate::components::captures::{CapturesLightbox, INITIAL_CAPTURE_COUNT};
 use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;
 use crate::components::video_section::GameVideoSection;
-use crate::i18n::{Key, t, use_i18n};
+use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
 
@@ -970,8 +970,8 @@ fn GameChipRow(title_key: Key, chips: Vec<ChipItem>) -> impl IntoView {
 fn SimilarGamesRow(
     games: Vec<RecommendedGame>,
     #[prop(default = Key::GameDetailMoreLikeThis)] title_key: Key,
-    /// Optional custom title (e.g., series name from Wikidata). When non-empty, displayed
-    /// instead of the i18n title_key.
+    /// Optional series name from Wikidata. When non-empty, interpolated into
+    /// `GameDetailMoreOfSeries` (e.g. "More of Kirby"), overriding `title_key`.
     #[prop(default = String::new())]
     custom_title: String,
 ) -> impl IntoView {
@@ -982,10 +982,11 @@ fn SimilarGamesRow(
         <section class="section game-section">
             <h2 class="game-section-title">
                 {move || {
+                    let locale = i18n.locale.get();
                     if has_custom {
-                        custom_title.clone()
+                        tf(locale, Key::GameDetailMoreOfSeries, &[&custom_title])
                     } else {
-                        t(i18n.locale.get(), title_key).to_string()
+                        t(locale, title_key).to_string()
                     }
                 }}
             </h2>

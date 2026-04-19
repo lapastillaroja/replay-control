@@ -299,6 +299,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailMoreLikeThis => "Más como este",
         Key::GameDetailOtherVersions => "Otras versiones",
         Key::GameDetailMoreInSeries => "Más de esta saga",
+        Key::GameDetailMoreOfSeries => "Más de {0}",
         Key::GameDetailPlayOrder => "Orden de juego",
         Key::GameDetailNotInLibrary => "no está en la biblioteca",
         Key::GameDetailNOfM => "{0} de {1}",
