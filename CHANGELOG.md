@@ -4,6 +4,31 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.1](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.1) - 2026-04-19
+
+### Added
+
+- Redesigned metadata page: six library summary cards (Total Games, Enrichment, Systems, Co-op, Year Span, Library Size) plus a per-system accordion list replacing the cramped 7-column table. Mobile-friendly with no horizontal scroll; expanded rows show coverage bars, composition ratios, arcade driver status, and a footer with year range / verified / co-op counts.
+- Fast-CI path via `REPLAY_BUILD_STUB=1`: `build.rs` reads small committed fixtures under `replay-control-core/fixtures/` instead of ~180MB of upstream arcade/No-Intro/TGDB/Wikidata downloads. Lint and Test CI jobs use stub mode; a new nightly `test-full` workflow runs the same tests against real data.
+
+### Changed
+
+- `game_series` lookups resolve aliases at read time via a `candidates` CTE (self + canonical + aliases + sibling aliases), replacing the `propagate_series_to_aliases` denormalization helper that was dropped entirely. Single source of truth, no duplicate rows, no O(N²) per-system propagation pass.
+- Wikidata series extraction uses `en,mul` label fallback instead of `en,ja`: prevents Japanese labels from leaking into series names while still resolving series whose only English-equivalent representation is Wikidata's curated multilingual default (e.g. Kirby → Q2569953).
+
+### Fixed
+
+- Metadata page summary cards refetch after import / rebuild / thumbnail update / clear-metadata; previously stayed stale until a full page reload.
+- `Cache::invalidate` now clears `game_series` and `game_alias` in addition to `game_library`, so rows populated by a previous binary's embedded data don't survive a Rebuild Game Library.
+- `scripts/wikidata-series-extract.py` reads the Flycast CSV from its new `data/arcade/` location (was pointing at the pre-move path, silently dropping Flycast/Naomi names from `series.json`).
+
+### Other
+
+- Integration tests no longer hang under parallel execution — `TestEnv` RAII helper replaces the manual `close_state` pattern that was causing `DbPool::close` to contend with in-flight test traffic.
+- Rust 1.95 clippy fixes (`sort_by_key` + `Reverse`, `checked_div`, feature-gated atomic imports, collapsible match arm).
+
+---
+
 ## [0.3.1-beta.3](https://github.com/lapastillaroja/replay-control/releases/tag/v0.3.1-beta.3) - 2026-04-14
 
 ### Other
