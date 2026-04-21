@@ -242,27 +242,38 @@ copy_assets() {
 
 check_aarch64_sysroot() {
     AARCH64_SYSROOT="${AARCH64_SYSROOT:-}"
+    AARCH64_INCLUDE=""
     if [[ -z "$AARCH64_SYSROOT" ]]; then
-        # Auto-detect: Fedora uses sys-root subdir, Ubuntu puts files directly
+        # Auto-detect across layouts:
+        #   Fedora:            /usr/aarch64-linux-gnu/sys-root/usr/include/stdio.h
+        #   Ubuntu/older Deb:  /usr/aarch64-linux-gnu/usr/include/stdio.h
+        #   Debian trixie+:    /usr/aarch64-linux-gnu/include/stdio.h     (no /usr/)
         for _sysroot in "/usr/aarch64-linux-gnu/sys-root" "/usr/aarch64-linux-gnu"; do
-            if [[ -f "$_sysroot/usr/include/stdio.h" ]]; then
-                AARCH64_SYSROOT="$_sysroot"
-                break
-            fi
+            for _inc in "$_sysroot/usr/include" "$_sysroot/include"; do
+                if [[ -f "$_inc/stdio.h" ]]; then
+                    AARCH64_SYSROOT="$_sysroot"
+                    AARCH64_INCLUDE="$_inc"
+                    break 2
+                fi
+            done
         done
+    elif [[ -f "$AARCH64_SYSROOT/usr/include/stdio.h" ]]; then
+        AARCH64_INCLUDE="$AARCH64_SYSROOT/usr/include"
+    elif [[ -f "$AARCH64_SYSROOT/include/stdio.h" ]]; then
+        AARCH64_INCLUDE="$AARCH64_SYSROOT/include"
     fi
-    if [[ -z "$AARCH64_SYSROOT" || ! -f "$AARCH64_SYSROOT/usr/include/stdio.h" ]]; then
+    if [[ -z "$AARCH64_SYSROOT" || -z "$AARCH64_INCLUDE" ]]; then
         echo ""
         echo "  aarch64 cross-compile sysroot not found."
         echo ""
         echo "  Searched: /usr/aarch64-linux-gnu/sys-root (Fedora)"
-        echo "           /usr/aarch64-linux-gnu (Ubuntu/Debian)"
+        echo "           /usr/aarch64-linux-gnu           (Debian/Ubuntu)"
         echo ""
         echo "  Set AARCH64_SYSROOT to override. See CONTRIBUTING.md for cross-compilation setup."
         echo ""
         fatal "aarch64 sysroot missing."
     fi
-    info "Sysroot: $AARCH64_SYSROOT"
+    info "Sysroot: $AARCH64_SYSROOT (include: $AARCH64_INCLUDE)"
 }
 
 # ── SSH helpers ──────────────────────────────────────────────────────────────
