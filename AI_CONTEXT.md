@@ -7,6 +7,11 @@
 - Never commit without explicit user approval
 - **NEVER run `git push` without explicit user approval. ALWAYS ask first.**
 
+## Releases
+
+- **Never create or push git tags manually.** Releases are driven by [release-plz](release-plz.toml): bump `version` in [replay-control-app/Cargo.toml](replay-control-app/Cargo.toml), update [CHANGELOG.md](CHANGELOG.md), and push the commit to `main`. Release-plz then creates the tag and the GitHub Release, and chains [build-release.yml](.github/workflows/build-release.yml) via `workflow_call` to attach artifacts.
+- If a tag is pushed by hand, `build-release.yml` fires via its `push: tags: ['v*']` trigger with no release behind it. The upload step self-heals by creating the release if missing, but this is a fallback — don't rely on it.
+
 ## Testing
 
 - Add unit, integration, and/or e2e tests for new features and bug fixes to prevent regressions

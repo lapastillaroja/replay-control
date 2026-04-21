@@ -82,10 +82,23 @@ jobs:
       - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release upload "${{ inputs.tag || github.ref_name }}"
-          replay-control-app-aarch64-linux.tar.gz
-          replay-site.tar.gz
-          install.sh
-          checksums.sha256
-          --clobber
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          # Create the release if it doesn't exist. Normally release-plz creates
+          # it via workflow_call, but a human-pushed tag fires this workflow
+          # directly (push: tags: ['v*']) with no release behind it — in that
+          # case we self-heal instead of failing at upload.
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG not found — creating it."
+            gh release create "$TAG" \
+              --repo "${{ github.repository }}" \
+              --title "$TAG" \
+              --generate-notes \
+              --prerelease
+          fi
+          gh release upload "$TAG" \
+            replay-control-app-aarch64-linux.tar.gz \
+            replay-site.tar.gz \
+            install.sh \
+            checksums.sha256 \
+            --clobber
