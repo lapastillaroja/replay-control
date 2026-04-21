@@ -4,6 +4,33 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.2](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.2) - 2026-04-21
+
+### Added
+
+- Per-region release dates with precision: new `game_release_date` side table stores ISO 8601 partial dates (`YYYY` / `YYYY-MM` / `YYYY-MM-DD`) per (system, base_title, region). `game_library` gets `release_date`, `release_precision`, and `release_region_used` mirror columns resolved against the user's region preference, with `idx_release_date_chrono` for indexed range scans.
+- TGDB emit in `build.rs` folds region_ids into four buckets (Canada → USA, Korea → Japan) and records per-region precision heuristics. Arcade pipeline (MAME/FBNeo/Naomi) extracts year-only rows from driver metadata. LaunchBox enrichment upgrades to day-precision USA dates via `ON CONFLICT … DO UPDATE WHERE precision_rank` improves.
+- `DatePrecision` enum (Year/Month/Day) with `serde` + rusqlite `ToSql`/`FromSql`, usable from both SSR and WASM. `format_release_date(&str, Option<DatePrecision>, Locale)` renders the game detail page through i18n month-short keys instead of hardcoded strings.
+
+### Changed
+
+- Region preference and secondary region preference saves now re-resolve the `game_library` release-date mirror columns in-place — no re-import required.
+- `SearchFilter` year range migrated from `substr(release_date, 1, 4)` to lexicographic compare (`release_date >= 'YYYY' AND < '(Y+1)'`) with `saturating_add` for `u16` overflow. Hits the chrono index directly.
+- Decade list query reads from `release_date` instead of `release_year`, using `substr(release_date, 1, 3) || '0'` to form decade buckets.
+
+### Fixed
+
+- Game detail page now shows a formatted release date (e.g. "Aug 31, 2000") when day or month precision is available, labeled "Released" instead of "Release Year". Previously always rendered as year-only regardless of the available data.
+
+### Other
+
+- Resolver SQL refactored from 9 correlated subqueries to a single `ROW_NUMBER() OVER PARTITION BY` CTE with row-value `UPDATE`.
+- `build.rs` shares `title_utils::base_title` via `#[path]` module include instead of a duplicate `compute_base_title_build()`.
+- SG-1000 lookup tests now run against the canonical DAT after adding `Sega - SG-1000.dat` to `scripts/download-metadata.sh` outputs.
+- Metadata analysis rule added to `AI_CONTEXT.md`: exclude ROM hacks, translations, homebrew, and aftermarket when measuring source coverage.
+
+---
+
 ## [0.4.0-beta.1](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.1) - 2026-04-19
 
 ### Added

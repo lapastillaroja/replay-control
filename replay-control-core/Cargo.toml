@@ -1,6 +1,6 @@
 [package]
 name = "replay-control-core"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 edition = "2024"
 description = "Core library for Replay Control — game databases, ROM parsing, metadata, and settings"
 license.workspace = true
