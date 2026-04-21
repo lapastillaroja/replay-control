@@ -142,11 +142,22 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let is_favorite = RwSignal::new(detail.is_favorite);
 
     // Metadata fields
-    let has_year = !game.year.is_empty();
+    // Prefer the full ISO `release_date` + `release_precision`;
+    // fall back to `year` (derived from legacy sources).
+    let release_display = match game.release_date.as_deref() {
+        Some(date) => crate::util::format_release_date(
+            date,
+            game.release_precision,
+            i18n.locale.get_untracked(),
+        )
+        .unwrap_or_else(|| game.year.clone()),
+        None => game.year.clone(),
+    };
+    let has_year = !release_display.is_empty();
     let has_developer = !game.developer.is_empty();
     let has_genre = !game.genre.is_empty();
     let has_players = game.players > 0;
-    let year = StoredValue::new(game.year.clone());
+    let year = StoredValue::new(release_display);
     let developer = StoredValue::new(game.developer.clone());
     let genre = StoredValue::new(game.genre.clone());
     let players_str = if game.players > 0 {
@@ -340,7 +351,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                 </Show>
                 <Show when=move || has_year>
                     <div class="game-meta-item">
-                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailYear)}</span>
+                        <span class="game-meta-label">{move || t(i18n.locale.get(), Key::GameDetailReleased)}</span>
                         <span class="game-meta-value">{year.get_value()}</span>
                     </div>
                 </Show>

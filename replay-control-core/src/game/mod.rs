@@ -1,4 +1,5 @@
 pub mod arcade_db;
+pub mod date_precision;
 pub mod developer;
 pub mod game_db;
 pub mod game_ref;

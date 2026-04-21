@@ -162,7 +162,9 @@ fn build_single_entry(
         hash_matched_name: hash.and_then(|h| h.matched_name.clone()),
         series_key,
         developer: developer_name,
-        release_year,
+        release_date: release_year.map(|y| format!("{y:04}")),
+        release_precision: release_year.map(|_| crate::metadata_db::DatePrecision::Year),
+        release_region_used: None,
         cooperative,
     })
 }

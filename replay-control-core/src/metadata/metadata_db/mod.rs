@@ -8,9 +8,11 @@ mod game_library;
 mod game_metadata;
 mod recommendations;
 mod relationships;
+mod release_dates;
 
 pub use aliases_series::SequelChainInfo;
 pub use game_library::SearchFilter;
+pub use release_dates::{ReleaseDateRow, region_pref_to_db_region};
 
 use std::path::{Path, PathBuf};
 
@@ -165,6 +167,31 @@ pub struct LibrarySummary {
     pub total_size_bytes: u64,
 }
 
+pub use crate::game::date_precision::DatePrecision;
+
+// rusqlite bridge: lives here (not next to the enum) because `rusqlite` is
+// behind the `metadata` feature. The enum itself is unconditional so it can
+// be used in WASM / app-side code too.
+impl rusqlite::ToSql for DatePrecision {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.as_str().into())
+    }
+}
+
+impl rusqlite::types::FromSql for DatePrecision {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        let s = value.as_str()?;
+        Self::from_str(s).ok_or_else(|| {
+            rusqlite::types::FromSqlError::Other(format!("invalid DatePrecision: {s}").into())
+        })
+    }
+}
+
+/// Extract the year from an ISO 8601 partial/full date string (`"YYYY"`, `"YYYY-MM"`, `"YYYY-MM-DD"`).
+pub fn year_from_release_date(date: &str) -> Option<u16> {
+    date.get(..4).and_then(|y| y.parse().ok())
+}
+
 /// Cached metadata for a single game.
 #[derive(Debug, Clone)]
 pub struct GameMetadata {
@@ -175,12 +202,26 @@ pub struct GameMetadata {
     pub developer: Option<String>,
     pub genre: Option<String>,
     pub players: Option<u8>,
-    pub release_year: Option<u16>,
+    /// Release date in ISO 8601 partial/full format: `"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`.
+    pub release_date: Option<String>,
+    /// Precision of `release_date`.
+    pub release_precision: Option<DatePrecision>,
+    /// Region the resolver picked for this date (`"usa" | "japan" | "europe" | "world" | ...`).
+    pub release_region_used: Option<String>,
     pub cooperative: bool,
     pub fetched_at: i64,
     pub box_art_path: Option<String>,
     pub screenshot_path: Option<String>,
     pub title_path: Option<String>,
+}
+
+impl GameMetadata {
+    /// Derive the release year from `release_date` (if any).
+    pub fn release_year(&self) -> Option<u16> {
+        self.release_date
+            .as_deref()
+            .and_then(year_from_release_date)
+    }
 }
 
 /// Import statistics.
@@ -242,11 +283,24 @@ pub struct GameEntry {
     /// For arcade: populated from arcade_db manufacturer at scan time.
     /// For console: populated from game_metadata.developer via enrichment.
     pub developer: String,
-    /// Release year extracted from TOSEC filename tags or baked-in game_db.
-    /// Enrichment may upgrade with LaunchBox release_year.
-    pub release_year: Option<u16>,
+    /// Release date (ISO 8601 partial/full: `"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`).
+    /// Resolved from `game_release_date` for the user's preferred region, then mirrored here.
+    pub release_date: Option<String>,
+    /// Precision of `release_date`.
+    pub release_precision: Option<DatePrecision>,
+    /// Region the resolver picked for this date (UI hint when falling back).
+    pub release_region_used: Option<String>,
     /// Cooperative play flag (from imported metadata).
     pub cooperative: bool,
+}
+
+impl GameEntry {
+    /// Derive the release year from `release_date` (if any).
+    pub fn release_year(&self) -> Option<u16> {
+        self.release_date
+            .as_deref()
+            .and_then(year_from_release_date)
+    }
 }
 
 /// Full enrichment update for a ROM in game_library (including driver_status).
@@ -323,7 +377,9 @@ const CREATE_GAME_METADATA_SQL: &str = "
         genre TEXT,
         developer TEXT,
         publisher TEXT,
-        release_year INTEGER,
+        release_date TEXT,
+        release_precision TEXT,
+        release_region_used TEXT,
         rating REAL,
         rating_count INTEGER,
         cooperative INTEGER NOT NULL DEFAULT 0,
@@ -334,6 +390,21 @@ const CREATE_GAME_METADATA_SQL: &str = "
         fetched_at INTEGER NOT NULL,
         PRIMARY KEY (system, rom_filename)
     );
+";
+
+/// SQL to create the `game_release_date` table (multi-region, full-precision).
+const CREATE_GAME_RELEASE_DATE_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS game_release_date (
+        system       TEXT NOT NULL,
+        base_title   TEXT NOT NULL,
+        region       TEXT NOT NULL,
+        release_date TEXT NOT NULL,
+        precision    TEXT NOT NULL,
+        source       TEXT NOT NULL,
+        PRIMARY KEY (system, base_title, region)
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_date_lookup ON game_release_date(system, base_title);
+    CREATE INDEX IF NOT EXISTS idx_release_date_chrono ON game_release_date(release_date);
 ";
 
 /// SQL to create the `game_library` table. Single source of truth used by
@@ -365,7 +436,9 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         crc32 INTEGER,
         hash_mtime INTEGER,
         hash_matched_name TEXT,
-        release_year INTEGER,
+        release_date TEXT,
+        release_precision TEXT,
+        release_region_used TEXT,
         cooperative INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (system, rom_filename)
     );
@@ -410,7 +483,9 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "crc32",
     "hash_mtime",
     "hash_matched_name",
-    "release_year",
+    "release_date",
+    "release_precision",
+    "release_region_used",
     "cooperative",
 ];
 
@@ -423,7 +498,9 @@ const GAME_METADATA_COLUMNS: &[&str] = &[
     "genre",
     "developer",
     "publisher",
-    "release_year",
+    "release_date",
+    "release_precision",
+    "release_region_used",
     "rating",
     "rating_count",
     "cooperative",
@@ -432,6 +509,16 @@ const GAME_METADATA_COLUMNS: &[&str] = &[
     "screenshot_path",
     "title_path",
     "fetched_at",
+];
+
+/// Expected columns in the `game_release_date` table.
+const GAME_RELEASE_DATE_COLUMNS: &[&str] = &[
+    "system",
+    "base_title",
+    "region",
+    "release_date",
+    "precision",
+    "source",
 ];
 
 /// Stateless query namespace for the metadata SQLite database.
@@ -445,6 +532,7 @@ impl MetadataDb {
     pub const TABLES: &[&str] = &[
         "game_metadata",
         "game_library",
+        "game_release_date",
         "data_sources",
         "thumbnail_index",
         "game_alias",
@@ -491,9 +579,14 @@ impl MetadataDb {
         if Self::table_needs_rebuild(conn, "game_metadata", GAME_METADATA_COLUMNS) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS game_metadata;");
         }
+        if Self::table_needs_rebuild(conn, "game_release_date", GAME_RELEASE_DATE_COLUMNS) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_release_date;");
+        }
 
         conn.execute_batch(CREATE_GAME_METADATA_SQL)
             .map_err(|e| Error::Other(format!("Failed to create game_metadata: {e}")))?;
+        conn.execute_batch(CREATE_GAME_RELEASE_DATE_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create game_release_date: {e}")))?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS data_sources (
@@ -675,7 +768,7 @@ impl MetadataDb {
     ///   region, developer, genre, genre_group, rating, rating_count, players,
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
     ///   driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-    ///   release_year, cooperative
+    ///   release_date, release_precision, release_region_used, cooperative
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
             system: row.get(0)?,
@@ -714,11 +807,10 @@ impl MetadataDb {
                 .map(|c| c as u32),
             hash_mtime: row.get(22).unwrap_or_default(),
             hash_matched_name: row.get(23).unwrap_or_default(),
-            release_year: row
-                .get::<_, Option<i32>>(24)
-                .unwrap_or_default()
-                .map(|y| y as u16),
-            cooperative: row.get::<_, bool>(25).unwrap_or_default(),
+            release_date: row.get::<_, Option<String>>(24).unwrap_or_default(),
+            release_precision: row.get::<_, Option<DatePrecision>>(25).unwrap_or_default(),
+            release_region_used: row.get::<_, Option<String>>(26).unwrap_or_default(),
+            cooperative: row.get::<_, bool>(27).unwrap_or_default(),
         })
     }
 }
@@ -751,7 +843,9 @@ mod tests {
             developer: None,
             genre: None,
             players: None,
-            release_year: None,
+            release_date: None,
+            release_precision: None,
+            release_region_used: None,
             cooperative: false,
             fetched_at: 0,
             box_art_path: box_art.map(String::from),
@@ -801,7 +895,9 @@ mod tests {
             hash_matched_name: None,
             series_key: String::new(),
             developer: String::new(),
-            release_year: None,
+            release_date: None,
+            release_precision: None,
+            release_region_used: None,
             cooperative: false,
         }
     }

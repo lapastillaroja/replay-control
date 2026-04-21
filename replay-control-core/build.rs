@@ -7,6 +7,12 @@ use std::path::Path;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
+// build.rs only calls `base_title` here; the rest of `title_utils` is exposed
+// but unused in this compilation unit.
+#[allow(dead_code)]
+#[path = "src/game/title_utils.rs"]
+mod title_utils;
+
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -73,6 +79,11 @@ fn main() {
     // Collect all game entries keyed by rom_name.
     // We use a HashMap for deduplication — later sources with richer metadata win.
     let mut entries_map: HashMap<String, GameEntry> = HashMap::new();
+    // Parallel provenance map: rom_name -> "naomi" | "fbneo" | "mame".
+    // Used solely to label the `source` column when emitting arcade rows into
+    // `ARCADE_RELEASE_DATES`. Whichever parser last wrote `entries_map[rom_name]`
+    // is the source of record for the year.
+    let mut entry_source: HashMap<String, &'static str> = HashMap::new();
 
     // Track Flycast ROM names so we can protect them from being overridden.
     // Flycast entries are hand-curated and should always be preserved.
@@ -88,6 +99,7 @@ fn main() {
         );
         for entry in flycast_entries {
             flycast_rom_names.insert(entry.rom_name.clone());
+            entry_source.insert(entry.rom_name.clone(), "naomi");
             entries_map.insert(entry.rom_name.clone(), entry);
         }
     }
@@ -105,7 +117,13 @@ fn main() {
         for entry in fbneo_entries {
             // FBNeo has no players/rotation/status, so it's not "richer" than
             // existing Flycast entries. Only insert if rom_name is new.
-            entries_map.entry(entry.rom_name.clone()).or_insert(entry);
+            let rom_name = entry.rom_name.clone();
+            if let std::collections::hash_map::Entry::Vacant(vacant) =
+                entries_map.entry(rom_name.clone())
+            {
+                vacant.insert(entry);
+                entry_source.insert(rom_name, "fbneo");
+            }
         }
     }
 
@@ -119,7 +137,7 @@ fn main() {
         );
         for entry in mame_entries {
             let rom_name = entry.rom_name.clone();
-            match entries_map.entry(rom_name) {
+            match entries_map.entry(rom_name.clone()) {
                 std::collections::hash_map::Entry::Occupied(mut occupied) => {
                     // MAME 2003+ has richer metadata than FBNeo.
                     // Overwrite entries that lack players/rotation/status data
@@ -131,10 +149,12 @@ fn main() {
                         && existing.status == "unknown"
                     {
                         occupied.insert(entry);
+                        entry_source.insert(rom_name, "mame");
                     }
                 }
                 std::collections::hash_map::Entry::Vacant(vacant) => {
                     vacant.insert(entry);
+                    entry_source.insert(rom_name, "mame");
                 }
             }
         }
@@ -163,11 +183,13 @@ fn main() {
                     // Flycast hand-curated entries (Naomi/Atomiswave).
                     if !flycast_rom_names.contains(&rom_name) {
                         occupied.insert(entry);
+                        entry_source.insert(rom_name, "mame");
                         override_count += 1;
                     }
                 }
                 std::collections::hash_map::Entry::Vacant(vacant) => {
                     vacant.insert(entry);
+                    entry_source.insert(rom_name, "mame");
                     new_count += 1;
                 }
             }
@@ -325,6 +347,53 @@ fn main() {
 
     // Generate the PHF map
     generate_phf_map(&mut out, &entries);
+
+    // Emit `ARCADE_RELEASE_DATES`: one row per arcade game that has a non-empty
+    // 4-digit year. Each row is (rom_name, year, source) where source is "mame",
+    // "fbneo", or "naomi" depending on which parser last wrote the year.
+    //
+    // At scan-time, a seed function iterates this list along with the user's
+    // `game_library` arcade rows, computes `base_title` per entry, and upserts
+    // into `game_release_date` with `region="world"` and `precision="year"`.
+    // Arcade DATs have no regional release-date semantics.
+    let mut arcade_date_rows: Vec<(&str, &str, &str)> = Vec::new();
+    for entry in &entries {
+        if entry.is_bios {
+            continue;
+        }
+        let y = entry.year.trim();
+        if y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()) {
+            let src = entry_source.get(&entry.rom_name).copied().unwrap_or("mame");
+            arcade_date_rows.push((entry.rom_name.as_str(), y, src));
+        }
+    }
+    arcade_date_rows.sort();
+    writeln!(
+        out,
+        "// (rom_name, year, source) — source is \"mame\" | \"fbneo\" | \"naomi\""
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "pub static ARCADE_RELEASE_DATES: &[(&str, &str, &str)] = &["
+    )
+    .unwrap();
+    for (rom, year, source) in &arcade_date_rows {
+        writeln!(
+            out,
+            "    (\"{}\", \"{}\", \"{}\"),",
+            escape_str(rom),
+            year,
+            source,
+        )
+        .unwrap();
+    }
+    writeln!(out, "];").unwrap();
+    writeln!(out).unwrap();
+    println!(
+        "cargo:warning=Arcade DB: Emitted {} release-date rows (ARCADE_RELEASE_DATES)",
+        arcade_date_rows.len()
+    );
 }
 
 struct GameEntry {
@@ -1913,10 +1982,39 @@ fn tgdb_genre_name(id: u32) -> &'static str {
     }
 }
 
+/// Per-region release-date entry extracted from a TGDB game row.
+///
+/// Multiple of these may exist per `(normalized_title, platform_id)` — TGDB
+/// has separate rows per regional release, each with its own `region_id` and
+/// `release_date`. The builder groups them and emits one row per region.
+#[derive(Debug, Clone)]
+struct TgdbRegionalDate {
+    /// The TGDB game title (non-normalized — used for display matching).
+    title: String,
+    /// TGDB platform id.
+    platform: u32,
+    /// TGDB region_id (0=unknown, 1=NTSC, 2=NTSC-U, 3=Canada, 4=Japan,
+    /// 5=Korea, 6=PAL, 7=PAL-A, 8=PAL-B, 9=World). Folded to four user-facing
+    /// buckets in `tgdb_region_id_to_str`.
+    region_id: u32,
+    /// Full ISO date string (may be year-only, day-precision, or `YYYY-01-01`
+    /// which is treated as year-precision).
+    release_date: String,
+}
+
+/// `HashMap` keyed by `(normalized_title, tgdb_platform_id)` that accumulates
+/// every TGDB row for a given game — used to emit per-region `release_date`
+/// rows at build time.
+type TgdbRegionalDatesMap = HashMap<(String, u32), Vec<TgdbRegionalDate>>;
+
 /// Parse TheGamesDB JSON dump and build a lookup by normalized title + platform.
 ///
-/// Returns: HashMap<(normalized_title, platform_id), TgdbEntry>
-fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
+/// Returns:
+/// - Primary lookup: `HashMap<(normalized_title, platform_id), TgdbEntry>` with
+///   first-occurrence metadata (year/genre/players/devs) for CanonicalGame emit.
+/// - Regional dates: `TgdbRegionalDatesMap` accumulates ALL regional entries so
+///   we can emit per-region `release_date` rows at build time.
+fn parse_tgdb_json(path: &Path) -> (HashMap<(String, u32), TgdbEntry>, TgdbRegionalDatesMap) {
     let file = match File::open(path) {
         Ok(f) => f,
         Err(e) => {
@@ -1925,7 +2023,7 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
                 path.display(),
                 e
             );
-            return HashMap::new();
+            return (HashMap::new(), HashMap::new());
         }
     };
 
@@ -1934,15 +2032,16 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
         Ok(v) => v,
         Err(e) => {
             eprintln!("Warning: failed to parse TheGamesDB JSON: {}", e);
-            return HashMap::new();
+            return (HashMap::new(), HashMap::new());
         }
     };
 
     let mut result: HashMap<(String, u32), TgdbEntry> = HashMap::new();
+    let mut regional_dates: TgdbRegionalDatesMap = HashMap::new();
 
     let games = match json["data"]["games"].as_array() {
         Some(arr) => arr,
-        None => return result,
+        None => return (result, regional_dates),
     };
 
     for game in games {
@@ -1955,10 +2054,13 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
             None => continue,
         };
 
-        // Extract year from release_date (format: "YYYY-MM-DD")
-        let year: u16 = game["release_date"]
-            .as_str()
-            .and_then(|d| d.get(..4))
+        let release_date_raw = game["release_date"].as_str().unwrap_or("").to_string();
+
+        // Extract year from release_date (format: "YYYY-MM-DD") — used for the
+        // legacy CanonicalGame.year field. Full-fidelity date is preserved in
+        // the regional_dates side-output below.
+        let year: u16 = release_date_raw
+            .get(..4)
             .and_then(|y| y.parse().ok())
             .unwrap_or(0);
 
@@ -2008,7 +2110,23 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
             .unwrap_or_default();
 
         let normalized = normalize_title_for_tgdb(&title);
-        let key = (normalized, platform);
+        let key = (normalized.clone(), platform);
+
+        // Side-output: accumulate ALL per-region date entries for this
+        // (title, platform) so we can emit multi-region release_date rows later.
+        // Only collect entries that actually have a parseable 4-digit year.
+        if year > 0 && !release_date_raw.is_empty() {
+            let region_id: u32 = game["region_id"].as_u64().unwrap_or(0) as u32;
+            regional_dates
+                .entry(key.clone())
+                .or_default()
+                .push(TgdbRegionalDate {
+                    title: title.clone(),
+                    platform,
+                    region_id,
+                    release_date: release_date_raw,
+                });
+        }
 
         // Only keep the first entry per title+platform (avoid overwriting)
         result.entry(key).or_insert(TgdbEntry {
@@ -2024,7 +2142,51 @@ fn parse_tgdb_json(path: &Path) -> HashMap<(String, u32), TgdbEntry> {
         });
     }
 
-    result
+    (result, regional_dates)
+}
+
+/// Map a TGDB `region_id` to the `game_release_date.region` string.
+///
+/// Folds NTSC / NTSC-U / Canada (1|2|3) → "usa" and PAL / PAL-A / PAL-B
+/// (6|7|8) → "europe" because the user-facing region preference has only
+/// four buckets (USA, Europe, Japan, World).
+fn tgdb_region_id_to_str(region_id: u32) -> &'static str {
+    match region_id {
+        1..=3 => "usa",
+        4 => "japan",
+        5 => "korea",
+        6..=8 => "europe",
+        9 => "world",
+        _ => "unknown",
+    }
+}
+
+/// Classify a TGDB full `YYYY-MM-DD` release_date string into a
+/// `(date_for_display, precision)` pair.
+///
+/// - `YYYY-01-01` → `("YYYY", "year")` — TGDB uses Jan 1 as a year-only stub.
+/// - `YYYY-MM-DD` (other dates) → `("YYYY-MM-DD", "day")`.
+/// - Returns `None` if the input doesn't match `YYYY-MM-DD` shape or has year 0.
+fn classify_tgdb_date(raw: &str) -> Option<(String, &'static str)> {
+    // Must be at least 4 chars of year, optionally followed by -MM-DD.
+    let year_str = raw.get(..4)?;
+    let year: u16 = year_str.parse().ok()?;
+    if year == 0 {
+        return None;
+    }
+    if raw.len() >= 10 {
+        let rest = &raw[4..10];
+        if rest == "-01-01" {
+            Some((year_str.to_string(), "year"))
+        } else if rest.starts_with('-') && rest.chars().filter(|c| c.is_ascii_digit()).count() == 4
+        {
+            Some((raw[..10].to_string(), "day"))
+        } else {
+            Some((year_str.to_string(), "year"))
+        }
+    } else {
+        Some((year_str.to_string(), "year"))
+    }
 }
 
 /// Normalize a title for matching against TheGamesDB.
@@ -2056,18 +2218,23 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
     println!("cargo::rerun-if-changed={}", genre_dir.display());
     println!("cargo::rerun-if-changed={}", tgdb_path.display());
 
-    // Parse TheGamesDB JSON dump (shared across all systems)
-    let tgdb = if tgdb_path.exists() {
+    // Parse TheGamesDB JSON dump (shared across all systems).
+    // Returns both the primary lookup (first entry per (title, platform) for
+    // CanonicalGame.year-style metadata) AND a regional dates side-output
+    // (all entries per (title, platform), for multi-region release_date emit).
+    let (tgdb, tgdb_regional_dates) = if tgdb_path.exists() {
         println!("cargo:warning=Game DB: Loading TheGamesDB JSON dump...");
-        let tgdb = parse_tgdb_json(&tgdb_path);
+        let parsed = parse_tgdb_json(&tgdb_path);
+        let multi_region_count = parsed.1.values().filter(|v| v.len() > 1).count();
         println!(
-            "cargo:warning=Game DB: TheGamesDB loaded {} entries",
-            tgdb.len()
+            "cargo:warning=Game DB: TheGamesDB loaded {} entries ({} with multi-region dates)",
+            parsed.0.len(),
+            multi_region_count
         );
-        tgdb
+        parsed
     } else {
         println!("cargo:warning=Game DB: TheGamesDB JSON not found, skipping metadata enrichment");
-        HashMap::new()
+        (HashMap::new(), HashMap::new())
     };
 
     // Load TGDB lookup tables (developer/publisher/genre name maps)
@@ -2099,6 +2266,19 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
     let mut total_games = 0usize;
     let mut total_tgdb_matches = 0usize;
     let mut system_names: Vec<&str> = Vec::new();
+
+    // Per-region release-date rows harvested from TGDB for every canonical game.
+    // Each entry: (system_folder, base_title_lc, region, release_date, precision, source).
+    // Emitted as `CONSOLE_RELEASE_DATES: &[(&str, &str, &str, &str, &str, &str)]`
+    // at the end of the DB file so the runtime can upsert into `game_release_date`.
+    let mut console_release_dates: Vec<(
+        String,
+        String,
+        &'static str,
+        String,
+        &'static str,
+        &'static str,
+    )> = Vec::new();
 
     // Process each system
     for sys in GAME_DB_SYSTEMS {
@@ -2195,6 +2375,38 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
 
             // Try matching against each TGDB platform ID for this system
             let tgdb_normalized = normalize_title_for_tgdb(&display_name);
+            // Harvest per-region release dates across ALL matching platform IDs.
+            // Deduplicate (region, date) so a game matched by multiple platform
+            // IDs (e.g., NES + NES-VS) doesn't emit duplicate rows.
+            // `base_title_lc` here must match `title_utils::base_title(display_name)`
+            // at runtime so the resolver can join on it.
+            let base_title_lc = title_utils::base_title(&display_name);
+            let mut region_dates_seen: std::collections::HashSet<(&'static str, String)> =
+                std::collections::HashSet::new();
+            for &platform_id in sys.tgdb_platform_ids {
+                if let Some(region_rows) =
+                    tgdb_regional_dates.get(&(tgdb_normalized.clone(), platform_id))
+                {
+                    for row in region_rows {
+                        if let Some((date_str, precision)) = classify_tgdb_date(&row.release_date) {
+                            let region = tgdb_region_id_to_str(row.region_id);
+                            if region_dates_seen.insert((region, date_str.clone())) {
+                                console_release_dates.push((
+                                    sys.folder_name.to_string(),
+                                    base_title_lc.clone(),
+                                    region,
+                                    date_str,
+                                    precision,
+                                    "tgdb",
+                                ));
+                            }
+                        }
+                        // Mark platform unused warning silencer.
+                        let _ = row.platform;
+                        let _ = &row.title;
+                    }
+                }
+            }
             for &platform_id in sys.tgdb_platform_ids {
                 if let Some(tgdb_entry) = tgdb.get(&(tgdb_normalized.clone(), platform_id)) {
                     year = tgdb_entry.year;
@@ -2395,12 +2607,48 @@ fn generate_game_db(out_dir: &str, sources_dir: &Path) {
     // Generate the dispatch functions
     write_dispatch_code(&mut out, &system_names);
 
+    // Emit the per-region release-dates static. Tuple schema:
+    //   (system_folder, base_title_lc, region, release_date, precision, source)
+    // Each row will be upserted into `game_release_date` at scan time via
+    // `MetadataDb::seed_release_dates_from_static`.
+    console_release_dates.sort();
+    console_release_dates.dedup();
+    writeln!(
+        out,
+        "// (system, base_title, region, release_date, precision, source)"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "pub static CONSOLE_RELEASE_DATES: &[(&str, &str, &str, &str, &str, &str)] = &["
+    )
+    .unwrap();
+    for (system, base_title, region, date, precision, source) in &console_release_dates {
+        writeln!(
+            out,
+            "    (\"{}\", \"{}\", \"{}\", \"{}\", \"{}\", \"{}\"),",
+            escape_str(system),
+            escape_str(base_title),
+            region,
+            escape_str(date),
+            precision,
+            source,
+        )
+        .unwrap();
+    }
+    writeln!(out, "];").unwrap();
+    writeln!(out).unwrap();
+
     println!(
         "cargo:warning=Game DB: Total: {} ROM entries, {} canonical games, {} TGDB matches across {} systems",
         total_roms,
         total_games,
         total_tgdb_matches,
         system_names.len()
+    );
+    println!(
+        "cargo:warning=Game DB: Emitted {} per-region release-date rows (CONSOLE_RELEASE_DATES)",
+        console_release_dates.len()
     );
 }
 

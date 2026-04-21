@@ -1,3 +1,7 @@
+use replay_control_core::DatePrecision;
+
+use crate::i18n::Locale;
+
 /// Format a number with thousands separators (e.g., 15440 -> "15,440").
 pub fn format_number(n: usize) -> String {
     let s = n.to_string();
@@ -26,6 +30,86 @@ pub fn format_year_range(min: Option<u16>, max: Option<u16>) -> Option<String> {
         (Some(a), Some(b)) if a != b => Some(format!("{a}\u{2013}{b}")),
         (Some(y), _) | (_, Some(y)) => Some(y.to_string()),
         _ => None,
+    }
+}
+
+/// Format an ISO 8601 partial/full release date according to precision + locale.
+///
+/// - `Year` → `"1991"`
+/// - `Month` → localized "Aug 1991" / "ago. 1991" / "1991年8月"
+/// - `Day` → localized "Aug 23, 1991" / "23 ago. 1991" / "1991年8月23日"
+///
+/// When `precision` is `None`, it's inferred from the string length.
+/// Returns `None` if the date is unparseable.
+pub fn format_release_date(
+    date: &str,
+    precision: Option<DatePrecision>,
+    locale: Locale,
+) -> Option<String> {
+    // Parse YYYY[-MM[-DD]] loosely.
+    let year = date.get(..4).and_then(|y| y.parse::<u16>().ok())?;
+    let month = date
+        .get(5..7)
+        .and_then(|m| m.parse::<u8>().ok())
+        .filter(|m| (1..=12).contains(m));
+    let day = date
+        .get(8..10)
+        .and_then(|d| d.parse::<u8>().ok())
+        .filter(|d| (1..=31).contains(d));
+
+    let effective = precision.unwrap_or(match (month, day) {
+        (Some(_), Some(_)) => DatePrecision::Day,
+        (Some(_), None) => DatePrecision::Month,
+        _ => DatePrecision::Year,
+    });
+
+    match effective {
+        DatePrecision::Day => match (month, day) {
+            (Some(m), Some(d)) => Some(format_day(year, m, d, locale)),
+            _ => Some(year.to_string()),
+        },
+        DatePrecision::Month => match month {
+            Some(m) => Some(format_month(year, m, locale)),
+            None => Some(year.to_string()),
+        },
+        DatePrecision::Year => Some(year.to_string()),
+    }
+}
+
+fn month_short(month: u8, locale: Locale) -> &'static str {
+    use crate::i18n::{Key, t};
+    let key = match month {
+        1 => Key::MonthJanShort,
+        2 => Key::MonthFebShort,
+        3 => Key::MonthMarShort,
+        4 => Key::MonthAprShort,
+        5 => Key::MonthMayShort,
+        6 => Key::MonthJunShort,
+        7 => Key::MonthJulShort,
+        8 => Key::MonthAugShort,
+        9 => Key::MonthSepShort,
+        10 => Key::MonthOctShort,
+        11 => Key::MonthNovShort,
+        12 => Key::MonthDecShort,
+        _ => return "",
+    };
+    t(locale, key)
+}
+
+fn format_day(year: u16, month: u8, day: u8, locale: Locale) -> String {
+    let m = month_short(month, locale);
+    match locale {
+        Locale::Es => format!("{day} {m} {year}"),
+        Locale::Ja => format!("{year}年{month}月{day}日"),
+        _ => format!("{m} {day}, {year}"),
+    }
+}
+
+fn format_month(year: u16, month: u8, locale: Locale) -> String {
+    let m = month_short(month, locale);
+    match locale {
+        Locale::Ja => format!("{year}年{month}月"),
+        _ => format!("{m} {year}"),
     }
 }
 
@@ -445,6 +529,114 @@ mod tests {
         assert_eq!(
             format_size_for_system(1_048_576, "unknown_system"),
             "1.0 MB"
+        );
+    }
+
+    // --- format_release_date tests ---
+
+    #[test]
+    fn release_date_year_only_en() {
+        assert_eq!(
+            format_release_date("1991", Some(DatePrecision::Year), Locale::En),
+            Some("1991".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_month_en() {
+        assert_eq!(
+            format_release_date("1991-08", Some(DatePrecision::Month), Locale::En),
+            Some("Aug 1991".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_day_en() {
+        assert_eq!(
+            format_release_date("1991-08-23", Some(DatePrecision::Day), Locale::En),
+            Some("Aug 23, 1991".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_year_only_es() {
+        assert_eq!(
+            format_release_date("1991", Some(DatePrecision::Year), Locale::Es),
+            Some("1991".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_month_es() {
+        assert_eq!(
+            format_release_date("1991-08", Some(DatePrecision::Month), Locale::Es),
+            Some("ago 1991".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_day_es() {
+        assert_eq!(
+            format_release_date("1991-08-23", Some(DatePrecision::Day), Locale::Es),
+            Some("23 ago 1991".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_year_only_ja() {
+        assert_eq!(
+            format_release_date("1991", Some(DatePrecision::Year), Locale::Ja),
+            Some("1991".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_month_ja() {
+        assert_eq!(
+            format_release_date("1991-08", Some(DatePrecision::Month), Locale::Ja),
+            Some("1991年8月".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_day_ja() {
+        assert_eq!(
+            format_release_date("1991-08-23", Some(DatePrecision::Day), Locale::Ja),
+            Some("1991年8月23日".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_invalid_returns_none() {
+        assert_eq!(
+            format_release_date("not-a-date", Some(DatePrecision::Day), Locale::En),
+            None
+        );
+    }
+
+    #[test]
+    fn release_date_infers_precision_from_length() {
+        // Missing precision, infer from date string.
+        assert_eq!(
+            format_release_date("1991", None, Locale::En),
+            Some("1991".to_string())
+        );
+        assert_eq!(
+            format_release_date("1991-08", None, Locale::En),
+            Some("Aug 1991".to_string())
+        );
+        assert_eq!(
+            format_release_date("1991-08-23", None, Locale::En),
+            Some("Aug 23, 1991".to_string())
+        );
+    }
+
+    #[test]
+    fn release_date_day_precision_with_only_year_falls_back() {
+        // When caller claims "day" but the date is year-only, emit the year.
+        assert_eq!(
+            format_release_date("1991", Some(DatePrecision::Day), Locale::En),
+            Some("1991".to_string())
         );
     }
 }

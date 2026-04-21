@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core::roms::RomEntry;
 use replay_control_core::storage::StorageLocation;
 
@@ -106,6 +107,7 @@ impl LibraryService {
 
     /// Write ROM list to SQLite game_library for persistent storage.
     /// Enriches with genre/players from the baked-in game databases during write.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn save_roms_to_db(
         &self,
         _storage: &StorageLocation,
@@ -113,6 +115,8 @@ impl LibraryService {
         roms: &[RomEntry],
         system_dir: &Path,
         hash_results: &HashMap<String, replay_control_core::rom_hash::HashResult>,
+        region_pref: RegionPreference,
+        region_secondary: Option<RegionPreference>,
         db: &DbPool,
     ) {
         let mtime_secs = dir_mtime(system_dir).and_then(|t| {
@@ -150,6 +154,30 @@ impl LibraryService {
 
                 // Populate game_series from embedded Wikidata data.
                 self.populate_wikidata_series(system, &cached_roms, db)
+                    .await;
+
+                // Seed `game_release_date` in three steps:
+                //  1. Build-time static emit: TGDB per-region dates + arcade
+                //     MAME/FBNeo/Naomi year rows. This gives us multi-region
+                //     coverage (USA/Japan/Europe dates from TGDB) immediately.
+                //  2. `game_library` mirror columns from the builder — year
+                //     fallback for games TGDB didn't classify per-region
+                //     (CanonicalGame.year → release_date = "YYYY").
+                //  3. Resolve per-region mirror columns from the user's
+                //     region preference.
+                //
+                // LaunchBox enrichment later runs `seed_release_dates_from_metadata`
+                // to upgrade to day-precision USA dates.
+                let _ = db
+                    .write(move |conn| {
+                        let _ = MetadataDb::seed_release_dates_from_static(conn);
+                        let _ = MetadataDb::seed_release_dates_from_library(conn, "builder");
+                        let _ = MetadataDb::resolve_release_date_for_library(
+                            conn,
+                            region_pref,
+                            region_secondary,
+                        );
+                    })
                     .await;
             }
             Some(Err(e)) => tracing::warn!("L2 write-through: {system} FAILED: {e}"),

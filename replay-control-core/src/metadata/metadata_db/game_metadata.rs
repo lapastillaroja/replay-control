@@ -6,7 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{Error, Result};
 
-use super::{GameMetadata, ImagePathUpdate, MetadataDb, MetadataStats};
+use super::{DatePrecision, GameMetadata, ImagePathUpdate, MetadataDb, MetadataStats};
 
 impl MetadataDb {
     /// Look up cached metadata for a specific game.
@@ -17,7 +17,8 @@ impl MetadataDb {
     ) -> Result<Option<GameMetadata>> {
         let result = conn
             .query_row(
-                "SELECT description, rating, rating_count, publisher, developer, genre, players, release_year,
+                "SELECT description, rating, rating_count, publisher, developer, genre, players, \
+                        release_date, release_precision, release_region_used, \
                         cooperative, fetched_at, box_art_path, screenshot_path, title_path
                  FROM game_metadata WHERE system = ?1 AND rom_filename = ?2",
                 params![system, rom_filename],
@@ -30,12 +31,14 @@ impl MetadataDb {
                         developer: row.get(4)?,
                         genre: row.get(5)?,
                         players: row.get::<_, Option<i32>>(6)?.map(|p| p as u8),
-                        release_year: row.get::<_, Option<i32>>(7)?.map(|y| y as u16),
-                        cooperative: row.get::<_, i32>(8)? != 0,
-                        fetched_at: row.get(9)?,
-                        box_art_path: row.get(10)?,
-                        screenshot_path: row.get(11)?,
-                        title_path: row.get(12)?,
+                        release_date: row.get::<_, Option<String>>(7)?,
+                        release_precision: row.get::<_, Option<DatePrecision>>(8)?,
+                        release_region_used: row.get::<_, Option<String>>(9)?,
+                        cooperative: row.get::<_, i32>(10)? != 0,
+                        fetched_at: row.get(11)?,
+                        box_art_path: row.get(12)?,
+                        screenshot_path: row.get(13)?,
+                        title_path: row.get(14)?,
                     })
                 },
             )
@@ -226,8 +229,8 @@ impl MetadataDb {
     }
 
     /// Fetch all non-null release years from `game_metadata` for a single system.
-    /// Returns a map of `rom_filename -> release_year`.
-    /// Used to fill empty release year entries during enrichment.
+    /// Returns a map of `rom_filename -> release_year` (derived from the year prefix of
+    /// `release_date`). Used by legacy enrichment's null-fill path.
     pub fn system_metadata_release_years(
         conn: &Connection,
         system: &str,
@@ -236,20 +239,26 @@ impl MetadataDb {
 
         let mut stmt = conn
             .prepare(
-                "SELECT rom_filename, release_year FROM game_metadata
-                 WHERE system = ?1 AND release_year IS NOT NULL",
+                "SELECT rom_filename, CAST(substr(release_date, 1, 4) AS INTEGER) \
+                 FROM game_metadata \
+                 WHERE system = ?1 AND release_date IS NOT NULL",
             )
             .map_err(|e| Error::Other(format!("Prepare system_metadata_release_years: {e}")))?;
 
         let rows = stmt
             .query_map(params![system], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? as u16))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<i64>>(1)?.unwrap_or(0) as u16,
+                ))
             })
             .map_err(|e| Error::Other(format!("System metadata release_years query: {e}")))?;
 
         let mut map = HashMap::new();
         for row in rows.flatten() {
-            map.insert(row.0, row.1);
+            if row.1 > 0 {
+                map.insert(row.0, row.1);
+            }
         }
         Ok(map)
     }
@@ -318,8 +327,9 @@ impl MetadataDb {
     ) -> Result<Vec<(String, GameMetadata)>> {
         let mut stmt = conn
             .prepare(
-                "SELECT rom_filename, description, rating, rating_count, publisher, developer, genre, players,
-                        release_year, cooperative, fetched_at, box_art_path, screenshot_path,
+                "SELECT rom_filename, description, rating, rating_count, publisher, developer, genre, players, \
+                        release_date, release_precision, release_region_used, \
+                        cooperative, fetched_at, box_art_path, screenshot_path, \
                         title_path
                  FROM game_metadata WHERE system = ?1",
             )
@@ -337,12 +347,14 @@ impl MetadataDb {
                         developer: row.get(5)?,
                         genre: row.get(6)?,
                         players: row.get::<_, Option<i32>>(7)?.map(|p| p as u8),
-                        release_year: row.get::<_, Option<i32>>(8)?.map(|y| y as u16),
-                        cooperative: row.get::<_, i32>(9)? != 0,
-                        fetched_at: row.get(10)?,
-                        box_art_path: row.get(11)?,
-                        screenshot_path: row.get(12)?,
-                        title_path: row.get(13)?,
+                        release_date: row.get::<_, Option<String>>(8)?,
+                        release_precision: row.get::<_, Option<DatePrecision>>(9)?,
+                        release_region_used: row.get::<_, Option<String>>(10)?,
+                        cooperative: row.get::<_, i32>(11)? != 0,
+                        fetched_at: row.get(12)?,
+                        box_art_path: row.get(13)?,
+                        screenshot_path: row.get(14)?,
+                        title_path: row.get(15)?,
                     },
                 ))
             })
@@ -363,19 +375,21 @@ impl MetadataDb {
         meta: &GameMetadata,
     ) -> Result<()> {
         conn.execute(
-                "INSERT INTO game_metadata (system, rom_filename, description, rating, rating_count, publisher, developer,
-                    genre, players, release_year, cooperative, fetched_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
-                 ON CONFLICT(system, rom_filename) DO UPDATE SET
-                    description = excluded.description,
-                    rating = excluded.rating,
-                    rating_count = excluded.rating_count,
-                    publisher = excluded.publisher,
-                    developer = excluded.developer,
-                    genre = excluded.genre,
-                    players = excluded.players,
-                    release_year = excluded.release_year,
-                    cooperative = excluded.cooperative,
+                "INSERT INTO game_metadata (system, rom_filename, description, rating, rating_count, publisher, developer, \
+                    genre, players, release_date, release_precision, release_region_used, cooperative, fetched_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
+                 ON CONFLICT(system, rom_filename) DO UPDATE SET \
+                    description = excluded.description, \
+                    rating = excluded.rating, \
+                    rating_count = excluded.rating_count, \
+                    publisher = excluded.publisher, \
+                    developer = excluded.developer, \
+                    genre = excluded.genre, \
+                    players = excluded.players, \
+                    release_date = excluded.release_date, \
+                    release_precision = excluded.release_precision, \
+                    release_region_used = excluded.release_region_used, \
+                    cooperative = excluded.cooperative, \
                     fetched_at = excluded.fetched_at",
                 params![
                     system,
@@ -387,7 +401,9 @@ impl MetadataDb {
                     meta.developer,
                     meta.genre,
                     meta.players.map(|p| p as i32),
-                    meta.release_year.map(|y| y as i32),
+                    meta.release_date,
+                    meta.release_precision,
+                    meta.release_region_used,
                     meta.cooperative as i32,
                     meta.fetched_at,
                 ],
@@ -409,19 +425,21 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO game_metadata (system, rom_filename, description, rating, rating_count, publisher, developer,
-                        genre, players, release_year, cooperative, fetched_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
-                     ON CONFLICT(system, rom_filename) DO UPDATE SET
-                        description = COALESCE(excluded.description, game_metadata.description),
-                        rating = COALESCE(excluded.rating, game_metadata.rating),
-                        rating_count = COALESCE(excluded.rating_count, game_metadata.rating_count),
-                        publisher = COALESCE(excluded.publisher, game_metadata.publisher),
-                        developer = COALESCE(excluded.developer, game_metadata.developer),
-                        genre = COALESCE(excluded.genre, game_metadata.genre),
-                        players = COALESCE(excluded.players, game_metadata.players),
-                        release_year = COALESCE(excluded.release_year, game_metadata.release_year),
-                        cooperative = CASE WHEN excluded.cooperative = 1 THEN 1 ELSE game_metadata.cooperative END,
+                    "INSERT INTO game_metadata (system, rom_filename, description, rating, rating_count, publisher, developer, \
+                        genre, players, release_date, release_precision, release_region_used, cooperative, fetched_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
+                     ON CONFLICT(system, rom_filename) DO UPDATE SET \
+                        description = COALESCE(excluded.description, game_metadata.description), \
+                        rating = COALESCE(excluded.rating, game_metadata.rating), \
+                        rating_count = COALESCE(excluded.rating_count, game_metadata.rating_count), \
+                        publisher = COALESCE(excluded.publisher, game_metadata.publisher), \
+                        developer = COALESCE(excluded.developer, game_metadata.developer), \
+                        genre = COALESCE(excluded.genre, game_metadata.genre), \
+                        players = COALESCE(excluded.players, game_metadata.players), \
+                        release_date = COALESCE(excluded.release_date, game_metadata.release_date), \
+                        release_precision = COALESCE(excluded.release_precision, game_metadata.release_precision), \
+                        release_region_used = COALESCE(excluded.release_region_used, game_metadata.release_region_used), \
+                        cooperative = CASE WHEN excluded.cooperative = 1 THEN 1 ELSE game_metadata.cooperative END, \
                         fetched_at = excluded.fetched_at",
                 )
                 .map_err(|e| Error::Other(format!("Prepare failed: {e}")))?;
@@ -437,7 +455,9 @@ impl MetadataDb {
                     meta.developer,
                     meta.genre,
                     meta.players.map(|p| p as i32),
-                    meta.release_year.map(|y| y as i32),
+                    meta.release_date,
+                    meta.release_precision,
+                    meta.release_region_used,
                     meta.cooperative as i32,
                     meta.fetched_at,
                 ])

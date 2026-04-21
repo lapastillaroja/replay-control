@@ -89,6 +89,18 @@ impl LibraryService {
             );
         }
 
+        // Seed game_release_date from game_metadata (LaunchBox day-precision dates),
+        // then re-run the resolver so game_library mirror columns reflect the new info.
+        // The precision-upgrade rule ensures day > month > year.
+        let region_pref = state.region_preference();
+        let region_secondary = state.region_preference_secondary();
+        db.write(move |conn| {
+            let _ = MetadataDb::seed_release_dates_from_metadata(conn);
+            let _ =
+                MetadataDb::resolve_release_date_for_library(conn, region_pref, region_secondary);
+        })
+        .await;
+
         if result.enrichments.is_empty() {
             return;
         }

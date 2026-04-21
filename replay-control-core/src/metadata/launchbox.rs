@@ -12,7 +12,7 @@ use quick_xml::events::Event;
 
 use crate::arcade_db;
 use crate::error::{Error, Result};
-use crate::metadata_db::{GameMetadata, ImportStats};
+use crate::metadata_db::{DatePrecision, GameMetadata, ImportStats};
 
 /// Build the LaunchBox platform → system folder mapping from the centralized
 /// system definitions in `systems.rs`. Adding a new system with
@@ -31,8 +31,40 @@ struct LbGame {
     developer: String,
     genre: String,
     max_players: Option<u8>,
-    release_year: Option<u16>,
+    release_date: Option<String>,
+    release_precision: Option<DatePrecision>,
     cooperative: bool,
+}
+
+/// Parse a LaunchBox `ReleaseDate` ISO 8601 datetime string.
+///
+/// LaunchBox stores dates like `1991-08-23T00:00:00-05:00`. We extract the
+/// `YYYY-MM-DD` prefix. If the date is `YYYY-01-01`, we treat it as year-only
+/// (year-only approximations are commonly stored this way). Otherwise we emit
+/// day-precision.
+fn parse_launchbox_release_date(text: &str) -> Option<(String, DatePrecision)> {
+    let date_portion = text.get(..10).unwrap_or(text);
+    if date_portion.len() < 10 || date_portion.as_bytes().get(4) != Some(&b'-') {
+        // Fall back to year-only if format isn't recognizable.
+        return text.get(..4).and_then(|y| {
+            y.parse::<u16>()
+                .ok()
+                .map(|_| (y.to_string(), DatePrecision::Year))
+        });
+    }
+    // Validate the shape YYYY-MM-DD.
+    let bytes = date_portion.as_bytes();
+    if bytes[7] != b'-' || !bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+        return text
+            .get(..4)
+            .and_then(|y| y.parse::<u16>().ok())
+            .map(|y| (format!("{y:04}"), DatePrecision::Year));
+    }
+    // `-01-01` heuristic: likely a year-only approximation.
+    if &date_portion[5..] == "01-01" {
+        return Some((date_portion[..4].to_string(), DatePrecision::Year));
+    }
+    Some((date_portion.to_string(), DatePrecision::Day))
 }
 
 /// Normalize a game title for fuzzy matching.
@@ -139,7 +171,7 @@ pub fn import_launchbox(
             && game.genre.is_empty()
             && game.max_players.is_none()
             && game.developer.is_empty()
-            && game.release_year.is_none()
+            && game.release_date.is_none()
             && !game.cooperative
         {
             stats.skipped += 1;
@@ -176,7 +208,9 @@ pub fn import_launchbox(
                         Some(game.genre.clone())
                     },
                     players: game.max_players,
-                    release_year: game.release_year,
+                    release_date: game.release_date.clone(),
+                    release_precision: game.release_precision,
+                    release_region_used: None,
                     cooperative: game.cooperative,
                     fetched_at: now,
                     box_art_path: None,
@@ -263,7 +297,8 @@ fn parse_xml<R: BufRead>(
     let mut developer = String::new();
     let mut genre = String::new();
     let mut max_players: Option<u8> = None;
-    let mut release_year: Option<u16> = None;
+    let mut release_date: Option<String> = None;
+    let mut release_precision: Option<DatePrecision> = None;
     let mut cooperative = false;
 
     // AlternateName fields.
@@ -293,7 +328,8 @@ fn parse_xml<R: BufRead>(
                         developer.clear();
                         genre.clear();
                         max_players = None;
-                        release_year = None;
+                        release_date = None;
+                        release_precision = None;
                         cooperative = false;
                     }
                     "GameAlternateName" => {
@@ -334,7 +370,10 @@ fn parse_xml<R: BufRead>(
                             }
                         }
                         "ReleaseDate" if text.len() >= 4 => {
-                            release_year = text[..4].parse::<u16>().ok();
+                            if let Some((date, precision)) = parse_launchbox_release_date(&text) {
+                                release_date = Some(date);
+                                release_precision = Some(precision);
+                            }
                         }
                         "Cooperative" => {
                             cooperative = text.trim().eq_ignore_ascii_case("true");
@@ -371,7 +410,8 @@ fn parse_xml<R: BufRead>(
                                 developer: std::mem::take(&mut developer),
                                 genre: std::mem::take(&mut genre),
                                 max_players,
-                                release_year,
+                                release_date: release_date.take(),
+                                release_precision: release_precision.take(),
                                 cooperative,
                             };
                             for folder in system_folders {

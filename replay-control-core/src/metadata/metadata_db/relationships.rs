@@ -197,7 +197,7 @@ impl MetadataDb {
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year
+                        release_date, release_precision, release_region_used, cooperative
                 FROM deduped WHERE rn = 1
                 ORDER BY display_name",
             )
@@ -309,7 +309,7 @@ impl MetadataDb {
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year
+                        release_date, release_precision, release_region_used, cooperative
                 FROM deduped WHERE rn = 1
                 ORDER BY CASE
                     WHEN system LIKE 'arcade_%' THEN 0

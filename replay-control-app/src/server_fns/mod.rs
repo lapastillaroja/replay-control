@@ -191,6 +191,13 @@ pub struct GameInfo {
 
     // --- Common metadata (from either DB) ---
     pub year: String,
+    /// Full release date (ISO 8601 partial/full: `"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`).
+    /// None if unknown. Populated from the region-resolved `release_date` column.
+    pub release_date: Option<String>,
+    /// Precision of `release_date`.
+    pub release_precision: Option<replay_control_core::DatePrecision>,
+    /// Which region the resolver picked for this date (UI hint; e.g., `"usa" | "japan"`).
+    pub release_region_used: Option<String>,
     pub genre: String,
     pub developer: String,
     pub players: u8,
@@ -318,9 +325,12 @@ pub(crate) async fn build_game_detail(
             .clone()
             .unwrap_or_else(|| entry.rom_filename.clone()),
         year: entry
-            .release_year
+            .release_year()
             .map(|y| y.to_string())
             .unwrap_or_default(),
+        release_date: entry.release_date.clone(),
+        release_precision: entry.release_precision,
+        release_region_used: entry.release_region_used.clone(),
         genre: entry
             .genre
             .clone()

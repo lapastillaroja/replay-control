@@ -13,7 +13,7 @@ const GAME_ENTRY_COLS: &str = "system, rom_filename, rom_path, display_name, bas
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year, cooperative";
+                        release_date, release_precision, release_region_used, cooperative";
 
 impl MetadataDb {
     /// Get random cached ROMs with box art from all systems.
@@ -535,11 +535,11 @@ impl MetadataDb {
     pub fn decade_list(conn: &Connection) -> Result<Vec<u16>> {
         let mut stmt = conn
             .prepare(
-                "SELECT (release_year / 10) * 10 as decade
-                 FROM game_library
-                 WHERE release_year IS NOT NULL AND release_year > 0
-                 GROUP BY decade
-                 HAVING COUNT(*) >= 10
+                "SELECT CAST(substr(release_date, 1, 3) || '0' AS INTEGER) AS decade \
+                 FROM game_library \
+                 WHERE release_date IS NOT NULL AND length(release_date) >= 4 \
+                 GROUP BY decade \
+                 HAVING COUNT(*) >= 10 \
                  ORDER BY decade",
             )
             .map_err(|e| Error::Other(format!("Prepare decade_list: {e}")))?;
@@ -548,7 +548,7 @@ impl MetadataDb {
             .query_map([], |row| row.get::<_, i64>(0).map(|v| v as u16))
             .map_err(|e| Error::Other(format!("Query decade_list: {e}")))?;
 
-        Ok(rows.flatten().collect())
+        Ok(rows.flatten().filter(|&d| d > 0).collect())
     }
 
     /// Top genre names by game count (ordered descending).

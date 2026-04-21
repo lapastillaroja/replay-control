@@ -326,6 +326,19 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     state.prefs.write().expect("prefs lock poisoned").region = pref;
     state.cache.invalidate(&state.metadata_pool).await;
     state.response_cache.invalidate_all();
+    // Re-resolve release_date mirror columns for the new region preference.
+    // Fast (milliseconds on a typical library) — no re-fetch, no re-parse.
+    let region_secondary = state.region_preference_secondary();
+    state
+        .metadata_pool
+        .write(move |conn| {
+            let _ = replay_control_core::metadata_db::MetadataDb::resolve_release_date_for_library(
+                conn,
+                pref,
+                region_secondary,
+            );
+        })
+        .await;
     Ok(())
 }
 
@@ -357,6 +370,18 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
         .region_secondary = pref;
     state.cache.invalidate(&state.metadata_pool).await;
     state.response_cache.invalidate_all();
+    // Re-resolve release_date mirror columns for the new secondary region preference.
+    let region_primary = state.region_preference();
+    state
+        .metadata_pool
+        .write(move |conn| {
+            let _ = replay_control_core::metadata_db::MetadataDb::resolve_release_date_for_library(
+                conn,
+                region_primary,
+                pref,
+            );
+        })
+        .await;
     Ok(())
 }
 

@@ -16,7 +16,7 @@ const GAME_ENTRY_COLUMNS: &str = "\
     region, developer, genre, genre_group, rating, rating_count, players, \
     is_clone, is_m3u, is_translation, is_hack, is_special, \
     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name, \
-    release_year, cooperative";
+    release_date, release_precision, release_region_used, cooperative";
 
 /// Build the pre-computed, lowercased search index value for a game_library row.
 ///
@@ -28,7 +28,7 @@ fn build_search_text(
     rom_filename: &str,
     base_title: &str,
     developer: &str,
-    release_year: Option<u16>,
+    release_date: Option<&str>,
 ) -> String {
     let display = display_name.unwrap_or(rom_filename);
     let mut text = format!(
@@ -41,7 +41,7 @@ fn build_search_text(
         text.push('|');
         text.push_str(&developer.to_lowercase());
     }
-    if let Some(year) = release_year {
+    if let Some(year) = release_date.and_then(super::year_from_release_date) {
         text.push('|');
         text.push_str(&year.to_string());
     }
@@ -190,8 +190,8 @@ impl MetadataDb {
                 SUM(CASE WHEN rating IS NOT NULL THEN 1 ELSE 0 END),
                 SUM(CASE WHEN box_art_url IS NOT NULL THEN 1 ELSE 0 END),
                 SUM(CASE WHEN cooperative = 1 THEN 1 ELSE 0 END),
-                MIN(CASE WHEN release_year IS NOT NULL AND release_year > 0 THEN release_year END),
-                MAX(CASE WHEN release_year IS NOT NULL AND release_year > 0 THEN release_year END),
+                MIN(CAST(substr(release_date, 1, 4) AS INTEGER)),
+                MAX(CAST(substr(release_date, 1, 4) AS INTEGER)),
                 (SELECT COALESCE(SUM(total_size_bytes), 0) FROM game_library_meta) AS total_size
              FROM game_library",
             [],
@@ -238,8 +238,8 @@ impl MetadataDb {
                     SUM(CASE WHEN is_special = 1 THEN 1 ELSE 0 END) AS special_count,
                     SUM(CASE WHEN cooperative = 1 THEN 1 ELSE 0 END) AS coop_count,
                     SUM(CASE WHEN hash_matched_name IS NOT NULL THEN 1 ELSE 0 END) AS verified_count,
-                    MIN(CASE WHEN release_year IS NOT NULL AND release_year > 0 THEN release_year END) AS min_year,
-                    MAX(CASE WHEN release_year IS NOT NULL AND release_year > 0 THEN release_year END) AS max_year
+                    MIN(CAST(substr(release_date, 1, 4) AS INTEGER)) AS min_year,
+                    MAX(CAST(substr(release_date, 1, 4) AS INTEGER)) AS max_year
                  FROM game_library
                  GROUP BY system",
             )
@@ -345,9 +345,9 @@ impl MetadataDb {
                      genre, genre_group, rating, rating_count, players,
                      is_clone, is_m3u, is_translation, is_hack, is_special,
                      box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                     release_year, cooperative)
+                     release_date, release_precision, release_region_used, cooperative)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                             ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
+                             ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -357,7 +357,7 @@ impl MetadataDb {
                     &rom.rom_filename,
                     &rom.base_title,
                     &rom.developer,
-                    rom.release_year,
+                    rom.release_date.as_deref(),
                 );
                 stmt.execute(params![
                     &rom.system,
@@ -385,7 +385,9 @@ impl MetadataDb {
                     rom.crc32.map(|c| c as i64),
                     rom.hash_mtime,
                     &rom.hash_matched_name,
-                    rom.release_year.map(|y| y as i32),
+                    &rom.release_date,
+                    rom.release_precision,
+                    &rom.release_region_used,
                     rom.cooperative,
                 ])
                 .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
@@ -937,7 +939,7 @@ impl MetadataDb {
         Ok(())
     }
 
-    /// Fetch filenames that already have a `release_year` in `game_library` for a system.
+    /// Fetch filenames that already have a `release_date` in `game_library` for a system.
     pub fn system_rom_release_years(
         conn: &Connection,
         system: &str,
@@ -947,7 +949,7 @@ impl MetadataDb {
         let mut stmt = conn
             .prepare(
                 "SELECT rom_filename FROM game_library
-                 WHERE system = ?1 AND release_year IS NOT NULL",
+                 WHERE system = ?1 AND release_date IS NOT NULL",
             )
             .map_err(|e| Error::Other(format!("Prepare system_rom_release_years: {e}")))?;
 
@@ -962,34 +964,41 @@ impl MetadataDb {
         Ok(set)
     }
 
-    /// Batch-load `(rom_filename, release_year)` pairs for a system.
+    /// Batch-load `(rom_filename, release_year)` pairs for a system (derived from release_date).
     ///
-    /// Returns only rows where `release_year IS NOT NULL`, keyed by filename.
+    /// Returns only rows where `release_date IS NOT NULL`, keyed by filename.
     pub fn system_release_years(
         conn: &Connection,
         system: &str,
     ) -> Result<std::collections::HashMap<String, u16>> {
         let mut stmt = conn
             .prepare(
-                "SELECT rom_filename, release_year FROM game_library
-                 WHERE system = ?1 AND release_year IS NOT NULL",
+                "SELECT rom_filename, CAST(substr(release_date, 1, 4) AS INTEGER) \
+                 FROM game_library \
+                 WHERE system = ?1 AND release_date IS NOT NULL",
             )
             .map_err(|e| Error::Other(format!("Prepare system_release_years: {e}")))?;
 
         let rows = stmt
             .query_map(params![system], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, u16>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<i64>>(1)?.unwrap_or(0) as u16,
+                ))
             })
             .map_err(|e| Error::Other(format!("Query system_release_years: {e}")))?;
 
         let mut map = std::collections::HashMap::new();
         for row in rows.flatten() {
-            map.insert(row.0, row.1);
+            if row.1 > 0 {
+                map.insert(row.0, row.1);
+            }
         }
         Ok(map)
     }
 
-    /// Batch update `release_year` for entries in game_library.
+    /// Batch update `release_date` for entries in game_library (year-precision only,
+    /// used by legacy null-fill enrichment path).
     pub fn update_release_years(
         conn: &mut Connection,
         system: &str,
@@ -1002,14 +1011,15 @@ impl MetadataDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "UPDATE game_library SET release_year = ?2
-                     WHERE system = ?3 AND rom_filename = ?1
-                       AND release_year IS NULL",
+                    "UPDATE game_library \
+                     SET release_date = ?2, release_precision = 'year' \
+                     WHERE system = ?3 AND rom_filename = ?1 \
+                       AND release_date IS NULL",
                 )
                 .map_err(|e| Error::Other(format!("Prepare release_year update: {e}")))?;
 
             for (filename, year) in years {
-                stmt.execute(params![filename, *year as i32, system])
+                stmt.execute(params![filename, year.to_string(), system])
                     .map_err(|e| Error::Other(format!("Update release_year: {e}")))?;
             }
         }
@@ -1365,16 +1375,27 @@ impl MetadataDb {
             where_clauses.push(format!("rating >= ?{idx}"));
         }
 
-        // Year range filters (parameterized). NULL release_year is excluded.
+        // Year range filters (parameterized). Lexicographic compare on ISO date
+        // strings — hits the `idx_release_date_chrono` index directly. NULL
+        // release_date is excluded.
+        //
+        // Half-open upper bound (`< '(max+1)'`) includes day-precision entries
+        // of the max year: `"1999-12-31" < "2000"` but `"1999-12-31" > "1999"`,
+        // so `<= '1999'` would miss them.
+        //
+        // PERF NOTE: ISO string compare is fast and indexable, but if year-keyed
+        // queries become hot (timeline, per-year histograms, aggregates), revisit
+        // adding a computed `release_year_cached` column (`GENERATED ALWAYS AS
+        // (CAST(substr(release_date,1,4) AS INTEGER))`) with its own index.
         if let Some(min_y) = filter.min_year {
-            param_values.push(min_y.to_string());
+            param_values.push(format!("{min_y:04}"));
             let idx = param_values.len();
-            where_clauses.push(format!("release_year >= ?{idx}"));
+            where_clauses.push(format!("release_date >= ?{idx}"));
         }
         if let Some(max_y) = filter.max_year {
-            param_values.push(max_y.to_string());
+            param_values.push(format!("{:04}", max_y.saturating_add(1)));
             let idx = param_values.len();
-            where_clauses.push(format!("release_year <= ?{idx}"));
+            where_clauses.push(format!("release_date < ?{idx}"));
         }
 
         (where_clauses, param_values)
@@ -2440,14 +2461,19 @@ mod tests {
 
     #[test]
     fn build_search_text_with_year() {
-        let text = super::build_search_text(Some("Game"), "game.rom", "game", "", Some(1987));
+        let text = super::build_search_text(Some("Game"), "game.rom", "game", "", Some("1987"));
         assert_eq!(text, "game|game.rom|game|1987");
     }
 
     #[test]
     fn build_search_text_with_developer_and_year() {
-        let text =
-            super::build_search_text(Some("Game"), "game.rom", "game", "Imagine", Some(1987));
+        let text = super::build_search_text(
+            Some("Game"),
+            "game.rom",
+            "game",
+            "Imagine",
+            Some("1987-06-15"),
+        );
         assert_eq!(text, "game|game.rom|game|imagine|1987");
     }
 
@@ -2917,13 +2943,15 @@ mod tests {
         sonic.developer = "Sega".into();
         sonic.rating = Some(4.5);
         sonic.box_art_url = Some("/img/sonic.png".into());
-        sonic.release_year = Some(1991);
+        sonic.release_date = Some("1991".into());
+        sonic.release_precision = Some(super::super::DatePrecision::Year);
         sonic.hash_matched_name = Some("Sonic (USA)".into());
         sonic.cooperative = true;
 
         let mut mario_clone = make_game_entry("snes", "Mario (J).sfc", false);
         mario_clone.is_clone = true;
-        mario_clone.release_year = Some(1999);
+        mario_clone.release_date = Some("1999".into());
+        mario_clone.release_precision = Some(super::super::DatePrecision::Year);
 
         let mut zelda_hack = make_game_entry("snes", "Zelda.hack.sfc", false);
         zelda_hack.is_hack = true;

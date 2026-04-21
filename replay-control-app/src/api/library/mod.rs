@@ -271,8 +271,17 @@ impl LibraryService {
         let arc = Arc::new(roms);
 
         // Write to L2.
-        self.save_roms_to_db(storage, system, &arc, &system_dir, &hash_results, db)
-            .await;
+        self.save_roms_to_db(
+            storage,
+            system,
+            &arc,
+            &system_dir,
+            &hash_results,
+            region_pref,
+            region_secondary,
+            db,
+        )
+        .await;
 
         Ok(arc)
     }

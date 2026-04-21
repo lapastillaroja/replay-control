@@ -48,6 +48,28 @@ pub struct GameEntry {
 // This provides per-system PHF maps and canonical game tables.
 include!(concat!(env!("OUT_DIR"), "/game_db.rs"));
 
+/// All per-region release-date rows harvested from TGDB at build time.
+///
+/// Each tuple: `(system_folder, base_title_lowercased, region, release_date,
+/// precision, source)`. `region` follows the `game_release_date.region`
+/// convention ("usa", "europe", "japan", "world", "korea", "unknown").
+/// `precision` is `"year"` or `"day"`. `source` is `"tgdb"`.
+///
+/// Consumers (scan pipeline) iterate this slice and upsert each row into
+/// `game_release_date` via `MetadataDb::upsert_release_dates`. The
+/// precision-upgrade rule lets later day-precision data from LaunchBox
+/// overwrite year-precision TGDB stubs.
+pub fn console_release_dates() -> &'static [(
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+)] {
+    CONSOLE_RELEASE_DATES
+}
+
 /// Look up game metadata by filename stem (without extension) for a system.
 ///
 /// The filename stem should match the No-Intro canonical naming convention,

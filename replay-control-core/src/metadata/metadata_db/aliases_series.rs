@@ -209,7 +209,7 @@ impl MetadataDb {
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year, series_order
+                        release_date, release_precision, release_region_used, cooperative, series_order
                 FROM deduped WHERE rn = 1
                 ORDER BY series_order NULLS LAST, display_name
                 LIMIT ?4",
@@ -221,7 +221,7 @@ impl MetadataDb {
                 params![system, base_title, region_pref, limit as i64],
                 |row| {
                     let entry = Self::row_to_game_entry(row)?;
-                    let order: Option<i32> = row.get(25)?;
+                    let order: Option<i32> = row.get(28)?;
                     Ok((entry, order))
                 },
             )
@@ -451,7 +451,7 @@ impl MetadataDb {
                         region, developer, genre, genre_group, rating, rating_count, players,
                         is_clone, is_m3u, is_translation, is_hack, is_special,
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                        release_year
+                        release_date, release_precision, release_region_used, cooperative
                  FROM game_library
                  WHERE base_title = ?1 COLLATE NOCASE
                    AND is_translation = 0 AND is_hack = 0 AND is_special = 0

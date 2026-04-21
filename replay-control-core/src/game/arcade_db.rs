@@ -51,6 +51,16 @@ pub fn lookup_arcade_game(rom_name: &str) -> Option<&'static ArcadeGameInfo> {
     ARCADE_DB.get(rom_name)
 }
 
+/// All build-time arcade release-date rows.
+///
+/// Each tuple: `(rom_name, year, source)` where `source` is `"mame"`,
+/// `"fbneo"`, or `"naomi"`. `year` is always a 4-digit string ("YYYY"); all
+/// rows are treated as year-precision `region="world"` at upsert time
+/// because arcade DATs carry no regional release semantics.
+pub fn arcade_release_dates() -> &'static [(&'static str, &'static str, &'static str)] {
+    ARCADE_RELEASE_DATES
+}
+
 /// MAME version used as the primary data source.
 pub const MAME_VERSION: &str = "0.285";
 
