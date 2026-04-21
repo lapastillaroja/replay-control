@@ -32,6 +32,10 @@
 - Extract logic from templates — setup above, structure below
 - Don't over-engineer: solve the current problem, not hypothetical future ones
 
+## Metadata Analysis
+
+When analyzing metadata source coverage or quality across a ROM set (release dates, developers, genres, cover art, etc.), **exclude** ROM hacks, translations, homebrew, and aftermarket. Filter by No-Intro filename tags: `[h]`, `[h1-3]`, `(Hack)`, `[T+XX]`, `[T-XX]`, `[a]`, `[b]`, `[o]`, `[f]`, `(Unl)`, `(Aftermarket)`, `(Homebrew)`, `[BIOS]`. Keep prototypes, betas, official regional variants, and Virtual Console re-releases. Official metadata databases index only original releases, so matching hacks/translations systematically inflates "missing" counts and pollutes per-source comparisons. This rule applies only to **analysis** — runtime code that displays the user's actual library must not filter their ROMs.
+
 ## Rust
 
 - Use `clippy` conventions — no unnecessary `clone()`, prefer references where possible
