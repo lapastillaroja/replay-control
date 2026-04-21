@@ -6,6 +6,7 @@
 - Dependency updates use `build:` (e.g., `build: bump actions/checkout to v6`)
 - Never commit without explicit user approval
 - **NEVER run `git push` without explicit user approval. ALWAYS ask first.**
+- Do not add `Co-authored-by: Claude ...` trailers to commit messages — commits are authored by the user only.
 
 ## Releases
 
