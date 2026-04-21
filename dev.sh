@@ -24,7 +24,8 @@ set -euo pipefail
 # ── Constants ────────────────────────────────────────────────────────────────
 
 CRATE="replay-control-app"
-OUT_DIR="target/site"
+TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+OUT_DIR="$TARGET_DIR/site"
 PKG_DIR="$OUT_DIR/pkg"
 PORT="${PORT:-8091}"
 TARGET_TRIPLE="aarch64-unknown-linux-gnu"
@@ -177,7 +178,7 @@ build_wasm() {
     info "Running wasm-bindgen..."
     mkdir -p "$PKG_DIR"
     wasm-bindgen \
-        "target/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm" \
+        "$TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm" \
         --out-dir "$PKG_DIR" \
         --out-name "${CRATE//-/_}" \
         --target web \
@@ -202,7 +203,7 @@ build_ssr_local() {
         --features "$features" \
         --no-default-features
 
-    local bin="target/debug/$CRATE"
+    local bin="$TARGET_DIR/debug/$CRATE"
     if [[ -f "$bin" ]]; then
         local size
         size=$(stat -c%s "$bin" 2>/dev/null || echo 0)
@@ -221,7 +222,7 @@ build_ssr_aarch64() {
         --features "$features" \
         --no-default-features
 
-    local bin="target/$TARGET_TRIPLE/debug/$CRATE"
+    local bin="$TARGET_DIR/$TARGET_TRIPLE/debug/$CRATE"
     if [[ -f "$bin" ]]; then
         local size
         size=$(stat -c%s "$bin" 2>/dev/null || echo 0)
@@ -317,7 +318,7 @@ check_pi_connectivity() {
 # ── Pi deployment ────────────────────────────────────────────────────────────
 
 deploy_to_pi() {
-    local bin_path="target/$TARGET_TRIPLE/debug/$CRATE"
+    local bin_path="$TARGET_DIR/$TARGET_TRIPLE/debug/$CRATE"
 
     if [[ ! -f "$bin_path" ]]; then
         fatal "Binary not found: $bin_path"
@@ -390,7 +391,7 @@ run_local() {
 set -e
 BUILD_START=\$(date +%s)
 cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile wasm-dev --features hydrate --no-default-features
-wasm-bindgen target/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
+wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
 rm -f $PKG_DIR/${CRATE//-/_}_bg.wasm.gz
 cat replay-control-app/style/_*.css > $OUT_DIR/style.css
 cargo build -p $CRATE --bin $CRATE --features $features --no-default-features
@@ -436,7 +437,7 @@ BUILD_START=\$(date +%s)
 echo ""
 echo "${BOLD}${BLUE}==> Rebuilding WASM (wasm-dev)${RESET}"
 cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile wasm-dev --features hydrate --no-default-features
-wasm-bindgen target/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
+wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
 cat replay-control-app/style/_*.css > $OUT_DIR/style.css
 rm -rf $OUT_DIR/icons $OUT_DIR/branding
 cp -r replay-control-app/static/icons $OUT_DIR/icons 2>/dev/null || true
@@ -454,7 +455,7 @@ echo "${BOLD}${BLUE}==> Deploying to Pi ($PI_IP)${RESET}"
 SSH_CMD="ssh $SSH_OPTS -o ControlMaster=auto -o ControlPath=$SSH_CONTROL_SOCK -o ControlPersist=300"
 
 \$SSH_CMD ${PI_USER}@${PI_IP} "systemctl stop $PI_SERVICE 2>/dev/null || true"
-rsync -e "\$SSH_CMD" --compress target/$TARGET_TRIPLE/debug/$CRATE ${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/replay-control-app
+rsync -e "\$SSH_CMD" --compress $TARGET_DIR/$TARGET_TRIPLE/debug/$CRATE ${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/replay-control-app
 \$SSH_CMD ${PI_USER}@${PI_IP} "chmod +x ${PI_INSTALL_DIR}/replay-control-app"
 rsync -e "\$SSH_CMD" -r --compress --delete $OUT_DIR/ ${PI_USER}@${PI_IP}:${PI_SITE_DIR}/
 \$SSH_CMD ${PI_USER}@${PI_IP} "systemctl start $PI_SERVICE"
