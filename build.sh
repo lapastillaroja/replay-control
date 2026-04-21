@@ -2,7 +2,8 @@
 set -euo pipefail
 
 CRATE="replay-control-app"
-OUT_DIR="target/site"
+TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+OUT_DIR="$TARGET_DIR/site"
 PKG_DIR="$OUT_DIR/pkg"
 TARGET=""
 
@@ -52,7 +53,7 @@ cargo build -p "$CRATE" --lib \
 echo "==> Running wasm-bindgen..."
 mkdir -p "$PKG_DIR"
 wasm-bindgen \
-  "target/wasm32-unknown-unknown/wasm-release/${CRATE//-/_}.wasm" \
+  "$TARGET_DIR/wasm32-unknown-unknown/wasm-release/${CRATE//-/_}.wasm" \
   --out-dir "$PKG_DIR" \
   --out-name "${CRATE//-/_}" \
   --target web \
@@ -126,13 +127,13 @@ if [[ -n "$TARGET" ]]; then
       --target "$TARGET" \
       --features ssr \
       --no-default-features
-    BIN_PATH="target/$TARGET/release/$CRATE"
+    BIN_PATH="$TARGET_DIR/$TARGET/release/$CRATE"
 else
     cargo build -p "$CRATE" --bin "$CRATE" \
       --release \
       --features ssr \
       --no-default-features
-    BIN_PATH="target/release/$CRATE"
+    BIN_PATH="$TARGET_DIR/release/$CRATE"
 fi
 
 echo ""
