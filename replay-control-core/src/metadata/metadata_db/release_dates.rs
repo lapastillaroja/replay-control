@@ -36,6 +36,33 @@ pub fn region_pref_to_db_region(pref: RegionPreference) -> &'static str {
     }
 }
 
+/// Pre-fetched catalog data for `seed_release_dates_from_static`.
+///
+/// Gathered asynchronously before entering the sync DB write closure.
+#[derive(Default)]
+pub struct StaticReleaseData {
+    console_rows: Vec<(String, String, String, String, String, String)>,
+    arcade_rows: Vec<(String, String, String)>,
+    arcade_rom_to_display: HashMap<String, String>,
+}
+
+/// Fetch static release date data from the catalog asynchronously.
+pub async fn fetch_static_release_data() -> StaticReleaseData {
+    let console_rows = game_db::console_release_dates().await;
+    let arcade_rows = arcade_db::arcade_release_dates().await;
+    let rom_refs: Vec<&str> = arcade_rows.iter().map(|(r, _, _)| r.as_str()).collect();
+    let arcade_info = arcade_db::lookup_arcade_games_batch(&rom_refs).await;
+    let arcade_rom_to_display: HashMap<String, String> = arcade_info
+        .into_iter()
+        .map(|(rom, info)| (rom, info.display_name))
+        .collect();
+    StaticReleaseData {
+        console_rows,
+        arcade_rows,
+        arcade_rom_to_display,
+    }
+}
+
 impl MetadataDb {
     /// Bulk insert release-date rows. Overwrites existing `(system, base_title, region)` entries
     /// with `source = <new>` iff the new precision is strictly higher than the existing one
@@ -139,12 +166,14 @@ impl MetadataDb {
     /// Returns the count of rows upserted (subject to the precision-upgrade
     /// filter — rows that couldn't upgrade are still counted here because
     /// SQLite's `execute` returns 1 even for no-op upserts).
-    pub fn seed_release_dates_from_static(conn: &mut Connection) -> Result<usize> {
+    pub fn seed_release_dates_from_static(
+        conn: &mut Connection,
+        data: StaticReleaseData,
+    ) -> Result<usize> {
         // Step 1: Collect the `(system, base_title)` set that actually exists
-        // in the user's library. Avoids bulk-writing ~24k rows for games the
-        // user doesn't own.
-        let mut library_pairs: std::collections::HashSet<(String, String)> =
-            std::collections::HashSet::new();
+        // in the user's library. Grouped by system so we can look up with
+        // `&str` keys and skip cloning on every filter check.
+        let mut library_pairs: HashMap<String, std::collections::HashSet<String>> = HashMap::new();
         {
             let mut stmt = conn
                 .prepare(
@@ -157,29 +186,39 @@ impl MetadataDb {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })
                 .map_err(|e| Error::Other(format!("Query library pairs: {e}")))?;
-            for r in rows.flatten() {
-                library_pairs.insert(r);
+            for (system, base_title) in rows.flatten() {
+                library_pairs.entry(system).or_default().insert(base_title);
             }
         }
 
+        let has_pair = |system: &str, base_title: &str| {
+            library_pairs
+                .get(system)
+                .is_some_and(|titles| titles.contains(base_title))
+        };
+
+        let StaticReleaseData {
+            console_rows,
+            arcade_rows,
+            arcade_rom_to_display,
+        } = data;
+
         // Step 2: Filter console TGDB rows against the library set.
         let mut rows: Vec<ReleaseDateRow> = Vec::new();
-        for &(system, base_title, region, date, precision, source) in
-            game_db::console_release_dates()
-        {
-            if !library_pairs.contains(&(system.to_string(), base_title.to_string())) {
+        for (system, base_title, region, date, precision, source) in console_rows {
+            if !has_pair(&system, &base_title) {
                 continue;
             }
-            let Some(prec) = DatePrecision::from_str(precision) else {
+            let Some(prec) = DatePrecision::from_str(&precision) else {
                 continue;
             };
             rows.push(ReleaseDateRow {
-                system: system.to_string(),
-                base_title: base_title.to_string(),
-                region: region.to_string(),
-                release_date: date.to_string(),
+                system,
+                base_title,
+                region,
+                release_date: date,
                 precision: prec,
-                source: source.to_string(),
+                source,
             });
         }
 
@@ -187,28 +226,15 @@ impl MetadataDb {
         // we need to look up the arcade_db entry to get the display_name,
         // then compute `base_title`. Then emit one row per arcade system
         // folder that the user has in `game_library`.
-        //
-        // Collect per-rom arcade info once so we don't call
-        // `lookup_arcade_game` repeatedly.
-        let rom_to_info: HashMap<&'static str, &'static str> = arcade_db::arcade_release_dates()
-            .iter()
-            .filter_map(|&(rom, _, _)| {
-                arcade_db::lookup_arcade_game(rom).map(|info| (rom, info.display_name))
-            })
-            .collect();
-
-        // Identify arcade systems present in the library.
-        let arcade_systems_in_library: Vec<String> = library_pairs
-            .iter()
-            .map(|(s, _)| s.clone())
+        let arcade_systems_in_library: Vec<&str> = library_pairs
+            .keys()
             .filter(|s| systems::is_arcade_system(s))
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
+            .map(String::as_str)
             .collect();
 
         if !arcade_systems_in_library.is_empty() {
-            for &(rom_name, year, source) in arcade_db::arcade_release_dates() {
-                let Some(display_name) = rom_to_info.get(rom_name) else {
+            for (rom_name, year, source) in &arcade_rows {
+                let Some(display_name) = arcade_rom_to_display.get(rom_name) else {
                     continue;
                 };
                 let base_title = title_utils::base_title(display_name);
@@ -216,14 +242,14 @@ impl MetadataDb {
                     continue;
                 }
                 for sys in &arcade_systems_in_library {
-                    if library_pairs.contains(&(sys.clone(), base_title.clone())) {
+                    if has_pair(sys, &base_title) {
                         rows.push(ReleaseDateRow {
-                            system: sys.clone(),
+                            system: (*sys).to_string(),
                             base_title: base_title.clone(),
                             region: "world".to_string(),
-                            release_date: year.to_string(),
+                            release_date: year.clone(),
                             precision: DatePrecision::Year,
-                            source: source.to_string(),
+                            source: source.clone(),
                         });
                     }
                 }
@@ -515,12 +541,15 @@ mod tests {
         assert_eq!(region_used.as_deref(), Some("usa"));
     }
 
-    #[test]
-    fn seed_from_static_only_inserts_library_members() {
+    #[tokio::test]
+    async fn seed_from_static_only_inserts_library_members() {
+        crate::game::init_test_catalog().await;
         let (mut conn, _d) = open_temp_db();
 
         // Empty library: nothing should be inserted from static data.
-        let inserted = MetadataDb::seed_release_dates_from_static(&mut conn).unwrap();
+        let data = super::fetch_static_release_data().await;
+        let inserted =
+            MetadataDb::seed_release_dates_from_static(&mut conn, data).unwrap();
         assert_eq!(
             inserted, 0,
             "with an empty library the static seeder should write 0 rows"
@@ -533,11 +562,12 @@ mod tests {
         assert_eq!(count, 0);
     }
 
-    #[test]
-    fn seed_from_static_populates_known_tgdb_game() {
+    #[tokio::test]
+    async fn seed_from_static_populates_known_tgdb_game() {
+        crate::game::init_test_catalog().await;
         // This test requires real TGDB-backed static data (not stub fixtures),
         // so skip if static is empty.
-        if crate::game_db::console_release_dates().is_empty() {
+        if crate::game_db::console_release_dates().await.is_empty() {
             return;
         }
 
@@ -555,7 +585,9 @@ mod tests {
         )
         .unwrap();
 
-        let inserted = MetadataDb::seed_release_dates_from_static(&mut conn).unwrap();
+        let data = super::fetch_static_release_data().await;
+        let inserted =
+            MetadataDb::seed_release_dates_from_static(&mut conn, data).unwrap();
 
         // Should upsert at least one row for Super Mario World; TGDB knows
         // this game across multiple regions so we expect > 0 inserts.

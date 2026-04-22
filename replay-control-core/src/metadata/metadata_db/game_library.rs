@@ -1682,7 +1682,7 @@ mod tests {
 
     #[test]
     fn thumbnails_per_system_empty_library_returns_empty() {
-        let (mut conn, _dir) = open_temp_db();
+        let (conn, _dir) = open_temp_db();
         let thumbs = MetadataDb::thumbnails_per_system(&conn).unwrap();
         assert!(thumbs.is_empty());
     }
@@ -2306,7 +2306,7 @@ mod tests {
 
     #[test]
     fn count_system_entries_empty() {
-        let (mut conn, _dir) = open_temp_db();
+        let (conn, _dir) = open_temp_db();
         let count = MetadataDb::count_system_entries(&conn, "snes").unwrap();
         assert_eq!(count, 0);
     }

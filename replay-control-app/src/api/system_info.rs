@@ -24,7 +24,9 @@ async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
         .cache
         .cached_systems(&storage, &state.metadata_pool)
         .await;
-    let favorites = replay_control_core::favorites::list_favorites(&storage).unwrap_or_default();
+    let favorites = replay_control_core::favorites::list_favorites(&storage)
+        .await
+        .unwrap_or_default();
 
     let disk = storage
         .disk_usage()

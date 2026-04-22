@@ -281,6 +281,17 @@ pub fn roman_to_arabic_suffix(normalized: &str) -> Option<String> {
     None
 }
 
+/// Strip the file extension from a ROM filename.
+///
+/// `"Super Mario Bros (USA).nes"` -> `"Super Mario Bros (USA)"`
+/// `"Alshark"` -> `"Alshark"` (no extension, unchanged)
+pub fn filename_stem(rom_filename: &str) -> &str {
+    rom_filename
+        .rfind('.')
+        .map(|i| &rom_filename[..i])
+        .unwrap_or(rom_filename)
+}
+
 /// Strip the `"N64DD - "` prefix from a ROM filename stem.
 ///
 /// N64DD ROMs use this prefix in their filenames, but the thumbnail repos

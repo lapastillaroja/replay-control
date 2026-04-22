@@ -1,78 +1,156 @@
-// Embedded Wikidata series database.
-//
-// Provides game series/franchise data extracted from Wikidata P179 (part of the series)
-// with P1545 ordinals and P155/P156 sequel/prequel chains.
-//
-// The data is embedded at build time from `data/wikidata/series.json`.
-// At scan time, entries are matched to library games by normalized title + system
-// and used to populate the `game_series` table in the metadata database.
+/// A Wikidata-sourced game series entry.
+#[derive(Debug, Clone)]
+pub struct WikidataSeriesEntry {
+    pub game_title: String,
+    pub series_name: String,
+    pub system: String,
+    pub series_order: Option<i32>,
+    pub follows: String,
+    pub followed_by: String,
+    pub normalized_title: String,
+}
 
-// Include the build-generated series database code.
-include!(concat!(env!("OUT_DIR"), "/series_db.rs"));
+#[cfg(not(target_arch = "wasm32"))]
+fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<WikidataSeriesEntry> {
+    Ok(WikidataSeriesEntry {
+        game_title: row.get(0)?,
+        series_name: row.get(1)?,
+        system: row.get(2)?,
+        series_order: row.get(3)?,
+        follows: row.get(4)?,
+        followed_by: row.get(5)?,
+        normalized_title: row.get(6)?,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+const ENTRY_COLS: &str = "game_title, series_name, system, series_order, follows, followed_by, \
+     normalized_title";
 
 /// Look up all Wikidata series entries for a given system and normalized title.
-///
-/// The `normalized_title` should be produced by the same normalization used at build time:
-/// lowercase, strip non-alphanumeric except spaces, collapse whitespace.
-pub fn lookup_series(system: &str, normalized_title: &str) -> Vec<&'static WikidataSeriesEntry> {
-    wikidata_series()
-        .iter()
-        .filter(|e| e.system == system && e.normalized_title == normalized_title)
-        .collect()
+pub async fn lookup_series(system: &str, normalized_title: &str) -> Vec<WikidataSeriesEntry> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let system = system.to_string();
+        let normalized_title = normalized_title.to_string();
+        return crate::game::with_catalog(move |conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT {ENTRY_COLS} FROM series_entries \
+                 WHERE system = ?1 AND normalized_title = ?2"
+            ))?;
+            let rows =
+                stmt.query_map(rusqlite::params![system, normalized_title], row_to_entry)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .await
+        .unwrap_or_default();
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (system, normalized_title);
+        vec![]
+    }
 }
 
 /// Look up all Wikidata series entries for a given system.
-///
-/// Returns all entries for the system, useful for batch matching during scan.
-pub fn system_series_entries(system: &str) -> Vec<&'static WikidataSeriesEntry> {
-    wikidata_series()
-        .iter()
-        .filter(|e| e.system == system)
-        .collect()
+pub async fn system_series_entries(system: &str) -> Vec<WikidataSeriesEntry> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let system = system.to_string();
+        return crate::game::with_catalog(move |conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT {ENTRY_COLS} FROM series_entries WHERE system = ?1"
+            ))?;
+            let rows = stmt.query_map(rusqlite::params![system], row_to_entry)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .await
+        .unwrap_or_default();
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = system;
+        vec![]
+    }
 }
 
-/// Get all unique series names from the embedded data.
-pub fn all_series_names() -> Vec<&'static str> {
-    let mut names: Vec<&str> = wikidata_series()
-        .iter()
-        .filter(|e| !e.series_name.is_empty())
-        .map(|e| e.series_name)
-        .collect();
-    names.sort_unstable();
-    names.dedup();
-    names
+/// Get all unique series names.
+pub async fn all_series_names() -> Vec<String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return crate::game::with_catalog(|conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT DISTINCT series_name FROM series_entries \
+                 WHERE series_name != '' ORDER BY series_name",
+            )?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .await
+        .unwrap_or_default();
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        vec![]
+    }
 }
 
-/// Return all entries from the embedded series database.
-///
-/// Useful when matching should not be restricted to a single system (e.g.,
-/// a game's Wikidata entry may list a different platform than the ROM's system).
-pub fn all_entries() -> &'static [WikidataSeriesEntry] {
-    wikidata_series()
+/// Return all entries from the series database.
+pub async fn all_entries() -> Vec<WikidataSeriesEntry> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return crate::game::with_catalog(|conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT {ENTRY_COLS} FROM series_entries"
+            ))?;
+            let rows = stmt.query_map([], row_to_entry)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .await
+        .unwrap_or_default();
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        vec![]
+    }
 }
 
-/// Total number of entries in the embedded series database.
-pub fn entry_count() -> usize {
-    wikidata_series().len()
+/// Total number of entries in the series database.
+pub async fn entry_count() -> usize {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return crate::game::with_catalog(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM series_entries", [], |row| {
+                row.get::<_, i64>(0)
+            })
+        })
+        .await
+        .unwrap_or(0) as usize;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::using_stub_data;
+    use crate::game::{init_test_catalog, using_stub_data};
 
-    #[test]
-    fn series_db_not_empty() {
+    #[tokio::test]
+    async fn series_db_not_empty() {
+        init_test_catalog().await;
         assert!(
-            entry_count() > 0,
+            entry_count().await > 0,
             "Series DB should have entries (check data/wikidata/series.json)"
         );
     }
 
-    #[test]
-    fn series_db_has_known_series() {
-        let names = all_series_names();
-        // These are well-known series that should be in Wikidata with English labels
+    #[tokio::test]
+    async fn series_db_has_known_series() {
+        init_test_catalog().await;
+        let names = all_series_names().await;
         let expected = ["Mega Man", "Streets of Rage", "Sonic the Hedgehog"];
         for name in &expected {
             assert!(
@@ -82,9 +160,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn lookup_streets_of_rage() {
-        let entries = lookup_series("sega_smd", "streets of rage 2");
+    #[tokio::test]
+    async fn lookup_streets_of_rage() {
+        init_test_catalog().await;
+        let entries = lookup_series("sega_smd", "streets of rage 2").await;
         assert!(
             !entries.is_empty(),
             "Should find Streets of Rage 2 on sega_smd"
@@ -94,9 +173,10 @@ mod tests {
         assert_eq!(entry.series_order, Some(2));
     }
 
-    #[test]
-    fn system_entries_nes() {
-        let entries = system_series_entries("nintendo_nes");
+    #[tokio::test]
+    async fn system_entries_nes() {
+        init_test_catalog().await;
+        let entries = system_series_entries("nintendo_nes").await;
         let min_expected = if using_stub_data() { 2 } else { 50 };
         assert!(
             entries.len() > min_expected,
@@ -106,19 +186,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn normalized_title_matching() {
-        // Verify that our normalize matches Wikidata titles
-        let entries = lookup_series("nintendo_nes", "mega man 2");
+    #[tokio::test]
+    async fn normalized_title_matching() {
+        init_test_catalog().await;
+        let entries = lookup_series("nintendo_nes", "mega man 2").await;
         assert!(
             !entries.is_empty(),
             "Should find Mega Man 2 by normalized title"
         );
     }
 
-    #[test]
-    fn system_entries_arcade_fbneo() {
-        let entries = system_series_entries("arcade_fbneo");
+    #[tokio::test]
+    async fn system_entries_arcade_fbneo() {
+        init_test_catalog().await;
+        let entries = system_series_entries("arcade_fbneo").await;
         let min_expected = if using_stub_data() { 1 } else { 400 };
         assert!(
             entries.len() > min_expected,
@@ -128,9 +209,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn donpachi_entries_exist() {
-        let entries = lookup_series("arcade_fbneo", "donpachi");
+    #[tokio::test]
+    async fn donpachi_entries_exist() {
+        init_test_catalog().await;
+        let entries = lookup_series("arcade_fbneo", "donpachi").await;
         assert!(!entries.is_empty(), "Should find DonPachi on arcade_fbneo");
         assert_eq!(entries[0].series_name, "DonPachi");
     }

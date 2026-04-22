@@ -55,8 +55,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     let fn_start = std::time::Instant::now();
 
     let state = expect_context::<crate::api::AppState>();
-    // Response cache: return immediately on hit.
-    if let Some(cached) = state.response_cache.get_recommendations() {
+    if let Some(cached) = state.response_cache.recommendations.get() {
         #[cfg(feature = "ssr")]
         tracing::debug!(
             elapsed_ms = fn_start.elapsed().as_millis(),
@@ -72,11 +71,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         .await;
     let count = count.clamp(1, 12);
 
-    // Collect favorites from the in-memory cache — no DB access.
-    // top_genre is resolved inside the single DB closure below.
-    let favorites_info = collect_favorites_info_sync(&state, &storage, &systems);
-
-    // Clone favorites_info for use after the DB closure (which consumes it via move).
+    let favorites_info = collect_favorites_info_sync(&state, &storage, &systems).await;
     let favorites_info_for_picks = favorites_info.clone();
 
     // Pre-roll spotlight type so we can lazily collect Hidden Gems exclusion data.
@@ -88,13 +83,14 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // Only collect recent + favorite keys when Hidden Gems is selected (type 4).
     // These are (system, rom_filename) pairs used as an exclusion set.
     let hidden_gems_exclude: Vec<(String, String)> = if spotlight_type == 4 {
-        let recents = state.cache.get_recents(&storage).unwrap_or_default();
+        let recents = state.cache.get_recents(&storage).await.unwrap_or_default();
         let recent_keys = recents
             .iter()
             .map(|r| (r.game.system.clone(), r.game.rom_filename.clone()));
         let fav_keys = state
             .cache
             .get_all_favorited_systems(&storage)
+            .await
             .unwrap_or_default()
             .into_iter()
             .flat_map(|(system, filenames)| {
@@ -107,13 +103,11 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
 
     let (region_str, region_secondary_str) = super::region_strings(&state);
 
-    // Pre-build system display name pairs for use inside the DB closure.
     let systems_for_spotlight: Vec<(String, String)> = systems
         .iter()
         .map(|s| (s.folder_name.clone(), s.display_name.clone()))
         .collect();
 
-    // Query cache: read cached pill data before entering the DB closure.
     let cached_genres = state.cache.query_cache.get_top_genres();
     let cached_developers = state.cache.query_cache.get_top_developers();
     let cached_decades = state.cache.query_cache.get_decades();
@@ -410,7 +404,6 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         });
     };
 
-    // Query cache: store freshly computed pill data for future requests.
     state.cache.query_cache.set_top_genres(&top_genres);
     state.cache.query_cache.set_top_developers(&top_developers);
     state.cache.query_cache.set_decades(&decades);
@@ -480,9 +473,6 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         }
     };
 
-    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
-    // No filesystem fallback at request time — NULL means no art, show placeholder.
-
     #[cfg(feature = "ssr")]
     tracing::debug!(
         elapsed_ms = fn_start.elapsed().as_millis(),
@@ -500,8 +490,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         curated_spotlight,
     };
 
-    // Response cache: store for subsequent hits within TTL.
-    state.response_cache.set_recommendations(&data);
+    state.response_cache.recommendations.set(data.clone());
 
     #[cfg(feature = "ssr")]
     tracing::info!(
@@ -528,12 +517,12 @@ struct FavoritesInfo {
 /// DB read closure using `MetadataDb::top_genre_for_filenames` to avoid
 /// a separate round-trip.
 #[cfg(feature = "ssr")]
-fn collect_favorites_info_sync(
+async fn collect_favorites_info_sync(
     state: &crate::api::AppState,
     storage: &replay_control_core::storage::StorageLocation,
     systems: &[SystemSummary],
 ) -> Option<FavoritesInfo> {
-    let all_favorites = state.cache.get_all_favorited_systems(storage)?;
+    let all_favorites = state.cache.get_all_favorited_systems(storage).await?;
     if all_favorites.is_empty() {
         return None;
     }

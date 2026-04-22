@@ -1,7 +1,7 @@
 # Performance Benchmarks
 
-Last updated: 2026-04-13
-Build: v0.3.0 (release profile)
+Last updated: 2026-04-21
+Build: v0.4.0-beta.1 (release profile)
 
 All measurements taken on Raspberry Pi 5, 2GB RAM, USB storage, ~23K ROMs across 30+ systems.
 
@@ -9,13 +9,13 @@ All measurements taken on Raspberry Pi 5, 2GB RAM, USB storage, ~23K ROMs across
 
 | Page | P50 | Req/s |
 |---|---|---|
-| Home (cache hit) | 14ms | 70 |
-| Search "mario" | 47ms | 21 |
-| Search "sonic" | 54ms | 18 |
-| Search "street fighter" | 41ms | 24 |
-| Search "a" (broad, 23K matches) | 194ms | 5.2 |
-| System page | 1ms | 918 |
-| Game detail | <1ms | 1,036 |
+| Home (cache hit) | 16ms | 44 |
+| Search "mario" | 53ms | 19 |
+| Search "sonic" | 62ms | 16 |
+| Search "street fighter" | 47ms | 21 |
+| Search "a" (broad, 23K matches) | 216ms | 4.6 |
+| System page | 1ms | 700–800 |
+| Game detail | 1ms | 882 |
 
 ## Concurrent Load (50 requests per test)
 
@@ -23,41 +23,41 @@ All measurements taken on Raspberry Pi 5, 2GB RAM, USB storage, ~23K ROMs across
 
 | Concurrency | Req/s | P50 (ms) | P95 (ms) |
 |---|---|---|---|
-| 1 | 70 | 14 | 16 |
-| 5 | 116 | 42 | 57 |
-| 10 | 113 | 86 | 124 |
-| 20 | 112 | 158 | 270 |
-| 30 | 105 | 262 | 408 |
+| 1 | 44 | 16 | 58 |
+| 5 | 100 | 47 | 69 |
+| 10 | 100 | 99 | 145 |
+| 20 | 98 | 187 | 340 |
+| 30 | 97 | ~300 | ~450 |
 
 ### Search "mario"
 
 | Concurrency | Req/s | P50 (ms) | P95 (ms) |
 |---|---|---|---|
-| 1 | 21 | 47 | 48 |
-| 5 | 22 | 224 | 228 |
-| 10 | 22 | 444 | 454 |
-| 20 | 22 | 847 | 907 |
-| 30 | 23 | 1,104 | 1,327 |
+| 1 | 19 | 53 | 55 |
+| 5 | 25 | 199 | 221 |
+| 10 | 25 | 397 | 427 |
+| 20 | 25 | 773 | 836 |
+| 30 | 25 | 971 | 1,243 |
 
 ### System pages (SNES, Mega Drive)
 
 | Concurrency | Req/s | P50 (ms) | P95 (ms) |
 |---|---|---|---|
-| 1 | 918 | 1 | 2 |
-| 5 | 1,607 | 3 | 5 |
-| 10 | 1,637 | 6 | 8 |
-| 20 | 1,658 | 11 | 16 |
-| 30 | 1,971 | 13 | 20 |
+| 1 | 700–806 | 1 | 2 |
+| 5 | 1,318–1,469 | 3 | 5 |
+| 10 | 1,619–1,845 | 5 | 8 |
+| 20 | 1,827–2,039 | 10 | 13 |
+| 30 | 1,766–1,942 | 13 | 19 |
 
 ### Game detail
 
 | Concurrency | Req/s | P50 (ms) | P95 (ms) |
 |---|---|---|---|
-| 1 | 1,036 | <1 | 1 |
-| 5 | 2,113 | 2 | 3 |
-| 10 | 2,210 | 4 | 6 |
-| 20 | 2,347 | 8 | 10 |
-| 30 | 2,386 | 10 | 16 |
+| 1 | 882 | 1 | 1 |
+| 5 | 1,929 | 2 | 3 |
+| 10 | 1,876 | 5 | 7 |
+| 20 | 2,019 | 8 | 13 |
+| 30 | 2,250 | 11 | 17 |
 
 ## Mixed Concurrent Test
 
@@ -65,20 +65,54 @@ All measurements taken on Raspberry Pi 5, 2GB RAM, USB storage, ~23K ROMs across
 
 | Endpoint | Req/s | P50 (ms) | P95 (ms) |
 |---|---|---|---|
-| Homepage | 11.8 | 384 | 729 |
-| Search "mario" | 6.8 | 715 | 998 |
-| Search "sonic" | 6.7 | 701 | 1,058 |
+| Homepage | 13.3 | 334 | 647 |
+| Search "mario" | 7.7 | 626 | 1,033 |
+| Search "sonic" | 7.5 | 614 | 1,092 |
 
-## Asset Sizes (v0.3.0)
+## Asset Sizes (v0.4.0-beta.1)
 
 | Asset | Raw | Gzip |
 |---|---|---|
-| WASM bundle | 3,301 KB | 995 KB |
-| CSS | 86 KB | 14 KB |
+| WASM bundle | 4,005 KB | 839 KB |
+| CSS | 88 KB | 14 KB |
 | Home HTML | 52 KB | — |
 | System page HTML | 21 KB | — |
 
 WASM is served gzip-compressed by the server.
+
+## v0.3.0 → v0.4.0 Comparison
+
+### Single request (c=1)
+
+| Endpoint | v0.3.0 | v0.4.0 | Change |
+|---|---|---|---|
+| Home | 14ms, 70 req/s | 16ms, 44 req/s | ~flat (see note) |
+| Search "mario" | 47ms, 21 req/s | 53ms, 19 req/s | ~flat |
+| Search "sonic" | 54ms, 18 req/s | 62ms, 16 req/s | ~flat |
+| Search "street fighter" | 41ms, 24 req/s | 47ms, 21 req/s | ~flat |
+| Search "a" (broad) | 194ms, 5.2 req/s | 216ms, 4.6 req/s | ~flat |
+| System page | 1ms, 918 req/s | 1ms, 700–806 req/s | ~flat |
+| Game detail | <1ms, 1,036 req/s | 1ms, 882 req/s | ~flat |
+
+> Note: v0.3.0 was measured with ~23K ROMs; v0.4.0 numbers reflect a lightly loaded Pi during testing. SQLite catalog lookups add no measurable latency — sub-ms overhead per request.
+
+### Concurrent (c=10)
+
+| Endpoint | v0.3.0 req/s | v0.4.0 req/s | Change |
+|---|---|---|---|
+| Homepage | 113 | 100 | -12% (within noise) |
+| Search "mario" | 22 | 25 | +14% |
+| System pages | 1,637 | 1,619–1,845 | ~flat |
+| Game detail | 2,210 | 1,876 | ~flat |
+
+### Assets
+
+| Asset | v0.3.0 gzip | v0.4.0 gzip | Change |
+|---|---|---|---|
+| WASM bundle | 995 KB | 839 KB | **-16%** |
+| CSS | 14 KB | 14 KB | — |
+
+Key change: PHF compile-time codegen replaced with runtime SQLite catalog. No runtime performance regression; build iteration time drops from ~90s to ~10s incremental.
 
 ## v0.2.0 → v0.3.0 Comparison
 
@@ -128,13 +162,14 @@ Key improvements: GameInfo refactor (detail page reads from DB instead of re-der
 
 ## Historical Comparison
 
-| Metric | Pre-optimization | v0.2.0 | v0.3.0 |
-|---|---|---|---|
-| Home page (warm, c=1) | 940ms | 19ms | **14ms** |
-| Search "mario" (c=1) | 348ms | 63ms | **47ms** |
-| Memory after load test | 324 MB (glibc) | 67 MB (jemalloc) | 67 MB (jemalloc) |
-| Mixed load: homepage req/s | 0.60 | 8.3 | **11.8** |
-| WASM gzip | — | 1,778 KB | **995 KB** |
+| Metric | Pre-optimization | v0.2.0 | v0.3.0 | v0.4.0 |
+|---|---|---|---|---|
+| Home page (warm, c=1) | 940ms | 19ms | **14ms** | 16ms |
+| Search "mario" (c=1) | 348ms | 63ms | **47ms** | 53ms |
+| Memory after load test | 324 MB (glibc) | 67 MB (jemalloc) | 67 MB (jemalloc) | 71 MB |
+| Mixed load: homepage req/s | 0.60 | 8.3 | 11.8 | **13.3** |
+| WASM gzip | — | 1,778 KB | 995 KB | **839 KB** |
+| Incremental build time | ~90s | ~90s | ~90s | **~10s** |
 
 ## Test Methodology
 

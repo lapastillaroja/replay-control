@@ -1,3 +1,7 @@
+#[cfg(not(target_arch = "wasm32"))]
+use rusqlite::OptionalExtension;
+use std::collections::HashMap;
+
 /// Screen rotation for an arcade game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rotation {
@@ -16,146 +20,272 @@ pub enum DriverStatus {
 }
 
 /// Metadata for an arcade game ROM.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ArcadeGameInfo {
-    /// ROM zip filename without extension (e.g., "mslug6").
-    pub rom_name: &'static str,
-    /// Human-readable display name (e.g., "Metal Slug 6").
-    pub display_name: &'static str,
-    /// Release year (e.g., "2006"). May be empty if unknown.
-    pub year: &'static str,
-    /// Manufacturer/publisher (e.g., "Sega / SNK Playmore"). May be empty.
-    pub manufacturer: &'static str,
-    /// Maximum simultaneous players. 0 = unknown.
+    pub rom_name: String,
+    pub display_name: String,
+    pub year: String,
+    pub manufacturer: String,
     pub players: u8,
-    /// Screen orientation.
     pub rotation: Rotation,
-    /// Driver emulation status.
     pub status: DriverStatus,
-    /// Whether this ROM is a clone/variant of another game.
     pub is_clone: bool,
-    /// Whether this ROM is a BIOS/system ROM (not directly playable).
     pub is_bios: bool,
-    /// Parent ROM name if this is a clone, empty otherwise.
-    pub parent: &'static str,
-    /// Genre/category (e.g., "Fighter / 2D"). May be empty.
-    pub category: &'static str,
-    /// Normalized genre from shared taxonomy (e.g., "Fighting"). May be empty.
-    pub normalized_genre: &'static str,
+    pub parent: String,
+    pub category: String,
+    pub normalized_genre: String,
 }
 
-include!(concat!(env!("OUT_DIR"), "/arcade_db.rs"));
+#[cfg(not(target_arch = "wasm32"))]
+fn rotation_from_str(s: &str) -> Rotation {
+    match s {
+        "horizontal" => Rotation::Horizontal,
+        "vertical" => Rotation::Vertical,
+        _ => Rotation::Unknown,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn status_from_str(s: &str) -> DriverStatus {
+    match s {
+        "working" => DriverStatus::Working,
+        "imperfect" => DriverStatus::Imperfect,
+        "preliminary" => DriverStatus::Preliminary,
+        _ => DriverStatus::Unknown,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn row_to_info(row: &rusqlite::Row<'_>) -> rusqlite::Result<ArcadeGameInfo> {
+    Ok(ArcadeGameInfo {
+        rom_name: row.get(0)?,
+        display_name: row.get(1)?,
+        year: row.get(2)?,
+        manufacturer: row.get(3)?,
+        players: row.get::<_, i64>(4)? as u8,
+        rotation: rotation_from_str(&row.get::<_, String>(5)?),
+        status: status_from_str(&row.get::<_, String>(6)?),
+        is_clone: row.get::<_, i64>(7)? != 0,
+        is_bios: row.get::<_, i64>(8)? != 0,
+        parent: row.get(9)?,
+        category: row.get(10)?,
+        normalized_genre: row.get(11)?,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+const ARCADE_COLS: &str =
+    "rom_name, display_name, year, manufacturer, players, rotation, status, \
+     is_clone, is_bios, parent, category, normalized_genre";
 
 /// Look up arcade game metadata by ROM name (without `.zip` extension).
-pub fn lookup_arcade_game(rom_name: &str) -> Option<&'static ArcadeGameInfo> {
-    ARCADE_DB.get(rom_name)
+pub async fn lookup_arcade_game(rom_name: &str) -> Option<ArcadeGameInfo> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let rom = rom_name.to_string();
+        return crate::game::with_catalog(move |conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT {ARCADE_COLS} FROM arcade_games WHERE rom_name = ?1"
+            ))?;
+            stmt.query_row([rom.as_str()], row_to_info).optional()
+        })
+        .await
+        .flatten();
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = rom_name;
+        None
+    }
 }
 
-/// All build-time arcade release-date rows.
-///
-/// Each tuple: `(rom_name, year, source)` where `source` is `"mame"`,
-/// `"fbneo"`, or `"naomi"`. `year` is always a 4-digit string ("YYYY"); all
-/// rows are treated as year-precision `region="world"` at upsert time
-/// because arcade DATs carry no regional release semantics.
-pub fn arcade_release_dates() -> &'static [(&'static str, &'static str, &'static str)] {
-    ARCADE_RELEASE_DATES
-}
-
-/// MAME version used as the primary data source.
-pub const MAME_VERSION: &str = "0.285";
-
-/// Total number of entries in the arcade database.
-pub fn entry_count() -> usize {
-    ARCADE_DB.len()
+/// Batch lookup by ROM names. Returns only entries found in the DB.
+pub async fn lookup_arcade_games_batch(rom_names: &[&str]) -> HashMap<String, ArcadeGameInfo> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if rom_names.is_empty() {
+            return HashMap::new();
+        }
+        let names_json = serde_json::to_string(rom_names).unwrap_or_else(|_| "[]".into());
+        return crate::game::with_catalog(move |conn| {
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT {ARCADE_COLS} FROM arcade_games \
+                 WHERE rom_name IN (SELECT value FROM json_each(?1))"
+            ))?;
+            let rows = stmt.query_map([names_json.as_str()], |row| {
+                let info = row_to_info(row)?;
+                Ok((info.rom_name.clone(), info))
+            })?;
+            rows.collect::<rusqlite::Result<HashMap<_, _>>>()
+        })
+        .await
+        .unwrap_or_default();
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = rom_names;
+        HashMap::new()
+    }
 }
 
 /// Get the display name for a ROM filename, falling back to the filename itself.
 ///
-/// Accepts filenames with or without the `.zip` extension.
-pub fn arcade_display_name(filename: &str) -> &str {
-    let rom_name = filename.strip_suffix(".zip").unwrap_or(filename);
-    lookup_arcade_game(rom_name)
-        .map(|info| info.display_name)
-        .unwrap_or(filename)
+/// Accepts filenames with or without an extension.
+pub async fn arcade_display_name(filename: &str) -> String {
+    let rom_name = crate::title_utils::filename_stem(filename);
+    match lookup_arcade_game(rom_name).await {
+        Some(info) => info.display_name,
+        None => filename.to_string(),
+    }
+}
+
+/// Resolve the arcade display name for a ROM, or `None` if the system isn't
+/// arcade (or the ROM isn't in the catalog).
+///
+pub async fn display_name_if_arcade(system: &str, rom_filename: &str) -> Option<String> {
+    if !crate::systems::is_arcade_system(system) {
+        return None;
+    }
+    let stem = crate::title_utils::filename_stem(rom_filename);
+    lookup_arcade_game(stem).await.map(|i| i.display_name)
+}
+
+/// All build-time arcade release-date rows as (rom_name, year, source) tuples.
+///
+/// Each tuple: `(rom_name, year, source)` where `source` is `"mame"`,
+/// `"fbneo"`, or `"naomi"`. `year` is always a 4-digit string ("YYYY").
+pub async fn arcade_release_dates() -> Vec<(String, String, String)> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return crate::game::with_catalog(|conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT rom_name, year, source FROM arcade_release_dates ORDER BY rom_name",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .await
+        .unwrap_or_default();
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        vec![]
+    }
+}
+
+/// MAME version used as the primary data source (from catalog metadata).
+pub const MAME_VERSION: &str = "0.285";
+
+/// Total number of entries in the arcade database.
+pub async fn entry_count() -> usize {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return crate::game::with_catalog(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM arcade_games", [], |row| {
+                row.get::<_, i64>(0)
+            })
+        })
+        .await
+        .unwrap_or(0) as usize;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::using_stub_data;
+    use crate::game::{init_test_catalog, using_stub_data};
 
-    #[test]
-    fn lookup_known_game() {
-        let info = lookup_arcade_game("mslug6").expect("mslug6 should exist in DB");
+    #[tokio::test]
+    async fn lookup_known_game() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("mslug6").await.expect("mslug6 should exist in DB");
         assert_eq!(info.display_name, "Metal Slug 6");
         assert_eq!(info.year, "2006");
         assert!(!info.is_clone);
         assert!(info.parent.is_empty());
     }
 
-    #[test]
-    fn lookup_clone() {
-        let info = lookup_arcade_game("capsnka").expect("capsnka should exist in DB");
+    #[tokio::test]
+    async fn lookup_clone() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("capsnka").await.expect("capsnka should exist in DB");
         assert!(info.is_clone);
         assert_eq!(info.parent, "capsnk");
     }
 
-    #[test]
-    fn lookup_unknown_returns_none() {
-        assert!(lookup_arcade_game("nonexistent_rom_xyz").is_none());
+    #[tokio::test]
+    async fn lookup_unknown_returns_none() {
+        init_test_catalog().await;
+        assert!(lookup_arcade_game("nonexistent_rom_xyz").await.is_none());
     }
 
-    #[test]
-    fn display_name_with_zip() {
-        let name = arcade_display_name("mslug6.zip");
+    #[tokio::test]
+    async fn display_name_with_zip() {
+        init_test_catalog().await;
+        let name = arcade_display_name("mslug6.zip").await;
         assert_eq!(name, "Metal Slug 6");
     }
 
-    #[test]
-    fn display_name_without_zip() {
-        let name = arcade_display_name("mslug6");
+    #[tokio::test]
+    async fn display_name_without_zip() {
+        init_test_catalog().await;
+        let name = arcade_display_name("mslug6").await;
         assert_eq!(name, "Metal Slug 6");
     }
 
-    #[test]
-    fn display_name_fallback() {
-        let name = arcade_display_name("unknown_game.zip");
+    #[tokio::test]
+    async fn display_name_fallback() {
+        init_test_catalog().await;
+        let name = arcade_display_name("unknown_game.zip").await;
         assert_eq!(name, "unknown_game.zip");
     }
 
-    #[test]
-    fn vertical_rotation_game() {
+    #[tokio::test]
+    async fn vertical_rotation_game() {
+        init_test_catalog().await;
         // anmlbskt is Animal Basket which has ROT270 (vertical)
-        let info = lookup_arcade_game("anmlbskt").expect("anmlbskt should exist");
+        let info = lookup_arcade_game("anmlbskt").await.expect("anmlbskt should exist");
         assert_eq!(info.rotation, Rotation::Vertical);
     }
 
-    #[test]
-    fn horizontal_rotation_game() {
-        let info = lookup_arcade_game("crzytaxi").expect("crzytaxi should exist");
+    #[tokio::test]
+    async fn horizontal_rotation_game() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("crzytaxi").await.expect("crzytaxi should exist");
         assert_eq!(info.rotation, Rotation::Horizontal);
     }
 
-    #[test]
-    fn lookup_gdrom_game() {
-        let info = lookup_arcade_game("ikaruga").expect("ikaruga should exist (GD-ROM game)");
+    #[tokio::test]
+    async fn lookup_gdrom_game() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("ikaruga").await.expect("ikaruga should exist (GD-ROM game)");
         assert!(info.display_name.starts_with("Ikaruga"));
         assert_eq!(info.year, "2001");
         assert_eq!(info.rotation, Rotation::Vertical);
     }
 
-    #[test]
-    fn lookup_atomiswave_game() {
-        let info = lookup_arcade_game("kofxi").expect("kofxi should exist (Atomiswave game)");
+    #[tokio::test]
+    async fn lookup_atomiswave_game() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("kofxi").await.expect("kofxi should exist (Atomiswave game)");
         assert_eq!(info.display_name, "The King of Fighters XI");
         assert_eq!(info.year, "2005");
     }
 
-    // --- FBNeo / MAME 2003+ integration tests ---
-
-    #[test]
-    fn lookup_sf2_from_mame() {
-        let info = lookup_arcade_game("sf2").expect("sf2 should exist (MAME current)");
+    #[tokio::test]
+    async fn lookup_sf2_from_mame() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("sf2").await.expect("sf2 should exist (MAME current)");
         assert_eq!(
             info.display_name,
             "Street Fighter II: The World Warrior (World 910522)"
@@ -169,9 +299,10 @@ mod tests {
         assert_eq!(info.category, "Fighter / Versus");
     }
 
-    #[test]
-    fn lookup_pacman_clone() {
-        let info = lookup_arcade_game("pacman").expect("pacman should exist (MAME 2003+)");
+    #[tokio::test]
+    async fn lookup_pacman_clone() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("pacman").await.expect("pacman should exist (MAME 2003+)");
         assert_eq!(info.display_name, "Pac-Man (Midway)");
         assert_eq!(info.year, "1980");
         assert!(info.is_clone);
@@ -179,36 +310,35 @@ mod tests {
         assert_eq!(info.category, "Maze / Collect");
     }
 
-    #[test]
-    fn lookup_dkong_vertical() {
-        let info = lookup_arcade_game("dkong").expect("dkong should exist (MAME 2003+)");
+    #[tokio::test]
+    async fn lookup_dkong_vertical() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("dkong").await.expect("dkong should exist (MAME 2003+)");
         assert_eq!(info.display_name, "Donkey Kong (US set 1)");
         assert_eq!(info.year, "1981");
         assert_eq!(info.rotation, Rotation::Vertical);
         assert_eq!(info.category, "Platform / Run Jump");
     }
 
-    #[test]
-    fn lookup_fbneo_only_game() {
-        // 3countba exists in FBNeo but not MAME 2003+ or MAME current
-        let info = lookup_arcade_game("3countba").expect("3countba should exist (FBNeo-only)");
+    #[tokio::test]
+    async fn lookup_fbneo_only_game() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("3countba").await.expect("3countba should exist (FBNeo-only)");
         assert_eq!(info.display_name, "3 Count Bout / Fire Suplex (NGM-043)");
         assert_eq!(info.year, "1993");
         assert_eq!(info.manufacturer, "SNK");
         assert!(info.is_clone);
         assert_eq!(info.parent, "3countb");
-        // FBNeo-only games have unknown rotation/status
         assert_eq!(info.rotation, Rotation::Unknown);
         assert_eq!(info.status, DriverStatus::Unknown);
     }
 
-    // --- MAME current (0.285) integration tests ---
-
-    #[test]
-    fn lookup_mame_current_only_game() {
-        // timecris (Time Crisis) exists in MAME current but not FBNeo or MAME 2003+
-        let info =
-            lookup_arcade_game("timecris").expect("timecris should exist (MAME current only)");
+    #[tokio::test]
+    async fn lookup_mame_current_only_game() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("timecris")
+            .await
+            .expect("timecris should exist (MAME current only)");
         assert_eq!(info.display_name, "Time Crisis (World, TS2 Ver.B)");
         assert_eq!(info.year, "1996");
         assert_eq!(info.manufacturer, "Namco");
@@ -218,63 +348,75 @@ mod tests {
         assert!(!info.is_clone);
     }
 
-    #[test]
-    fn lookup_mame_current_overrides_mame2003() {
-        // 1941r1 exists in FBNeo and MAME current (but not MAME 2003+).
-        // MAME current should override FBNeo, providing rotation and status.
-        let info = lookup_arcade_game("1941r1").expect("1941r1 should exist");
+    #[tokio::test]
+    async fn lookup_mame_current_overrides_mame2003() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("1941r1").await.expect("1941r1 should exist");
         assert_eq!(info.display_name, "1941: Counter Attack (World)");
         assert_eq!(info.year, "1990");
         assert!(info.is_clone);
         assert_eq!(info.parent, "1941");
-        // MAME current provides rotation and status data
         assert_eq!(info.rotation, Rotation::Vertical);
         assert_eq!(info.status, DriverStatus::Working);
     }
 
-    #[test]
-    fn lookup_mame_current_preserves_flycast() {
-        // Flycast hand-curated entries should not be overridden by MAME current
-        let info = lookup_arcade_game("ikaruga").expect("ikaruga should still be Flycast entry");
+    #[tokio::test]
+    async fn lookup_mame_current_preserves_flycast() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("ikaruga").await.expect("ikaruga should still be Flycast entry");
         assert!(info.display_name.starts_with("Ikaruga"));
         assert_eq!(info.year, "2001");
         assert_eq!(info.rotation, Rotation::Vertical);
     }
 
-    #[test]
-    fn mame_current_category_overlay() {
-        // timecris should have a category from the current MAME catver.ini
-        let info = lookup_arcade_game("timecris").expect("timecris should exist");
+    #[tokio::test]
+    async fn mame_current_category_overlay() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("timecris").await.expect("timecris should exist");
         assert!(
             !info.category.is_empty(),
             "timecris should have a category from catver-mame-current.ini"
         );
     }
 
-    #[test]
-    fn bios_entry_flagged() {
-        let info = lookup_arcade_game("neogeo").expect("neogeo BIOS should exist in DB");
+    #[tokio::test]
+    async fn bios_entry_flagged() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("neogeo").await.expect("neogeo BIOS should exist in DB");
         assert!(info.is_bios, "neogeo should be flagged as BIOS");
     }
 
-    #[test]
-    fn regular_game_not_bios() {
-        let info = lookup_arcade_game("mslug6").expect("mslug6 should exist");
+    #[tokio::test]
+    async fn regular_game_not_bios() {
+        init_test_catalog().await;
+        let info = lookup_arcade_game("mslug6").await.expect("mslug6 should exist");
         assert!(!info.is_bios, "mslug6 should not be flagged as BIOS");
     }
 
-    #[test]
-    fn total_entry_count() {
-        // After merging Flycast + FBNeo + MAME 2003+ + MAME current and filtering non-game
-        // machines (slot machines, gambling, computers, handhelds, etc.), we expect ~15K+
-        // entries against the real upstream data. Against the small committed fixtures
-        // only a handful of curated entries survive, so we drop the threshold accordingly.
-        // BIOS entries are preserved (with is_bios flag) but non-game machines are excluded.
+    #[tokio::test]
+    async fn total_entry_count() {
+        init_test_catalog().await;
         let min_expected = if using_stub_data() { 14 } else { 15000 };
-        let count = ARCADE_DB.len();
+        let count = entry_count().await;
         assert!(
             count >= min_expected,
             "Expected {min_expected}+ entries, got {count}"
         );
+    }
+
+    #[tokio::test]
+    async fn batch_lookup() {
+        init_test_catalog().await;
+        let map = lookup_arcade_games_batch(&["mslug6", "sf2", "does_not_exist"]).await;
+        assert_eq!(map.len(), 2, "should find 2 of 3");
+        assert!(map.contains_key("mslug6"));
+        assert!(map.contains_key("sf2"));
+    }
+
+    #[tokio::test]
+    async fn batch_lookup_empty() {
+        init_test_catalog().await;
+        let map = lookup_arcade_games_batch(&[]).await;
+        assert!(map.is_empty());
     }
 }

@@ -102,14 +102,13 @@ pub async fn get_roms_page(
     #[server(default)] min_year: Option<u16>,
     #[server(default)] max_year: Option<u16>,
 ) -> Result<RomPage, ServerFnError> {
-    use replay_control_core::systems::{self as sys_db, SystemCategory};
+    use replay_control_core::systems as sys_db;
 
     let state = expect_context::<crate::api::AppState>();
-    let sys_info = sys_db::find_system(&system);
-    let system_display = sys_info
+    let system_display = sys_db::find_system(&system)
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| system.clone());
-    let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
+    let is_arcade = sys_db::is_arcade_system(&system);
     let region_pref = state.region_preference();
     let region_secondary = state.region_preference_secondary();
 
@@ -234,7 +233,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
             }
         })?;
 
-    let is_favorite = replay_control_core::favorites::is_favorite(&storage, &system, &filename);
+    let is_favorite =
+        replay_control_core::favorites::is_favorite(&storage, &system, &filename).await;
 
     let game = build_game_detail(&state, &entry).await;
 
@@ -254,14 +254,20 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
             .collect();
 
     // Count box art variants (manifest index only — no filesystem scan to avoid N+1).
+    let arcade_display =
+        replay_control_core::arcade_db::display_name_if_arcade(&system, &filename).await;
     let variant_count = state
         .metadata_pool
         .read({
             let system = system.clone();
             let filename = filename.clone();
+            let arcade_display = arcade_display.clone();
             move |conn| {
                 replay_control_core::thumbnail_manifest::count_boxart_variants(
-                    conn, &system, &filename,
+                    conn,
+                    &system,
+                    &filename,
+                    arcade_display.as_deref(),
                 )
             }
         })
@@ -446,7 +452,7 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
         .cache
         .invalidate_system(system, &state.metadata_pool)
         .await;
-    state.cache.invalidate_favorites();
+    state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
 
     Ok(())
@@ -581,7 +587,7 @@ pub async fn rename_rom(
         .cache
         .invalidate_system(system, &state.metadata_pool)
         .await;
-    state.cache.invalidate_favorites();
+    state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
 
     Ok(new_path.display().to_string())
@@ -712,8 +718,8 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
         {
             tracing::warn!("Failed to create recents entry: {e}");
         }
-        state.cache.invalidate_recents();
-        state.response_cache.invalidate_recommendations();
+        state.cache.invalidate_recents().await;
+        state.response_cache.recommendations.invalidate();
     }
 
     Ok("Game launching".into())

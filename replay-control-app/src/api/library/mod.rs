@@ -7,24 +7,23 @@ mod scan_pipeline;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::SystemTime;
 
 use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::recents::RecentEntry;
 use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core::roms::{RomEntry, SystemSummary};
 use replay_control_core::storage::StorageLocation;
+use tokio::sync::RwLock;
 
 use super::DbPool;
-
-/// Hard TTL for NFS storage — even if mtime hasn't changed, re-scan after this long.
-/// Local storage (SD/USB/NVMe) has no TTL because inotify + mtime + explicit
-/// invalidation already cover all change scenarios.
-const NFS_CACHE_TTL: Duration = Duration::from_secs(1800); // 30 minutes
 
 /// Compute the max mtime across a directory and its immediate subdirectories
 /// (maxdepth 2). This detects changes inside organizational subdirectories
 /// like `00 Clean Romset/` without the cost of a full recursive scan.
+///
+/// Blocking — only called from within `db.write(|conn| ...)` closures, which
+/// already run on a deadpool blocking thread.
 pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
     let mut max_mtime = std::fs::metadata(path)
         .ok()
@@ -44,120 +43,59 @@ pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
     Some(max_mtime)
 }
 
-/// Mtime + optional TTL freshness tracker.
-///
-/// Shared by `CacheEntry` and `FavoritesCache` to avoid
-/// duplicating the same expiry/mtime logic across cache types.
-///
-/// For local storage (SD/USB/NVMe), there is no TTL — inotify watcher + mtime
-/// comparison + explicit `invalidate()` calls cover all change scenarios.
-/// For NFS, a 30-minute TTL acts as a safety net since inotify doesn't detect
-/// remote changes (lazy: only checked on access, so it won't wake idle disks).
-pub(super) struct Freshness {
-    dir_mtime: Option<SystemTime>,
-    /// `None` for local storage (no TTL), `Some` for NFS.
-    expires: Option<Instant>,
-}
-
-impl Freshness {
-    pub(super) fn new(dir: &Path, is_local: bool) -> Self {
-        Self {
-            dir_mtime: dir_mtime(dir),
-            expires: if is_local {
-                None
-            } else {
-                Some(Instant::now() + NFS_CACHE_TTL)
-            },
-        }
-    }
-
-    /// Fresh = hard TTL not expired (if set) AND directory mtime unchanged.
-    pub(super) fn is_fresh(&self, dir: &Path) -> bool {
-        if self.expires.is_some_and(|exp| Instant::now() >= exp) {
-            return false;
-        }
-        match (self.dir_mtime, dir_mtime(dir)) {
-            (Some(cached), Some(current)) => cached == current,
-            _ => true,
-        }
-    }
-}
-
-/// Cached result with freshness tracking.
-pub(super) struct CacheEntry<T> {
-    pub(super) data: T,
-    freshness: Freshness,
-}
-
-impl<T: Clone> CacheEntry<T> {
-    pub(super) fn new(data: T, dir: &Path, is_local: bool) -> Self {
-        Self {
-            data,
-            freshness: Freshness::new(dir, is_local),
-        }
-    }
-
-    pub(super) fn is_fresh(&self, dir: &Path) -> bool {
-        self.freshness.is_fresh(dir)
-    }
-}
-
 use favorites::FavoritesCache;
 
 pub struct LibraryService {
     pub(crate) query_cache: query::QueryCache,
-    pub(super) systems: std::sync::RwLock<Option<CacheEntry<Vec<SystemSummary>>>>,
-    pub(super) favorites: std::sync::RwLock<Option<FavoritesCache>>,
-    pub(super) recents: std::sync::RwLock<Option<CacheEntry<Vec<RecentEntry>>>>,
+    pub(super) systems: RwLock<Option<Vec<SystemSummary>>>,
+    pub(super) favorites: RwLock<Option<FavoritesCache>>,
+    pub(super) recents: RwLock<Option<Vec<RecentEntry>>>,
 }
 
 impl LibraryService {
     pub(crate) fn new() -> Self {
         let query_cache = query::QueryCache::new();
         Self {
-            systems: std::sync::RwLock::new(None),
-            favorites: std::sync::RwLock::new(None),
-            recents: std::sync::RwLock::new(None),
+            systems: RwLock::new(None),
+            favorites: RwLock::new(None),
+            recents: RwLock::new(None),
             query_cache,
         }
     }
 
     /// Get cached systems or scan and cache.
     /// L1 (in-memory) → L2 (SQLite game_library_meta) → L3 (filesystem scan).
+    ///
+    /// Single-flight on miss: concurrent callers acquire the write lock and
+    /// re-check before rebuilding, so only the first arrival performs L2/L3.
     pub async fn cached_systems(
         &self,
         storage: &StorageLocation,
         db: &DbPool,
     ) -> Vec<SystemSummary> {
-        let roms_dir = storage.roms_dir();
+        if let Some(ref cached) = *self.systems.read().await {
+            return cached.clone();
+        }
 
-        // L1: Try in-memory cache.
-        if let Ok(guard) = self.systems.read()
-            && let Some(ref entry) = *guard
-            && entry.is_fresh(&roms_dir)
-        {
-            return entry.data.clone();
+        let mut guard = self.systems.write().await;
+        if let Some(ref cached) = *guard {
+            return cached.clone();
         }
 
         // L2: Try SQLite game_library_meta (reconstructs SystemSummary from cached metadata).
-        let is_local = storage.kind.is_local();
         if let Some(summaries) = self.load_systems_from_db(storage, db).await
             && !summaries.is_empty()
         {
-            // Store in L1.
-            if let Ok(mut guard) = self.systems.write() {
-                *guard = Some(CacheEntry::new(summaries.clone(), &roms_dir, is_local));
-            }
+            *guard = Some(summaries.clone());
             return summaries;
         }
 
         // L3: Cache miss — full filesystem scan.
-        let summaries = replay_control_core::roms::scan_systems(storage);
-        if let Ok(mut guard) = self.systems.write() {
-            *guard = Some(CacheEntry::new(summaries.clone(), &roms_dir, is_local));
-        }
+        let summaries = replay_control_core::roms::scan_systems(storage).await;
+        *guard = Some(summaries.clone());
+        drop(guard);
 
-        // Write-through to L2 (background-safe: no lock held on L1).
+        // Write-through to L2 (lock released to avoid holding it across DB IO).
         self.save_systems_to_db(storage, &summaries, db).await;
 
         summaries
@@ -259,7 +197,8 @@ impl LibraryService {
 
         tracing::debug!("L3 scan for {system}: starting filesystem scan");
         let mut roms =
-            replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)?;
+            replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)
+                .await?;
         tracing::debug!("L3 scan for {system}: found {} ROMs", roms.len());
 
         // Hash-and-identify step: for hash-eligible systems, compute CRC32 hashes
@@ -373,44 +312,33 @@ impl LibraryService {
     }
 
     /// Get cached recents or scan and cache.
-    /// Recents are created by RePlayOS on game launch, so mtime-based
-    /// invalidation detects new entries without explicit invalidation.
-    pub fn get_recents(
+    ///
+    /// Invalidated explicitly by the launch server_fn and by the inotify
+    /// watcher on `_recents/` changes. Single-flight on miss.
+    pub async fn get_recents(
         &self,
         storage: &StorageLocation,
     ) -> Result<Vec<RecentEntry>, replay_control_core::error::Error> {
-        let recents_dir = storage.recents_dir();
-
-        if let Ok(guard) = self.recents.read()
-            && let Some(ref entry) = *guard
-            && entry.is_fresh(&recents_dir)
-        {
-            return Ok(entry.data.clone());
+        if let Some(ref cached) = *self.recents.read().await {
+            return Ok(cached.clone());
         }
 
-        let entries = replay_control_core::recents::list_recents(storage)?;
-        if let Ok(mut guard) = self.recents.write() {
-            *guard = Some(CacheEntry::new(
-                entries.clone(),
-                &recents_dir,
-                storage.kind.is_local(),
-            ));
+        let mut guard = self.recents.write().await;
+        if let Some(ref cached) = *guard {
+            return Ok(cached.clone());
         }
+
+        let entries = replay_control_core::recents::list_recents(storage).await?;
+        *guard = Some(entries.clone());
         Ok(entries)
     }
 
     /// Invalidate all caches (after delete, rename, upload).
     /// Clears L1 in-memory caches and L2 (SQLite game_library).
     pub async fn invalidate(&self, db: &DbPool) {
-        if let Ok(mut guard) = self.systems.write() {
-            *guard = None;
-        }
-        if let Ok(mut guard) = self.favorites.write() {
-            *guard = None;
-        }
-        if let Ok(mut guard) = self.recents.write() {
-            *guard = None;
-        }
+        *self.systems.write().await = None;
+        *self.favorites.write().await = None;
+        *self.recents.write().await = None;
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library.
         db.write(|conn| {
@@ -424,9 +352,7 @@ impl LibraryService {
     /// Invalidate cache for a specific system.
     /// Clears L1 systems cache and L2 (SQLite game_library) for the system.
     pub async fn invalidate_system(&self, system: String, db: &DbPool) {
-        if let Ok(mut guard) = self.systems.write() {
-            *guard = None;
-        }
+        *self.systems.write().await = None;
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library for this system.
         db.write(move |conn| {
@@ -438,17 +364,13 @@ impl LibraryService {
     }
 
     /// Invalidate only the favorites cache (after add/remove favorite).
-    pub fn invalidate_favorites(&self) {
-        if let Ok(mut guard) = self.favorites.write() {
-            *guard = None;
-        }
+    pub async fn invalidate_favorites(&self) {
+        *self.favorites.write().await = None;
     }
 
     /// Invalidate only the recents cache (after launch creates a new entry).
-    pub fn invalidate_recents(&self) {
-        if let Ok(mut guard) = self.recents.write() {
-            *guard = None;
-        }
+    pub async fn invalidate_recents(&self) {
+        *self.recents.write().await = None;
     }
 }
 

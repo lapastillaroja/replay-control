@@ -1,9 +1,9 @@
 name: Test (full data)
 
-# Runs the same unit tests as the `test` job in ci.yml, but without
-# REPLAY_BUILD_STUB — so the embedded PHF maps are built from the real
-# (downloaded) source files. This keeps the strict entry-count thresholds
-# honest and catches regressions the stub build would silently swallow.
+# Runs the same unit tests as the `test` job in ci.yml, but with the
+# catalog built from real (downloaded) source files. This keeps the strict
+# entry-count thresholds honest and catches regressions the stub build
+# would silently swallow.
 
 on:
   push:
@@ -49,6 +49,7 @@ jobs:
             data/tgdb-genres.json
             data/tgdb-publishers.json
             data/wikidata
+            catalog.sqlite
           key: upstream-data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/download-tgdb-lookups.sh', 'scripts/extract-mame-arcade.py', 'scripts/merge-catver.py', 'scripts/wikidata-series-extract.py') }}
 
       - name: Download arcade data
@@ -72,5 +73,13 @@ jobs:
             python3 scripts/wikidata-series-extract.py > data/wikidata/series.json
           fi
 
+      - name: Build game catalog (full data)
+        run: |
+          if [[ ! -f catalog.sqlite ]]; then
+            cargo run --release -p build-catalog -- --output catalog.sqlite
+          fi
+
       - name: Unit tests (core, full data)
         run: cargo test -p replay-control-core
+        env:
+          REPLAY_CATALOG_PATH: catalog.sqlite

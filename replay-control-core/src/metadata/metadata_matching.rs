@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::metadata_db::GameMetadata;
+use crate::title_utils::filename_stem;
 
 /// Result of matching a ROM to existing metadata via normalized title.
 #[derive(Debug, Clone)]
@@ -28,7 +29,7 @@ pub struct MetadataMatch {
 /// * `system` - The system folder name (used for arcade detection).
 /// * `rom_filenames` - All ROM filenames in the system.
 /// * `existing_metadata` - Current `(rom_filename, GameMetadata)` pairs from the DB.
-pub fn match_roms_to_metadata(
+pub async fn match_roms_to_metadata(
     system: &str,
     rom_filenames: &[String],
     existing_metadata: &[(String, GameMetadata)],
@@ -42,20 +43,34 @@ pub fn match_roms_to_metadata(
 
     let is_arcade = systems::is_arcade_system(system);
 
-    // Build a normalized-title -> metadata map from existing entries.
-    let mut title_index: HashMap<String, &GameMetadata> = HashMap::new();
-    for (rom_filename, meta) in existing_metadata {
-        let stem = rom_filename
-            .rfind('.')
-            .map(|i| &rom_filename[..i])
-            .unwrap_or(rom_filename);
-        let normalized = if is_arcade {
-            crate::arcade_db::lookup_arcade_game(stem)
-                .map(|info| normalize_title(info.display_name))
+    let arcade_map = if is_arcade {
+        let mut stems: Vec<String> = existing_metadata
+            .iter()
+            .map(|(f, _)| filename_stem(f).to_string())
+            .chain(rom_filenames.iter().map(|f| filename_stem(f).to_string()))
+            .collect();
+        stems.sort();
+        stems.dedup();
+        let refs: Vec<&str> = stems.iter().map(|s| s.as_str()).collect();
+        crate::arcade_db::lookup_arcade_games_batch(&refs).await
+    } else {
+        HashMap::new()
+    };
+    let normalize_from_stem = |stem: &str| -> String {
+        if is_arcade {
+            arcade_map
+                .get(stem)
+                .map(|info| normalize_title(&info.display_name))
                 .unwrap_or_else(|| normalize_title(stem))
         } else {
             normalize_title(stem)
-        };
+        }
+    };
+
+    // Build a normalized-title -> metadata map from existing entries.
+    let mut title_index: HashMap<String, &GameMetadata> = HashMap::new();
+    for (rom_filename, meta) in existing_metadata {
+        let normalized = normalize_from_stem(filename_stem(rom_filename));
         title_index.entry(normalized).or_insert(meta);
     }
 
@@ -77,18 +92,7 @@ pub fn match_roms_to_metadata(
             continue;
         }
 
-        let stem = rom_filename
-            .rfind('.')
-            .map(|i| &rom_filename[..i])
-            .unwrap_or(rom_filename);
-
-        let normalized = if is_arcade {
-            crate::arcade_db::lookup_arcade_game(stem)
-                .map(|info| normalize_title(info.display_name))
-                .unwrap_or_else(|| normalize_title(stem))
-        } else {
-            normalize_title(stem)
-        };
+        let normalized = normalize_from_stem(filename_stem(rom_filename));
 
         if let Some(donor_meta) = title_index.get(&normalized) {
             matches.push(MetadataMatch {
@@ -141,29 +145,29 @@ mod tests {
         }
     }
 
-    #[test]
-    fn no_metadata_returns_empty() {
-        let result = match_roms_to_metadata("nintendo_snes", &["game.sfc".into()], &[]);
+    #[tokio::test]
+    async fn no_metadata_returns_empty() {
+        let result = match_roms_to_metadata("nintendo_snes", &["game.sfc".into()], &[]).await;
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn no_roms_returns_empty() {
+    #[tokio::test]
+    async fn no_roms_returns_empty() {
         let existing = vec![("game.sfc".into(), make_metadata(Some(4.0), None))];
-        let result = match_roms_to_metadata("nintendo_snes", &[], &existing);
+        let result = match_roms_to_metadata("nintendo_snes", &[], &existing).await;
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn already_matched_rom_is_skipped() {
+    #[tokio::test]
+    async fn already_matched_rom_is_skipped() {
         let existing = vec![("game.sfc".into(), make_metadata(Some(4.0), None))];
         let roms = vec!["game.sfc".into()];
-        let result = match_roms_to_metadata("nintendo_snes", &roms, &existing);
+        let result = match_roms_to_metadata("nintendo_snes", &roms, &existing).await;
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn unmatched_rom_gets_donor_metadata_by_normalized_title() {
+    #[tokio::test]
+    async fn unmatched_rom_gets_donor_metadata_by_normalized_title() {
         // "Super Mario World (USA).sfc" has metadata
         // "Super Mario World (Europe).sfc" does not, but should match via normalized title
         let existing = vec![(
@@ -174,7 +178,7 @@ mod tests {
             "Super Mario World (USA).sfc".into(),
             "Super Mario World (Europe).sfc".into(),
         ];
-        let result = match_roms_to_metadata("nintendo_snes", &roms, &existing);
+        let result = match_roms_to_metadata("nintendo_snes", &roms, &existing).await;
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].rom_filename, "Super Mario World (Europe).sfc");
         assert_eq!(result[0].metadata.rating, Some(4.5));
@@ -184,8 +188,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn non_matching_rom_not_included() {
+    #[tokio::test]
+    async fn non_matching_rom_not_included() {
         let existing = vec![(
             "Super Mario World (USA).sfc".into(),
             make_metadata(Some(4.5), None),
@@ -194,12 +198,12 @@ mod tests {
             "Super Mario World (USA).sfc".into(),
             "Donkey Kong Country (USA).sfc".into(),
         ];
-        let result = match_roms_to_metadata("nintendo_snes", &roms, &existing);
+        let result = match_roms_to_metadata("nintendo_snes", &roms, &existing).await;
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn multiple_unmatched_roms_matched() {
+    #[tokio::test]
+    async fn multiple_unmatched_roms_matched() {
         let existing = vec![(
             "Sonic The Hedgehog (USA).md".into(),
             make_metadata(Some(3.5), None),
@@ -209,7 +213,7 @@ mod tests {
             "Sonic The Hedgehog (Europe).md".into(),
             "Sonic The Hedgehog (Japan).md".into(),
         ];
-        let result = match_roms_to_metadata("sega_smd", &roms, &existing);
+        let result = match_roms_to_metadata("sega_smd", &roms, &existing).await;
         assert_eq!(result.len(), 2);
         assert!(
             result

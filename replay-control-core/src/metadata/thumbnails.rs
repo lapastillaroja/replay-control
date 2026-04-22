@@ -79,7 +79,7 @@ pub fn any_images_on_disk(rc_dir: &std::path::Path) -> bool {
         let boxart_dir = entry.path().join(ThumbnailKind::Boxart.media_dir());
         if boxart_dir.is_dir()
             && let Ok(mut files) = std::fs::read_dir(&boxart_dir)
-            && files.any(|f| f.ok().map(|f| f.path()).is_some_and(|p| is_valid_image(&p)))
+            && files.any(|f| f.ok().map(|f| f.path()).is_some_and(|p| is_valid_image_sync(&p)))
         {
             return true;
         }
@@ -102,7 +102,7 @@ pub fn scan_system_images(
             let name = file.file_name();
             let name_str = name.to_string_lossy();
             if let Some(stem) = strip_image_ext(&name_str)
-                && is_valid_image(&file.path())
+                && is_valid_image_sync(&file.path())
             {
                 entries.push((kind.repo_dir().to_string(), stem.to_string(), None));
             }
@@ -192,7 +192,7 @@ pub fn strip_image_ext(name: &str) -> Option<&str> {
 }
 
 /// Quick check that a file is likely a real image (not a git fake-symlink text file).
-pub fn is_valid_image(path: &Path) -> bool {
+pub(crate) fn is_valid_image_sync(path: &Path) -> bool {
     path.metadata().map(|m| m.len() >= 200).unwrap_or(false)
 }
 
@@ -200,14 +200,14 @@ pub fn is_valid_image(path: &Path) -> bool {
 /// Reads its text content (a relative filename), checks if that file exists in
 /// `parent_dir` and passes `is_valid_image()`. Returns the target filename on
 /// success, `None` otherwise.
-pub fn try_resolve_fake_symlink(path: &Path, parent_dir: &Path) -> Option<String> {
+pub(crate) fn try_resolve_fake_symlink_sync(path: &Path, parent_dir: &Path) -> Option<String> {
     let bytes = std::fs::read(path).ok()?;
     let target_name = std::str::from_utf8(&bytes).ok()?.trim();
     if target_name.is_empty() || !target_name.ends_with(".png") {
         return None;
     }
     let target_path = parent_dir.join(target_name);
-    if target_path.exists() && is_valid_image(&target_path) {
+    if target_path.exists() && is_valid_image_sync(&target_path) {
         Some(target_name.to_string())
     } else {
         None
@@ -226,20 +226,17 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
         return None;
     }
 
-    let stem = rom_filename
-        .rfind('.')
-        .map(|i| &rom_filename[..i])
-        .unwrap_or(rom_filename);
+    let stem = crate::title_utils::filename_stem(rom_filename);
     let stem = crate::title_utils::strip_n64dd_prefix(stem);
     let thumb_name = thumbnail_filename(stem);
 
     // 1. Exact match
     let exact = kind_dir.join(format!("{thumb_name}.png"));
     if exact.exists() {
-        if is_valid_image(&exact) {
+        if is_valid_image_sync(&exact) {
             return Some(format!("{kind}/{thumb_name}.png"));
         }
-        if let Some(resolved) = try_resolve_fake_symlink(&exact, &kind_dir) {
+        if let Some(resolved) = try_resolve_fake_symlink_sync(&exact, &kind_dir) {
             return Some(format!("{kind}/{resolved}"));
         }
     }
@@ -282,10 +279,10 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
                 // 1b. Case-insensitive exact match (preserves region tags)
                 if img_stem.to_lowercase() == thumb_lower {
                     let path = entry.path();
-                    if is_valid_image(&path) {
+                    if is_valid_image_sync(&path) {
                         return Some(format!("{kind}/{name}"));
                     }
-                    if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                    if let Some(resolved) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
                         return Some(format!("{kind}/{resolved}"));
                     }
                 }
@@ -294,27 +291,27 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
                 // 2. Fuzzy match (strip tags)
                 if img_base == rom_base && fuzzy_result.is_none() {
                     let path = entry.path();
-                    if is_valid_image(&path) {
+                    if is_valid_image_sync(&path) {
                         fuzzy_result = Some(format!("{kind}/{name}"));
-                    } else if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                    } else if let Some(resolved) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
                         fuzzy_result = Some(format!("{kind}/{resolved}"));
                     }
                 }
                 // 3. Version-stripped match
                 if has_version && img_base == rom_base_no_version && version_result.is_none() {
                     let path = entry.path();
-                    if is_valid_image(&path) {
+                    if is_valid_image_sync(&path) {
                         version_result = Some(format!("{kind}/{name}"));
-                    } else if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                    } else if let Some(resolved) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
                         version_result = Some(format!("{kind}/{resolved}"));
                     }
                 }
                 // 4. Slash dual-name match
                 if slash_result.is_none() && slash_parts.iter().any(|part| *part == img_base) {
                     let path = entry.path();
-                    if is_valid_image(&path) {
+                    if is_valid_image_sync(&path) {
                         slash_result = Some(format!("{kind}/{name}"));
-                    } else if let Some(resolved) = try_resolve_fake_symlink(&path, &kind_dir) {
+                    } else if let Some(resolved) = try_resolve_fake_symlink_sync(&path, &kind_dir) {
                         slash_result = Some(format!("{kind}/{resolved}"));
                     }
                 }
@@ -338,32 +335,64 @@ pub fn find_image_on_disk(media_base: &Path, kind: &str, rom_filename: &str) -> 
 /// Resolve an image file on disk for a ROM, with arcade name translation.
 ///
 /// This is the main entry point for per-file image resolution. For arcade systems,
-/// it translates the MAME codename to the display name (e.g., `ga2` → `Golden Axe:
-/// The Revenge of Death Adder`) and tries that first, then falls back to the ROM
-/// filename. For non-arcade systems, it delegates directly to `find_image_on_disk`.
+/// the caller passes `arcade_display` (the MAME display name, e.g.
+/// `Golden Axe: The Revenge of Death Adder`) which is tried first; then falls back
+/// to the ROM filename. For non-arcade systems, pass `None` — it delegates directly
+/// to `find_image_on_disk`.
 ///
 /// Use this instead of calling `find_image_on_disk` directly to avoid forgetting
 /// arcade name translation when adding new image types.
-pub fn resolve_image_on_disk(
-    system: &str,
+pub(crate) fn resolve_image_on_disk_sync(
+    arcade_display: Option<&str>,
     media_base: &Path,
     kind: &str,
     rom_filename: &str,
 ) -> Option<String> {
-    if crate::systems::is_arcade_system(system) {
-        let stem = rom_filename
-            .rfind('.')
-            .map(|i| &rom_filename[..i])
-            .unwrap_or(rom_filename);
-        if let Some(game) = crate::arcade_db::lookup_arcade_game(stem) {
-            let thumb = thumbnail_filename(game.display_name);
-            let arcade_filename = format!("{thumb}.zip");
-            if let Some(path) = find_image_on_disk(media_base, kind, &arcade_filename) {
-                return Some(path);
-            }
+    if let Some(display) = arcade_display {
+        let thumb = thumbnail_filename(display);
+        let arcade_filename = format!("{thumb}.zip");
+        if let Some(path) = find_image_on_disk(media_base, kind, &arcade_filename) {
+            return Some(path);
         }
     }
     find_image_on_disk(media_base, kind, rom_filename)
+}
+
+/// Validate an image file on disk. Runs the `metadata` syscall on the
+/// blocking pool so async callers don't pin a tokio worker.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn is_valid_image(path: PathBuf) -> bool {
+    tokio::task::spawn_blocking(move || is_valid_image_sync(&path))
+        .await
+        .unwrap_or(false)
+}
+
+/// Resolve an image file on disk for a ROM, with arcade name translation.
+/// Runs the `read_dir` + per-entry `metadata` scan on the blocking pool.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn resolve_image_on_disk(
+    arcade_display: Option<String>,
+    media_base: PathBuf,
+    kind: &'static str,
+    rom_filename: String,
+) -> Option<String> {
+    tokio::task::spawn_blocking(move || {
+        resolve_image_on_disk_sync(arcade_display.as_deref(), &media_base, kind, &rom_filename)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!("resolve_image_on_disk panicked: {e}");
+        None
+    })
+}
+
+/// Resolve a single libretro-thumbnails "fake symlink" entry (a tiny text
+/// file with the target filename in it). Runs on the blocking pool.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn try_resolve_fake_symlink(path: PathBuf, parent_dir: PathBuf) -> Option<String> {
+    tokio::task::spawn_blocking(move || try_resolve_fake_symlink_sync(&path, &parent_dir))
+        .await
+        .unwrap_or(None)
 }
 
 /// Build a list of ROM filenames for a system from the filesystem.
@@ -815,30 +844,28 @@ mod tests {
     //   3. Apply thumbnail_filename() normalization
     //   4. Try exact match, colon variants, fuzzy (strip_tags), version-stripped
 
-    /// Helper: simulate the full matching pipeline used by resolve_box_art.
+    /// Helper: simulate the full matching pipeline used by resolve_box_art_with_hash.
     /// Returns (thumb_name, base_title) for a given ROM filename + system.
-    fn resolve_pipeline(rom_filename: &str, system: &str) -> (String, String) {
-        let stem = rom_filename
-            .rfind('.')
-            .map(|i| &rom_filename[..i])
-            .unwrap_or(rom_filename);
-        let is_arcade = matches!(
-            system,
-            "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
-        );
+    async fn resolve_pipeline(rom_filename: &str, system: &str) -> (String, String) {
+        let stem = crate::title_utils::filename_stem(rom_filename);
+        let is_arcade = crate::systems::is_arcade_system(system);
         let display_name = if is_arcade {
-            crate::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name)
+            crate::arcade_db::lookup_arcade_game(stem)
+                .await
+                .map(|info| info.display_name)
         } else {
             None
         };
-        let thumb_name = thumbnail_filename(display_name.unwrap_or(stem));
+        let thumb_name = thumbnail_filename(display_name.as_deref().unwrap_or(stem));
         let base = strip_tags(&thumb_name).trim().to_lowercase();
         (thumb_name, base)
     }
 
-    #[test]
-    fn arcade_avsp_resolves_to_alien_vs_predator() {
-        let (thumb_name, base) = resolve_pipeline("avsp.zip", "arcade_fbneo");
+    #[tokio::test(flavor = "current_thread")]
+    async fn arcade_avsp_resolves_to_alien_vs_predator() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
+        let (thumb_name, base) = resolve_pipeline("avsp.zip", "arcade_fbneo").await;
         assert!(
             thumb_name.starts_with("Alien vs. Predator"),
             "expected 'Alien vs. Predator...', got '{thumb_name}'"
@@ -846,9 +873,11 @@ mod tests {
         assert_eq!(base, "alien vs. predator");
     }
 
-    #[test]
-    fn arcade_ffight_resolves_to_final_fight() {
-        let (thumb_name, base) = resolve_pipeline("ffight.zip", "arcade_fbneo");
+    #[tokio::test(flavor = "current_thread")]
+    async fn arcade_ffight_resolves_to_final_fight() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
+        let (thumb_name, base) = resolve_pipeline("ffight.zip", "arcade_fbneo").await;
         assert!(
             thumb_name.starts_with("Final Fight"),
             "expected 'Final Fight...', got '{thumb_name}'"
@@ -856,9 +885,11 @@ mod tests {
         assert_eq!(base, "final fight");
     }
 
-    #[test]
-    fn arcade_dsmbl_resolves_to_deathsmiles() {
-        let (thumb_name, base) = resolve_pipeline("dsmbl.zip", "arcade_fbneo");
+    #[tokio::test(flavor = "current_thread")]
+    async fn arcade_dsmbl_resolves_to_deathsmiles() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
+        let (thumb_name, base) = resolve_pipeline("dsmbl.zip", "arcade_fbneo").await;
         assert!(
             thumb_name.starts_with("Deathsmiles MegaBlack Label"),
             "expected 'Deathsmiles MegaBlack Label...', got '{thumb_name}'"
@@ -866,9 +897,11 @@ mod tests {
         assert_eq!(base, "deathsmiles megablack label");
     }
 
-    #[test]
-    fn arcade_dmnfrnt_resolves_with_slash_replaced() {
-        let (thumb_name, _) = resolve_pipeline("dmnfrnt.zip", "arcade_fbneo");
+    #[tokio::test(flavor = "current_thread")]
+    async fn arcade_dmnfrnt_resolves_with_slash_replaced() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
+        let (thumb_name, _) = resolve_pipeline("dmnfrnt.zip", "arcade_fbneo").await;
         // Display name is "Demon Front / Moyu Zhanxian ..."
         // thumbnail_filename replaces '/' with '_'
         assert!(
@@ -877,9 +910,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn arcade_sf2_colon_in_display_name() {
-        let (thumb_name, _) = resolve_pipeline("sf2.zip", "arcade_fbneo");
+    #[tokio::test(flavor = "current_thread")]
+    async fn arcade_sf2_colon_in_display_name() {
+        let (thumb_name, _) = resolve_pipeline("sf2.zip", "arcade_fbneo").await;
         // "Street Fighter II: The World Warrior (...)"
         // thumbnail_filename replaces ':' with '_'
         assert!(
@@ -888,7 +921,7 @@ mod tests {
         );
 
         // Colon variant: ": " → " - "
-        let info = crate::arcade_db::lookup_arcade_game("sf2").unwrap();
+        let info = crate::arcade_db::lookup_arcade_game("sf2").await.unwrap();
         let dash_variant =
             thumbnail_filename(&info.display_name.replace(": ", " - ").replace(':', " -"));
         assert!(
@@ -897,33 +930,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn arcade_unknown_rom_falls_back_to_stem() {
-        let (thumb_name, base) = resolve_pipeline("zzz_nonexistent.zip", "arcade_fbneo");
+    #[tokio::test(flavor = "current_thread")]
+    async fn arcade_unknown_rom_falls_back_to_stem() {
+        let (thumb_name, base) = resolve_pipeline("zzz_nonexistent.zip", "arcade_fbneo").await;
         assert_eq!(thumb_name, "zzz_nonexistent");
         assert_eq!(base, "zzz_nonexistent");
     }
 
-    #[test]
-    fn non_arcade_system_no_arcade_db_lookup() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn non_arcade_system_no_arcade_db_lookup() {
         // For non-arcade systems, the stem is used directly
-        let (thumb_name, base) = resolve_pipeline("Super Mario World (USA).sfc", "nintendo_snes");
+        let (thumb_name, base) =
+            resolve_pipeline("Super Mario World (USA).sfc", "nintendo_snes").await;
         assert_eq!(thumb_name, "Super Mario World (USA)");
         assert_eq!(base, "super mario world");
     }
 
-    #[test]
-    fn arcade_mame_system_also_uses_arcade_db() {
-        let (thumb_name, _) = resolve_pipeline("sf2.zip", "arcade_mame");
+    #[tokio::test(flavor = "current_thread")]
+    async fn arcade_mame_system_also_uses_arcade_db() {
+        let (thumb_name, _) = resolve_pipeline("sf2.zip", "arcade_mame").await;
         assert!(
             thumb_name.contains("Street Fighter II"),
             "arcade_mame should also use arcade_db, got '{thumb_name}'"
         );
     }
 
-    #[test]
-    fn arcade_dc_system_uses_arcade_db() {
-        let (thumb_name, _) = resolve_pipeline("ikaruga.zip", "arcade_dc");
+    #[tokio::test(flavor = "current_thread")]
+    async fn arcade_dc_system_uses_arcade_db() {
+        let (thumb_name, _) = resolve_pipeline("ikaruga.zip", "arcade_dc").await;
         assert!(
             thumb_name.starts_with("Ikaruga"),
             "arcade_dc should use arcade_db, got '{thumb_name}'"

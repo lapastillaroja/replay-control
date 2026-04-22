@@ -275,12 +275,12 @@ pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
     use replay_control_core::{arcade_db, game_db, series_db};
 
     Ok(BuiltinDbStats {
-        arcade_entries: arcade_db::entry_count(),
+        arcade_entries: arcade_db::entry_count().await,
         arcade_mame_version: arcade_db::MAME_VERSION.to_string(),
-        game_rom_entries: game_db::total_rom_entries(),
-        game_system_count: game_db::system_count(),
-        wikidata_series_entries: series_db::entry_count(),
-        wikidata_series_count: series_db::all_series_names().len(),
+        game_rom_entries: game_db::total_rom_entries().await,
+        game_system_count: game_db::system_count().await,
+        wikidata_series_entries: series_db::entry_count().await,
+        wikidata_series_count: series_db::all_series_names().await.len(),
     })
 }
 

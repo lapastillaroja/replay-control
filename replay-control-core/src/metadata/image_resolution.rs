@@ -1,7 +1,7 @@
 //! Image resolution: build per-system image indexes and resolve box art paths.
 //!
 //! Extracted from `enrichment.rs` — contains `ImageIndex`, `BoxArtResult`,
-//! `build_image_index`, `resolve_box_art`, and URL formatting helpers.
+//! `build_image_index`, `resolve_box_art_with_hash`, and URL formatting helpers.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -74,7 +74,9 @@ pub fn build_image_index(
                     continue; // Already indexed by build_dir_index.
                 }
                 let full = entry.path();
-                if let Some(resolved) = thumbnails::try_resolve_fake_symlink(&full, &boxart_dir) {
+                if let Some(resolved) =
+                    thumbnails::try_resolve_fake_symlink_sync(&full, &boxart_dir)
+                {
                     let resolved_path = format!("boxart/{resolved}");
                     dir_index
                         .exact
@@ -172,20 +174,42 @@ pub fn build_image_index(
     }
 }
 
-/// Resolve a box art path for a single ROM using the image index.
-///
-/// Returns the relative media path (e.g., `"boxart/Name.png"`) or None.
-/// Does NOT produce a URL — the app layer adds the `/media/{system}/` prefix
-/// and URL-encodes path segments.
-///
-/// If no local image is found but the manifest has a match, the match is
-/// returned via `manifest_hit` so the caller can queue a background download.
-pub fn resolve_box_art<'a>(
-    index: &'a ImageIndex,
-    system: &str,
-    rom_filename: &str,
-) -> BoxArtResult<'a> {
-    resolve_box_art_with_hash(index, system, rom_filename, None)
+/// Pre-fetched map of `ArcadeGameInfo` keyed by filename stem.
+#[derive(Debug, Default, Clone)]
+pub struct ArcadeInfoLookup {
+    pub map: std::collections::HashMap<String, crate::arcade_db::ArcadeGameInfo>,
+}
+
+impl ArcadeInfoLookup {
+    /// Build from a list of filename stems by issuing one batch query.
+    pub async fn build(system: &str, rom_filenames: &[String]) -> Self {
+        if !crate::systems::is_arcade_system(system) || rom_filenames.is_empty() {
+            return Self::default();
+        }
+        let mut stems: Vec<&str> = rom_filenames
+            .iter()
+            .map(|f| crate::title_utils::filename_stem(f.as_str()))
+            .collect();
+        // Include parent stems via a second pass (follow-up batch below).
+        stems.sort();
+        stems.dedup();
+        let mut map = crate::arcade_db::lookup_arcade_games_batch(&stems).await;
+        let parent_stems: Vec<String> = map
+            .values()
+            .filter(|info| !info.parent.is_empty() && !map.contains_key(info.parent.as_str()))
+            .map(|info| info.parent.clone())
+            .collect();
+        if !parent_stems.is_empty() {
+            let parent_refs: Vec<&str> = parent_stems.iter().map(String::as_str).collect();
+            let parents = crate::arcade_db::lookup_arcade_games_batch(&parent_refs).await;
+            map.extend(parents);
+        }
+        Self { map }
+    }
+
+    pub fn get(&self, stem: &str) -> Option<&crate::arcade_db::ArcadeGameInfo> {
+        self.map.get(stem)
+    }
 }
 
 /// Resolve box art with an optional `hash_matched_name` fallback.
@@ -195,21 +219,20 @@ pub fn resolve_box_art<'a>(
 /// use No-Intro naming, so the hash_matched_name will often match directly.
 pub fn resolve_box_art_with_hash<'a>(
     index: &'a ImageIndex,
+    arcade_lookup: &ArcadeInfoLookup,
     system: &str,
     rom_filename: &str,
     hash_matched_name: Option<&str>,
 ) -> BoxArtResult<'a> {
-    let stem = rom_filename
-        .rfind('.')
-        .map(|i| &rom_filename[..i])
-        .unwrap_or(rom_filename);
+    let stem = crate::title_utils::filename_stem(rom_filename);
     let stem = crate::title_utils::strip_n64dd_prefix(stem);
     let is_arcade = crate::systems::is_arcade_system(system);
-    let arcade_display = if is_arcade {
-        crate::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name)
+    let arcade_info = if is_arcade {
+        arcade_lookup.get(stem)
     } else {
         None
     };
+    let arcade_display: Option<&str> = arcade_info.map(|i| i.display_name.as_str());
 
     // Delegate all filesystem-based matching tiers to core image_matching.
     let db_paths = if index.db_paths.is_empty() {
@@ -225,16 +248,17 @@ pub fn resolve_box_art_with_hash<'a>(
 
     // Check manifest for a remote thumbnail to download.
     if let Some(ref manifest) = index.manifest
-        && let Some(m) = thumbnail_manifest::find_in_manifest(manifest, rom_filename, system)
+        && let Some(m) =
+            thumbnail_manifest::find_in_manifest(manifest, rom_filename, arcade_display)
     {
         return BoxArtResult::ManifestHit(m);
     }
 
     // Arcade clone fallback: if this ROM is a clone, try the parent's display name.
     if is_arcade
-        && let Some(info) = crate::arcade_db::lookup_arcade_game(stem)
+        && let Some(info) = arcade_info
         && !info.parent.is_empty()
-        && let Some(parent_info) = crate::arcade_db::lookup_arcade_game(info.parent)
+        && let Some(parent_info) = arcade_lookup.get(&info.parent)
     {
         // Build a synthetic rom_filename from the parent codename so
         // find_best_match uses the parent's display name for matching.
@@ -242,7 +266,7 @@ pub fn resolve_box_art_with_hash<'a>(
         if let Some(path) = image_matching::find_best_match(
             &index.dir_index,
             &parent_filename,
-            Some(parent_info.display_name),
+            Some(parent_info.display_name.as_str()),
             db_paths,
         ) {
             return BoxArtResult::Found(path);
@@ -250,8 +274,11 @@ pub fn resolve_box_art_with_hash<'a>(
 
         // Also try manifest with parent.
         if let Some(ref manifest) = index.manifest
-            && let Some(m) =
-                thumbnail_manifest::find_in_manifest(manifest, &parent_filename, system)
+            && let Some(m) = thumbnail_manifest::find_in_manifest(
+                manifest,
+                &parent_filename,
+                Some(parent_info.display_name.as_str()),
+            )
         {
             return BoxArtResult::ManifestHit(m);
         }
@@ -269,8 +296,11 @@ pub fn resolve_box_art_with_hash<'a>(
         }
         // Also try manifest with hash_matched_name.
         if let Some(ref manifest) = index.manifest
-            && let Some(m) =
-                thumbnail_manifest::find_in_manifest(manifest, &synthetic_filename, system)
+            && let Some(m) = thumbnail_manifest::find_in_manifest(
+                manifest,
+                &synthetic_filename,
+                None,
+            )
         {
             return BoxArtResult::ManifestHit(m);
         }
@@ -382,27 +412,37 @@ mod tests {
         }
     }
 
-    #[test]
-    fn arcade_clone_falls_back_to_parent_art() {
+    #[tokio::test]
+    async fn arcade_clone_falls_back_to_parent_art() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() {
+            return;
+        }
         // "pacman" is a clone of "puckman". If there's no art for
         // pacman's display name but there IS art for puckman's display name,
         // the clone fallback should find the parent's art.
-        let clone_info =
-            crate::arcade_db::lookup_arcade_game("pacman").expect("pacman should be in arcade DB");
+        let batch = ArcadeInfoLookup::build("arcade_mame", &["pacman.zip".to_string()]).await;
+        let clone_info = batch
+            .get("pacman")
+            .cloned()
+            .expect("pacman should be in arcade DB");
         assert!(clone_info.is_clone, "pacman should be a clone");
         assert_eq!(clone_info.parent, "puckman");
 
-        let parent_info = crate::arcade_db::lookup_arcade_game("puckman")
+        let parent_info = batch
+            .get("puckman")
+            .cloned()
             .expect("puckman should be in arcade DB");
 
         // Put the parent's display name as a thumbnail stem in the index.
         // thumbnail_filename converts special chars, so use that to build
         // the stem as it would appear on disk.
-        let parent_thumb = crate::thumbnails::thumbnail_filename(parent_info.display_name);
+        let parent_thumb = crate::thumbnails::thumbnail_filename(&parent_info.display_name);
         let path = format!("boxart/{parent_thumb}.png");
         let index = image_index_from(&[(&parent_thumb, &path)]);
 
-        let result = resolve_box_art(&index, "arcade_mame", "pacman.zip");
+        let result =
+            resolve_box_art_with_hash(&index, &batch, "arcade_mame", "pacman.zip", None);
         match result {
             BoxArtResult::Found(found_path) => {
                 assert_eq!(found_path, path);
@@ -411,8 +451,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn hash_matched_name_finds_art_when_filename_misses() {
+    #[tokio::test]
+    async fn hash_matched_name_finds_art_when_filename_misses() {
         // ROM "Dong Gu Ri Te Chi Jak Jeon (Korea).md" doesn't match any thumbnail,
         // but hash_matched_name "Dongguri Techi Jakjeon (Korea)" does.
         let thumb_stem = "Dongguri Techi Jakjeon (Korea)";
@@ -420,7 +460,14 @@ mod tests {
         let index = image_index_from(&[(thumb_stem, &path)]);
 
         // Without hash: no match.
-        let result = resolve_box_art(&index, "sega_smd", "Dong Gu Ri Te Chi Jak Jeon (Korea).md");
+        let batch = ArcadeInfoLookup::default();
+        let result = resolve_box_art_with_hash(
+            &index,
+            &batch,
+            "sega_smd",
+            "Dong Gu Ri Te Chi Jak Jeon (Korea).md",
+            None,
+        );
         assert!(
             matches!(result, BoxArtResult::NotFound),
             "Filename alone should not match"
@@ -429,6 +476,7 @@ mod tests {
         // With hash: finds art via fallback.
         let result = resolve_box_art_with_hash(
             &index,
+            &batch,
             "sega_smd",
             "Dong Gu Ri Te Chi Jak Jeon (Korea).md",
             Some("Dongguri Techi Jakjeon (Korea)"),
@@ -439,15 +487,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn hash_matched_name_not_used_when_filename_matches() {
+    #[tokio::test]
+    async fn hash_matched_name_not_used_when_filename_matches() {
         // When the filename already matches, the hash fallback shouldn't change the result.
         let thumb_stem = "Sonic the Hedgehog (USA)";
         let path = format!("boxart/{thumb_stem}.png");
         let index = image_index_from(&[(thumb_stem, &path)]);
+        let batch = ArcadeInfoLookup::default();
 
         let result = resolve_box_art_with_hash(
             &index,
+            &batch,
             "sega_smd",
             "Sonic the Hedgehog (USA).md",
             Some("Sonic the Hedgehog (USA)"),
@@ -458,27 +508,42 @@ mod tests {
         }
     }
 
-    #[test]
-    fn hash_matched_name_none_returns_not_found() {
+    #[tokio::test]
+    async fn hash_matched_name_none_returns_not_found() {
         // No art on disk, no hash — should be NotFound.
         let index = image_index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
+        let batch = ArcadeInfoLookup::default();
 
-        let result = resolve_box_art_with_hash(&index, "sega_smd", "Unknown ROM (Korea).md", None);
+        let result = resolve_box_art_with_hash(
+            &index,
+            &batch,
+            "sega_smd",
+            "Unknown ROM (Korea).md",
+            None,
+        );
         assert!(matches!(result, BoxArtResult::NotFound));
     }
 
-    #[test]
-    fn non_clone_does_not_use_parent_fallback() {
+    #[tokio::test]
+    async fn non_clone_does_not_use_parent_fallback() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() {
+            return;
+        }
         // "puckman" is NOT a clone — it's a parent ROM. If there's no art
         // matching "Puck Man", it should return NotFound (no parent to fall back to).
-        let info = crate::arcade_db::lookup_arcade_game("puckman")
+        let batch = ArcadeInfoLookup::build("arcade_mame", &["puckman.zip".to_string()]).await;
+        let info = batch
+            .get("puckman")
+            .cloned()
             .expect("puckman should be in arcade DB");
         assert!(!info.is_clone, "puckman should not be a clone");
 
         // Index has art for an unrelated game only.
         let index = image_index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
 
-        let result = resolve_box_art(&index, "arcade_mame", "puckman.zip");
+        let result =
+            resolve_box_art_with_hash(&index, &batch, "arcade_mame", "puckman.zip", None);
         assert!(
             matches!(result, BoxArtResult::NotFound),
             "Non-clone should not find art via parent fallback"

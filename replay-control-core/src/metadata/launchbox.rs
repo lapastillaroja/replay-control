@@ -10,7 +10,6 @@ use std::path::Path;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::arcade_db;
 use crate::error::{Error, Result};
 use crate::metadata_db::{DatePrecision, GameMetadata, ImportStats};
 
@@ -604,24 +603,49 @@ pub fn download_metadata(
 ///
 /// Scans the given ROM directories recursively and normalizes each filename
 /// for matching against LaunchBox titles.
-pub fn build_rom_index(storage_root: &Path) -> HashMap<(String, String), Vec<String>> {
+pub async fn build_rom_index(storage_root: &Path) -> HashMap<(String, String), Vec<String>> {
+    // Walk the filesystem on the blocking pool — a full import-time scan
+    // issues one `read_dir` per system folder and per ROM subdirectory.
     let roms_dir = storage_root.join("roms");
-    let mut index: HashMap<(String, String), Vec<String>> = HashMap::new();
-
-    let entries = match std::fs::read_dir(&roms_dir) {
-        Ok(e) => e,
-        Err(_) => return index,
+    let system_files: Vec<(String, Vec<String>)> = {
+        let walk = move || -> Vec<(String, Vec<String>)> {
+            let entries = match std::fs::read_dir(&roms_dir) {
+                Ok(e) => e,
+                Err(_) => return Vec::new(),
+            };
+            let mut out = Vec::new();
+            for entry in entries.flatten() {
+                let system = entry.file_name().to_string_lossy().to_string();
+                if system.starts_with('_') {
+                    continue;
+                }
+                let mut rom_files: Vec<String> = Vec::new();
+                collect_rom_filenames(&entry.path(), &mut rom_files);
+                out.push((system, rom_files));
+            }
+            out
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            tokio::task::spawn_blocking(walk).await.unwrap_or_else(|e| {
+                tracing::warn!("build_rom_index walk panicked: {e}");
+                Vec::new()
+            })
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            walk()
+        }
     };
 
-    for entry in entries.flatten() {
-        let system = entry.file_name().to_string_lossy().to_string();
-        // Skip special directories.
-        if system.starts_with('_') {
-            continue;
-        }
-
-        let system_dir = entry.path();
-        scan_rom_dir_recursive(&system_dir, &system, &mut index);
+    let mut index: HashMap<(String, String), Vec<String>> = HashMap::new();
+    for (system, rom_files) in system_files {
+        let arcade_lookup = if crate::systems::is_arcade_system(&system) {
+            crate::image_resolution::ArcadeInfoLookup::build(&system, &rom_files).await
+        } else {
+            crate::image_resolution::ArcadeInfoLookup::default()
+        };
+        build_index_entries(&rom_files, &system, &arcade_lookup, &mut index);
     }
 
     let total: usize = index.values().map(|v| v.len()).sum();
@@ -634,77 +658,68 @@ pub fn build_rom_index(storage_root: &Path) -> HashMap<(String, String), Vec<Str
     index
 }
 
-/// System folders that use MAME-style ROM zip naming (codenames, not human titles).
-const ARCADE_SYSTEMS: &[&str] = &[
-    "arcade_mame",
-    "arcade_fbneo",
-    "arcade_mame_2k3p",
-    "arcade_dc",
-];
+/// Collect ROM filenames (not stems) under `dir` recursively, skipping
+/// `_`-prefixed directories.
+fn collect_rom_filenames(dir: &Path, out: &mut Vec<String>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name();
+            if !name.to_string_lossy().starts_with('_') {
+                collect_rom_filenames(&path, out);
+            }
+        } else {
+            out.push(entry.file_name().to_string_lossy().to_string());
+        }
+    }
+}
 
-/// Recursively scan a directory for ROM files, adding them to the index.
+/// Build LaunchBox index entries from a pre-collected ROM filename list.
 ///
 /// For arcade systems, ROM filenames are MAME codenames (e.g. `sf2.zip`) that
 /// don't match LaunchBox's human-readable titles. We use `arcade_db` to look up
 /// the display name and normalize that instead. For clones, we also index under
 /// the parent ROM's display name so they match the parent's LaunchBox entry.
-fn scan_rom_dir_recursive(
-    dir: &Path,
+fn build_index_entries(
+    rom_files: &[String],
     system: &str,
+    arcade_lookup: &crate::image_resolution::ArcadeInfoLookup,
     index: &mut HashMap<(String, String), Vec<String>>,
 ) {
-    let is_arcade = ARCADE_SYSTEMS.contains(&system);
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
+    let is_arcade = crate::systems::is_arcade_system(system);
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if !name_str.starts_with('_') {
-                scan_rom_dir_recursive(&path, system, index);
-            }
-        } else {
-            let filename = entry.file_name().to_string_lossy().to_string();
-            // Strip extension to get the title stem.
-            let stem = match filename.rfind('.') {
-                Some(i) => &filename[..i],
-                None => &filename,
-            };
+    for filename in rom_files {
+        let stem = crate::title_utils::filename_stem(filename);
 
-            if is_arcade {
-                // Use arcade_db to get the human-readable display name.
-                if let Some(info) = arcade_db::lookup_arcade_game(stem) {
-                    let norm = normalize_title(info.display_name);
-                    let key = (system.to_string(), norm);
-                    index.entry(key).or_default().push(filename.clone());
+        if is_arcade {
+            if let Some(info) = arcade_lookup.get(stem) {
+                let norm = normalize_title(&info.display_name);
+                let key = (system.to_string(), norm);
+                index.entry(key).or_default().push(filename.clone());
 
-                    // For clones, also index under the parent's display name
-                    // so they can match the parent's LaunchBox entry.
-                    if info.is_clone
-                        && !info.parent.is_empty()
-                        && let Some(parent_info) = arcade_db::lookup_arcade_game(info.parent)
-                    {
-                        let parent_norm = normalize_title(parent_info.display_name);
-                        if parent_norm != normalize_title(info.display_name) {
-                            let parent_key = (system.to_string(), parent_norm);
-                            index.entry(parent_key).or_default().push(filename);
-                        }
+                if info.is_clone
+                    && !info.parent.is_empty()
+                    && let Some(parent_info) = arcade_lookup.get(&info.parent)
+                {
+                    let parent_norm = normalize_title(&parent_info.display_name);
+                    if parent_norm != normalize_title(&info.display_name) {
+                        let parent_key = (system.to_string(), parent_norm);
+                        index.entry(parent_key).or_default().push(filename.clone());
                     }
-                } else {
-                    // ROM not in arcade_db — fall back to normalizing the stem directly.
-                    let norm = normalize_title(stem);
-                    let key = (system.to_string(), norm);
-                    index.entry(key).or_default().push(filename);
                 }
             } else {
                 let norm = normalize_title(stem);
                 let key = (system.to_string(), norm);
-                index.entry(key).or_default().push(filename);
+                index.entry(key).or_default().push(filename.clone());
             }
+        } else {
+            let norm = normalize_title(stem);
+            let key = (system.to_string(), norm);
+            index.entry(key).or_default().push(filename.clone());
         }
     }
 }

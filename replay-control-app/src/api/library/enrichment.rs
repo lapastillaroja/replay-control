@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use replay_control_core::enrichment::{self, ImageIndex};
+use replay_control_core::enrichment::{self, ArcadeInfoLookup, ImageIndex};
 use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::user_data_db::UserDataDb;
 
@@ -17,13 +17,17 @@ impl LibraryService {
     pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
         let db = &state.metadata_pool;
 
-        // Build a temporary image index for this enrichment run (not cached).
         let index = build_image_index(state, &system).await;
 
-        // Auto-match new ROMs against existing metadata by normalized title.
         let auto_matched_ratings = self.auto_match_metadata(state, &system).await;
 
-        // Run the pure enrichment pipeline in a single DB read.
+        let sys = system.clone();
+        let rom_filenames: Vec<String> = db
+            .read(move |conn| MetadataDb::visible_filenames(conn, &sys).unwrap_or_default())
+            .await
+            .unwrap_or_default();
+        let arcade_lookup = ArcadeInfoLookup::build(&system, &rom_filenames).await;
+
         let sys = system.clone();
         let result = db
             .read(move |conn| {
@@ -31,6 +35,7 @@ impl LibraryService {
                     conn,
                     &sys,
                     &index,
+                    &arcade_lookup,
                     &auto_matched_ratings,
                 )
             })
@@ -160,7 +165,7 @@ impl LibraryService {
 
         // Call pure core matching function.
         let matches =
-            metadata_matching::match_roms_to_metadata(system, &rom_filenames, &all_metadata);
+            metadata_matching::match_roms_to_metadata(system, &rom_filenames, &all_metadata).await;
 
         if matches.is_empty() {
             return HashMap::new();
@@ -269,8 +274,10 @@ fn queue_on_demand_download(
                     &system,
                     ThumbnailKind::Boxart,
                     &m.filename,
-                    &bytes,
-                ) {
+                    bytes,
+                )
+                .await
+                {
                     tracing::debug!("On-demand save failed for {}: {e}", m.filename);
                 } else {
                     // Update box_art_url in the DB so it's visible immediately.

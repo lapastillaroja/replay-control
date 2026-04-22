@@ -19,8 +19,8 @@ fn write_lock<'a, T>(
 
 /// Manages the two-phase thumbnail pipeline (index + download).
 ///
-/// No longer owns its own busy flag, progress, or cancel --
-/// those live in `AppState.activity` as `Activity::ThumbnailUpdate { progress, cancel }`.
+/// Progress/cancel state lives in `AppState.activity` as
+/// `Activity::ThumbnailUpdate { progress, cancel }`.
 #[derive(Default)]
 pub struct ThumbnailPipeline;
 
@@ -113,7 +113,11 @@ impl ThumbnailPipeline {
             state
                 .metadata_pool
                 .write(move |db| {
-                    // pool.interact() runs on a blocking thread, so block_on is safe.
+                    // The closure passed to `pool.write` runs inside
+                    // `deadpool::interact()`, which dispatches to a dedicated
+                    // blocking thread — not a tokio runtime worker. That's
+                    // why `rt.block_on(...)` is safe here: we are not
+                    // blocking a shared runtime worker.
                     rt.block_on(thumbnail_manifest::import_all_manifests(
                         db,
                         &|repos_done, repos_total, current_repo| {
@@ -274,14 +278,22 @@ impl ThumbnailPipeline {
 
             let activity_ref = activity_lock.clone();
 
+            let rom_filenames =
+                replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
+            let arcade_lookup = replay_control_core::image_resolution::ArcadeInfoLookup::build(
+                system,
+                &rom_filenames,
+            )
+            .await;
+
             for kind in ALL_THUMBNAIL_KINDS {
                 if cancel.load(Ordering::Relaxed) {
                     break;
                 }
 
-                // Phase 1: Plan downloads (sync DB read, then release connection).
                 let storage_root_plan = storage_root.clone();
                 let system_plan = system.clone();
+                let arcade_lookup_plan = arcade_lookup.clone();
                 let plan = state
                     .metadata_pool
                     .read(move |conn| {
@@ -290,6 +302,7 @@ impl ThumbnailPipeline {
                             &storage_root_plan,
                             &system_plan,
                             *kind,
+                            &arcade_lookup_plan,
                         )
                     })
                     .await;
@@ -442,22 +455,15 @@ impl ThumbnailPipeline {
         let snap_index = &indexes[1];
         let title_index = &indexes[2];
 
-        let is_arcade = replay_control_core::systems::is_arcade_system(system);
+        let arcade_lookup =
+            replay_control_core::image_resolution::ArcadeInfoLookup::build(system, &rom_filenames).await;
 
-        // Match ROM filenames to images (in-memory, no DB needed).
         let mut updates: Vec<replay_control_core::metadata_db::ImagePathUpdate> = Vec::new();
 
         for rom_filename in &rom_filenames {
-            let arcade_display = if is_arcade {
-                let stem = rom_filename
-                    .rfind('.')
-                    .map(|i| &rom_filename[..i])
-                    .unwrap_or(rom_filename);
-                replay_control_core::arcade_db::lookup_arcade_game(stem)
-                    .map(|info| info.display_name)
-            } else {
-                None
-            };
+            let stem = replay_control_core::title_utils::filename_stem(rom_filename);
+            let arcade_display: Option<&str> =
+                arcade_lookup.get(stem).map(|info| info.display_name.as_str());
             let boxart_rel = find_best_match(box_index, rom_filename, arcade_display, None);
             let snap_rel = find_best_match(snap_index, rom_filename, arcade_display, None);
             let title_rel = find_best_match(title_index, rom_filename, arcade_display, None);

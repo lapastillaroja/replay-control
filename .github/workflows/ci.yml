@@ -15,8 +15,6 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    env:
-      REPLAY_BUILD_STUB: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -75,13 +73,12 @@ jobs:
           path: |
             target/release/replay-control-app
             target/site/
+            catalog.sqlite
 
   # ── Unit tests ─────────────────────────────────────────────────────
   test:
     name: Test
     runs-on: ubuntu-latest
-    env:
-      REPLAY_BUILD_STUB: "1"
     steps:
       - uses: actions/checkout@v6
 

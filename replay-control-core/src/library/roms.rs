@@ -49,36 +49,52 @@ pub struct SystemSummary {
 }
 
 /// Scan all systems and return a summary of each.
-pub fn scan_systems(storage: &StorageLocation) -> Vec<SystemSummary> {
+///
+/// A cold USB/NFS scan issues hundreds of `read_dir` + `metadata` syscalls
+/// across every system folder; runs on the blocking pool so it doesn't pin
+/// a tokio worker.
+pub async fn scan_systems(storage: &StorageLocation) -> Vec<SystemSummary> {
     let roms_dir = storage.roms_dir();
-    let mut summaries = Vec::new();
+    let walk = move || {
+        let mut summaries = Vec::new();
+        for system in systems::visible_systems() {
+            let system_dir = roms_dir.join(system.folder_name);
+            let (count, size) = if system_dir.exists() {
+                count_roms_recursive(&system_dir, system, &roms_dir)
+            } else {
+                (0, 0)
+            };
 
-    for system in systems::visible_systems() {
-        let system_dir = roms_dir.join(system.folder_name);
-        let (count, size) = if system_dir.exists() {
-            count_roms_recursive(&system_dir, system, &roms_dir)
-        } else {
-            (0, 0)
-        };
+            summaries.push(SystemSummary {
+                folder_name: system.folder_name.to_string(),
+                display_name: system.display_name.to_string(),
+                manufacturer: system.manufacturer.to_string(),
+                category: format!("{:?}", system.category).to_lowercase(),
+                game_count: count,
+                total_size_bytes: size,
+            });
+        }
 
-        summaries.push(SystemSummary {
-            folder_name: system.folder_name.to_string(),
-            display_name: system.display_name.to_string(),
-            manufacturer: system.manufacturer.to_string(),
-            category: format!("{:?}", system.category).to_lowercase(),
-            game_count: count,
-            total_size_bytes: size,
+        summaries.sort_by(|a, b| {
+            let a_has = a.game_count > 0;
+            let b_has = b.game_count > 0;
+            b_has.cmp(&a_has).then(a.display_name.cmp(&b.display_name))
         });
+
+        summaries
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::task::spawn_blocking(walk).await.unwrap_or_else(|e| {
+            tracing::warn!("scan_systems panicked: {e}");
+            Vec::new()
+        })
     }
-
-    // Sort: systems with games first, then alphabetically
-    summaries.sort_by(|a, b| {
-        let a_has = a.game_count > 0;
-        let b_has = b.game_count > 0;
-        b_has.cmp(&a_has).then(a.display_name.cmp(&b.display_name))
-    });
-
-    summaries
+    #[cfg(target_arch = "wasm32")]
+    {
+        walk()
+    }
 }
 
 /// List ROM files for a specific system.
@@ -86,7 +102,7 @@ pub fn scan_systems(storage: &StorageLocation) -> Vec<SystemSummary> {
 /// The `region_pref` parameter controls the sort order of region variants:
 /// ROMs from the preferred region sort before others within the same title group.
 /// The optional `region_secondary` provides a fallback region preference.
-pub fn list_roms(
+pub async fn list_roms(
     storage: &StorageLocation,
     system_folder: &str,
     region_pref: RegionPreference,
@@ -96,13 +112,19 @@ pub fn list_roms(
         .ok_or_else(|| Error::SystemNotFound(system_folder.to_string()))?;
 
     let system_dir = storage.system_roms_dir(system_folder);
-    if !system_dir.exists() {
-        return Ok(Vec::new());
-    }
+    let roms_root = storage.roms_dir();
 
-    let mut roms = Vec::new();
-    collect_roms_recursive(&system_dir, &storage.roms_dir(), system, &mut roms);
-    apply_m3u_dedup(&mut roms, &storage.roms_dir());
+    // Filesystem walk runs on the blocking pool — a cold NFS/USB `roms/<system>`
+    // scan can issue hundreds of `read_dir` + `metadata` syscalls and must not
+    // pin a tokio worker.
+    let raw = walk_raw_roms_blocking(system_dir, roms_root.clone(), system).await;
+    let Some(raw) = raw else {
+        return Ok(Vec::new());
+    };
+    let mut roms = materialize_rom_entries(system, raw).await;
+
+    // m3u dedup opens referenced playlists from disk — also blocking IO.
+    roms = apply_m3u_dedup_blocking(roms, roms_root).await;
 
     // Sort by display name, then by tier (originals before hacks), then by region
     // (using the user's region preference to determine region ordering).
@@ -133,11 +155,74 @@ pub fn list_roms(
     Ok(roms)
 }
 
+/// Walk the system's ROM directory on the blocking pool (native) or inline
+/// (wasm, which has no thread pool). Returns `None` if the directory does not
+/// exist.
+async fn walk_raw_roms_blocking(
+    system_dir: PathBuf,
+    roms_root: PathBuf,
+    system: &'static System,
+) -> Option<Vec<RawRom>> {
+    let walk = move || -> Option<Vec<RawRom>> {
+        if !system_dir.exists() {
+            return None;
+        }
+        let mut raw = Vec::new();
+        collect_raw_roms_recursive(&system_dir, &roms_root, system, &mut raw);
+        Some(raw)
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::task::spawn_blocking(walk)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("rom walk panicked: {e}");
+                None
+            })
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        walk()
+    }
+}
+
+async fn apply_m3u_dedup_blocking(roms: Vec<RomEntry>, roms_root: PathBuf) -> Vec<RomEntry> {
+    let dedup = move || {
+        let mut roms = roms;
+        // catch_unwind so a panic inside apply_m3u_dedup doesn't erase the
+        // whole input list. Silently returning `Vec::new()` on panic would
+        // make every system look empty on any dedup bug — far worse than
+        // the original symptom (at worst, some disc files not deduped).
+        // AssertUnwindSafe: we don't care about `roms`' post-panic state
+        // beyond "it's a valid Vec we can return".
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            apply_m3u_dedup(&mut roms, &roms_root);
+        }));
+        roms
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::task::spawn_blocking(dedup)
+            .await
+            .unwrap_or_else(|e| {
+                // JoinError here is task-cancel during runtime shutdown —
+                // no useful recovery, and we've already lost the input.
+                tracing::warn!("m3u dedup task join failed: {e}");
+                Vec::new()
+            })
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        dedup()
+    }
+}
+
 /// Mark each ROM entry's `is_favorite` flag using the favorites on disk.
 /// Efficient: collects favorite filenames once, then checks via HashSet lookup.
-pub fn mark_favorites(storage: &StorageLocation, system: &str, roms: &mut [RomEntry]) {
+pub async fn mark_favorites(storage: &StorageLocation, system: &str, roms: &mut [RomEntry]) {
     let fav_set: std::collections::HashSet<String> =
         crate::favorites::list_favorites_for_system(storage, system)
+            .await
             .unwrap_or_default()
             .into_iter()
             .map(|f| f.game.rom_filename)
@@ -816,14 +901,17 @@ fn parse_disc_pattern(filename: &str) -> Option<(String, u32)> {
 }
 
 /// Detect duplicate ROMs across all systems by file size + name similarity.
-pub fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
+pub async fn find_duplicates(storage: &StorageLocation) -> Vec<(RomEntry, RomEntry)> {
     let roms_dir = storage.roms_dir();
     let mut all_roms: Vec<RomEntry> = Vec::new();
 
     for system in systems::visible_systems() {
         let system_dir = roms_dir.join(system.folder_name);
         if system_dir.exists() {
-            collect_roms_recursive(&system_dir, &roms_dir, system, &mut all_roms);
+            let mut raw = Vec::new();
+            collect_raw_roms_recursive(&system_dir, &roms_dir, system, &mut raw);
+            let mut entries = materialize_rom_entries(system, raw).await;
+            all_roms.append(&mut entries);
         }
     }
     apply_m3u_dedup(&mut all_roms, &roms_dir);
@@ -973,7 +1061,20 @@ fn count_roms_inner(
     (count, size)
 }
 
-fn collect_roms_recursive(dir: &Path, roms_root: &Path, system: &System, out: &mut Vec<RomEntry>) {
+/// Raw scan result — filename and path only, no catalog-resolved display name.
+struct RawRom {
+    rom_filename: String,
+    rom_path: String,
+    size_bytes: u64,
+    is_m3u: bool,
+}
+
+fn collect_raw_roms_recursive(
+    dir: &Path,
+    roms_root: &Path,
+    system: &System,
+    out: &mut Vec<RawRom>,
+) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -987,7 +1088,7 @@ fn collect_roms_recursive(dir: &Path, roms_root: &Path, system: &System, out: &m
             if name_str.starts_with('_') {
                 continue;
             }
-            collect_roms_recursive(&path, roms_root, system, out);
+            collect_raw_roms_recursive(&path, roms_root, system, out);
         } else if is_rom_file(&path, system) {
             let rom_filename = entry.file_name().to_string_lossy().to_string();
             let relative = path
@@ -999,10 +1100,66 @@ fn collect_roms_recursive(dir: &Path, roms_root: &Path, system: &System, out: &m
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
 
-            out.push(RomEntry {
-                game: GameRef::new(system.folder_name, rom_filename, rom_path),
+            out.push(RawRom {
+                rom_filename,
+                rom_path,
                 size_bytes,
                 is_m3u,
+            });
+        }
+    }
+}
+
+/// Resolve display names for a raw scan in one batch per system, then build
+/// `RomEntry` rows.
+async fn materialize_rom_entries(system: &System, raw: Vec<RawRom>) -> Vec<RomEntry> {
+    use crate::arcade_db;
+    use crate::game_db;
+
+    let is_arcade = systems::is_arcade_system(system.folder_name);
+    let mut out: Vec<RomEntry> = Vec::with_capacity(raw.len());
+
+    if is_arcade {
+        let stems: Vec<&str> = raw
+            .iter()
+            .map(|r| crate::title_utils::filename_stem(&r.rom_filename))
+            .collect();
+        let mut batch = arcade_db::lookup_arcade_games_batch(&stems).await;
+        for r in raw {
+            let stem = crate::title_utils::filename_stem(&r.rom_filename);
+            let resolved = batch.remove(stem).map(|info| info.display_name);
+            let game = GameRef::from_parts(
+                system.folder_name,
+                r.rom_filename,
+                r.rom_path,
+                resolved,
+            );
+            out.push(RomEntry {
+                game,
+                size_bytes: r.size_bytes,
+                is_m3u: r.is_m3u,
+                is_favorite: false,
+                box_art_url: None,
+                driver_status: None,
+                rating: None,
+                players: None,
+            });
+        }
+    } else {
+        let filenames: Vec<&str> = raw.iter().map(|r| r.rom_filename.as_str()).collect();
+        let mut names = game_db::display_names_batch(system.folder_name, &filenames).await;
+        for r in raw {
+            let resolved = names.remove(&r.rom_filename);
+            let game = GameRef::from_parts(
+                system.folder_name,
+                r.rom_filename,
+                r.rom_path,
+                resolved,
+            );
+            out.push(RomEntry {
+                game,
+                size_bytes: r.size_bytes,
+                is_m3u: r.is_m3u,
                 is_favorite: false,
                 box_art_url: None,
                 driver_status: None,
@@ -1011,6 +1168,8 @@ fn collect_roms_recursive(dir: &Path, roms_root: &Path, system: &System, out: &m
             });
         }
     }
+
+    out
 }
 
 /// Parse an M3U file and return the list of referenced filenames (just the
@@ -1281,18 +1440,18 @@ mod tests {
         assert!(is_rom_file(Path::new("gdl-0010.chd"), sega_dc));
     }
 
-    #[test]
-    fn scan_empty_storage() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn scan_empty_storage() {
         let tmp = tempdir();
         fs::create_dir_all(tmp.join("roms")).unwrap();
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
         assert!(!summaries.is_empty());
         assert!(summaries.iter().all(|s| s.game_count == 0));
     }
 
-    #[test]
-    fn scan_with_roms() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn scan_with_roms() {
         let tmp = tempdir();
         let nes_dir = tmp.join("roms/nintendo_nes");
         fs::create_dir_all(&nes_dir).unwrap();
@@ -1301,7 +1460,7 @@ mod tests {
         fs::write(nes_dir.join("readme.txt"), "not a rom").unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
 
         let nes = summaries
             .iter()
@@ -1397,8 +1556,8 @@ mod tests {
         assert!(refs.is_empty());
     }
 
-    #[test]
-    fn m3u_dedup_hides_disc_files() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn m3u_dedup_hides_disc_files() {
         let tmp = tempdir();
         let x68k_dir = tmp.join("roms/sharp_x68k");
         fs::create_dir_all(&x68k_dir).unwrap();
@@ -1410,13 +1569,15 @@ mod tests {
         )
         .unwrap();
         // Create the disc files (100 bytes each)
-        fs::write(x68k_dir.join("Game (Disk 1).dim"), &[0u8; 100]).unwrap();
-        fs::write(x68k_dir.join("Game (Disk 2).dim"), &[0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 1).dim"), [0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 2).dim"), [0u8; 100]).unwrap();
         // Create a standalone file not referenced by any M3U
-        fs::write(x68k_dir.join("Other.dim"), &[0u8; 50]).unwrap();
+        fs::write(x68k_dir.join("Other.dim"), [0u8; 50]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None)
+            .await
+            .unwrap();
 
         // Should have 2 entries: Game.m3u and Other.dim (disc files hidden)
         assert_eq!(roms.len(), 2);
@@ -1434,8 +1595,8 @@ mod tests {
         assert_eq!(other.size_bytes, 50);
     }
 
-    #[test]
-    fn m3u_dedup_count_is_accurate() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn m3u_dedup_count_is_accurate() {
         let tmp = tempdir();
         let x68k_dir = tmp.join("roms/sharp_x68k");
         fs::create_dir_all(&x68k_dir).unwrap();
@@ -1446,13 +1607,13 @@ mod tests {
             "Game (Disk 1).dim\nGame (Disk 2).dim\nGame (Disk 3).dim\n",
         )
         .unwrap();
-        fs::write(x68k_dir.join("Game (Disk 1).dim"), &[0u8; 100]).unwrap();
-        fs::write(x68k_dir.join("Game (Disk 2).dim"), &[0u8; 100]).unwrap();
-        fs::write(x68k_dir.join("Game (Disk 3).dim"), &[0u8; 100]).unwrap();
-        fs::write(x68k_dir.join("Standalone.hdf"), &[0u8; 200]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 1).dim"), [0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 2).dim"), [0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 3).dim"), [0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Standalone.hdf"), [0u8; 200]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
         let x68k = summaries
             .iter()
             .find(|s| s.folder_name == "sharp_x68k")
@@ -1462,26 +1623,28 @@ mod tests {
         assert_eq!(x68k.game_count, 2);
     }
 
-    #[test]
-    fn m3u_dedup_case_insensitive() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn m3u_dedup_case_insensitive() {
         let tmp = tempdir();
         let x68k_dir = tmp.join("roms/sharp_x68k");
         fs::create_dir_all(&x68k_dir).unwrap();
 
         // M3U references "game.DIM" but file on disk is "game.dim"
         fs::write(x68k_dir.join("Multi.m3u"), "game.DIM\n").unwrap();
-        fs::write(x68k_dir.join("game.dim"), &[0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("game.dim"), [0u8; 100]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None)
+            .await
+            .unwrap();
 
         // Only the M3U should remain; the .dim should be hidden
         assert_eq!(roms.len(), 1);
         assert!(roms[0].is_m3u);
     }
 
-    #[test]
-    fn scummvm_m3u_dedup_hides_scummvm_in_subfolder() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn scummvm_m3u_dedup_hides_scummvm_in_subfolder() {
         let tmp = tempdir();
         let scummvm_dir = tmp.join("roms/scummvm");
         fs::create_dir_all(&scummvm_dir).unwrap();
@@ -1502,18 +1665,20 @@ mod tests {
         // .scummvm (in extensions, will be picked up)
         fs::write(game_dir.join("Cool Game (CD).svm"), "scummvm-id").unwrap();
         fs::write(game_dir.join("Cool Game (CD).scummvm"), "scummvm-id").unwrap();
-        fs::write(game_dir.join("GAME.DAT"), &[0u8; 1000]).unwrap();
+        fs::write(game_dir.join("GAME.DAT"), [0u8; 1000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None)
+            .await
+            .unwrap();
 
         // Should only have the M3U entry; the .scummvm should be hidden
         assert_eq!(roms.len(), 1, "Expected 1 ROM (M3U only), got: {roms:?}");
         assert!(roms[0].is_m3u);
     }
 
-    #[test]
-    fn scummvm_m3u_dedup_count_is_accurate() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn scummvm_m3u_dedup_count_is_accurate() {
         let tmp = tempdir();
         let scummvm_dir = tmp.join("roms/scummvm");
         fs::create_dir_all(&scummvm_dir).unwrap();
@@ -1542,7 +1707,7 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         // Check game count via scan_systems
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
         let scummvm = summaries
             .iter()
             .find(|s| s.folder_name == "scummvm")
@@ -1555,7 +1720,9 @@ mod tests {
         );
 
         // Check ROM list
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None)
+            .await
+            .unwrap();
         assert_eq!(roms.len(), 2, "Expected 2 ROMs (M3Us only), got: {roms:?}");
         assert!(roms.iter().all(|r| r.is_m3u));
     }
@@ -1572,8 +1739,8 @@ mod tests {
         assert!(is_rom_file(Path::new("game.scummvm"), sys));
     }
 
-    #[test]
-    fn scummvm_svm_with_m3u_hides_svm() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn scummvm_svm_with_m3u_hides_svm() {
         let tmp = tempdir();
         let scummvm_dir = tmp.join("roms/scummvm");
         let game_dir = scummvm_dir.join("My Game (CD)");
@@ -1586,18 +1753,20 @@ mod tests {
         )
         .unwrap();
         fs::write(game_dir.join("My Game (CD).svm"), "scummvm-id").unwrap();
-        fs::write(game_dir.join("DATA.PAK"), &[0u8; 5000]).unwrap();
+        fs::write(game_dir.join("DATA.PAK"), [0u8; 5000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         // list_roms: only M3U should appear, .svm hidden
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None)
+            .await
+            .unwrap();
         assert_eq!(roms.len(), 1, "Expected 1 ROM (M3U only), got: {roms:?}");
         assert!(roms[0].is_m3u);
         assert_eq!(roms[0].game.rom_filename, "My Game (CD).m3u");
 
         // scan_systems: count should be 1
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
         let scummvm = summaries
             .iter()
             .find(|s| s.folder_name == "scummvm")
@@ -1605,8 +1774,8 @@ mod tests {
         assert_eq!(scummvm.game_count, 1);
     }
 
-    #[test]
-    fn scummvm_orphan_m3u_hidden() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn scummvm_orphan_m3u_hidden() {
         let tmp = tempdir();
         let scummvm_dir = tmp.join("roms/scummvm");
         fs::create_dir_all(&scummvm_dir).unwrap();
@@ -1621,11 +1790,13 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         // list_roms: orphan M3U should be hidden
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None)
+            .await
+            .unwrap();
         assert_eq!(roms.len(), 0, "Orphan M3U should be hidden, got: {roms:?}");
 
         // scan_systems: count should be 0
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
         let scummvm = summaries
             .iter()
             .find(|s| s.folder_name == "scummvm")
@@ -1633,8 +1804,8 @@ mod tests {
         assert_eq!(scummvm.game_count, 0, "Orphan M3U should not be counted");
     }
 
-    #[test]
-    fn scummvm_svm_without_m3u_shown() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn scummvm_svm_without_m3u_shown() {
         let tmp = tempdir();
         let scummvm_dir = tmp.join("roms/scummvm");
         let game_dir = scummvm_dir.join("Standalone Game");
@@ -1642,11 +1813,13 @@ mod tests {
 
         // .svm file with no M3U wrapper — should be shown as-is
         fs::write(game_dir.join("Standalone Game.svm"), "scummvm-id").unwrap();
-        fs::write(game_dir.join("DATA.PAK"), &[0u8; 2000]).unwrap();
+        fs::write(game_dir.join("DATA.PAK"), [0u8; 2000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
-        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "scummvm", RegionPreference::default(), None)
+            .await
+            .unwrap();
         assert_eq!(
             roms.len(),
             1,
@@ -1656,7 +1829,7 @@ mod tests {
         assert!(!roms[0].is_m3u);
 
         // scan_systems: should count 1
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
         let scummvm = summaries
             .iter()
             .find(|s| s.folder_name == "scummvm")
@@ -1664,8 +1837,8 @@ mod tests {
         assert_eq!(scummvm.game_count, 1);
     }
 
-    #[test]
-    fn psx_m3u_multi_disc_not_affected() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn psx_m3u_multi_disc_not_affected() {
         // Ensure PSX multi-disc M3U behavior is preserved:
         // M3U shown, disc .chd files hidden.
         let tmp = tempdir();
@@ -1678,17 +1851,19 @@ mod tests {
             "Final Fantasy VII (Disc 1).chd\nFinal Fantasy VII (Disc 2).chd\nFinal Fantasy VII (Disc 3).chd\n",
         )
         .unwrap();
-        fs::write(psx_dir.join("Final Fantasy VII (Disc 1).chd"), &[0u8; 500]).unwrap();
-        fs::write(psx_dir.join("Final Fantasy VII (Disc 2).chd"), &[0u8; 500]).unwrap();
-        fs::write(psx_dir.join("Final Fantasy VII (Disc 3).chd"), &[0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Final Fantasy VII (Disc 1).chd"), [0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Final Fantasy VII (Disc 2).chd"), [0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Final Fantasy VII (Disc 3).chd"), [0u8; 500]).unwrap();
 
         // Single-disc PSX game (no M3U)
-        fs::write(psx_dir.join("Crash Bandicoot.chd"), &[0u8; 300]).unwrap();
+        fs::write(psx_dir.join("Crash Bandicoot.chd"), [0u8; 300]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         // list_roms: M3U + standalone game
-        let roms = list_roms(&storage, "sony_psx", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "sony_psx", RegionPreference::default(), None)
+            .await
+            .unwrap();
         assert_eq!(roms.len(), 2, "Expected 2 ROMs, got: {roms:?}");
 
         let m3u = roms.iter().find(|r| r.is_m3u).unwrap();
@@ -1703,7 +1878,7 @@ mod tests {
         assert_eq!(standalone.game.rom_filename, "Crash Bandicoot.chd");
 
         // scan_systems: should count 2
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
         let psx = summaries
             .iter()
             .find(|s| s.folder_name == "sony_psx")
@@ -1711,8 +1886,8 @@ mod tests {
         assert_eq!(psx.game_count, 2);
     }
 
-    #[test]
-    fn x68k_m3u_multi_disc_not_affected() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn x68k_m3u_multi_disc_not_affected() {
         // Ensure X68000 multi-disc M3U behavior is preserved.
         let tmp = tempdir();
         let x68k_dir = tmp.join("roms/sharp_x68k");
@@ -1723,13 +1898,15 @@ mod tests {
             "Game (Disk 1).dim\nGame (Disk 2).dim\n",
         )
         .unwrap();
-        fs::write(x68k_dir.join("Game (Disk 1).dim"), &[0u8; 100]).unwrap();
-        fs::write(x68k_dir.join("Game (Disk 2).dim"), &[0u8; 100]).unwrap();
-        fs::write(x68k_dir.join("Other.dim"), &[0u8; 50]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 1).dim"), [0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Game (Disk 2).dim"), [0u8; 100]).unwrap();
+        fs::write(x68k_dir.join("Other.dim"), [0u8; 50]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
-        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None).unwrap();
+        let roms = list_roms(&storage, "sharp_x68k", RegionPreference::default(), None)
+            .await
+            .unwrap();
         assert_eq!(
             roms.len(),
             2,
@@ -1741,7 +1918,7 @@ mod tests {
         );
         assert!(roms.iter().any(|r| r.game.rom_filename == "Other.dim"));
 
-        let summaries = scan_systems(&storage);
+        let summaries = scan_systems(&storage).await;
         let x68k = summaries
             .iter()
             .find(|s| s.folder_name == "sharp_x68k")
@@ -1897,10 +2074,10 @@ mod tests {
         let saturn_dir = tmp.join("roms/sega_st");
         fs::create_dir_all(&saturn_dir).unwrap();
 
-        fs::write(saturn_dir.join("PDS (USA) (Disc 1).chd"), &[0u8; 100]).unwrap();
-        fs::write(saturn_dir.join("PDS (USA) (Disc 2).chd"), &[0u8; 100]).unwrap();
-        fs::write(saturn_dir.join("PDS (USA) (Disc 3).chd"), &[0u8; 100]).unwrap();
-        fs::write(saturn_dir.join("PDS (USA) (Disc 4).chd"), &[0u8; 100]).unwrap();
+        fs::write(saturn_dir.join("PDS (USA) (Disc 1).chd"), [0u8; 100]).unwrap();
+        fs::write(saturn_dir.join("PDS (USA) (Disc 2).chd"), [0u8; 100]).unwrap();
+        fs::write(saturn_dir.join("PDS (USA) (Disc 3).chd"), [0u8; 100]).unwrap();
+        fs::write(saturn_dir.join("PDS (USA) (Disc 4).chd"), [0u8; 100]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let info = detect_disc_set(&storage, "sega_st", "PDS (USA) (Disc 1).chd").unwrap();
@@ -1916,7 +2093,7 @@ mod tests {
         let saturn_dir = tmp.join("roms/sega_st");
         fs::create_dir_all(&saturn_dir).unwrap();
 
-        fs::write(saturn_dir.join("Game (Disc 1).chd"), &[0u8; 100]).unwrap();
+        fs::write(saturn_dir.join("Game (Disc 1).chd"), [0u8; 100]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         assert!(detect_disc_set(&storage, "sega_st", "Game (Disc 1).chd").is_none());
@@ -1929,7 +2106,7 @@ mod tests {
         let tmp = tempdir();
         let nes_dir = tmp.join("roms/nintendo_nes");
         fs::create_dir_all(&nes_dir).unwrap();
-        fs::write(nes_dir.join("Sonic.nes"), &[0u8; 256]).unwrap();
+        fs::write(nes_dir.join("Sonic.nes"), [0u8; 256]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let group =
@@ -1951,9 +2128,9 @@ mod tests {
             "FF7 (Disc 1).chd\nFF7 (Disc 2).chd\nFF7 (Disc 3).chd\n",
         )
         .unwrap();
-        fs::write(psx_dir.join("FF7 (Disc 1).chd"), &[0u8; 500]).unwrap();
-        fs::write(psx_dir.join("FF7 (Disc 2).chd"), &[0u8; 600]).unwrap();
-        fs::write(psx_dir.join("FF7 (Disc 3).chd"), &[0u8; 700]).unwrap();
+        fs::write(psx_dir.join("FF7 (Disc 1).chd"), [0u8; 500]).unwrap();
+        fs::write(psx_dir.join("FF7 (Disc 2).chd"), [0u8; 600]).unwrap();
+        fs::write(psx_dir.join("FF7 (Disc 3).chd"), [0u8; 700]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let group = list_rom_group(&storage, "sony_psx", "roms/sony_psx/FF7.m3u").unwrap();
@@ -1976,8 +2153,8 @@ mod tests {
         fs::create_dir_all(&psx_dir).unwrap();
 
         fs::write(psx_dir.join("FF8.m3u"), "FF8 (Disc 1).chd\n").unwrap();
-        fs::write(psx_dir.join("FF8 (Disc 1).chd"), &[0u8; 500]).unwrap();
-        fs::write(psx_dir.join("FF8 (Disc 1).sbi"), &[0u8; 50]).unwrap();
+        fs::write(psx_dir.join("FF8 (Disc 1).chd"), [0u8; 500]).unwrap();
+        fs::write(psx_dir.join("FF8 (Disc 1).sbi"), [0u8; 50]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let group = list_rom_group(&storage, "sony_psx", "roms/sony_psx/FF8.m3u").unwrap();
@@ -1998,7 +2175,7 @@ mod tests {
             "FILE \"GAME.BIN\" BINARY\n  TRACK 01 MODE1/2352\n",
         )
         .unwrap();
-        fs::write(saturn_dir.join("GAME.BIN"), &[0u8; 1000]).unwrap();
+        fs::write(saturn_dir.join("GAME.BIN"), [0u8; 1000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let group = list_rom_group(&storage, "sega_st", "roms/sega_st/Game/Game.cue").unwrap();
@@ -2014,8 +2191,8 @@ mod tests {
         let psx_dir = tmp.join("roms/sony_psx");
         fs::create_dir_all(&psx_dir).unwrap();
 
-        fs::write(psx_dir.join("Game.chd"), &[0u8; 500]).unwrap();
-        fs::write(psx_dir.join("Game.sbi"), &[0u8; 30]).unwrap();
+        fs::write(psx_dir.join("Game.chd"), [0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Game.sbi"), [0u8; 30]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let group = list_rom_group(&storage, "sony_psx", "roms/sony_psx/Game.chd").unwrap();
@@ -2041,7 +2218,7 @@ mod tests {
         )
         .unwrap();
         fs::write(game_dir.join("Cool Game (CD).svm"), "scummvm-id").unwrap();
-        fs::write(game_dir.join("DATA.PAK"), &[0u8; 5000]).unwrap();
+        fs::write(game_dir.join("DATA.PAK"), [0u8; 5000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let group = list_rom_group(&storage, "scummvm", "roms/scummvm/Cool Game (CD).m3u").unwrap();
@@ -2062,7 +2239,7 @@ mod tests {
         let tmp = tempdir();
         let nes_dir = tmp.join("roms/nintendo_nes");
         fs::create_dir_all(&nes_dir).unwrap();
-        fs::write(nes_dir.join("Game.nes"), &[0u8; 256]).unwrap();
+        fs::write(nes_dir.join("Game.nes"), [0u8; 256]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let report =
@@ -2085,8 +2262,8 @@ mod tests {
             "Game (Disc 1).chd\nGame (Disc 2).chd\n",
         )
         .unwrap();
-        fs::write(psx_dir.join("Game (Disc 1).chd"), &[0u8; 500]).unwrap();
-        fs::write(psx_dir.join("Game (Disc 2).chd"), &[0u8; 600]).unwrap();
+        fs::write(psx_dir.join("Game (Disc 1).chd"), [0u8; 500]).unwrap();
+        fs::write(psx_dir.join("Game (Disc 2).chd"), [0u8; 600]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let report = delete_rom_group(&storage, "sony_psx", "roms/sony_psx/Game.m3u").unwrap();
@@ -2104,7 +2281,7 @@ mod tests {
         fs::create_dir_all(&saturn_dir).unwrap();
 
         fs::write(saturn_dir.join("Game.cue"), "FILE \"GAME.BIN\" BINARY\n").unwrap();
-        fs::write(saturn_dir.join("GAME.BIN"), &[0u8; 1000]).unwrap();
+        fs::write(saturn_dir.join("GAME.BIN"), [0u8; 1000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let report = delete_rom_group(&storage, "sega_st", "roms/sega_st/Game/Game.cue").unwrap();
@@ -2129,7 +2306,7 @@ mod tests {
         )
         .unwrap();
         fs::write(game_dir.join("Cool Game.svm"), "scummvm-id").unwrap();
-        fs::write(game_dir.join("DATA.PAK"), &[0u8; 5000]).unwrap();
+        fs::write(game_dir.join("DATA.PAK"), [0u8; 5000]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let report = delete_rom_group(&storage, "scummvm", "roms/scummvm/Cool Game.m3u").unwrap();
@@ -2146,7 +2323,7 @@ mod tests {
         let tmp = tempdir();
         let nes_dir = tmp.join("roms/nintendo_nes");
         fs::create_dir_all(&nes_dir).unwrap();
-        fs::write(nes_dir.join("Game.nes"), &[0u8; 10]).unwrap();
+        fs::write(nes_dir.join("Game.nes"), [0u8; 10]).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
         let (allowed, reason) =

@@ -280,7 +280,7 @@ impl ImportPipeline {
             }
         });
 
-        let rom_index = replay_control_core::launchbox::build_rom_index(&storage_root);
+        let rom_index = replay_control_core::launchbox::build_rom_index(&storage_root).await;
 
         // Verify DB is available before starting the parse.
         {
@@ -316,9 +316,17 @@ impl ImportPipeline {
         // Activated after the DB availability check; dropped after checkpoint.
         let write_gate = WriteGate::activate(state.metadata_pool.write_gate_flag());
 
-        // The sync XML parser (import_launchbox) and its flush_batch callback
-        // run in spawn_blocking since they are CPU-bound and use block_on to
-        // bridge into the async pool API.
+        // `import_launchbox` is a sync, CPU-bound XML parser that takes a
+        // sync `flush_batch` callback. To write batches into the async pool
+        // we bridge via `Handle::block_on` inside the callback.
+        //
+        // Safety of this bridge:
+        // - We are on a `spawn_blocking` worker (a dedicated blocking thread,
+        //   not a tokio runtime worker), so `block_on` does not deadlock the
+        //   runtime by monopolizing a shared worker thread.
+        // - `Handle::current()` is captured here (still on the tokio worker),
+        //   then moved into the closure — we use the *multi-thread* runtime's
+        //   handle from a blocking thread, which is the sanctioned pattern.
         let pool_ref = state.metadata_pool.clone();
         let activity_lock = state.activity.clone();
         let activity_tx = state.activity_tx.clone();

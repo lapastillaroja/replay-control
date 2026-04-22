@@ -35,7 +35,9 @@ jobs:
       - name: Cache data files
         uses: actions/cache@v5
         with:
-          path: data/
+          path: |
+            data/
+            catalog.sqlite
           key: data-${{ hashFiles('scripts/download-arcade-data.sh', 'scripts/download-metadata.sh', 'scripts/wikidata-series-extract.py') }}
           restore-keys: data-
 
@@ -73,9 +75,12 @@ jobs:
               -C target \
               site
 
+          tar -czf replay-catalog.tar.gz catalog.sqlite
+
           sha256sum \
               replay-control-app-aarch64-linux.tar.gz \
               replay-site.tar.gz \
+              replay-catalog.tar.gz \
               install.sh \
               > checksums.sha256
 
@@ -99,6 +104,7 @@ jobs:
           gh release upload "$TAG" \
             replay-control-app-aarch64-linux.tar.gz \
             replay-site.tar.gz \
+            replay-catalog.tar.gz \
             install.sh \
             checksums.sha256 \
             --clobber

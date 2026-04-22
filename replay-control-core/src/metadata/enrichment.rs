@@ -15,7 +15,7 @@ use crate::thumbnail_manifest::ManifestMatch;
 
 // Re-export image resolution types so existing `use enrichment::*` paths keep working.
 pub use crate::image_resolution::{
-    BoxArtResult, ImageIndex, build_image_index, format_box_art_url, resolve_box_art,
+    ArcadeInfoLookup, BoxArtResult, ImageIndex, build_image_index, format_box_art_url,
     resolve_box_art_with_hash,
 };
 
@@ -61,6 +61,7 @@ pub fn enrich_system(
     conn: &Connection,
     system: &str,
     index: &ImageIndex,
+    arcade_lookup: &ArcadeInfoLookup,
     auto_matched_ratings: &HashMap<String, f64>,
 ) -> EnrichmentResult {
     // Load LaunchBox metadata from game_metadata table.
@@ -130,7 +131,7 @@ pub fn enrich_system(
         .iter()
         .filter_map(|filename| {
             let hash_name = hash_matched_names.get(filename).map(|s| s.as_str());
-            let art = match resolve_box_art_with_hash(index, system, filename, hash_name) {
+            let art = match resolve_box_art_with_hash(index, arcade_lookup, system, filename, hash_name) {
                 BoxArtResult::Found(path) => Some(format_box_art_url(system, &path)),
                 BoxArtResult::ManifestHit(m) => {
                     manifest_downloads.push((filename.clone(), m.clone()));

@@ -1,0 +1,16 @@
+[package]
+name = "build-catalog"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Builds catalog.sqlite from raw game data files"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
+csv = "1"
+quick-xml = "0.39"
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -102,14 +102,34 @@ pub(crate) async fn enrich_box_art_and_favorites(
     // Collect distinct systems for batch operations.
     let distinct_systems: HashSet<&str> = entries.iter().map(|(sys, _, _)| sys.as_str()).collect();
 
-    // Batch-load favorites per system.
-    let fav_sets: HashMap<String, HashSet<String>> = distinct_systems
-        .into_iter()
-        .map(|sys| {
-            let set = state.cache.get_favorites_set(&storage, sys);
-            (sys.to_string(), set)
-        })
-        .collect();
+    // Fan out per-system favorite lookups concurrently. Each lookup may hit
+    // the shared favorites cache on the fast path, or spawn a blocking fs walk
+    // on miss — running them in parallel keeps the request off the critical
+    // sequential path when multiple systems are involved (homepage, search).
+    let fav_sets: HashMap<String, HashSet<String>> = {
+        let mut set = tokio::task::JoinSet::new();
+        for sys in distinct_systems {
+            let state = state.clone();
+            let storage = storage.clone();
+            let sys = sys.to_string();
+            set.spawn(async move {
+                let favs = state.cache.get_favorites_set(&storage, &sys).await;
+                (sys, favs)
+            });
+        }
+        let mut out = HashMap::new();
+        while let Some(res) = set.join_next().await {
+            match res {
+                Ok((sys, favs)) => {
+                    out.insert(sys, favs);
+                }
+                Err(e) => {
+                    tracing::warn!("favorites fan-out task failed: {e}");
+                }
+            }
+        }
+        out
+    };
 
     // Build result map.
     let mut result = HashMap::with_capacity(entries.len());
@@ -276,21 +296,18 @@ pub(crate) async fn build_game_detail(
     entry: &replay_control_core::metadata_db::GameEntry,
 ) -> GameInfo {
     use replay_control_core::arcade_db;
-    use replay_control_core::systems::{self, SystemCategory};
+    use replay_control_core::systems;
 
     let sys_info = systems::find_system(&entry.system);
     let system_display = sys_info
         .map(|s| s.display_name.to_string())
         .unwrap_or_else(|| entry.system.clone());
-    let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
+    let is_arcade = systems::is_arcade_system(&entry.system);
 
     // Arcade-only fields from static arcade_db lookup.
-    let (rotation, parent_rom, arcade_category) = if is_arcade {
-        let stem = entry
-            .rom_filename
-            .strip_suffix(".zip")
-            .unwrap_or(&entry.rom_filename);
-        match arcade_db::lookup_arcade_game(stem) {
+    let (rotation, parent_rom, arcade_category, arcade_display) = if is_arcade {
+        let stem = replay_control_core::title_utils::filename_stem(&entry.rom_filename);
+        match arcade_db::lookup_arcade_game(stem).await {
             Some(info) => {
                 let rotation = match info.rotation {
                     arcade_db::Rotation::Horizontal => "Horizontal",
@@ -307,12 +324,17 @@ pub(crate) async fn build_game_detail(
                 } else {
                     Some(info.category.to_string())
                 };
-                (Some(rotation.to_string()), parent, category)
+                (
+                    Some(rotation.to_string()),
+                    parent,
+                    category,
+                    Some(info.display_name),
+                )
             }
-            None => (None, None, None),
+            None => (None, None, None, None),
         }
     } else {
-        (None, None, None)
+        (None, None, None, None)
     };
 
     let mut info = GameInfo {
@@ -361,7 +383,7 @@ pub(crate) async fn build_game_detail(
     };
 
     // Enrich with detail-only fields not stored in GameEntry.
-    enrich_detail_fields(state, &mut info).await;
+    enrich_detail_fields(state, &mut info, arcade_display.as_deref()).await;
 
     info
 }
@@ -372,7 +394,11 @@ pub(crate) async fn build_game_detail(
 /// Handles box art override from `user_data_db` and filesystem fallback for
 /// screenshots/title screens.
 #[cfg(feature = "ssr")]
-async fn enrich_detail_fields(state: &crate::api::AppState, info: &mut GameInfo) {
+async fn enrich_detail_fields(
+    state: &crate::api::AppState,
+    info: &mut GameInfo,
+    arcade_display: Option<&str>,
+) {
     // Check user_data_db for box art override FIRST (highest priority).
     if let Some(override_path) = state
         .user_data_pool
@@ -394,7 +420,7 @@ async fn enrich_detail_fields(state: &crate::api::AppState, info: &mut GameInfo)
             .join("media")
             .join(&info.system)
             .join(&override_path);
-        if is_valid_image(&full) {
+        if is_valid_image(full).await {
             info.box_art_url = Some(format!("/media/{}/{override_path}", info.system));
         }
     }
@@ -423,7 +449,7 @@ async fn enrich_detail_fields(state: &crate::api::AppState, info: &mut GameInfo)
                         .join("media")
                         .join(&info.system)
                         .join(path);
-                    if is_valid_image(&full) {
+                    if is_valid_image(full).await {
                         info.box_art_url = Some(format!("/media/{}/{path}", info.system));
                     }
                 }
@@ -434,7 +460,7 @@ async fn enrich_detail_fields(state: &crate::api::AppState, info: &mut GameInfo)
                         .join("media")
                         .join(&info.system)
                         .join(path);
-                    if is_valid_image(&full) {
+                    if is_valid_image(full).await {
                         info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
                     }
                 }
@@ -445,7 +471,7 @@ async fn enrich_detail_fields(state: &crate::api::AppState, info: &mut GameInfo)
                         .join("media")
                         .join(&info.system)
                         .join(path);
-                    if is_valid_image(&full) {
+                    if is_valid_image(full).await {
                         info.title_url = Some(format!("/media/{}/{path}", info.system));
                     }
                 }
@@ -464,23 +490,26 @@ async fn enrich_detail_fields(state: &crate::api::AppState, info: &mut GameInfo)
     // Filesystem fallback for screenshots and title screens.
     if info.screenshot_url.is_none() || info.title_url.is_none() {
         let media_base = state.storage().rc_dir().join("media").join(&info.system);
+        let arcade_display_owned = arcade_display.map(str::to_owned);
         if info.screenshot_url.is_none()
             && let Some(path) = resolve_image_on_disk(
-                &info.system,
-                &media_base,
+                arcade_display_owned.clone(),
+                media_base.clone(),
                 replay_control_core::thumbnails::ThumbnailKind::Snap.media_dir(),
-                &info.rom_filename,
+                info.rom_filename.clone(),
             )
+            .await
         {
             info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
         }
         if info.title_url.is_none()
             && let Some(path) = resolve_image_on_disk(
-                &info.system,
-                &media_base,
+                arcade_display_owned,
+                media_base,
                 replay_control_core::thumbnails::ThumbnailKind::Title.media_dir(),
-                &info.rom_filename,
+                info.rom_filename.clone(),
             )
+            .await
         {
             info.title_url = Some(format!("/media/{}/{path}", info.system));
         }
@@ -493,6 +522,7 @@ pub(crate) async fn resolve_box_art_url(
     state: &crate::api::AppState,
     system: &str,
     rom_filename: &str,
+    arcade_display: Option<&str>,
 ) -> Option<String> {
     let media_base = state.storage().rc_dir().join("media").join(system);
 
@@ -517,7 +547,7 @@ pub(crate) async fn resolve_box_art_url(
             .join("media")
             .join(system)
             .join(&override_path);
-        if is_valid_image(&full) {
+        if is_valid_image(full).await {
             return Some(format!("/media/{system}/{override_path}"));
         }
     }
@@ -539,12 +569,15 @@ pub(crate) async fn resolve_box_art_url(
         && let Some(ref path) = meta.box_art_path
     {
         let full_path = media_base.join(path);
-        if is_valid_image(&full_path) {
+        if is_valid_image(full_path.clone()).await {
             return Some(format!("/media/{system}/{path}"));
         }
         // DB path points to a fake symlink — try resolving it.
-        let kind_dir = full_path.parent().unwrap_or(&media_base);
-        if let Some(resolved) = try_resolve_fake_symlink(&full_path, kind_dir) {
+        let kind_dir = full_path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| media_base.clone());
+        if let Some(resolved) = try_resolve_fake_symlink(full_path, kind_dir).await {
             let kind = std::path::Path::new(path)
                 .parent()
                 .and_then(|p| p.to_str())
@@ -554,11 +587,12 @@ pub(crate) async fn resolve_box_art_url(
     }
     // 2. Filesystem fallback — resolve_image_on_disk handles arcade name translation.
     resolve_image_on_disk(
-        system,
-        &media_base,
+        arcade_display.map(str::to_owned),
+        media_base,
         replay_control_core::thumbnails::ThumbnailKind::Boxart.media_dir(),
-        rom_filename,
+        rom_filename.to_string(),
     )
+    .await
     .map(|path| format!("/media/{system}/{path}"))
 }
 

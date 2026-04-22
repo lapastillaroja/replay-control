@@ -8,21 +8,18 @@ repository.workspace = true
 
 [features]
 default = []
-metadata = ["dep:rusqlite", "dep:quick-xml"]
-http = ["dep:reqwest", "dep:tokio"]
+metadata = ["dep:quick-xml"]
+http = ["dep:reqwest"]
 
 
 [dependencies]
-phf = "0.13"
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = "2"
 thiserror = { workspace = true }
 tracing = { workspace = true }
-rusqlite = { version = "0.38", features = ["bundled"], optional = true }
 quick-xml = { version = "0.39", optional = true }
 reqwest = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["fs", "sync"], optional = true }
 crc32fast = "1"
 semver = "1"
 
@@ -30,12 +27,12 @@ semver = "1"
 name = "metadata_report"
 required-features = ["metadata"]
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.38", features = ["bundled"] }
+deadpool-sqlite = { version = "0.13", features = ["rt_tokio_1"] }
+deadpool = "0.13"
+deadpool-sync = "0.2"
+tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread"] }
+
 [dev-dependencies]
 tempfile = "3"
-
-[build-dependencies]
-csv = "1"
-phf_codegen = "0.13"
-quick-xml = "0.39"
-serde = { workspace = true }
-serde_json = { workspace = true }

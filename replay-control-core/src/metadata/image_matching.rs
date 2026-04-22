@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::thumbnails::{
-    base_title, is_valid_image, strip_image_ext, strip_version, thumbnail_filename,
+    base_title, is_valid_image_sync, strip_image_ext, strip_version, thumbnail_filename,
 };
 use crate::title_utils::{normalize_aggressive, strip_n64dd_prefix, strip_tags};
 
@@ -47,7 +47,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
             let name_str = name.to_string_lossy();
             if let Some(img_stem) = strip_image_ext(&name_str) {
                 // Skip tiny files (fake symlinks / stubs).
-                if !is_valid_image(&entry.path()) {
+                if !is_valid_image_sync(&entry.path()) {
                     continue;
                 }
                 let path = format!("{kind}/{name_str}");

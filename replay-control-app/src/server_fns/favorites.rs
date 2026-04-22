@@ -24,82 +24,63 @@ pub struct OrganizeResult {
 pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites(&state.storage())
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    // Collect (system, rom_filename) keys for batch DB lookup.
-    let keys: Vec<(String, String)> = favs
-        .iter()
-        .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
-        .collect();
-
-    // Batch-load game entries (box_art_url + genre) in one DB read.
-    let db_entries = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
-        .unwrap_or_default();
-
-    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
-    // If NULL, no art is available — show placeholder.
-    let results: Vec<FavoriteWithArt> = favs
-        .into_iter()
-        .map(|fav| {
-            let db_entry =
-                db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
-            let box_art_url = db_entry.and_then(|e| e.box_art_url.clone());
-            let genre = db_entry
-                .map(|e| &e.genre_group)
-                .filter(|g| !g.is_empty())
-                .cloned();
-            FavoriteWithArt {
-                fav,
-                box_art_url,
-                genre,
-            }
-        })
-        .collect();
-    Ok(results)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(enrich_favorites(&state, favs).await)
 }
 
 #[server(prefix = "/sfn")]
 pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let favs = replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
+        .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(enrich_favorites(&state, favs).await)
+}
 
-    // Collect keys for batch DB lookup.
+/// Pair each favorite with its DB-backed `box_art_url` and `genre_group`.
+///
+/// One batch DB read keyed by `(system, rom_filename)`. Keys are built once
+/// and consumed inside the read closure so the post-read zip doesn't need a
+/// second `.clone()` per favorite.
+#[cfg(feature = "ssr")]
+async fn enrich_favorites(
+    state: &crate::api::AppState,
+    favs: Vec<Favorite>,
+) -> Vec<FavoriteWithArt> {
     let keys: Vec<(String, String)> = favs
         .iter()
         .map(|f| (f.game.system.clone(), f.game.rom_filename.clone()))
         .collect();
+    let favs_count = favs.len();
 
-    // Batch-load game entries (box_art_url + genre) in one DB read.
-    let db_entries = state
+    let art_genre: Vec<(Option<String>, Option<String>)> = state
         .metadata_pool
-        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
-        .await
-        .unwrap_or_default();
-
-    // Box art comes from the DB `box_art_url` field (set by enrichment pipeline).
-    // If NULL, no art is available — show placeholder.
-    let results: Vec<FavoriteWithArt> = favs
-        .into_iter()
-        .map(|fav| {
-            let db_entry =
-                db_entries.get(&(fav.game.system.clone(), fav.game.rom_filename.clone()));
-            let box_art_url = db_entry.and_then(|e| e.box_art_url.clone());
-            let genre = db_entry
-                .map(|e| &e.genre_group)
-                .filter(|g| !g.is_empty())
-                .cloned();
-            FavoriteWithArt {
-                fav,
-                box_art_url,
-                genre,
-            }
+        .read(move |conn| {
+            let entries = MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default();
+            keys.iter()
+                .map(|k| {
+                    let entry = entries.get(k);
+                    let box_art_url = entry.and_then(|e| e.box_art_url.clone());
+                    let genre = entry
+                        .map(|e| &e.genre_group)
+                        .filter(|g| !g.is_empty())
+                        .cloned();
+                    (box_art_url, genre)
+                })
+                .collect()
         })
-        .collect();
-    Ok(results)
+        .await
+        .unwrap_or_else(|| vec![(None, None); favs_count]);
+
+    favs.into_iter()
+        .zip(art_genre)
+        .map(|(fav, (box_art_url, genre))| FavoriteWithArt {
+            fav,
+            box_art_url,
+            genre,
+        })
+        .collect()
 }
 
 #[server(prefix = "/sfn")]
@@ -111,8 +92,9 @@ pub async fn add_favorite(
     let state = expect_context::<crate::api::AppState>();
     let result =
         replay_control_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
+            .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-    state.cache.invalidate_favorites();
+    state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
     Ok(result)
 }
@@ -140,7 +122,7 @@ pub async fn remove_favorite(
         }
     }
 
-    state.cache.invalidate_favorites();
+    state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
     Ok(())
 }
@@ -170,8 +152,9 @@ pub async fn organize_favorites(
         keep_originals,
         ratings.as_ref(),
     )
+    .await
     .map_err(|e| ServerFnError::new(e.to_string()))?;
-    state.cache.invalidate_favorites();
+    state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
     Ok(OrganizeResult {
         organized: result.organized,
@@ -184,7 +167,7 @@ pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let result = replay_control_core::favorites::group_by_system(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    state.cache.invalidate_favorites();
+    state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
     Ok(result)
 }
@@ -194,7 +177,7 @@ pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let result = replay_control_core::favorites::flatten_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-    state.cache.invalidate_favorites();
+    state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
     Ok(result)
 }
@@ -212,8 +195,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
 
     let state = expect_context::<crate::api::AppState>();
 
-    // Response cache: return immediately on hit.
-    if let Some(cached) = state.response_cache.get_favorites_recommendations() {
+    if let Some(cached) = state.response_cache.favorites_recommendations.get() {
         #[cfg(feature = "ssr")]
         tracing::debug!(
             elapsed_ms = fn_start.elapsed().as_millis(),
@@ -230,11 +212,11 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
 
     let (region_str, region_secondary_str) = super::region_strings(&state);
 
-    // Collect recents and favorites from cache.
-    let recents = state.cache.get_recents(&storage).unwrap_or_default();
+    let recents = state.cache.get_recents(&storage).await.unwrap_or_default();
     let all_favorites = state
         .cache
         .get_all_favorited_systems(&storage)
+        .await
         .unwrap_or_default();
 
     // Build Vec of all favorite keys, then derive HashSet for O(1) exclusion checks.
@@ -443,10 +425,10 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
         });
     }
 
-    // Response cache: store for subsequent hits within TTL.
     state
         .response_cache
-        .set_favorites_recommendations(&result_sections);
+        .favorites_recommendations
+        .set(result_sections.clone());
 
     #[cfg(feature = "ssr")]
     tracing::info!(

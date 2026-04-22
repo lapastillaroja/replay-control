@@ -56,7 +56,7 @@ impl LibraryService {
             .collect();
 
         let results =
-            rom_hash::hash_and_identify(system, &rom_files, &cached_hashes, &storage.root);
+            rom_hash::hash_and_identify(system, &rom_files, &cached_hashes, &storage.root).await;
 
         // Build a lookup map for applying results.
         let mut result_map: HashMap<String, HashResult> = HashMap::new();
@@ -64,28 +64,35 @@ impl LibraryService {
             result_map.insert(result.rom_filename.clone(), result);
         }
 
-        // Apply hash-matched display names to RomEntries.
-        // When a CRC match gives us a canonical No-Intro name (e.g.,
-        // "Super Mario World (USA)"), re-resolve the display name through
-        // GameRef::new() using that canonical name as the filename stem.
-        // This gives us the proper display name with tags.
-        for rom in roms.iter_mut() {
-            if let Some(hash_result) = result_map.get(&rom.game.rom_filename)
-                && let Some(ref matched_name) = hash_result.matched_name
-            {
-                // The matched_name is the No-Intro canonical filename stem
-                // (e.g., "Super Mario World (USA)"). Use game_display_name()
-                // to get the clean display title, then apply tags from the
-                // original filename.
-                let canonical_filename = format!("{matched_name}.rom");
-                if let Some(display) =
-                    replay_control_core::game_db::game_display_name(system, &canonical_filename)
+        // Apply hash-matched display names to RomEntries. The matched_name
+        // is the No-Intro canonical filename stem (e.g., "Super Mario World
+        // (USA)"); look it up to get the clean display title and re-apply
+        // tags from the original filename.
+        let canonical_filenames: Vec<String> = roms
+            .iter()
+            .filter_map(|rom| {
+                result_map
+                    .get(&rom.game.rom_filename)
+                    .and_then(|hr| hr.matched_name.as_ref())
+                    .map(|matched| format!("{matched}.rom"))
+            })
+            .collect();
+        if !canonical_filenames.is_empty() {
+            let refs: Vec<&str> = canonical_filenames.iter().map(String::as_str).collect();
+            let display_map =
+                replay_control_core::game_db::display_names_batch(system, &refs).await;
+            for rom in roms.iter_mut() {
+                if let Some(hash_result) = result_map.get(&rom.game.rom_filename)
+                    && let Some(ref matched_name) = hash_result.matched_name
                 {
-                    let with_tags = replay_control_core::rom_tags::display_name_with_tags(
-                        display,
-                        &rom.game.rom_filename,
-                    );
-                    rom.game.display_name = Some(with_tags);
+                    let canonical_filename = format!("{matched_name}.rom");
+                    if let Some(display) = display_map.get(&canonical_filename) {
+                        let with_tags = replay_control_core::rom_tags::display_name_with_tags(
+                            display,
+                            &rom.game.rom_filename,
+                        );
+                        rom.game.display_name = Some(with_tags);
+                    }
                 }
             }
         }
@@ -126,8 +133,12 @@ impl LibraryService {
         });
 
         // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
-        let cached_roms =
-            replay_control_core::game_entry_builder::build_game_entries(system, roms, hash_results);
+        let cached_roms = replay_control_core::game_entry_builder::build_game_entries(
+            system,
+            roms,
+            hash_results,
+        )
+        .await;
 
         tracing::debug!(
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
@@ -168,9 +179,11 @@ impl LibraryService {
                 //
                 // LaunchBox enrichment later runs `seed_release_dates_from_metadata`
                 // to upgrade to day-precision USA dates.
+                let static_data =
+                    replay_control_core::metadata_db::fetch_static_release_data().await;
                 let _ = db
                     .write(move |conn| {
-                        let _ = MetadataDb::seed_release_dates_from_static(conn);
+                        let _ = MetadataDb::seed_release_dates_from_static(conn, static_data);
                         let _ = MetadataDb::seed_release_dates_from_library(conn, "builder");
                         let _ = MetadataDb::resolve_release_date_for_library(
                             conn,

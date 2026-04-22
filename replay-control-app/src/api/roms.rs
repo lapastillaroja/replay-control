@@ -85,7 +85,7 @@ async fn rename_rom(
 }
 
 async fn find_duplicates(State(state): State<AppState>) -> Json<Vec<DuplicateResponse>> {
-    let dupes = replay_control_core::roms::find_duplicates(&state.storage());
+    let dupes = replay_control_core::roms::find_duplicates(&state.storage()).await;
     Json(
         dupes
             .into_iter()

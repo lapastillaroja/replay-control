@@ -353,6 +353,16 @@ deploy_to_pi() {
     run_rsync --compress "$bin_path" "${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/replay-control-app"
     run_ssh "chmod +x ${PI_INSTALL_DIR}/replay-control-app"
 
+    # Transfer catalog. Hard fail if missing — shipping with an absent (or
+    # zero-byte) catalog leaves SQLite to silently open an empty DB and every
+    # catalog query then fails with "no such table: arcade_games". Build the
+    # real catalog first rather than continuing with a broken deploy.
+    if [[ ! -s catalog.sqlite ]]; then
+        fatal "catalog.sqlite not found or empty — run: cargo run -p build-catalog -- --output catalog.sqlite"
+    fi
+    info "Syncing catalog..."
+    run_rsync --compress catalog.sqlite "${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/catalog.sqlite"
+
     # Transfer site assets (rsync only changed files)
     info "Syncing site assets..."
     run_rsync -r --compress --delete \
@@ -376,8 +386,27 @@ deploy_to_pi() {
 
 # ── Local mode ───────────────────────────────────────────────────────────────
 
+ensure_catalog_local() {
+    # Build the real catalog (not the stub fixture). Stub data only has a
+    # handful of games; shipping it to a real Pi hides most ROMs' metadata
+    # and looks like a regression. Missing data files are a hard error so
+    # the caller notices instead of silently running with a broken catalog.
+    if [[ ! -f catalog.sqlite ]]; then
+        phase "Building game catalog (catalog.sqlite not found)"
+        if ! cargo run -p build-catalog -- --output catalog.sqlite; then
+            fatal "Failed to build catalog.sqlite. Run ./build.sh first, or \
+check that data/ is populated (run ./scripts/download-arcade-data.sh and \
+./scripts/download-metadata.sh)."
+        fi
+    fi
+    if [[ ! -s catalog.sqlite ]]; then
+        fatal "catalog.sqlite is empty or missing after build step."
+    fi
+}
+
 run_local() {
     timer_start
+    ensure_catalog_local
     phase "Initial build (local)"
     build_wasm
     build_ssr_local
@@ -481,6 +510,11 @@ INNER
 
 pi_build_and_deploy() {
     timer_start
+
+    # Build the catalog before anything else so the Pi always receives a
+    # real, non-empty DB. deploy_to_pi hard-fails if catalog.sqlite is
+    # missing, but preflighting here gives a cleaner failure earlier.
+    ensure_catalog_local
 
     # WASM is architecture-independent, same build for both local and Pi
     build_wasm

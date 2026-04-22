@@ -135,7 +135,7 @@ pub struct CachedHash {
 ///
 /// The `rom_dir_root` is the parent of the storage root, used to resolve
 /// `rom_path` to an absolute filesystem path.
-pub fn hash_and_identify(
+pub async fn hash_and_identify(
     system: &str,
     rom_files: &[(String, String, u64)], // (rom_filename, rom_path, size_bytes)
     cached_hashes: &std::collections::HashMap<String, CachedHash>,
@@ -145,54 +145,96 @@ pub fn hash_and_identify(
         return Vec::new();
     }
 
-    let mut results = Vec::new();
-
-    for (rom_filename, rom_path, _size_bytes) in rom_files {
-        // Resolve the absolute path on disk from the rom_path.
-        // rom_path is like "/roms/nintendo_nes/game.nes" relative to storage root.
-        let abs_path = storage_root.join(rom_path.trim_start_matches('/'));
-
-        // Get the current file mtime.
-        let current_mtime = match file_mtime_secs(&abs_path) {
-            Some(m) => m,
-            None => continue, // Can't stat the file — skip.
-        };
-
-        // Check cache: if mtime matches, use cached hash.
-        if let Some(cached) = cached_hashes.get(rom_filename)
-            && cached.hash_mtime == current_mtime
-        {
-            results.push(HashResult {
-                rom_filename: rom_filename.clone(),
-                crc32: cached.crc32,
-                mtime_secs: current_mtime,
-                matched_name: cached.matched_name.clone(),
-            });
-            continue;
-        }
-
-        // Cache miss or stale — compute CRC32.
-        let crc32 = match compute_crc32(&abs_path) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::debug!("Failed to hash {}: {e}", abs_path.display());
-                continue;
-            }
-        };
-
-        // Look up the CRC32 in the No-Intro index.
-        let matched_name =
-            game_db::lookup_by_crc(system, crc32).map(|entry| entry.canonical_name.to_string());
-
-        results.push(HashResult {
-            rom_filename: rom_filename.clone(),
-            crc32,
-            mtime_secs: current_mtime,
-            matched_name,
-        });
+    enum Pending {
+        Cached(HashResult),
+        NeedsLookup {
+            rom_filename: String,
+            crc32: u32,
+            mtime_secs: i64,
+        },
     }
 
-    results
+    // Phase 1 does per-file std::fs::metadata + File::open + read of
+    // potentially megabytes of ROM content. Keep it off tokio workers.
+    let rom_files_owned = rom_files.to_vec();
+    let cached_hashes_owned = cached_hashes.clone();
+    let storage_root_owned = storage_root.to_path_buf();
+    let pending: Vec<Pending> = {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            tokio::task::spawn_blocking(move || {
+                let mut pending = Vec::with_capacity(rom_files_owned.len());
+                for (rom_filename, rom_path, _size_bytes) in &rom_files_owned {
+                    let abs_path = storage_root_owned.join(rom_path.trim_start_matches('/'));
+
+                    let Some(current_mtime) = file_mtime_secs(&abs_path) else {
+                        continue;
+                    };
+
+                    if let Some(cached) = cached_hashes_owned.get(rom_filename)
+                        && cached.hash_mtime == current_mtime
+                    {
+                        pending.push(Pending::Cached(HashResult {
+                            rom_filename: rom_filename.clone(),
+                            crc32: cached.crc32,
+                            mtime_secs: current_mtime,
+                            matched_name: cached.matched_name.clone(),
+                        }));
+                        continue;
+                    }
+
+                    match compute_crc32(&abs_path) {
+                        Ok(crc32) => pending.push(Pending::NeedsLookup {
+                            rom_filename: rom_filename.clone(),
+                            crc32,
+                            mtime_secs: current_mtime,
+                        }),
+                        Err(e) => {
+                            tracing::debug!("Failed to hash {}: {e}", abs_path.display());
+                        }
+                    }
+                }
+                pending
+            })
+            .await
+            .unwrap_or_default()
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (rom_files_owned, cached_hashes_owned, storage_root_owned);
+            Vec::new()
+        }
+    };
+
+    let fresh_crcs: Vec<u32> = pending
+        .iter()
+        .filter_map(|p| match p {
+            Pending::NeedsLookup { crc32, .. } => Some(*crc32),
+            _ => None,
+        })
+        .collect();
+    let matches = if fresh_crcs.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        game_db::lookup_by_crcs_batch(system, &fresh_crcs).await
+    };
+
+    pending
+        .into_iter()
+        .map(|p| match p {
+            Pending::Cached(r) => r,
+            Pending::NeedsLookup {
+                rom_filename,
+                crc32,
+                mtime_secs,
+            } => HashResult {
+                rom_filename,
+                crc32,
+                mtime_secs,
+                matched_name: matches.get(&crc32).map(|e| e.canonical_name.clone()),
+            },
+        })
+        .collect()
 }
 
 /// Get a file's mtime as seconds since the UNIX epoch.
@@ -299,8 +341,8 @@ mod tests {
         assert_eq!(detect_header_skip(Path::new("game.gb")), 0);
     }
 
-    #[test]
-    fn hash_and_identify_skips_ineligible_system() {
+    #[tokio::test]
+    async fn hash_and_identify_skips_ineligible_system() {
         let results = hash_and_identify(
             "sony_psx",
             &[(
@@ -310,12 +352,13 @@ mod tests {
             )],
             &std::collections::HashMap::new(),
             Path::new("/tmp"),
-        );
+        )
+        .await;
         assert!(results.is_empty());
     }
 
-    #[test]
-    fn hash_and_identify_uses_cache() {
+    #[tokio::test]
+    async fn hash_and_identify_uses_cache() {
         let tmp = tempdir();
         let roms_dir = tmp.join("roms/nintendo_snes");
         fs::create_dir_all(&roms_dir).unwrap();
@@ -340,15 +383,16 @@ mod tests {
             &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
             &cache,
             &tmp,
-        );
+        )
+        .await;
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].crc32, 0xDEADBEEF);
         assert_eq!(results[0].matched_name.as_deref(), Some("Cached Game Name"));
     }
 
-    #[test]
-    fn hash_and_identify_rehashes_on_mtime_change() {
+    #[tokio::test]
+    async fn hash_and_identify_rehashes_on_mtime_change() {
         let tmp = tempdir();
         let roms_dir = tmp.join("roms/nintendo_snes");
         fs::create_dir_all(&roms_dir).unwrap();
@@ -372,7 +416,8 @@ mod tests {
             &[("game.sfc".to_string(), rom_path_str.to_string(), 100)],
             &cache,
             &tmp,
-        );
+        )
+        .await;
 
         assert_eq!(results.len(), 1);
         // Should have recomputed, so CRC won't be 0xDEADBEEF

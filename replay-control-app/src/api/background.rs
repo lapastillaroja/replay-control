@@ -1686,11 +1686,15 @@ impl AppState {
                 // events within the debounce window.
                 let mut affected_systems = std::collections::HashSet::new();
                 let mut roms_dir_changed = false;
+                let mut favorites_changed = false;
+                let mut recents_changed = false;
                 Self::collect_rom_event_systems(
                     &event,
                     &roms_dir,
                     &mut affected_systems,
                     &mut roms_dir_changed,
+                    &mut favorites_changed,
+                    &mut recents_changed,
                 );
 
                 tracing::debug!("ROM change detected ({:?}), debouncing...", event.kind);
@@ -1706,6 +1710,8 @@ impl AppState {
                                     &roms_dir,
                                     &mut affected_systems,
                                     &mut roms_dir_changed,
+                                    &mut favorites_changed,
+                                    &mut recents_changed,
                                 );
                             }
                         }
@@ -1714,11 +1720,29 @@ impl AppState {
                     }
                 }
 
-                // Skip if any activity is running (startup, import, etc.).
+                // Favorites/recents invalidation is cheap (just clears the
+                // cache; the next request rebuilds). Do it regardless of
+                // whether a background scan is in progress, and regardless of
+                // whether any ROM-file systems were affected in this batch.
+                if favorites_changed {
+                    tracing::debug!("ROM watcher: _favorites/ changed, invalidating cache");
+                    state.cache.invalidate_favorites().await;
+                    state.response_cache.invalidate_all();
+                }
+                if recents_changed {
+                    tracing::debug!("ROM watcher: _recent/ changed, invalidating cache");
+                    state.cache.invalidate_recents().await;
+                    state.response_cache.recommendations.invalidate();
+                }
+
+                // Skip the heavier system rescan if any activity is running
+                // (startup, import, etc.).
                 if !state.is_idle() {
-                    tracing::debug!(
-                        "Background operation in progress, skipping ROM watcher rescan"
-                    );
+                    if !affected_systems.is_empty() || roms_dir_changed {
+                        tracing::debug!(
+                            "Background operation in progress, skipping ROM watcher rescan"
+                        );
+                    }
                     continue;
                 }
 
@@ -1815,13 +1839,15 @@ impl AppState {
         )
     }
 
-    /// Extract system folder names from event paths and detect top-level
-    /// roms/ directory changes.
+    /// Extract system folder names from event paths, detect top-level roms/
+    /// directory changes, and flag favorites/recents changes.
     fn collect_rom_event_systems(
         event: &notify::Event,
         roms_dir: &std::path::Path,
         affected_systems: &mut std::collections::HashSet<String>,
         roms_dir_changed: &mut bool,
+        favorites_changed: &mut bool,
+        recents_changed: &mut bool,
     ) {
         for path in &event.paths {
             let relative = match path.strip_prefix(roms_dir) {
@@ -1839,7 +1865,22 @@ impl AppState {
 
             let system_name = first.as_os_str().to_string_lossy();
 
-            // Skip internal directories (e.g., _favorites, _recent).
+            // Internal marker directories trigger targeted cache invalidation
+            // so remote/OS-level edits (e.g. a .fav symlink written outside
+            // the UI) propagate without a restart.
+            match system_name.as_ref() {
+                "_favorites" => {
+                    *favorites_changed = true;
+                    continue;
+                }
+                "_recent" => {
+                    *recents_changed = true;
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Skip any other internal directory.
             if system_name.starts_with('_') {
                 continue;
             }

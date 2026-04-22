@@ -16,15 +16,18 @@ pub struct RecentEntry {
     pub last_played: u64,
 }
 
-/// List recently played games, sorted by most recent first.
-pub fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>> {
-    let recents_dir = storage.recents_dir();
-    if !recents_dir.exists() {
-        return Ok(Vec::new());
-    }
+struct RawRecent {
+    system: String,
+    rom_filename: String,
+    rom_path: String,
+    marker_filename: String,
+    last_played: u64,
+}
 
-    let mut recents = Vec::new();
-    let entries = std::fs::read_dir(&recents_dir).map_err(|e| Error::io(&recents_dir, e))?;
+/// Walk `_recent/` and parse each `.rec` marker. Blocking IO.
+fn collect_raw_recents(recents_dir: &std::path::Path) -> Result<Vec<RawRecent>> {
+    let mut raw: Vec<RawRecent> = Vec::new();
+    let entries = std::fs::read_dir(recents_dir).map_err(|e| Error::io(recents_dir, e))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -64,10 +67,47 @@ pub fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>> {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        recents.push(RecentEntry {
-            game: GameRef::new(&system, rom_filename, rom_path),
+        raw.push(RawRecent {
+            system,
+            rom_filename,
+            rom_path,
             marker_filename: filename,
             last_played,
+        });
+    }
+
+    Ok(raw)
+}
+
+async fn collect_raw_recents_blocking(recents_dir: std::path::PathBuf) -> Result<Vec<RawRecent>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::task::spawn_blocking(move || collect_raw_recents(&recents_dir))
+            .await
+            .map_err(|e| Error::Other(format!("recents walk panicked: {e}")))?
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        collect_raw_recents(&recents_dir)
+    }
+}
+
+/// List recently played games, sorted by most recent first.
+pub async fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>> {
+    let recents_dir = storage.recents_dir();
+    if !recents_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let raw = collect_raw_recents_blocking(recents_dir).await?;
+
+    let mut recents: Vec<RecentEntry> = Vec::with_capacity(raw.len());
+    for r in raw {
+        let game = GameRef::new(&r.system, r.rom_filename, r.rom_path).await;
+        recents.push(RecentEntry {
+            game,
+            marker_filename: r.marker_filename,
+            last_played: r.last_played,
         });
     }
 
@@ -107,8 +147,8 @@ pub fn add_recent(
 }
 
 /// Get the most recently played game.
-pub fn last_played(storage: &StorageLocation) -> Result<Option<RecentEntry>> {
-    let recents = list_recents(storage)?;
+pub async fn last_played(storage: &StorageLocation) -> Result<Option<RecentEntry>> {
+    let recents = list_recents(storage).await?;
     Ok(recents.into_iter().next())
 }
 
@@ -117,19 +157,19 @@ mod tests {
     use super::*;
     use crate::storage::StorageKind;
 
-    #[test]
-    fn list_empty_recents() {
+    #[tokio::test]
+    async fn list_empty_recents() {
         let tmp = std::env::temp_dir().join(format!("replay-rec-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join("roms/_recent")).unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
-        let recents = list_recents(&storage).unwrap();
+        let recents = list_recents(&storage).await.unwrap();
         assert!(recents.is_empty());
     }
 
-    #[test]
-    fn list_recents_parses_files() {
+    #[tokio::test]
+    async fn list_recents_parses_files() {
         let tmp = std::env::temp_dir().join(format!("replay-rec-test2-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let recent_dir = tmp.join("roms/_recent");
@@ -142,14 +182,14 @@ mod tests {
         .unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
-        let recents = list_recents(&storage).unwrap();
+        let recents = list_recents(&storage).await.unwrap();
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].game.system, "sega_smd");
         assert_eq!(recents[0].game.rom_filename, "Sonic.md");
     }
 
-    #[test]
-    fn fav_suffix_stripped_from_rom_filename() {
+    #[tokio::test]
+    async fn fav_suffix_stripped_from_rom_filename() {
         let tmp = std::env::temp_dir().join(format!("replay-rec-fav-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let recent_dir = tmp.join("roms/_recent");
@@ -163,13 +203,13 @@ mod tests {
         .unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
-        let recents = list_recents(&storage).unwrap();
+        let recents = list_recents(&storage).await.unwrap();
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].game.rom_filename, "chelnov.zip");
     }
 
-    #[test]
-    fn add_recent_creates_marker() {
+    #[tokio::test]
+    async fn add_recent_creates_marker() {
         let tmp = std::env::temp_dir().join(format!("replay-rec-add-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join("roms")).unwrap();
@@ -184,14 +224,14 @@ mod tests {
         assert_eq!(content, "/roms/sega_smd/Sonic.md\n");
 
         // Verify it shows up in list_recents
-        let recents = list_recents(&storage).unwrap();
+        let recents = list_recents(&storage).await.unwrap();
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].game.system, "sega_smd");
         assert_eq!(recents[0].game.rom_filename, "Sonic.md");
     }
 
-    #[test]
-    fn add_recent_overwrites_existing() {
+    #[tokio::test]
+    async fn add_recent_overwrites_existing() {
         let tmp = std::env::temp_dir().join(format!("replay-rec-overwrite-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let recent_dir = tmp.join("roms/_recent");
@@ -211,8 +251,8 @@ mod tests {
         assert_eq!(content, "/roms/sega_smd/Sonic.md\n");
     }
 
-    #[test]
-    fn add_recent_creates_directory() {
+    #[tokio::test]
+    async fn add_recent_creates_directory() {
         let tmp = std::env::temp_dir().join(format!("replay-rec-mkdir-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         // Only create the base roms dir, not _recent
@@ -236,8 +276,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn fav_and_non_fav_deduplicated() {
+    #[tokio::test]
+    async fn fav_and_non_fav_deduplicated() {
         let tmp = std::env::temp_dir().join(format!("replay-rec-dedup-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let recent_dir = tmp.join("roms/_recent");
@@ -256,7 +296,7 @@ mod tests {
         .unwrap();
 
         let storage = StorageLocation::from_path(tmp.clone(), StorageKind::Sd);
-        let recents = list_recents(&storage).unwrap();
+        let recents = list_recents(&storage).await.unwrap();
         // Should deduplicate to one entry
         assert_eq!(recents.len(), 1);
         assert_eq!(recents[0].game.rom_filename, "chelnov.zip");

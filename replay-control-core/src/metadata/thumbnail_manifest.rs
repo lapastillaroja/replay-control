@@ -553,27 +553,14 @@ pub fn build_manifest_fuzzy_index_from_raw(
 pub fn find_in_manifest<'a>(
     index: &'a ManifestFuzzyIndex,
     rom_filename: &str,
-    system: &str,
+    arcade_display: Option<&str>,
 ) -> Option<&'a ManifestMatch> {
-    use crate::arcade_db;
-    use crate::title_utils::{base_title, strip_n64dd_prefix};
+    use crate::title_utils::{base_title, filename_stem, strip_n64dd_prefix};
     use thumbnails::{strip_tags, strip_version, thumbnail_filename};
 
-    let stem = rom_filename
-        .rfind('.')
-        .map(|i| &rom_filename[..i])
-        .unwrap_or(rom_filename);
-    let stem = strip_n64dd_prefix(stem);
+    let stem = strip_n64dd_prefix(filename_stem(rom_filename));
 
-    let is_arcade = crate::systems::is_arcade_system(system);
-
-    // For arcade ROMs, translate MAME codename to display name.
-    let display_name = if is_arcade {
-        arcade_db::lookup_arcade_game(stem).map(|info| info.display_name)
-    } else {
-        None
-    };
-    let source = display_name.unwrap_or(stem);
+    let source: &str = arcade_display.unwrap_or(stem);
     let thumb_name = thumbnail_filename(source);
 
     // Tier 1: exact match.
@@ -769,25 +756,41 @@ pub async fn download_bytes(url: &str) -> Result<Vec<u8>> {
     crate::http::get_bytes_with_timeout(url, std::time::Duration::from_secs(15)).await
 }
 
-/// Save a downloaded PNG to the media directory.
-pub fn save_thumbnail(
+/// Save a downloaded PNG to the media directory. Runs the `mkdir -p` and
+/// `write` on the blocking pool.
+pub async fn save_thumbnail(
     storage_root: &Path,
     system: &str,
     kind: ThumbnailKind,
     matched_stem: &str,
-    png_bytes: &[u8],
+    png_bytes: Vec<u8>,
 ) -> Result<std::path::PathBuf> {
     let media_dir = storage_root
         .join(crate::storage::RC_DIR)
         .join("media")
         .join(system)
         .join(kind.media_dir());
-
-    std::fs::create_dir_all(&media_dir).map_err(|e| Error::io(&media_dir, e))?;
-
     let dest = media_dir.join(format!("{matched_stem}.png"));
-    std::fs::write(&dest, png_bytes).map_err(|e| Error::io(&dest, e))?;
 
+    let work = {
+        let media_dir = media_dir.clone();
+        let dest = dest.clone();
+        move || -> Result<()> {
+            std::fs::create_dir_all(&media_dir).map_err(|e| Error::io(&media_dir, e))?;
+            std::fs::write(&dest, &png_bytes).map_err(|e| Error::io(&dest, e))
+        }
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::task::spawn_blocking(work)
+            .await
+            .map_err(|e| Error::Other(format!("save_thumbnail task panicked: {e}")))??;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        work()?;
+    }
     Ok(dest)
 }
 
@@ -825,28 +828,15 @@ pub fn find_boxart_variants(
     conn: &Connection,
     system: &str,
     rom_filename: &str,
+    arcade_display: Option<&str>,
     storage_root: &std::path::Path,
     active_box_art_url: Option<&str>,
 ) -> Vec<BoxArtVariant> {
     use crate::thumbnails::{self, strip_tags, thumbnail_filename};
     use std::collections::HashSet;
 
-    // Compute the ROM's base title for matching.
-    let stem = rom_filename
-        .rfind('.')
-        .map(|i| &rom_filename[..i])
-        .unwrap_or(rom_filename);
-
-    let is_arcade = matches!(
-        system,
-        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
-    );
-    let display_name = if is_arcade {
-        crate::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name.to_string())
-    } else {
-        None
-    };
-    let source = display_name.as_deref().unwrap_or(stem);
+    let stem = crate::title_utils::filename_stem(rom_filename);
+    let source = arcade_display.unwrap_or(stem);
     let thumb_name = thumbnail_filename(source);
     let base_title = strip_tags(&thumb_name).to_lowercase();
 
@@ -887,7 +877,7 @@ pub fn find_boxart_variants(
             }
 
             // Stat only after title matched (avoids thousands of stat calls on exFAT).
-            if !thumbnails::is_valid_image(&entry.path()) {
+            if !thumbnails::is_valid_image_sync(&entry.path()) {
                 continue;
             }
 
@@ -984,7 +974,12 @@ pub fn find_boxart_variants(
 /// Used in game list views where per-ROM filesystem scans would be an N+1 problem.
 /// The full `find_boxart_variants()` (with filesystem scan) is only called on the
 /// game detail page.
-pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str) -> usize {
+pub fn count_boxart_variants(
+    conn: &Connection,
+    system: &str,
+    rom_filename: &str,
+    arcade_display: Option<&str>,
+) -> usize {
     use crate::thumbnails::{self, strip_tags, thumbnail_filename};
     use std::collections::HashSet;
 
@@ -993,21 +988,8 @@ pub fn count_boxart_variants(conn: &Connection, system: &str, rom_filename: &str
         None => return 0,
     };
 
-    let stem = rom_filename
-        .rfind('.')
-        .map(|i| &rom_filename[..i])
-        .unwrap_or(rom_filename);
-
-    let is_arcade = matches!(
-        system,
-        "arcade_mame" | "arcade_fbneo" | "arcade_mame_2k3p" | "arcade_dc"
-    );
-    let display_name = if is_arcade {
-        crate::arcade_db::lookup_arcade_game(stem).map(|info| info.display_name.to_string())
-    } else {
-        None
-    };
-    let source = display_name.as_deref().unwrap_or(stem);
+    let stem = crate::title_utils::filename_stem(rom_filename);
+    let source = arcade_display.unwrap_or(stem);
     let thumb_name = thumbnail_filename(source);
     let base_title = strip_tags(&thumb_name).to_lowercase();
 
@@ -1098,11 +1080,14 @@ pub struct DownloadPlan {
 }
 
 /// Plan which thumbnails need downloading for a system (sync, needs DB).
+///
+/// `arcade_lookup` must be pre-populated by the caller.
 pub fn plan_system_thumbnails(
     conn: &Connection,
     storage_root: &Path,
     system: &str,
     kind: ThumbnailKind,
+    arcade_lookup: &crate::image_resolution::ArcadeInfoLookup,
 ) -> Result<DownloadPlan> {
     let repo_names = thumbnails::thumbnail_repo_names(system)
         .ok_or_else(|| Error::Other(format!("No thumbnail repo for {system}")))?;
@@ -1122,7 +1107,9 @@ pub fn plan_system_thumbnails(
     let mut work: Vec<(String, ManifestMatch)> = Vec::new();
     let mut skipped = 0usize;
     for rom_filename in &rom_filenames {
-        if let Some(m) = find_in_manifest(&manifest_index, rom_filename, system) {
+        let stem = crate::title_utils::filename_stem(rom_filename);
+        let arcade_display = arcade_lookup.get(stem).map(|i| i.display_name.as_str());
+        if let Some(m) = find_in_manifest(&manifest_index, rom_filename, arcade_display) {
             let local_path = media_dir.join(format!("{}.png", m.filename));
             if local_path.exists() {
                 skipped += 1;
@@ -1215,15 +1202,17 @@ pub async fn download_system_thumbnails(
         }
 
         match handle.await {
-            Ok(Ok((m, bytes))) => match save_thumbnail(&root, &sys, kind, &m.filename, &bytes) {
-                Ok(_) => {
-                    downloaded.fetch_add(1, Ordering::Relaxed);
+            Ok(Ok((m, bytes))) => {
+                match save_thumbnail(&root, &sys, kind, &m.filename, bytes).await {
+                    Ok(_) => {
+                        downloaded.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to save {}: {e}", m.filename);
+                        failed.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to save {}: {e}", m.filename);
-                    failed.fetch_add(1, Ordering::Relaxed);
-                }
-            },
+            }
             Ok(Err(e)) => {
                 tracing::debug!("Failed to download: {e}");
                 failed.fetch_add(1, Ordering::Relaxed);
@@ -1304,7 +1293,7 @@ mod tests {
         };
 
         // ROM "Sonic the Hedgehog 3 (USA).md" (lowercase "the") should match USA via CI-exact
-        let result = find_in_manifest(&index, "Sonic the Hedgehog 3 (USA).md", "sega_smd");
+        let result = find_in_manifest(&index, "Sonic the Hedgehog 3 (USA).md", None);
         assert!(result.is_some());
         assert_eq!(result.unwrap().filename, "Sonic The Hedgehog 3 (USA)");
     }
@@ -1336,7 +1325,7 @@ mod tests {
             by_aggressive: HashMap::new(),
         };
 
-        let result = find_in_manifest(&index, "Game (USA).md", "sega_smd");
+        let result = find_in_manifest(&index, "Game (USA).md", None);
         assert!(result.is_some());
         assert_eq!(result.unwrap().filename, "Game (USA)");
     }
@@ -1370,7 +1359,7 @@ mod tests {
         };
 
         // ROM stem after tag stripping matches
-        let result = find_in_manifest(&index, "Completely Different Name (Europe).md", "sega_smd");
+        let result = find_in_manifest(&index, "Completely Different Name (Europe).md", None);
         assert!(result.is_some());
         assert_eq!(result.unwrap().filename, "Completely Different Name (USA)");
     }
@@ -1592,15 +1581,14 @@ mod tests {
         }
         // Tier 3: version-stripped
         let version_key = strip_version(&key);
-        if version_key.len() < key.len() {
-            if let Some(m) = index
+        if version_key.len() < key.len()
+            && let Some(m) = index
                 .by_tags
                 .get(version_key)
                 .or_else(|| index.by_version.get(version_key))
             {
                 return Some(m);
             }
-        }
         // Tier 4: slash dual-name (only split on " _ " if source had " / ")
         let search_key = if version_key.len() < key.len() {
             version_key
@@ -1616,15 +1604,14 @@ mod tests {
             };
             for part in search_key.split(separator) {
                 let part = part.trim();
-                if part.len() >= 5 {
-                    if let Some(m) = index
+                if part.len() >= 5
+                    && let Some(m) = index
                         .by_tags
                         .get(part)
                         .or_else(|| index.by_version.get(part))
                     {
                         return Some(m);
                     }
-                }
             }
         }
         None

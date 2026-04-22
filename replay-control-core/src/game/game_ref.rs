@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::arcade_db;
 use crate::game_db;
 use crate::rom_tags;
-use crate::systems::{self, SystemCategory};
+use crate::systems;
 use crate::title_utils;
 
 /// A reference to a game — the common identity shared across ROM listings,
@@ -63,67 +63,36 @@ impl GameRef {
     /// For arcade systems, uses the arcade DB (zip filename lookup).
     /// For non-arcade systems with game DB coverage, uses the game DB
     /// (No-Intro filename lookup).
-    pub fn new(system: &str, rom_filename: String, rom_path: String) -> Self {
-        let sys_info = systems::find_system(system);
-
-        let system_display = sys_info
-            .map(|s| s.display_name.to_string())
-            .unwrap_or_else(|| system.to_string());
-
-        let display_name = if sys_info.is_some_and(|s| s.category == SystemCategory::Arcade) {
-            // Arcade: use arcade DB (zip filename without extension)
-            let resolved = arcade_db::arcade_display_name(&rom_filename);
-            if resolved != rom_filename {
-                Some(resolved.to_string())
-            } else {
-                None
-            }
+    pub async fn new(system: &str, rom_filename: String, rom_path: String) -> Self {
+        let resolved_name = if systems::is_arcade_system(system) {
+            let resolved = arcade_db::arcade_display_name(&rom_filename).await;
+            if resolved != rom_filename { Some(resolved) } else { None }
         } else {
-            // Non-arcade: try game DB first, then append useful filename tags.
-            // Fall back to deriving a clean name from the filename for systems
-            // without game DB coverage (e.g., ibm_pc, commodore_ami) or unknown systems.
-            game_db::game_display_name(system, &rom_filename)
-                .map(|name| {
-                    let mut display = rom_tags::display_name_with_tags(name, &rom_filename);
-                    // Append disc/side label for multi-part games (Option A:
-                    // always include — M3U dedup hides duplicates anyway).
-                    if let Some(label) = rom_tags::extract_disc_label(&rom_filename) {
-                        display.push_str(" [");
-                        display.push_str(&label);
-                        display.push(']');
-                    }
-                    display
-                })
-                .or_else(|| {
-                    let stem = rom_filename
-                        .rfind('.')
-                        .map(|i| &rom_filename[..i])
-                        .unwrap_or(&rom_filename);
-                    // Always return a display name from the stem (without extension).
-                    // Use the tag-stripped base as the display name, or the full
-                    // stem if there are no tags to strip.
-                    let base = strip_filename_tags(stem);
-                    let name = if base.is_empty() { stem } else { base };
-                    // Un-invert comma-separated trailing articles:
-                    // "4th Unit Act 2, The" → "The 4th Unit Act 2"
-                    let uninverted = uninvert_article(name);
-                    let name = uninverted.as_deref().unwrap_or(name);
-                    // Strip TOSEC/GDI version strings: "Game v1.001" → "Game"
-                    let name = title_utils::strip_version(name);
-                    let mut display = rom_tags::display_name_with_tags(name, &rom_filename);
-                    // Append disc/side label for multi-part games (Option A).
-                    if let Some(label) = rom_tags::extract_disc_label(&rom_filename) {
-                        display.push_str(" [");
-                        display.push_str(&label);
-                        display.push(']');
-                    }
-                    Some(display)
-                })
+            game_db::game_display_name(system, &rom_filename).await
+        };
+
+        Self::from_parts(system, rom_filename, rom_path, resolved_name)
+    }
+
+    /// Build a `GameRef` from a pre-resolved catalog name (or `None` if the
+    /// catalog had no match). Applies the same tag/disc-label/article
+    /// processing as [`Self::new`] so callers that batched the DB lookup get
+    /// identical display strings.
+    pub fn from_parts(
+        system: &str,
+        rom_filename: String,
+        rom_path: String,
+        resolved_name: Option<String>,
+    ) -> Self {
+        let display_name = if systems::is_arcade_system(system) {
+            resolved_name
+        } else {
+            Some(compute_console_display_name(resolved_name.as_deref(), &rom_filename))
         };
 
         Self {
             system: system.to_string(),
-            system_display,
+            system_display: system_display_name(system),
             rom_filename,
             display_name,
             rom_path,
@@ -138,18 +107,46 @@ impl GameRef {
         rom_path: String,
         display_name: Option<String>,
     ) -> Self {
-        let system_display = systems::find_system(system)
-            .map(|s| s.display_name.to_string())
-            .unwrap_or_else(|| system.to_string());
-
         Self {
             system: system.to_string(),
-            system_display,
+            system_display: system_display_name(system),
             rom_filename,
             display_name,
             rom_path,
         }
     }
+}
+
+fn system_display_name(system: &str) -> String {
+    systems::find_system(system)
+        .map(|s| s.display_name.to_string())
+        .unwrap_or_else(|| system.to_string())
+}
+
+/// Build the final display string for a non-arcade ROM given the catalog's
+/// resolved canonical name (or `None` if no catalog match). Handles tag
+/// passthrough (region, revision, disc labels) and falls back to filename
+/// stem processing (article inversion, version stripping) when the catalog
+/// has no match.
+fn compute_console_display_name(resolved: Option<&str>, rom_filename: &str) -> String {
+    let base_name: String = match resolved {
+        Some(name) => name.to_string(),
+        None => {
+            let stem = title_utils::filename_stem(rom_filename);
+            let base = strip_filename_tags(stem);
+            let name = if base.is_empty() { stem } else { base };
+            let uninverted = uninvert_article(name);
+            let name = uninverted.as_deref().unwrap_or(name);
+            title_utils::strip_version(name).to_string()
+        }
+    };
+    let mut display = rom_tags::display_name_with_tags(&base_name, rom_filename);
+    if let Some(label) = rom_tags::extract_disc_label(rom_filename) {
+        display.push_str(" [");
+        display.push_str(&label);
+        display.push(']');
+    }
+    display
 }
 
 #[cfg(test)]
@@ -212,65 +209,69 @@ mod tests {
         assert_eq!(uninvert_article(""), None);
     }
 
-    #[test]
-    fn display_name_uninverts_m3u() {
-        // X68000 M3U file with comma-inverted title
+    #[tokio::test]
+    async fn display_name_uninverts_m3u() {
+        crate::game::init_test_catalog().await;
         let game_ref = GameRef::new(
             "sharp_x68k",
             "4th Unit Act 2, The.m3u".to_string(),
             "/roms/sharp_x68k/4th Unit Act 2, The.m3u".to_string(),
-        );
+        )
+        .await;
         assert_eq!(game_ref.display_name.as_deref(), Some("The 4th Unit Act 2"));
     }
 
-    #[test]
-    fn display_name_uninverts_dim() {
-        // X68000 .dim file with comma-inverted title and tags
+    #[tokio::test]
+    async fn display_name_uninverts_dim() {
+        crate::game::init_test_catalog().await;
         let game_ref = GameRef::new(
             "sharp_x68k",
             "Emerald Dragon, The (1990)(Glodia)(Disk 1 of 5).dim".to_string(),
             "/roms/sharp_x68k/Emerald Dragon, The (1990)(Glodia)(Disk 1 of 5).dim".to_string(),
-        );
-        // strip_filename_tags removes "(1990)..." part, leaving "Emerald Dragon, The"
-        // uninvert_article turns it into "The Emerald Dragon"
-        // disc label appended in brackets
+        )
+        .await;
         assert_eq!(
             game_ref.display_name.as_deref(),
             Some("The Emerald Dragon [Disk 1 of 5]")
         );
     }
 
-    #[test]
-    fn display_name_no_comma_no_change() {
-        // Regular filename without comma inversion
+    #[tokio::test]
+    async fn display_name_no_comma_no_change() {
+        crate::game::init_test_catalog().await;
         let game_ref = GameRef::new(
             "sharp_x68k",
             "Alshark.m3u".to_string(),
             "/roms/sharp_x68k/Alshark.m3u".to_string(),
-        );
+        )
+        .await;
         assert_eq!(game_ref.display_name.as_deref(), Some("Alshark"));
     }
 
-    #[test]
-    fn display_name_side_a() {
+    #[tokio::test]
+    async fn display_name_side_a() {
+        crate::game::init_test_catalog().await;
         let game_ref = GameRef::new(
             "amstrad_cpc",
             "Arkanoid (1987)(Imagine)(GB)(Side A).dsk".to_string(),
             "/roms/amstrad_cpc/Arkanoid (1987)(Imagine)(GB)(Side A).dsk".to_string(),
-        );
+        )
+        .await;
         assert_eq!(
             game_ref.display_name.as_deref(),
             Some("Arkanoid (UK) [Side A]")
         );
     }
 
-    #[test]
-    fn display_name_no_disc_label() {
+    #[tokio::test]
+    async fn display_name_no_disc_label() {
+        crate::game::init_test_catalog().await;
         let game_ref = GameRef::new(
             "amstrad_cpc",
             "Commando (1985)(Elite)(GB).dsk".to_string(),
             "/roms/amstrad_cpc/Commando (1985)(Elite)(GB).dsk".to_string(),
-        );
+        )
+        .await;
         assert_eq!(game_ref.display_name.as_deref(), Some("Commando (UK)"));
     }
 }

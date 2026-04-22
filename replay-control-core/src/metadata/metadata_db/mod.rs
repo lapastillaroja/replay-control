@@ -8,11 +8,13 @@ mod game_library;
 mod game_metadata;
 mod recommendations;
 mod relationships;
-mod release_dates;
+pub mod release_dates;
 
 pub use aliases_series::SequelChainInfo;
 pub use game_library::SearchFilter;
-pub use release_dates::{ReleaseDateRow, region_pref_to_db_region};
+pub use release_dates::{
+    ReleaseDateRow, StaticReleaseData, fetch_static_release_data, region_pref_to_db_region,
+};
 
 use std::path::{Path, PathBuf};
 

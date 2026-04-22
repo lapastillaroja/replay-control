@@ -75,6 +75,7 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
     let games: Vec<GameRef> = state
         .cache
         .get_recents(&storage)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()
         .map(|e| e.game)
@@ -87,6 +88,7 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
 async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry>>, StatusCode> {
     let storage = state.storage();
     let games: Vec<GameRef> = replay_control_core::favorites::list_favorites(&storage)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()
         .map(|f| f.game)

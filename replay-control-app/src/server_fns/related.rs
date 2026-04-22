@@ -129,28 +129,20 @@ pub async fn get_related_games(
         .cached_systems(&storage, &state.metadata_pool)
         .await;
 
-    // Look up the detail genre from game_library for two-tier similar matching.
-    // The detail genre (e.g., "Maze / Shooter") is passed to similar_by_genre(),
-    // which internally normalizes it to genre_group for broader matching.
-    use replay_control_core::systems::{self, SystemCategory};
-    let sys_info = systems::find_system(&system);
-    let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
+    let is_arcade = replay_control_core::systems::is_arcade_system(&system);
 
     let region_pref = state.region_preference();
     let region_pref_str = region_pref.as_str().to_string();
 
-    // Pre-compute genre fallback outside the closure (lookup_genre is async).
     let genre_fallback = {
         let g = super::search::lookup_genre(&system, &filename).await;
         if g.is_empty() { None } else { Some(g) }
     };
 
-    // Clone owned values for the Send + 'static closure.
     let system_cl = system.clone();
     let filename_cl = filename.clone();
     let region_pref_str_cl = region_pref_str.clone();
 
-    // Single DB access for all queries.
     let db_data = state
         .metadata_pool
         .read(move |conn| {
@@ -167,10 +159,7 @@ pub async fn get_related_games(
             let specials_raw =
                 MetadataDb::specials(conn, &system_cl, &filename_cl).unwrap_or_default();
 
-            // Load all entries once — used for current entry lookup and arcade clone siblings.
             let all_entries = MetadataDb::load_system_entries(conn, &system_cl).unwrap_or_default();
-
-            // Get the current game's base_title, series_key for relationship queries.
             let current_entry = all_entries.iter().find(|e| e.rom_filename == filename_cl);
 
             let base_title = current_entry
@@ -184,7 +173,7 @@ pub async fn get_related_games(
                 .or(genre_fallback)
                 .unwrap_or_default();
 
-            // Series siblings: prefer Wikidata data (has ordering), fall back to algorithmic series_key.
+            // Series siblings: prefer Wikidata (has ordering), fall back to algorithmic series_key.
             let (series_raw, series_name_raw) = {
                 let wikidata = MetadataDb::wikidata_series_siblings(
                     conn,
@@ -195,14 +184,12 @@ pub async fn get_related_games(
                 )
                 .unwrap_or_default();
                 if !wikidata.is_empty() {
-                    // Wikidata series found: use it (entries come with optional order).
                     let sname = MetadataDb::lookup_series_name(conn, &system_cl, &base_title)
                         .unwrap_or_default();
                     let entries: Vec<_> =
                         wikidata.into_iter().map(|(entry, _order)| entry).collect();
                     (entries, sname)
                 } else {
-                    // Fall back to algorithmic series_key matching.
                     let fallback = MetadataDb::series_siblings(
                         conn,
                         &series_key,
@@ -215,9 +202,7 @@ pub async fn get_related_games(
                 }
             };
 
-            // Cross-system availability: same base_title on other systems.
-            // Skip when Wikidata series data exists (it already covers cross-system entries).
-            // Also skip for clones/hacks — only show for primary entries.
+            // Skip when Wikidata series data covers cross-system entries, or for clones/hacks.
             let is_primary = current_entry.is_none_or(|e| !e.is_clone && !e.is_hack);
             let cross_system_raw = if series_raw.is_empty() && is_primary {
                 MetadataDb::cross_system_availability(
@@ -250,7 +235,6 @@ pub async fn get_related_games(
                     .unwrap_or_default()
             };
 
-            // For arcade systems, collect all ROM filenames for clone sibling lookup.
             let all_system_roms: Vec<String> = if is_arcade {
                 all_entries.iter().map(|e| e.rom_filename.clone()).collect()
             } else {
@@ -441,7 +425,7 @@ pub async fn get_related_games(
 
     // Build arcade versions: clone siblings sharing the same parent ROM.
     let arcade_versions = if is_arcade {
-        build_arcade_versions(&system, &filename, &all_system_roms)
+        build_arcade_versions(&system, &filename, &all_system_roms).await
     } else {
         Vec::new()
     };
@@ -568,18 +552,22 @@ pub async fn get_related_games(
 /// Uses `arcade_db` to resolve parent/clone relationships, then cross-references
 /// with the ROMs that actually exist in this system's `game_library`.
 #[cfg(feature = "ssr")]
-fn build_arcade_versions(
+async fn build_arcade_versions(
     system: &str,
     current_filename: &str,
     all_system_roms: &[String],
 ) -> Vec<ArcadeVersion> {
     use replay_control_core::arcade_db;
 
-    let current_stem = current_filename
-        .strip_suffix(".zip")
-        .unwrap_or(current_filename);
+    let current_stem = replay_control_core::title_utils::filename_stem(current_filename);
 
-    let current_info = match arcade_db::lookup_arcade_game(current_stem) {
+    let stems: Vec<&str> = all_system_roms
+        .iter()
+        .map(|f| replay_control_core::title_utils::filename_stem(f))
+        .collect();
+    let mut batch = arcade_db::lookup_arcade_games_batch(&stems).await;
+
+    let current_info = match batch.get(current_stem).cloned() {
         Some(info) => info,
         None => return Vec::new(),
     };
@@ -592,17 +580,23 @@ fn build_arcade_versions(
         current_info.rom_name
     };
 
-    // Get the parent's display name for label extraction.
-    let parent_display = arcade_db::lookup_arcade_game(parent_name)
-        .map(|info| info.display_name)
-        .unwrap_or(parent_name);
+    // Parent may not be in the system's ROM list, so fall back to a singular lookup.
+    let parent_display = if let Some(info) = batch.get(parent_name.as_str()) {
+        info.display_name.clone()
+    } else if let Some(info) = arcade_db::lookup_arcade_game(&parent_name).await {
+        let name = info.display_name.clone();
+        batch.insert(parent_name.clone(), info);
+        name
+    } else {
+        parent_name.clone()
+    };
 
     // Find all ROMs in this system that share the same parent via arcade_db.
     let mut versions: Vec<ArcadeVersion> = all_system_roms
         .iter()
         .filter_map(|rom_fn| {
-            let stem = rom_fn.strip_suffix(".zip").unwrap_or(rom_fn);
-            let info = arcade_db::lookup_arcade_game(stem)?;
+            let stem = replay_control_core::title_utils::filename_stem(rom_fn);
+            let info = batch.get(stem)?.clone();
 
             // Must share the same parent (or BE the parent).
             let rom_parent = if info.is_clone && !info.parent.is_empty() {
@@ -630,7 +624,7 @@ fn build_arcade_versions(
             }
 
             let is_current = rom_fn == current_filename;
-            let label = arcade_clone_label(parent_display, info.display_name);
+            let label = arcade_clone_label(&parent_display, &info.display_name);
             let href = format!("/games/{}/{}", system, urlencoding::encode(rom_fn));
 
             Some(ArcadeVersion {

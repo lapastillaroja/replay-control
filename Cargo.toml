@@ -4,6 +4,7 @@ members = [
     "replay-control-core",
     "replay-control-app",
     "tools/generate-test-fixtures",
+    "tools/build-catalog",
 ]
 
 [workspace.package]

@@ -23,8 +23,17 @@ pub async fn get_boxart_variants(
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
 
+    let arcade_display =
+        replay_control_core::arcade_db::display_name_if_arcade(&system, &rom_filename).await;
+
     // Resolve the current active box art URL first.
-    let active_url = crate::server_fns::resolve_box_art_url(&state, &system, &rom_filename).await;
+    let active_url = crate::server_fns::resolve_box_art_url(
+        &state,
+        &system,
+        &rom_filename,
+        arcade_display.as_deref(),
+    )
+    .await;
 
     // Gracefully return empty when the DB is temporarily unavailable
     // (e.g., during a metadata import or thumbnail update operation).
@@ -37,6 +46,7 @@ pub async fn get_boxart_variants(
                     conn,
                     &system,
                     &rom_filename,
+                    arcade_display.as_deref(),
                     &storage_root,
                     active_url.as_deref(),
                 )
@@ -134,7 +144,7 @@ pub async fn set_boxart_override(
         .join(&system)
         .join(ThumbnailKind::Boxart.media_dir());
     let local_path = media_dir.join(format!("{variant_filename}.png"));
-    let is_valid = replay_control_core::thumbnails::is_valid_image(&local_path);
+    let is_valid = replay_control_core::thumbnails::is_valid_image(local_path).await;
 
     if !is_valid {
         let bytes = thumbnail_manifest::download_thumbnail(
@@ -144,20 +154,14 @@ pub async fn set_boxart_override(
         .await
         .map_err(|e| ServerFnError::new(format!("Download failed: {e}")))?;
 
-        let storage_root = storage.root.clone();
-        let sys = system.clone();
-        let filename = manifest_match.filename.clone();
-        tokio::task::spawn_blocking(move || {
-            thumbnail_manifest::save_thumbnail(
-                &storage_root,
-                &sys,
-                ThumbnailKind::Boxart,
-                &filename,
-                &bytes,
-            )
-        })
+        thumbnail_manifest::save_thumbnail(
+            &storage.root,
+            &system,
+            ThumbnailKind::Boxart,
+            &manifest_match.filename,
+            bytes,
+        )
         .await
-        .map_err(|e| ServerFnError::new(format!("Save task failed: {e}")))?
         .map_err(|e| ServerFnError::new(format!("Save failed: {e}")))?;
     }
 

@@ -40,6 +40,10 @@ mod ssr {
         #[arg(long)]
         settings_path: Option<String>,
 
+        /// Path to the game catalog SQLite file
+        #[arg(long, default_value = "catalog.sqlite")]
+        catalog_path: String,
+
         /// Path to the site root (where pkg/ and style.css live)
         #[arg(long, default_value = "target/site")]
         site_root: String,
@@ -401,6 +405,26 @@ mod ssr {
         axum::response::Html(html).into_response()
     }
 
+    /// Resolve the catalog SQLite path. If the supplied path is relative and
+    /// doesn't exist at the current working directory, fall back to the same
+    /// filename next to the executable (systemd units without `WorkingDirectory`
+    /// default to `/`, where `catalog.sqlite` won't exist).
+    fn resolve_catalog_path(configured: &str) -> std::path::PathBuf {
+        let as_given = std::path::PathBuf::from(configured);
+        if as_given.is_absolute() || as_given.exists() {
+            return as_given;
+        }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(dir) = exe.parent()
+        {
+            let candidate = dir.join(&as_given);
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+        as_given
+    }
+
     pub async fn run() {
         use std::io::IsTerminal;
         tracing_subscriber::fmt()
@@ -419,6 +443,17 @@ mod ssr {
         let _ = any_spawner::Executor::init_tokio();
 
         let cli = Cli::parse();
+
+        let catalog_path = resolve_catalog_path(&cli.catalog_path);
+        if let Err(e) = replay_control_core::init_catalog(&catalog_path).await {
+            tracing::error!(
+                "catalog not loaded from {} ({e}) — catalog.sqlite is required. \
+                Place it next to the executable or pass --catalog-path.",
+                catalog_path.display()
+            );
+            std::process::exit(1);
+        }
+        tracing::info!("catalog loaded from {}", catalog_path.display());
 
         let app_state =
             match api::AppState::new(cli.storage_path, cli.config_path, cli.settings_path) {

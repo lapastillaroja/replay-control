@@ -45,26 +45,25 @@ pub(crate) use replay_control_core::search_scoring::{search_score, split_into_wo
 pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
     use replay_control_core::arcade_db;
     use replay_control_core::game_db;
-    use replay_control_core::systems::{self, SystemCategory};
+    use replay_control_core::systems;
 
-    let is_arcade =
-        systems::find_system(system).is_some_and(|s| s.category == SystemCategory::Arcade);
+    let is_arcade = systems::is_arcade_system(system);
 
+    let stem = replay_control_core::title_utils::filename_stem(rom_filename);
     let baked_genre = if is_arcade {
-        let stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
         arcade_db::lookup_arcade_game(stem)
+            .await
             .map(|info| info.normalized_genre.to_string())
             .unwrap_or_default()
     } else {
-        let stem = rom_filename
-            .rfind('.')
-            .map(|i| &rom_filename[..i])
-            .unwrap_or(rom_filename);
-        let entry = game_db::lookup_game(system, stem);
-        let game = entry.map(|e| e.game).or_else(|| {
-            let normalized = game_db::normalize_filename(stem);
-            game_db::lookup_by_normalized_title(system, &normalized)
-        });
+        let entry = game_db::lookup_game(system, stem).await;
+        let game = match entry {
+            Some(e) => Some(e.game),
+            None => {
+                let normalized = game_db::normalize_filename(stem);
+                game_db::lookup_by_normalized_title(system, &normalized).await
+            }
+        };
         game.map(|g| g.normalized_genre.to_string())
             .unwrap_or_default()
     };

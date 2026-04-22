@@ -5,10 +5,20 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::arcade_db::ArcadeGameInfo;
+use crate::game_db::{CanonicalGame, GameEntry as CatalogGameEntry};
 use crate::metadata_db::GameEntry;
 use crate::rom_hash::HashResult;
 use crate::roms::RomEntry;
 use crate::{arcade_db, developer, game_db, genre, rom_tags, systems, title_utils};
+
+/// Pre-fetched catalog lookups for a system, keyed by filename stem.
+#[derive(Default)]
+struct CatalogLookup {
+    arcade: HashMap<String, ArcadeGameInfo>,
+    by_stem: HashMap<String, CatalogGameEntry>,
+    by_normalized: HashMap<String, CanonicalGame>,
+}
 
 /// Intermediate metadata extracted from game/arcade databases and filename tags.
 ///
@@ -29,16 +39,18 @@ type RomMetadata = (
 /// Enriches each ROM with genre, developer, year, region, clone status, and
 /// series key using the baked-in game/arcade databases and filename tags.
 /// Also applies TOSEC clone inference and display name disambiguation.
-pub fn build_game_entries(
+pub async fn build_game_entries(
     system: &str,
     roms: &[RomEntry],
     hash_results: &HashMap<String, HashResult>,
 ) -> Vec<GameEntry> {
     let is_arcade = systems::is_arcade_system(system);
 
+    let batch = prefetch_catalog(system, roms, hash_results, is_arcade).await;
+
     let mut entries: Vec<GameEntry> = roms
         .iter()
-        .filter_map(|r| build_single_entry(system, r, hash_results, is_arcade))
+        .filter_map(|r| build_single_entry(r, hash_results, is_arcade, &batch))
         .collect();
 
     // Phase 2: Infer is_clone for TOSEC bracket-tagged entries.
@@ -58,16 +70,13 @@ pub fn build_game_entries(
 
 /// Build a single `GameEntry` from a `RomEntry`.
 fn build_single_entry(
-    system: &str,
     r: &RomEntry,
     hash_results: &HashMap<String, HashResult>,
     is_arcade: bool,
+    batch: &CatalogLookup,
 ) -> Option<GameEntry> {
     let rom_filename = &r.game.rom_filename;
-    let stem = rom_filename
-        .rfind('.')
-        .map(|i| &rom_filename[..i])
-        .unwrap_or(rom_filename);
+    let stem = title_utils::filename_stem(rom_filename);
 
     // Two-tier genre: `genre` = detail/original, `genre_group` = normalized.
     // Also extract developer (manufacturer for arcade, empty for console — enriched later).
@@ -82,9 +91,9 @@ fn build_single_entry(
         release_year,
         cooperative,
     ) = if is_arcade {
-        build_arcade_metadata(rom_filename, stem)
+        build_arcade_metadata(stem, batch)
     } else {
-        build_console_metadata(system, r, rom_filename, stem, hash_results)
+        build_console_metadata(r, rom_filename, stem, hash_results, batch)
     }?;
 
     // Extract TOSEC structured metadata (year, publisher) from filename tags.
@@ -169,10 +178,78 @@ fn build_single_entry(
     })
 }
 
+/// Batch all catalog lookups for the per-ROM builder into one or two queries
+/// per system.
+async fn prefetch_catalog(
+    system: &str,
+    roms: &[RomEntry],
+    hash_results: &HashMap<String, HashResult>,
+    is_arcade: bool,
+) -> CatalogLookup {
+    if is_arcade {
+        let stems: Vec<String> = roms
+            .iter()
+            .map(|r| title_utils::filename_stem(&r.game.rom_filename).to_string())
+            .collect();
+        let refs: Vec<&str> = stems.iter().map(|s| s.as_str()).collect();
+        let arcade = arcade_db::lookup_arcade_games_batch(&refs).await;
+        CatalogLookup {
+            arcade,
+            ..Default::default()
+        }
+    } else {
+        let mut stems: Vec<String> = roms
+            .iter()
+            .map(|r| title_utils::filename_stem(&r.game.rom_filename).to_string())
+            .collect();
+        // Include CRC-matched canonical names as additional lookup keys.
+        for r in roms {
+            if let Some(hr) = hash_results.get(&r.game.rom_filename)
+                && let Some(name) = &hr.matched_name
+            {
+                stems.push(name.clone());
+            }
+        }
+        stems.sort();
+        stems.dedup();
+        let stem_refs: Vec<&str> = stems.iter().map(|s| s.as_str()).collect();
+        let by_stem = game_db::lookup_games_batch(system, &stem_refs).await;
+
+        // Normalized-title fallback for ROMs that didn't match a stem.
+        let missing_norms: Vec<String> = roms
+            .iter()
+            .filter_map(|r| {
+                let fname = &r.game.rom_filename;
+                let stem = title_utils::filename_stem(fname);
+                if by_stem.contains_key(stem) {
+                    return None;
+                }
+                let matched = hash_results
+                    .get(fname)
+                    .and_then(|hr| hr.matched_name.as_deref())
+                    .map(|n| by_stem.contains_key(n))
+                    .unwrap_or(false);
+                if matched {
+                    return None;
+                }
+                Some(game_db::normalize_filename(stem))
+            })
+            .collect();
+        let norm_refs: Vec<&str> = missing_norms.iter().map(|s| s.as_str()).collect();
+        let by_normalized =
+            game_db::lookup_by_normalized_titles_batch(system, &norm_refs).await;
+
+        CatalogLookup {
+            arcade: HashMap::new(),
+            by_stem,
+            by_normalized,
+        }
+    }
+}
+
 /// Extract metadata from arcade databases. Returns `None` for BIOS entries.
-fn build_arcade_metadata(rom_filename: &str, stem: &str) -> Option<RomMetadata> {
-    let arcade_stem = rom_filename.strip_suffix(".zip").unwrap_or(rom_filename);
-    match arcade_db::lookup_arcade_game(arcade_stem) {
+fn build_arcade_metadata(stem: &str, batch: &CatalogLookup) -> Option<RomMetadata> {
+    match batch.arcade.get(stem).cloned() {
         Some(info) => {
             // Skip BIOS entries — they're not playable games
             if info.is_bios {
@@ -183,15 +260,15 @@ fn build_arcade_metadata(rom_filename: &str, stem: &str) -> Option<RomMetadata> 
             } else {
                 Some(info.category.to_string())
             };
-            let group = genre::normalize_genre(info.category).to_string();
-            let dev = developer::normalize_developer(info.manufacturer);
+            let group = genre::normalize_genre(&info.category).to_string();
+            let dev = developer::normalize_developer(&info.manufacturer);
             let year: Option<u16> = info.year.parse::<u16>().ok().filter(|&y| y > 0);
             Some((
                 detail,
                 group,
                 Some(info.players),
                 info.is_clone,
-                title_utils::base_title(info.display_name),
+                title_utils::base_title(&info.display_name),
                 dev,
                 year,
                 false,
@@ -213,22 +290,22 @@ fn build_arcade_metadata(rom_filename: &str, stem: &str) -> Option<RomMetadata> 
 /// Extract metadata from console game databases.
 /// Always returns `Some` (console ROMs are never filtered out).
 fn build_console_metadata(
-    system: &str,
     r: &RomEntry,
     rom_filename: &str,
     stem: &str,
     hash_results: &HashMap<String, HashResult>,
+    batch: &CatalogLookup,
 ) -> Option<RomMetadata> {
     // Try CRC-based lookup first (if we have a hash match),
     // then fall back to filename-based lookup.
     let hash_entry = hash_results
         .get(rom_filename)
         .and_then(|hr| hr.matched_name.as_ref())
-        .and_then(|name| game_db::lookup_game(system, name));
-    let entry = hash_entry.or_else(|| game_db::lookup_game(system, stem));
+        .and_then(|name| batch.by_stem.get(name.as_str()).cloned());
+    let entry = hash_entry.or_else(|| batch.by_stem.get(stem).cloned());
     let game = entry.map(|e| e.game).or_else(|| {
         let normalized = game_db::normalize_filename(stem);
-        game_db::lookup_by_normalized_title(system, &normalized)
+        batch.by_normalized.get(&normalized).cloned()
     });
     let bt = r
         .game
@@ -243,7 +320,7 @@ fn build_console_metadata(
             } else {
                 Some(g.genre.to_string())
             };
-            let group = genre::normalize_genre(g.genre).to_string();
+            let group = genre::normalize_genre(&g.genre).to_string();
             let year: Option<u16> = if g.year > 0 { Some(g.year) } else { None };
             let cooperative = g.coop.unwrap_or(false);
             Some((

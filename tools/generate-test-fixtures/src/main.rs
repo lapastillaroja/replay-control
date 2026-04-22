@@ -281,7 +281,7 @@ fn parse_nointro_dat(path: &Path, max_count: usize) -> Vec<String> {
 
     // Sort: USA/World first, then Europe, then rest. This ensures the most
     // useful test entries survive the truncation to max_count.
-    all_entries.sort_by(|a, b| region_priority(&a.1).cmp(&region_priority(&b.1)));
+    all_entries.sort_by_key(|a| region_priority(&a.1));
 
     all_entries
         .into_iter()

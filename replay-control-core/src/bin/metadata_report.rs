@@ -16,16 +16,18 @@ use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::rom_tags;
 use replay_control_core::roms;
 use replay_control_core::storage::{StorageKind, StorageLocation};
-use replay_control_core::systems::{self, SystemCategory};
+use replay_control_core::systems;
+use replay_control_core::title_utils;
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     let (storage_path, import_xml) = parse_args();
     let storage = StorageLocation::from_path(storage_path, StorageKind::Usb);
 
     // Optional: re-import LaunchBox metadata before generating the report.
     if let Some(xml_path) = import_xml {
         eprintln!("Building ROM index...");
-        let rom_index = launchbox::build_rom_index(&storage.root);
+        let rom_index = launchbox::build_rom_index(&storage.root).await;
         eprintln!("ROM index: {} entries", rom_index.len());
 
         eprintln!("Opening metadata DB...");
@@ -52,7 +54,7 @@ fn main() {
     // Open external metadata DB (may not exist yet).
     let meta_conn = MetadataDb::open(&storage.root).ok().map(|(c, _)| c);
 
-    let summaries = roms::scan_systems(&storage);
+    let summaries = roms::scan_systems(&storage).await;
     let active: Vec<_> = summaries.iter().filter(|s| s.game_count > 0).collect();
 
     if active.is_empty() {
@@ -79,15 +81,16 @@ fn main() {
 
     for summary in &active {
         let system_name = &summary.folder_name;
-        let sys_info = systems::find_system(system_name);
-        let is_arcade = sys_info.is_some_and(|s| s.category == SystemCategory::Arcade);
+        let is_arcade = systems::is_arcade_system(system_name);
 
         let rom_list = match roms::list_roms(
             &storage,
             system_name,
             rom_tags::RegionPreference::default(),
             None,
-        ) {
+        )
+        .await
+        {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("  Error listing ROMs for {system_name}: {e}");
@@ -103,13 +106,48 @@ fn main() {
         let mut embedded = EmbeddedCoverage::default();
         let mut external = ExternalCoverage::default();
 
+        let arcade_batch = if is_arcade {
+            let stems: Vec<&str> = rom_list
+                .iter()
+                .map(|r| title_utils::filename_stem(r.game.rom_filename.as_str()))
+                .collect();
+            arcade_db::lookup_arcade_games_batch(&stems).await
+        } else {
+            Default::default()
+        };
+        let (game_by_stem, game_by_norm) = if is_arcade {
+            Default::default()
+        } else {
+            let stems: Vec<&str> = rom_list
+                .iter()
+                .map(|r| title_utils::filename_stem(r.game.rom_filename.as_str()))
+                .collect();
+            let by_stem = game_db::lookup_games_batch(system_name, &stems).await;
+            let missing_norms: Vec<String> = rom_list
+                .iter()
+                .filter_map(|r| {
+                    let f = r.game.rom_filename.as_str();
+                    let stem = title_utils::filename_stem(f);
+                    if by_stem.contains_key(stem) {
+                        return None;
+                    }
+                    let n = game_db::normalize_filename(stem);
+                    (!n.is_empty()).then_some(n)
+                })
+                .collect();
+            let norm_refs: Vec<&str> = missing_norms.iter().map(String::as_str).collect();
+            let by_norm =
+                game_db::lookup_by_normalized_titles_batch(system_name, &norm_refs).await;
+            (by_stem, by_norm)
+        };
+
         for rom in &rom_list {
             let filename = &rom.game.rom_filename;
 
             // --- Embedded metadata ---
             if is_arcade {
-                let rom_name = filename.strip_suffix(".zip").unwrap_or(filename);
-                if let Some(info) = arcade_db::lookup_arcade_game(rom_name) {
+                let rom_name = title_utils::filename_stem(filename);
+                if let Some(info) = arcade_batch.get(rom_name) {
                     embedded.display_name += 1;
                     if !info.year.is_empty() {
                         embedded.year += 1;
@@ -132,21 +170,23 @@ fn main() {
                 }
             } else {
                 // Try exact match first, then normalized
-                let stem = filename
-                    .rfind('.')
-                    .map(|i| &filename[..i])
-                    .unwrap_or(filename);
+                let stem = title_utils::filename_stem(filename);
 
-                let entry = game_db::lookup_game(system_name, stem);
+                let entry = game_by_stem.get(stem);
+                let has_region = entry.is_some_and(|e| !e.region.is_empty());
 
                 // Also try normalized for CanonicalGame (which has more fields)
-                let canonical = entry.map(|e| e.game).or_else(|| {
-                    let normalized = game_db::normalize_filename(stem);
-                    if normalized.is_empty() {
-                        return None;
+                let canonical = match entry {
+                    Some(e) => Some(&e.game),
+                    None => {
+                        let normalized = game_db::normalize_filename(stem);
+                        if normalized.is_empty() {
+                            None
+                        } else {
+                            game_by_norm.get(&normalized)
+                        }
                     }
-                    game_db::lookup_by_normalized_title(system_name, &normalized)
-                });
+                };
 
                 if let Some(game) = canonical {
                     embedded.display_name += 1;
@@ -168,9 +208,7 @@ fn main() {
                     embedded.any += 1;
                 }
 
-                if let Some(e) = entry
-                    && !e.region.is_empty()
-                {
+                if has_region {
                     embedded.region += 1;
                 }
             }

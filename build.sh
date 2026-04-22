@@ -43,6 +43,12 @@ else
     echo "==> Data files present, skipping download."
 fi
 
+echo "==> Building game catalog..."
+if ! cargo run --release -p build-catalog -- --output catalog.sqlite; then
+    echo "ERROR: catalog build failed" >&2
+    exit 1
+fi
+
 echo "==> Building WASM (hydrate)..."
 cargo build -p "$CRATE" --lib \
   --target wasm32-unknown-unknown \

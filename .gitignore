@@ -111,6 +111,13 @@ server_debug.log
 __pycache__/
 research/investigations/load-tests/
 tools/bench-results/
+PLAN.md
+.claude/
+
+# Build-time catalog (generated from data/ — not committed; only fixture is tracked)
+/catalog.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
 # End of https://www.toptal.com/developers/gitignore/api/rust,linux,macos,windows,visualstudiocode
 

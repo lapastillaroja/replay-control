@@ -21,7 +21,7 @@ use crate::title_utils::{
 /// * `system` - The system folder name.
 /// * `library_base_titles` - Set of all `base_title` values in the library.
 /// * `library_fuzzy` - Map of `fuzzy_match_key(base_title)` -> `base_title`.
-pub fn build_tgdb_alias_tuples(
+pub async fn build_tgdb_alias_tuples(
     system: &str,
     library_base_titles: &HashSet<&str>,
     library_fuzzy: &HashMap<String, &str>,
@@ -32,26 +32,26 @@ pub fn build_tgdb_alias_tuples(
     let is_arcade = systems::is_arcade_system(system);
 
     // TGDB alternates are only available for non-arcade systems with game_db coverage.
-    if is_arcade || !game_db::has_system(system) {
+    if is_arcade || !game_db::has_system(system).await {
         return Vec::new();
     }
 
-    let alternates = game_db::system_alternates(system);
+    let alternates = game_db::system_alternates(system).await;
     if alternates.is_empty() {
         return Vec::new();
     }
 
-    let games = match game_db::system_games(system) {
-        Some(g) => g,
-        None => return Vec::new(),
-    };
+    let games = game_db::system_games(system).await;
+    if games.is_empty() {
+        return Vec::new();
+    }
 
     let mut aliases: Vec<AliasInsert> = Vec::new();
 
-    for &(game_id, alt_names) in alternates {
+    for (game_id, alt_names) in alternates {
         if let Some(game) = games.get(game_id as usize) {
             let resolved =
-                resolve_to_library_title(game.display_name, library_base_titles, library_fuzzy);
+                resolve_to_library_title(&game.display_name, library_base_titles, library_fuzzy);
             if !library_base_titles.contains(resolved.as_str())
                 && !library_fuzzy.contains_key(&fuzzy_match_key(&resolved))
             {
@@ -59,7 +59,7 @@ pub fn build_tgdb_alias_tuples(
             }
             let library_bt = resolved;
 
-            for alt in alt_names {
+            for alt in &alt_names {
                 let alt_resolved =
                     resolve_to_library_title(alt, library_base_titles, library_fuzzy);
                 if alt_resolved != library_bt && !alt_resolved.is_empty() {
@@ -103,7 +103,7 @@ pub fn build_tgdb_alias_tuples(
 /// # Arguments
 /// * `system` - The system folder name.
 /// * `library_entries` - All `GameEntry` rows from `game_library` for this system.
-pub fn build_wikidata_series_tuples(
+pub async fn build_wikidata_series_tuples(
     system: &str,
     library_entries: &[GameEntry],
 ) -> Vec<SeriesInsert> {
@@ -114,7 +114,7 @@ pub fn build_wikidata_series_tuples(
     // A game's Wikidata entry may list a different platform than the ROM's actual system
     // (e.g., Metal Slug X tagged as sony_psx but ROM is on arcade_fbneo).
     // Series data is platform-independent, so cross-system matching is correct.
-    let wikidata_entries = series_db::all_entries();
+    let wikidata_entries = series_db::all_entries().await;
     if wikidata_entries.is_empty() {
         return Vec::new();
     }
@@ -191,15 +191,15 @@ pub fn build_wikidata_series_tuples(
     let mut series_entries: Vec<SeriesInsert> = Vec::new();
 
     for entry in wikidata_entries {
-        if let Some(base_titles) = norm_to_bases.get(entry.normalized_title)
+        if let Some(base_titles) = norm_to_bases.get(&entry.normalized_title)
             && !entry.series_name.is_empty()
         {
             // Resolve follows/followed_by Wikidata titles to library base_titles.
             // If the linked game is in the library, store its base_title for direct join.
             // If not, store the raw Wikidata title for display purposes.
             // Filter out unresolved QID references (e.g., "Q88759").
-            let follows = resolve_sequel_link(entry.follows, &norm_to_bases);
-            let followed_by = resolve_sequel_link(entry.followed_by, &norm_to_bases);
+            let follows = resolve_sequel_link(&entry.follows, &norm_to_bases);
+            let followed_by = resolve_sequel_link(&entry.followed_by, &norm_to_bases);
 
             for base_title in base_titles {
                 series_entries.push(SeriesInsert {
@@ -362,46 +362,48 @@ mod tests {
         }
     }
 
-    #[test]
-    fn tgdb_aliases_empty_for_arcade() {
+    #[tokio::test]
+    async fn tgdb_aliases_empty_for_arcade() {
         let exact: HashSet<&str> = HashSet::new();
         let fuzzy: HashMap<String, &str> = HashMap::new();
-        let result = build_tgdb_alias_tuples("arcade_fbneo", &exact, &fuzzy);
+        let result = build_tgdb_alias_tuples("arcade_fbneo", &exact, &fuzzy).await;
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn tgdb_aliases_empty_for_unsupported_system() {
+    #[tokio::test]
+    async fn tgdb_aliases_empty_for_unsupported_system() {
         let exact: HashSet<&str> = HashSet::new();
         let fuzzy: HashMap<String, &str> = HashMap::new();
-        let result = build_tgdb_alias_tuples("nonexistent_system", &exact, &fuzzy);
+        let result = build_tgdb_alias_tuples("nonexistent_system", &exact, &fuzzy).await;
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn wikidata_series_works_for_arcade() {
+    #[tokio::test]
+    async fn wikidata_series_works_for_arcade() {
         // Arcade systems now have Wikidata series data (546 entries).
         // "some game" won't match anything, but it shouldn't panic.
         let entries = vec![make_entry("arcade_fbneo", "some game")];
-        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries).await;
         // No match expected for a fake game, but the function runs without skipping.
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn wikidata_series_empty_for_empty_library() {
-        let result = build_wikidata_series_tuples("nintendo_snes", &[]);
+    #[tokio::test]
+    async fn wikidata_series_empty_for_empty_library() {
+        let result = build_wikidata_series_tuples("nintendo_snes", &[]).await;
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn wikidata_series_subtitle_stripped_matching() {
+    #[tokio::test]
+    async fn wikidata_series_subtitle_stripped_matching() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
         // ROM has "dodonpachi ii - bee storm" as base_title.
         // Wikidata has "DoDonPachi II" (no subtitle).
         // The subtitle-stripped fallback should match via "dodonpachi ii".
         let mut entry = make_entry("arcade_fbneo", "dodonpachi ii - bee storm");
         entry.display_name = Some("DoDonPachi II - Bee Storm (World, ver. 102)".to_string());
-        let result = build_wikidata_series_tuples("arcade_fbneo", &[entry]);
+        let result = build_wikidata_series_tuples("arcade_fbneo", &[entry]).await;
         let has_donpachi = result.iter().any(|s| s.series_name == "DonPachi");
         assert!(
             has_donpachi,
@@ -416,8 +418,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn wikidata_series_multi_base_title_per_norm_key() {
+    #[tokio::test]
+    async fn wikidata_series_multi_base_title_per_norm_key() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
         // Bug fix: when multiple ROMs normalize to the same Wikidata key,
         // ALL of them should get game_series entries (not just the first one).
         //
@@ -428,7 +432,7 @@ mod tests {
             make_entry("arcade_fbneo", "dodonpachi ii"),
             make_entry("arcade_fbneo", "dodonpachi ii - bee storm"),
         ];
-        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries).await;
         let donpachi_bts: Vec<&str> = result
             .iter()
             .filter(|s| s.series_name == "DonPachi")
@@ -446,23 +450,23 @@ mod tests {
         );
     }
 
-    #[test]
-    fn wikidata_series_skips_entries_without_base_title() {
+    #[tokio::test]
+    async fn wikidata_series_skips_entries_without_base_title() {
         let entries = vec![make_entry("nintendo_snes", "")];
-        let result = build_wikidata_series_tuples("nintendo_snes", &entries);
+        let result = build_wikidata_series_tuples("nintendo_snes", &entries).await;
         // Even if there's a wikidata match, entries with empty base_title are skipped
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn tgdb_aliases_source_is_tgdb() {
+    #[tokio::test]
+    async fn tgdb_aliases_source_is_tgdb() {
         // If we get any results, verify the source field
         let exact: HashSet<&str> = ["super mario world"].into_iter().collect();
         let fuzzy: HashMap<String, &str> =
             [(fuzzy_match_key("super mario world"), "super mario world")]
                 .into_iter()
                 .collect();
-        let result = build_tgdb_alias_tuples("nintendo_snes", &exact, &fuzzy);
+        let result = build_tgdb_alias_tuples("nintendo_snes", &exact, &fuzzy).await;
         for a in &result {
             assert_eq!(a.source, "tgdb");
             assert_eq!(a.system, "nintendo_snes");
@@ -542,22 +546,24 @@ mod tests {
         }
     }
 
-    #[test]
-    fn wikidata_series_source_is_wikidata() {
+    #[tokio::test]
+    async fn wikidata_series_source_is_wikidata() {
         // Build entries for games that might be in wikidata
         let entries = vec![
             make_entry("nintendo_snes", "super mario world"),
             make_entry("nintendo_snes", "the legend of zelda"),
         ];
-        let result = build_wikidata_series_tuples("nintendo_snes", &entries);
+        let result = build_wikidata_series_tuples("nintendo_snes", &entries).await;
         for s in &result {
             assert_eq!(s.source, "wikidata");
             assert_eq!(s.system, "nintendo_snes");
         }
     }
 
-    #[test]
-    fn wikidata_series_donpachi_direct_match() {
+    #[tokio::test]
+    async fn wikidata_series_donpachi_direct_match() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
         // These base_titles should match Wikidata entries directly (no subtitle stripping needed).
         let entries = vec![
             make_entry("arcade_fbneo", "donpachi"),
@@ -565,7 +571,7 @@ mod tests {
             make_entry("arcade_fbneo", "dodonpachi dai-ou-jou"),
             make_entry("arcade_fbneo", "dodonpachi saidaioujou"),
         ];
-        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries).await;
         // All 4 should match the DonPachi series
         let donpachi_count = result
             .iter()
@@ -578,15 +584,17 @@ mod tests {
         );
     }
 
-    #[test]
-    fn wikidata_series_donpachi_sequel_links() {
+    #[tokio::test]
+    async fn wikidata_series_donpachi_sequel_links() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
         // Verify that sequel chain data is resolved for DonPachi entries.
         let entries = vec![
             make_entry("arcade_fbneo", "donpachi"),
             make_entry("arcade_fbneo", "dodonpachi"),
             make_entry("arcade_fbneo", "dodonpachi ii - bee storm"),
         ];
-        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries).await;
 
         // DonPachi should have followed_by pointing to "dodonpachi" (resolved library base_title).
         let donpachi = result
@@ -617,11 +625,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn wikidata_series_cross_system_matching() {
+    #[tokio::test]
+    async fn wikidata_series_cross_system_matching() {
+        crate::game::init_test_catalog().await;
+        if crate::game::using_stub_data() { return; }
         // Metal Slug 6 is on Atomiswave (arcade_dc) but Wikidata maps it to arcade_fbneo.
         let entries = vec![make_entry("arcade_dc", "metal slug 6")];
-        let result = build_wikidata_series_tuples("arcade_dc", &entries);
+        let result = build_wikidata_series_tuples("arcade_dc", &entries).await;
         let ms6 = result.iter().find(|s| s.base_title == "metal slug 6");
         assert!(
             ms6.is_some(),
@@ -636,7 +646,7 @@ mod tests {
             "arcade_fbneo",
             "metal slug x - super vehicle-001",
         )];
-        let result = build_wikidata_series_tuples("arcade_fbneo", &entries);
+        let result = build_wikidata_series_tuples("arcade_fbneo", &entries).await;
         let msx = result
             .iter()
             .find(|s| s.base_title == "metal slug x - super vehicle-001");
@@ -648,11 +658,11 @@ mod tests {
         assert_eq!(msx.unwrap().series_name, "Metal Slug");
     }
 
-    #[test]
-    fn wikidata_series_roman_numeral_matching() {
+    #[tokio::test]
+    async fn wikidata_series_roman_numeral_matching() {
         // "Streets of Rage II" (roman) should match Wikidata "Streets of Rage 2" (arabic)
         let entries = vec![make_entry("sega_smd", "streets of rage ii")];
-        let result = build_wikidata_series_tuples("sega_smd", &entries);
+        let result = build_wikidata_series_tuples("sega_smd", &entries).await;
         let sor = result.iter().find(|s| s.base_title == "streets of rage ii");
         assert!(
             sor.is_some(),

@@ -33,7 +33,8 @@ impl LibraryService {
             system,
             &library_exact,
             &library_fuzzy,
-        );
+        )
+        .await;
 
         if aliases.is_empty() {
             return;
@@ -65,7 +66,7 @@ impl LibraryService {
     ) {
         // Call pure core matching function.
         let series_entries =
-            replay_control_core::alias_matching::build_wikidata_series_tuples(system, roms);
+            replay_control_core::alias_matching::build_wikidata_series_tuples(system, roms).await;
 
         if series_entries.is_empty() {
             return;

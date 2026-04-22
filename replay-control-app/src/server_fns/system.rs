@@ -26,7 +26,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         .cache
         .cached_systems(&storage, &state.metadata_pool)
         .await;
-    let total_favorites = state.cache.get_favorites_count(&storage);
+    let total_favorites = state.cache.get_favorites_count(&storage).await;
 
     let disk = storage
         .disk_usage()
@@ -109,6 +109,7 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
     let entries = state
         .cache
         .get_recents(&storage)
+        .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Collect (system, rom_filename) pairs for a batch DB lookup.
