@@ -244,14 +244,15 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         "get_rom_detail game_info resolved"
     );
 
-    let user_screenshots =
-        replay_control_core::screenshots::find_screenshots_for_rom(&storage, &system, &filename)
-            .into_iter()
-            .map(|s| ScreenshotUrl {
-                url: format!("/captures/{}/{}", system, s.filename),
-                timestamp: s.timestamp,
-            })
-            .collect();
+    let user_screenshots = replay_control_core_server::screenshots::find_screenshots_for_rom(
+        &storage, &system, &filename,
+    )
+    .into_iter()
+    .map(|s| ScreenshotUrl {
+        url: format!("/captures/{}/{}", system, s.filename),
+        timestamp: s.timestamp,
+    })
+    .collect();
 
     // Count box art variants (manifest index only — no filesystem scan to avoid N+1).
     let arcade_display =
@@ -706,7 +707,7 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
 
-    replay_control_core::launch::launch_game(&storage, &rom_path)
+    replay_control_core_server::launch::launch_game(&storage, &rom_path)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Create a recents entry so the home page reflects the launch immediately.

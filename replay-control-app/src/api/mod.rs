@@ -534,10 +534,10 @@ pub struct AppState {
     /// When set, --storage-path was given on the CLI and auto-detection is skipped.
     pub storage_path_override: Option<PathBuf>,
     /// Resolved settings store (owns the directory path for settings.cfg).
-    pub settings: replay_control_core::settings::SettingsStore,
+    pub settings: replay_control_core_server::settings::SettingsStore,
     /// Cached user preferences (skin, locale, region, font size).
     /// Loaded once at startup; updated in-memory on every settings change.
-    pub prefs: Arc<std::sync::RwLock<replay_control_core::settings::UserPreferences>>,
+    pub prefs: Arc<std::sync::RwLock<replay_control_core_server::settings::UserPreferences>>,
     /// Metadata DB pool (deadpool-backed, concurrent reads).
     pub metadata_pool: DbPool,
     /// User data DB pool (deadpool-backed, concurrent reads).
@@ -581,9 +581,9 @@ fn open_user_data_db(
 fn resolve_settings_dir(
     settings_path: Option<&str>,
     storage_path: Option<&str>,
-) -> replay_control_core::settings::SettingsStore {
-    use replay_control_core::settings::SettingsStore;
+) -> replay_control_core_server::settings::SettingsStore {
     use replay_control_core::storage::RC_DIR;
+    use replay_control_core_server::settings::SettingsStore;
 
     if let Some(p) = settings_path {
         return SettingsStore::new(p);
@@ -700,7 +700,7 @@ impl AppState {
         }
 
         // Load all user preferences from settings.cfg once at startup.
-        let prefs = replay_control_core::settings::UserPreferences::load(&settings);
+        let prefs = replay_control_core_server::settings::UserPreferences::load(&settings);
 
         let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
         let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
@@ -892,7 +892,8 @@ impl AppState {
             self.response_cache.invalidate_all();
 
             // Reload user preferences from the settings store.
-            let new_prefs = replay_control_core::settings::UserPreferences::load(&self.settings);
+            let new_prefs =
+                replay_control_core_server::settings::UserPreferences::load(&self.settings);
             *self.prefs.write().expect("prefs lock poisoned") = new_prefs;
 
             let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();

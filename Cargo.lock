@@ -2363,6 +2363,7 @@ dependencies = [
  "notify",
  "rand 0.10.0",
  "replay-control-core",
+ "replay-control-core-server",
  "reqwest",
  "semver",
  "serde",
@@ -2391,6 +2392,28 @@ dependencies = [
  "deadpool-sqlite",
  "deadpool-sync",
  "quick-xml",
+ "reqwest",
+ "rusqlite",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "replay-control-core-server"
+version = "0.4.0-beta.2"
+dependencies = [
+ "crc32fast",
+ "deadpool",
+ "deadpool-sqlite",
+ "deadpool-sync",
+ "quick-xml",
+ "replay-control-core",
  "reqwest",
  "rusqlite",
  "semver",

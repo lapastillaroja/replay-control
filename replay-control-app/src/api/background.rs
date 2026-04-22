@@ -576,7 +576,7 @@ impl BackgroundManager {
             Some(available) => {
                 // Race guard: verify channel still matches before writing.
                 let current_channel =
-                    replay_control_core::settings::read_update_channel(&state.settings);
+                    replay_control_core_server::settings::read_update_channel(&state.settings);
                 if current_channel != channel {
                     tracing::debug!(
                         "Update channel changed during check ({} -> {}), discarding result",
@@ -1034,7 +1034,7 @@ exit 1
         use super::activity::UpdatePhase;
         use replay_control_core::update::{UPDATE_DIR, UPDATE_LOCK, UPDATE_SCRIPT};
 
-        let github_key = replay_control_core::settings::read_github_api_key(&state.settings);
+        let github_key = replay_control_core_server::settings::read_github_api_key(&state.settings);
         let base_url = Self::github_api_base_url();
         let update_dir = std::path::PathBuf::from(UPDATE_DIR);
 

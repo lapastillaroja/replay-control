@@ -1,4 +1,4 @@
-use replay_control_core::settings::{self, SettingsStore};
+use replay_control_core_server::settings::{self, SettingsStore};
 
 pub const ENDPOINT: &str = "https://replay-control-analytics.bubbleb.workers.dev/ping";
 

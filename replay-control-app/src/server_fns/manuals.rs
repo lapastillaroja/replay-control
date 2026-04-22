@@ -174,10 +174,11 @@ pub async fn search_game_manuals(
     // Load user's language preferences for sorting results
     let preferred_langs = {
         let state = expect_context::<crate::api::AppState>();
-        let primary = replay_control_core::settings::read_language_primary(&state.settings);
-        let secondary = replay_control_core::settings::read_language_secondary(&state.settings);
+        let primary = replay_control_core_server::settings::read_language_primary(&state.settings);
+        let secondary =
+            replay_control_core_server::settings::read_language_secondary(&state.settings);
         let region = state.region_preference();
-        replay_control_core::settings::preferred_languages(
+        replay_control_core_server::settings::preferred_languages(
             primary.as_deref(),
             secondary.as_deref(),
             region,
@@ -204,7 +205,7 @@ pub async fn search_game_manuals(
                         // Sort by language preference
                         results.sort_by_key(|r| {
                             let lang = r.language.as_deref().unwrap_or("");
-                            replay_control_core::settings::language_match_score(
+                            replay_control_core_server::settings::language_match_score(
                                 lang,
                                 &preferred_langs,
                             )

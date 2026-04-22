@@ -1,0 +1,32 @@
+[package]
+name = "replay-control-core-server"
+version = "0.4.0-beta.2"
+edition = "2024"
+description = "Server-side (native) implementation for Replay Control: SQLite catalog, filesystem, HTTP, metadata ETL"
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+metadata = ["dep:quick-xml"]
+http = ["dep:reqwest"]
+
+[dependencies]
+replay-control-core = { path = "../replay-control-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+url = "2"
+crc32fast = "1"
+semver = "1"
+rusqlite = { version = "0.38", features = ["bundled"] }
+deadpool-sqlite = { version = "0.13", features = ["rt_tokio_1"] }
+deadpool = "0.13"
+deadpool-sync = "0.2"
+tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread"] }
+quick-xml = { version = "0.39", optional = true }
+reqwest = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = "3"

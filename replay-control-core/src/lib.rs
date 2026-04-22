@@ -1,5 +1,4 @@
 pub mod error;
-pub mod launch;
 pub mod locale;
 pub mod search_scoring;
 
@@ -36,7 +35,6 @@ pub mod update;
 pub mod http;
 
 mod capture;
-pub use capture::screenshots;
 pub use capture::video_url;
 
 #[cfg(feature = "metadata")]

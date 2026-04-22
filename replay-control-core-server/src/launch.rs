@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::error::{Error, Result};
-use crate::storage::StorageLocation;
+use replay_control_core::error::{Error, Result};
+use replay_control_core::storage::StorageLocation;
 
 /// Check whether the replay process has a libretro game core loaded.
 ///

@@ -73,7 +73,7 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
 #[server(prefix = "/sfn")]
 pub async fn dismiss_setup() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    replay_control_core::settings::write_setup_dismissed(&state.settings, true)
+    replay_control_core_server::settings::write_setup_dismissed(&state.settings, true)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state
         .prefs
