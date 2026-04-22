@@ -1586,9 +1586,9 @@ mod tests {
                 .by_tags
                 .get(version_key)
                 .or_else(|| index.by_version.get(version_key))
-            {
-                return Some(m);
-            }
+        {
+            return Some(m);
+        }
         // Tier 4: slash dual-name (only split on " _ " if source had " / ")
         let search_key = if version_key.len() < key.len() {
             version_key
@@ -1609,9 +1609,9 @@ mod tests {
                         .by_tags
                         .get(part)
                         .or_else(|| index.by_version.get(part))
-                    {
-                        return Some(m);
-                    }
+                {
+                    return Some(m);
+                }
             }
         }
         None

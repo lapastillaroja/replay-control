@@ -140,10 +140,10 @@ mod catalog_pool {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use catalog_pool::init_catalog;
-#[cfg(not(target_arch = "wasm32"))]
 #[allow(unused_imports)]
 pub use catalog_pool::CatalogInitError;
+#[cfg(not(target_arch = "wasm32"))]
+pub use catalog_pool::init_catalog;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use catalog_pool::with_catalog;
 
@@ -153,12 +153,8 @@ pub(crate) async fn init_test_catalog() {
     static ONCE: OnceCell<()> = OnceCell::const_new();
     ONCE.get_or_init(|| async {
         // Allow override via env var (used in test-full.yml with real data).
-        let path = std::env::var("REPLAY_CATALOG_PATH").unwrap_or_else(|_| {
-            format!(
-                "{}/fixtures/catalog.sqlite",
-                env!("CARGO_MANIFEST_DIR")
-            )
-        });
+        let path = std::env::var("REPLAY_CATALOG_PATH")
+            .unwrap_or_else(|_| format!("{}/fixtures/catalog.sqlite", env!("CARGO_MANIFEST_DIR")));
         init_catalog(&path).await.unwrap_or_else(|e| {
             panic!(
                 "Failed to open catalog at {path}: {e}\n\

@@ -100,10 +100,7 @@ pub async fn lookup_game(system: &str, filename_stem: &str) -> Option<GameEntry>
 
 /// Batch lookup by filename stems for a system. Returns entries keyed by the
 /// `canonical_name` (filename stem) that was found.
-pub async fn lookup_games_batch(
-    system: &str,
-    stems: &[&str],
-) -> HashMap<String, GameEntry> {
+pub async fn lookup_games_batch(system: &str, stems: &[&str]) -> HashMap<String, GameEntry> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         if stems.is_empty() {
@@ -160,10 +157,7 @@ pub async fn lookup_by_crc(system: &str, crc32: u32) -> Option<GameEntry> {
 }
 
 /// Batch CRC32 lookup. Returns entries keyed by their crc32.
-pub async fn lookup_by_crcs_batch(
-    system: &str,
-    crcs: &[u32],
-) -> HashMap<u32, GameEntry> {
+pub async fn lookup_by_crcs_batch(system: &str, crcs: &[u32]) -> HashMap<u32, GameEntry> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         if crcs.is_empty() {
@@ -202,10 +196,7 @@ pub async fn lookup_by_crcs_batch(
 }
 
 /// Look up a canonical game by normalized title for a system.
-pub async fn lookup_by_normalized_title(
-    system: &str,
-    normalized: &str,
-) -> Option<CanonicalGame> {
+pub async fn lookup_by_normalized_title(system: &str, normalized: &str) -> Option<CanonicalGame> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let system = system.to_string();
@@ -338,10 +329,7 @@ pub async fn game_display_name(system: &str, filename: &str) -> Option<String> {
 /// filename (as provided) to its resolved display name.
 ///
 /// Tries exact filename-stem match first, then normalized title for misses.
-pub async fn display_names_batch(
-    system: &str,
-    filenames: &[&str],
-) -> HashMap<String, String> {
+pub async fn display_names_batch(system: &str, filenames: &[&str]) -> HashMap<String, String> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         if filenames.is_empty() {
@@ -394,8 +382,8 @@ pub async fn supported_systems() -> Vec<String> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         return crate::game::with_catalog(|conn| {
-            let mut stmt = conn
-                .prepare_cached("SELECT DISTINCT system FROM canonical_games ORDER BY system")?;
+            let mut stmt =
+                conn.prepare_cached("SELECT DISTINCT system FROM canonical_games ORDER BY system")?;
             let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
         })
@@ -451,9 +439,8 @@ pub async fn has_system(system: &str) -> bool {
     {
         let system = system.to_string();
         return crate::game::with_catalog(move |conn| {
-            let mut stmt = conn.prepare_cached(
-                "SELECT COUNT(*) FROM canonical_games WHERE system = ?1 LIMIT 1",
-            )?;
+            let mut stmt = conn
+                .prepare_cached("SELECT COUNT(*) FROM canonical_games WHERE system = ?1 LIMIT 1")?;
             stmt.query_row(rusqlite::params![system], |row| row.get::<_, i64>(0))
         })
         .await
@@ -591,7 +578,11 @@ mod tests {
     #[tokio::test]
     async fn lookup_nonexistent_system() {
         init_test_catalog().await;
-        assert!(lookup_game("nonexistent_system", "anything").await.is_none());
+        assert!(
+            lookup_game("nonexistent_system", "anything")
+                .await
+                .is_none()
+        );
     }
 
     #[tokio::test]

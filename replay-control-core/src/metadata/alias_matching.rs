@@ -397,7 +397,9 @@ mod tests {
     #[tokio::test]
     async fn wikidata_series_subtitle_stripped_matching() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         // ROM has "dodonpachi ii - bee storm" as base_title.
         // Wikidata has "DoDonPachi II" (no subtitle).
         // The subtitle-stripped fallback should match via "dodonpachi ii".
@@ -421,7 +423,9 @@ mod tests {
     #[tokio::test]
     async fn wikidata_series_multi_base_title_per_norm_key() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         // Bug fix: when multiple ROMs normalize to the same Wikidata key,
         // ALL of them should get game_series entries (not just the first one).
         //
@@ -563,7 +567,9 @@ mod tests {
     #[tokio::test]
     async fn wikidata_series_donpachi_direct_match() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         // These base_titles should match Wikidata entries directly (no subtitle stripping needed).
         let entries = vec![
             make_entry("arcade_fbneo", "donpachi"),
@@ -587,7 +593,9 @@ mod tests {
     #[tokio::test]
     async fn wikidata_series_donpachi_sequel_links() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         // Verify that sequel chain data is resolved for DonPachi entries.
         let entries = vec![
             make_entry("arcade_fbneo", "donpachi"),
@@ -628,7 +636,9 @@ mod tests {
     #[tokio::test]
     async fn wikidata_series_cross_system_matching() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         // Metal Slug 6 is on Atomiswave (arcade_dc) but Wikidata maps it to arcade_fbneo.
         let entries = vec![make_entry("arcade_dc", "metal slug 6")];
         let result = build_wikidata_series_tuples("arcade_dc", &entries).await;

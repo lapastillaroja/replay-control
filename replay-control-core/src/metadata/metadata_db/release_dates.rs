@@ -548,8 +548,7 @@ mod tests {
 
         // Empty library: nothing should be inserted from static data.
         let data = super::fetch_static_release_data().await;
-        let inserted =
-            MetadataDb::seed_release_dates_from_static(&mut conn, data).unwrap();
+        let inserted = MetadataDb::seed_release_dates_from_static(&mut conn, data).unwrap();
         assert_eq!(
             inserted, 0,
             "with an empty library the static seeder should write 0 rows"
@@ -586,8 +585,7 @@ mod tests {
         .unwrap();
 
         let data = super::fetch_static_release_data().await;
-        let inserted =
-            MetadataDb::seed_release_dates_from_static(&mut conn, data).unwrap();
+        let inserted = MetadataDb::seed_release_dates_from_static(&mut conn, data).unwrap();
 
         // Should upsert at least one row for Super Mario World; TGDB knows
         // this game across multiple regions so we expect > 0 inserts.

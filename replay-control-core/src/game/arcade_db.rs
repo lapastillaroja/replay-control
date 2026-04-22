@@ -74,8 +74,7 @@ fn row_to_info(row: &rusqlite::Row<'_>) -> rusqlite::Result<ArcadeGameInfo> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-const ARCADE_COLS: &str =
-    "rom_name, display_name, year, manufacturer, players, rotation, status, \
+const ARCADE_COLS: &str = "rom_name, display_name, year, manufacturer, players, rotation, status, \
      is_clone, is_bios, parent, category, normalized_genre";
 
 /// Look up arcade game metadata by ROM name (without `.zip` extension).
@@ -208,7 +207,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_known_game() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("mslug6").await.expect("mslug6 should exist in DB");
+        let info = lookup_arcade_game("mslug6")
+            .await
+            .expect("mslug6 should exist in DB");
         assert_eq!(info.display_name, "Metal Slug 6");
         assert_eq!(info.year, "2006");
         assert!(!info.is_clone);
@@ -218,7 +219,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_clone() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("capsnka").await.expect("capsnka should exist in DB");
+        let info = lookup_arcade_game("capsnka")
+            .await
+            .expect("capsnka should exist in DB");
         assert!(info.is_clone);
         assert_eq!(info.parent, "capsnk");
     }
@@ -254,21 +257,27 @@ mod tests {
     async fn vertical_rotation_game() {
         init_test_catalog().await;
         // anmlbskt is Animal Basket which has ROT270 (vertical)
-        let info = lookup_arcade_game("anmlbskt").await.expect("anmlbskt should exist");
+        let info = lookup_arcade_game("anmlbskt")
+            .await
+            .expect("anmlbskt should exist");
         assert_eq!(info.rotation, Rotation::Vertical);
     }
 
     #[tokio::test]
     async fn horizontal_rotation_game() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("crzytaxi").await.expect("crzytaxi should exist");
+        let info = lookup_arcade_game("crzytaxi")
+            .await
+            .expect("crzytaxi should exist");
         assert_eq!(info.rotation, Rotation::Horizontal);
     }
 
     #[tokio::test]
     async fn lookup_gdrom_game() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("ikaruga").await.expect("ikaruga should exist (GD-ROM game)");
+        let info = lookup_arcade_game("ikaruga")
+            .await
+            .expect("ikaruga should exist (GD-ROM game)");
         assert!(info.display_name.starts_with("Ikaruga"));
         assert_eq!(info.year, "2001");
         assert_eq!(info.rotation, Rotation::Vertical);
@@ -277,7 +286,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_atomiswave_game() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("kofxi").await.expect("kofxi should exist (Atomiswave game)");
+        let info = lookup_arcade_game("kofxi")
+            .await
+            .expect("kofxi should exist (Atomiswave game)");
         assert_eq!(info.display_name, "The King of Fighters XI");
         assert_eq!(info.year, "2005");
     }
@@ -285,7 +296,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_sf2_from_mame() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("sf2").await.expect("sf2 should exist (MAME current)");
+        let info = lookup_arcade_game("sf2")
+            .await
+            .expect("sf2 should exist (MAME current)");
         assert_eq!(
             info.display_name,
             "Street Fighter II: The World Warrior (World 910522)"
@@ -302,7 +315,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_pacman_clone() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("pacman").await.expect("pacman should exist (MAME 2003+)");
+        let info = lookup_arcade_game("pacman")
+            .await
+            .expect("pacman should exist (MAME 2003+)");
         assert_eq!(info.display_name, "Pac-Man (Midway)");
         assert_eq!(info.year, "1980");
         assert!(info.is_clone);
@@ -313,7 +328,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_dkong_vertical() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("dkong").await.expect("dkong should exist (MAME 2003+)");
+        let info = lookup_arcade_game("dkong")
+            .await
+            .expect("dkong should exist (MAME 2003+)");
         assert_eq!(info.display_name, "Donkey Kong (US set 1)");
         assert_eq!(info.year, "1981");
         assert_eq!(info.rotation, Rotation::Vertical);
@@ -323,7 +340,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_fbneo_only_game() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("3countba").await.expect("3countba should exist (FBNeo-only)");
+        let info = lookup_arcade_game("3countba")
+            .await
+            .expect("3countba should exist (FBNeo-only)");
         assert_eq!(info.display_name, "3 Count Bout / Fire Suplex (NGM-043)");
         assert_eq!(info.year, "1993");
         assert_eq!(info.manufacturer, "SNK");
@@ -351,7 +370,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_mame_current_overrides_mame2003() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("1941r1").await.expect("1941r1 should exist");
+        let info = lookup_arcade_game("1941r1")
+            .await
+            .expect("1941r1 should exist");
         assert_eq!(info.display_name, "1941: Counter Attack (World)");
         assert_eq!(info.year, "1990");
         assert!(info.is_clone);
@@ -363,7 +384,9 @@ mod tests {
     #[tokio::test]
     async fn lookup_mame_current_preserves_flycast() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("ikaruga").await.expect("ikaruga should still be Flycast entry");
+        let info = lookup_arcade_game("ikaruga")
+            .await
+            .expect("ikaruga should still be Flycast entry");
         assert!(info.display_name.starts_with("Ikaruga"));
         assert_eq!(info.year, "2001");
         assert_eq!(info.rotation, Rotation::Vertical);
@@ -372,7 +395,9 @@ mod tests {
     #[tokio::test]
     async fn mame_current_category_overlay() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("timecris").await.expect("timecris should exist");
+        let info = lookup_arcade_game("timecris")
+            .await
+            .expect("timecris should exist");
         assert!(
             !info.category.is_empty(),
             "timecris should have a category from catver-mame-current.ini"
@@ -382,14 +407,18 @@ mod tests {
     #[tokio::test]
     async fn bios_entry_flagged() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("neogeo").await.expect("neogeo BIOS should exist in DB");
+        let info = lookup_arcade_game("neogeo")
+            .await
+            .expect("neogeo BIOS should exist in DB");
         assert!(info.is_bios, "neogeo should be flagged as BIOS");
     }
 
     #[tokio::test]
     async fn regular_game_not_bios() {
         init_test_catalog().await;
-        let info = lookup_arcade_game("mslug6").await.expect("mslug6 should exist");
+        let info = lookup_arcade_game("mslug6")
+            .await
+            .expect("mslug6 should exist");
         assert!(!info.is_bios, "mslug6 should not be flagged as BIOS");
     }
 

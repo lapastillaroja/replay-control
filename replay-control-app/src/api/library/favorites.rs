@@ -71,7 +71,8 @@ impl LibraryService {
         &self,
         storage: &StorageLocation,
     ) -> Option<(String, Vec<String>)> {
-        self.with_favorites(storage, Self::top_system_from_data).await
+        self.with_favorites(storage, Self::top_system_from_data)
+            .await
     }
 
     fn top_system_from_data(

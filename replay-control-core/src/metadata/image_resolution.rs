@@ -296,11 +296,8 @@ pub fn resolve_box_art_with_hash<'a>(
         }
         // Also try manifest with hash_matched_name.
         if let Some(ref manifest) = index.manifest
-            && let Some(m) = thumbnail_manifest::find_in_manifest(
-                manifest,
-                &synthetic_filename,
-                None,
-            )
+            && let Some(m) =
+                thumbnail_manifest::find_in_manifest(manifest, &synthetic_filename, None)
         {
             return BoxArtResult::ManifestHit(m);
         }
@@ -441,8 +438,7 @@ mod tests {
         let path = format!("boxart/{parent_thumb}.png");
         let index = image_index_from(&[(&parent_thumb, &path)]);
 
-        let result =
-            resolve_box_art_with_hash(&index, &batch, "arcade_mame", "pacman.zip", None);
+        let result = resolve_box_art_with_hash(&index, &batch, "arcade_mame", "pacman.zip", None);
         match result {
             BoxArtResult::Found(found_path) => {
                 assert_eq!(found_path, path);
@@ -514,13 +510,8 @@ mod tests {
         let index = image_index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
         let batch = ArcadeInfoLookup::default();
 
-        let result = resolve_box_art_with_hash(
-            &index,
-            &batch,
-            "sega_smd",
-            "Unknown ROM (Korea).md",
-            None,
-        );
+        let result =
+            resolve_box_art_with_hash(&index, &batch, "sega_smd", "Unknown ROM (Korea).md", None);
         assert!(matches!(result, BoxArtResult::NotFound));
     }
 
@@ -542,8 +533,7 @@ mod tests {
         // Index has art for an unrelated game only.
         let index = image_index_from(&[("Unrelated Game", "boxart/Unrelated Game.png")]);
 
-        let result =
-            resolve_box_art_with_hash(&index, &batch, "arcade_mame", "puckman.zip", None);
+        let result = resolve_box_art_with_hash(&index, &batch, "arcade_mame", "puckman.zip", None);
         assert!(
             matches!(result, BoxArtResult::NotFound),
             "Non-clone should not find art via parent fallback"

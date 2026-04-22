@@ -91,12 +91,7 @@ pub async fn add_favorite(
     };
 
     let fav_path = target_dir.join(&fav_filename);
-    write_favorite_marker(
-        target_dir,
-        fav_path.clone(),
-        rom_relative_path.to_string(),
-    )
-    .await?;
+    write_favorite_marker(target_dir, fav_path.clone(), rom_relative_path.to_string()).await?;
 
     let subfolder = if grouped_by_system {
         system_folder.to_string()
@@ -329,7 +324,6 @@ pub async fn organize_favorites(
         }
     };
 
-
     let batch_input: Vec<(String, String, String)> = parsed_entries
         .iter()
         .map(|(_, f, s, r)| (f.clone(), s.clone(), r.clone()))
@@ -343,8 +337,13 @@ pub async fn organize_favorites(
         let mut organized = 0usize;
         let mut skipped = skipped_from_scan;
         for (src, filename, system, rom_filename) in &parsed_entries {
-            let primary_folder =
-                criteria_folder(primary, system, rom_filename, ratings_owned.as_ref(), &batch);
+            let primary_folder = criteria_folder(
+                primary,
+                system,
+                rom_filename,
+                ratings_owned.as_ref(),
+                &batch,
+            );
             let subfolder = match secondary {
                 Some(sec) => {
                     let secondary_folder =
@@ -429,10 +428,9 @@ impl CatalogLookup {
                 let mut need_norm: Vec<(String, String)> = Vec::new();
                 for stem in &stems {
                     if let Some(entry) = exact.remove(*stem) {
-                        batch.game.insert(
-                            ((*system).to_string(), (*stem).to_string()),
-                            entry.game,
-                        );
+                        batch
+                            .game
+                            .insert(((*system).to_string(), (*stem).to_string()), entry.game);
                     } else {
                         let norm = game_db::normalize_filename(stem);
                         if !norm.is_empty() {
@@ -442,14 +440,11 @@ impl CatalogLookup {
                 }
 
                 if !need_norm.is_empty() {
-                    let norms: Vec<&str> =
-                        need_norm.iter().map(|(_, n)| n.as_str()).collect();
+                    let norms: Vec<&str> = need_norm.iter().map(|(_, n)| n.as_str()).collect();
                     let fuzzy = game_db::lookup_by_normalized_titles_batch(system, &norms).await;
                     for (stem, norm) in need_norm {
                         if let Some(cg) = fuzzy.get(&norm) {
-                            batch
-                                .game
-                                .insert(((*system).to_string(), stem), cg.clone());
+                            batch.game.insert(((*system).to_string(), stem), cg.clone());
                         }
                     }
                 }
@@ -715,11 +710,7 @@ async fn walk_favorites_blocking(dir: PathBuf, favs_root: PathBuf) -> Result<Vec
     }
 }
 
-fn collect_raw_favorites(
-    dir: &Path,
-    favs_root: &Path,
-    out: &mut Vec<RawFavorite>,
-) -> Result<()> {
+fn collect_raw_favorites(dir: &Path, favs_root: &Path, out: &mut Vec<RawFavorite>) -> Result<()> {
     let entries = std::fs::read_dir(dir).map_err(|e| Error::io(dir, e))?;
 
     for entry in entries.flatten() {
@@ -786,7 +777,13 @@ async fn collect_favorites(dir: &Path, favs_root: &Path, out: &mut Vec<Favorite>
 
     let parsed: Vec<(String, String, String)> = raw
         .iter()
-        .map(|r| (r.marker_filename.clone(), r.system.clone(), r.rom_filename.clone()))
+        .map(|r| {
+            (
+                r.marker_filename.clone(),
+                r.system.clone(),
+                r.rom_filename.clone(),
+            )
+        })
         .collect();
     let batch = CatalogLookup::prefetch(&parsed).await;
 

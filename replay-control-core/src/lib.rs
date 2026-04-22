@@ -9,8 +9,6 @@ pub use platform::storage;
 pub use platform::systems;
 
 mod game;
-#[cfg(not(target_arch = "wasm32"))]
-pub use game::init_catalog;
 pub use game::arcade_db;
 pub use game::date_precision;
 pub use game::date_precision::DatePrecision;
@@ -18,6 +16,8 @@ pub use game::developer;
 pub use game::game_db;
 pub use game::game_ref;
 pub use game::genre;
+#[cfg(not(target_arch = "wasm32"))]
+pub use game::init_catalog;
 pub use game::rom_tags;
 pub use game::series_db;
 pub use game::title_utils;

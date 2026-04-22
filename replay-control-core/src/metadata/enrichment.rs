@@ -131,7 +131,13 @@ pub fn enrich_system(
         .iter()
         .filter_map(|filename| {
             let hash_name = hash_matched_names.get(filename).map(|s| s.as_str());
-            let art = match resolve_box_art_with_hash(index, arcade_lookup, system, filename, hash_name) {
+            let art = match resolve_box_art_with_hash(
+                index,
+                arcade_lookup,
+                system,
+                filename,
+                hash_name,
+            ) {
                 BoxArtResult::Found(path) => Some(format_box_art_url(system, &path)),
                 BoxArtResult::ManifestHit(m) => {
                     manifest_downloads.push((filename.clone(), m.clone()));

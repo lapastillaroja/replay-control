@@ -173,12 +173,10 @@ async fn walk_raw_roms_blocking(
     };
     #[cfg(not(target_arch = "wasm32"))]
     {
-        tokio::task::spawn_blocking(walk)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!("rom walk panicked: {e}");
-                None
-            })
+        tokio::task::spawn_blocking(walk).await.unwrap_or_else(|e| {
+            tracing::warn!("rom walk panicked: {e}");
+            None
+        })
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -1128,12 +1126,8 @@ async fn materialize_rom_entries(system: &System, raw: Vec<RawRom>) -> Vec<RomEn
         for r in raw {
             let stem = crate::title_utils::filename_stem(&r.rom_filename);
             let resolved = batch.remove(stem).map(|info| info.display_name);
-            let game = GameRef::from_parts(
-                system.folder_name,
-                r.rom_filename,
-                r.rom_path,
-                resolved,
-            );
+            let game =
+                GameRef::from_parts(system.folder_name, r.rom_filename, r.rom_path, resolved);
             out.push(RomEntry {
                 game,
                 size_bytes: r.size_bytes,
@@ -1150,12 +1144,8 @@ async fn materialize_rom_entries(system: &System, raw: Vec<RawRom>) -> Vec<RomEn
         let mut names = game_db::display_names_batch(system.folder_name, &filenames).await;
         for r in raw {
             let resolved = names.remove(&r.rom_filename);
-            let game = GameRef::from_parts(
-                system.folder_name,
-                r.rom_filename,
-                r.rom_path,
-                resolved,
-            );
+            let game =
+                GameRef::from_parts(system.folder_name, r.rom_filename, r.rom_path, resolved);
             out.push(RomEntry {
                 game,
                 size_bytes: r.size_bytes,

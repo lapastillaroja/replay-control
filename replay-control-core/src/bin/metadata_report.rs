@@ -136,8 +136,7 @@ async fn main() {
                 })
                 .collect();
             let norm_refs: Vec<&str> = missing_norms.iter().map(String::as_str).collect();
-            let by_norm =
-                game_db::lookup_by_normalized_titles_batch(system_name, &norm_refs).await;
+            let by_norm = game_db::lookup_by_normalized_titles_batch(system_name, &norm_refs).await;
             (by_stem, by_norm)
         };
 

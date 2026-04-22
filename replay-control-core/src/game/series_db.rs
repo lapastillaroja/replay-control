@@ -38,8 +38,7 @@ pub async fn lookup_series(system: &str, normalized_title: &str) -> Vec<Wikidata
                 "SELECT {ENTRY_COLS} FROM series_entries \
                  WHERE system = ?1 AND normalized_title = ?2"
             ))?;
-            let rows =
-                stmt.query_map(rusqlite::params![system, normalized_title], row_to_entry)?;
+            let rows = stmt.query_map(rusqlite::params![system, normalized_title], row_to_entry)?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
         })
         .await
@@ -100,9 +99,8 @@ pub async fn all_entries() -> Vec<WikidataSeriesEntry> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         return crate::game::with_catalog(|conn| {
-            let mut stmt = conn.prepare_cached(&format!(
-                "SELECT {ENTRY_COLS} FROM series_entries"
-            ))?;
+            let mut stmt =
+                conn.prepare_cached(&format!("SELECT {ENTRY_COLS} FROM series_entries"))?;
             let rows = stmt.query_map([], row_to_entry)?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
         })

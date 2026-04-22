@@ -66,7 +66,11 @@ impl GameRef {
     pub async fn new(system: &str, rom_filename: String, rom_path: String) -> Self {
         let resolved_name = if systems::is_arcade_system(system) {
             let resolved = arcade_db::arcade_display_name(&rom_filename).await;
-            if resolved != rom_filename { Some(resolved) } else { None }
+            if resolved != rom_filename {
+                Some(resolved)
+            } else {
+                None
+            }
         } else {
             game_db::game_display_name(system, &rom_filename).await
         };
@@ -87,7 +91,10 @@ impl GameRef {
         let display_name = if systems::is_arcade_system(system) {
             resolved_name
         } else {
-            Some(compute_console_display_name(resolved_name.as_deref(), &rom_filename))
+            Some(compute_console_display_name(
+                resolved_name.as_deref(),
+                &rom_filename,
+            ))
         };
 
         Self {

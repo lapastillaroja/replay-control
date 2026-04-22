@@ -133,12 +133,9 @@ impl LibraryService {
         });
 
         // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
-        let cached_roms = replay_control_core::game_entry_builder::build_game_entries(
-            system,
-            roms,
-            hash_results,
-        )
-        .await;
+        let cached_roms =
+            replay_control_core::game_entry_builder::build_game_entries(system, roms, hash_results)
+                .await;
 
         tracing::debug!(
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",

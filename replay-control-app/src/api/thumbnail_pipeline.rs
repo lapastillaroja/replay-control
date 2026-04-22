@@ -456,14 +456,16 @@ impl ThumbnailPipeline {
         let title_index = &indexes[2];
 
         let arcade_lookup =
-            replay_control_core::image_resolution::ArcadeInfoLookup::build(system, &rom_filenames).await;
+            replay_control_core::image_resolution::ArcadeInfoLookup::build(system, &rom_filenames)
+                .await;
 
         let mut updates: Vec<replay_control_core::metadata_db::ImagePathUpdate> = Vec::new();
 
         for rom_filename in &rom_filenames {
             let stem = replay_control_core::title_utils::filename_stem(rom_filename);
-            let arcade_display: Option<&str> =
-                arcade_lookup.get(stem).map(|info| info.display_name.as_str());
+            let arcade_display: Option<&str> = arcade_lookup
+                .get(stem)
+                .map(|info| info.display_name.as_str());
             let boxart_rel = find_best_match(box_index, rom_filename, arcade_display, None);
             let snap_rel = find_best_match(snap_index, rom_filename, arcade_display, None);
             let title_rel = find_best_match(title_index, rom_filename, arcade_display, None);

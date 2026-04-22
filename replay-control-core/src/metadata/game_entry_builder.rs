@@ -236,8 +236,7 @@ async fn prefetch_catalog(
             })
             .collect();
         let norm_refs: Vec<&str> = missing_norms.iter().map(|s| s.as_str()).collect();
-        let by_normalized =
-            game_db::lookup_by_normalized_titles_batch(system, &norm_refs).await;
+        let by_normalized = game_db::lookup_by_normalized_titles_batch(system, &norm_refs).await;
 
         CatalogLookup {
             arcade: HashMap::new(),

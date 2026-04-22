@@ -79,7 +79,11 @@ pub fn any_images_on_disk(rc_dir: &std::path::Path) -> bool {
         let boxart_dir = entry.path().join(ThumbnailKind::Boxart.media_dir());
         if boxart_dir.is_dir()
             && let Ok(mut files) = std::fs::read_dir(&boxart_dir)
-            && files.any(|f| f.ok().map(|f| f.path()).is_some_and(|p| is_valid_image_sync(&p)))
+            && files.any(|f| {
+                f.ok()
+                    .map(|f| f.path())
+                    .is_some_and(|p| is_valid_image_sync(&p))
+            })
         {
             return true;
         }
@@ -864,7 +868,9 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn arcade_avsp_resolves_to_alien_vs_predator() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         let (thumb_name, base) = resolve_pipeline("avsp.zip", "arcade_fbneo").await;
         assert!(
             thumb_name.starts_with("Alien vs. Predator"),
@@ -876,7 +882,9 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn arcade_ffight_resolves_to_final_fight() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         let (thumb_name, base) = resolve_pipeline("ffight.zip", "arcade_fbneo").await;
         assert!(
             thumb_name.starts_with("Final Fight"),
@@ -888,7 +896,9 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn arcade_dsmbl_resolves_to_deathsmiles() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         let (thumb_name, base) = resolve_pipeline("dsmbl.zip", "arcade_fbneo").await;
         assert!(
             thumb_name.starts_with("Deathsmiles MegaBlack Label"),
@@ -900,7 +910,9 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn arcade_dmnfrnt_resolves_with_slash_replaced() {
         crate::game::init_test_catalog().await;
-        if crate::game::using_stub_data() { return; }
+        if crate::game::using_stub_data() {
+            return;
+        }
         let (thumb_name, _) = resolve_pipeline("dmnfrnt.zip", "arcade_fbneo").await;
         // Display name is "Demon Front / Moyu Zhanxian ..."
         // thumbnail_filename replaces '/' with '_'
