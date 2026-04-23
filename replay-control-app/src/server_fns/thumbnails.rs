@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 /// Data source info for the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,5 @@
-use replay_control_core::metadata_db::MetadataDb;
 use replay_control_core::title_utils::fuzzy_match_key;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 use super::LibraryService;
 use crate::api::DbPool;
@@ -8,11 +8,11 @@ impl LibraryService {
     /// Populate game_alias table with TGDB alternate names for a system.
     ///
     /// Builds lookup maps from library entries, delegates the matching to
-    /// `replay_control_core::alias_matching`, then persists results.
+    /// `replay_control_core_server::alias_matching`, then persists results.
     pub(super) async fn populate_tgdb_aliases(
         &self,
         system: &str,
-        roms: &[replay_control_core::metadata_db::GameEntry],
+        roms: &[replay_control_core_server::metadata_db::GameEntry],
         db: &DbPool,
     ) {
         // Build lookup maps for matching TGDB names to library base_titles.
@@ -29,7 +29,7 @@ impl LibraryService {
             .collect();
 
         // Call pure core matching function.
-        let aliases = replay_control_core::alias_matching::build_tgdb_alias_tuples(
+        let aliases = replay_control_core_server::alias_matching::build_tgdb_alias_tuples(
             system,
             &library_exact,
             &library_fuzzy,
@@ -56,17 +56,18 @@ impl LibraryService {
 
     /// Populate game_series table with Wikidata series data for a system.
     ///
-    /// Delegates the matching to `replay_control_core::alias_matching`,
+    /// Delegates the matching to `replay_control_core_server::alias_matching`,
     /// then persists results.
     pub(super) async fn populate_wikidata_series(
         &self,
         system: &str,
-        roms: &[replay_control_core::metadata_db::GameEntry],
+        roms: &[replay_control_core_server::metadata_db::GameEntry],
         db: &DbPool,
     ) {
         // Call pure core matching function.
         let series_entries =
-            replay_control_core::alias_matching::build_wikidata_series_tuples(system, roms).await;
+            replay_control_core_server::alias_matching::build_wikidata_series_tuples(system, roms)
+                .await;
 
         if series_entries.is_empty() {
             return;

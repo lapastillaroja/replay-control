@@ -9,11 +9,11 @@
 
 use std::path::{Path, PathBuf};
 
-use replay_control_core::config::AppSettings;
+use crate::config::AppSettings;
+use crate::storage::{RC_DIR, SETTINGS_FILE};
 use replay_control_core::error::Result;
 use replay_control_core::locale::Locale;
 use replay_control_core::rom_tags::RegionPreference;
-use replay_control_core::storage::{RC_DIR, SETTINGS_FILE};
 
 /// Resolved settings directory. Contains `settings.cfg`.
 #[derive(Debug, Clone)]

@@ -1,8 +1,8 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 #[cfg(feature = "ssr")]
-use replay_control_core::user_data_db::UserDataDb;
+use replay_control_core_server::user_data_db::UserDataDb;
 
 /// A box art variant returned to the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,7 +24,7 @@ pub async fn get_boxart_variants(
     let storage = state.storage();
 
     let arcade_display =
-        replay_control_core::arcade_db::display_name_if_arcade(&system, &rom_filename).await;
+        replay_control_core_server::arcade_db::display_name_if_arcade(&system, &rom_filename).await;
 
     // Resolve the current active box art URL first.
     let active_url = crate::server_fns::resolve_box_art_url(
@@ -42,7 +42,7 @@ pub async fn get_boxart_variants(
         .metadata_pool
         .read({
             move |conn| {
-                replay_control_core::thumbnail_manifest::find_boxart_variants(
+                replay_control_core_server::thumbnail_manifest::find_boxart_variants(
                     conn,
                     &system,
                     &rom_filename,
@@ -79,15 +79,15 @@ pub async fn set_boxart_override(
     rom_filename: String,
     variant_filename: String,
 ) -> Result<String, ServerFnError> {
-    use replay_control_core::thumbnail_manifest;
-    use replay_control_core::thumbnails::ThumbnailKind;
+    use replay_control_core_server::thumbnail_manifest;
+    use replay_control_core_server::thumbnails::ThumbnailKind;
 
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
 
     // Look up the variant in the thumbnail index to get repo/branch info.
     let manifest_match = {
-        let repo_names = replay_control_core::thumbnails::thumbnail_repo_names(&system)
+        let repo_names = replay_control_core_server::thumbnails::thumbnail_repo_names(&system)
             .ok_or_else(|| ServerFnError::new(format!("No thumbnail repo for {system}")))?;
 
         let variant_fn = variant_filename.clone();
@@ -95,9 +95,10 @@ pub async fn set_boxart_override(
             .metadata_pool
             .read(move |conn| {
                 for display_name in repo_names {
-                    let url_name = replay_control_core::thumbnails::repo_url_name(display_name);
+                    let url_name =
+                        replay_control_core_server::thumbnails::repo_url_name(display_name);
                     let source_name =
-                        replay_control_core::thumbnails::libretro_source_name(display_name);
+                        replay_control_core_server::thumbnails::libretro_source_name(display_name);
 
                     let branch = MetadataDb::get_data_source(conn, &source_name)
                         .ok()
@@ -108,7 +109,7 @@ pub async fn set_boxart_override(
                     let entries = MetadataDb::query_thumbnail_index(
                         conn,
                         &source_name,
-                        replay_control_core::thumbnails::ThumbnailKind::Boxart.repo_dir(),
+                        replay_control_core_server::thumbnails::ThumbnailKind::Boxart.repo_dir(),
                     )
                     .unwrap_or_default();
 
@@ -144,7 +145,7 @@ pub async fn set_boxart_override(
         .join(&system)
         .join(ThumbnailKind::Boxart.media_dir());
     let local_path = media_dir.join(format!("{variant_filename}.png"));
-    let is_valid = replay_control_core::thumbnails::is_valid_image(local_path).await;
+    let is_valid = replay_control_core_server::thumbnails::is_valid_image(local_path).await;
 
     if !is_valid {
         let bytes = thumbnail_manifest::download_thumbnail(

@@ -1,4 +1,4 @@
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 use std::time::Duration;
 
 use super::AppState;
@@ -111,7 +111,7 @@ impl BackgroundManager {
 
         // Try LaunchBox XML.
         {
-            use replay_control_core::metadata_db::LAUNCHBOX_XML;
+            use replay_control_core_server::metadata_db::LAUNCHBOX_XML;
 
             let xml_path = rc_dir.join(LAUNCHBOX_XML);
             // Backwards-compat: fall back to old upstream name if user placed it manually.
@@ -270,8 +270,9 @@ impl BackgroundManager {
         if !has_sources {
             // No data_sources entries. Check if images exist on disk — if so,
             // someone previously downloaded thumbnails but the DB was deleted.
-            let has_images_on_disk =
-                replay_control_core::thumbnails::any_images_on_disk(&state.storage().rc_dir());
+            let has_images_on_disk = replay_control_core_server::thumbnails::any_images_on_disk(
+                &state.storage().rc_dir(),
+            );
             if !has_images_on_disk {
                 tracing::debug!(
                     "No libretro-thumbnails data sources and no images on disk, skipping thumbnail index rebuild"
@@ -312,13 +313,13 @@ impl BackgroundManager {
             let system_str = system_name.to_string_lossy().into_owned();
 
             let Some(repo_names) =
-                replay_control_core::thumbnails::thumbnail_repo_names(&system_str)
+                replay_control_core_server::thumbnails::thumbnail_repo_names(&system_str)
             else {
                 continue;
             };
 
             let all_entries =
-                replay_control_core::thumbnails::scan_system_images(&system_entry.path());
+                replay_control_core_server::thumbnails::scan_system_images(&system_entry.path());
 
             if all_entries.is_empty() {
                 continue;
@@ -341,9 +342,10 @@ impl BackgroundManager {
                 for data in &system_data {
                     let repo_display = data.repo_names[0];
                     let source_name =
-                        replay_control_core::thumbnails::libretro_source_name(repo_display);
-                    let branch =
-                        replay_control_core::thumbnail_manifest::default_branch(repo_display);
+                        replay_control_core_server::thumbnails::libretro_source_name(repo_display);
+                    let branch = replay_control_core_server::thumbnail_manifest::default_branch(
+                        repo_display,
+                    );
                     let entry_count = data.entries.len();
 
                     if let Err(e) = MetadataDb::upsert_data_source(
@@ -368,9 +370,13 @@ impl BackgroundManager {
                     // Register additional repos for multi-repo systems (e.g., arcade_dc → Naomi + Naomi 2).
                     for extra_repo in &data.repo_names[1..] {
                         let extra_source =
-                            replay_control_core::thumbnails::libretro_source_name(extra_repo);
+                            replay_control_core_server::thumbnails::libretro_source_name(
+                                extra_repo,
+                            );
                         let extra_branch =
-                            replay_control_core::thumbnail_manifest::default_branch(extra_repo);
+                            replay_control_core_server::thumbnail_manifest::default_branch(
+                                extra_repo,
+                            );
                         if let Err(e) = MetadataDb::upsert_data_source(
                             db,
                             &extra_source,
@@ -407,7 +413,7 @@ impl BackgroundManager {
     /// After populating ROMs, enriches box art URLs and ratings.
     pub(crate) async fn populate_all_systems(
         state: &AppState,
-        storage: &replay_control_core::storage::StorageLocation,
+        storage: &replay_control_core_server::storage::StorageLocation,
         region_pref: replay_control_core::rom_tags::RegionPreference,
         region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
     ) {
@@ -526,7 +532,7 @@ impl BackgroundManager {
         tokio::time::sleep(Duration::from_secs(60)).await;
 
         let analytics = super::analytics::AnalyticsClient::new(
-            replay_control_core::http::shared_client().clone(),
+            replay_control_core_server::http::shared_client().clone(),
             super::analytics::ENDPOINT,
         );
 
@@ -783,7 +789,7 @@ impl BackgroundManager {
         url: &str,
         api_key: Option<&str>,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let mut req = replay_control_core::http::shared_client()
+        let mut req = replay_control_core_server::http::shared_client()
             .get(url)
             .header("Accept", "application/vnd.github+json");
 
@@ -840,7 +846,7 @@ impl BackgroundManager {
         use tokio::io::AsyncWriteExt;
         use tokio_stream::StreamExt;
 
-        let resp = replay_control_core::http::shared_client()
+        let resp = replay_control_core_server::http::shared_client()
             .get(url)
             .timeout(Duration::from_secs(300))
             .send()

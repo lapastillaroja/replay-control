@@ -1,4 +1,4 @@
-use replay_control_core::storage::StorageLocation;
+use crate::storage::StorageLocation;
 
 /// A user-taken screenshot found on disk.
 #[derive(Debug, Clone)]

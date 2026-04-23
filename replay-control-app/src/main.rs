@@ -445,7 +445,7 @@ mod ssr {
         let cli = Cli::parse();
 
         let catalog_path = resolve_catalog_path(&cli.catalog_path);
-        if let Err(e) = replay_control_core::init_catalog(&catalog_path).await {
+        if let Err(e) = replay_control_core_server::init_catalog(&catalog_path).await {
             tracing::error!(
                 "catalog not loaded from {} ({e}) — catalog.sqlite is required. \
                 Place it next to the executable or pass --catalog-path.",

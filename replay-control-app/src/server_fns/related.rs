@@ -2,7 +2,7 @@
 use super::recommendations::to_recommended;
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 /// Related games data: regional variants + translations + hacks + specials + series + similar games.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -557,7 +557,7 @@ async fn build_arcade_versions(
     current_filename: &str,
     all_system_roms: &[String],
 ) -> Vec<ArcadeVersion> {
-    use replay_control_core::arcade_db;
+    use replay_control_core_server::arcade_db;
 
     let current_stem = replay_control_core::title_utils::filename_stem(current_filename);
 

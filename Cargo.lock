@@ -2388,18 +2388,11 @@ name = "replay-control-core"
 version = "0.4.0-beta.2"
 dependencies = [
  "crc32fast",
- "deadpool",
- "deadpool-sqlite",
- "deadpool-sync",
- "quick-xml",
- "reqwest",
- "rusqlite",
  "semver",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
- "tokio",
  "tracing",
  "url",
 ]

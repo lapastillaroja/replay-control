@@ -1,13 +1,13 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 #[cfg(feature = "ssr")]
-use replay_control_core::user_data_db::UserDataDb;
+use replay_control_core_server::user_data_db::UserDataDb;
 
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::VideoEntry;
 #[cfg(feature = "ssr")]
-pub use replay_control_core::user_data_db::VideoEntry;
+pub use replay_control_core_server::user_data_db::VideoEntry;
 
 /// A video recommendation from Piped search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,7 +236,7 @@ pub async fn search_game_videos(
 /// Fetch a URL and parse the response as JSON.
 #[cfg(feature = "ssr")]
 async fn http_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
-    replay_control_core::http::get_json_with_timeout(
+    replay_control_core_server::http::get_json_with_timeout(
         url,
         std::time::Duration::from_secs(timeout_secs),
     )

@@ -335,7 +335,7 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     state
         .metadata_pool
         .write(move |conn| {
-            let _ = replay_control_core::metadata_db::MetadataDb::resolve_release_date_for_library(
+            let _ = replay_control_core_server::metadata_db::MetadataDb::resolve_release_date_for_library(
                 conn,
                 pref,
                 region_secondary,
@@ -378,7 +378,7 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
     state
         .metadata_pool
         .write(move |conn| {
-            let _ = replay_control_core::metadata_db::MetadataDb::resolve_release_date_for_library(
+            let _ = replay_control_core_server::metadata_db::MetadataDb::resolve_release_date_for_library(
                 conn,
                 region_primary,
                 pref,

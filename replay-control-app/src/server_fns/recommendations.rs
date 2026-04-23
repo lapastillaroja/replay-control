@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 /// A recommended game card with display info and navigation link.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,7 +150,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
 
             #[allow(clippy::type_complexity)]
             let spotlight_result: Option<(
-                Vec<replay_control_core::metadata_db::GameEntry>,
+                Vec<replay_control_core_server::metadata_db::GameEntry>,
                 String,
                 Vec<String>,
                 Option<String>,
@@ -519,7 +519,7 @@ struct FavoritesInfo {
 #[cfg(feature = "ssr")]
 async fn collect_favorites_info_sync(
     state: &crate::api::AppState,
-    storage: &replay_control_core::storage::StorageLocation,
+    storage: &replay_control_core_server::storage::StorageLocation,
     systems: &[SystemSummary],
 ) -> Option<FavoritesInfo> {
     let all_favorites = state.cache.get_all_favorited_systems(storage).await?;
@@ -711,7 +711,7 @@ fn build_discover_pills(
 /// Select diverse picks from a pool: prefer one per system, then fill with a cap.
 #[cfg(feature = "ssr")]
 fn diversify_picks(
-    pool: Vec<replay_control_core::metadata_db::GameEntry>,
+    pool: Vec<replay_control_core_server::metadata_db::GameEntry>,
     count: usize,
     systems: &[SystemSummary],
 ) -> Vec<RecommendedGame> {
@@ -768,7 +768,7 @@ fn diversify_picks(
 #[cfg(feature = "ssr")]
 pub(super) fn to_recommended(
     system: &str,
-    rom: &replay_control_core::metadata_db::GameEntry,
+    rom: &replay_control_core_server::metadata_db::GameEntry,
     systems: &[SystemSummary],
 ) -> Option<RecommendedGame> {
     let display_name = rom

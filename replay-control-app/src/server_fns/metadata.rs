@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 /// Status of the first-run setup checklist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +101,7 @@ pub use crate::types::{
     SystemCoverage,
 };
 #[cfg(feature = "ssr")]
-pub use replay_control_core::metadata_db::{
+pub use replay_control_core_server::metadata_db::{
     DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
     SystemCoverage,
 };
@@ -216,7 +216,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         thumbnails_per_system.into_iter().collect();
     let mut stats_map: std::collections::HashMap<
         String,
-        replay_control_core::metadata_db::SystemCoverageStats,
+        replay_control_core_server::metadata_db::SystemCoverageStats,
     > = coverage_stats
         .into_iter()
         .map(|s| (s.system.clone(), s))
@@ -272,7 +272,7 @@ pub struct BuiltinDbStats {
 /// Get stats for the built-in (compile-time) metadata databases.
 #[server(prefix = "/sfn")]
 pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
-    use replay_control_core::{arcade_db, game_db, series_db};
+    use replay_control_core_server::{arcade_db, game_db, series_db};
 
     Ok(BuiltinDbStats {
         arcade_entries: arcade_db::entry_count().await,
@@ -405,7 +405,7 @@ pub async fn rebuild_corrupt_metadata() -> Result<(), ServerFnError> {
     // Close pool (already closed by mark_corrupt, but be safe).
     state.metadata_pool.close();
     // Delete the corrupt DB files.
-    replay_control_core::db_common::delete_db_files(&db_path);
+    replay_control_core_server::db_common::delete_db_files(&db_path);
     // Reopen at the current storage root — creates fresh schema.
     let storage = state.storage();
     if !state.metadata_pool.reopen(&storage.root) {
@@ -434,7 +434,7 @@ pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
     tracing::info!("Repairing corrupt user data DB at {}", db_path.display());
 
     state.user_data_pool.close();
-    replay_control_core::db_common::delete_db_files(&db_path);
+    replay_control_core_server::db_common::delete_db_files(&db_path);
     let storage = state.storage();
     if !state.user_data_pool.reopen(&storage.root) {
         return Err(ServerFnError::new(
@@ -466,7 +466,7 @@ pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
 
     // Close pool, copy backup over the DB, reopen.
     state.user_data_pool.close();
-    replay_control_core::db_common::delete_db_files(&db_path);
+    replay_control_core_server::db_common::delete_db_files(&db_path);
     std::fs::copy(&backup_path, &db_path)
         .map_err(|e| ServerFnError::new(format!("Failed to copy backup: {e}")))?;
 
@@ -474,7 +474,7 @@ pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
     if !state.user_data_pool.reopen(&storage.root) {
         // Restored copy is also corrupt — fall back to fresh DB.
         tracing::warn!("Restored user_data.db backup is also corrupt, creating fresh DB");
-        replay_control_core::db_common::delete_db_files(&db_path);
+        replay_control_core_server::db_common::delete_db_files(&db_path);
         if !state.user_data_pool.reopen(&storage.root) {
             return Err(ServerFnError::new(
                 "Failed to reopen user data DB after restore",

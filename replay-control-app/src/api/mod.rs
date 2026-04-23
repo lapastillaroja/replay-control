@@ -28,9 +28,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use deadpool_sqlite::rusqlite;
-use replay_control_core::config::SystemConfig;
-use replay_control_core::db_common::JournalMode;
-use replay_control_core::storage::{StorageKind, StorageLocation};
+use replay_control_core_server::config::SystemConfig;
+use replay_control_core_server::db_common::JournalMode;
+use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
 // ── Custom deadpool Manager ───────────────────────────────────────
 
@@ -75,8 +75,8 @@ impl managed::Manager for SqliteManager {
         let label = self.label.clone();
 
         SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
-            let conn =
-                replay_control_core::db_common::open_connection(&db_path, &label).map_err(|e| {
+            let conn = replay_control_core_server::db_common::open_connection(&db_path, &label)
+                .map_err(|e| {
                     rusqlite::Error::SqliteFailure(
                         rusqlite::ffi::Error::new(1),
                         Some(e.to_string()),
@@ -266,7 +266,7 @@ impl DbPool {
         // Open a warmup connection to detect the actual journal mode.
         // open_connection() picks WAL or DELETE based on filesystem capabilities,
         // so we query the result rather than guessing.
-        let warmup = replay_control_core::db_common::open_connection(&db_path, label)
+        let warmup = replay_control_core_server::db_common::open_connection(&db_path, label)
             .map_err(|e| format!("{label}: failed to open warmup connection: {e}"))?;
         let journal_mode = query_journal_mode(&warmup);
         drop(warmup);
@@ -561,14 +561,15 @@ pub struct AppState {
 fn open_metadata_db(
     storage_root: &std::path::Path,
 ) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    replay_control_core::metadata_db::MetadataDb::open(storage_root)
+    replay_control_core_server::metadata_db::MetadataDb::open(storage_root)
 }
 
 /// Opener for user data DB.
 fn open_user_data_db(
     storage_root: &std::path::Path,
 ) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    let (conn, path, _corrupt) = replay_control_core::user_data_db::UserDataDb::open(storage_root)?;
+    let (conn, path, _corrupt) =
+        replay_control_core_server::user_data_db::UserDataDb::open(storage_root)?;
     Ok((conn, path))
 }
 
@@ -582,8 +583,8 @@ fn resolve_settings_dir(
     settings_path: Option<&str>,
     storage_path: Option<&str>,
 ) -> replay_control_core_server::settings::SettingsStore {
-    use replay_control_core::storage::RC_DIR;
     use replay_control_core_server::settings::SettingsStore;
+    use replay_control_core_server::storage::RC_DIR;
 
     if let Some(p) = settings_path {
         return SettingsStore::new(p);
@@ -646,13 +647,13 @@ impl AppState {
 
             // Open DBs eagerly at startup so they're ready for the first request.
             let (_meta_conn, meta_path) =
-                replay_control_core::metadata_db::MetadataDb::open(&storage.root)
+                replay_control_core_server::metadata_db::MetadataDb::open(&storage.root)
                     .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
             tracing::info!("Metadata DB ready at {}", meta_path.display());
             let metadata_pool = DbPool::new(meta_path.clone(), "metadata_db", open_metadata_db)?;
 
             let (_ud_conn, ud_path, ud_corrupt) =
-                replay_control_core::user_data_db::UserDataDb::open(&storage.root)
+                replay_control_core_server::user_data_db::UserDataDb::open(&storage.root)
                     .map_err(|e| format!("Failed to open user data DB: {e}"))?;
             tracing::info!("User data DB ready at {}", ud_path.display());
             let user_data_pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;

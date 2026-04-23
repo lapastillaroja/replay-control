@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{RwLock, RwLockWriteGuard};
 
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 use super::AppState;
 use super::activity::{Activity, ActivityGuard};
@@ -29,11 +29,11 @@ impl ImportPipeline {
     /// Check if an import is actively running by inspecting the activity.
     /// Used by the startup pipeline to wait for auto-import completion.
     pub fn has_active_import(state: &AppState) -> bool {
-        use replay_control_core::metadata_db::ImportState;
+        use replay_control_core_server::metadata_db::ImportState;
         matches!(
             state.activity(),
             Activity::Import {
-                progress: replay_control_core::metadata_db::ImportProgress {
+                progress: replay_control_core_server::metadata_db::ImportProgress {
                     state: ImportState::Downloading
                         | ImportState::BuildingIndex
                         | ImportState::Parsing,
@@ -61,7 +61,7 @@ impl ImportPipeline {
         state: AppState,
         skip_enrichment: bool,
     ) -> bool {
-        use replay_control_core::metadata_db::{ImportProgress, ImportState};
+        use replay_control_core_server::metadata_db::{ImportProgress, ImportState};
 
         // Atomically claim the operation slot via Activity.
         let guard = match state.try_start_activity(Activity::Import {
@@ -92,7 +92,7 @@ impl ImportPipeline {
     /// Clear metadata DB and re-import from `launchbox-metadata.xml` if present.
     /// Returns an error message if the XML file is not found.
     pub async fn regenerate_metadata(&self, state: &AppState) -> Result<(), String> {
-        use replay_control_core::metadata_db::{ImportProgress, ImportState, LAUNCHBOX_XML};
+        use replay_control_core_server::metadata_db::{ImportProgress, ImportState, LAUNCHBOX_XML};
 
         // Find launchbox-metadata.xml (with fallback to old name) BEFORE claiming
         // the activity slot — no point locking out other operations if the file
@@ -158,7 +158,7 @@ impl ImportPipeline {
     /// Runs entirely in a background task. Returns false if another metadata
     /// operation is already running.
     pub fn start_metadata_download(&self, state: &AppState) -> bool {
-        use replay_control_core::metadata_db::{ImportProgress, ImportState};
+        use replay_control_core_server::metadata_db::{ImportProgress, ImportState};
 
         // Atomically claim the operation slot via Activity.
         let guard = match state.try_start_activity(Activity::Import {
@@ -191,7 +191,7 @@ impl ImportPipeline {
             let xml_path = match tokio::task::spawn_blocking({
                 move || {
                     let start = start;
-                    replay_control_core::launchbox::download_metadata(
+                    replay_control_core_server::launchbox::download_metadata(
                         &rc_dir_owned,
                         |downloaded, total| {
                             let mut guard = write_lock(&activity_lock, "activity");
@@ -269,7 +269,7 @@ impl ImportPipeline {
         _guard: ActivityGuard,
     ) {
         use super::WriteGate;
-        use replay_control_core::metadata_db::ImportState;
+        use replay_control_core_server::metadata_db::ImportState;
 
         // Build ROM index (no DB needed).
         let storage_root = state.storage().root.clone();
@@ -280,7 +280,7 @@ impl ImportPipeline {
             }
         });
 
-        let rom_index = replay_control_core::launchbox::build_rom_index(&storage_root).await;
+        let rom_index = replay_control_core_server::launchbox::build_rom_index(&storage_root).await;
 
         // Verify DB is available before starting the parse.
         {
@@ -337,7 +337,7 @@ impl ImportPipeline {
             let flush_batch = |batch: &[(
                 String,
                 String,
-                replay_control_core::metadata_db::GameMetadata,
+                replay_control_core_server::metadata_db::GameMetadata,
             )]| {
                 let batch = batch.to_vec();
                 handle
@@ -349,7 +349,7 @@ impl ImportPipeline {
                     })?
             };
 
-            replay_control_core::launchbox::import_launchbox(
+            replay_control_core_server::launchbox::import_launchbox(
                 &xml_path_owned,
                 &rom_index,
                 |processed, matched, inserted| {
@@ -433,7 +433,7 @@ impl ImportPipeline {
     /// write aliases) so other threads can access the DB between operations.
     async fn import_launchbox_aliases(
         state: &AppState,
-        parse_result: &replay_control_core::launchbox::ParseResult,
+        parse_result: &replay_control_core_server::launchbox::ParseResult,
     ) {
         if parse_result.alternate_names.is_empty() {
             return;
@@ -470,7 +470,7 @@ impl ImportPipeline {
         };
 
         // Call pure core matching function.
-        let aliases = replay_control_core::alias_matching::resolve_launchbox_aliases(
+        let aliases = replay_control_core_server::alias_matching::resolve_launchbox_aliases(
             &parse_result.alternate_names,
             &parse_result.game_names,
             &base_titles,

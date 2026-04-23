@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 /// Developer search result: a matched developer with their games.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,9 +43,9 @@ pub(crate) use replay_control_core::search_scoring::{search_score, split_into_wo
 /// Look up the normalized genre for a ROM on a given system.
 #[cfg(feature = "ssr")]
 pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
-    use replay_control_core::arcade_db;
-    use replay_control_core::game_db;
     use replay_control_core::systems;
+    use replay_control_core_server::arcade_db;
+    use replay_control_core_server::game_db;
 
     let is_arcade = systems::is_arcade_system(system);
 
@@ -114,8 +114,8 @@ pub async fn global_search(
     #[server(default)] min_year: Option<u16>,
     #[server(default)] max_year: Option<u16>,
 ) -> Result<GlobalSearchResults, ServerFnError> {
-    use replay_control_core::metadata_db::GameEntry;
     use replay_control_core::systems::{self as sys_db};
+    use replay_control_core_server::metadata_db::GameEntry;
 
     let state = expect_context::<crate::api::AppState>();
     let region_pref = state.region_preference();
@@ -178,7 +178,7 @@ pub async fn global_search(
     let candidates: Vec<GameEntry> = state
         .metadata_pool
         .read(move |conn| {
-            let filter = replay_control_core::metadata_db::SearchFilter {
+            let filter = replay_control_core_server::metadata_db::SearchFilter {
                 hide_hacks,
                 hide_translations,
                 hide_betas,
@@ -471,8 +471,8 @@ pub async fn get_developer_games(
     #[server(default)] min_year: Option<u16>,
     #[server(default)] max_year: Option<u16>,
 ) -> Result<DeveloperPageData, ServerFnError> {
-    use replay_control_core::metadata_db::SearchFilter;
     use replay_control_core::systems as sys_db;
+    use replay_control_core_server::metadata_db::SearchFilter;
 
     let state = expect_context::<crate::api::AppState>();
     let limit = limit.clamp(1, 200);

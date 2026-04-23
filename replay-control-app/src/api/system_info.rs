@@ -24,13 +24,13 @@ async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
         .cache
         .cached_systems(&storage, &state.metadata_pool)
         .await;
-    let favorites = replay_control_core::favorites::list_favorites(&storage)
+    let favorites = replay_control_core_server::favorites::list_favorites(&storage)
         .await
         .unwrap_or_default();
 
     let disk = storage
         .disk_usage()
-        .unwrap_or(replay_control_core::storage::DiskUsage {
+        .unwrap_or(replay_control_core_server::storage::DiskUsage {
             total_bytes: 0,
             available_bytes: 0,
             used_bytes: 0,

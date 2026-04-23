@@ -1,7 +1,7 @@
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 #[cfg(feature = "ssr")]
-use replay_control_core::user_data_db::UserDataDb;
+use replay_control_core_server::user_data_db::UserDataDb;
 
 mod boxart;
 mod favorites;
@@ -38,7 +38,7 @@ use server_fn::ServerFnError;
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::OrganizeCriteria;
 #[cfg(feature = "ssr")]
-pub use replay_control_core::favorites::OrganizeCriteria;
+pub use replay_control_core_server::favorites::OrganizeCriteria;
 
 pub const PAGE_SIZE: usize = 100;
 
@@ -155,7 +155,7 @@ pub(crate) async fn enrich_box_art_and_favorites(
 #[cfg(feature = "ssr")]
 pub(crate) async fn enrich_game_entries(
     state: &crate::api::AppState,
-    entries: Vec<replay_control_core::metadata_db::GameEntry>,
+    entries: Vec<replay_control_core_server::metadata_db::GameEntry>,
 ) -> Vec<RomListEntry> {
     // Build input tuples for the shared enrichment function.
     let input: Vec<(String, String, Option<String>)> = entries
@@ -265,13 +265,13 @@ pub struct SystemInfo {
 // On the server, use replay-core types directly.
 // On the client, use mirror types from types.rs.
 #[cfg(feature = "ssr")]
-pub use replay_control_core::favorites::Favorite;
+pub use replay_control_core_server::favorites::Favorite;
 #[cfg(feature = "ssr")]
-pub use replay_control_core::game_ref::GameRef;
+pub use replay_control_core_server::game_ref::GameRef;
 #[cfg(feature = "ssr")]
-pub use replay_control_core::recents::RecentEntry;
+pub use replay_control_core_server::recents::RecentEntry;
 #[cfg(feature = "ssr")]
-pub use replay_control_core::roms::{RomEntry, SystemSummary};
+pub use replay_control_core_server::roms::{RomEntry, SystemSummary};
 
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::{Favorite, GameRef, RecentEntry, RomEntry, SystemSummary};
@@ -293,10 +293,10 @@ pub fn format_error(e: server_fn::ServerFnError) -> String {
 #[cfg(feature = "ssr")]
 pub(crate) async fn build_game_detail(
     state: &crate::api::AppState,
-    entry: &replay_control_core::metadata_db::GameEntry,
+    entry: &replay_control_core_server::metadata_db::GameEntry,
 ) -> GameInfo {
-    use replay_control_core::arcade_db;
     use replay_control_core::systems;
+    use replay_control_core_server::arcade_db;
 
     let sys_info = systems::find_system(&entry.system);
     let system_display = sys_info
@@ -495,7 +495,7 @@ async fn enrich_detail_fields(
             && let Some(path) = resolve_image_on_disk(
                 arcade_display_owned.clone(),
                 media_base.clone(),
-                replay_control_core::thumbnails::ThumbnailKind::Snap.media_dir(),
+                replay_control_core_server::thumbnails::ThumbnailKind::Snap.media_dir(),
                 info.rom_filename.clone(),
             )
             .await
@@ -506,7 +506,7 @@ async fn enrich_detail_fields(
             && let Some(path) = resolve_image_on_disk(
                 arcade_display_owned,
                 media_base,
-                replay_control_core::thumbnails::ThumbnailKind::Title.media_dir(),
+                replay_control_core_server::thumbnails::ThumbnailKind::Title.media_dir(),
                 info.rom_filename.clone(),
             )
             .await
@@ -581,7 +581,9 @@ pub(crate) async fn resolve_box_art_url(
             let kind = std::path::Path::new(path)
                 .parent()
                 .and_then(|p| p.to_str())
-                .unwrap_or(replay_control_core::thumbnails::ThumbnailKind::Boxart.media_dir());
+                .unwrap_or(
+                    replay_control_core_server::thumbnails::ThumbnailKind::Boxart.media_dir(),
+                );
             return Some(format!("/media/{system}/{kind}/{resolved}"));
         }
     }
@@ -589,7 +591,7 @@ pub(crate) async fn resolve_box_art_url(
     resolve_image_on_disk(
         arcade_display.map(str::to_owned),
         media_base,
-        replay_control_core::thumbnails::ThumbnailKind::Boxart.media_dir(),
+        replay_control_core_server::thumbnails::ThumbnailKind::Boxart.media_dir(),
         rom_filename.to_string(),
     )
     .await
@@ -598,6 +600,6 @@ pub(crate) async fn resolve_box_art_url(
 
 // Re-export image utilities from core for use in this crate.
 #[cfg(feature = "ssr")]
-pub(crate) use replay_control_core::thumbnails::{
+pub(crate) use replay_control_core_server::thumbnails::{
     is_valid_image, resolve_image_on_disk, try_resolve_fake_symlink,
 };

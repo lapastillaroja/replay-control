@@ -84,8 +84,8 @@ hydrate = [
 ssr = [
     "leptos/ssr",
     "server_fn/axum-no-default",
-    "replay-control-core/metadata",
-    "replay-control-core/http",
+    "replay-control-core-server/metadata",
+    "replay-control-core-server/http",
     "dep:replay-control-core-server",
     "dep:axum",
     "dep:leptos_axum",

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 use super::AppState;
 use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
@@ -68,8 +68,8 @@ impl ThumbnailPipeline {
         _guard: ActivityGuard,
     ) {
         use super::WriteGate;
-        use replay_control_core::thumbnail_manifest;
-        use replay_control_core::thumbnails::ALL_THUMBNAIL_KINDS;
+        use replay_control_core_server::thumbnail_manifest;
+        use replay_control_core_server::thumbnails::ALL_THUMBNAIL_KINDS;
 
         let storage_root = state.storage().root.clone();
 
@@ -248,7 +248,8 @@ impl ThumbnailPipeline {
             .into_iter()
             .filter(|s| s.game_count > 0)
             .filter(|s| {
-                replay_control_core::thumbnails::thumbnail_repo_names(&s.folder_name).is_some()
+                replay_control_core_server::thumbnails::thumbnail_repo_names(&s.folder_name)
+                    .is_some()
             })
             .map(|s| s.folder_name)
             .collect();
@@ -279,12 +280,13 @@ impl ThumbnailPipeline {
             let activity_ref = activity_lock.clone();
 
             let rom_filenames =
-                replay_control_core::thumbnails::list_rom_filenames(&storage_root, system);
-            let arcade_lookup = replay_control_core::image_resolution::ArcadeInfoLookup::build(
-                system,
-                &rom_filenames,
-            )
-            .await;
+                replay_control_core_server::thumbnails::list_rom_filenames(&storage_root, system);
+            let arcade_lookup =
+                replay_control_core_server::image_resolution::ArcadeInfoLookup::build(
+                    system,
+                    &rom_filenames,
+                )
+                .await;
 
             for kind in ALL_THUMBNAIL_KINDS {
                 if cancel.load(Ordering::Relaxed) {
@@ -422,7 +424,7 @@ impl ThumbnailPipeline {
         storage_root: &std::path::Path,
         system: &str,
     ) {
-        use replay_control_core::image_matching::{build_dir_index, find_best_match};
+        use replay_control_core_server::image_matching::{build_dir_index, find_best_match};
 
         // Read visible filenames from DB via pool.
         let system_owned = system.to_string();
@@ -438,9 +440,9 @@ impl ThumbnailPipeline {
         };
 
         // Build dir indexes (filesystem scan, no DB needed).
-        use replay_control_core::thumbnails::ALL_THUMBNAIL_KINDS;
+        use replay_control_core_server::thumbnails::ALL_THUMBNAIL_KINDS;
         let media_base = storage_root
-            .join(replay_control_core::storage::RC_DIR)
+            .join(replay_control_core_server::storage::RC_DIR)
             .join("media")
             .join(system);
 
@@ -455,11 +457,13 @@ impl ThumbnailPipeline {
         let snap_index = &indexes[1];
         let title_index = &indexes[2];
 
-        let arcade_lookup =
-            replay_control_core::image_resolution::ArcadeInfoLookup::build(system, &rom_filenames)
-                .await;
+        let arcade_lookup = replay_control_core_server::image_resolution::ArcadeInfoLookup::build(
+            system,
+            &rom_filenames,
+        )
+        .await;
 
-        let mut updates: Vec<replay_control_core::metadata_db::ImagePathUpdate> = Vec::new();
+        let mut updates: Vec<replay_control_core_server::metadata_db::ImagePathUpdate> = Vec::new();
 
         for rom_filename in &rom_filenames {
             let stem = replay_control_core::title_utils::filename_stem(rom_filename);
@@ -471,7 +475,7 @@ impl ThumbnailPipeline {
             let title_rel = find_best_match(title_index, rom_filename, arcade_display, None);
 
             if boxart_rel.is_some() || snap_rel.is_some() || title_rel.is_some() {
-                updates.push(replay_control_core::metadata_db::ImagePathUpdate {
+                updates.push(replay_control_core_server::metadata_db::ImagePathUpdate {
                     system: system.to_string(),
                     rom_filename: rom_filename.clone(),
                     box_art_path: boxart_rel,

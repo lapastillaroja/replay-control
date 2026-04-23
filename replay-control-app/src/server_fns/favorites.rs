@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 /// A favorite enriched with box art URL and genre.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub struct OrganizeResult {
 #[server(prefix = "/sfn", endpoint = "/get_favorites")]
 pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let favs = replay_control_core::favorites::list_favorites(&state.storage())
+    let favs = replay_control_core_server::favorites::list_favorites(&state.storage())
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(enrich_favorites(&state, favs).await)
@@ -32,9 +32,10 @@ pub async fn get_favorites() -> Result<Vec<FavoriteWithArt>, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_system_favorites(system: String) -> Result<Vec<FavoriteWithArt>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let favs = replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let favs =
+        replay_control_core_server::favorites::list_favorites_for_system(&state.storage(), &system)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(enrich_favorites(&state, favs).await)
 }
 
@@ -90,10 +91,14 @@ pub async fn add_favorite(
     grouped: bool,
 ) -> Result<Favorite, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let result =
-        replay_control_core::favorites::add_favorite(&state.storage(), &system, &rom_path, grouped)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let result = replay_control_core_server::favorites::add_favorite(
+        &state.storage(),
+        &system,
+        &rom_path,
+        grouped,
+    )
+    .await
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
     Ok(result)
@@ -110,14 +115,14 @@ pub async fn remove_favorite(
     match &subfolder {
         Some(s) if !s.is_empty() => {
             // Caller knows the subfolder — remove from that specific location.
-            replay_control_core::favorites::remove_favorite(&storage, &filename, Some(s))
+            replay_control_core_server::favorites::remove_favorite(&storage, &filename, Some(s))
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
         }
         _ => {
             // Caller doesn't know the subfolder (e.g., game detail page).
             // Remove from all locations (root + all subfolders) since the
             // same .fav may exist in multiple places after reorganization.
-            replay_control_core::favorites::remove_favorite_everywhere(&storage, &filename)
+            replay_control_core_server::favorites::remove_favorite_everywhere(&storage, &filename)
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
         }
     }
@@ -139,13 +144,15 @@ pub async fn organize_favorites(
     let ratings = if needs_ratings {
         state
             .metadata_pool
-            .read(|conn| replay_control_core::metadata_db::MetadataDb::all_ratings(conn).ok())
+            .read(|conn| {
+                replay_control_core_server::metadata_db::MetadataDb::all_ratings(conn).ok()
+            })
             .await
             .flatten()
     } else {
         None
     };
-    let result = replay_control_core::favorites::organize_favorites(
+    let result = replay_control_core_server::favorites::organize_favorites(
         &state.storage(),
         primary,
         secondary,
@@ -165,7 +172,7 @@ pub async fn organize_favorites(
 #[server(prefix = "/sfn")]
 pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let result = replay_control_core::favorites::group_by_system(&state.storage())
+    let result = replay_control_core_server::favorites::group_by_system(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
@@ -175,7 +182,7 @@ pub async fn group_favorites() -> Result<usize, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let result = replay_control_core::favorites::flatten_favorites(&state.storage())
+    let result = replay_control_core_server::favorites::flatten_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
@@ -252,7 +259,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
             let mut sections: Vec<(
                 String,
                 Vec<String>,
-                Vec<replay_control_core::metadata_db::GameEntry>,
+                Vec<replay_control_core_server::metadata_db::GameEntry>,
                 Option<String>,
             )> = Vec::new();
 

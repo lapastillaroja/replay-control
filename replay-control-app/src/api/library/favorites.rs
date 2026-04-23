@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use replay_control_core::storage::StorageLocation;
+use replay_control_core_server::storage::StorageLocation;
 
 use super::LibraryService;
 
@@ -13,7 +13,7 @@ pub(in crate::api) struct FavoritesCache {
 
 impl FavoritesCache {
     pub(in crate::api) async fn load(storage: &StorageLocation) -> Self {
-        let all_favs = replay_control_core::favorites::list_favorites(storage)
+        let all_favs = replay_control_core_server::favorites::list_favorites(storage)
             .await
             .unwrap_or_default();
         let mut data: HashMap<String, HashSet<String>> = HashMap::new();

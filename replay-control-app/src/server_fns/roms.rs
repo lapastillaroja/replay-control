@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,7 +116,7 @@ pub async fn get_roms_page(
     // search_game_library(). GameEntry rows from the DB already carry genre,
     // rating, players, and driver_status, so enrichment is minimal (just box art
     // and favorites overlay).
-    use replay_control_core::metadata_db::SearchFilter;
+    use replay_control_core_server::metadata_db::SearchFilter;
 
     let q = search.to_lowercase();
     let query_words: Vec<String> = if q.is_empty() {
@@ -164,7 +164,7 @@ pub async fn get_roms_page(
     // When text search is active, score and paginate in Rust (SQL returned all
     // matching rows without LIMIT/OFFSET so we can sort by relevance).
     let (page_entries, total, has_more) = if !search.is_empty() {
-        let mut scored: Vec<(u32, replay_control_core::metadata_db::GameEntry)> = entries
+        let mut scored: Vec<(u32, replay_control_core_server::metadata_db::GameEntry)> = entries
             .into_iter()
             .filter_map(|entry| {
                 let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
@@ -234,7 +234,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
         })?;
 
     let is_favorite =
-        replay_control_core::favorites::is_favorite(&storage, &system, &filename).await;
+        replay_control_core_server::favorites::is_favorite(&storage, &system, &filename).await;
 
     let game = build_game_detail(&state, &entry).await;
 
@@ -256,7 +256,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
 
     // Count box art variants (manifest index only — no filesystem scan to avoid N+1).
     let arcade_display =
-        replay_control_core::arcade_db::display_name_if_arcade(&system, &filename).await;
+        replay_control_core_server::arcade_db::display_name_if_arcade(&system, &filename).await;
     let variant_count = state
         .metadata_pool
         .read({
@@ -264,7 +264,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
             let filename = filename.clone();
             let arcade_display = arcade_display.clone();
             move |conn| {
-                replay_control_core::thumbnail_manifest::count_boxart_variants(
+                replay_control_core_server::thumbnail_manifest::count_boxart_variants(
                     conn,
                     &system,
                     &filename,
@@ -281,20 +281,18 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let base_title = replay_control_core::title_utils::base_title(&game.display_name);
 
     // Determine rename restrictions.
-    let (rename_allowed, rename_reason) = replay_control_core::roms::check_rename_allowed(
+    let (rename_allowed, rename_reason) = replay_control_core_server::roms::check_rename_allowed(
         &storage,
         &system,
         entry.rom_path.trim_start_matches('/'),
     );
 
     // Detect multi-disc set.
-    let disc_info =
-        replay_control_core::roms::detect_disc_set(&storage, &system, &filename).map(|di| {
-            DiscInfoDto {
-                disc_number: di.disc_number,
-                total_discs: di.total_discs,
-                siblings: di.siblings,
-            }
+    let disc_info = replay_control_core_server::roms::detect_disc_set(&storage, &system, &filename)
+        .map(|di| DiscInfoDto {
+            disc_number: di.disc_number,
+            total_discs: di.total_discs,
+            siblings: di.siblings,
         });
 
     #[cfg(feature = "ssr")]
@@ -337,8 +335,9 @@ pub async fn get_rom_file_group(
     let state = expect_context::<crate::api::AppState>();
     let storage = state.storage();
 
-    let mut group = replay_control_core::roms::list_rom_group(&storage, &system, &relative_path)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut group =
+        replay_control_core_server::roms::list_rom_group(&storage, &system, &relative_path)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // If this ROM is part of a multi-disc set (no M3U), include sibling discs.
     let rom_filename = std::path::Path::new(&relative_path)
@@ -346,7 +345,7 @@ pub async fn get_rom_file_group(
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
     if let Some(disc_info) =
-        replay_control_core::roms::detect_disc_set(&storage, &system, &rom_filename)
+        replay_control_core_server::roms::detect_disc_set(&storage, &system, &rom_filename)
     {
         let system_dir = storage.system_roms_dir(&system);
         for sibling in &disc_info.siblings {
@@ -358,10 +357,10 @@ pub async fn get_rom_file_group(
                 let size = std::fs::metadata(&sibling_path)
                     .map(|m| m.len())
                     .unwrap_or(0);
-                group.push(replay_control_core::roms::GroupedFile {
+                group.push(replay_control_core_server::roms::GroupedFile {
                     path: sibling_path,
                     size_bytes: size,
-                    kind: replay_control_core::roms::FileKind::Disc,
+                    kind: replay_control_core_server::roms::FileKind::Disc,
                 });
             }
         }
@@ -379,10 +378,10 @@ pub async fn get_rom_file_group(
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| g.path.display().to_string());
             let kind = match g.kind {
-                replay_control_core::roms::FileKind::Primary => "primary",
-                replay_control_core::roms::FileKind::Disc => "disc",
-                replay_control_core::roms::FileKind::Companion => "companion",
-                replay_control_core::roms::FileKind::DataDir => "directory",
+                replay_control_core_server::roms::FileKind::Primary => "primary",
+                replay_control_core_server::roms::FileKind::Disc => "disc",
+                replay_control_core_server::roms::FileKind::Companion => "companion",
+                replay_control_core_server::roms::FileKind::DataDir => "directory",
             };
             RomFileEntry {
                 filename,
@@ -413,13 +412,14 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
 
     // Check for multi-disc set — include siblings in the deletion.
     let disc_siblings: Vec<String> =
-        replay_control_core::roms::detect_disc_set(&storage, &system, &rom_filename)
+        replay_control_core_server::roms::detect_disc_set(&storage, &system, &rom_filename)
             .map(|di| di.siblings)
             .unwrap_or_default();
 
     // Delete the primary ROM group.
-    let report = replay_control_core::roms::delete_rom_group(&storage, &system, &relative_path)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let report =
+        replay_control_core_server::roms::delete_rom_group(&storage, &system, &relative_path)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     if !report.errors.is_empty() {
         tracing::warn!("Errors during ROM group delete: {:?}", report.errors);
@@ -431,7 +431,8 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
             continue; // Already deleted as part of the primary group.
         }
         let sibling_rel = format!("roms/{system}/{sibling}");
-        if let Err(e) = replay_control_core::roms::delete_rom_group(&storage, &system, &sibling_rel)
+        if let Err(e) =
+            replay_control_core_server::roms::delete_rom_group(&storage, &system, &sibling_rel)
         {
             tracing::warn!("Failed to delete disc sibling {sibling}: {e}");
         }
@@ -488,7 +489,7 @@ fn find_matching_screenshots(
 #[cfg(feature = "ssr")]
 async fn delete_rom_cleanup(
     state: &crate::api::AppState,
-    storage: &replay_control_core::storage::StorageLocation,
+    storage: &replay_control_core_server::storage::StorageLocation,
     system: &str,
     rom_filename: &str,
 ) {
@@ -510,7 +511,7 @@ async fn delete_rom_cleanup(
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
-                replay_control_core::user_data_db::UserDataDb::delete_for_rom(
+                replay_control_core_server::user_data_db::UserDataDb::delete_for_rom(
                     conn,
                     &system,
                     &rom_filename,
@@ -526,7 +527,7 @@ async fn delete_rom_cleanup(
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
-                replay_control_core::metadata_db::MetadataDb::delete_for_rom(
+                replay_control_core_server::metadata_db::MetadataDb::delete_for_rom(
                     conn,
                     &system,
                     &rom_filename,
@@ -577,8 +578,9 @@ pub async fn rename_rom(
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    let new_path = replay_control_core::roms::rename_rom(&storage, &relative_path, &new_filename)
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let new_path =
+        replay_control_core_server::roms::rename_rom(&storage, &relative_path, &new_filename)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Phase 3: Rename cascade — update all associated data.
     rename_rom_cascade(&state, &storage, &system, &old_filename, &new_filename).await;
@@ -601,7 +603,7 @@ pub async fn rename_rom(
 #[cfg(feature = "ssr")]
 async fn rename_rom_cascade(
     state: &crate::api::AppState,
-    storage: &replay_control_core::storage::StorageLocation,
+    storage: &replay_control_core_server::storage::StorageLocation,
     system: &str,
     old_filename: &str,
     new_filename: &str,
@@ -636,7 +638,7 @@ async fn rename_rom_cascade(
             let old_filename = old_filename.to_string();
             let new_filename = new_filename.to_string();
             move |conn| {
-                replay_control_core::user_data_db::UserDataDb::rename_for_rom(
+                replay_control_core_server::user_data_db::UserDataDb::rename_for_rom(
                     conn,
                     &system,
                     &old_filename,
@@ -654,7 +656,7 @@ async fn rename_rom_cascade(
             let old_filename = old_filename.to_string();
             let new_filename = new_filename.to_string();
             move |conn| {
-                replay_control_core::metadata_db::MetadataDb::rename_for_rom(
+                replay_control_core_server::metadata_db::MetadataDb::rename_for_rom(
                     conn,
                     &system,
                     &old_filename,
@@ -714,9 +716,12 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
     // Extract system and rom_filename from the rom_path.
     // rom_path format: "/roms/<system>/<optional_subdirs>/<rom_filename>"
     if let Some((system, rom_filename)) = parse_rom_path(&rom_path) {
-        if let Err(e) =
-            replay_control_core::recents::add_recent(&storage, &system, &rom_filename, &rom_path)
-        {
+        if let Err(e) = replay_control_core_server::recents::add_recent(
+            &storage,
+            &system,
+            &rom_filename,
+            &rom_path,
+        ) {
             tracing::warn!("Failed to create recents entry: {e}");
         }
         state.cache.invalidate_recents().await;

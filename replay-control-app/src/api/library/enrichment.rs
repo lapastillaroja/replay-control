@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use replay_control_core::enrichment::{self, ArcadeInfoLookup, ImageIndex};
-use replay_control_core::metadata_db::MetadataDb;
-use replay_control_core::user_data_db::UserDataDb;
+use replay_control_core_server::enrichment::{self, ArcadeInfoLookup, ImageIndex};
+use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::user_data_db::UserDataDb;
 
 use super::LibraryService;
 
@@ -31,7 +31,7 @@ impl LibraryService {
         let sys = system.clone();
         let result = db
             .read(move |conn| {
-                replay_control_core::enrichment::enrich_system(
+                replay_control_core_server::enrichment::enrich_system(
                     conn,
                     &sys,
                     &index,
@@ -128,14 +128,14 @@ impl LibraryService {
 
     /// Auto-match new ROMs against existing LaunchBox metadata by normalized title.
     ///
-    /// Delegates the pure matching logic to `replay_control_core::metadata_matching`,
+    /// Delegates the pure matching logic to `replay_control_core_server::metadata_matching`,
     /// then persists results and returns a map of `rom_filename -> rating`.
     async fn auto_match_metadata(
         &self,
         state: &crate::api::AppState,
         system: &str,
     ) -> HashMap<String, f64> {
-        use replay_control_core::metadata_matching;
+        use replay_control_core_server::metadata_matching;
 
         let db = &state.metadata_pool;
 
@@ -224,7 +224,7 @@ async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageI
         .unwrap_or_else(|| {
             // Pool unavailable — return an empty index.
             ImageIndex {
-                dir_index: replay_control_core::image_matching::DirIndex {
+                dir_index: replay_control_core_server::image_matching::DirIndex {
                     exact: Default::default(),
                     exact_ci: Default::default(),
                     fuzzy: Default::default(),
@@ -243,10 +243,10 @@ fn queue_on_demand_download(
     state: &crate::api::AppState,
     system: &str,
     rom_filename: &str,
-    m: &replay_control_core::thumbnail_manifest::ManifestMatch,
+    m: &replay_control_core_server::thumbnail_manifest::ManifestMatch,
 ) {
-    use replay_control_core::thumbnail_manifest::{download_thumbnail, save_thumbnail};
-    use replay_control_core::thumbnails::ThumbnailKind;
+    use replay_control_core_server::thumbnail_manifest::{download_thumbnail, save_thumbnail};
+    use replay_control_core_server::thumbnails::ThumbnailKind;
 
     let download_key = format!("{system}/{}", m.filename);
 
@@ -283,7 +283,7 @@ fn queue_on_demand_download(
                     // Update box_art_url in the DB so it's visible immediately.
                     let boxart_dir = ThumbnailKind::Boxart.media_dir();
                     let png_name = format!("{}.png", m.filename);
-                    let url = replay_control_core::enrichment::format_box_art_url(
+                    let url = replay_control_core_server::enrichment::format_box_art_url(
                         &system,
                         &format!("{boxart_dir}/{png_name}"),
                     );

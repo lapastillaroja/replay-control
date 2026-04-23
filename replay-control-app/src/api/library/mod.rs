@@ -9,11 +9,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use replay_control_core::metadata_db::MetadataDb;
-use replay_control_core::recents::RecentEntry;
 use replay_control_core::rom_tags::RegionPreference;
-use replay_control_core::roms::{RomEntry, SystemSummary};
-use replay_control_core::storage::StorageLocation;
+use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::recents::RecentEntry;
+use replay_control_core_server::roms::{RomEntry, SystemSummary};
+use replay_control_core_server::storage::StorageLocation;
 use tokio::sync::RwLock;
 
 use super::DbPool;
@@ -91,7 +91,7 @@ impl LibraryService {
         }
 
         // L3: Cache miss — full filesystem scan.
-        let summaries = replay_control_core::roms::scan_systems(storage).await;
+        let summaries = replay_control_core_server::roms::scan_systems(storage).await;
         *guard = Some(summaries.clone());
         drop(guard);
 
@@ -117,7 +117,7 @@ impl LibraryService {
         }
 
         // Build a lookup map from cached data.
-        let meta_map: HashMap<String, &replay_control_core::metadata_db::SystemMeta> =
+        let meta_map: HashMap<String, &replay_control_core_server::metadata_db::SystemMeta> =
             cached_meta.iter().map(|m| (m.system.clone(), m)).collect();
 
         let mut summaries = Vec::new();
@@ -196,9 +196,13 @@ impl LibraryService {
         let system_dir = storage.roms_dir().join(system);
 
         tracing::debug!("L3 scan for {system}: starting filesystem scan");
-        let mut roms =
-            replay_control_core::roms::list_roms(storage, system, region_pref, region_secondary)
-                .await?;
+        let mut roms = replay_control_core_server::roms::list_roms(
+            storage,
+            system,
+            region_pref,
+            region_secondary,
+        )
+        .await?;
         tracing::debug!("L3 scan for {system}: found {} ROMs", roms.len());
 
         // Hash-and-identify step: for hash-eligible systems, compute CRC32 hashes
@@ -233,7 +237,7 @@ impl LibraryService {
         system_dir: &Path,
         db: &DbPool,
     ) -> Option<Vec<RomEntry>> {
-        use replay_control_core::metadata_db::SystemMeta;
+        use replay_control_core_server::metadata_db::SystemMeta;
 
         let sys = system.to_string();
         let meta: SystemMeta = db
@@ -285,7 +289,7 @@ impl LibraryService {
         let roms: Vec<RomEntry> = cached_roms
             .into_iter()
             .map(|cr| {
-                use replay_control_core::game_ref::GameRef;
+                use replay_control_core_server::game_ref::GameRef;
                 RomEntry {
                     game: GameRef::new_with_display(
                         &cr.system,
@@ -328,7 +332,7 @@ impl LibraryService {
             return Ok(cached.clone());
         }
 
-        let entries = replay_control_core::recents::list_recents(storage).await?;
+        let entries = replay_control_core_server::recents::list_recents(storage).await?;
         *guard = Some(entries.clone());
         Ok(entries)
     }

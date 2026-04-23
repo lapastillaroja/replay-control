@@ -67,7 +67,7 @@ pub struct RecentEntry {
     pub last_played: u64,
 }
 
-/// Mirror of `replay_control_core::metadata_db::ImportStats` for WASM.
+/// Mirror of `replay_control_core_server::metadata_db::ImportStats` for WASM.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ImportStats {
     pub total_source: usize,
@@ -76,7 +76,7 @@ pub struct ImportStats {
     pub skipped: usize,
 }
 
-/// Mirror of `replay_control_core::metadata_db::MetadataStats` for WASM.
+/// Mirror of `replay_control_core_server::metadata_db::MetadataStats` for WASM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataStats {
     pub total_entries: usize,
@@ -86,7 +86,7 @@ pub struct MetadataStats {
     pub last_updated_text: String,
 }
 
-/// Mirror of `replay_control_core::metadata_db::ImportState` for WASM.
+/// Mirror of `replay_control_core_server::metadata_db::ImportState` for WASM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImportState {
     Downloading,
@@ -96,7 +96,7 @@ pub enum ImportState {
     Failed,
 }
 
-/// Mirror of `replay_control_core::metadata_db::ImportProgress` for WASM.
+/// Mirror of `replay_control_core_server::metadata_db::ImportProgress` for WASM.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ImportProgress {
     pub state: ImportState,
@@ -174,7 +174,7 @@ pub struct LibrarySummary {
     pub total_size_bytes: u64,
 }
 
-/// Mirror of `replay_control_core::game_docs::GameDocument` for WASM.
+/// Mirror of `replay_control_core_server::game_docs::GameDocument` for WASM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameDocument {
     pub relative_path: String,
@@ -184,7 +184,7 @@ pub struct GameDocument {
     pub category: DocumentCategory,
 }
 
-/// Mirror of `replay_control_core::game_docs::DocumentCategory` for WASM.
+/// Mirror of `replay_control_core_server::game_docs::DocumentCategory` for WASM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DocumentCategory {
     Manual,
@@ -193,7 +193,7 @@ pub enum DocumentCategory {
     Extra,
 }
 
-/// Mirror of `replay_control_core::retrokit_manuals::ManualRecommendation` for WASM.
+/// Mirror of `replay_control_core_server::retrokit_manuals::ManualRecommendation` for WASM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManualRecommendation {
     pub source: String,
@@ -204,7 +204,7 @@ pub struct ManualRecommendation {
     pub source_id: String,
 }
 
-/// Mirror of `replay_control_core::user_data_db::VideoEntry` for WASM.
+/// Mirror of `replay_control_core_server::user_data_db::VideoEntry` for WASM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoEntry {
     pub id: String,

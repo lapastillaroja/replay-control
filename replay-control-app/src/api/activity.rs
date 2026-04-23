@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 use serde::{Deserialize, Serialize};
 
 // Re-export progress types used in Activity variants.
-pub use replay_control_core::metadata_db::ImportProgress;
+pub use replay_control_core_server::metadata_db::ImportProgress;
 
 /// What the server is doing right now. At most one activity at a time.
 /// Serialized over SSE as tagged JSON for the client to consume.
@@ -49,7 +49,7 @@ fn default_cancel() -> Arc<AtomicBool> {
 impl Activity {
     /// Check if this activity represents a terminal (completed/failed/cancelled) state.
     pub fn is_terminal(&self) -> bool {
-        use replay_control_core::metadata_db::ImportState;
+        use replay_control_core_server::metadata_db::ImportState;
         match self {
             Self::Import { progress } => {
                 matches!(progress.state, ImportState::Complete | ImportState::Failed)
@@ -72,7 +72,7 @@ impl Activity {
     /// Extract a human-readable terminal message from a completed activity.
     /// Returns an empty string if the activity is not in a terminal state.
     pub fn terminal_message(&self) -> String {
-        use replay_control_core::metadata_db::ImportState;
+        use replay_control_core_server::metadata_db::ImportState;
         match self {
             Self::Import { progress } => match progress.state {
                 ImportState::Complete => format!(

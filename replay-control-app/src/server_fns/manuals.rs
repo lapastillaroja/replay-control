@@ -1,11 +1,11 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 #[cfg(feature = "ssr")]
-pub use replay_control_core::game_docs::GameDocument;
+pub use replay_control_core_server::game_docs::GameDocument;
 #[cfg(feature = "ssr")]
-pub use replay_control_core::retrokit_manuals::ManualRecommendation;
+pub use replay_control_core_server::retrokit_manuals::ManualRecommendation;
 
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::GameDocument;
@@ -59,7 +59,7 @@ pub async fn get_game_documents(
         };
 
         match game_dir {
-            Some(d) => replay_control_core::game_docs::scan_game_documents(&d),
+            Some(d) => replay_control_core_server::game_docs::scan_game_documents(&d),
             None => Vec::new(),
         }
     })
@@ -91,7 +91,8 @@ pub async fn get_local_manuals(
         all_titles.extend(aliases);
     }
 
-    let folder = replay_control_core::retrokit_manuals::manual_folder_name(&system).to_string();
+    let folder =
+        replay_control_core_server::retrokit_manuals::manual_folder_name(&system).to_string();
     let manuals_dir = state.storage().manuals_dir().join(&folder);
 
     // Run all blocking filesystem I/O off the async runtime to avoid stalling
@@ -166,7 +167,7 @@ pub async fn search_game_manuals(
     base_title: String,
     display_name: String,
 ) -> Result<Vec<ManualRecommendation>, ServerFnError> {
-    use replay_control_core::retrokit_manuals;
+    use replay_control_core_server::retrokit_manuals;
 
     // Normalize the title for matching
     let normalized = retrokit_manuals::normalize_retrokit_title(&base_title);
@@ -318,7 +319,7 @@ pub async fn download_manual(
         return Err(ServerFnError::new("Invalid title"));
     }
 
-    let folder = replay_control_core::retrokit_manuals::manual_folder_name(&system);
+    let folder = replay_control_core_server::retrokit_manuals::manual_folder_name(&system);
     let manuals_dir = state.storage().manuals_dir().join(folder);
 
     // Build filename: "<base_title> (<lang>).pdf" or "<base_title>.pdf"
@@ -353,7 +354,7 @@ pub async fn download_manual(
         target_path.display()
     );
 
-    let size = match replay_control_core::http::download_to_file(
+    let size = match replay_control_core_server::http::download_to_file(
         &encoded_url,
         &target_path,
         std::time::Duration::from_secs(120),
@@ -387,7 +388,8 @@ pub async fn delete_manual(system: String, filename: String) -> Result<(), Serve
     }
 
     let state = expect_context::<crate::api::AppState>();
-    let folder = replay_control_core::retrokit_manuals::manual_folder_name(&system).to_string();
+    let folder =
+        replay_control_core_server::retrokit_manuals::manual_folder_name(&system).to_string();
     let target_path = state.storage().manuals_dir().join(&folder).join(&filename);
 
     match tokio::fs::remove_file(&target_path).await {
@@ -406,13 +408,13 @@ pub async fn delete_manual(system: String, filename: String) -> Result<(), Serve
 #[cfg(feature = "ssr")]
 async fn load_retrokit_index(
     folder: &str,
-) -> Result<replay_control_core::retrokit_manuals::RetrokitIndex, String> {
+) -> Result<replay_control_core_server::retrokit_manuals::RetrokitIndex, String> {
     use std::sync::LazyLock;
     use std::sync::Mutex;
     use std::time::Instant;
 
     struct CachedIndex {
-        index: replay_control_core::retrokit_manuals::RetrokitIndex,
+        index: replay_control_core_server::retrokit_manuals::RetrokitIndex,
         loaded_at: Instant,
     }
 
@@ -436,12 +438,14 @@ async fn load_retrokit_index(
         format!("https://archive.org/download/retrokit-manuals/{folder}/{folder}-sources.tsv");
     tracing::info!("Fetching retrokit TSV: {url}");
 
-    let tsv_data =
-        replay_control_core::http::get_text_with_timeout(&url, std::time::Duration::from_secs(30))
-            .await
-            .map_err(|e| e.to_string())?;
+    let tsv_data = replay_control_core_server::http::get_text_with_timeout(
+        &url,
+        std::time::Duration::from_secs(30),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
-    let index = replay_control_core::retrokit_manuals::parse_retrokit_tsv(&tsv_data);
+    let index = replay_control_core_server::retrokit_manuals::parse_retrokit_tsv(&tsv_data);
     tracing::info!("Retrokit TSV loaded: {folder} ({} titles)", index.len());
 
     // Store in cache
@@ -462,7 +466,7 @@ async fn load_retrokit_index(
 /// Fetch a URL and parse the response as JSON.
 #[cfg(feature = "ssr")]
 async fn http_get_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
-    replay_control_core::http::get_json_with_timeout(
+    replay_control_core_server::http::get_json_with_timeout(
         url,
         std::time::Duration::from_secs(timeout_secs),
     )

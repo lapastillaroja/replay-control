@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use replay_control_core::rom_tags::RegionPreference;
-use replay_control_core::roms::RomEntry;
-use replay_control_core::storage::StorageLocation;
+use replay_control_core_server::roms::RomEntry;
+use replay_control_core_server::storage::StorageLocation;
 
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 
 use super::{LibraryService, dir_mtime};
 use crate::api::DbPool;
@@ -27,8 +27,8 @@ impl LibraryService {
         system: &str,
         roms: &mut [RomEntry],
         db: &DbPool,
-    ) -> HashMap<String, replay_control_core::rom_hash::HashResult> {
-        use replay_control_core::rom_hash::{self, HashResult};
+    ) -> HashMap<String, replay_control_core_server::rom_hash::HashResult> {
+        use replay_control_core_server::rom_hash::{self, HashResult};
 
         if !rom_hash::is_hash_eligible(system) {
             return HashMap::new();
@@ -80,7 +80,7 @@ impl LibraryService {
         if !canonical_filenames.is_empty() {
             let refs: Vec<&str> = canonical_filenames.iter().map(String::as_str).collect();
             let display_map =
-                replay_control_core::game_db::display_names_batch(system, &refs).await;
+                replay_control_core_server::game_db::display_names_batch(system, &refs).await;
             for rom in roms.iter_mut() {
                 if let Some(hash_result) = result_map.get(&rom.game.rom_filename)
                     && let Some(ref matched_name) = hash_result.matched_name
@@ -121,7 +121,7 @@ impl LibraryService {
         system: &str,
         roms: &[RomEntry],
         system_dir: &Path,
-        hash_results: &HashMap<String, replay_control_core::rom_hash::HashResult>,
+        hash_results: &HashMap<String, replay_control_core_server::rom_hash::HashResult>,
         region_pref: RegionPreference,
         region_secondary: Option<RegionPreference>,
         db: &DbPool,
@@ -133,9 +133,12 @@ impl LibraryService {
         });
 
         // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
-        let cached_roms =
-            replay_control_core::game_entry_builder::build_game_entries(system, roms, hash_results)
-                .await;
+        let cached_roms = replay_control_core_server::game_entry_builder::build_game_entries(
+            system,
+            roms,
+            hash_results,
+        )
+        .await;
 
         tracing::debug!(
             "L2 write-through: saving {} ROMs for {system} (mtime={mtime_secs:?})",
@@ -177,7 +180,7 @@ impl LibraryService {
                 // LaunchBox enrichment later runs `seed_release_dates_from_metadata`
                 // to upgrade to day-precision USA dates.
                 let static_data =
-                    replay_control_core::metadata_db::fetch_static_release_data().await;
+                    replay_control_core_server::metadata_db::fetch_static_release_data().await;
                 let _ = db
                     .write(move |conn| {
                         let _ = MetadataDb::seed_release_dates_from_static(conn, static_data);

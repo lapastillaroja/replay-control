@@ -8,7 +8,7 @@ use super::AppState;
 
 async fn list_systems(
     State(state): State<AppState>,
-) -> Json<Vec<replay_control_core::roms::SystemSummary>> {
+) -> Json<Vec<replay_control_core_server::roms::SystemSummary>> {
     Json(
         state
             .cache
@@ -20,7 +20,7 @@ async fn list_systems(
 async fn list_system_roms(
     State(state): State<AppState>,
     Path(system): Path<String>,
-) -> Result<Json<Vec<replay_control_core::roms::RomEntry>>, StatusCode> {
+) -> Result<Json<Vec<replay_control_core_server::roms::RomEntry>>, StatusCode> {
     let storage = state.storage();
 
     // L2: try SQLite game_library.
@@ -56,7 +56,7 @@ async fn delete_rom(
     State(state): State<AppState>,
     Json(payload): Json<DeleteRomRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    replay_control_core::roms::delete_rom_group(
+    replay_control_core_server::roms::delete_rom_group(
         &state.storage(),
         &payload.system,
         &payload.relative_path,
@@ -71,7 +71,7 @@ async fn rename_rom(
     State(state): State<AppState>,
     Json(payload): Json<RenameRomRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let new_path = replay_control_core::roms::rename_rom(
+    let new_path = replay_control_core_server::roms::rename_rom(
         &state.storage(),
         &payload.relative_path,
         &payload.new_filename,
@@ -85,7 +85,7 @@ async fn rename_rom(
 }
 
 async fn find_duplicates(State(state): State<AppState>) -> Json<Vec<DuplicateResponse>> {
-    let dupes = replay_control_core::roms::find_duplicates(&state.storage()).await;
+    let dupes = replay_control_core_server::roms::find_duplicates(&state.storage()).await;
     Json(
         dupes
             .into_iter()

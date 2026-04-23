@@ -28,5 +28,9 @@ tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread
 quick-xml = { version = "0.39", optional = true }
 reqwest = { workspace = true, optional = true }
 
+[[bin]]
+name = "metadata_report"
+required-features = ["metadata"]
+
 [dev-dependencies]
 tempfile = "3"

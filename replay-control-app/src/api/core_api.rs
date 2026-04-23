@@ -7,11 +7,11 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
-use replay_control_core::metadata_db::MetadataDb;
+use replay_control_core_server::metadata_db::MetadataDb;
 use serde::Serialize;
 
 use super::AppState;
-use replay_control_core::game_ref::GameRef;
+use replay_control_core_server::game_ref::GameRef;
 
 /// Minimal game entry returned by recents/favorites list endpoints.
 /// Matches the shape expected by the libretro core's JSON parser.
@@ -87,7 +87,7 @@ async fn recents(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry
 /// GET /api/core/favorites — returns JSON array of favorites.
 async fn favorites(State(state): State<AppState>) -> Result<Json<Vec<CoreGameEntry>>, StatusCode> {
     let storage = state.storage();
-    let games: Vec<GameRef> = replay_control_core::favorites::list_favorites(&storage)
+    let games: Vec<GameRef> = replay_control_core_server::favorites::list_favorites(&storage)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()

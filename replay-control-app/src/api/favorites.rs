@@ -8,8 +8,8 @@ use super::AppState;
 
 async fn list_favorites(
     State(state): State<AppState>,
-) -> Result<Json<Vec<replay_control_core::favorites::Favorite>>, StatusCode> {
-    replay_control_core::favorites::list_favorites(&state.storage())
+) -> Result<Json<Vec<replay_control_core_server::favorites::Favorite>>, StatusCode> {
+    replay_control_core_server::favorites::list_favorites(&state.storage())
         .await
         .map(Json)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -18,8 +18,8 @@ async fn list_favorites(
 async fn list_system_favorites(
     State(state): State<AppState>,
     Path(system): Path<String>,
-) -> Result<Json<Vec<replay_control_core::favorites::Favorite>>, StatusCode> {
-    replay_control_core::favorites::list_favorites_for_system(&state.storage(), &system)
+) -> Result<Json<Vec<replay_control_core_server::favorites::Favorite>>, StatusCode> {
+    replay_control_core_server::favorites::list_favorites_for_system(&state.storage(), &system)
         .await
         .map(Json)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -28,8 +28,14 @@ async fn list_system_favorites(
 async fn add_favorite(
     State(state): State<AppState>,
     Json(payload): Json<AddFavoriteRequest>,
-) -> Result<(StatusCode, Json<replay_control_core::favorites::Favorite>), StatusCode> {
-    replay_control_core::favorites::add_favorite(
+) -> Result<
+    (
+        StatusCode,
+        Json<replay_control_core_server::favorites::Favorite>,
+    ),
+    StatusCode,
+> {
+    replay_control_core_server::favorites::add_favorite(
         &state.storage(),
         &payload.system,
         &payload.rom_path,
@@ -44,7 +50,7 @@ async fn remove_favorite(
     State(state): State<AppState>,
     Json(payload): Json<RemoveFavoriteRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    replay_control_core::favorites::remove_favorite(
+    replay_control_core_server::favorites::remove_favorite(
         &state.storage(),
         &payload.filename,
         payload.subfolder.as_deref(),
@@ -56,7 +62,7 @@ async fn remove_favorite(
 async fn group_favorites(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    replay_control_core::favorites::group_by_system(&state.storage())
+    replay_control_core_server::favorites::group_by_system(&state.storage())
         .map(|count| Json(serde_json::json!({ "moved": count })))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
@@ -64,7 +70,7 @@ async fn group_favorites(
 async fn flatten_all_favorites(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    replay_control_core::favorites::flatten_favorites(&state.storage())
+    replay_control_core_server::favorites::flatten_favorites(&state.storage())
         .map(|count| Json(serde_json::json!({ "moved": count })))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
@@ -73,8 +79,12 @@ async fn check_favorite(
     State(state): State<AppState>,
     Path((system, rom_filename)): Path<(String, String)>,
 ) -> Json<serde_json::Value> {
-    let is_fav =
-        replay_control_core::favorites::is_favorite(&state.storage(), &system, &rom_filename).await;
+    let is_fav = replay_control_core_server::favorites::is_favorite(
+        &state.storage(),
+        &system,
+        &rom_filename,
+    )
+    .await;
     Json(serde_json::json!({ "is_favorite": is_fav }))
 }
 

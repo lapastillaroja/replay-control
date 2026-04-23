@@ -30,7 +30,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
 
     let disk = storage
         .disk_usage()
-        .unwrap_or(replay_control_core::storage::DiskUsage {
+        .unwrap_or(replay_control_core_server::storage::DiskUsage {
             total_bytes: 0,
             available_bytes: 0,
             used_bytes: 0,

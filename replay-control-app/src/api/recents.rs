@@ -7,15 +7,15 @@ use super::AppState;
 
 async fn list_recents(
     State(state): State<AppState>,
-) -> Result<Json<Vec<replay_control_core::recents::RecentEntry>>, StatusCode> {
-    replay_control_core::recents::list_recents(&state.storage())
+) -> Result<Json<Vec<replay_control_core_server::recents::RecentEntry>>, StatusCode> {
+    replay_control_core_server::recents::list_recents(&state.storage())
         .await
         .map(Json)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn last_played(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
-    let entry = replay_control_core::recents::last_played(&state.storage())
+    let entry = replay_control_core_server::recents::last_played(&state.storage())
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
