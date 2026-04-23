@@ -2318,6 +2318,56 @@ fn insert_series(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> 
 }
 
 // =============================================================================
+// Preflight
+// =============================================================================
+
+/// Source files that must be present for a production (non-stub) catalog build.
+/// Missing entries would silently produce a catalog with coverage gaps
+/// (e.g. missing MAME 0.285 games), so we fail fast here.
+///
+/// Truly optional inputs (catver, nplayers, tgdb-*, libretro-meta) are
+/// skipped individually at parse time — they only enrich existing entries.
+const REQUIRED_SOURCES: &[&str] = &[
+    "fbneo-arcade.dat",
+    "mame2003plus.xml",
+    "mame0285-arcade.xml",
+    "no-intro",
+    "thegamesdb-latest.json",
+    "wikidata/series.json",
+];
+
+fn preflight_check(sources_dir: &Path) -> Result<(), String> {
+    let missing: Vec<&str> = REQUIRED_SOURCES
+        .iter()
+        .filter(|rel| !sources_dir.join(rel).exists())
+        .copied()
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let mut msg = String::new();
+    msg.push_str(&format!(
+        "Missing {} required source file(s) under {}:\n",
+        missing.len(),
+        sources_dir.display(),
+    ));
+    for rel in &missing {
+        msg.push_str(&format!("  - {rel}\n"));
+    }
+    msg.push_str(
+        "\nRun the data download scripts to produce them:\n\
+         \n  ./scripts/download-arcade-data.sh\n\
+         \n  ./scripts/download-metadata.sh\n\
+         \n  python3 scripts/wikidata-series-extract.py > data/wikidata/series.json\n\
+         \nmame0285-arcade.xml additionally needs `7z` (p7zip-full) and `python3` \
+         installed on the build host; without them download-arcade-data.sh skips it \
+         with a warning, producing a catalog that omits MAME 0.285 games.\n\
+         \nOr pass --stub to build from replay-control-core/fixtures/ instead.\n",
+    );
+    Err(msg)
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -2342,6 +2392,13 @@ fn main() {
 
     eprintln!("build-catalog: sources_dir = {}", sources_dir.display());
     eprintln!("build-catalog: output      = {}", args.output.display());
+
+    if !args.stub
+        && let Err(msg) = preflight_check(&sources_dir)
+    {
+        eprintln!("build-catalog: ERROR\n\n{msg}");
+        std::process::exit(1);
+    }
 
     // Remove existing output file if it exists (fresh build)
     if args.output.exists() {
