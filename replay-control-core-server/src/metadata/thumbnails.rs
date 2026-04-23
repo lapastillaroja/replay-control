@@ -1012,6 +1012,37 @@ mod tests {
     // --- list_rom_filenames extension filtering ---
 
     #[test]
+    fn resolve_image_on_disk_finds_apostrophe_arcade_title() {
+        // Regression: arcade ROM galaga88.zip has display "Galaga '88 (set 1)" (MAME 2003+),
+        // libretro saves art as "Galaga '88.png". resolve_image_on_disk must find it via
+        // the strip_tags fuzzy tier — apostrophes are preserved in both the lookup key
+        // and the on-disk filename.
+        let tmp = tempfile::tempdir().unwrap();
+        let boxart_dir = tmp.path().join("boxart");
+        std::fs::create_dir_all(&boxart_dir).unwrap();
+        let file = boxart_dir.join("Galaga '88.png");
+        std::fs::write(&file, vec![0u8; 1024]).unwrap();
+
+        // Parent: MAME 2003+ display.
+        let result = resolve_image_on_disk_sync(
+            Some("Galaga '88 (set 1)"),
+            tmp.path(),
+            "boxart",
+            "galaga88.zip",
+        );
+        assert_eq!(result.as_deref(), Some("boxart/Galaga '88.png"));
+
+        // Clone: FBNeo display.
+        let result = resolve_image_on_disk_sync(
+            Some("Galaga '88 (02-03-88)"),
+            tmp.path(),
+            "boxart",
+            "galaga88a.zip",
+        );
+        assert_eq!(result.as_deref(), Some("boxart/Galaga '88.png"));
+    }
+
+    #[test]
     fn list_rom_filenames_filters_unsupported_extensions() {
         let tmp = tempfile::tempdir().unwrap();
         let roms_dir = tmp.path().join("roms").join("amstrad_cpc");

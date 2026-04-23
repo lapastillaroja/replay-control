@@ -1549,6 +1549,109 @@ mod tests {
         );
     }
 
+    #[test]
+    fn find_in_manifest_galaga88_full_repo_simulation() {
+        // Simulate arcade_fbneo's real manifest: both FBNeo and MAME entries indexed
+        // via `build_manifest_fuzzy_index_from_raw`. FBNeo has "Galaga '88"; MAME has
+        // "Galaga '88 (set 1)" and "Galaga '88 (Japan)".
+        let fbneo_entries = vec![crate::metadata_db::ThumbnailIndexEntry {
+            filename: "Galaga '88".to_string(),
+            symlink_target: None,
+        }];
+        let mame_entries = vec![
+            crate::metadata_db::ThumbnailIndexEntry {
+                filename: "Galaga '88 (set 1)".to_string(),
+                symlink_target: None,
+            },
+            crate::metadata_db::ThumbnailIndexEntry {
+                filename: "Galaga '88 (Japan)".to_string(),
+                symlink_target: None,
+            },
+        ];
+        let repo_data = vec![
+            (
+                "FBNeo_-_Arcade_Games".to_string(),
+                "master".to_string(),
+                fbneo_entries,
+            ),
+            ("MAME".to_string(), "master".to_string(), mame_entries),
+        ];
+        let index = build_manifest_fuzzy_index_from_raw(&repo_data);
+
+        // galaga88 (parent) → MAME 2003+ display "Galaga '88 (set 1)" → Tier 1 exact
+        // matches MAME's "Galaga '88 (set 1)".
+        let hit = find_in_manifest(&index, "galaga88.zip", Some("Galaga '88 (set 1)"))
+            .expect("galaga88 must match");
+        assert_eq!(hit.filename, "Galaga '88 (set 1)");
+
+        // galaga88a (clone, FBNeo-driven display "Galaga '88 (02-03-88)") — no exact
+        // match in either repo. Tier 2 strip_tags reduces to "galaga '88" which must
+        // match FBNeo's "Galaga '88".
+        let hit = find_in_manifest(&index, "galaga88a.zip", Some("Galaga '88 (02-03-88)"))
+            .expect("galaga88a must match");
+        // Any of the three candidates is acceptable (HashMap insertion order
+        // picks one), but matching MUST succeed.
+        assert!(
+            hit.filename.starts_with("Galaga '88"),
+            "expected a Galaga '88 entry, got '{}'",
+            hit.filename
+        );
+    }
+
+    #[test]
+    fn find_in_manifest_galaga88_apostrophe_fuzzy_match() {
+        // Regression test: "Galaga '88" in libretro FBNeo repo must match the
+        // MAME 2003+ display name "Galaga '88 (set 1)" for ROM galaga88.zip.
+        // Also the FBNeo display for clone galaga88a.zip: "Galaga '88 (02-03-88)".
+        //
+        // The apostrophe passes through thumbnail_filename() unchanged, so the
+        // strip_tags tier should collapse both names to "galaga '88" and match.
+        let m = ManifestMatch {
+            filename: "Galaga '88".to_string(),
+            is_symlink: false,
+            repo_url_name: "FBNeo_-_Arcade_Games".to_string(),
+            branch: "master".to_string(),
+        };
+
+        let mut exact = HashMap::new();
+        let mut exact_ci = HashMap::new();
+        let mut by_tags = HashMap::new();
+        exact.insert("Galaga '88".to_string(), m.clone());
+        exact_ci.insert("galaga '88".to_string(), m.clone());
+        by_tags.insert("galaga '88".to_string(), m.clone());
+
+        let index = ManifestFuzzyIndex {
+            exact,
+            exact_ci,
+            by_tags,
+            by_version: HashMap::new(),
+            by_base_title: HashMap::new(),
+            by_aggressive: HashMap::new(),
+        };
+
+        // Parent: MAME 2003+ display "Galaga '88 (set 1)".
+        let result = find_in_manifest(
+            &index,
+            "galaga88.zip",
+            Some("Galaga '88 (set 1)"),
+        );
+        assert!(
+            result.is_some(),
+            "Galaga '88 (set 1) should match manifest entry \"Galaga '88\" via strip_tags"
+        );
+
+        // Clone: FBNeo display "Galaga '88 (02-03-88)".
+        let result = find_in_manifest(
+            &index,
+            "galaga88a.zip",
+            Some("Galaga '88 (02-03-88)"),
+        );
+        assert!(
+            result.is_some(),
+            "Galaga '88 (02-03-88) should match manifest entry \"Galaga '88\" via strip_tags"
+        );
+    }
+
     /// Helper for testing find_in_manifest with a pre-computed thumbnail name,
     /// bypassing the arcade_db lookup and filename extraction.
     ///
