@@ -6,30 +6,7 @@
 
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
-
-/// A document file found inside a game directory.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GameDocument {
-    /// Relative path from ROM directory: "Manual.pdf", "EXTRAS/Art Book.pdf"
-    pub relative_path: String,
-    /// Display label derived from filename: "Manual", "Walkthrough", "Art Book"
-    pub label: String,
-    /// File extension for icon/handling: "pdf", "txt", "jpg"
-    pub extension: String,
-    /// File size in bytes
-    pub size_bytes: u64,
-    /// Category for sorting: Manual, Walkthrough, Reference, Extra
-    pub category: DocumentCategory,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum DocumentCategory {
-    Manual,
-    Walkthrough,
-    Reference,
-    Extra,
-}
+pub use replay_control_core::game_docs::{DocumentCategory, GameDocument};
 
 /// Document file extensions we recognize.
 const DOC_EXTENSIONS: &[&str] = &[

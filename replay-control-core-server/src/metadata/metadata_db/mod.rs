@@ -56,76 +56,10 @@ pub struct ThumbnailIndexEntry {
     pub symlink_target: Option<String>,
 }
 
-/// State of a metadata import operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ImportState {
-    Downloading,
-    BuildingIndex,
-    Parsing,
-    Complete,
-    Failed,
-}
-
-/// Progress of an ongoing metadata import.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ImportProgress {
-    pub state: ImportState,
-    pub processed: usize,
-    pub matched: usize,
-    pub inserted: usize,
-    pub elapsed_secs: u64,
-    pub error: Option<String>,
-    /// Bytes downloaded so far (only meaningful during `Downloading` state).
-    #[serde(default)]
-    pub download_bytes: u64,
-    /// Total download size in bytes, if known from Content-Length.
-    #[serde(default)]
-    pub download_total: Option<u64>,
-}
-
-/// Per-system metadata coverage.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SystemCoverage {
-    pub system: String,
-    pub display_name: String,
-    pub total_games: usize,
-    pub with_thumbnail: usize,
-    /// Games with a non-empty genre in game_library.
-    #[serde(default)]
-    pub with_genre: usize,
-    /// Games with a non-empty developer in game_library.
-    #[serde(default)]
-    pub with_developer: usize,
-    /// Games with a non-null rating in game_library.
-    #[serde(default)]
-    pub with_rating: usize,
-    /// Total ROM size in bytes for this system (from game_library).
-    #[serde(default)]
-    pub size_bytes: u64,
-    /// Games with a description in game_metadata.
-    #[serde(default)]
-    pub with_description: usize,
-    #[serde(default)]
-    pub clone_count: usize,
-    #[serde(default)]
-    pub hack_count: usize,
-    #[serde(default)]
-    pub translation_count: usize,
-    #[serde(default)]
-    pub special_count: usize,
-    #[serde(default)]
-    pub coop_count: usize,
-    /// Games with `hash_matched_name IS NOT NULL` (No-Intro verified).
-    #[serde(default)]
-    pub verified_count: usize,
-    #[serde(default)]
-    pub min_year: Option<u16>,
-    #[serde(default)]
-    pub max_year: Option<u16>,
-    /// Driver status counts for arcade systems. `None` for non-arcade systems.
-    #[serde(default)]
-    pub driver_status: Option<DriverStatusCounts>,
-}
+pub use replay_control_core::metadata_db::{
+    DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
+    SystemCoverage,
+};
 
 /// Per-system coverage stats from a single `GROUP BY system` pass over `game_library`.
 #[derive(Debug, Clone, Default)]
@@ -143,30 +77,6 @@ pub struct SystemCoverageStats {
     pub verified_count: usize,
     pub min_year: Option<u16>,
     pub max_year: Option<u16>,
-}
-
-/// Per-system counts for arcade `driver_status` values.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct DriverStatusCounts {
-    pub working: usize,
-    pub imperfect: usize,
-    pub preliminary: usize,
-    pub unknown: usize,
-}
-
-/// Aggregate summary of the entire game library.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct LibrarySummary {
-    pub total_games: usize,
-    pub system_count: usize,
-    pub with_genre: usize,
-    pub with_developer: usize,
-    pub with_rating: usize,
-    pub with_box_art: usize,
-    pub coop_games: usize,
-    pub min_year: Option<u16>,
-    pub max_year: Option<u16>,
-    pub total_size_bytes: u64,
 }
 
 pub use replay_control_core::DatePrecision;
@@ -229,25 +139,6 @@ impl GameMetadata {
             .as_deref()
             .and_then(year_from_release_date)
     }
-}
-
-/// Import statistics.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct ImportStats {
-    pub total_source: usize,
-    pub matched: usize,
-    pub inserted: usize,
-    pub skipped: usize,
-}
-
-/// Coverage statistics.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct MetadataStats {
-    pub total_entries: usize,
-    pub with_description: usize,
-    pub with_rating: usize,
-    pub db_size_bytes: u64,
-    pub last_updated_text: String,
 }
 
 /// A cached ROM entry from the `game_library` table.

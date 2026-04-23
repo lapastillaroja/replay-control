@@ -35,10 +35,7 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 use server_fn::ServerFnError;
 
-#[cfg(not(feature = "ssr"))]
-pub use crate::types::OrganizeCriteria;
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::favorites::OrganizeCriteria;
+pub use replay_control_core::favorites::OrganizeCriteria;
 
 pub const PAGE_SIZE: usize = 100;
 
@@ -262,19 +259,10 @@ pub struct SystemInfo {
 }
 
 // Re-export types for use in components.
-// On the server, use replay-core types directly.
-// On the client, use mirror types from types.rs.
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::favorites::Favorite;
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::game_ref::GameRef;
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::recents::RecentEntry;
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::roms::{RomEntry, SystemSummary};
-
-#[cfg(not(feature = "ssr"))]
-pub use crate::types::{Favorite, GameRef, RecentEntry, RomEntry, SystemSummary};
+pub use replay_control_core::favorites::Favorite;
+pub use replay_control_core::game_ref::GameRef;
+pub use replay_control_core::recents::RecentEntry;
+pub use replay_control_core::roms::{RomEntry, SystemSummary};
 
 /// Strip the Leptos "error running server function: " prefix from server errors.
 pub fn format_error(e: server_fn::ServerFnError) -> String {

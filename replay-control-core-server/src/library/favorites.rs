@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+pub use replay_control_core::favorites::{Favorite, OrganizeCriteria, OrganizeResult};
 
 use crate::arcade_db::{self, ArcadeGameInfo};
 use crate::game_db::{self, CanonicalGame};
@@ -9,19 +9,6 @@ use crate::game_ref::GameRef;
 use crate::storage::StorageLocation;
 use replay_control_core::error::{Error, Result};
 use replay_control_core::systems;
-
-/// A parsed favorite entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Favorite {
-    #[serde(flatten)]
-    pub game: GameRef,
-    /// The .fav marker filename (e.g., "sega_smd@Sonic.md.fav")
-    pub marker_filename: String,
-    /// Subfolder within _favorites (empty string if at root)
-    pub subfolder: String,
-    /// Unix timestamp when the favorite was added (from file mtime)
-    pub date_added: u64,
-}
 
 /// List all favorites, searching root and subfolders.
 pub async fn list_favorites(storage: &StorageLocation) -> Result<Vec<Favorite>> {
@@ -105,7 +92,8 @@ pub async fn add_favorite(
         .unwrap_or(0);
 
     Ok(Favorite {
-        game: GameRef::new(system_folder, rom_filename, rom_relative_path.to_string()).await,
+        game: crate::game_ref::new(system_folder, rom_filename, rom_relative_path.to_string())
+            .await,
         marker_filename: fav_filename,
         subfolder,
         date_added,
@@ -228,25 +216,6 @@ pub fn group_by_system(storage: &StorageLocation) -> Result<usize> {
 /// that already exist at root.
 pub fn flatten_favorites(storage: &StorageLocation) -> Result<usize> {
     flatten_favorites_deep(storage)
-}
-
-/// Criteria for organizing favorites into subfolders.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum OrganizeCriteria {
-    System,
-    Genre,
-    Players,
-    Rating,
-    Alphabetical,
-    Developer,
-}
-
-/// Result of an organize or flatten operation.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct OrganizeResult {
-    pub organized: usize,
-    pub skipped: usize,
 }
 
 /// (src_path, fav_filename, system_folder, rom_filename) for each parsed

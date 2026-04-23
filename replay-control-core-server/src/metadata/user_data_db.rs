@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, params};
-use serde::{Deserialize, Serialize};
 
 use crate::storage::RC_DIR;
 use replay_control_core::error::{Error, Result};
@@ -16,28 +15,7 @@ use replay_control_core::error::{Error, Result};
 /// Filename for the SQLite user data database.
 pub const USER_DATA_DB_FILE: &str = "user_data.db";
 
-/// A single saved video entry for a game.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VideoEntry {
-    /// Unique ID: "{platform}-{video_id}"
-    pub id: String,
-    /// Sanitized canonical URL
-    pub url: String,
-    /// Platform name (e.g., "youtube")
-    pub platform: String,
-    /// Platform-specific video ID
-    pub video_id: String,
-    /// Human-readable title (from user or search results)
-    pub title: Option<String>,
-    /// Unix timestamp when the video was added
-    pub added_at: u64,
-    /// Whether this was pinned from a recommendation search
-    pub from_recommendation: bool,
-    /// Tag: "trailer", "gameplay", "1cc", or None for manual
-    pub tag: Option<String>,
-    /// The ROM filename this video was originally saved from (for delete path).
-    pub rom_filename: String,
-}
+pub use replay_control_core::user_data_db::VideoEntry;
 
 /// Stateless query namespace for the user data SQLite database.
 ///

@@ -1,20 +1,8 @@
-use serde::{Deserialize, Serialize};
+pub use replay_control_core::recents::RecentEntry;
 
-use crate::game_ref::GameRef;
 use crate::storage::StorageLocation;
 use replay_control_core::error::{Error, Result};
 use replay_control_core::systems;
-
-/// A recently played game entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecentEntry {
-    #[serde(flatten)]
-    pub game: GameRef,
-    /// The .rec marker filename
-    pub marker_filename: String,
-    /// Timestamp of last play (file modification time as unix epoch seconds)
-    pub last_played: u64,
-}
 
 struct RawRecent {
     system: String,
@@ -98,7 +86,7 @@ pub async fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>>
 
     let mut recents: Vec<RecentEntry> = Vec::with_capacity(raw.len());
     for r in raw {
-        let game = GameRef::new(&r.system, r.rom_filename, r.rom_path).await;
+        let game = crate::game_ref::new(&r.system, r.rom_filename, r.rom_path).await;
         recents.push(RecentEntry {
             game,
             marker_filename: r.marker_filename,

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+pub use replay_control_core::retrokit_manuals::ManualRecommendation;
+
 /// A single manual source from a retrokit TSV entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManualSource {
@@ -17,23 +19,6 @@ pub struct ManualSource {
     pub language: String,
     /// Direct download URL for the manual PDF
     pub url: String,
-}
-
-/// A manual recommendation returned to the UI.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ManualRecommendation {
-    /// Source: "retrokit" or "archive.org"
-    pub source: String,
-    /// Display title
-    pub title: String,
-    /// Direct URL to the PDF file
-    pub url: String,
-    /// File size in bytes (not available from retrokit TSV)
-    pub size_bytes: Option<u64>,
-    /// Language code(s): "en", "ja", "en-gb,de,es,fr,it"
-    pub language: Option<String>,
-    /// Archive.org item identifier (for attribution)
-    pub source_id: String,
 }
 
 /// Parsed retrokit TSV index for one system.

@@ -95,13 +95,7 @@ pub use crate::types::{
     ThumbnailProgress,
 };
 
-#[cfg(not(feature = "ssr"))]
-pub use crate::types::{
-    DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
-    SystemCoverage,
-};
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::metadata_db::{
+pub use replay_control_core::metadata_db::{
     DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
     SystemCoverage,
 };

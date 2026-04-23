@@ -2,15 +2,8 @@ use super::*;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::metadata_db::MetadataDb;
 
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::game_docs::GameDocument;
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::retrokit_manuals::ManualRecommendation;
-
-#[cfg(not(feature = "ssr"))]
-pub use crate::types::GameDocument;
-#[cfg(not(feature = "ssr"))]
-pub use crate::types::ManualRecommendation;
+pub use replay_control_core::game_docs::GameDocument;
+pub use replay_control_core::retrokit_manuals::ManualRecommendation;
 
 /// A local manual file found on disk in `<storage>/manuals/<system>/`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

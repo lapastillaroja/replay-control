@@ -4,10 +4,7 @@ use replay_control_core_server::metadata_db::MetadataDb;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
-#[cfg(not(feature = "ssr"))]
-pub use crate::types::VideoEntry;
-#[cfg(feature = "ssr")]
-pub use replay_control_core_server::user_data_db::VideoEntry;
+pub use replay_control_core::user_data_db::VideoEntry;
 
 /// A video recommendation from Piped search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
