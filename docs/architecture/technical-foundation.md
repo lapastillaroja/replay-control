@@ -4,31 +4,45 @@ The core technical stack and infrastructure that powers Replay Control. For perf
 
 ## Crates
 
-The codebase is split into three crates inside a Cargo workspace.
+The codebase is split into four crates inside a Cargo workspace.
 
-### replay-control-core (library)
+### replay-control-core (pure library)
 
-Pure Rust library with no web framework dependency. Contains:
+Pure Rust library compiled for both native (SSR) and `wasm32-unknown-unknown` (hydrate). Zero I/O dependencies — no `rusqlite`, `tokio`, `reqwest`, `std::fs`, `std::process`, `deadpool`, or `quick-xml`. Contains:
 
-- **Game databases**: embedded arcade_db, game_db (genres, ratings, players) compiled via `phf` at build time
-- **ROM parsing**: filename tag extraction, tier classification, region detection, base title extraction, series key computation
-- **Metadata storage**: SQLite schema and queries for `metadata.db` (game library, metadata cache, thumbnail index) and `user_data.db` (user customizations)
-- **Image matching**: multi-tier fuzzy matching (exact, case-insensitive, base_title, version-stripped) for resolving ROM filenames to thumbnail paths
-- **Configuration**: `replay.cfg` parser, settings reader/writer
-- **Systems catalog**: static list of supported systems with display names, folder names, core assignments
-- **Thumbnails**: libretro-thumbnails repo mapping, on-demand download logic, manifest parsing
+- **Pure domain types**: ROM filename parsing (`rom_tags`), title normalization (`title_utils`), developer/genre canonicalization, search scoring, semver-based update detection, locale
+- **Pure reference data**: systems catalog (`platform::systems`), skin palettes, `DatePrecision` enum
+- **Error types**: shared error enum (`error::Error`)
 
-Feature-gated: the `metadata` feature enables SQLite (`rusqlite`) and XML parsing (`quick-xml`).
+This crate is the default home for new code. If code touches SQLite, fs, HTTP, or a process, it belongs in `replay-control-core-server` instead.
+
+### replay-control-core-server (native library)
+
+Server-only native implementation. Compiled for native targets only (never wasm). Pulls `rusqlite`, `deadpool-sqlite`, `tokio`, `reqwest` (optional), `quick-xml` (optional). Contains:
+
+- **Catalog pool**: async read-only `deadpool-sqlite` pool for the bundled `catalog.sqlite` (game databases, arcade DB, series DB)
+- **Game DB queries**: native SQL lookups for arcade/console metadata, display name resolution, release dates
+- **Library scanning**: ROM discovery, favorites/recents I/O, hashing, disc-group detection
+- **Metadata pipeline**: LaunchBox XML parsing, thumbnail manifest download, image resolution, metadata DB writes
+- **Platform adapters**: `/proc/mounts` filesystem detection, `df` disk usage, storage location detection
+- **HTTP client**: `reqwest`-backed helpers (feature-gated)
+- **Settings store**: `replay.cfg` / `settings.cfg` reader+writer
+- **Launch**: spawns `replay` process for game playback
+
+Re-exports `replay-control-core`'s pure types at each matching module level (e.g. `replay_control_core_server::arcade_db::ArcadeGameInfo` resolves via `pub use replay_control_core::arcade_db::*`), so SSR callers have a single import path for both type and native fn.
+
+Feature-gated: `metadata` enables `quick-xml`; `http` enables `reqwest`. The `metadata_report` bin requires `metadata`.
 
 ### replay-control-app (web application)
 
-Leptos 0.7 SSR + WASM hydration app built on Axum. Contains:
+Leptos 0.7 SSR + WASM hydration app built on Axum. Depends on `replay-control-core` unconditionally (both SSR and hydrate builds) and on `replay-control-core-server` only when the `ssr` feature is active. Contains:
 
 - **Server functions**: ~70 registered server functions for all UI data needs
 - **API layer** (`src/api/`): AppState, connection pools, background pipeline, activity system, game library cache, enrichment, import/thumbnail pipelines
 - **Pages** (`src/pages/`): home, system browser, game detail, favorites, settings, metadata management, search
 - **Components** (`src/components/`): reusable UI components (hero cards, game rows, skeleton loaders, modals)
 - **Internationalization**: runtime i18n with locale-keyed translation strings
+- **Wire-type mirrors** (`src/types.rs`): duplicate serde types for hydrate-side code. Mirrors the types still in `replay-control-core-server` because hydrate can't depend on core-server. A planned follow-up promotes these types back to `replay-control-core` and deletes the mirrors.
 
 ### replay-control-libretro (TV display core)
 
@@ -44,11 +58,12 @@ Standalone cdylib (not in the workspace) that implements the libretro API. Runs 
 | Activity system | `replay-control-app/src/api/activity.rs` |
 | Enrichment | `replay-control-app/src/api/cache/enrichment.rs` |
 | Image resolution | `replay-control-app/src/api/cache/images.rs` |
-| DB schema | `replay-control-core/src/metadata/metadata_db/mod.rs` |
-| User data DB | `replay-control-core/src/metadata/user_data_db.rs` |
+| DB schema | `replay-control-core-server/src/metadata/metadata_db/mod.rs` |
+| User data DB | `replay-control-core-server/src/metadata/user_data_db.rs` |
+| Catalog pool | `replay-control-core-server/src/catalog_pool.rs` |
 | ROM tag parsing | `replay-control-core/src/game/rom_tags.rs` |
-| Image matching | `replay-control-core/src/metadata/image_matching.rs` |
-| HTTP client | `replay-control-core/src/http.rs` |
+| Image matching | `replay-control-core-server/src/metadata/image_matching.rs` |
+| HTTP client | `replay-control-core-server/src/http.rs` |
 
 ## Stack
 
@@ -77,13 +92,13 @@ Systems with embedded data include SG-1000, 32X, and all major consoles from the
 
 See [Design Decisions #10](design-decisions.md) for the trade-offs.
 
-**Files**: `replay-control-core/build.rs`, `replay-control-core/src/game/arcade_db.rs`, `replay-control-core/src/game/game_db.rs`
+**Files**: `tools/build-catalog/src/main.rs`, `replay-control-core-server/src/game/arcade_db.rs`, `replay-control-core-server/src/game/game_db.rs`
 
 ## Embedded Series Database
 
 ~5,345 Wikidata series entries across 194+ franchises compiled at build time. Provides game franchise identification, sequel/prequel chains (P155/P156), and ordinals. Bidirectional links are filled at build time so both forward and backward navigation work even when Wikidata only has one direction.
 
-**Files**: `replay-control-core/src/game/series_db.rs`
+**Files**: `replay-control-core-server/src/game/series_db.rs`
 
 ## CRC32 ROM Identification
 
@@ -130,7 +145,7 @@ See [Activity System](activity-system.md) for the mutual exclusion and progress 
 
 ## Shared HTTP Client
 
-All outbound HTTP requests use a shared `reqwest` client (`replay-control-core/src/http.rs`, `shared_client()`). The client is initialized once with sensible defaults (timeouts, connection pooling) and reused across the app. This replaced earlier curl subprocess calls, reducing overhead and enabling connection reuse for GitHub API, LaunchBox downloads, and thumbnail fetches.
+All outbound HTTP requests use a shared `reqwest` client (`replay-control-core-server/src/http.rs`, `shared_client()`). The client is initialized once with sensible defaults (timeouts, connection pooling) and reused across the app. This replaced earlier curl subprocess calls, reducing overhead and enabling connection reuse for GitHub API, LaunchBox downloads, and thumbnail fetches.
 
 ## Analytics Infrastructure
 

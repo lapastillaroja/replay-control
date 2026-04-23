@@ -5,7 +5,7 @@ Two SQLite databases live at `<storage>/.replay-control/`:
 - **metadata.db** -- rebuildable cache (game library, external metadata, thumbnail index)
 - **user_data.db** -- persistent user customizations (never auto-deleted)
 
-Schema defined in `replay-control-core/src/metadata/metadata_db/mod.rs` and `user_data_db.rs`.
+Schema defined in `replay-control-core-server/src/metadata/metadata_db/mod.rs` and `user_data_db.rs`.
 
 ## metadata.db
 
@@ -153,7 +153,7 @@ The `thumbnail_index` PK `(repo_name, kind, filename)` covers repo_name-only pre
 
 ## user_data.db
 
-Defined in `replay-control-core/src/metadata/user_data_db.rs`. Separate from metadata.db so user choices survive metadata clears and rebuilds.
+Defined in `replay-control-core-server/src/metadata/user_data_db.rs`. Separate from metadata.db so user choices survive metadata clears and rebuilds.
 
 ### box_art_overrides
 

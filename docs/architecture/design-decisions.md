@@ -8,7 +8,7 @@ RePlayOS is a custom libretro frontend for retro gaming on Raspberry Pi (3 and n
 
 Storage is typically USB (exFAT) or NFS, both with significant limitations. exFAT doesn't support SQLite WAL mode and has slow directory reads (~100ms for `read_dir` on 2000 files). NFS adds network latency and lacks inotify for change detection. These constraints drive many of the design decisions below — from how box art is resolved to how SQLite connections are configured.
 
-The filesystem is auto-detected at startup via `/proc/mounts` in `db_common::open_connection()` (`replay-control-core/src/metadata/db_common.rs`). WAL-capable filesystems (ext4, btrfs) get WAL + `synchronous=NORMAL`. Non-WAL filesystems (exFAT, NFS) get `nolock=1` + DELETE journal. No caller-supplied hints needed.
+The filesystem is auto-detected at startup via `/proc/mounts` in `db_common::open_connection()` (`replay-control-core-server/src/metadata/db_common.rs`). WAL-capable filesystems (ext4, btrfs) get WAL + `synchronous=NORMAL`. Non-WAL filesystems (exFAT, NFS) get `nolock=1` + DELETE journal. No caller-supplied hints needed.
 
 ## Memory Budget
 
@@ -22,7 +22,7 @@ Measured on Pi 5 (2GB) with a 23K game library: idle RSS is ~44MB (binary + embe
 
 Box art URLs are stored in `game_library.box_art_url` during background enrichment. The request path reads from DB only — no filesystem access, no in-memory image index. See the "In-memory ImageIndex cache" entry in Rejected Alternatives for the previous approach and why it was replaced.
 
-**Files**: `replay-control-app/src/api/cache/enrichment.rs`, `replay-control-core/src/metadata/enrichment.rs`
+**Files**: `replay-control-app/src/api/cache/enrichment.rs`, `replay-control-core-server/src/metadata/enrichment.rs`
 
 ### 2. jemalloc allocator
 
@@ -147,19 +147,19 @@ Activated in `import.rs` and `background.rs` before batch writes, dropped after 
 No-Intro DATs (11 systems), TheGamesDB metadata, arcade databases (FBNeo, MAME 2003+, MAME 0.285, Flycast), Wikidata series data, and genre/category INI files are compiled into the binary at build time via `build.rs` using PHF (perfect hash function) maps.
 
 ```rust
-// replay-control-core/src/game/arcade_db.rs
+// replay-control-core-server/src/game/arcade_db.rs
 include!(concat!(env!("OUT_DIR"), "/arcade_db.rs"));
 
-// replay-control-core/src/game/game_db.rs
+// replay-control-core-server/src/game/game_db.rs
 include!(concat!(env!("OUT_DIR"), "/game_db.rs"));
 
-// replay-control-core/src/game/series_db.rs
+// replay-control-core-server/src/game/series_db.rs
 include!(concat!(env!("OUT_DIR"), "/series_db.rs"));
 ```
 
 This adds ~34MB to the binary but avoids runtime file I/O for metadata lookups. PHF maps provide O(1) lookups from ROM filename stem or CRC32 hash to canonical game data (title, year, genre, developer, players).
 
-**Files**: `replay-control-core/build.rs`, `replay-control-core/src/game/arcade_db.rs`, `replay-control-core/src/game/game_db.rs`, `replay-control-core/src/game/series_db.rs`
+**Files**: `replay-control-core/build.rs`, `replay-control-core-server/src/game/arcade_db.rs`, `replay-control-core-server/src/game/game_db.rs`, `replay-control-core-server/src/game/series_db.rs`
 
 ### 11. Enrichment as background pipeline
 
@@ -225,6 +225,22 @@ No disk reads for these assets at runtime. CSS partials (`style/_*.css`) are con
 WASM bundle and icons are served from disk (`target/site/pkg/`, `target/site/icons/`) via `tower_http::ServeDir` since they are larger binary files where embedding would bloat startup memory.
 
 **Files**: `replay-control-app/src/main.rs`, `replay-control-app/src/api/mod.rs`, `replay-control-app/build.rs`
+
+### Crate split: `replay-control-core` vs `replay-control-core-server`
+
+Historically all shared library code lived in a single `replay-control-core` crate consumed by `replay-control-app`. Because `replay-control-app` is a Leptos full-stack crate that builds for both native (SSR) and `wasm32-unknown-unknown` (hydrate), `replay-control-core` had to compile for both targets. But it transitively pulled `rusqlite`, `deadpool-sqlite`, `tokio`, and `reqwest` — none of which link on wasm. The workaround was 89 `#[cfg(target_arch = "wasm32")]` attributes across 12 files, stubbing every DB/fs/HTTP function to return `None`/`HashMap::new()`/`vec![]` on wasm. A mirror layer in `replay-control-app/src/types.rs` duplicated ~17 serde wire types so hydrate-side code could name them without crossing the cfg boundary.
+
+The split replaces that workaround with a crate-level firewall:
+
+- **`replay-control-core`**: pure types, wire contracts, pure domain logic. Compiles for both targets. No `rusqlite`, `tokio`, `reqwest`, `std::fs`, `std::process`, `deadpool`, or `quick-xml`.
+- **`replay-control-core-server`**: everything that touches those deps. Compiles for native only. Re-exports core's pure types at matching module paths so SSR callers find both type and native fn under `replay_control_core_server::<module>::`.
+- **`replay-control-app`**: depends on `replay-control-core` unconditionally, on `replay-control-core-server` only under `feature = "ssr"`.
+
+**Why not `#[cfg(feature = "server")]` on core instead?** It would rename the gates, not remove them. The goal was to stop branching in core, not relabel it. Two crates removes the cfgs by construction.
+
+**Why not fold the native code into `replay-control-app`?** `metadata_report` (a CLI reporting bin) and `tools/build-catalog` consume the same logic. Moving it into the Leptos crate would force those consumers to either depend on `app` (wrong layering) or duplicate code.
+
+**Orphan-rule note**: `DatePrecision` is in core but serialized to SQLite in core-server. A `DpSql` newtype scoped to `metadata_db` carries the `rusqlite::ToSql` / `FromSql` impls, sidestepping the orphan rule. Future foreign-trait-on-core-type impls should use the same pattern.
 
 ## What We Considered But Rejected
 

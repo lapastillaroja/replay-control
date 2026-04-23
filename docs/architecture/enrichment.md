@@ -1,6 +1,6 @@
 # Enrichment Pipeline
 
-Pure data logic in `replay-control-core/src/metadata/enrichment.rs`.
+Pure data logic in `replay-control-core-server/src/metadata/enrichment.rs`.
 App orchestration in `replay-control-app/src/api/cache/enrichment.rs` and `images.rs`.
 
 ## Architecture: Core / App Split
@@ -54,7 +54,7 @@ Fields are only filled when the game_library row doesn't already have a value. S
 
 ## Image Index (DirIndex)
 
-Defined in `replay-control-core/src/metadata/image_matching.rs`. Built from a single `readdir` scan of `<storage>/.replay-control/media/<system>/boxart/`.
+Defined in `replay-control-core-server/src/metadata/image_matching.rs`. Built from a single `readdir` scan of `<storage>/.replay-control/media/<system>/boxart/`.
 
 Four matching tiers, tried in order:
 

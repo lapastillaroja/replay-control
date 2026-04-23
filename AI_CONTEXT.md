@@ -48,6 +48,19 @@ When analyzing metadata source coverage or quality across a ROM set (release dat
 - Prefer `Result` propagation over manual error matching when the caller handles errors
 - Use descriptive variable names; avoid single-letter names outside short closures
 
+### Crate boundary: `replay-control-core` vs `replay-control-core-server`
+
+New code goes in whichever crate matches its dependencies:
+
+- **`replay-control-core`** (pure, wasm-safe) — types, enums, wire contracts, pure domain logic, reference data, error types. **Forbidden deps**: `rusqlite`, `tokio`, `reqwest`, `deadpool-*`, `quick-xml`, `std::fs::*` (beyond path manipulation), `std::process::*`. Compiles for both native and `wasm32-unknown-unknown`.
+- **`replay-control-core-server`** (native-only) — everything else. SQL queries, filesystem operations, HTTP clients, process spawning, XML parsing, tokio async code. Compiled for native targets only.
+
+Quick test: does the code name any forbidden dep? If no → core. If yes → core-server.
+
+Re-export pattern inside core-server: modules that wrap a core module do `pub use replay_control_core::<module>::*;` at the top, then add native fns below. Consumers reach both type and native fn via `replay_control_core_server::<module>::`.
+
+**Orphan-rule workaround**: when a native trait (like `rusqlite::ToSql`) needs to apply to a core type, create a local newtype in the consuming core-server module (e.g. `DpSql(DatePrecision)` in `metadata_db`). Don't move the core type to core-server just to satisfy the orphan rule.
+
 ## Leptos Components
 
 ### Structure: setup above, view below
