@@ -28,18 +28,20 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
         .await;
     let total_favorites = state.cache.get_favorites_count(&storage).await;
 
-    let disk = storage
-        .disk_usage()
-        .unwrap_or(replay_control_core_server::storage::DiskUsage {
-            total_bytes: 0,
-            available_bytes: 0,
-            used_bytes: 0,
-        });
+    let disk =
+        storage
+            .disk_usage()
+            .await
+            .unwrap_or(replay_control_core_server::storage::DiskUsage {
+                total_bytes: 0,
+                available_bytes: 0,
+                used_bytes: 0,
+            });
 
     let systems_with_games = summaries.iter().filter(|s| s.game_count > 0).count();
     let total_games: usize = summaries.iter().map(|s| s.game_count).sum();
 
-    let (ethernet_ip, wifi_ip) = get_network_ips();
+    let (ethernet_ip, wifi_ip) = get_network_ips().await;
 
     #[cfg(feature = "ssr")]
     tracing::debug!(
@@ -62,24 +64,29 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
 }
 
 #[cfg(feature = "ssr")]
-fn get_network_ips() -> (Option<String>, Option<String>) {
-    let extract_ip = |iface_prefix: &str| -> Option<String> {
-        let output = std::process::Command::new("ip")
-            .args(["-4", "-o", "addr", "show"])
-            .output()
-            .ok()?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
+async fn get_network_ips() -> (Option<String>, Option<String>) {
+    // Single `ip` call covers all interfaces — fewer process spawns than one per prefix.
+    let output = tokio::process::Command::new("ip")
+        .args(["-4", "-o", "addr", "show"])
+        .output()
+        .await
+        .ok();
+    let Some(output) = output else {
+        return (None, None);
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let extract_from_output = |prefix: &str| -> Option<String> {
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 4 && parts[1].starts_with(iface_prefix) {
+            if parts.len() >= 4 && parts[1].starts_with(prefix) {
                 // Format: "2: eth0    inet 192.168.1.100/24 ..."
                 return parts[3].split('/').next().map(|s| s.to_string());
             }
         }
         None
     };
-    let eth = extract_ip("eth").or_else(|| extract_ip("enp"));
-    let wifi = extract_ip("wlan").or_else(|| extract_ip("wlp"));
+    let eth = extract_from_output("eth").or_else(|| extract_from_output("enp"));
+    let wifi = extract_from_output("wlan").or_else(|| extract_from_output("wlp"));
     (eth, wifi)
 }
 
@@ -159,19 +166,19 @@ pub async fn get_system_logs(source: String, lines: usize) -> Result<String, Ser
     let lines = lines.min(500);
 
     // Try journalctl first.
-    let journal_text = read_journalctl(&source, lines);
+    let journal_text = read_journalctl(&source, lines).await;
     if !journal_text.is_empty() {
         return Ok(journal_text);
     }
 
     // Fallback: read from log files.
     match source.as_str() {
-        "replay" => Ok(read_log_file_tail("/var/log/replay.log", lines)),
-        "replay-control" => Ok(read_log_file_tail("/var/log/replay-control.log", lines)),
+        "replay" => Ok(read_log_file_tail("/var/log/replay.log", lines).await),
+        "replay-control" => Ok(read_log_file_tail("/var/log/replay-control.log", lines).await),
         _ => {
             // "all": combine both log files, interleave by showing replay-control first.
-            let rc = read_log_file_tail("/var/log/replay-control.log", lines);
-            let rp = read_log_file_tail("/var/log/replay.log", lines);
+            let rc = read_log_file_tail("/var/log/replay-control.log", lines).await;
+            let rp = read_log_file_tail("/var/log/replay.log", lines).await;
             if rc.is_empty() && rp.is_empty() {
                 Ok("No logs available.".to_string())
             } else if rc.is_empty() {
@@ -188,8 +195,8 @@ pub async fn get_system_logs(source: String, lines: usize) -> Result<String, Ser
 }
 
 #[cfg(feature = "ssr")]
-fn read_journalctl(source: &str, lines: usize) -> String {
-    let mut cmd = std::process::Command::new("journalctl");
+async fn read_journalctl(source: &str, lines: usize) -> String {
+    let mut cmd = tokio::process::Command::new("journalctl");
     cmd.args(["--no-pager", "--lines", &lines.to_string(), "--reverse"]);
 
     match source {
@@ -202,7 +209,7 @@ fn read_journalctl(source: &str, lines: usize) -> String {
         _ => {}
     }
 
-    let output = match cmd.output() {
+    let output = match cmd.output().await {
         Ok(o) if o.status.success() => o,
         _ => return String::new(),
     };
@@ -220,10 +227,11 @@ fn read_journalctl(source: &str, lines: usize) -> String {
 
 /// Read the last N lines of a log file (newest last, reversed for display).
 #[cfg(feature = "ssr")]
-fn read_log_file_tail(path: &str, lines: usize) -> String {
-    let output = std::process::Command::new("tail")
+async fn read_log_file_tail(path: &str, lines: usize) -> String {
+    let output = tokio::process::Command::new("tail")
         .args(["-n", &lines.to_string(), path])
-        .output();
+        .output()
+        .await;
     match output {
         Ok(o) if o.status.success() => {
             let text = String::from_utf8_lossy(&o.stdout).into_owned();

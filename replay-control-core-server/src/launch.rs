@@ -82,31 +82,35 @@ fn check_game_loaded() -> bool {
 /// was designed for boot-time auto-launch, not companion app integration.
 /// Check RePlayOS changelogs for official remote launch support in future
 /// releases.
-pub fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()> {
+pub async fn launch_game(storage: &StorageLocation, rom_path: &str) -> Result<()> {
     // Validate the ROM exists on disk
     let full_path = storage.root.join(rom_path.trim_start_matches('/'));
-    if !full_path.exists() {
+    if !tokio::fs::try_exists(&full_path).await.unwrap_or(false) {
         return Err(Error::RomNotFound(full_path));
     }
 
     // Create the _autostart directory
     let autostart_dir = storage.roms_dir().join("_autostart");
-    std::fs::create_dir_all(&autostart_dir).map_err(|e| Error::io(&autostart_dir, e))?;
+    tokio::fs::create_dir_all(&autostart_dir)
+        .await
+        .map_err(|e| Error::io(&autostart_dir, e))?;
 
     // Write the rom_path to autostart.auto
     let autostart_file = autostart_dir.join("autostart.auto");
-    std::fs::write(&autostart_file, format!("{rom_path}\n"))
+    tokio::fs::write(&autostart_file, format!("{rom_path}\n"))
+        .await
         .map_err(|e| Error::io(&autostart_file, e))?;
 
     // Restart the replay service
-    let output = std::process::Command::new("systemctl")
+    let output = tokio::process::Command::new("systemctl")
         .args(["restart", "replay.service"])
         .output()
+        .await
         .map_err(|e| Error::io(Path::new("systemctl"), e))?;
 
     if !output.status.success() {
         // Clean up on failure
-        let _ = std::fs::remove_file(&autostart_file);
+        let _ = tokio::fs::remove_file(&autostart_file).await;
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(Error::Other(format!(
             "Failed to restart replay service: {stderr}"

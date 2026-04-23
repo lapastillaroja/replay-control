@@ -24,7 +24,7 @@ rusqlite = { version = "0.38", features = ["bundled"] }
 deadpool-sqlite = { version = "0.13", features = ["rt_tokio_1"] }
 deadpool = "0.13"
 deadpool-sync = "0.2"
-tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread", "process"] }
 quick-xml = { version = "0.39", optional = true }
 reqwest = { workspace = true, optional = true }
 

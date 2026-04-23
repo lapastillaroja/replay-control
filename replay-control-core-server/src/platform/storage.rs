@@ -173,8 +173,8 @@ impl StorageLocation {
     }
 
     /// Returns the total and available disk space for this storage.
-    pub fn disk_usage(&self) -> Result<DiskUsage> {
-        disk_usage_for(&self.root)
+    pub async fn disk_usage(&self) -> Result<DiskUsage> {
+        disk_usage_for(&self.root).await
     }
 }
 
@@ -185,12 +185,13 @@ pub struct DiskUsage {
     pub used_bytes: u64,
 }
 
-fn disk_usage_for(path: &Path) -> Result<DiskUsage> {
+async fn disk_usage_for(path: &Path) -> Result<DiskUsage> {
     // Use statvfs via nix or fall back to parsing df output
-    let output = std::process::Command::new("df")
+    let output = tokio::process::Command::new("df")
         .arg("-B1")
         .arg(path)
         .output()
+        .await
         .map_err(|e| Error::io(path, e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);

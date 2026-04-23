@@ -710,6 +710,7 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
     let storage = state.storage();
 
     replay_control_core_server::launch::launch_game(&storage, &rom_path)
+        .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Create a recents entry so the home page reflects the launch immediately.
