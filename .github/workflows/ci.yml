@@ -113,7 +113,6 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: build-artifacts
-          path: target/
 
       - name: Restore artifact permissions
         run: chmod +x target/release/replay-control-app
