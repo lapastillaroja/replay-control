@@ -42,7 +42,7 @@ Leptos 0.7 SSR + WASM hydration app built on Axum. Depends on `replay-control-co
 - **Pages** (`src/pages/`): home, system browser, game detail, favorites, settings, metadata management, search
 - **Components** (`src/components/`): reusable UI components (hero cards, game rows, skeleton loaders, modals)
 - **Internationalization**: runtime i18n with locale-keyed translation strings
-- **Wire-type mirrors** (`src/types.rs`): duplicate serde types for hydrate-side code. Mirrors the types still in `replay-control-core-server` because hydrate can't depend on core-server. A planned follow-up promotes these types back to `replay-control-core` and deletes the mirrors.
+- **App-only types** (`src/types.rs`): `Activity`, phase/progress types for the SSE stream. Wire types that cross server-function boundaries are imported directly from `replay-control-core` — no mirror layer.
 
 ### replay-control-libretro (TV display core)
 
