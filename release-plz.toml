@@ -21,6 +21,16 @@ name = "replay-control-core"
 release = false
 
 [[package]]
+name = "replay-control-core-server"
+# Native server-side half of the core split; not released independently
+release = false
+
+[[package]]
 name = "generate-test-fixtures"
 # Dev tool, not released
+release = false
+
+[[package]]
+name = "build-catalog"
+# Build tool for CI; not released
 release = false
