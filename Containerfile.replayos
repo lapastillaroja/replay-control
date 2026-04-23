@@ -70,6 +70,10 @@ RUN mkdir -p /media/usb/roms \
 # --- App binary + site assets ---
 COPY target/release/replay-control-app /usr/local/bin/replay-control-app
 COPY target/site /usr/local/share/replay/site
+# Catalog DB: the app looks for `catalog.sqlite` next to the executable by
+# default (or at --catalog-path). Without this the container exits with
+# "catalog not loaded ... unable to open database file".
+COPY catalog.sqlite /usr/local/bin/catalog.sqlite
 
 # --- Environment ---
 ENV RUST_LOG=replay_control_app=info,replay_control_core=info
