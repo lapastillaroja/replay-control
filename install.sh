@@ -228,14 +228,26 @@ resolve_download_urls() {
 
 prepare_local_artifacts() {
     local project_dir="${LOCAL_DIR:-$(pwd)}"
-    local site_dir="$project_dir/target/site"
+    # Respect CARGO_TARGET_DIR (absolute or relative to project_dir), the same
+    # way build.sh does. Falls back to the in-tree `target/` directory.
+    local target_dir
+    if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+        if [[ "$CARGO_TARGET_DIR" = /* ]]; then
+            target_dir="$CARGO_TARGET_DIR"
+        else
+            target_dir="$project_dir/$CARGO_TARGET_DIR"
+        fi
+    else
+        target_dir="$project_dir/target"
+    fi
+    local site_dir="$target_dir/site"
 
     # Prefer aarch64 binary (for Pi), fall back to native
     local binary=""
-    if [[ -f "$project_dir/target/aarch64-unknown-linux-gnu/release/replay-control-app" ]]; then
-        binary="$project_dir/target/aarch64-unknown-linux-gnu/release/replay-control-app"
-    elif [[ -f "$project_dir/target/release/replay-control-app" ]]; then
-        binary="$project_dir/target/release/replay-control-app"
+    if [[ -f "$target_dir/aarch64-unknown-linux-gnu/release/replay-control-app" ]]; then
+        binary="$target_dir/aarch64-unknown-linux-gnu/release/replay-control-app"
+    elif [[ -f "$target_dir/release/replay-control-app" ]]; then
+        binary="$target_dir/release/replay-control-app"
         local arch
         arch="$(file "$binary" 2>/dev/null || true)"
         if [[ "$arch" == *"x86-64"* ]] && [[ "$MODE" == "ssh" ]]; then
@@ -245,8 +257,8 @@ prepare_local_artifacts() {
 
     if [[ -z "$binary" ]] || [[ ! -f "$binary" ]]; then
         fatal "Local binary not found at:
-  $project_dir/target/aarch64-unknown-linux-gnu/release/replay-control-app
-  $project_dir/target/release/replay-control-app
+  $target_dir/aarch64-unknown-linux-gnu/release/replay-control-app
+  $target_dir/release/replay-control-app
   Run ./build.sh first, or specify the project directory: --local /path/to/replay"
     fi
 
