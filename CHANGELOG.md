@@ -4,6 +4,36 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.3](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.3) - 2026-04-23
+
+### Added
+
+- Async catalog connection pool via `deadpool-sqlite` replaces the single `OnceLock<Mutex<Connection>>` that serialized lookups under load. Adds `prepare_cached` on every hot path, tuned pragmas (`mmap_size=64MiB`, `cache_size=8MiB`, `temp_store=MEMORY`), and batch APIs for the N+1 sites in `favorites`, `related`, `scan_pipeline`, and `search`. Homepage c=10 throughput: **113 → 265 req/s** vs v0.3.0. See `docs/features/benchmarks.md`.
+- New workspace crate `replay-control-core-server` holds all native (linux) server-side code — SQLite, filesystem, HTTP, process spawning, XML parsing. `replay-control-core` is now pure and compiles for both native and `wasm32-unknown-unknown`, eliminating all 89 `#[cfg(target_arch = "wasm32")]` attributes that previously stubbed DB/fs/HTTP on WASM.
+- `tools/pi-memory.sh` reads `VmRSS` / `VmHWM` / `RssAnon` / `free -m` from the Pi over SSH. `--restart` for a clean idle baseline, `--wait N` for settle time, `--json` for machine-readable output.
+
+### Changed
+
+- 17 wire types (`Favorite`, `RomEntry`, `SystemSummary`, `GameRef`, `ImportProgress`, `VideoEntry`, `GameDocument`, …) promoted to `replay-control-core`. The `app/src/types.rs` mirror layer is gone; adding a field now means editing one definition, not two, and the `#[cfg(feature = "ssr")] pub use` / `#[cfg(not(ssr))]` switches in `server_fns/*.rs` collapse to unconditional imports.
+- Subprocess and filesystem calls on the async request path (`df`, `ip`, `journalctl`, `tail`, `systemctl restart`, `launch_game`'s autostart writes) migrated to `tokio::process::Command` / `tokio::fs::*`. Previously each blocked the reactor for 1–2s on every homepage, log-viewer, and game-launch request.
+- `install.sh` now respects `CARGO_TARGET_DIR` (same behaviour as `build.sh`); `--local` deploys no longer need a `target/ → $CARGO_TARGET_DIR` symlink.
+
+### Fixed
+
+- `build-catalog` fails loudly when input data files are missing or unreadable, instead of producing a degraded catalog that passes tests but loses rows at runtime.
+- Arcade box-art matcher handles apostrophes in display names (e.g., "Galaga '88"); regression test locks this in.
+- `launch_game` cleans up its autostart marker via `tokio::fs::remove_file` when `systemctl restart` fails, preventing a stale trigger on the next boot.
+
+### Other
+
+- Pool warmup validates the catalog schema at `init_catalog` time and surfaces a clear error if the file is missing or schemaless. Previously a 0-byte `/catalog.sqlite` left at the systemd CWD would silently break every query and show bare filenames in the UI.
+- Local `DpSql(DatePrecision)` newtype in `metadata_db` carries the `rusqlite::ToSql` / `FromSql` impls without violating Rust's orphan rule (`DatePrecision` stays pure in core).
+- `docs/architecture/` updated for the 3-crate layout with a new "Crate split" design-decisions entry. `CLAUDE.md` gains a "Crate boundary" rule listing the deps forbidden in core.
+- `docs/features/benchmarks.md` refreshed for v0.4.0 (Pi 5, 2GB, ~23K ROMs). Memory section now shows idle / right-after-load / +60s-settled: peak 189 MB, settled 62 MB within a minute (jemalloc returns cleanly).
+- CI self-heal: `build-release.yml` now creates a missing release instead of failing when fired from a pushed tag without one.
+
+---
+
 ## [0.4.0-beta.2](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.2) - 2026-04-21
 
 ### Added
