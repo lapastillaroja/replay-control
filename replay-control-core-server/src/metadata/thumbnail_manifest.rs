@@ -1630,22 +1630,14 @@ mod tests {
         };
 
         // Parent: MAME 2003+ display "Galaga '88 (set 1)".
-        let result = find_in_manifest(
-            &index,
-            "galaga88.zip",
-            Some("Galaga '88 (set 1)"),
-        );
+        let result = find_in_manifest(&index, "galaga88.zip", Some("Galaga '88 (set 1)"));
         assert!(
             result.is_some(),
             "Galaga '88 (set 1) should match manifest entry \"Galaga '88\" via strip_tags"
         );
 
         // Clone: FBNeo display "Galaga '88 (02-03-88)".
-        let result = find_in_manifest(
-            &index,
-            "galaga88a.zip",
-            Some("Galaga '88 (02-03-88)"),
-        );
+        let result = find_in_manifest(&index, "galaga88a.zip", Some("Galaga '88 (02-03-88)"));
         assert!(
             result.is_some(),
             "Galaga '88 (02-03-88) should match manifest entry \"Galaga '88\" via strip_tags"
