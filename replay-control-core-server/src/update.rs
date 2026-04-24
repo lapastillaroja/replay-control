@@ -32,11 +32,13 @@ pub fn github_api_base_url() -> String {
 
 /// Nuke the update temp directory (idempotent).
 pub fn nuke_update_dir() {
-    let dir = Path::new(UPDATE_DIR);
+    nuke_paths(Path::new(UPDATE_DIR), Path::new(UPDATE_SCRIPT));
+}
+
+fn nuke_paths(dir: &Path, script: &Path) {
     if dir.exists() {
         let _ = std::fs::remove_dir_all(dir);
     }
-    let script = Path::new(UPDATE_SCRIPT);
     if script.exists() {
         let _ = std::fs::remove_file(script);
     }
@@ -44,14 +46,21 @@ pub fn nuke_update_dir() {
 
 /// Read `available.json` from the update temp directory.
 pub fn read_available_update() -> Option<AvailableUpdate> {
-    let path = Path::new(UPDATE_DIR).join("available.json");
+    read_available_in(Path::new(UPDATE_DIR))
+}
+
+fn read_available_in(dir: &Path) -> Option<AvailableUpdate> {
+    let path = dir.join("available.json");
     let data = std::fs::read_to_string(&path).ok()?;
     serde_json::from_str(&data).ok()
 }
 
 /// Write `available.json` to the update temp directory, creating the dir if missing.
 pub fn write_available_update(update: &AvailableUpdate) -> std::io::Result<()> {
-    let dir = Path::new(UPDATE_DIR);
+    write_available_in(Path::new(UPDATE_DIR), update)
+}
+
+fn write_available_in(dir: &Path, update: &AvailableUpdate) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join("available.json");
     let json = serde_json::to_string(update).map_err(std::io::Error::other)?;
@@ -283,6 +292,73 @@ mod tests {
 
     const REPO: &str = "lapastillaroja/replay-control";
 
+    // ── available.json roundtrip ────────────────────────────────────
+
+    fn sample_update(version: &str) -> AvailableUpdate {
+        AvailableUpdate {
+            version: version.to_string(),
+            tag: format!("v{version}"),
+            prerelease: false,
+            release_notes_url: format!("https://example.com/{version}"),
+            published_at: "2026-04-01T00:00:00Z".to_string(),
+            binary_size: 10_000_000,
+            site_size: 4_000_000,
+        }
+    }
+
+    #[test]
+    fn write_then_read_available_roundtrips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let want = sample_update("0.5.0");
+        write_available_in(tmp.path(), &want).unwrap();
+        let got = read_available_in(tmp.path()).unwrap();
+        assert_eq!(got.version, want.version);
+        assert_eq!(got.tag, want.tag);
+        assert_eq!(got.binary_size, want.binary_size);
+        assert_eq!(got.site_size, want.site_size);
+    }
+
+    #[test]
+    fn write_creates_missing_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp.path().join("does/not/exist/yet");
+        assert!(!nested.exists());
+        write_available_in(&nested, &sample_update("0.1.0")).unwrap();
+        assert!(nested.join("available.json").exists());
+    }
+
+    #[test]
+    fn read_missing_file_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(read_available_in(tmp.path()).is_none());
+    }
+
+    #[test]
+    fn nuke_paths_removes_dir_and_script() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("update_dir");
+        let script = tmp.path().join("do-update.sh");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("available.json"), "{}").unwrap();
+        std::fs::write(&script, "#!/bin/sh\n").unwrap();
+        assert!(dir.exists() && script.exists());
+
+        nuke_paths(&dir, &script);
+
+        assert!(!dir.exists());
+        assert!(!script.exists());
+    }
+
+    #[test]
+    fn nuke_paths_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("never_existed");
+        let script = tmp.path().join("ghost.sh");
+        // No panic, no error — just a no-op.
+        nuke_paths(&dir, &script);
+        nuke_paths(&dir, &script);
+    }
+
     fn make_release_json(tag: &str, prerelease: bool) -> serde_json::Value {
         serde_json::json!({
             "tag_name": tag,
@@ -314,18 +390,22 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let latest_path = format!("/repos/{REPO}/releases/latest");
         let m_latest = match latest {
-            Some(json) => server
-                .mock("GET", latest_path.as_str())
-                .with_status(200)
-                .with_header("content-type", "application/json")
-                .with_body(json.to_string())
-                .create_async()
-                .await,
-            None => server
-                .mock("GET", latest_path.as_str())
-                .with_status(404)
-                .create_async()
-                .await,
+            Some(json) => {
+                server
+                    .mock("GET", latest_path.as_str())
+                    .with_status(200)
+                    .with_header("content-type", "application/json")
+                    .with_body(json.to_string())
+                    .create_async()
+                    .await
+            }
+            None => {
+                server
+                    .mock("GET", latest_path.as_str())
+                    .with_status(404)
+                    .create_async()
+                    .await
+            }
         };
         let m_releases = server
             .mock(

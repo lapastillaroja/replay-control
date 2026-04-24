@@ -2344,4 +2344,33 @@ mod tests {
         let (allowed, _) = check_rename_allowed(&storage, "sony_psx", "roms/sony_psx/Game.m3u");
         assert!(allowed);
     }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn write_rom_creates_system_dir() {
+        let tmp = tempdir();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let system_dir = tmp.join("roms/nintendo_nes");
+        assert!(!system_dir.exists());
+
+        let dest = write_rom(&storage, "nintendo_nes", "game.nes", b"NES\x1a payload")
+            .await
+            .unwrap();
+
+        assert_eq!(dest, system_dir.join("game.nes"));
+        assert!(system_dir.is_dir());
+        assert_eq!(fs::read(&dest).unwrap(), b"NES\x1a payload");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn write_rom_overwrites_existing_file() {
+        let tmp = tempdir();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        write_rom(&storage, "sega_smd", "rom.bin", b"old")
+            .await
+            .unwrap();
+        let dest = write_rom(&storage, "sega_smd", "rom.bin", b"newer payload")
+            .await
+            .unwrap();
+        assert_eq!(fs::read(dest).unwrap(), b"newer payload");
+    }
 }
