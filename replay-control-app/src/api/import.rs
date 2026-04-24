@@ -312,59 +312,29 @@ impl ImportPipeline {
         // Activated after the DB availability check; dropped after checkpoint.
         let write_gate = WriteGate::activate(state.library_pool.write_gate_flag());
 
-        // `import_launchbox` is a sync, CPU-bound XML parser that takes a
-        // sync `flush_batch` callback. To write batches into the async pool
-        // we bridge via `Handle::block_on` inside the callback.
-        //
-        // Safety of this bridge:
-        // - We are on a `spawn_blocking` worker (a dedicated blocking thread,
-        //   not a tokio runtime worker), so `block_on` does not deadlock the
-        //   runtime by monopolizing a shared worker thread.
-        // - `Handle::current()` is captured here (still on the tokio worker),
-        //   then moved into the closure — we use the *multi-thread* runtime's
-        //   handle from a blocking thread, which is the sanctioned pattern.
-        let pool_ref = state.library_pool.clone();
+        // Bridge the sync XML parser to the async pool in core-server; here we
+        // just translate per-batch progress ticks into activity updates.
         let activity_lock = state.activity.clone();
         let activity_tx = state.activity_tx.clone();
         let start_ref = start;
-        let xml_path_owned = xml_path.to_path_buf();
-        let result = tokio::task::spawn_blocking(move || {
-            let handle = tokio::runtime::Handle::current();
-            let flush_batch = |batch: &[(
-                String,
-                String,
-                replay_control_core_server::library_db::GameMetadata,
-            )]| {
-                let batch = batch.to_vec();
-                handle
-                    .block_on(pool_ref.write(move |db| LibraryDb::bulk_upsert(db, &batch)))
-                    .ok_or_else(|| {
-                        replay_control_core::error::Error::Other(
-                            "Library DB unavailable during import".to_string(),
-                        )
-                    })?
-            };
-
-            replay_control_core_server::launchbox::import_launchbox(
-                &xml_path_owned,
-                &rom_index,
-                |processed, matched, inserted| {
-                    let mut guard = write_lock(&activity_lock, "activity");
-                    if let Activity::Import { progress } = &mut *guard {
-                        progress.processed = processed;
-                        progress.matched = matched;
-                        progress.inserted = inserted;
-                        progress.elapsed_secs = start_ref.elapsed().as_secs();
-                    }
-                    let activity = guard.clone();
-                    drop(guard);
-                    let _ = activity_tx.send(activity);
-                },
-                flush_batch,
-            )
-        })
-        .await
-        .unwrap_or_else(|e| Err(replay_control_core::error::Error::Other(e.to_string())));
+        let result = replay_control_core_server::launchbox::run_bulk_import(
+            &state.library_pool,
+            &xml_path,
+            rom_index,
+            move |processed, matched, inserted| {
+                let mut guard = write_lock(&activity_lock, "activity");
+                if let Activity::Import { progress } = &mut *guard {
+                    progress.processed = processed;
+                    progress.matched = matched;
+                    progress.inserted = inserted;
+                    progress.elapsed_secs = start_ref.elapsed().as_secs();
+                }
+                let activity = guard.clone();
+                drop(guard);
+                let _ = activity_tx.send(activity);
+            },
+        )
+        .await;
 
         // Checkpoint WAL after the heavy batch writes.
         state.library_pool.checkpoint().await;
@@ -387,7 +357,11 @@ impl ImportPipeline {
                 pr.alternate_names.len(),
                 pr.game_names.len()
             );
-            Self::import_launchbox_aliases(state, pr).await;
+            replay_control_core_server::launchbox::import_launchbox_aliases(
+                &state.library_pool,
+                pr,
+            )
+            .await;
             tracing::debug!("LaunchBox alias import complete");
         }
 
@@ -420,76 +394,5 @@ impl ImportPipeline {
         }
 
         // _guard drops here → Idle
-    }
-
-    /// Import LaunchBox alternate names into the `game_alias` table.
-    ///
-    /// Uses the `ParseResult` from the single-pass XML parse — no re-reading.
-    /// Acquires/releases the DB lock per-operation (read base_titles, then
-    /// write aliases) so other threads can access the DB between operations.
-    async fn import_launchbox_aliases(
-        state: &AppState,
-        parse_result: &replay_control_core_server::launchbox::ParseResult,
-    ) {
-        if parse_result.alternate_names.is_empty() {
-            return;
-        }
-
-        // Read base_titles from DB via pool.
-        tracing::debug!("LaunchBox aliases: loading base_titles from game_library...");
-        let base_titles: std::collections::HashMap<String, Vec<String>> = match state
-            .library_pool
-            .read(|conn| {
-                let systems = LibraryDb::active_systems(conn).unwrap_or_default();
-                let mut map: std::collections::HashMap<String, Vec<String>> =
-                    std::collections::HashMap::new();
-                for system in &systems {
-                    if let Ok(entries) = LibraryDb::load_system_entries(conn, system) {
-                        for entry in entries {
-                            if !entry.base_title.is_empty() {
-                                map.entry(entry.base_title.clone())
-                                    .or_default()
-                                    .push(system.clone());
-                            }
-                        }
-                    }
-                }
-                map
-            })
-            .await
-        {
-            Some(map) => map,
-            None => {
-                tracing::warn!("LaunchBox aliases: DB unavailable for reading base_titles");
-                return;
-            }
-        };
-
-        // Call pure core matching function.
-        let aliases = replay_control_core_server::alias_matching::resolve_launchbox_aliases(
-            &parse_result.alternate_names,
-            &parse_result.game_names,
-            &base_titles,
-        );
-
-        if aliases.is_empty() {
-            tracing::debug!("LaunchBox aliases: no matches found");
-            return;
-        }
-
-        // Write aliases to DB via pool.
-        let count = aliases.len();
-        if let Some(result) = state
-            .library_pool
-            .write(move |db| LibraryDb::bulk_insert_aliases(db, &aliases))
-            .await
-        {
-            match result {
-                Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
-                Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
-            }
-        } else {
-            tracing::warn!("LaunchBox aliases: DB unavailable for inserting aliases");
-        }
     }
 }

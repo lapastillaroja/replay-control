@@ -609,6 +609,76 @@ pub fn delete_orphaned_thumbnails(
     Ok((deleted, bytes_freed))
 }
 
+/// Scan a system's media directory and update `game_metadata` image paths
+/// to point at whatever matches best on disk.
+///
+/// Reads visible ROM filenames from `game_library`, builds dir indexes for
+/// boxart/screenshot/title, resolves each ROM's best match via
+/// `image_matching::find_best_match`, and bulk-writes the results.
+pub async fn update_image_paths_from_disk(pool: &crate::DbPool, storage_root: &Path, system: &str) {
+    use crate::image_matching::{build_dir_index, find_best_match};
+
+    let system_owned = system.to_string();
+    let rom_filenames = match pool
+        .read(move |conn| {
+            crate::library_db::LibraryDb::visible_filenames(conn, &system_owned).unwrap_or_default()
+        })
+        .await
+    {
+        Some(filenames) => filenames,
+        None => return,
+    };
+
+    let media_base = storage_root
+        .join(crate::storage::RC_DIR)
+        .join("media")
+        .join(system);
+
+    let indexes: Vec<_> = ALL_THUMBNAIL_KINDS
+        .iter()
+        .map(|kind| {
+            let dir = media_base.join(kind.media_dir());
+            build_dir_index(&dir, kind.media_dir())
+        })
+        .collect();
+    let box_index = &indexes[0];
+    let snap_index = &indexes[1];
+    let title_index = &indexes[2];
+
+    let arcade_lookup =
+        crate::image_resolution::ArcadeInfoLookup::build(system, &rom_filenames).await;
+
+    let mut updates: Vec<crate::library_db::ImagePathUpdate> = Vec::new();
+
+    for rom_filename in &rom_filenames {
+        let stem = replay_control_core::title_utils::filename_stem(rom_filename);
+        let arcade_display: Option<&str> = arcade_lookup
+            .get(stem)
+            .map(|info| info.display_name.as_str());
+        let boxart_rel = find_best_match(box_index, rom_filename, arcade_display, None);
+        let snap_rel = find_best_match(snap_index, rom_filename, arcade_display, None);
+        let title_rel = find_best_match(title_index, rom_filename, arcade_display, None);
+
+        if boxart_rel.is_some() || snap_rel.is_some() || title_rel.is_some() {
+            updates.push(crate::library_db::ImagePathUpdate {
+                system: system.to_string(),
+                rom_filename: rom_filename.clone(),
+                box_art_path: boxart_rel,
+                screenshot_path: snap_rel,
+                title_path: title_rel,
+            });
+        }
+    }
+
+    if !updates.is_empty()
+        && let Some(Err(e)) = pool
+            .write(move |db| crate::library_db::LibraryDb::bulk_update_image_paths(db, &updates))
+            .await
+    {
+        tracing::warn!("Failed to update image paths for {system}: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

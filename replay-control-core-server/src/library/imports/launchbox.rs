@@ -719,6 +719,107 @@ fn build_index_entries(
     }
 }
 
+/// Run a LaunchBox XML import end-to-end: streams the XML in a blocking task,
+/// flushes per-batch inserts via `pool.write`, and reports progress ticks
+/// (`processed`, `matched`, `inserted`) to `on_progress`.
+///
+/// The caller owns any higher-level activity state; this fn just does I/O.
+/// Callers that need write-gate semantics should activate one around this call.
+pub async fn run_bulk_import(
+    pool: &crate::DbPool,
+    xml_path: &Path,
+    rom_index: HashMap<(String, String), Vec<String>>,
+    on_progress: impl Fn(usize, usize, usize) + Send + Sync + 'static,
+) -> Result<(ImportStats, ParseResult)> {
+    let pool = pool.clone();
+    let xml_path = xml_path.to_path_buf();
+    let on_progress = std::sync::Arc::new(on_progress);
+
+    tokio::task::spawn_blocking(move || {
+        let handle = tokio::runtime::Handle::current();
+        let flush_batch = |batch: &[(String, String, GameMetadata)]| {
+            let batch = batch.to_vec();
+            let pool = pool.clone();
+            handle
+                .block_on(
+                    pool.write(move |db| crate::library_db::LibraryDb::bulk_upsert(db, &batch)),
+                )
+                .ok_or_else(|| Error::Other("Library DB unavailable during import".to_string()))?
+        };
+
+        import_launchbox(
+            &xml_path,
+            &rom_index,
+            |processed, matched, inserted| on_progress(processed, matched, inserted),
+            flush_batch,
+        )
+    })
+    .await
+    .unwrap_or_else(|e| Err(Error::Other(e.to_string())))
+}
+
+/// Import LaunchBox alternate names into the `game_alias` table.
+///
+/// Reads base titles from `game_library` to match alternates against, resolves
+/// via `alias_matching::resolve_launchbox_aliases`, then bulk-inserts.
+pub async fn import_launchbox_aliases(pool: &crate::DbPool, parse_result: &ParseResult) {
+    if parse_result.alternate_names.is_empty() {
+        return;
+    }
+
+    tracing::debug!("LaunchBox aliases: loading base_titles from game_library...");
+    let base_titles: HashMap<String, Vec<String>> = match pool
+        .read(|conn| {
+            let systems = crate::library_db::LibraryDb::active_systems(conn).unwrap_or_default();
+            let mut map: HashMap<String, Vec<String>> = HashMap::new();
+            for system in &systems {
+                if let Ok(entries) = crate::library_db::LibraryDb::load_system_entries(conn, system)
+                {
+                    for entry in entries {
+                        if !entry.base_title.is_empty() {
+                            map.entry(entry.base_title.clone())
+                                .or_default()
+                                .push(system.clone());
+                        }
+                    }
+                }
+            }
+            map
+        })
+        .await
+    {
+        Some(map) => map,
+        None => {
+            tracing::warn!("LaunchBox aliases: DB unavailable for reading base_titles");
+            return;
+        }
+    };
+
+    let aliases = crate::alias_matching::resolve_launchbox_aliases(
+        &parse_result.alternate_names,
+        &parse_result.game_names,
+        &base_titles,
+    );
+
+    if aliases.is_empty() {
+        tracing::debug!("LaunchBox aliases: no matches found");
+        return;
+    }
+
+    let count = aliases.len();
+    if let Some(result) = pool
+        .write(move |db| crate::library_db::LibraryDb::bulk_insert_aliases(db, &aliases))
+        .await
+    {
+        match result {
+            Ok(n) => tracing::info!("LaunchBox aliases: {n}/{count} inserted"),
+            Err(e) => tracing::warn!("LaunchBox aliases: insert failed: {e}"),
+        }
+    } else {
+        tracing::warn!("LaunchBox aliases: DB unavailable for inserting aliases");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

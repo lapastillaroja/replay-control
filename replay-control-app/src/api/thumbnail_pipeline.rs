@@ -1,8 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use replay_control_core_server::library_db::LibraryDb;
-
 use super::AppState;
 use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
 
@@ -363,7 +361,12 @@ impl ThumbnailPipeline {
             }
 
             // Lock DB for image path update, then release.
-            Self::update_image_paths_from_disk(state, &storage_root, system).await;
+            replay_control_core_server::thumbnails::update_image_paths_from_disk(
+                &state.library_pool,
+                &storage_root,
+                system,
+            )
+            .await;
         }
 
         // Image index is no longer cached — enrichment builds it fresh each run.
@@ -412,81 +415,5 @@ impl ThumbnailPipeline {
         });
 
         // _guard drops here → Idle
-    }
-
-    /// Scan the media directory for a system and update game_metadata image paths.
-    async fn update_image_paths_from_disk(
-        state: &AppState,
-        storage_root: &std::path::Path,
-        system: &str,
-    ) {
-        use replay_control_core_server::image_matching::{build_dir_index, find_best_match};
-
-        // Read visible filenames from DB via pool.
-        let system_owned = system.to_string();
-        let rom_filenames = match state
-            .library_pool
-            .read(move |conn| LibraryDb::visible_filenames(conn, &system_owned).unwrap_or_default())
-            .await
-        {
-            Some(filenames) => filenames,
-            None => return,
-        };
-
-        // Build dir indexes (filesystem scan, no DB needed).
-        use replay_control_core_server::thumbnails::ALL_THUMBNAIL_KINDS;
-        let media_base = storage_root
-            .join(replay_control_core_server::storage::RC_DIR)
-            .join("media")
-            .join(system);
-
-        let indexes: Vec<_> = ALL_THUMBNAIL_KINDS
-            .iter()
-            .map(|kind| {
-                let dir = media_base.join(kind.media_dir());
-                build_dir_index(&dir, kind.media_dir())
-            })
-            .collect();
-        let box_index = &indexes[0];
-        let snap_index = &indexes[1];
-        let title_index = &indexes[2];
-
-        let arcade_lookup = replay_control_core_server::image_resolution::ArcadeInfoLookup::build(
-            system,
-            &rom_filenames,
-        )
-        .await;
-
-        let mut updates: Vec<replay_control_core_server::library_db::ImagePathUpdate> = Vec::new();
-
-        for rom_filename in &rom_filenames {
-            let stem = replay_control_core::title_utils::filename_stem(rom_filename);
-            let arcade_display: Option<&str> = arcade_lookup
-                .get(stem)
-                .map(|info| info.display_name.as_str());
-            let boxart_rel = find_best_match(box_index, rom_filename, arcade_display, None);
-            let snap_rel = find_best_match(snap_index, rom_filename, arcade_display, None);
-            let title_rel = find_best_match(title_index, rom_filename, arcade_display, None);
-
-            if boxart_rel.is_some() || snap_rel.is_some() || title_rel.is_some() {
-                updates.push(replay_control_core_server::library_db::ImagePathUpdate {
-                    system: system.to_string(),
-                    rom_filename: rom_filename.clone(),
-                    box_art_path: boxart_rel,
-                    screenshot_path: snap_rel,
-                    title_path: title_rel,
-                });
-            }
-        }
-
-        // Write image path updates to DB via pool.
-        if !updates.is_empty()
-            && let Some(Err(e)) = state
-                .library_pool
-                .write(move |db| LibraryDb::bulk_update_image_paths(db, &updates))
-                .await
-        {
-            tracing::warn!("Failed to update image paths for {system}: {e}");
-        }
     }
 }
