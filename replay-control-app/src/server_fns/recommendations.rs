@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 /// A recommended game card with display info and navigation link.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +67,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.metadata_pool)
+        .cached_systems(&storage, &state.library_pool)
         .await;
     let count = count.clamp(1, 12);
 
@@ -122,9 +122,9 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     // This includes the favorites genre lookup that previously required a
     // separate DB read round-trip.
     let db_data = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
-            let random_pool = MetadataDb::random_cached_roms_diverse(
+            let random_pool = LibraryDb::random_cached_roms_diverse(
                 conn,
                 count,
                 &region_str,
@@ -132,13 +132,13 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             )
             .unwrap_or_default();
             let top_genres = cached_genres
-                .unwrap_or_else(|| MetadataDb::top_genre_names(conn, 6).unwrap_or_default());
+                .unwrap_or_else(|| LibraryDb::top_genre_names(conn, 6).unwrap_or_default());
             let top_developers = cached_developers
-                .unwrap_or_else(|| MetadataDb::top_developers(conn, 10).unwrap_or_default());
+                .unwrap_or_else(|| LibraryDb::top_developers(conn, 10).unwrap_or_default());
             let decades =
-                cached_decades.unwrap_or_else(|| MetadataDb::decade_list(conn).unwrap_or_default());
+                cached_decades.unwrap_or_else(|| LibraryDb::decade_list(conn).unwrap_or_default());
             let active_systems = cached_active_systems
-                .unwrap_or_else(|| MetadataDb::active_systems(conn).unwrap_or_default());
+                .unwrap_or_else(|| LibraryDb::active_systems(conn).unwrap_or_default());
             // --- Spotlight: type was pre-rolled above ---
 
             // Exclude the favorites system from system spotlight candidates.
@@ -150,7 +150,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
 
             #[allow(clippy::type_complexity)]
             let spotlight_result: Option<(
-                Vec<replay_control_core_server::metadata_db::GameEntry>,
+                Vec<replay_control_core_server::library_db::GameEntry>,
                 String,
                 Vec<String>,
                 Option<String>,
@@ -160,7 +160,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     use rand::RngExt;
                     let idx = rand::rng().random_range(0..top_genres.len());
                     let genre = &top_genres[idx];
-                    let games = MetadataDb::top_rated_filtered(
+                    let games = LibraryDb::top_rated_filtered(
                         conn,
                         None,
                         Some(genre),
@@ -197,7 +197,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     } else {
                         let idx = rand::rng().random_range(0..candidates.len());
                         let sys = candidates[idx];
-                        let games = MetadataDb::top_rated_filtered(
+                        let games = LibraryDb::top_rated_filtered(
                             conn,
                             Some(sys),
                             None,
@@ -225,7 +225,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                     use rand::RngExt;
                     let idx = rand::rng().random_range(0..top_developers.len());
                     let dev = &top_developers[idx];
-                    let games = MetadataDb::top_rated_filtered(
+                    let games = LibraryDb::top_rated_filtered(
                         conn,
                         None,
                         None,
@@ -250,7 +250,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 4 => {
                     // Hidden Gems — high-rated games the user hasn't played recently or favorited.
                     // Prefer games with fewer ratings to surface less-known titles.
-                    let games = MetadataDb::top_rated_filtered(
+                    let games = LibraryDb::top_rated_filtered(
                         conn,
                         None,
                         None,
@@ -284,7 +284,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 }
                 5 => {
                     // Co-op Games — best rated cooperative games
-                    let games = MetadataDb::random_coop_games(
+                    let games = LibraryDb::random_coop_games(
                         conn,
                         count * 3,
                         &region_str,
@@ -304,7 +304,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             // Fall back to global top rated if the selected type returned empty or was type 0.
             let (spotlight_pool, spotlight_title_key, spotlight_title_args, spotlight_href) =
                 spotlight_result.unwrap_or_else(|| {
-                    let games = MetadataDb::top_rated_filtered(
+                    let games = LibraryDb::top_rated_filtered(
                         conn,
                         None,
                         None,
@@ -319,11 +319,11 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             let fav_roms = favorites_info.as_ref().map(|fi| {
                 // Compute top genre inside this closure instead of a separate DB read.
                 let fav_refs: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
-                let top_genre = MetadataDb::top_genre_for_filenames(conn, &fi.system, &fav_refs)
+                let top_genre = LibraryDb::top_genre_for_filenames(conn, &fi.system, &fav_refs)
                     .ok()
                     .flatten();
                 let exclude: Vec<&str> = fi.fav_filenames.iter().map(|s| s.as_str()).collect();
-                let mut roms = MetadataDb::system_roms_excluding(
+                let mut roms = LibraryDb::system_roms_excluding(
                     conn,
                     &fi.system,
                     &exclude,
@@ -337,7 +337,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
                 if roms.len() < count && top_genre.is_some() {
                     let have: std::collections::HashSet<String> =
                         roms.iter().map(|r| r.rom_filename.clone()).collect();
-                    let more = MetadataDb::system_roms_excluding(
+                    let more = LibraryDb::system_roms_excluding(
                         conn,
                         &fi.system,
                         &exclude,
@@ -514,7 +514,7 @@ struct FavoritesInfo {
 /// so the section rotates across systems on each page load.
 ///
 /// `top_genre` is left as `None` — the caller computes it inside the main
-/// DB read closure using `MetadataDb::top_genre_for_filenames` to avoid
+/// DB read closure using `LibraryDb::top_genre_for_filenames` to avoid
 /// a separate round-trip.
 #[cfg(feature = "ssr")]
 async fn collect_favorites_info_sync(
@@ -711,7 +711,7 @@ fn build_discover_pills(
 /// Select diverse picks from a pool: prefer one per system, then fill with a cap.
 #[cfg(feature = "ssr")]
 fn diversify_picks(
-    pool: Vec<replay_control_core_server::metadata_db::GameEntry>,
+    pool: Vec<replay_control_core_server::library_db::GameEntry>,
     count: usize,
     systems: &[SystemSummary],
 ) -> Vec<RecommendedGame> {
@@ -768,7 +768,7 @@ fn diversify_picks(
 #[cfg(feature = "ssr")]
 pub(super) fn to_recommended(
     system: &str,
-    rom: &replay_control_core_server::metadata_db::GameEntry,
+    rom: &replay_control_core_server::library_db::GameEntry,
     systems: &[SystemSummary],
 ) -> Option<RecommendedGame> {
     let display_name = rom

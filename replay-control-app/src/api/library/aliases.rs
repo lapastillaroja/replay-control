@@ -1,5 +1,5 @@
 use replay_control_core::title_utils::fuzzy_match_key;
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 use super::LibraryService;
 use crate::api::DbPool;
@@ -12,7 +12,7 @@ impl LibraryService {
     pub(super) async fn populate_tgdb_aliases(
         &self,
         system: &str,
-        roms: &[replay_control_core_server::metadata_db::GameEntry],
+        roms: &[replay_control_core_server::library_db::GameEntry],
         db: &DbPool,
     ) {
         // Build lookup maps for matching TGDB names to library base_titles.
@@ -43,7 +43,7 @@ impl LibraryService {
         let count = aliases.len();
         let system = system.to_owned();
         let result = db
-            .write(move |conn| MetadataDb::bulk_insert_aliases(conn, &aliases))
+            .write(move |conn| LibraryDb::bulk_insert_aliases(conn, &aliases))
             .await;
         match result {
             Some(Ok(n)) => {
@@ -61,7 +61,7 @@ impl LibraryService {
     pub(super) async fn populate_wikidata_series(
         &self,
         system: &str,
-        roms: &[replay_control_core_server::metadata_db::GameEntry],
+        roms: &[replay_control_core_server::library_db::GameEntry],
         db: &DbPool,
     ) {
         // Call pure core matching function.
@@ -76,7 +76,7 @@ impl LibraryService {
         let count = series_entries.len();
         let system = system.to_owned();
         let result = db
-            .write(move |conn| MetadataDb::bulk_insert_series(conn, &series_entries))
+            .write(move |conn| LibraryDb::bulk_insert_series(conn, &series_entries))
             .await;
         match result {
             Some(Ok(n)) => {

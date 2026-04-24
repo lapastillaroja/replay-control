@@ -72,11 +72,16 @@ pub fn probe_tables(conn: &Connection, tables: &[&str]) -> std::result::Result<(
     Ok(())
 }
 
-/// Delete a DB and its WAL/SHM sidecar files.
+/// Delete a DB and its WAL/SHM/journal sidecar files.
+///
+/// Covers both journal modes: `.db-wal` / `.db-shm` for WAL (ext4/btrfs) and
+/// `.db-journal` for DELETE rollback mode (exFAT/NFS). Any of them can linger
+/// depending on which journal mode was active when the DB was last open.
 pub fn delete_db_files(db_path: &Path) {
     let _ = std::fs::remove_file(db_path);
     let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
     let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+    let _ = std::fs::remove_file(db_path.with_extension("db-journal"));
 }
 
 /// If WAL or SHM files exist alongside a SQLite database, open with normal

@@ -6,7 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use replay_control_core::error::{Error, Result};
 
-use super::{DpSql, GameEntry, MetadataDb, SystemMeta, unix_now};
+use super::{DpSql, GameEntry, LibraryDb, SystemMeta, unix_now};
 
 /// SELECT columns for `game_library` queries that feed `row_to_game_entry()`.
 ///
@@ -63,7 +63,7 @@ pub struct SearchFilter<'a> {
     pub max_year: Option<u16>,
 }
 
-impl MetadataDb {
+impl LibraryDb {
     /// Batch lookup of game entries by primary key `(system, rom_filename)`.
     ///
     /// Groups keys by system and uses `WHERE system = ? AND rom_filename IN (...)`
@@ -1533,7 +1533,7 @@ impl MetadataDb {
 
 #[cfg(test)]
 mod tests {
-    use super::super::MetadataDb;
+    use super::super::LibraryDb;
     use super::super::tests::*;
     use super::SearchFilter;
 
@@ -1541,7 +1541,7 @@ mod tests {
     fn genre_enrichment_fills_empty_genre_from_launchbox() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(
+        LibraryDb::bulk_upsert(
             &mut conn,
             &[(
                 "sega_smd".into(),
@@ -1551,7 +1551,7 @@ mod tests {
         )
         .unwrap();
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_smd",
             &[make_game_entry("sega_smd", "Sonic.md", false)],
@@ -1559,7 +1559,7 @@ mod tests {
         )
         .unwrap();
 
-        MetadataDb::update_box_art_genre_rating(
+        LibraryDb::update_box_art_genre_rating(
             &mut conn,
             "sega_smd",
             &[super::super::BoxArtGenreRating {
@@ -1573,7 +1573,7 @@ mod tests {
         )
         .unwrap();
 
-        let roms = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        let roms = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
         assert_eq!(roms[0].genre.as_deref(), Some("Platform"));
     }
 
@@ -1581,7 +1581,7 @@ mod tests {
     fn genre_enrichment_does_not_overwrite_existing_genre() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_smd",
             &[make_game_entry_with_genre(
@@ -1591,7 +1591,7 @@ mod tests {
         )
         .unwrap();
 
-        MetadataDb::update_box_art_genre_rating(
+        LibraryDb::update_box_art_genre_rating(
             &mut conn,
             "sega_smd",
             &[super::super::BoxArtGenreRating {
@@ -1605,7 +1605,7 @@ mod tests {
         )
         .unwrap();
 
-        let roms = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        let roms = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
         assert_eq!(roms[0].genre.as_deref(), Some("Shooter"));
     }
 
@@ -1613,7 +1613,7 @@ mod tests {
     fn genre_enrichment_mixed_empty_and_existing() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_smd",
             &[
@@ -1625,7 +1625,7 @@ mod tests {
         )
         .unwrap();
 
-        MetadataDb::update_box_art_genre_rating(
+        LibraryDb::update_box_art_genre_rating(
             &mut conn,
             "sega_smd",
             &[
@@ -1649,7 +1649,7 @@ mod tests {
         )
         .unwrap();
 
-        let roms = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        let roms = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
         let sonic = roms.iter().find(|r| r.rom_filename == "Sonic.md").unwrap();
         let streets = roms
             .iter()
@@ -1673,9 +1673,9 @@ mod tests {
         with_art.box_art_url = Some("/img/mario.png".into());
         let without_art = make_game_entry("snes", "Zelda.sfc", false);
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[with_art, without_art], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[with_art, without_art], None).unwrap();
 
-        let thumbs = MetadataDb::thumbnails_per_system(&conn).unwrap();
+        let thumbs = LibraryDb::thumbnails_per_system(&conn).unwrap();
         assert_eq!(thumbs.len(), 1);
         assert_eq!(thumbs[0], ("snes".into(), 1));
     }
@@ -1683,7 +1683,7 @@ mod tests {
     #[test]
     fn thumbnails_per_system_empty_library_returns_empty() {
         let (conn, _dir) = open_temp_db();
-        let thumbs = MetadataDb::thumbnails_per_system(&conn).unwrap();
+        let thumbs = LibraryDb::thumbnails_per_system(&conn).unwrap();
         assert!(thumbs.is_empty());
     }
 
@@ -1699,11 +1699,11 @@ mod tests {
         gba_game2.box_art_url = Some("/img/zelda.png".into());
         let gba_game3 = make_game_entry("gba", "NoArt.gba", false);
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[snes_game], None).unwrap();
-        MetadataDb::save_system_entries(&mut conn, "gba", &[gba_game1, gba_game2, gba_game3], None)
+        LibraryDb::save_system_entries(&mut conn, "snes", &[snes_game], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "gba", &[gba_game1, gba_game2, gba_game3], None)
             .unwrap();
 
-        let thumbs = MetadataDb::thumbnails_per_system(&conn).unwrap();
+        let thumbs = LibraryDb::thumbnails_per_system(&conn).unwrap();
         let snes = thumbs.iter().find(|(s, _)| s == "snes").unwrap();
         let gba = thumbs.iter().find(|(s, _)| s == "gba").unwrap();
         assert_eq!(snes.1, 1);
@@ -1726,7 +1726,7 @@ mod tests {
     #[test]
     fn find_developer_matches_exact_match_first() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "arcade_fbneo",
             &[
@@ -1761,7 +1761,7 @@ mod tests {
         )
         .unwrap();
 
-        let matches = MetadataDb::find_developer_matches(&conn, "snk").unwrap();
+        let matches = LibraryDb::find_developer_matches(&conn, "snk").unwrap();
         assert_eq!(matches.len(), 3);
         assert_eq!(matches[0].0, "SNK");
         assert_eq!(matches[0].1, 3);
@@ -1774,7 +1774,7 @@ mod tests {
     #[test]
     fn find_developer_matches_no_match_returns_empty() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_game_entry_with_developer(
@@ -1786,14 +1786,14 @@ mod tests {
             None,
         )
         .unwrap();
-        let matches = MetadataDb::find_developer_matches(&conn, "capcom").unwrap();
+        let matches = LibraryDb::find_developer_matches(&conn, "capcom").unwrap();
         assert!(matches.is_empty());
     }
 
     #[test]
     fn find_developer_matches_single_match() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -1803,7 +1803,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let matches = MetadataDb::find_developer_matches(&conn, "capcom").unwrap();
+        let matches = LibraryDb::find_developer_matches(&conn, "capcom").unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, "Capcom");
         assert_eq!(matches[0].1, 2);
@@ -1872,7 +1872,7 @@ mod tests {
     #[test]
     fn developer_games_empty_genre_returns_all() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -1900,7 +1900,7 @@ mod tests {
         .unwrap();
         let filters = super::SearchFilter::default();
         let (entries, total) =
-            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
+            LibraryDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 2);
         assert_eq!(entries.len(), 2);
     }
@@ -1908,7 +1908,7 @@ mod tests {
     #[test]
     fn developer_games_specific_genre() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -1948,7 +1948,7 @@ mod tests {
             ..Default::default()
         };
         let (entries, total) =
-            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
+            LibraryDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Mega Man X");
@@ -1957,7 +1957,7 @@ mod tests {
     #[test]
     fn developer_games_system_and_genre_combined() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -1983,7 +1983,7 @@ mod tests {
             None,
         )
         .unwrap();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "gba",
             &[make_dev_entry(
@@ -2003,7 +2003,7 @@ mod tests {
             ..Default::default()
         };
         // Use search_game_library directly to combine system + developer filters.
-        let (entries, total) = MetadataDb::search_game_library(
+        let (entries, total) = LibraryDb::search_game_library(
             &conn,
             Some("snes"),
             Some("Capcom"),
@@ -2021,7 +2021,7 @@ mod tests {
     #[test]
     fn developer_games_case_insensitive() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_dev_entry(
@@ -2039,7 +2039,7 @@ mod tests {
         let filters = super::SearchFilter::default();
         // Query with different case should still match.
         let (entries, total) =
-            MetadataDb::developer_games(&conn, "capcom", &filters, 0, 50).unwrap();
+            LibraryDb::developer_games(&conn, "capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
     }
@@ -2047,7 +2047,7 @@ mod tests {
     #[test]
     fn developer_games_offset_beyond_total() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2075,7 +2075,7 @@ mod tests {
         .unwrap();
         let filters = super::SearchFilter::default();
         let (entries, total) =
-            MetadataDb::developer_games(&conn, "Capcom", &filters, 100, 50).unwrap();
+            LibraryDb::developer_games(&conn, "Capcom", &filters, 100, 50).unwrap();
         assert_eq!(total, 2);
         assert!(entries.is_empty());
     }
@@ -2083,7 +2083,7 @@ mod tests {
     #[test]
     fn developer_games_pagination() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2095,18 +2095,17 @@ mod tests {
         )
         .unwrap();
         let filters = super::SearchFilter::default();
-        let (entries, total) =
-            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 2).unwrap();
+        let (entries, total) = LibraryDb::developer_games(&conn, "Capcom", &filters, 0, 2).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(total, 3);
-        let (entries, _) = MetadataDb::developer_games(&conn, "Capcom", &filters, 2, 2).unwrap();
+        let (entries, _) = LibraryDb::developer_games(&conn, "Capcom", &filters, 2, 2).unwrap();
         assert_eq!(entries.len(), 1);
     }
 
     #[test]
     fn developer_games_hide_hacks_and_clones() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2131,7 +2130,7 @@ mod tests {
             ..Default::default()
         };
         let (entries, total) =
-            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
+            LibraryDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Street Fighter II");
@@ -2140,7 +2139,7 @@ mod tests {
     #[test]
     fn developer_games_multiplayer_only() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2163,7 +2162,7 @@ mod tests {
             ..Default::default()
         };
         let (entries, total) =
-            MetadataDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
+            LibraryDb::developer_games(&conn, "Capcom", &filters, 0, 50).unwrap();
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].base_title, "Street Fighter II");
@@ -2172,7 +2171,7 @@ mod tests {
     #[test]
     fn games_by_developer_deduplicates_across_systems() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_dev_entry(
@@ -2187,7 +2186,7 @@ mod tests {
             None,
         )
         .unwrap();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_smd",
             &[make_dev_entry(
@@ -2202,14 +2201,14 @@ mod tests {
             None,
         )
         .unwrap();
-        let results = MetadataDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
+        let results = LibraryDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn games_by_developer_prefers_entry_with_box_art() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2235,7 +2234,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let results = MetadataDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
+        let results = LibraryDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].box_art_url.as_deref(), Some("/img/sf2.png"));
     }
@@ -2243,7 +2242,7 @@ mod tests {
     #[test]
     fn games_by_developer_excludes_clones_and_hacks() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2262,7 +2261,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let results = MetadataDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
+        let results = LibraryDb::games_by_developer(&conn, "Capcom", 50, "us", "").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].base_title, "Street Fighter II");
     }
@@ -2270,7 +2269,7 @@ mod tests {
     #[test]
     fn games_by_developer_prefers_user_region() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2297,7 +2296,7 @@ mod tests {
         )
         .unwrap();
         let results =
-            MetadataDb::games_by_developer(&conn, "Capcom", 50, "europe", "japan").unwrap();
+            LibraryDb::games_by_developer(&conn, "Capcom", 50, "europe", "japan").unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].region, "europe");
     }
@@ -2307,14 +2306,14 @@ mod tests {
     #[test]
     fn count_system_entries_empty() {
         let (conn, _dir) = open_temp_db();
-        let count = MetadataDb::count_system_entries(&conn, "snes").unwrap();
+        let count = LibraryDb::count_system_entries(&conn, "snes").unwrap();
         assert_eq!(count, 0);
     }
 
     #[test]
     fn count_system_entries_returns_correct_count() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2326,9 +2325,9 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(MetadataDb::count_system_entries(&conn, "snes").unwrap(), 3);
+        assert_eq!(LibraryDb::count_system_entries(&conn, "snes").unwrap(), 3);
         // Different system should return 0.
-        assert_eq!(MetadataDb::count_system_entries(&conn, "gba").unwrap(), 0);
+        assert_eq!(LibraryDb::count_system_entries(&conn, "gba").unwrap(), 0);
     }
 
     #[test]
@@ -2343,27 +2342,27 @@ mod tests {
                 ..make_game_entry("snes", &format!("{name}.sfc"), false)
             })
             .collect();
-        MetadataDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
 
         // First page: offset=0, limit=2 → Alpha, Bravo
-        let page1 = MetadataDb::load_system_entries_page(&conn, "snes", 0, 2).unwrap();
+        let page1 = LibraryDb::load_system_entries_page(&conn, "snes", 0, 2).unwrap();
         assert_eq!(page1.len(), 2);
         assert_eq!(page1[0].display_name.as_deref(), Some("Alpha"));
         assert_eq!(page1[1].display_name.as_deref(), Some("Bravo"));
 
         // Second page: offset=2, limit=2 → Charlie, Delta
-        let page2 = MetadataDb::load_system_entries_page(&conn, "snes", 2, 2).unwrap();
+        let page2 = LibraryDb::load_system_entries_page(&conn, "snes", 2, 2).unwrap();
         assert_eq!(page2.len(), 2);
         assert_eq!(page2[0].display_name.as_deref(), Some("Charlie"));
         assert_eq!(page2[1].display_name.as_deref(), Some("Delta"));
 
         // Third page: offset=4, limit=2 → Echo (partial page)
-        let page3 = MetadataDb::load_system_entries_page(&conn, "snes", 4, 2).unwrap();
+        let page3 = LibraryDb::load_system_entries_page(&conn, "snes", 4, 2).unwrap();
         assert_eq!(page3.len(), 1);
         assert_eq!(page3[0].display_name.as_deref(), Some("Echo"));
 
         // Beyond range: offset=5, limit=2 → empty
-        let page4 = MetadataDb::load_system_entries_page(&conn, "snes", 5, 2).unwrap();
+        let page4 = LibraryDb::load_system_entries_page(&conn, "snes", 5, 2).unwrap();
         assert!(page4.is_empty());
     }
 
@@ -2379,9 +2378,9 @@ mod tests {
                 ..make_game_entry("snes", &format!("{name}.sfc"), false)
             })
             .collect();
-        MetadataDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
 
-        let page = MetadataDb::load_system_entries_page(&conn, "snes", 0, 10).unwrap();
+        let page = LibraryDb::load_system_entries_page(&conn, "snes", 0, 10).unwrap();
         assert_eq!(page.len(), 3);
         assert_eq!(page[0].display_name.as_deref(), Some("Alpha"));
         assert_eq!(page[1].display_name.as_deref(), Some("BRAVO"));
@@ -2400,9 +2399,9 @@ mod tests {
             },
             make_game_entry("snes", "alpha.sfc", false), // No display_name → uses filename
         ];
-        MetadataDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &entries, None).unwrap();
 
-        let page = MetadataDb::load_system_entries_page(&conn, "snes", 0, 10).unwrap();
+        let page = LibraryDb::load_system_entries_page(&conn, "snes", 0, 10).unwrap();
         assert_eq!(page.len(), 2);
         // "alpha.sfc" < "Zelda" case-insensitively
         assert_eq!(page[0].rom_filename, "alpha.sfc");
@@ -2525,8 +2524,8 @@ mod tests {
             ..make_game_entry("sega_smd", "Sonic the Hedgehog (USA).md", false)
         }];
         // save_system_entries replaces all entries for a system, so batch per system.
-        MetadataDb::save_system_entries(&mut *conn, "snes", &snes_entries, None).unwrap();
-        MetadataDb::save_system_entries(&mut *conn, "sega_smd", &smd_entries, None).unwrap();
+        LibraryDb::save_system_entries(&mut *conn, "snes", &snes_entries, None).unwrap();
+        LibraryDb::save_system_entries(&mut *conn, "sega_smd", &smd_entries, None).unwrap();
     }
 
     #[test]
@@ -2534,7 +2533,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2553,7 +2552,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2575,7 +2574,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2594,7 +2593,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2616,7 +2615,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2638,7 +2637,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2661,7 +2660,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2685,7 +2684,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2709,7 +2708,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
         insert_test_library(&mut conn);
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2729,7 +2728,7 @@ mod tests {
         insert_test_library(&mut conn);
 
         // "hedgehog" should find the sega_smd entry
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2749,7 +2748,7 @@ mod tests {
         insert_test_library(&mut conn);
 
         // Searching for "%" or "_" should not match everything
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2761,7 +2760,7 @@ mod tests {
         .unwrap();
         assert!(results.is_empty());
 
-        let (results, _total) = MetadataDb::search_game_library(
+        let (results, _total) = LibraryDb::search_game_library(
             &conn,
             None,
             None,
@@ -2787,9 +2786,9 @@ mod tests {
         zelda.base_title = "The Legend of Zelda".into();
         let mut metroid = make_game_entry_with_genre("snes", "metroid.sfc", "Platform");
         metroid.base_title = "Super Metroid".into();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[mario, zelda, metroid], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[mario, zelda, metroid], None).unwrap();
 
-        let result = MetadataDb::top_genre_for_filenames(
+        let result = LibraryDb::top_genre_for_filenames(
             &conn,
             "snes",
             &["mario.sfc", "zelda.sfc", "metroid.sfc"],
@@ -2802,14 +2801,14 @@ mod tests {
     #[test]
     fn top_genre_for_filenames_empty_input() {
         let (conn, _dir) = open_temp_db();
-        let result = MetadataDb::top_genre_for_filenames(&conn, "snes", &[]).unwrap();
+        let result = LibraryDb::top_genre_for_filenames(&conn, "snes", &[]).unwrap();
         assert_eq!(result, None);
     }
 
     #[test]
     fn top_genre_for_filenames_no_matches() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_game_entry("snes", "mario.sfc", false)],
@@ -2817,7 +2816,7 @@ mod tests {
         )
         .unwrap();
         // "mario.sfc" has no genre_group set and no base_title.
-        let result = MetadataDb::top_genre_for_filenames(&conn, "snes", &["mario.sfc"]).unwrap();
+        let result = LibraryDb::top_genre_for_filenames(&conn, "snes", &["mario.sfc"]).unwrap();
         assert_eq!(result, None);
     }
 
@@ -2826,7 +2825,7 @@ mod tests {
     #[test]
     fn lookup_game_entries_returns_matching() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -2841,7 +2840,7 @@ mod tests {
             ("snes".to_string(), "mario.sfc".to_string()),
             ("snes".to_string(), "zelda.sfc".to_string()),
         ];
-        let result = MetadataDb::lookup_game_entries(&conn, &keys).unwrap();
+        let result = LibraryDb::lookup_game_entries(&conn, &keys).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result.contains_key(&("snes".into(), "mario.sfc".into())));
         assert!(result.contains_key(&("snes".into(), "zelda.sfc".into())));
@@ -2851,14 +2850,14 @@ mod tests {
     fn lookup_game_entries_empty_keys() {
         let (conn, _dir) = open_temp_db();
         let keys: Vec<(String, String)> = vec![];
-        let result = MetadataDb::lookup_game_entries(&conn, &keys).unwrap();
+        let result = LibraryDb::lookup_game_entries(&conn, &keys).unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
     fn lookup_game_entries_missing_entries() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_game_entry("snes", "mario.sfc", false)],
@@ -2870,7 +2869,7 @@ mod tests {
             ("snes".to_string(), "mario.sfc".to_string()),
             ("snes".to_string(), "nonexistent.sfc".to_string()),
         ];
-        let result = MetadataDb::lookup_game_entries(&conn, &keys).unwrap();
+        let result = LibraryDb::lookup_game_entries(&conn, &keys).unwrap();
         assert_eq!(result.len(), 1);
         assert!(result.contains_key(&("snes".into(), "mario.sfc".into())));
     }
@@ -2878,14 +2877,14 @@ mod tests {
     #[test]
     fn lookup_game_entries_multi_system() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_game_entry("snes", "mario.sfc", false)],
             None,
         )
         .unwrap();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "nes",
             &[make_game_entry("nes", "contra.nes", false)],
@@ -2897,7 +2896,7 @@ mod tests {
             ("snes".to_string(), "mario.sfc".to_string()),
             ("nes".to_string(), "contra.nes".to_string()),
         ];
-        let result = MetadataDb::lookup_game_entries(&conn, &keys).unwrap();
+        let result = LibraryDb::lookup_game_entries(&conn, &keys).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result.contains_key(&("snes".into(), "mario.sfc".into())));
         assert!(result.contains_key(&("nes".into(), "contra.nes".into())));
@@ -2912,7 +2911,7 @@ mod tests {
         let solo_game1 = make_game_entry("snes", "Mario.sfc", false);
         let solo_game2 = make_game_entry("snes", "Zelda.sfc", false);
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[coop_game, solo_game1, solo_game2],
@@ -2925,8 +2924,7 @@ mod tests {
             ..SearchFilter::default()
         };
         let (entries, total) =
-            MetadataDb::search_game_library(&conn, Some("snes"), None, &[], &filter, 0, 50)
-                .unwrap();
+            LibraryDb::search_game_library(&conn, Some("snes"), None, &[], &filter, 0, 50).unwrap();
 
         assert_eq!(total, 1);
         assert_eq!(entries.len(), 1);
@@ -2959,7 +2957,7 @@ mod tests {
         let mut contra_trans = make_game_entry("snes", "Contra.trans.sfc", false);
         contra_trans.is_translation = true;
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[sonic, mario_clone, zelda_hack, contra_trans],
@@ -2967,7 +2965,7 @@ mod tests {
         )
         .unwrap();
 
-        let stats = MetadataDb::system_coverage_stats(&conn).unwrap();
+        let stats = LibraryDb::system_coverage_stats(&conn).unwrap();
         assert_eq!(stats.len(), 1);
         let s = &stats[0];
         assert_eq!(s.system, "snes");
@@ -2986,7 +2984,7 @@ mod tests {
     #[test]
     fn system_coverage_stats_empty_library_returns_empty() {
         let (conn, _dir) = open_temp_db();
-        let stats = MetadataDb::system_coverage_stats(&conn).unwrap();
+        let stats = LibraryDb::system_coverage_stats(&conn).unwrap();
         assert!(stats.is_empty());
     }
 
@@ -3004,7 +3002,7 @@ mod tests {
         preliminary.driver_status = Some("Preliminary".into());
         let no_status = make_game_entry("arcade_mame", "nostatus.zip", false);
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "arcade_mame",
             &[working, working2, imperfect, preliminary, no_status],
@@ -3012,7 +3010,7 @@ mod tests {
         )
         .unwrap();
 
-        let drivers = MetadataDb::driver_status_per_system(&conn).unwrap();
+        let drivers = LibraryDb::driver_status_per_system(&conn).unwrap();
         assert_eq!(drivers.len(), 1);
         let counts = drivers.get("arcade_mame").expect("arcade_mame present");
         assert_eq!(counts.working, 2);
@@ -3024,14 +3022,14 @@ mod tests {
     #[test]
     fn driver_status_per_system_skips_systems_without_status() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_game_entry("snes", "Mario.sfc", false)],
             None,
         )
         .unwrap();
-        let drivers = MetadataDb::driver_status_per_system(&conn).unwrap();
+        let drivers = LibraryDb::driver_status_per_system(&conn).unwrap();
         assert!(drivers.is_empty());
     }
 
@@ -3048,9 +3046,9 @@ mod tests {
 
         // save_system_entries updates game_library_meta.total_size_bytes from the
         // sum of size_bytes in the batch.
-        MetadataDb::save_system_entries(&mut conn, "snes", &[g1, g2], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[g1, g2], None).unwrap();
 
-        let summary = MetadataDb::library_summary(&conn).unwrap();
+        let summary = LibraryDb::library_summary(&conn).unwrap();
         assert_eq!(summary.total_games, 2);
         assert_eq!(summary.system_count, 1);
         assert_eq!(summary.with_genre, 1);

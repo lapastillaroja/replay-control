@@ -9,7 +9,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use crate::image_matching::{self, DirIndex};
-use crate::metadata_db::MetadataDb;
+use crate::library_db::LibraryDb;
 use crate::thumbnail_manifest::{self, ManifestFuzzyIndex, ManifestMatch};
 use crate::thumbnails::{self, ThumbnailKind};
 
@@ -45,7 +45,7 @@ pub enum BoxArtResult<'a> {
 /// (with user overrides merged in), and builds the manifest fuzzy index.
 ///
 /// # Arguments
-/// * `conn` - Metadata DB connection (for box_art_paths, manifest data)
+/// * `conn` - Library DB connection (for box_art_paths, manifest data)
 /// * `system` - System folder name
 /// * `storage_root` - Root of the storage device (e.g., `/media/usb`)
 /// * `user_overrides` - User box art overrides from user_data.db (rom_filename -> path)
@@ -127,8 +127,8 @@ pub fn build_image_index(
         }
     }
 
-    // Load DB paths from metadata DB.
-    let mut db_paths = MetadataDb::system_box_art_paths(conn, system).unwrap_or_default();
+    // Load DB paths from library DB.
+    let mut db_paths = LibraryDb::system_box_art_paths(conn, system).unwrap_or_default();
 
     // Inject user box art overrides (highest priority — overwrites auto-matched paths).
     for (rom_filename, override_path) in user_overrides {
@@ -143,12 +143,12 @@ pub fn build_image_index(
             for display_name in repo_names {
                 let url_name = thumbnails::repo_url_name(display_name);
                 let source_name = thumbnails::libretro_source_name(display_name);
-                let branch = MetadataDb::get_data_source(conn, &source_name)
+                let branch = LibraryDb::get_data_source(conn, &source_name)
                     .ok()
                     .flatten()
                     .and_then(|s| s.branch)
                     .unwrap_or_else(|| "master".to_string());
-                let entries = MetadataDb::query_thumbnail_index(
+                let entries = LibraryDb::query_thumbnail_index(
                     conn,
                     &source_name,
                     ThumbnailKind::Boxart.repo_dir(),

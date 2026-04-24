@@ -5,7 +5,7 @@ use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
 
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 use super::{LibraryService, dir_mtime};
 use crate::api::DbPool;
@@ -37,7 +37,7 @@ impl LibraryService {
         // Load cached hashes from L2 (database).
         let system_owned = system.to_string();
         let cached_hashes = db
-            .read(move |conn| MetadataDb::load_cached_hashes(conn, &system_owned))
+            .read(move |conn| LibraryDb::load_cached_hashes(conn, &system_owned))
             .await
             .and_then(|r| r.ok())
             .unwrap_or_default();
@@ -148,12 +148,7 @@ impl LibraryService {
         let cached_roms_for_db = cached_roms.clone();
         let result = db
             .write(move |conn| {
-                MetadataDb::save_system_entries(
-                    conn,
-                    &system_owned,
-                    &cached_roms_for_db,
-                    mtime_secs,
-                )
+                LibraryDb::save_system_entries(conn, &system_owned, &cached_roms_for_db, mtime_secs)
             })
             .await;
         match result {
@@ -180,12 +175,12 @@ impl LibraryService {
                 // LaunchBox enrichment later runs `seed_release_dates_from_metadata`
                 // to upgrade to day-precision USA dates.
                 let static_data =
-                    replay_control_core_server::metadata_db::fetch_static_release_data().await;
+                    replay_control_core_server::library_db::fetch_static_release_data().await;
                 let _ = db
                     .write(move |conn| {
-                        let _ = MetadataDb::seed_release_dates_from_static(conn, static_data);
-                        let _ = MetadataDb::seed_release_dates_from_library(conn, "builder");
-                        let _ = MetadataDb::resolve_release_date_for_library(
+                        let _ = LibraryDb::seed_release_dates_from_static(conn, static_data);
+                        let _ = LibraryDb::seed_release_dates_from_library(conn, "builder");
+                        let _ = LibraryDb::resolve_release_date_for_library(
                             conn,
                             region_pref,
                             region_secondary,

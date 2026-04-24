@@ -1,7 +1,7 @@
 //! User data database — persistent user customizations that survive metadata clears.
 //!
 //! Stored at `<rom_storage>/.replay-control/user_data.db`.
-//! Separate from `metadata.db` (which is a rebuildable cache) to ensure user
+//! Separate from `library.db` (which is a rebuildable cache) to ensure user
 //! choices are never accidentally destroyed.
 
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ impl UserDataDb {
 
     /// Open (or create) the user data database at `<storage_root>/.replay-control/user_data.db`.
     ///
-    /// Uses the shared nolock->WAL open strategy (see `db_common`), runs table
+    /// Uses the shared nolock->WAL open strategy (see `sqlite`), runs table
     /// init, then probes all tables for corruption.
     ///
     /// Returns `(connection, path, is_corrupt)`. When corrupt, the connection
@@ -42,10 +42,10 @@ impl UserDataDb {
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
         let db_path = dir.join(USER_DATA_DB_FILE);
 
-        let conn = crate::db_common::open_connection(&db_path, "user_data.db")?;
+        let conn = crate::sqlite::open_connection(&db_path, "user_data.db")?;
         Self::init_tables(&conn)?;
 
-        let is_corrupt = if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
+        let is_corrupt = if let Err(detail) = crate::sqlite::probe_tables(&conn, Self::TABLES) {
             tracing::warn!("User data DB corrupt ({detail})");
             true
         } else {
@@ -166,7 +166,7 @@ impl UserDataDb {
     ///
     /// Queries by `(system, base_title)` so regional variants share videos.
     /// `base_titles` should include the primary base_title plus any alias
-    /// base_titles resolved from `game_alias` in `metadata.db`.
+    /// base_titles resolved from `game_alias` in `library.db`.
     pub fn get_game_videos(
         conn: &Connection,
         system: &str,

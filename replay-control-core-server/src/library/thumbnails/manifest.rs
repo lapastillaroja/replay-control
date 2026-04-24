@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use rusqlite::Connection;
 
-use crate::metadata_db::MetadataDb;
+use crate::library_db::LibraryDb;
 use crate::thumbnails::{self, ThumbnailKind};
 use replay_control_core::error::{Error, Result};
 
@@ -203,7 +203,7 @@ pub fn insert_thumbnail_entries(
         })
         .collect();
 
-    MetadataDb::bulk_insert_thumbnail_index(conn, source_name, &tuples)
+    LibraryDb::bulk_insert_thumbnail_index(conn, source_name, &tuples)
 }
 
 /// Orchestrate the full manifest import for all repos.
@@ -232,7 +232,7 @@ pub async fn import_all_manifests(
         let source_name = thumbnails::libretro_source_name(&repo.display_name);
 
         // Check if repo has changed since last import.
-        if let Ok(Some(status)) = MetadataDb::get_data_source(conn, &source_name) {
+        if let Ok(Some(status)) = LibraryDb::get_data_source(conn, &source_name) {
             let existing_hash = status.version_hash.as_deref().unwrap_or("");
             if !existing_hash.is_empty() {
                 match check_repo_freshness(&repo.url_name, existing_hash, api_key).await {
@@ -269,7 +269,7 @@ pub async fn import_all_manifests(
             };
 
         // Upsert data_source BEFORE inserting thumbnail entries (FK constraint).
-        if let Err(e) = MetadataDb::upsert_data_source(
+        if let Err(e) = LibraryDb::upsert_data_source(
             conn,
             &source_name,
             "libretro-thumbnails",
@@ -293,7 +293,7 @@ pub async fn import_all_manifests(
         };
 
         // Update with actual entry count.
-        if let Err(e) = MetadataDb::upsert_data_source(
+        if let Err(e) = LibraryDb::upsert_data_source(
             conn,
             &source_name,
             "libretro-thumbnails",
@@ -404,14 +404,14 @@ pub fn build_manifest_fuzzy_index(
         let source_name = thumbnails::libretro_source_name(display_name);
 
         // Look up branch from data_sources.
-        let branch = MetadataDb::get_data_source(conn, &source_name)
+        let branch = LibraryDb::get_data_source(conn, &source_name)
             .ok()
             .flatten()
             .and_then(|s| s.branch)
             .unwrap_or_else(|| "master".to_string());
 
         let entries =
-            MetadataDb::query_thumbnail_index(conn, &source_name, kind).unwrap_or_default();
+            LibraryDb::query_thumbnail_index(conn, &source_name, kind).unwrap_or_default();
 
         for entry in entries {
             let m = ManifestMatch {
@@ -472,7 +472,7 @@ pub fn build_manifest_fuzzy_index(
 /// entries were queried from `thumbnail_index` under the DB lock. This allows
 /// the caller to release the DB lock before the expensive index construction.
 pub fn build_manifest_fuzzy_index_from_raw(
-    repo_data: &[(String, String, Vec<crate::metadata_db::ThumbnailIndexEntry>)],
+    repo_data: &[(String, String, Vec<crate::library_db::ThumbnailIndexEntry>)],
 ) -> ManifestFuzzyIndex {
     use replay_control_core::title_utils::{base_title, normalize_aggressive};
     use thumbnails::{strip_tags, strip_version};
@@ -837,7 +837,7 @@ pub fn find_boxart_variants(
 
     // For tilde dual-title ROMs (e.g., "Bare Knuckle ~ Streets of Rage"),
     // also match either half individually.
-    let tilde_halves = super::image_matching::tilde_halves(source);
+    let tilde_halves = super::matching::tilde_halves(source);
 
     let media_base = storage_root
         .join(crate::storage::RC_DIR)
@@ -861,7 +861,7 @@ pub fn find_boxart_variants(
             let entry_base = strip_tags(img_stem).to_lowercase();
             if entry_base != base_title
                 && !tilde_halves.contains(&entry_base)
-                && !super::image_matching::base_titles_match_with_tags(
+                && !super::matching::base_titles_match_with_tags(
                     &base_title,
                     &thumb_name,
                     &entry_base,
@@ -903,13 +903,13 @@ pub fn find_boxart_variants(
             let url_name = thumbnails::repo_url_name(repo_display);
             let source_name = thumbnails::libretro_source_name(repo_display);
 
-            let branch = MetadataDb::get_data_source(conn, &source_name)
+            let branch = LibraryDb::get_data_source(conn, &source_name)
                 .ok()
                 .flatten()
                 .and_then(|s| s.branch)
                 .unwrap_or_else(|| "master".to_string());
 
-            let entries = MetadataDb::query_thumbnail_index(
+            let entries = LibraryDb::query_thumbnail_index(
                 conn,
                 &source_name,
                 ThumbnailKind::Boxart.repo_dir(),
@@ -920,7 +920,7 @@ pub fn find_boxart_variants(
                 let entry_base = strip_tags(&entry.filename).to_lowercase();
                 if entry_base != base_title
                     && !tilde_halves.contains(&entry_base)
-                    && !super::image_matching::base_titles_match_with_tags(
+                    && !super::matching::base_titles_match_with_tags(
                         &base_title,
                         &thumb_name,
                         &entry_base,
@@ -988,7 +988,7 @@ pub fn count_boxart_variants(
     let thumb_name = thumbnail_filename(source);
     let base_title = strip_tags(&thumb_name).to_lowercase();
 
-    let tilde_halves = super::image_matching::tilde_halves(source);
+    let tilde_halves = super::matching::tilde_halves(source);
 
     let mut seen_targets: HashSet<String> = HashSet::new();
 
@@ -996,14 +996,14 @@ pub fn count_boxart_variants(
         let source_name = thumbnails::libretro_source_name(repo_display);
 
         let entries =
-            MetadataDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
+            LibraryDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
                 .unwrap_or_default();
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
             if entry_base != base_title
                 && !tilde_halves.contains(&entry_base)
-                && !super::image_matching::base_titles_match_with_tags(
+                && !super::matching::base_titles_match_with_tags(
                     &base_title,
                     &thumb_name,
                     &entry_base,
@@ -1554,16 +1554,16 @@ mod tests {
         // Simulate arcade_fbneo's real manifest: both FBNeo and MAME entries indexed
         // via `build_manifest_fuzzy_index_from_raw`. FBNeo has "Galaga '88"; MAME has
         // "Galaga '88 (set 1)" and "Galaga '88 (Japan)".
-        let fbneo_entries = vec![crate::metadata_db::ThumbnailIndexEntry {
+        let fbneo_entries = vec![crate::library_db::ThumbnailIndexEntry {
             filename: "Galaga '88".to_string(),
             symlink_target: None,
         }];
         let mame_entries = vec![
-            crate::metadata_db::ThumbnailIndexEntry {
+            crate::library_db::ThumbnailIndexEntry {
                 filename: "Galaga '88 (set 1)".to_string(),
                 symlink_target: None,
             },
-            crate::metadata_db::ThumbnailIndexEntry {
+            crate::library_db::ThumbnailIndexEntry {
                 filename: "Galaga '88 (Japan)".to_string(),
                 symlink_target: None,
             },

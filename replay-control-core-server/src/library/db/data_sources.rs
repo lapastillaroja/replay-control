@@ -4,9 +4,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use replay_control_core::error::{Error, Result};
 
-use super::{DataSourceInfo, DataSourceStats, MetadataDb, ThumbnailIndexEntry, unix_now};
+use super::{DataSourceInfo, DataSourceStats, LibraryDb, ThumbnailIndexEntry, unix_now};
 
-impl MetadataDb {
+impl LibraryDb {
     /// Insert or update a data source entry.
     pub fn upsert_data_source(
         conn: &Connection,

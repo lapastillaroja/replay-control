@@ -1,4 +1,4 @@
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 use std::time::Duration;
 
 use super::AppState;
@@ -79,7 +79,7 @@ impl BackgroundManager {
 
             Self::phase_cache_verification(state).await;
             // Checkpoint after Phase 2 writes (game_library inserts/updates).
-            state.metadata_pool.checkpoint().await;
+            state.library_pool.checkpoint().await;
 
             state.update_activity(|act| {
                 if let Activity::Startup { phase, .. } = act {
@@ -97,8 +97,8 @@ impl BackgroundManager {
     /// Imports LaunchBox XML if the file exists on disk.
     async fn phase_auto_import(state: &AppState) {
         let should_import = state
-            .metadata_pool
-            .read(|conn| MetadataDb::is_empty(conn).unwrap_or(false))
+            .library_pool
+            .read(|conn| LibraryDb::is_empty(conn).unwrap_or(false))
             .await
             .unwrap_or(false);
 
@@ -111,7 +111,7 @@ impl BackgroundManager {
 
         // Try LaunchBox XML.
         {
-            use replay_control_core_server::metadata_db::LAUNCHBOX_XML;
+            use replay_control_core_server::library_db::LAUNCHBOX_XML;
 
             let xml_path = rc_dir.join(LAUNCHBOX_XML);
             // Backwards-compat: fall back to old upstream name if user placed it manually.
@@ -150,8 +150,8 @@ impl BackgroundManager {
 
         // Load cached system metadata directly from DB (no cache layer).
         let cached_meta = state
-            .metadata_pool
-            .read(|conn| MetadataDb::load_all_system_meta(conn).ok())
+            .library_pool
+            .read(|conn| LibraryDb::load_all_system_meta(conn).ok())
             .await
             .flatten()
             .unwrap_or_default();
@@ -164,7 +164,7 @@ impl BackgroundManager {
 
         // Query actual game_library row counts per system to detect interrupted scans.
         let actual_counts: std::collections::HashMap<String, usize> = state
-            .metadata_pool
+            .library_pool
             .read(|conn| {
                 let mut stmt = conn
                     .prepare("SELECT system, COUNT(*) FROM game_library GROUP BY system")
@@ -221,7 +221,7 @@ impl BackgroundManager {
                         &meta.system,
                         region_pref,
                         region_secondary,
-                        &state.metadata_pool,
+                        &state.library_pool,
                     )
                     .await;
                 state
@@ -254,10 +254,10 @@ impl BackgroundManager {
     async fn phase_auto_rebuild_thumbnail_index(state: &AppState) {
         // Check data_sources for libretro-thumbnails entries and thumbnail_index emptiness.
         let (has_sources, index_empty) = match state
-            .metadata_pool
+            .library_pool
             .read(|conn| {
-                let stats = MetadataDb::get_data_source_stats(conn, "libretro-thumbnails").ok()?;
-                let index_count: i64 = MetadataDb::thumbnail_index_count(conn).unwrap_or(0);
+                let stats = LibraryDb::get_data_source_stats(conn, "libretro-thumbnails").ok()?;
+                let index_count: i64 = LibraryDb::thumbnail_index_count(conn).unwrap_or(0);
                 Some((stats.repo_count > 0, index_count == 0))
             })
             .await
@@ -334,7 +334,7 @@ impl BackgroundManager {
 
         // Now write all collected data to the DB in a single write() call.
         let write_result = state
-            .metadata_pool
+            .library_pool
             .write(move |db| {
                 let mut w_total_entries = 0usize;
                 let mut w_total_repos = 0usize;
@@ -348,7 +348,7 @@ impl BackgroundManager {
                     );
                     let entry_count = data.entries.len();
 
-                    if let Err(e) = MetadataDb::upsert_data_source(
+                    if let Err(e) = LibraryDb::upsert_data_source(
                         db,
                         &source_name,
                         "libretro-thumbnails",
@@ -359,7 +359,7 @@ impl BackgroundManager {
                         tracing::warn!("Failed to upsert data source {source_name}: {e}");
                     }
 
-                    match MetadataDb::bulk_insert_thumbnail_index(db, &source_name, &data.entries) {
+                    match LibraryDb::bulk_insert_thumbnail_index(db, &source_name, &data.entries) {
                         Ok(_) => w_total_entries += entry_count,
                         Err(e) => tracing::warn!(
                             "Failed to insert disk-based index for {}: {e}",
@@ -377,7 +377,7 @@ impl BackgroundManager {
                             replay_control_core_server::thumbnail_manifest::default_branch(
                                 extra_repo,
                             );
-                        if let Err(e) = MetadataDb::upsert_data_source(
+                        if let Err(e) = LibraryDb::upsert_data_source(
                             db,
                             &extra_source,
                             "libretro-thumbnails",
@@ -401,7 +401,7 @@ impl BackgroundManager {
 
         if total_entries > 0 {
             // Checkpoint WAL after the bulk thumbnail index writes.
-            state.metadata_pool.checkpoint().await;
+            state.library_pool.checkpoint().await;
             tracing::info!(
                 "Thumbnail index rebuilt from disk: {total_entries} entries across {total_repos} repos"
             );
@@ -419,7 +419,7 @@ impl BackgroundManager {
     ) {
         let systems = state
             .cache
-            .cached_systems(storage, &state.metadata_pool)
+            .cached_systems(storage, &state.library_pool)
             .await;
         let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
         tracing::info!(
@@ -442,7 +442,7 @@ impl BackgroundManager {
                     &sys.folder_name,
                     region_pref,
                     region_secondary,
-                    &state.metadata_pool,
+                    &state.library_pool,
                 )
                 .await
             {
@@ -1262,9 +1262,9 @@ impl AppState {
 
             // Check if game library is empty -- if so, populate before enriching.
             let is_empty = state
-                .metadata_pool
+                .library_pool
                 .read(|conn| {
-                    MetadataDb::load_all_system_meta(conn)
+                    LibraryDb::load_all_system_meta(conn)
                         .map(|m| m.is_empty())
                         .unwrap_or(true)
                 })
@@ -1274,7 +1274,7 @@ impl AppState {
             if is_empty {
                 tracing::info!("Post-import: game library is empty, running full populate");
                 // Gate reads during heavy writes to prevent exFAT corruption.
-                let _write_gate = super::WriteGate::activate(state.metadata_pool.write_gate_flag());
+                let _write_gate = super::WriteGate::activate(state.library_pool.write_gate_flag());
                 BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
@@ -1282,7 +1282,7 @@ impl AppState {
                     region_secondary,
                 )
                 .await;
-                state.metadata_pool.checkpoint().await;
+                state.library_pool.checkpoint().await;
                 drop(_write_gate);
             }
 
@@ -1295,7 +1295,7 @@ impl AppState {
             // so the exFAT corruption risk is low.
             let systems = state
                 .cache
-                .cached_systems(&storage, &state.metadata_pool)
+                .cached_systems(&storage, &state.library_pool)
                 .await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
@@ -1334,9 +1334,9 @@ impl AppState {
 
             // Check if game library is empty -- if so, populate before enriching.
             let is_empty = state
-                .metadata_pool
+                .library_pool
                 .read(|conn| {
-                    MetadataDb::load_all_system_meta(conn)
+                    LibraryDb::load_all_system_meta(conn)
                         .map(|m| m.is_empty())
                         .unwrap_or(true)
                 })
@@ -1352,7 +1352,7 @@ impl AppState {
                     }
                 });
                 // Gate reads during heavy writes to prevent exFAT corruption.
-                let _write_gate = super::WriteGate::activate(state.metadata_pool.write_gate_flag());
+                let _write_gate = super::WriteGate::activate(state.library_pool.write_gate_flag());
                 BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
@@ -1360,7 +1360,7 @@ impl AppState {
                     region_secondary,
                 )
                 .await;
-                state.metadata_pool.checkpoint().await;
+                state.library_pool.checkpoint().await;
                 drop(_write_gate);
             }
 
@@ -1370,7 +1370,7 @@ impl AppState {
             // Enrichment writes are small per-system UPDATEs, not bulk INSERTs.
             let systems = state
                 .cache
-                .cached_systems(&storage, &state.metadata_pool)
+                .cached_systems(&storage, &state.library_pool)
                 .await;
             let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
@@ -1762,7 +1762,7 @@ impl AppState {
                 for system in &affected_systems {
                     state
                         .cache
-                        .invalidate_system(system.clone(), &state.metadata_pool)
+                        .invalidate_system(system.clone(), &state.library_pool)
                         .await;
                     state.response_cache.invalidate_all();
                 }
@@ -1786,7 +1786,7 @@ impl AppState {
                                 system,
                                 region_pref,
                                 region_secondary,
-                                &state.metadata_pool,
+                                &state.library_pool,
                             )
                             .await;
                         state
@@ -1803,7 +1803,7 @@ impl AppState {
                     tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
                     let systems = state
                         .cache
-                        .cached_systems(&storage, &state.metadata_pool)
+                        .cached_systems(&storage, &state.library_pool)
                         .await;
                     for sys in &systems {
                         if sys.game_count > 0 && !affected_systems.contains(&sys.folder_name) {
@@ -1814,7 +1814,7 @@ impl AppState {
                                     &sys.folder_name,
                                     region_pref,
                                     region_secondary,
-                                    &state.metadata_pool,
+                                    &state.library_pool,
                                 )
                                 .await;
                             state
@@ -1826,7 +1826,7 @@ impl AppState {
                 } else if !affected_systems.is_empty() {
                     let _ = state
                         .cache
-                        .cached_systems(&storage, &state.metadata_pool)
+                        .cached_systems(&storage, &state.library_pool)
                         .await;
                 }
             }

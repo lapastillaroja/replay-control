@@ -2,7 +2,7 @@
 use super::recommendations::to_recommended;
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 /// Related games data: regional variants + translations + hacks + specials + series + similar games.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,7 +126,7 @@ pub async fn get_related_games(
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.metadata_pool)
+        .cached_systems(&storage, &state.library_pool)
         .await;
 
     let is_arcade = replay_control_core::systems::is_arcade_system(&system);
@@ -144,22 +144,22 @@ pub async fn get_related_games(
     let region_pref_str_cl = region_pref_str.clone();
 
     let db_data = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
             let variants =
-                MetadataDb::regional_variants(conn, &system_cl, &filename_cl).unwrap_or_default();
+                LibraryDb::regional_variants(conn, &system_cl, &filename_cl).unwrap_or_default();
             let translations_raw =
-                MetadataDb::translations(conn, &system_cl, &filename_cl).unwrap_or_default();
-            let hacks_raw = MetadataDb::hacks(conn, &system_cl, &filename_cl).unwrap_or_default();
+                LibraryDb::translations(conn, &system_cl, &filename_cl).unwrap_or_default();
+            let hacks_raw = LibraryDb::hacks(conn, &system_cl, &filename_cl).unwrap_or_default();
             let alternates_raw = if !is_arcade {
-                MetadataDb::alternate_versions(conn, &system_cl, &filename_cl).unwrap_or_default()
+                LibraryDb::alternate_versions(conn, &system_cl, &filename_cl).unwrap_or_default()
             } else {
                 Vec::new()
             };
             let specials_raw =
-                MetadataDb::specials(conn, &system_cl, &filename_cl).unwrap_or_default();
+                LibraryDb::specials(conn, &system_cl, &filename_cl).unwrap_or_default();
 
-            let all_entries = MetadataDb::load_system_entries(conn, &system_cl).unwrap_or_default();
+            let all_entries = LibraryDb::load_system_entries(conn, &system_cl).unwrap_or_default();
             let current_entry = all_entries.iter().find(|e| e.rom_filename == filename_cl);
 
             let base_title = current_entry
@@ -175,7 +175,7 @@ pub async fn get_related_games(
 
             // Series siblings: prefer Wikidata (has ordering), fall back to algorithmic series_key.
             let (series_raw, series_name_raw) = {
-                let wikidata = MetadataDb::wikidata_series_siblings(
+                let wikidata = LibraryDb::wikidata_series_siblings(
                     conn,
                     &system_cl,
                     &base_title,
@@ -184,13 +184,13 @@ pub async fn get_related_games(
                 )
                 .unwrap_or_default();
                 if !wikidata.is_empty() {
-                    let sname = MetadataDb::lookup_series_name(conn, &system_cl, &base_title)
+                    let sname = LibraryDb::lookup_series_name(conn, &system_cl, &base_title)
                         .unwrap_or_default();
                     let entries: Vec<_> =
                         wikidata.into_iter().map(|(entry, _order)| entry).collect();
                     (entries, sname)
                 } else {
-                    let fallback = MetadataDb::series_siblings(
+                    let fallback = LibraryDb::series_siblings(
                         conn,
                         &series_key,
                         &base_title,
@@ -205,7 +205,7 @@ pub async fn get_related_games(
             // Skip when Wikidata series data covers cross-system entries, or for clones/hacks.
             let is_primary = current_entry.is_none_or(|e| !e.is_clone && !e.is_hack);
             let cross_system_raw = if series_raw.is_empty() && is_primary {
-                MetadataDb::cross_system_availability(
+                LibraryDb::cross_system_availability(
                     conn,
                     &system_cl,
                     &base_title,
@@ -218,7 +218,7 @@ pub async fn get_related_games(
             };
 
             // Alias variants: cross-name variants via game_alias table.
-            let alias_raw = MetadataDb::alias_variants(
+            let alias_raw = LibraryDb::alias_variants(
                 conn,
                 &system_cl,
                 &base_title,
@@ -231,7 +231,7 @@ pub async fn get_related_games(
                 Vec::new()
             } else {
                 let limit = if is_arcade { 24 } else { 8 };
-                MetadataDb::similar_by_genre(conn, &system_cl, &detail_genre, &filename_cl, limit)
+                LibraryDb::similar_by_genre(conn, &system_cl, &detail_genre, &filename_cl, limit)
                     .unwrap_or_default()
             };
 
@@ -243,7 +243,7 @@ pub async fn get_related_games(
 
             // Sequel/prequel chain info (Wikidata P155/P156).
             let sequel_chain =
-                MetadataDb::sequel_info(conn, &system_cl, &base_title, &region_pref_str_cl)
+                LibraryDb::sequel_info(conn, &system_cl, &base_title, &region_pref_str_cl)
                     .unwrap_or_default();
 
             (

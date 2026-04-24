@@ -6,9 +6,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use replay_control_core::error::{Error, Result};
 
-use super::{DpSql, GameMetadata, ImagePathUpdate, MetadataDb, MetadataStats};
+use super::{DpSql, GameMetadata, ImagePathUpdate, LibraryDb, MetadataStats};
 
-impl MetadataDb {
+impl LibraryDb {
     /// Look up cached metadata for a specific game.
     pub fn lookup(
         conn: &Connection,
@@ -747,13 +747,13 @@ impl MetadataDb {
 
 #[cfg(test)]
 mod tests {
-    use super::super::MetadataDb;
+    use super::super::LibraryDb;
     use super::super::tests::*;
 
     #[test]
     fn entries_per_system_no_game_library_returns_all() {
         let (mut conn, _dir) = open_temp_db();
-        MetadataDb::bulk_upsert(
+        LibraryDb::bulk_upsert(
             &mut conn,
             &[
                 (
@@ -775,7 +775,7 @@ mod tests {
         )
         .unwrap();
 
-        let counts = MetadataDb::entries_per_system(&conn).unwrap();
+        let counts = LibraryDb::entries_per_system(&conn).unwrap();
         assert_eq!(counts.len(), 2);
         assert_eq!(counts[0], ("sega_smd".into(), 2));
         assert_eq!(counts[1], ("snes".into(), 1));
@@ -785,7 +785,7 @@ mod tests {
     fn entries_per_system_with_game_library_deduplicates_m3u() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(
+        LibraryDb::bulk_upsert(
             &mut conn,
             &[
                 (
@@ -812,14 +812,14 @@ mod tests {
         )
         .unwrap();
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_cd",
             &[make_game_entry("sega_cd", "Game.m3u", true)],
             None,
         )
         .unwrap();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_game_entry("snes", "Mario.sfc", false)],
@@ -827,7 +827,7 @@ mod tests {
         )
         .unwrap();
 
-        let counts = MetadataDb::entries_per_system(&conn).unwrap();
+        let counts = LibraryDb::entries_per_system(&conn).unwrap();
         let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
         let snes = counts.iter().find(|(s, _)| s == "snes").unwrap();
 
@@ -839,7 +839,7 @@ mod tests {
     fn entries_per_system_mixed_cached_and_uncached_systems() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(
+        LibraryDb::bulk_upsert(
             &mut conn,
             &[
                 (
@@ -866,7 +866,7 @@ mod tests {
         )
         .unwrap();
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_cd",
             &[make_game_entry("sega_cd", "Game.m3u", true)],
@@ -874,7 +874,7 @@ mod tests {
         )
         .unwrap();
 
-        let counts = MetadataDb::entries_per_system(&conn).unwrap();
+        let counts = LibraryDb::entries_per_system(&conn).unwrap();
         let sega_cd = counts.iter().find(|(s, _)| s == "sega_cd").unwrap();
         let snes = counts.iter().find(|(s, _)| s == "snes").unwrap();
 
@@ -889,7 +889,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
 
         // Insert metadata with descriptions for 2 games.
-        MetadataDb::bulk_upsert(
+        LibraryDb::bulk_upsert(
             &mut conn,
             &[
                 (
@@ -909,7 +909,7 @@ mod tests {
         // Insert a thumbnail-only row (no description) via bulk_update_image_paths.
         // This simulates what happens when thumbnails are downloaded for a game
         // that has no LaunchBox metadata entry.
-        MetadataDb::bulk_update_image_paths(
+        LibraryDb::bulk_update_image_paths(
             &mut conn,
             &[super::super::ImagePathUpdate {
                 system: "snes".into(),
@@ -922,7 +922,7 @@ mod tests {
         .unwrap();
 
         // Populate game_library with 3 games.
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[
@@ -936,7 +936,7 @@ mod tests {
 
         // entries_per_system should only count the 2 games with descriptions,
         // not the thumbnail-only Metroid row.
-        let counts = MetadataDb::entries_per_system(&conn).unwrap();
+        let counts = LibraryDb::entries_per_system(&conn).unwrap();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], ("snes".into(), 2));
     }
@@ -946,7 +946,7 @@ mod tests {
     fn entries_per_system_no_description_not_counted() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(
+        LibraryDb::bulk_upsert(
             &mut conn,
             &[
                 (
@@ -960,7 +960,7 @@ mod tests {
         )
         .unwrap();
 
-        let counts = MetadataDb::entries_per_system(&conn).unwrap();
+        let counts = LibraryDb::entries_per_system(&conn).unwrap();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], ("snes".into(), 1));
     }
@@ -970,7 +970,7 @@ mod tests {
     fn entries_per_system_empty_description_not_counted() {
         let (mut conn, _dir) = open_temp_db();
 
-        MetadataDb::bulk_upsert(
+        LibraryDb::bulk_upsert(
             &mut conn,
             &[
                 (
@@ -987,7 +987,7 @@ mod tests {
         )
         .unwrap();
 
-        let counts = MetadataDb::entries_per_system(&conn).unwrap();
+        let counts = LibraryDb::entries_per_system(&conn).unwrap();
         assert_eq!(counts.len(), 1);
         assert_eq!(counts[0], ("snes".into(), 1));
     }

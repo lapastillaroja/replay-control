@@ -7,7 +7,7 @@ use crate::server_fns;
 /// activity banner since corruption is a rare, persistent state).
 ///
 /// Shows appropriate actions based on which DB is corrupt:
-/// - metadata.db: [Rebuild] (no data loss -- rebuildable cache)
+/// - library.db: [Rebuild] (no data loss -- rebuildable)
 /// - user_data.db with backup: [Restore from backup] [Repair]
 /// - user_data.db without backup: [Repair (lose data)]
 #[component]
@@ -40,7 +40,7 @@ pub fn CorruptionBanner() -> impl IntoView {
     });
 
     let rebuild_action = Action::new(|_: &()| async {
-        let _ = server_fns::rebuild_corrupt_metadata().await;
+        let _ = server_fns::rebuild_corrupt_library().await;
     });
     let repair_action = Action::new(|_: &()| async {
         let _ = server_fns::repair_corrupt_user_data().await;
@@ -54,17 +54,17 @@ pub fn CorruptionBanner() -> impl IntoView {
         (*wrapper).clone()
     };
 
-    let metadata_corrupt = move || get_status().is_some_and(|s| s.metadata_corrupt);
+    let library_corrupt = move || get_status().is_some_and(|s| s.library_corrupt);
     let user_data_corrupt = move || get_status().is_some_and(|s| s.user_data_corrupt);
     let backup_exists = move || get_status().is_some_and(|s| s.user_data_backup_exists);
-    let any_corrupt = move || metadata_corrupt() || user_data_corrupt();
+    let any_corrupt = move || library_corrupt() || user_data_corrupt();
 
     view! {
         <Show when=move || any_corrupt() fallback=|| ()>
             <div class="corruption-banner">
-                <Show when=move || metadata_corrupt() fallback=|| ()>
+                <Show when=move || library_corrupt() fallback=|| ()>
                     <div class="corruption-banner-row">
-                        <span>"Metadata database is corrupt."</span>
+                        <span>"Library database is corrupt."</span>
                         <button
                             class="corruption-banner-btn"
                             on:click=move |_| { rebuild_action.dispatch(()); }

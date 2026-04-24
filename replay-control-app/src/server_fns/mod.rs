@@ -1,5 +1,5 @@
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
@@ -72,7 +72,7 @@ pub struct RomListEntry {
     /// Arcade driver emulation status (Working/Imperfect/Preliminary/Unknown).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub driver_status: Option<String>,
-    /// Game rating (0.0-5.0 scale), from metadata DB.
+    /// Game rating (0.0-5.0 scale), from library DB.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<f32>,
     /// Maximum number of players, from game_db or arcade_db.
@@ -152,7 +152,7 @@ pub(crate) async fn enrich_box_art_and_favorites(
 #[cfg(feature = "ssr")]
 pub(crate) async fn enrich_game_entries(
     state: &crate::api::AppState,
-    entries: Vec<replay_control_core_server::metadata_db::GameEntry>,
+    entries: Vec<replay_control_core_server::library_db::GameEntry>,
 ) -> Vec<RomListEntry> {
     // Build input tuples for the shared enrichment function.
     let input: Vec<(String, String, Option<String>)> = entries
@@ -281,7 +281,7 @@ pub fn format_error(e: server_fn::ServerFnError) -> String {
 #[cfg(feature = "ssr")]
 pub(crate) async fn build_game_detail(
     state: &crate::api::AppState,
-    entry: &replay_control_core_server::metadata_db::GameEntry,
+    entry: &replay_control_core_server::library_db::GameEntry,
 ) -> GameInfo {
     use replay_control_core::systems;
     use replay_control_core_server::arcade_db;
@@ -417,8 +417,8 @@ async fn enrich_detail_fields(
     let system = info.system.clone();
     let rom_filename = info.rom_filename.clone();
     if let Some(lookup_result) = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::lookup(conn, &system, &rom_filename))
+        .library_pool
+        .read(move |conn| LibraryDb::lookup(conn, &system, &rom_filename))
         .await
     {
         match lookup_result {
@@ -504,7 +504,7 @@ async fn enrich_detail_fields(
     }
 }
 
-/// Resolve a box art URL for a ROM, checking metadata DB first, then filesystem.
+/// Resolve a box art URL for a ROM, checking library DB first, then filesystem.
 #[cfg(feature = "ssr")]
 pub(crate) async fn resolve_box_art_url(
     state: &crate::api::AppState,
@@ -540,15 +540,15 @@ pub(crate) async fn resolve_box_art_url(
         }
     }
 
-    // 1. Try metadata DB — but validate the file on disk (catches git fake-symlink artifacts).
+    // 1. Try library DB — but validate the file on disk (catches git fake-symlink artifacts).
     //    If the DB path is a fake symlink, try resolving it before falling back to disk scan.
     if let Some(Some(meta)) = state
-        .metadata_pool
+        .library_pool
         .read({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
-                MetadataDb::lookup(conn, &system, &rom_filename)
+                LibraryDb::lookup(conn, &system, &rom_filename)
                     .ok()
                     .flatten()
             }

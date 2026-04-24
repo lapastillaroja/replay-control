@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 /// Developer search result: a matched developer with their games.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,12 +75,12 @@ pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
     // Fallback: check LaunchBox metadata for genre.
     let state = leptos::prelude::expect_context::<crate::api::AppState>();
     if let Some(genre) = state
-        .metadata_pool
+        .library_pool
         .read({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
-                MetadataDb::lookup(conn, &system, &rom_filename)
+                LibraryDb::lookup(conn, &system, &rom_filename)
                     .ok()
                     .flatten()
                     .and_then(|meta| meta.genre)
@@ -115,7 +115,7 @@ pub async fn global_search(
     #[server(default)] max_year: Option<u16>,
 ) -> Result<GlobalSearchResults, ServerFnError> {
     use replay_control_core::systems::{self as sys_db};
-    use replay_control_core_server::metadata_db::GameEntry;
+    use replay_control_core_server::library_db::GameEntry;
 
     let state = expect_context::<crate::api::AppState>();
     let region_pref = state.region_preference();
@@ -153,9 +153,9 @@ pub async fn global_search(
         if !q.is_empty() {
             let q_owned = q.clone();
             let alias_hits: std::collections::HashSet<(String, String)> = state
-                .metadata_pool
+                .library_pool
                 .read(move |conn| {
-                    MetadataDb::search_aliases(conn, &q_owned)
+                    LibraryDb::search_aliases(conn, &q_owned)
                         .unwrap_or_default()
                         .into_iter()
                         .collect()
@@ -176,9 +176,9 @@ pub async fn global_search(
     let min_rating_f64 = min_rating.map(|r| r as f64);
     let genre_owned = genre.clone();
     let candidates: Vec<GameEntry> = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
-            let filter = replay_control_core_server::metadata_db::SearchFilter {
+            let filter = replay_control_core_server::library_db::SearchFilter {
                 hide_hacks,
                 hide_translations,
                 hide_betas,
@@ -190,7 +190,7 @@ pub async fn global_search(
                 min_year,
                 max_year,
             };
-            MetadataDb::search_game_library(conn, None, None, &query_words, &filter, 0, usize::MAX)
+            LibraryDb::search_game_library(conn, None, None, &query_words, &filter, 0, usize::MAX)
                 .map(|(entries, _total)| entries)
                 .unwrap_or_default()
         })
@@ -316,8 +316,8 @@ pub async fn get_all_genres() -> Result<Vec<String>, ServerFnError> {
 
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::all_genre_groups(conn).unwrap_or_default())
+        .library_pool
+        .read(move |conn| LibraryDb::all_genre_groups(conn).unwrap_or_default())
         .await
         .unwrap_or_default();
 
@@ -331,8 +331,8 @@ pub async fn get_system_genres(system: String) -> Result<Vec<String>, ServerFnEr
 
     // Use a single SQL query on game_library instead of iterating all ROMs.
     let genres = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::system_genre_groups(conn, &system).unwrap_or_default())
+        .library_pool
+        .read(move |conn| LibraryDb::system_genre_groups(conn, &system).unwrap_or_default())
         .await
         .unwrap_or_default();
 
@@ -358,15 +358,15 @@ pub async fn search_by_developer(
     // Single DB access: find matching developers, then fetch games for the top match.
     let q_owned = q.clone();
     let db_result = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
-            let matches = MetadataDb::find_developer_matches(conn, &q_owned).unwrap_or_default();
+            let matches = LibraryDb::find_developer_matches(conn, &q_owned).unwrap_or_default();
             if matches.is_empty() {
                 return None;
             }
 
             let (top_dev, top_count) = &matches[0];
-            let games = MetadataDb::games_by_developer(
+            let games = LibraryDb::games_by_developer(
                 conn,
                 top_dev,
                 limit,
@@ -440,9 +440,9 @@ pub async fn get_developer_genres(
     };
 
     let genres = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
-            MetadataDb::developer_genre_groups(conn, &developer, system_filter.as_deref())
+            LibraryDb::developer_genre_groups(conn, &developer, system_filter.as_deref())
                 .unwrap_or_default()
         })
         .await
@@ -472,7 +472,7 @@ pub async fn get_developer_games(
     #[server(default)] max_year: Option<u16>,
 ) -> Result<DeveloperPageData, ServerFnError> {
     use replay_control_core::systems as sys_db;
-    use replay_control_core_server::metadata_db::SearchFilter;
+    use replay_control_core_server::library_db::SearchFilter;
 
     let state = expect_context::<crate::api::AppState>();
     let limit = limit.clamp(1, 200);
@@ -489,10 +489,10 @@ pub async fn get_developer_games(
     let developer_owned = developer.clone();
     let fetch_limit = limit + 1; // fetch one extra to detect has_more
     let db_result = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
             let systems_raw =
-                MetadataDb::developer_systems(conn, &developer_owned).unwrap_or_default();
+                LibraryDb::developer_systems(conn, &developer_owned).unwrap_or_default();
             let filters = SearchFilter {
                 hide_hacks,
                 hide_translations,
@@ -505,7 +505,7 @@ pub async fn get_developer_games(
                 min_year,
                 max_year,
             };
-            let (entries, total) = MetadataDb::search_game_library(
+            let (entries, total) = LibraryDb::search_game_library(
                 conn,
                 system_filter.as_deref(),
                 Some(&developer_owned),
@@ -572,7 +572,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.metadata_pool)
+        .cached_systems(&storage, &state.library_pool)
         .await;
 
     // Build a weighted list: (system_folder, game_count).
@@ -609,7 +609,7 @@ pub async fn random_game() -> Result<(String, String), ServerFnError> {
     // Pick a random ROM filename from L2 (SQLite).
     let sys = chosen_system.clone();
     let filename: Option<String> = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
             conn.query_row(
                 "SELECT rom_filename FROM game_library

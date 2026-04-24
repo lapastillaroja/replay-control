@@ -2,3 +2,18 @@ pub mod favorites;
 pub mod recents;
 pub mod rom_hash;
 pub mod roms;
+
+#[cfg(feature = "library")]
+pub mod db;
+#[cfg(feature = "library")]
+pub mod enrichment;
+#[cfg(feature = "library")]
+pub mod game_entry_builder;
+#[cfg(feature = "library")]
+pub mod imports;
+#[cfg(feature = "library")]
+pub mod manuals;
+#[cfg(feature = "library")]
+pub mod matching;
+#[cfg(feature = "library")]
+pub mod thumbnails;

@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::metadata_db::{AliasInsert, GameEntry, SeriesInsert};
+use crate::library_db::{AliasInsert, GameEntry, SeriesInsert};
 use replay_control_core::title_utils::{
     fuzzy_match_key, normalize_for_wikidata, resolve_to_library_title, roman_to_arabic_suffix,
 };

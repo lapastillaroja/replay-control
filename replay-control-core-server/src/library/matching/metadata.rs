@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::metadata_db::GameMetadata;
+use crate::library_db::GameMetadata;
 use replay_control_core::title_utils::filename_stem;
 
 /// Result of matching a ROM to existing metadata via normalized title.

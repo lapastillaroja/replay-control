@@ -59,7 +59,7 @@ Quick test: does the code name any forbidden dep? If no → core. If yes → cor
 
 Re-export pattern inside core-server: modules that wrap a core module do `pub use replay_control_core::<module>::*;` at the top, then add native fns below. Consumers reach both type and native fn via `replay_control_core_server::<module>::`.
 
-**Orphan-rule workaround**: when a native trait (like `rusqlite::ToSql`) needs to apply to a core type, create a local newtype in the consuming core-server module (e.g. `DpSql(DatePrecision)` in `metadata_db`). Don't move the core type to core-server just to satisfy the orphan rule.
+**Orphan-rule workaround**: when a native trait (like `rusqlite::ToSql`) needs to apply to a core type, create a local newtype in the consuming core-server module (e.g. `DpSql(DatePrecision)` in `library_db`). Don't move the core type to core-server just to satisfy the orphan rule.
 
 ## Leptos Components
 

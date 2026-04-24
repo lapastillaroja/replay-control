@@ -23,7 +23,7 @@ Server-only native implementation. Compiled for native targets only (never wasm)
 - **Catalog pool**: async read-only `deadpool-sqlite` pool for the bundled `catalog.sqlite` (game databases, arcade DB, series DB)
 - **Game DB queries**: native SQL lookups for arcade/console metadata, display name resolution, release dates
 - **Library scanning**: ROM discovery, favorites/recents I/O, hashing, disc-group detection
-- **Metadata pipeline**: LaunchBox XML parsing, thumbnail manifest download, image resolution, metadata DB writes
+- **Metadata pipeline**: LaunchBox XML parsing, thumbnail manifest download, image resolution, library DB writes
 - **Platform adapters**: `/proc/mounts` filesystem detection, `df` disk usage, storage location detection
 - **HTTP client**: `reqwest`-backed helpers (feature-gated)
 - **Settings store**: `replay.cfg` / `settings.cfg` reader+writer
@@ -58,11 +58,11 @@ Standalone cdylib (not in the workspace) that implements the libretro API. Runs 
 | Activity system | `replay-control-app/src/api/activity.rs` |
 | Enrichment | `replay-control-app/src/api/cache/enrichment.rs` |
 | Image resolution | `replay-control-app/src/api/cache/images.rs` |
-| DB schema | `replay-control-core-server/src/metadata/metadata_db/mod.rs` |
-| User data DB | `replay-control-core-server/src/metadata/user_data_db.rs` |
+| DB schema | `replay-control-core-server/src/library/db/mod.rs` |
+| User data DB | `replay-control-core-server/src/user_data/db.rs` |
 | Catalog pool | `replay-control-core-server/src/catalog_pool.rs` |
 | ROM tag parsing | `replay-control-core/src/game/rom_tags.rs` |
-| Image matching | `replay-control-core-server/src/metadata/image_matching.rs` |
+| Image matching | `replay-control-core-server/src/library/thumbnails/matching.rs` |
 | HTTP client | `replay-control-core-server/src/http.rs` |
 
 ## Stack

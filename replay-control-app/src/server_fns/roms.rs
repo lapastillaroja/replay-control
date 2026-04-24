@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 /// A page of ROM results with total count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,7 +116,7 @@ pub async fn get_roms_page(
     // search_game_library(). GameEntry rows from the DB already carry genre,
     // rating, players, and driver_status, so enrichment is minimal (just box art
     // and favorites overlay).
-    use replay_control_core_server::metadata_db::SearchFilter;
+    use replay_control_core_server::library_db::SearchFilter;
 
     let q = search.to_lowercase();
     let query_words: Vec<String> = if q.is_empty() {
@@ -133,7 +133,7 @@ pub async fn get_roms_page(
     let sys_owned = system.clone();
 
     let db_result = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
             let filter = SearchFilter {
                 hide_hacks,
@@ -147,7 +147,7 @@ pub async fn get_roms_page(
                 min_year,
                 max_year,
             };
-            MetadataDb::search_game_library(
+            LibraryDb::search_game_library(
                 conn,
                 Some(&sys_owned),
                 None,
@@ -164,7 +164,7 @@ pub async fn get_roms_page(
     // When text search is active, score and paginate in Rust (SQL returned all
     // matching rows without LIMIT/OFFSET so we can sort by relevance).
     let (page_entries, total, has_more) = if !search.is_empty() {
-        let mut scored: Vec<(u32, replay_control_core_server::metadata_db::GameEntry)> = entries
+        let mut scored: Vec<(u32, replay_control_core_server::library_db::GameEntry)> = entries
             .into_iter()
             .filter_map(|entry| {
                 let display = entry.display_name.as_deref().unwrap_or(&entry.rom_filename);
@@ -220,8 +220,8 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let sys_owned = system.clone();
     let fname_owned = filename.clone();
     let entry = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::load_single_entry(conn, &sys_owned, &fname_owned))
+        .library_pool
+        .read(move |conn| LibraryDb::load_single_entry(conn, &sys_owned, &fname_owned))
         .await
         .and_then(|r| r.ok())
         .flatten()
@@ -258,7 +258,7 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let arcade_display =
         replay_control_core_server::arcade_db::display_name_if_arcade(&system, &filename).await;
     let variant_count = state
-        .metadata_pool
+        .library_pool
         .read({
             let system = system.clone();
             let filename = filename.clone();
@@ -452,7 +452,7 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
     // Invalidate caches.
     state
         .cache
-        .invalidate_system(system, &state.metadata_pool)
+        .invalidate_system(system, &state.library_pool)
         .await;
     state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
@@ -520,14 +520,14 @@ async fn delete_rom_cleanup(
         })
         .await;
 
-    // 4. Delete metadata.db game_library entry.
+    // 4. Delete library.db game_library entry.
     state
-        .metadata_pool
+        .library_pool
         .write({
             let system = system.to_string();
             let rom_filename = rom_filename.to_string();
             move |conn| {
-                replay_control_core_server::metadata_db::MetadataDb::delete_for_rom(
+                replay_control_core_server::library_db::LibraryDb::delete_for_rom(
                     conn,
                     &system,
                     &rom_filename,
@@ -588,7 +588,7 @@ pub async fn rename_rom(
     // Invalidate caches.
     state
         .cache
-        .invalidate_system(system, &state.metadata_pool)
+        .invalidate_system(system, &state.library_pool)
         .await;
     state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
@@ -648,15 +648,15 @@ async fn rename_rom_cascade(
         })
         .await;
 
-    // 4. Update metadata.db game_library entry.
+    // 4. Update library.db game_library entry.
     state
-        .metadata_pool
+        .library_pool
         .write({
             let system = system.to_string();
             let old_filename = old_filename.to_string();
             let new_filename = new_filename.to_string();
             move |conn| {
-                replay_control_core_server::metadata_db::MetadataDb::rename_for_rom(
+                replay_control_core_server::library_db::LibraryDb::rename_for_rom(
                     conn,
                     &system,
                     &old_filename,

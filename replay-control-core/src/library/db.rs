@@ -1,5 +1,5 @@
-//! Wire types for metadata DB progress, stats, and coverage reports.
-//! Native SQL operations live in `replay_control_core_server::metadata_db`.
+//! Wire types for library DB progress, stats, and coverage reports.
+//! Native SQL operations live in `replay_control_core_server::library_db`.
 
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,7 @@ pub struct ImportProgress {
     pub download_total: Option<u64>,
 }
 
-/// Cache-level stats about the metadata DB as a whole.
+/// Cache-level stats about the library DB as a whole.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MetadataStats {
     pub total_entries: usize,

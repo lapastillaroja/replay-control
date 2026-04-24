@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub use replay_control_core::metadata_db::{ImportProgress, ImportState};
+pub use replay_control_core::library_db::{ImportProgress, ImportState};
 
 // ── Activity types ──────────────────────────────────
 

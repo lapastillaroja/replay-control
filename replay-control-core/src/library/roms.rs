@@ -34,7 +34,7 @@ pub struct RomEntry {
     /// Only populated for arcade systems.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub driver_status: Option<String>,
-    /// Game rating (0.0–5.0 scale), from metadata DB or game_db.
+    /// Game rating (0.0–5.0 scale), from library DB or game_db.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<f32>,
     /// Maximum number of players, from game_db or arcade_db.

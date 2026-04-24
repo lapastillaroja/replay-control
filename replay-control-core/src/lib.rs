@@ -16,15 +16,15 @@ pub use game::rom_tags;
 pub use game::title_utils;
 
 pub mod library;
+pub use library::db as library_db;
 pub use library::favorites;
+pub use library::manuals::game_docs;
+pub use library::manuals::retrokit as retrokit_manuals;
 pub use library::recents;
 pub use library::roms;
 
-pub mod metadata;
-pub use metadata::game_docs;
-pub use metadata::metadata_db;
-pub use metadata::retrokit_manuals;
-pub use metadata::user_data_db;
+pub mod user_data;
+pub use user_data as user_data_db;
 
 pub mod settings;
 pub use settings::skins;

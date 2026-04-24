@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 /// Get image stats: (boxart_count, snap_count, media_size_bytes).
 /// Returns zeros when the DB is unavailable (e.g., during import).
@@ -8,8 +8,8 @@ use replay_control_core_server::metadata_db::MetadataDb;
 pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let (with_boxart, with_snap) = state
-        .metadata_pool
-        .read(|conn| MetadataDb::image_stats(conn).unwrap_or((0, 0)))
+        .library_pool
+        .read(|conn| LibraryDb::image_stats(conn).unwrap_or((0, 0)))
         .await
         .unwrap_or((0, 0));
     let storage = state.storage();
@@ -34,8 +34,8 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
 
     // Clear box_art_url from game_library so the UI doesn't show 404 placeholders.
     if let Some(Err(e)) = state
-        .metadata_pool
-        .write(|conn| MetadataDb::clear_all_box_art_urls(conn))
+        .library_pool
+        .write(|conn| LibraryDb::clear_all_box_art_urls(conn))
         .await
     {
         tracing::warn!("Failed to clear box_art_url after image clear: {e}");
@@ -67,9 +67,9 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
     // 2. Delete orphaned thumbnail files.
     let storage_root = storage.root.clone();
     let (metadata_deleted, files_deleted, bytes_freed) = state
-        .metadata_pool
+        .library_pool
         .write(move |conn| {
-            let meta_del = MetadataDb::delete_orphaned_metadata(conn).unwrap_or(0);
+            let meta_del = LibraryDb::delete_orphaned_metadata(conn).unwrap_or(0);
             let (files_del, freed) =
                 replay_control_core_server::thumbnails::delete_orphaned_thumbnails(
                     &storage_root,

@@ -1,6 +1,7 @@
-//! Local SQLite cache for external game metadata (descriptions, ratings, etc.).
+//! Local SQLite database for the user's game library.
 //!
-//! Stored at `<rom_storage>/.replay-control/metadata.db`.
+//! Stored at `<rom_storage>/.replay-control/library.db`. Rebuildable from the
+//! ROM filesystem plus the bundled catalog and optional LaunchBox XML import.
 
 mod aliases_series;
 mod data_sources;
@@ -25,8 +26,11 @@ use replay_control_core::error::{Error, Result};
 // Re-export RC_DIR from storage (the canonical definition).
 pub use crate::storage::RC_DIR;
 
-/// Filename for the SQLite metadata database.
-pub const METADATA_DB_FILE: &str = "metadata.db";
+/// Filename for the SQLite library database.
+pub const LIBRARY_DB_FILE: &str = "library.db";
+/// Legacy filename for the pre-0.5 library database. Removed on first open
+/// of the new `library.db` — see [`cleanup_legacy_metadata_db`].
+const LEGACY_METADATA_DB_FILE: &str = "metadata.db";
 /// Filename for the LaunchBox XML dump.
 pub const LAUNCHBOX_XML: &str = "launchbox-metadata.xml";
 
@@ -56,7 +60,7 @@ pub struct ThumbnailIndexEntry {
     pub symlink_target: Option<String>,
 }
 
-pub use replay_control_core::metadata_db::{
+pub use replay_control_core::library_db::{
     DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
     SystemCoverage,
 };
@@ -354,7 +358,7 @@ const CREATE_GAME_LIBRARY_META_SQL: &str = "
 ";
 
 /// Expected columns in the `game_library` table.
-/// Used by [`MetadataDb::validate_game_library_schema`] to detect stale schemas.
+/// Used by [`LibraryDb::validate_game_library_schema`] to detect stale schemas.
 const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "system",
     "rom_filename",
@@ -388,7 +392,7 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
 ];
 
 /// Expected columns in the `game_metadata` table.
-/// Used by [`MetadataDb::validate_game_metadata_schema`] to detect stale schemas.
+/// Used by [`LibraryDb::validate_game_metadata_schema`] to detect stale schemas.
 const GAME_METADATA_COLUMNS: &[&str] = &[
     "system",
     "rom_filename",
@@ -423,9 +427,9 @@ const GAME_RELEASE_DATE_COLUMNS: &[&str] = &[
 ///
 /// All methods are associated functions that take `conn: &Connection` as their
 /// first parameter. No connection ownership — the pool manages lifecycle.
-pub struct MetadataDb;
+pub struct LibraryDb;
 
-impl MetadataDb {
+impl LibraryDb {
     /// Tables to probe for corruption detection.
     pub const TABLES: &[&str] = &[
         "game_metadata",
@@ -437,24 +441,29 @@ impl MetadataDb {
         "game_series",
     ];
 
-    /// Open (or create) the metadata database at `<storage_root>/.replay-control/metadata.db`.
+    /// Open (or create) the library database at `<storage_root>/.replay-control/library.db`.
     ///
-    /// Opens the metadata DB with strategy appropriate for the filesystem.
+    /// Opens the library DB with strategy appropriate for the filesystem.
     /// Runs table init, probes for corruption, auto-recreates if corrupt.
     /// Returns a raw `Connection` — the caller (or pool manager) owns it.
+    ///
+    /// Also removes any legacy pre-0.5 `metadata.db` sidecars on first run.
     pub fn open(storage_root: &Path) -> Result<(Connection, PathBuf)> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
-        let db_path = dir.join(METADATA_DB_FILE);
 
-        let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
+        cleanup_legacy_metadata_db(&dir);
+
+        let db_path = dir.join(LIBRARY_DB_FILE);
+
+        let conn = crate::sqlite::open_connection(&db_path, "library.db")?;
         Self::init_tables(&conn)?;
 
-        if let Err(detail) = crate::db_common::probe_tables(&conn, Self::TABLES) {
-            tracing::warn!("Metadata DB corrupt ({detail}), deleting and recreating");
+        if let Err(detail) = crate::sqlite::probe_tables(&conn, Self::TABLES) {
+            tracing::warn!("Library DB corrupt ({detail}), deleting and recreating");
             drop(conn);
-            crate::db_common::delete_db_files(&db_path);
-            let conn = crate::db_common::open_connection(&db_path, "metadata.db")?;
+            crate::sqlite::delete_db_files(&db_path);
+            let conn = crate::sqlite::open_connection(&db_path, "library.db")?;
             Self::init_tables(&conn)?;
             // Fresh DB after corruption recovery — no need to validate schema.
             return Ok((conn, db_path));
@@ -723,15 +732,36 @@ pub(crate) fn unix_now() -> i64 {
         .as_secs() as i64
 }
 
+/// Remove legacy pre-0.5 `metadata.db` files from the `.replay-control` directory.
+///
+/// The library DB used to be called `metadata.db`. It was rebuildable then and
+/// remains rebuildable now, so we delete the file outright on upgrade rather
+/// than migrating schema: the startup pipeline rescans ROMs, re-imports
+/// LaunchBox data from `launchbox-metadata.xml`, and rebuilds the thumbnail
+/// index from disk. No data is lost.
+///
+/// Idempotent: silent no-op once the legacy files are gone.
+fn cleanup_legacy_metadata_db(dir: &Path) {
+    let legacy = dir.join(LEGACY_METADATA_DB_FILE);
+    if !legacy.exists() {
+        return;
+    }
+    tracing::info!(
+        "Removing legacy {} (rebuilding as library.db)",
+        legacy.display()
+    );
+    crate::sqlite::delete_db_files(&legacy);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Open a metadata DB connection backed by a temp directory.
+    /// Open a library DB connection backed by a temp directory.
     /// Returns a mutable `Connection` so tests can call both read and write methods.
     pub(crate) fn open_temp_db() -> (Connection, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let (conn, _path) = MetadataDb::open(dir.path()).unwrap();
+        let (conn, _path) = LibraryDb::open(dir.path()).unwrap();
         (conn, dir)
     }
 
@@ -806,7 +836,7 @@ mod tests {
     #[test]
     fn schema_rebuild_on_missing_column() {
         let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("metadata.db");
+        let db_path = dir.path().join("library.db");
 
         // Intentionally incomplete schema (missing most columns) to simulate
         // an outdated DB. Does NOT use CREATE_GAME_LIBRARY_SQL.
@@ -831,8 +861,8 @@ mod tests {
             assert_eq!(count, 1);
         }
 
-        // Open via MetadataDb — this runs validate_game_library_schema.
-        let (conn, _path) = MetadataDb::open(dir.path()).unwrap();
+        // Open via LibraryDb — this runs validate_game_library_schema.
+        let (conn, _path) = LibraryDb::open(dir.path()).unwrap();
 
         // The old row should be gone (table was dropped and recreated).
         let count: i64 = conn
@@ -851,6 +881,38 @@ mod tests {
         assert!(
             has_cooperative,
             "rebuilt table should have cooperative column"
+        );
+    }
+
+    #[test]
+    fn cleanup_legacy_metadata_db_removes_all_siblings() {
+        let dir = tempfile::tempdir().unwrap();
+        let rc = dir.path().join(RC_DIR);
+        std::fs::create_dir_all(&rc).unwrap();
+
+        // Plant a legacy metadata.db + every sidecar file.
+        let legacy = rc.join("metadata.db");
+        std::fs::write(&legacy, b"legacy-db").unwrap();
+        std::fs::write(legacy.with_extension("db-wal"), b"wal").unwrap();
+        std::fs::write(legacy.with_extension("db-shm"), b"shm").unwrap();
+        std::fs::write(legacy.with_extension("db-journal"), b"journal").unwrap();
+
+        let (_conn, lib_path) = LibraryDb::open(dir.path()).unwrap();
+
+        assert!(lib_path.ends_with("library.db"));
+        assert!(lib_path.exists(), "new library.db should be created");
+        assert!(!legacy.exists(), "legacy metadata.db should be gone");
+        assert!(
+            !legacy.with_extension("db-wal").exists(),
+            "metadata.db-wal should be gone"
+        );
+        assert!(
+            !legacy.with_extension("db-shm").exists(),
+            "metadata.db-shm should be gone"
+        );
+        assert!(
+            !legacy.with_extension("db-journal").exists(),
+            "metadata.db-journal should be gone"
         );
     }
 

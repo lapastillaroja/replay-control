@@ -42,16 +42,16 @@ No user configuration is needed.
 
 ## Corruption Recovery
 
-If the metadata database becomes corrupted (e.g., due to unexpected power loss), the app detects it at runtime and shows a recovery banner:
+If the library database becomes corrupted (e.g., due to unexpected power loss), the app detects it at runtime and shows a recovery banner:
 
-- **Metadata database** -- can be fully rebuilt from the ROM files (no data loss)
+- **Library database** -- can be fully rebuilt from the ROM files (no data loss)
 - **User data database** -- restored from automatic backups taken at each healthy startup
 
 ## App Data Directory
 
 The app stores its data in `.replay-control/` on the ROM storage device, separate from the RePlayOS configuration. This directory contains:
 
-- **Metadata database** -- game library index, imported metadata, thumbnail index (rebuildable)
+- **Library database** -- game library index, imported metadata, thumbnail index (rebuildable)
 - **User data database** -- box art overrides, saved videos (persistent)
 - **Settings** -- region preference, font size, skin override
 - **Media** -- downloaded box art, screenshots, and title screen images

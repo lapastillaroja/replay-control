@@ -5,9 +5,9 @@ use rusqlite::{Connection, params};
 
 use replay_control_core::error::{Error, Result};
 
-use super::{GameEntry, MetadataDb};
+use super::{GameEntry, LibraryDb};
 
-impl MetadataDb {
+impl LibraryDb {
     /// Find regional variants of a game: other ROMs sharing the same base_title
     /// that are not translations, hacks, specials, or arcade clones.
     /// Returns `(rom_filename, region, display_name)` tuples.
@@ -332,7 +332,7 @@ impl MetadataDb {
 
 #[cfg(test)]
 mod tests {
-    use super::super::MetadataDb;
+    use super::super::LibraryDb;
     use super::super::tests::*;
 
     #[test]
@@ -353,10 +353,10 @@ mod tests {
         hz60.region = "europe".into();
         hz60.is_special = true;
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[original, fastrom, hz60], None)
+        LibraryDb::save_system_entries(&mut conn, "snes", &[original, fastrom, hz60], None)
             .unwrap();
 
-        let specials = MetadataDb::specials(&conn, "snes", "Game (USA).sfc").unwrap();
+        let specials = LibraryDb::specials(&conn, "snes", "Game (USA).sfc").unwrap();
         assert_eq!(specials.len(), 2);
         let filenames: Vec<&str> = specials.iter().map(|(f, _)| f.as_str()).collect();
         assert!(filenames.contains(&"Game (USA) (FastRom).sfc"));
@@ -385,7 +385,7 @@ mod tests {
         special.region = "usa".into();
         special.is_special = true;
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[original, europe, clone, special],
@@ -393,7 +393,7 @@ mod tests {
         )
         .unwrap();
 
-        let variants = MetadataDb::regional_variants(&conn, "snes", "Game (USA).sfc").unwrap();
+        let variants = LibraryDb::regional_variants(&conn, "snes", "Game (USA).sfc").unwrap();
         assert_eq!(variants.len(), 2);
         let filenames: Vec<&str> = variants.iter().map(|(f, _, _)| f.as_str()).collect();
         assert!(filenames.contains(&"Game (USA).sfc"));
@@ -426,10 +426,10 @@ mod tests {
         hack_clone.is_clone = true;
         hack_clone.is_hack = true;
 
-        MetadataDb::save_system_entries(&mut conn, "cpc", &[parent, alt1, alt2, hack_clone], None)
+        LibraryDb::save_system_entries(&mut conn, "cpc", &[parent, alt1, alt2, hack_clone], None)
             .unwrap();
 
-        let alts = MetadataDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub).dsk").unwrap();
+        let alts = LibraryDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub).dsk").unwrap();
         assert_eq!(alts.len(), 2);
         let filenames: Vec<&str> = alts.iter().map(|(f, _)| f.as_str()).collect();
         assert!(filenames.contains(&"Game (1990)(Pub)[a].dsk"));
@@ -449,10 +449,10 @@ mod tests {
         alt.is_clone = true;
         alt.display_name = Some("Game (Alternate)".into());
 
-        MetadataDb::save_system_entries(&mut conn, "cpc", &[parent, alt], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "cpc", &[parent, alt], None).unwrap();
 
         // Query from the clone's perspective — should still find the other clone
-        let alts = MetadataDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub)[a].dsk").unwrap();
+        let alts = LibraryDb::alternate_versions(&conn, "cpc", "Game (1990)(Pub)[a].dsk").unwrap();
         assert_eq!(alts.len(), 1);
         assert_eq!(alts[0].0, "Game (1990)(Pub)[a].dsk");
     }
@@ -481,12 +481,12 @@ mod tests {
         clone.region = "japan".into();
         clone.is_clone = true;
 
-        MetadataDb::save_system_entries(&mut conn, "cpc", &[cpc], None).unwrap();
-        MetadataDb::save_system_entries(&mut conn, "smd", &[smd], None).unwrap();
-        MetadataDb::save_system_entries(&mut conn, "snes", &[snes, clone], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "cpc", &[cpc], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "smd", &[smd], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[snes, clone], None).unwrap();
 
         let results =
-            MetadataDb::cross_system_availability(&conn, "cpc", "pac-man", "usa", 10).unwrap();
+            LibraryDb::cross_system_availability(&conn, "cpc", "pac-man", "usa", 10).unwrap();
         assert_eq!(results.len(), 2);
         let systems: Vec<&str> = results.iter().map(|e| e.system.as_str()).collect();
         assert!(systems.contains(&"smd"));
@@ -512,12 +512,12 @@ mod tests {
         smd_eu.region = "europe".into();
         smd_eu.display_name = Some("Game (Europe)".into());
 
-        MetadataDb::save_system_entries(&mut conn, "cpc", &[cpc], None).unwrap();
-        MetadataDb::save_system_entries(&mut conn, "smd", &[smd_usa, smd_eu], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "cpc", &[cpc], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "smd", &[smd_usa, smd_eu], None).unwrap();
 
         // Prefer USA region
         let results =
-            MetadataDb::cross_system_availability(&conn, "cpc", "game", "usa", 10).unwrap();
+            LibraryDb::cross_system_availability(&conn, "cpc", "game", "usa", 10).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].rom_filename, "Game (USA).md");
     }
@@ -529,9 +529,9 @@ mod tests {
         let mut g = make_game_entry("cpc", "X.dsk", false);
         g.base_title = "x".into();
 
-        MetadataDb::save_system_entries(&mut conn, "cpc", &[g], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "cpc", &[g], None).unwrap();
 
-        let results = MetadataDb::cross_system_availability(&conn, "cpc", "x", "usa", 10).unwrap();
+        let results = LibraryDb::cross_system_availability(&conn, "cpc", "x", "usa", 10).unwrap();
         assert!(results.is_empty());
     }
 }

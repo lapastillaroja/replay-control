@@ -3,6 +3,10 @@
 //! Maps RePlayOS system folder names to libretro-thumbnails repo names,
 //! normalizes filenames, and provides fuzzy matching utilities.
 
+pub mod manifest;
+pub mod matching;
+pub mod resolution;
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -503,7 +507,7 @@ pub fn find_orphaned_thumbnails(
         return Ok(Vec::new());
     }
 
-    let active_systems = crate::metadata_db::MetadataDb::active_systems(conn)?;
+    let active_systems = crate::library_db::LibraryDb::active_systems(conn)?;
     let mut orphans = Vec::new();
 
     // Only check systems that have entries in game_library.
@@ -520,7 +524,7 @@ pub fn find_orphaned_thumbnails(
         // the `/media/<system>/` prefix to get `boxart/Sonic.png`.
         let prefix = format!("/media/{system}/");
         let referenced: HashSet<String> =
-            crate::metadata_db::MetadataDb::active_box_art_urls(conn, system)?
+            crate::library_db::LibraryDb::active_box_art_urls(conn, system)?
                 .into_iter()
                 .filter_map(|url| url.strip_prefix(&prefix).map(|s| s.to_string()))
                 .collect();

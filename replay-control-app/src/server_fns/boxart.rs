@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 #[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
@@ -39,7 +39,7 @@ pub async fn get_boxart_variants(
     // (e.g., during a metadata import or thumbnail update operation).
     let storage_root = storage.root.clone();
     let Some(core_variants) = state
-        .metadata_pool
+        .library_pool
         .read({
             move |conn| {
                 replay_control_core_server::thumbnail_manifest::find_boxart_variants(
@@ -92,7 +92,7 @@ pub async fn set_boxart_override(
 
         let variant_fn = variant_filename.clone();
         state
-            .metadata_pool
+            .library_pool
             .read(move |conn| {
                 for display_name in repo_names {
                     let url_name =
@@ -100,13 +100,13 @@ pub async fn set_boxart_override(
                     let source_name =
                         replay_control_core_server::thumbnails::libretro_source_name(display_name);
 
-                    let branch = MetadataDb::get_data_source(conn, &source_name)
+                    let branch = LibraryDb::get_data_source(conn, &source_name)
                         .ok()
                         .flatten()
                         .and_then(|s| s.branch)
                         .unwrap_or_else(|| "master".to_string());
 
-                    let entries = MetadataDb::query_thumbnail_index(
+                    let entries = LibraryDb::query_thumbnail_index(
                         conn,
                         &source_name,
                         replay_control_core_server::thumbnails::ThumbnailKind::Boxart.repo_dir(),
@@ -187,7 +187,7 @@ pub async fn set_boxart_override(
         let sys = system.clone();
         let rom = rom_filename.clone();
         let _ = state
-            .metadata_pool
+            .library_pool
             .write(move |conn| {
                 conn.execute(
                     "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
@@ -222,7 +222,7 @@ pub async fn reset_boxart_override(
         let sys = sys_for_db;
         let rom = rom_for_db;
         let _ = state
-            .metadata_pool
+            .library_pool
             .write(move |conn| {
                 conn.execute(
                     "UPDATE game_library SET box_art_url = NULL WHERE system = ?1 AND rom_filename = ?2",

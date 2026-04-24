@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::arcade_db::ArcadeGameInfo;
 use crate::game_db::{CanonicalGame, GameEntry as CatalogGameEntry};
-use crate::metadata_db::GameEntry;
+use crate::library_db::GameEntry;
 use crate::rom_hash::HashResult;
 use crate::roms::RomEntry;
 use crate::{arcade_db, game_db};
@@ -173,7 +173,7 @@ fn build_single_entry(
         series_key,
         developer: developer_name,
         release_date: release_year.map(|y| format!("{y:04}")),
-        release_precision: release_year.map(|_| crate::metadata_db::DatePrecision::Year),
+        release_precision: release_year.map(|_| crate::library_db::DatePrecision::Year),
         release_region_used: None,
         cooperative,
     })

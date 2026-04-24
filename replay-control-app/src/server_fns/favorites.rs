@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 /// A favorite enriched with box art URL and genre.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,9 +56,9 @@ async fn enrich_favorites(
     let favs_count = favs.len();
 
     let art_genre: Vec<(Option<String>, Option<String>)> = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
-            let entries = MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default();
+            let entries = LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default();
             keys.iter()
                 .map(|k| {
                     let entry = entries.get(k);
@@ -143,10 +143,8 @@ pub async fn organize_favorites(
         primary == OrganizeCriteria::Rating || secondary == Some(OrganizeCriteria::Rating);
     let ratings = if needs_ratings {
         state
-            .metadata_pool
-            .read(|conn| {
-                replay_control_core_server::metadata_db::MetadataDb::all_ratings(conn).ok()
-            })
+            .library_pool
+            .read(|conn| replay_control_core_server::library_db::LibraryDb::all_ratings(conn).ok())
             .await
             .flatten()
     } else {
@@ -214,7 +212,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.metadata_pool)
+        .cached_systems(&storage, &state.library_pool)
         .await;
 
     let (region_str, region_secondary_str) = super::region_strings(&state);
@@ -253,13 +251,13 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
 
     // DB closure: run all queries under one connection.
     let db_result = state
-        .metadata_pool
+        .library_pool
         .read(move |conn| {
             #[allow(clippy::type_complexity)]
             let mut sections: Vec<(
                 String,
                 Vec<String>,
-                Vec<replay_control_core_server::metadata_db::GameEntry>,
+                Vec<replay_control_core_server::library_db::GameEntry>,
                 Option<String>,
             )> = Vec::new();
 
@@ -270,7 +268,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
             {
                 all_keys.push(seed.clone());
             }
-            let all_entries = MetadataDb::lookup_game_entries(conn, &all_keys).unwrap_or_default();
+            let all_entries = LibraryDb::lookup_game_entries(conn, &all_keys).unwrap_or_default();
 
             // --- "Because You Love [Game]" ---
             if let Some(ref seed) = seed_game
@@ -290,7 +288,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                 // Find similar games by genre (cross-system) excluding favorites and seed.
                 let mut similar = Vec::new();
                 if let Some(genre) = genre {
-                    let by_genre = MetadataDb::top_rated_filtered(
+                    let by_genre = LibraryDb::top_rated_filtered(
                         conn,
                         None,
                         Some(genre),
@@ -312,7 +310,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                 if similar.len() < 6
                     && let Some(dev) = developer
                 {
-                    let by_dev = MetadataDb::top_rated_filtered(
+                    let by_dev = LibraryDb::top_rated_filtered(
                         conn,
                         None,
                         None,
@@ -359,7 +357,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                 for entry in all_entries.values() {
                     if !entry.series_key.is_empty() && !series_map.contains_key(&entry.series_key) {
                         let display =
-                            MetadataDb::lookup_series_name(conn, &entry.system, &entry.base_title)
+                            LibraryDb::lookup_series_name(conn, &entry.system, &entry.base_title)
                                 .unwrap_or_else(|| title_case(&entry.series_key));
                         series_map.insert(entry.series_key.clone(), display);
                     }
@@ -372,7 +370,7 @@ pub async fn get_favorites_recommendations() -> Result<Vec<super::GameSection>, 
                     series_keys.shuffle(&mut rand::rng());
 
                     for (skey, stitle) in &series_keys {
-                        let siblings = MetadataDb::series_siblings(
+                        let siblings = LibraryDb::series_siblings(
                             conn,
                             skey,
                             "", // empty base_title so all series members are returned

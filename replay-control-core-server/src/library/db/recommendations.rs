@@ -4,7 +4,7 @@ use rusqlite::{Connection, params};
 
 use replay_control_core::error::{Error, Result};
 
-use super::{GameEntry, MetadataDb};
+use super::{GameEntry, LibraryDb};
 
 /// Standard column list for `row_to_game_entry()`. All queries that use
 /// `Self::row_to_game_entry` as the row mapper MUST select these columns
@@ -15,7 +15,7 @@ const GAME_ENTRY_COLS: &str = "system, rom_filename, rom_path, display_name, bas
                         box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
                         release_date, release_precision, release_region_used, cooperative";
 
-impl MetadataDb {
+impl LibraryDb {
     /// Get random cached ROMs with box art from all systems.
     /// Returns a diverse selection across different systems.
     /// Filters out arcade clones and deduplicates regional variants,
@@ -575,7 +575,7 @@ impl MetadataDb {
 
 #[cfg(test)]
 mod tests {
-    use super::super::MetadataDb;
+    use super::super::LibraryDb;
     use super::super::tests::*;
 
     #[test]
@@ -596,14 +596,14 @@ mod tests {
         special.rating = Some(4.5);
         special.is_special = true;
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[normal, special], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[normal, special], None).unwrap();
 
-        let random = MetadataDb::random_cached_roms(&conn, "snes", 10).unwrap();
+        let random = LibraryDb::random_cached_roms(&conn, "snes", 10).unwrap();
         assert_eq!(random.len(), 1);
         assert_eq!(random[0].rom_filename, "Mario (USA).sfc");
 
         let similar =
-            MetadataDb::similar_by_genre(&conn, "snes", "Platform", "Other.sfc", 10).unwrap();
+            LibraryDb::similar_by_genre(&conn, "snes", "Platform", "Other.sfc", 10).unwrap();
         assert_eq!(similar.len(), 1);
         assert_eq!(similar[0].rom_filename, "Mario (USA).sfc");
     }
@@ -626,9 +626,9 @@ mod tests {
         classic.rating = Some(4.7);
         classic.rating_count = Some(50);
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[obscure, classic], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[obscure, classic], None).unwrap();
 
-        let top = MetadataDb::top_rated_cached_roms(&conn, 2, "usa", "").unwrap();
+        let top = LibraryDb::top_rated_cached_roms(&conn, 2, "usa", "").unwrap();
         assert_eq!(top.len(), 2);
 
         // Both should be present. The classic should rank higher due to weighted scoring.
@@ -655,17 +655,17 @@ mod tests {
         md_game.rating = Some(4.3);
         md_game.rating_count = Some(30);
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[snes_game], None).unwrap();
-        MetadataDb::save_system_entries(&mut conn, "sega_smd", &[md_game], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[snes_game], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[md_game], None).unwrap();
 
         // Filter by system=snes should only return the SNES game.
         let filtered =
-            MetadataDb::top_rated_filtered(&conn, Some("snes"), None, None, 10, "usa", "").unwrap();
+            LibraryDb::top_rated_filtered(&conn, Some("snes"), None, None, 10, "usa", "").unwrap();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].system, "snes");
 
         // No filter returns both.
-        let all = MetadataDb::top_rated_filtered(&conn, None, None, None, 10, "usa", "").unwrap();
+        let all = LibraryDb::top_rated_filtered(&conn, None, None, None, 10, "usa", "").unwrap();
         assert_eq!(all.len(), 2);
     }
 
@@ -685,10 +685,10 @@ mod tests {
         rpg.rating = Some(4.8);
         rpg.rating_count = Some(40);
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[platformer, rpg], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[platformer, rpg], None).unwrap();
 
         let filtered =
-            MetadataDb::top_rated_filtered(&conn, None, Some("Platform"), None, 10, "usa", "")
+            LibraryDb::top_rated_filtered(&conn, None, Some("Platform"), None, 10, "usa", "")
                 .unwrap();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].rom_filename, "Mario (USA).sfc");
@@ -712,11 +712,11 @@ mod tests {
         nintendo.rating = Some(4.5);
         nintendo.rating_count = Some(20);
 
-        MetadataDb::save_system_entries(&mut conn, "snes", &[capcom, nintendo], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "snes", &[capcom, nintendo], None).unwrap();
 
         // Case-insensitive match.
         let filtered =
-            MetadataDb::top_rated_filtered(&conn, None, None, Some("capcom"), 10, "usa", "")
+            LibraryDb::top_rated_filtered(&conn, None, None, Some("capcom"), 10, "usa", "")
                 .unwrap();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].developer, "Capcom");

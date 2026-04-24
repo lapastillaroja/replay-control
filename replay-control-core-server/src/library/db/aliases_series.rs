@@ -4,9 +4,9 @@ use rusqlite::{Connection, params};
 
 use replay_control_core::error::{Error, Result};
 
-use super::{AliasInsert, GameEntry, MetadataDb, SeriesInsert};
+use super::{AliasInsert, GameEntry, LibraryDb, SeriesInsert};
 
-impl MetadataDb {
+impl LibraryDb {
     /// Insert or update a game alias (cross-name variant).
     pub fn upsert_alias(
         conn: &Connection,
@@ -509,7 +509,7 @@ mod tests {
         let mut kirby3 = make_game_entry("nintendo_snes", "Kirby's Dream Land 3 (USA).sfc", false);
         kirby3.base_title = "kirby's dream land 3".into();
 
-        super::super::MetadataDb::save_system_entries(
+        super::super::LibraryDb::save_system_entries(
             &mut conn,
             "nintendo_snes",
             &[kirby_jp, kirby_us, kirby3],
@@ -518,7 +518,7 @@ mod tests {
         .unwrap();
 
         // Insert alias: hoshi no kirby super deluxe -> kirby super star
-        super::super::MetadataDb::upsert_alias(
+        super::super::LibraryDb::upsert_alias(
             &conn,
             "nintendo_snes",
             "kirby super star",
@@ -529,7 +529,7 @@ mod tests {
         .unwrap();
 
         // Insert series entries for the canonical titles only.
-        super::super::MetadataDb::bulk_insert_series(
+        super::super::LibraryDb::bulk_insert_series(
             &mut conn,
             &[
                 SeriesInsert {
@@ -555,7 +555,7 @@ mod tests {
         .unwrap();
 
         // Query siblings for the aliased title — should find Kirby series.
-        let siblings = super::super::MetadataDb::wikidata_series_siblings(
+        let siblings = super::super::LibraryDb::wikidata_series_siblings(
             &conn,
             "nintendo_snes",
             "hoshi no kirby super deluxe",
@@ -575,7 +575,7 @@ mod tests {
 
         // has_wikidata_series should also work via alias.
         assert!(
-            super::super::MetadataDb::has_wikidata_series(
+            super::super::LibraryDb::has_wikidata_series(
                 &conn,
                 "nintendo_snes",
                 "hoshi no kirby super deluxe"
@@ -584,7 +584,7 @@ mod tests {
         );
 
         // lookup_series_name should also work via alias.
-        let series = super::super::MetadataDb::lookup_series_name(
+        let series = super::super::LibraryDb::lookup_series_name(
             &conn,
             "nintendo_snes",
             "hoshi no kirby super deluxe",
@@ -604,14 +604,9 @@ mod tests {
         let mut ff2 = make_game_entry("nintendo_snes", "Final Fight 2 (USA).sfc", false);
         ff2.base_title = "final fight 2".into();
 
-        super::super::MetadataDb::save_system_entries(
-            &mut conn,
-            "arcade_fbneo",
-            &[ff_arcade],
-            None,
-        )
-        .unwrap();
-        super::super::MetadataDb::save_system_entries(
+        super::super::LibraryDb::save_system_entries(&mut conn, "arcade_fbneo", &[ff_arcade], None)
+            .unwrap();
+        super::super::LibraryDb::save_system_entries(
             &mut conn,
             "nintendo_snes",
             &[ff_snes, ff2],
@@ -620,7 +615,7 @@ mod tests {
         .unwrap();
 
         // Populate game_series for all three games.
-        super::super::MetadataDb::bulk_insert_series(
+        super::super::LibraryDb::bulk_insert_series(
             &mut conn,
             &[
                 SeriesInsert {
@@ -655,7 +650,7 @@ mod tests {
         .unwrap();
 
         // Query siblings for arcade Final Fight.
-        let siblings = super::super::MetadataDb::wikidata_series_siblings(
+        let siblings = super::super::LibraryDb::wikidata_series_siblings(
             &conn,
             "arcade_fbneo",
             "final fight",

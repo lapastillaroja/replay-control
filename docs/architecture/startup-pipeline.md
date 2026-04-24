@@ -33,7 +33,7 @@ Loads `game_library_meta` to get cached directory mtimes and ROM counts, then de
 2. **Stale mtime**: filesystem directory mtime differs from stored value -- re-scans that system via `scan_and_cache_system()` + `enrich_system_cache()`
 3. **Interrupted scan**: meta says `rom_count > 0` but `game_library` has 0 rows for that system -- re-scans
 
-After all systems are verified, runs `metadata_pool.checkpoint()` to fold WAL writes back into the main DB file.
+After all systems are verified, runs `library_pool.checkpoint()` to fold WAL writes back into the main DB file.
 
 ## Phase 3: Thumbnail Index Rebuild
 

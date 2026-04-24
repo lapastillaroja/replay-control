@@ -1,11 +1,11 @@
-//! Metadata coverage report tool.
+//! Library coverage report tool.
 //!
 //! Scans all systems with ROMs on a storage device and reports per-system,
-//! per-field coverage for both embedded metadata (game_db / arcade_db) and
-//! external metadata (LaunchBox import in metadata.db).
+//! per-field coverage for both embedded reference data (game_db / arcade_db)
+//! and external metadata (LaunchBox import in library.db).
 //!
 //! Usage:
-//!   cargo run --bin metadata_report --features metadata -- --storage-path /path/to/storage
+//!   cargo run --bin library_report --features library -- --storage-path /path/to/storage
 
 use std::path::PathBuf;
 
@@ -15,7 +15,7 @@ use replay_control_core::title_utils;
 use replay_control_core_server::arcade_db;
 use replay_control_core_server::game_db;
 use replay_control_core_server::launchbox;
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::roms;
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
@@ -30,9 +30,9 @@ async fn main() {
         let rom_index = launchbox::build_rom_index(&storage.root).await;
         eprintln!("ROM index: {} entries", rom_index.len());
 
-        eprintln!("Opening metadata DB...");
+        eprintln!("Opening library DB...");
         let (mut conn, _db_path) =
-            MetadataDb::open(&storage.root).expect("Failed to open metadata DB");
+            LibraryDb::open(&storage.root).expect("Failed to open library DB");
 
         eprintln!("Importing LaunchBox XML from {}...", xml_path.display());
         let (stats, _parse_result) = launchbox::import_launchbox(
@@ -41,7 +41,7 @@ async fn main() {
             |total, matched, inserted| {
                 eprint!("\r  Progress: {total} scanned, {matched} matched, {inserted} inserted");
             },
-            |batch| MetadataDb::bulk_upsert(&mut conn, batch),
+            |batch| LibraryDb::bulk_upsert(&mut conn, batch),
         )
         .expect("Import failed");
 
@@ -51,8 +51,8 @@ async fn main() {
         );
     }
 
-    // Open external metadata DB (may not exist yet).
-    let meta_conn = MetadataDb::open(&storage.root).ok().map(|(c, _)| c);
+    // Open library DB (may not exist yet on fresh storage).
+    let meta_conn = LibraryDb::open(&storage.root).ok().map(|(c, _)| c);
 
     let summaries = roms::scan_systems(&storage).await;
     let active: Vec<_> = summaries.iter().filter(|s| s.game_count > 0).collect();
@@ -66,7 +66,7 @@ async fn main() {
     }
 
     println!("╔══════════════════════════════════════════════════════════════════════════════╗");
-    println!("║                        METADATA COVERAGE REPORT                             ║");
+    println!("║                        LIBRARY COVERAGE REPORT                              ║");
     println!("╠══════════════════════════════════════════════════════════════════════════════╣");
     println!("║ Storage: {:<67}║", storage.root.display());
     println!("║ Systems with games: {:<56}║", active.len());
@@ -214,7 +214,7 @@ async fn main() {
 
             // --- External metadata (SQLite) ---
             if let Some(ref conn) = meta_conn
-                && let Ok(Some(meta)) = MetadataDb::lookup(conn, system_name, filename)
+                && let Ok(Some(meta)) = LibraryDb::lookup(conn, system_name, filename)
             {
                 if meta.description.as_ref().is_some_and(|d| !d.is_empty()) {
                     external.description += 1;

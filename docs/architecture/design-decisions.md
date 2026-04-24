@@ -8,7 +8,7 @@ RePlayOS is a custom libretro frontend for retro gaming on Raspberry Pi (3 and n
 
 Storage is typically USB (exFAT) or NFS, both with significant limitations. exFAT doesn't support SQLite WAL mode and has slow directory reads (~100ms for `read_dir` on 2000 files). NFS adds network latency and lacks inotify for change detection. These constraints drive many of the design decisions below — from how box art is resolved to how SQLite connections are configured.
 
-The filesystem is auto-detected at startup via `/proc/mounts` in `db_common::open_connection()` (`replay-control-core-server/src/metadata/db_common.rs`). WAL-capable filesystems (ext4, btrfs) get WAL + `synchronous=NORMAL`. Non-WAL filesystems (exFAT, NFS) get `nolock=1` + DELETE journal. No caller-supplied hints needed.
+The filesystem is auto-detected at startup via `/proc/mounts` in `sqlite::open_connection()` (`replay-control-core-server/src/metadata/sqlite.rs`). WAL-capable filesystems (ext4, btrfs) get WAL + `synchronous=NORMAL`. Non-WAL filesystems (exFAT, NFS) get `nolock=1` + DELETE journal. No caller-supplied hints needed.
 
 ## Memory Budget
 
@@ -22,7 +22,7 @@ Measured on Pi 5 (2GB) with a 23K game library: idle RSS is ~44MB (binary + embe
 
 Box art URLs are stored in `game_library.box_art_url` during background enrichment. The request path reads from DB only — no filesystem access, no in-memory image index. See the "In-memory ImageIndex cache" entry in Rejected Alternatives for the previous approach and why it was replaced.
 
-**Files**: `replay-control-app/src/api/cache/enrichment.rs`, `replay-control-core-server/src/metadata/enrichment.rs`
+**Files**: `replay-control-app/src/api/cache/enrichment.rs`, `replay-control-core-server/src/library/enrichment.rs`
 
 ### 2. jemalloc allocator
 
@@ -46,7 +46,7 @@ conn.execute_batch("PRAGMA cache_size = 500;")?;
 
 Reduced from the SQLite default of 2000 pages (8MB at 4KB/page) to 500 pages (2MB). With the connection pools, this saves ~6MB per connection. Trade-off: queries that scan large result sets may need more disk I/O, but most queries are indexed lookups returning <100 rows.
 
-The base `open_connection()` in `db_common.rs` sets `cache_size = -8000` (8MB), then the pool manager overrides to 500 per-connection. This means the warmup connection (used once) gets the larger cache, while the pooled connections stay lean.
+The base `open_connection()` in `sqlite.rs` sets `cache_size = -8000` (8MB), then the pool manager overrides to 500 per-connection. This means the warmup connection (used once) gets the larger cache, while the pooled connections stay lean.
 
 **File**: `replay-control-app/src/api/mod.rs` (SqliteManager::create)
 
@@ -240,7 +240,7 @@ The split replaces that workaround with a crate-level firewall:
 
 **Why not fold the native code into `replay-control-app`?** `metadata_report` (a CLI reporting bin) and `tools/build-catalog` consume the same logic. Moving it into the Leptos crate would force those consumers to either depend on `app` (wrong layering) or duplicate code.
 
-**Orphan-rule note**: `DatePrecision` is in core but serialized to SQLite in core-server. A `DpSql` newtype scoped to `metadata_db` carries the `rusqlite::ToSql` / `FromSql` impls, sidestepping the orphan rule. Future foreign-trait-on-core-type impls should use the same pattern.
+**Orphan-rule note**: `DatePrecision` is in core but serialized to SQLite in core-server. A `DpSql` newtype scoped to `library_db` carries the `rusqlite::ToSql` / `FromSql` impls, sidestepping the orphan rule. Future foreign-trait-on-core-type impls should use the same pattern.
 
 ## What We Considered But Rejected
 

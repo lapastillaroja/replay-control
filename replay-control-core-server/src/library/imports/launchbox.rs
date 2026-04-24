@@ -10,7 +10,7 @@ use std::path::Path;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::metadata_db::{DatePrecision, GameMetadata, ImportStats};
+use crate::library_db::{DatePrecision, GameMetadata, ImportStats};
 use replay_control_core::error::{Error, Result};
 
 /// Build the LaunchBox platform → system folder mapping from the centralized
@@ -494,7 +494,7 @@ pub fn download_metadata(
 ) -> Result<std::path::PathBuf> {
     use std::io::{Read, Write};
 
-    use crate::metadata_db::LAUNCHBOX_XML;
+    use crate::library_db::LAUNCHBOX_XML;
 
     std::fs::create_dir_all(dest_dir).map_err(|e| {
         Error::Other(format!(

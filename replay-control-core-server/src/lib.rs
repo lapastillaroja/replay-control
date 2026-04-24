@@ -8,6 +8,7 @@
 pub mod catalog_pool;
 pub mod launch;
 pub mod settings;
+pub mod sqlite;
 
 pub use catalog_pool::{CatalogInitError, init_catalog, with_catalog};
 
@@ -33,33 +34,32 @@ pub use library::recents;
 pub use library::rom_hash;
 pub use library::roms;
 
-#[cfg(feature = "metadata")]
-pub mod metadata;
-#[cfg(feature = "metadata")]
-pub use metadata::alias_matching;
-#[cfg(feature = "metadata")]
-pub use metadata::db_common;
-#[cfg(feature = "metadata")]
-pub use metadata::enrichment;
-#[cfg(feature = "metadata")]
-pub use metadata::game_docs;
-#[cfg(feature = "metadata")]
-pub use metadata::game_entry_builder;
-#[cfg(feature = "metadata")]
-pub use metadata::image_matching;
-#[cfg(feature = "metadata")]
-pub use metadata::image_resolution;
-#[cfg(feature = "metadata")]
-pub use metadata::launchbox;
-#[cfg(feature = "metadata")]
-pub use metadata::metadata_db;
-#[cfg(feature = "metadata")]
-pub use metadata::metadata_matching;
-#[cfg(feature = "metadata")]
-pub use metadata::retrokit_manuals;
-#[cfg(feature = "metadata")]
-pub use metadata::thumbnail_manifest;
-#[cfg(feature = "metadata")]
-pub use metadata::thumbnails;
-#[cfg(feature = "metadata")]
-pub use metadata::user_data_db;
+#[cfg(feature = "library")]
+pub use library::db as library_db;
+#[cfg(feature = "library")]
+pub use library::enrichment;
+#[cfg(feature = "library")]
+pub use library::game_entry_builder;
+#[cfg(feature = "library")]
+pub use library::imports::launchbox;
+#[cfg(feature = "library")]
+pub use library::manuals::game_docs;
+#[cfg(feature = "library")]
+pub use library::manuals::retrokit as retrokit_manuals;
+#[cfg(feature = "library")]
+pub use library::matching::alias as alias_matching;
+#[cfg(feature = "library")]
+pub use library::matching::metadata as metadata_matching;
+#[cfg(feature = "library")]
+pub use library::thumbnails;
+#[cfg(feature = "library")]
+pub use library::thumbnails::manifest as thumbnail_manifest;
+#[cfg(feature = "library")]
+pub use library::thumbnails::matching as image_matching;
+#[cfg(feature = "library")]
+pub use library::thumbnails::resolution as image_resolution;
+
+#[cfg(feature = "library")]
+pub mod user_data;
+#[cfg(feature = "library")]
+pub use user_data::db as user_data_db;

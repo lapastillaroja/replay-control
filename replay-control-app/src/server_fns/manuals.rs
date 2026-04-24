@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 pub use replay_control_core::game_docs::GameDocument;
 pub use replay_control_core::retrokit_manuals::ManualRecommendation;
@@ -73,11 +73,11 @@ pub async fn get_local_manuals(
     // Resolve alias base_titles for cross-name sharing.
     let mut all_titles = vec![base_title.clone()];
     if let Some(aliases) = state
-        .metadata_pool
+        .library_pool
         .read({
             let system = system.clone();
             let base_title = base_title.clone();
-            move |conn| MetadataDb::alias_base_titles(conn, &system, &base_title)
+            move |conn| LibraryDb::alias_base_titles(conn, &system, &base_title)
         })
         .await
     {

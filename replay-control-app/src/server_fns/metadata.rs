@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 /// Status of the first-run setup checklist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,15 +44,15 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
 
     // Slow path: check DB for metadata and thumbnail index presence.
     let has_metadata = state
-        .metadata_pool
-        .read(|conn| !MetadataDb::is_empty(conn).unwrap_or(true))
+        .library_pool
+        .read(|conn| !LibraryDb::is_empty(conn).unwrap_or(true))
         .await
         .unwrap_or(false);
 
     let has_thumbnail_index = state
-        .metadata_pool
+        .library_pool
         .read(|conn| {
-            MetadataDb::get_data_source_stats(conn, "libretro-thumbnails")
+            LibraryDb::get_data_source_stats(conn, "libretro-thumbnails")
                 .map(|s| s.total_entries > 0)
                 .unwrap_or(false)
         })
@@ -95,7 +95,7 @@ pub use crate::types::{
     ThumbnailProgress,
 };
 
-pub use replay_control_core::metadata_db::{
+pub use replay_control_core::library_db::{
     DriverStatusCounts, ImportProgress, ImportState, ImportStats, LibrarySummary, MetadataStats,
     SystemCoverage,
 };
@@ -128,10 +128,10 @@ pub async fn get_activity() -> Result<Activity, ServerFnError> {
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let db_path = state.metadata_pool.db_path();
+    let db_path = state.library_pool.db_path();
     let Some(result) = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::stats(conn, &db_path))
+        .library_pool
+        .read(move |conn| LibraryDb::stats(conn, &db_path))
         .await
     else {
         return Ok(MetadataStats::default());
@@ -167,7 +167,7 @@ pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnE
 #[server(prefix = "/sfn")]
 pub async fn get_library_summary() -> Result<LibrarySummary, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let result = state.metadata_pool.read(MetadataDb::library_summary).await;
+    let result = state.library_pool.read(LibraryDb::library_summary).await;
     match result {
         Some(Ok(summary)) => Ok(summary),
         Some(Err(e)) => {
@@ -186,12 +186,12 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
     // Get metadata entries, thumbnail counts, coverage stats, and driver status
     // per system from DB. Return empty data when DB is unavailable (e.g., during import).
     let (entries_per_system, thumbnails_per_system, coverage_stats, driver_status) = state
-        .metadata_pool
+        .library_pool
         .read(|conn| {
-            let entries = MetadataDb::entries_per_system(conn).unwrap_or_default();
-            let thumbnails = MetadataDb::thumbnails_per_system(conn).unwrap_or_default();
-            let stats = MetadataDb::system_coverage_stats(conn).unwrap_or_default();
-            let drivers = MetadataDb::driver_status_per_system(conn).unwrap_or_default();
+            let entries = LibraryDb::entries_per_system(conn).unwrap_or_default();
+            let thumbnails = LibraryDb::thumbnails_per_system(conn).unwrap_or_default();
+            let stats = LibraryDb::system_coverage_stats(conn).unwrap_or_default();
+            let drivers = LibraryDb::driver_status_per_system(conn).unwrap_or_default();
             (entries, thumbnails, stats, drivers)
         })
         .await
@@ -201,7 +201,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
     let storage = state.storage();
     let systems = state
         .cache
-        .cached_systems(&storage, &state.metadata_pool)
+        .cached_systems(&storage, &state.library_pool)
         .await;
 
     let mut meta_map: std::collections::HashMap<String, usize> =
@@ -210,7 +210,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
         thumbnails_per_system.into_iter().collect();
     let mut stats_map: std::collections::HashMap<
         String,
-        replay_control_core_server::metadata_db::SystemCoverageStats,
+        replay_control_core_server::library_db::SystemCoverageStats,
     > = coverage_stats
         .into_iter()
         .map(|s| (s.system.clone(), s))
@@ -252,7 +252,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
     Ok(coverage)
 }
 
-/// Stats for the built-in (compile-time) metadata databases.
+/// Stats for the bundled catalog (arcade, game, and series reference data).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuiltinDbStats {
     pub arcade_entries: usize,
@@ -263,7 +263,7 @@ pub struct BuiltinDbStats {
     pub wikidata_series_count: usize,
 }
 
-/// Get stats for the built-in (compile-time) metadata databases.
+/// Get stats for the bundled catalog (arcade, game, and series reference data).
 #[server(prefix = "/sfn")]
 pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
     use replay_control_core_server::{arcade_db, game_db, series_db};
@@ -290,19 +290,19 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     state
-        .metadata_pool
-        .write(|conn| MetadataDb::clear(conn))
+        .library_pool
+        .write(|conn| LibraryDb::clear(conn))
         .await
-        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
+        .ok_or_else(|| ServerFnError::new("Cannot open library DB"))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Checkpoint WAL after the DELETE + VACUUM.
-    state.metadata_pool.checkpoint().await;
+    state.library_pool.checkpoint().await;
     // _guard drops → Idle
     Ok(())
 }
 
-/// Clear metadata DB and trigger re-import from launchbox-metadata.xml.
+/// Clear library DB and trigger re-import from launchbox-metadata.xml.
 /// The import runs in the background; poll `get_activity` for status.
 #[server(prefix = "/sfn")]
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
@@ -349,7 +349,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Clear L1+L2 cache.
-    state.cache.invalidate(&state.metadata_pool).await;
+    state.cache.invalidate(&state.library_pool).await;
     state.response_cache.invalidate_all();
 
     // Rebuild in background; the guard drops → Idle when done (or on panic).
@@ -362,7 +362,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
 /// Corruption status for both databases.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CorruptionStatus {
-    pub metadata_corrupt: bool,
+    pub library_corrupt: bool,
     pub user_data_corrupt: bool,
     pub user_data_backup_exists: bool,
 }
@@ -371,44 +371,44 @@ pub struct CorruptionStatus {
 #[server(prefix = "/sfn")]
 pub async fn get_corruption_status() -> Result<CorruptionStatus, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let (metadata_corrupt, user_data_corrupt) = state.is_db_corrupt();
+    let (library_corrupt, user_data_corrupt) = state.is_db_corrupt();
     let backup_exists = state
         .user_data_pool
         .db_path()
         .with_extension("db.bak")
         .exists();
     Ok(CorruptionStatus {
-        metadata_corrupt,
+        library_corrupt,
         user_data_corrupt,
         user_data_backup_exists: backup_exists,
     })
 }
 
-/// Rebuild a corrupt metadata database: close, delete, reopen, trigger pipeline.
-/// Metadata is a rebuildable cache — no data loss.
+/// Rebuild a corrupt library database: close, delete, reopen, trigger pipeline.
+/// The library DB is rebuildable — no data loss.
 #[server(prefix = "/sfn")]
-pub async fn rebuild_corrupt_metadata() -> Result<(), ServerFnError> {
+pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    if !state.metadata_pool.is_corrupt() {
-        return Err(ServerFnError::new("Metadata database is not corrupt"));
+    if !state.library_pool.is_corrupt() {
+        return Err(ServerFnError::new("Library database is not corrupt"));
     }
 
-    let db_path = state.metadata_pool.db_path();
-    tracing::info!("Rebuilding corrupt metadata DB at {}", db_path.display());
+    let db_path = state.library_pool.db_path();
+    tracing::info!("Rebuilding corrupt library DB at {}", db_path.display());
 
     // Close pool (already closed by mark_corrupt, but be safe).
-    state.metadata_pool.close();
+    state.library_pool.close();
     // Delete the corrupt DB files.
-    replay_control_core_server::db_common::delete_db_files(&db_path);
+    replay_control_core_server::sqlite::delete_db_files(&db_path);
     // Reopen at the current storage root — creates fresh schema.
     let storage = state.storage();
-    if !state.metadata_pool.reopen(&storage.root) {
+    if !state.library_pool.reopen(&storage.root) {
         return Err(ServerFnError::new(
-            "Failed to reopen metadata DB after rebuild",
+            "Failed to reopen library DB after rebuild",
         ));
     }
     // Invalidate cache so stale data doesn't persist.
-    state.cache.invalidate(&state.metadata_pool).await;
+    state.cache.invalidate(&state.library_pool).await;
     state.response_cache.invalidate_all();
     // Trigger background re-import if XML exists.
     let _ = state.import.regenerate_metadata(&state).await;
@@ -428,7 +428,7 @@ pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
     tracing::info!("Repairing corrupt user data DB at {}", db_path.display());
 
     state.user_data_pool.close();
-    replay_control_core_server::db_common::delete_db_files(&db_path);
+    replay_control_core_server::sqlite::delete_db_files(&db_path);
     let storage = state.storage();
     if !state.user_data_pool.reopen(&storage.root) {
         return Err(ServerFnError::new(
@@ -460,7 +460,7 @@ pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
 
     // Close pool, copy backup over the DB, reopen.
     state.user_data_pool.close();
-    replay_control_core_server::db_common::delete_db_files(&db_path);
+    replay_control_core_server::sqlite::delete_db_files(&db_path);
     std::fs::copy(&backup_path, &db_path)
         .map_err(|e| ServerFnError::new(format!("Failed to copy backup: {e}")))?;
 
@@ -468,7 +468,7 @@ pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
     if !state.user_data_pool.reopen(&storage.root) {
         // Restored copy is also corrupt — fall back to fresh DB.
         tracing::warn!("Restored user_data.db backup is also corrupt, creating fresh DB");
-        replay_control_core_server::db_common::delete_db_files(&db_path);
+        replay_control_core_server::sqlite::delete_db_files(&db_path);
         if !state.user_data_pool.reopen(&storage.root) {
             return Err(ServerFnError::new(
                 "Failed to reopen user data DB after restore",

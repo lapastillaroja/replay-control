@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{RwLock, RwLockWriteGuard};
 
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 use super::AppState;
 use super::activity::{Activity, ActivityGuard};
@@ -14,7 +14,7 @@ fn write_lock<'a, T>(lock: &'a RwLock<T>, label: &str) -> RwLockWriteGuard<'a, T
 
 // ── ImportPipeline ─────────────────────────────────────────────────
 
-/// Manages metadata imports (LaunchBox XML → metadata DB).
+/// Manages metadata imports (LaunchBox XML → library DB).
 ///
 /// No longer owns its own busy flag or progress -- those live in
 /// `AppState.activity` as `Activity::Import { progress }`.
@@ -29,11 +29,11 @@ impl ImportPipeline {
     /// Check if an import is actively running by inspecting the activity.
     /// Used by the startup pipeline to wait for auto-import completion.
     pub fn has_active_import(state: &AppState) -> bool {
-        use replay_control_core_server::metadata_db::ImportState;
+        use replay_control_core_server::library_db::ImportState;
         matches!(
             state.activity(),
             Activity::Import {
-                progress: replay_control_core_server::metadata_db::ImportProgress {
+                progress: replay_control_core_server::library_db::ImportProgress {
                     state: ImportState::Downloading
                         | ImportState::BuildingIndex
                         | ImportState::Parsing,
@@ -61,7 +61,7 @@ impl ImportPipeline {
         state: AppState,
         skip_enrichment: bool,
     ) -> bool {
-        use replay_control_core_server::metadata_db::{ImportProgress, ImportState};
+        use replay_control_core_server::library_db::{ImportProgress, ImportState};
 
         // Atomically claim the operation slot via Activity.
         let guard = match state.try_start_activity(Activity::Import {
@@ -89,10 +89,10 @@ impl ImportPipeline {
         true
     }
 
-    /// Clear metadata DB and re-import from `launchbox-metadata.xml` if present.
+    /// Clear library DB and re-import from `launchbox-metadata.xml` if present.
     /// Returns an error message if the XML file is not found.
     pub async fn regenerate_metadata(&self, state: &AppState) -> Result<(), String> {
-        use replay_control_core_server::metadata_db::{ImportProgress, ImportState, LAUNCHBOX_XML};
+        use replay_control_core_server::library_db::{ImportProgress, ImportState, LAUNCHBOX_XML};
 
         // Find launchbox-metadata.xml (with fallback to old name) BEFORE claiming
         // the activity slot — no point locking out other operations if the file
@@ -137,8 +137,8 @@ impl ImportPipeline {
 
         // Clear existing metadata (safe: we own the activity slot).
         if let Some(result) = state
-            .metadata_pool
-            .write(|conn| MetadataDb::clear(conn))
+            .library_pool
+            .write(|conn| LibraryDb::clear(conn))
             .await
         {
             result.map_err(|e| e.to_string())?;
@@ -158,7 +158,7 @@ impl ImportPipeline {
     /// Runs entirely in a background task. Returns false if another metadata
     /// operation is already running.
     pub fn start_metadata_download(&self, state: &AppState) -> bool {
-        use replay_control_core_server::metadata_db::{ImportProgress, ImportState};
+        use replay_control_core_server::library_db::{ImportProgress, ImportState};
 
         // Atomically claim the operation slot via Activity.
         let guard = match state.try_start_activity(Activity::Import {
@@ -235,11 +235,11 @@ impl ImportPipeline {
 
             // Clear existing metadata before re-import.
             if let Some(Err(e)) = state
-                .metadata_pool
-                .write(|conn| MetadataDb::clear(conn))
+                .library_pool
+                .write(|conn| LibraryDb::clear(conn))
                 .await
             {
-                tracing::warn!("Failed to clear metadata DB before re-import: {e}");
+                tracing::warn!("Failed to clear library DB before re-import: {e}");
             }
 
             // Update elapsed before starting import.
@@ -269,7 +269,7 @@ impl ImportPipeline {
         _guard: ActivityGuard,
     ) {
         use super::WriteGate;
-        use replay_control_core_server::metadata_db::ImportState;
+        use replay_control_core_server::library_db::ImportState;
 
         // Build ROM index (no DB needed).
         let storage_root = state.storage().root.clone();
@@ -284,17 +284,13 @@ impl ImportPipeline {
 
         // Verify DB is available before starting the parse.
         {
-            let db_available = state
-                .metadata_pool
-                .read(|_conn| true)
-                .await
-                .unwrap_or(false);
+            let db_available = state.library_pool.read(|_conn| true).await.unwrap_or(false);
             if !db_available {
-                tracing::error!("Metadata DB unavailable at import start (pool closed)");
+                tracing::error!("Library DB unavailable at import start (pool closed)");
                 state.update_activity(|act| {
                     if let Activity::Import { progress } = act {
                         progress.state = ImportState::Failed;
-                        progress.error = Some("Metadata DB unavailable".to_string());
+                        progress.error = Some("Library DB unavailable".to_string());
                         progress.elapsed_secs = start.elapsed().as_secs();
                     }
                 });
@@ -311,10 +307,10 @@ impl ImportPipeline {
             }
         });
 
-        // Gate reads while import writes to the metadata DB.
+        // Gate reads while import writes to the library DB.
         // On exFAT (DELETE journal), concurrent reads during heavy writes corrupt the DB.
         // Activated after the DB availability check; dropped after checkpoint.
-        let write_gate = WriteGate::activate(state.metadata_pool.write_gate_flag());
+        let write_gate = WriteGate::activate(state.library_pool.write_gate_flag());
 
         // `import_launchbox` is a sync, CPU-bound XML parser that takes a
         // sync `flush_batch` callback. To write batches into the async pool
@@ -327,7 +323,7 @@ impl ImportPipeline {
         // - `Handle::current()` is captured here (still on the tokio worker),
         //   then moved into the closure — we use the *multi-thread* runtime's
         //   handle from a blocking thread, which is the sanctioned pattern.
-        let pool_ref = state.metadata_pool.clone();
+        let pool_ref = state.library_pool.clone();
         let activity_lock = state.activity.clone();
         let activity_tx = state.activity_tx.clone();
         let start_ref = start;
@@ -337,14 +333,14 @@ impl ImportPipeline {
             let flush_batch = |batch: &[(
                 String,
                 String,
-                replay_control_core_server::metadata_db::GameMetadata,
+                replay_control_core_server::library_db::GameMetadata,
             )]| {
                 let batch = batch.to_vec();
                 handle
-                    .block_on(pool_ref.write(move |db| MetadataDb::bulk_upsert(db, &batch)))
+                    .block_on(pool_ref.write(move |db| LibraryDb::bulk_upsert(db, &batch)))
                     .ok_or_else(|| {
                         replay_control_core::error::Error::Other(
-                            "Metadata DB unavailable during import".to_string(),
+                            "Library DB unavailable during import".to_string(),
                         )
                     })?
             };
@@ -371,7 +367,7 @@ impl ImportPipeline {
         .unwrap_or_else(|e| Err(replay_control_core::error::Error::Other(e.to_string())));
 
         // Checkpoint WAL after the heavy batch writes.
-        state.metadata_pool.checkpoint().await;
+        state.library_pool.checkpoint().await;
 
         // Release the write gate — heavy writes are done. The alias import
         // below needs to read from the DB.
@@ -442,13 +438,13 @@ impl ImportPipeline {
         // Read base_titles from DB via pool.
         tracing::debug!("LaunchBox aliases: loading base_titles from game_library...");
         let base_titles: std::collections::HashMap<String, Vec<String>> = match state
-            .metadata_pool
+            .library_pool
             .read(|conn| {
-                let systems = MetadataDb::active_systems(conn).unwrap_or_default();
+                let systems = LibraryDb::active_systems(conn).unwrap_or_default();
                 let mut map: std::collections::HashMap<String, Vec<String>> =
                     std::collections::HashMap::new();
                 for system in &systems {
-                    if let Ok(entries) = MetadataDb::load_system_entries(conn, system) {
+                    if let Ok(entries) = LibraryDb::load_system_entries(conn, system) {
                         for entry in entries {
                             if !entry.base_title.is_empty() {
                                 map.entry(entry.base_title.clone())
@@ -484,8 +480,8 @@ impl ImportPipeline {
         // Write aliases to DB via pool.
         let count = aliases.len();
         if let Some(result) = state
-            .metadata_pool
-            .write(move |db| MetadataDb::bulk_insert_aliases(db, &aliases))
+            .library_pool
+            .write(move |db| LibraryDb::bulk_insert_aliases(db, &aliases))
             .await
         {
             match result {

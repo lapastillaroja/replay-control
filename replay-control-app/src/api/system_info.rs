@@ -22,7 +22,7 @@ async fn get_system_info(State(state): State<AppState>) -> Json<SystemInfo> {
     let storage = state.storage();
     let summaries = state
         .cache
-        .cached_systems(&storage, &state.metadata_pool)
+        .cached_systems(&storage, &state.library_pool)
         .await;
     let favorites = replay_control_core_server::favorites::list_favorites(&storage)
         .await

@@ -1,6 +1,6 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 /// Data source info for the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,8 +42,8 @@ pub async fn get_thumbnail_data_source() -> Result<DataSourceSummary, ServerFnEr
     // Gracefully return defaults when the DB is temporarily unavailable
     // (e.g., during a metadata import or thumbnail update operation).
     let Some(stats) = state
-        .metadata_pool
-        .read(|conn| MetadataDb::get_data_source_stats(conn, "libretro-thumbnails"))
+        .library_pool
+        .read(|conn| LibraryDb::get_data_source_stats(conn, "libretro-thumbnails"))
         .await
     else {
         return Ok(DataSourceSummary {
@@ -98,10 +98,10 @@ pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     state
-        .metadata_pool
-        .write(|conn| MetadataDb::clear_thumbnail_index(conn))
+        .library_pool
+        .write(|conn| LibraryDb::clear_thumbnail_index(conn))
         .await
-        .ok_or_else(|| ServerFnError::new("Cannot open metadata DB"))?
+        .ok_or_else(|| ServerFnError::new("Cannot open library DB"))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // _guard drops → Idle

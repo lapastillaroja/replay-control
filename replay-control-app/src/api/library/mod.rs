@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use replay_control_core::rom_tags::RegionPreference;
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::recents::RecentEntry;
 use replay_control_core_server::roms::{RomEntry, SystemSummary};
 use replay_control_core_server::storage::StorageLocation;
@@ -109,7 +109,7 @@ impl LibraryService {
     ) -> Option<Vec<SystemSummary>> {
         use replay_control_core::systems;
 
-        let cached_meta = db.read(MetadataDb::load_all_system_meta).await?;
+        let cached_meta = db.read(LibraryDb::load_all_system_meta).await?;
         let cached_meta = cached_meta.ok()?;
 
         if cached_meta.is_empty() {
@@ -117,7 +117,7 @@ impl LibraryService {
         }
 
         // Build a lookup map from cached data.
-        let meta_map: HashMap<String, &replay_control_core_server::metadata_db::SystemMeta> =
+        let meta_map: HashMap<String, &replay_control_core_server::library_db::SystemMeta> =
             cached_meta.iter().map(|m| (m.system.clone(), m)).collect();
 
         let mut summaries = Vec::new();
@@ -166,7 +166,7 @@ impl LibraryService {
                         .ok()
                         .map(|d| d.as_secs() as i64)
                 });
-                if let Err(e) = MetadataDb::save_system_meta(
+                if let Err(e) = LibraryDb::save_system_meta(
                     conn,
                     &summary.folder_name,
                     mtime_secs,
@@ -237,11 +237,11 @@ impl LibraryService {
         system_dir: &Path,
         db: &DbPool,
     ) -> Option<Vec<RomEntry>> {
-        use replay_control_core_server::metadata_db::SystemMeta;
+        use replay_control_core_server::library_db::SystemMeta;
 
         let sys = system.to_string();
         let meta: SystemMeta = db
-            .read(move |conn| MetadataDb::load_system_meta(conn, &sys))
+            .read(move |conn| LibraryDb::load_system_meta(conn, &sys))
             .await?
             .ok()??;
 
@@ -276,7 +276,7 @@ impl LibraryService {
         // Load ROMs from DB.
         let sys = system.to_string();
         let cached_roms = db
-            .read(move |conn| MetadataDb::load_system_entries(conn, &sys))
+            .read(move |conn| LibraryDb::load_system_entries(conn, &sys))
             .await?
             .ok()?;
 
@@ -346,7 +346,7 @@ impl LibraryService {
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library.
         db.write(|conn| {
-            if let Err(e) = MetadataDb::clear_all_game_library(conn) {
+            if let Err(e) = LibraryDb::clear_all_game_library(conn) {
                 tracing::error!("Failed to clear game library: {e}");
             }
         })
@@ -360,7 +360,7 @@ impl LibraryService {
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library for this system.
         db.write(move |conn| {
-            if let Err(e) = MetadataDb::clear_system_game_library(conn, &system) {
+            if let Err(e) = LibraryDb::clear_system_game_library(conn, &system) {
                 tracing::error!("Failed to clear game library for {system}: {e}");
             }
         })

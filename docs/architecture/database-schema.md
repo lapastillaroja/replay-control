@@ -2,12 +2,12 @@
 
 Two SQLite databases live at `<storage>/.replay-control/`:
 
-- **metadata.db** -- rebuildable cache (game library, external metadata, thumbnail index)
+- **library.db** -- rebuildable cache (game library, external metadata, thumbnail index)
 - **user_data.db** -- persistent user customizations (never auto-deleted)
 
-Schema defined in `replay-control-core-server/src/metadata/metadata_db/mod.rs` and `user_data_db.rs`.
+Schema defined in `replay-control-core-server/src/library/db/mod.rs` and `replay-control-core-server/src/user_data/db.rs`.
 
-## metadata.db
+## library.db
 
 ### game_library
 
@@ -153,7 +153,7 @@ The `thumbnail_index` PK `(repo_name, kind, filename)` covers repo_name-only pre
 
 ## user_data.db
 
-Defined in `replay-control-core-server/src/metadata/user_data_db.rs`. Separate from metadata.db so user choices survive metadata clears and rebuilds.
+Defined in `replay-control-core-server/src/user_data/db.rs`. Separate from library.db so user choices survive metadata clears and rebuilds.
 
 ### box_art_overrides
 
@@ -192,4 +192,4 @@ Handled inline in `init_tables()` with idempotent `ALTER TABLE ... ADD COLUMN` s
 
 ## Corruption Handling
 
-Both databases probe all tables at open time via `probe_tables()`. For `metadata.db`, corruption triggers automatic delete-and-recreate (it's a rebuildable cache). For `user_data.db`, corruption is flagged but the DB is **not** destroyed -- the caller decides (user data is irreplaceable).
+Both databases probe all tables at open time via `probe_tables()`. For `library.db`, corruption triggers automatic delete-and-recreate (it's a rebuildable cache). For `user_data.db`, corruption is flagged but the DB is **not** destroyed -- the caller decides (user data is irreplaceable).

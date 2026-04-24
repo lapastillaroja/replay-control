@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use replay_control_core_server::enrichment::{self, ArcadeInfoLookup, ImageIndex};
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::user_data_db::UserDataDb;
 
 use super::LibraryService;
@@ -15,7 +15,7 @@ impl LibraryService {
     /// LaunchBox entries by normalized title. Matched metadata is persisted
     /// so future lookups hit directly without re-matching.
     pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
-        let db = &state.metadata_pool;
+        let db = &state.library_pool;
 
         let index = build_image_index(state, &system).await;
 
@@ -23,7 +23,7 @@ impl LibraryService {
 
         let sys = system.clone();
         let rom_filenames: Vec<String> = db
-            .read(move |conn| MetadataDb::visible_filenames(conn, &sys).unwrap_or_default())
+            .read(move |conn| LibraryDb::visible_filenames(conn, &sys).unwrap_or_default())
             .await
             .unwrap_or_default();
         let arcade_lookup = ArcadeInfoLookup::build(&system, &rom_filenames).await;
@@ -56,7 +56,7 @@ impl LibraryService {
             let sys = system.clone();
             let updates = result.developer_updates;
             db.write(move |conn| {
-                if let Err(e) = MetadataDb::update_developers(conn, &sys, &updates) {
+                if let Err(e) = LibraryDb::update_developers(conn, &sys, &updates) {
                     tracing::warn!("Developer enrichment failed for {sys}: {e}");
                 }
             })
@@ -70,7 +70,7 @@ impl LibraryService {
             let sys = system.clone();
             let updates = result.cooperative_updates;
             db.write(move |conn| {
-                if let Err(e) = MetadataDb::update_cooperative(conn, &sys, &updates) {
+                if let Err(e) = LibraryDb::update_cooperative(conn, &sys, &updates) {
                     tracing::warn!("Cooperative enrichment failed for {sys}: {e}");
                 }
             })
@@ -84,7 +84,7 @@ impl LibraryService {
             let sys = system.clone();
             let updates = result.year_updates;
             db.write(move |conn| {
-                if let Err(e) = MetadataDb::update_release_years(conn, &sys, &updates) {
+                if let Err(e) = LibraryDb::update_release_years(conn, &sys, &updates) {
                     tracing::warn!("Release year enrichment failed for {sys}: {e}");
                 }
             })
@@ -100,9 +100,9 @@ impl LibraryService {
         let region_pref = state.region_preference();
         let region_secondary = state.region_preference_secondary();
         db.write(move |conn| {
-            let _ = MetadataDb::seed_release_dates_from_metadata(conn);
+            let _ = LibraryDb::seed_release_dates_from_metadata(conn);
             let _ =
-                MetadataDb::resolve_release_date_for_library(conn, region_pref, region_secondary);
+                LibraryDb::resolve_release_date_for_library(conn, region_pref, region_secondary);
         })
         .await;
 
@@ -119,7 +119,7 @@ impl LibraryService {
         // Write enrichments to L2 (SQLite).
         let enrichments = result.enrichments;
         db.write(move |conn| {
-            if let Err(e) = MetadataDb::update_box_art_genre_rating(conn, &system, &enrichments) {
+            if let Err(e) = LibraryDb::update_box_art_genre_rating(conn, &system, &enrichments) {
                 tracing::warn!("Enrichment failed for {system}: {e}");
             }
         })
@@ -137,13 +137,13 @@ impl LibraryService {
     ) -> HashMap<String, f64> {
         use replay_control_core_server::metadata_matching;
 
-        let db = &state.metadata_pool;
+        let db = &state.library_pool;
 
         // Gather inputs: existing metadata from DB.
         let sys = system.to_string();
         let all_metadata = state
-            .metadata_pool
-            .read(move |conn| MetadataDb::system_metadata_all(conn, &sys).ok())
+            .library_pool
+            .read(move |conn| LibraryDb::system_metadata_all(conn, &sys).ok())
             .await
             .flatten()
             .unwrap_or_default();
@@ -155,7 +155,7 @@ impl LibraryService {
         // Gather inputs: ROM filenames from L2 (SQLite).
         let sys = system.to_string();
         let rom_filenames: Vec<String> = db
-            .read(move |conn| MetadataDb::visible_filenames(conn, &sys).unwrap_or_default())
+            .read(move |conn| LibraryDb::visible_filenames(conn, &sys).unwrap_or_default())
             .await
             .unwrap_or_default();
 
@@ -187,7 +187,7 @@ impl LibraryService {
         let count = new_entries.len();
         let sys = system.to_string();
         db.write(move |conn| {
-            if let Err(e) = MetadataDb::bulk_upsert(conn, &new_entries) {
+            if let Err(e) = LibraryDb::bulk_upsert(conn, &new_entries) {
                 tracing::warn!("Auto-match metadata persist failed for {sys}: {e}");
             }
         })
@@ -218,7 +218,7 @@ async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageI
     let sys = system.to_string();
     let storage_root = state.storage().root.clone();
     state
-        .metadata_pool
+        .library_pool
         .read(move |conn| enrichment::build_image_index(conn, &sys, &storage_root, user_overrides))
         .await
         .unwrap_or_else(|| {
@@ -263,7 +263,7 @@ fn queue_on_demand_download(
     let system = system.to_string();
     let rom_filename = rom_filename.to_string();
     let pending = state.pending_downloads.clone();
-    let metadata_pool = state.metadata_pool.clone();
+    let library_pool = state.library_pool.clone();
     let response_cache = state.response_cache.clone();
 
     tokio::spawn(async move {
@@ -289,7 +289,7 @@ fn queue_on_demand_download(
                     );
                     let sys = system.clone();
                     let rom = rom_filename.clone();
-                    let _ = metadata_pool.write(move |conn| {
+                    let _ = library_pool.write(move |conn| {
                         if let Err(e) = conn.execute(
                             "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
                             [&url, &sys, &rom],

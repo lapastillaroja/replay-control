@@ -7,7 +7,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 use serde::Serialize;
 
 use super::AppState;
@@ -47,8 +47,8 @@ async fn game_refs_to_core_entries(state: &AppState, games: Vec<GameRef>) -> Vec
         .map(|g| (g.system.clone(), g.rom_filename.clone()))
         .collect();
     let db_entries = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
+        .library_pool
+        .read(move |conn| LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default();
 
@@ -105,8 +105,8 @@ async fn game_detail(
     let sys_owned = system.clone();
     let fname_owned = filename.clone();
     let entry = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::load_single_entry(conn, &sys_owned, &fname_owned))
+        .library_pool
+        .read(move |conn| LibraryDb::load_single_entry(conn, &sys_owned, &fname_owned))
         .await
         .and_then(|r| r.ok())
         .flatten()

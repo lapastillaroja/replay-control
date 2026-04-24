@@ -564,7 +564,7 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetCorruptionStatus>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildCorruptMetadata>(
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildCorruptLibrary>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RepairCorruptUserData>(
         );

@@ -140,7 +140,7 @@ The installer places these files on the Pi:
 
 The service starts automatically on boot and listens on port 8080.
 
-During installation, the installer also downloads the LaunchBox metadata database (~100 MB) to provide game descriptions, ratings, and genres out of the box. To skip this step:
+During installation, the installer also downloads the LaunchBox library database (~100 MB) to provide game descriptions, ratings, and genres out of the box. To skip this step:
 
 ```bash
 bash install.sh --no-metadata

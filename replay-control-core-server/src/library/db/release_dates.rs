@@ -14,7 +14,7 @@ use replay_control_core::error::{Error, Result};
 use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core::{systems, title_utils};
 
-use super::{DatePrecision, DpSql, MetadataDb};
+use super::{DatePrecision, DpSql, LibraryDb};
 
 /// A row to insert into `game_release_date`.
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ pub async fn fetch_static_release_data() -> StaticReleaseData {
     }
 }
 
-impl MetadataDb {
+impl LibraryDb {
     /// Bulk insert release-date rows. Overwrites existing `(system, base_title, region)` entries
     /// with `source = <new>` iff the new precision is strictly higher than the existing one
     /// (year < month < day). Lower or equal precision is rejected.
@@ -395,7 +395,7 @@ mod tests {
         let (mut conn, _d) = open_temp_db();
 
         // Seed with year precision from arcade DAT.
-        MetadataDb::upsert_release_dates(
+        LibraryDb::upsert_release_dates(
             &mut conn,
             &[row(
                 "snes",
@@ -409,7 +409,7 @@ mod tests {
         .unwrap();
 
         // Upgrade to day precision from LaunchBox.
-        MetadataDb::upsert_release_dates(
+        LibraryDb::upsert_release_dates(
             &mut conn,
             &[row(
                 "snes",
@@ -440,7 +440,7 @@ mod tests {
         let (mut conn, _d) = open_temp_db();
 
         // Seed with day precision from LaunchBox.
-        MetadataDb::upsert_release_dates(
+        LibraryDb::upsert_release_dates(
             &mut conn,
             &[row(
                 "snes",
@@ -454,7 +454,7 @@ mod tests {
         .unwrap();
 
         // Attempt downgrade to year from TGDB — should NOT overwrite.
-        MetadataDb::upsert_release_dates(
+        LibraryDb::upsert_release_dates(
             &mut conn,
             &[row(
                 "snes",
@@ -490,7 +490,7 @@ mod tests {
         let (mut conn, _d) = open_temp_db();
 
         // Seed game_library row.
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_entry("snes", "Mario (USA).sfc", "mario")],
@@ -499,7 +499,7 @@ mod tests {
         .unwrap();
 
         // Multiple regions with different dates.
-        MetadataDb::upsert_release_dates(
+        LibraryDb::upsert_release_dates(
             &mut conn,
             &[
                 row(
@@ -530,7 +530,7 @@ mod tests {
         )
         .unwrap();
 
-        MetadataDb::resolve_release_date_for_library(&mut conn, RegionPreference::Usa, None)
+        LibraryDb::resolve_release_date_for_library(&mut conn, RegionPreference::Usa, None)
             .unwrap();
 
         let (date, region_used): (Option<String>, Option<String>) = conn
@@ -551,7 +551,7 @@ mod tests {
 
         // Empty library: nothing should be inserted from static data.
         let data = super::fetch_static_release_data().await;
-        let inserted = MetadataDb::seed_release_dates_from_static(&mut conn, data).unwrap();
+        let inserted = LibraryDb::seed_release_dates_from_static(&mut conn, data).unwrap();
         assert_eq!(
             inserted, 0,
             "with an empty library the static seeder should write 0 rows"
@@ -575,7 +575,7 @@ mod tests {
 
         // Pick a well-known TGDB-covered SNES title.
         let (mut conn, _d) = open_temp_db();
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "nintendo_snes",
             &[make_entry(
@@ -588,7 +588,7 @@ mod tests {
         .unwrap();
 
         let data = super::fetch_static_release_data().await;
-        let inserted = MetadataDb::seed_release_dates_from_static(&mut conn, data).unwrap();
+        let inserted = LibraryDb::seed_release_dates_from_static(&mut conn, data).unwrap();
 
         // Should upsert at least one row for Super Mario World; TGDB knows
         // this game across multiple regions so we expect > 0 inserts.
@@ -616,7 +616,7 @@ mod tests {
         let (mut conn, _d) = open_temp_db();
 
         // game_library row.
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[make_entry("snes", "Obscura.sfc", "obscura")],
@@ -625,7 +625,7 @@ mod tests {
         .unwrap();
 
         // Only 'unknown' region available.
-        MetadataDb::upsert_release_dates(
+        LibraryDb::upsert_release_dates(
             &mut conn,
             &[row(
                 "snes",
@@ -638,7 +638,7 @@ mod tests {
         )
         .unwrap();
 
-        MetadataDb::resolve_release_date_for_library(&mut conn, RegionPreference::Usa, None)
+        LibraryDb::resolve_release_date_for_library(&mut conn, RegionPreference::Usa, None)
             .unwrap();
 
         let (date, region_used): (Option<String>, Option<String>) = conn

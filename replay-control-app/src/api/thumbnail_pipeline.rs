@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use replay_control_core_server::metadata_db::MetadataDb;
+use replay_control_core_server::library_db::LibraryDb;
 
 use super::AppState;
 use super::activity::{Activity, ActivityGuard, ThumbnailPhase, ThumbnailProgress};
@@ -75,17 +75,13 @@ impl ThumbnailPipeline {
 
         // Verify DB is available before starting.
         {
-            let db_available = state
-                .metadata_pool
-                .read(|_conn| true)
-                .await
-                .unwrap_or(false);
+            let db_available = state.library_pool.read(|_conn| true).await.unwrap_or(false);
             if !db_available {
-                tracing::error!("Metadata DB unavailable at thumbnail update start (pool closed)");
+                tracing::error!("Library DB unavailable at thumbnail update start (pool closed)");
                 state.update_activity(|act| {
                     if let Activity::ThumbnailUpdate { progress, .. } = act {
                         progress.phase = ThumbnailPhase::Failed;
-                        progress.error = Some("Metadata DB unavailable".to_string());
+                        progress.error = Some("Library DB unavailable".to_string());
                         progress.elapsed_secs = start.elapsed().as_secs();
                     }
                 });
@@ -93,10 +89,10 @@ impl ThumbnailPipeline {
             }
         }
 
-        // Gate reads while thumbnail index writes to the metadata DB.
+        // Gate reads while thumbnail index writes to the library DB.
         // On exFAT (DELETE journal), concurrent reads during heavy writes corrupt the DB.
         // Activated after the DB availability check; dropped after Phase 1 checkpoint.
-        let write_gate = WriteGate::activate(state.metadata_pool.write_gate_flag());
+        let write_gate = WriteGate::activate(state.library_pool.write_gate_flag());
 
         // ── Phase 1: Index refresh ──────────────────────────────────
         let activity_lock = state.activity.clone();
@@ -111,7 +107,7 @@ impl ThumbnailPipeline {
             let activity_tx = state.activity_tx.clone();
             let rt = tokio::runtime::Handle::current();
             state
-                .metadata_pool
+                .library_pool
                 .write(move |db| {
                     // The closure passed to `pool.write` runs inside
                     // `deadpool::interact()`, which dispatches to a dedicated
@@ -140,7 +136,7 @@ impl ThumbnailPipeline {
                 .await
                 .unwrap_or_else(|| {
                     Err(replay_control_core::error::Error::Other(
-                        "Metadata DB unavailable during thumbnail index".to_string(),
+                        "Library DB unavailable during thumbnail index".to_string(),
                     ))
                 })
         };
@@ -210,7 +206,7 @@ impl ThumbnailPipeline {
         };
 
         // Checkpoint WAL after the index phase's bulk writes.
-        state.metadata_pool.checkpoint().await;
+        state.library_pool.checkpoint().await;
 
         // Release the write gate — Phase 1 heavy writes are done. Phase 2
         // (downloads) needs to read the DB for thumbnail index lookups.
@@ -242,7 +238,7 @@ impl ThumbnailPipeline {
         let storage = state.storage();
         let systems = state
             .cache
-            .cached_systems(&storage, &state.metadata_pool)
+            .cached_systems(&storage, &state.library_pool)
             .await;
         let supported: Vec<String> = systems
             .into_iter()
@@ -297,7 +293,7 @@ impl ThumbnailPipeline {
                 let system_plan = system.clone();
                 let arcade_lookup_plan = arcade_lookup.clone();
                 let plan = state
-                    .metadata_pool
+                    .library_pool
                     .read(move |conn| {
                         thumbnail_manifest::plan_system_thumbnails(
                             conn,
@@ -429,10 +425,8 @@ impl ThumbnailPipeline {
         // Read visible filenames from DB via pool.
         let system_owned = system.to_string();
         let rom_filenames = match state
-            .metadata_pool
-            .read(move |conn| {
-                MetadataDb::visible_filenames(conn, &system_owned).unwrap_or_default()
-            })
+            .library_pool
+            .read(move |conn| LibraryDb::visible_filenames(conn, &system_owned).unwrap_or_default())
             .await
         {
             Some(filenames) => filenames,
@@ -463,7 +457,7 @@ impl ThumbnailPipeline {
         )
         .await;
 
-        let mut updates: Vec<replay_control_core_server::metadata_db::ImagePathUpdate> = Vec::new();
+        let mut updates: Vec<replay_control_core_server::library_db::ImagePathUpdate> = Vec::new();
 
         for rom_filename in &rom_filenames {
             let stem = replay_control_core::title_utils::filename_stem(rom_filename);
@@ -475,7 +469,7 @@ impl ThumbnailPipeline {
             let title_rel = find_best_match(title_index, rom_filename, arcade_display, None);
 
             if boxart_rel.is_some() || snap_rel.is_some() || title_rel.is_some() {
-                updates.push(replay_control_core_server::metadata_db::ImagePathUpdate {
+                updates.push(replay_control_core_server::library_db::ImagePathUpdate {
                     system: system.to_string(),
                     rom_filename: rom_filename.clone(),
                     box_art_path: boxart_rel,
@@ -488,8 +482,8 @@ impl ThumbnailPipeline {
         // Write image path updates to DB via pool.
         if !updates.is_empty()
             && let Some(Err(e)) = state
-                .metadata_pool
-                .write(move |db| MetadataDb::bulk_update_image_paths(db, &updates))
+                .library_pool
+                .write(move |db| LibraryDb::bulk_update_image_paths(db, &updates))
                 .await
         {
             tracing::warn!("Failed to update image paths for {system}: {e}");

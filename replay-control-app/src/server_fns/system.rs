@@ -24,7 +24,7 @@ pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     let storage = state.storage();
     let summaries = state
         .cache
-        .cached_systems(&storage, &state.metadata_pool)
+        .cached_systems(&storage, &state.library_pool)
         .await;
     let total_favorites = state.cache.get_favorites_count(&storage).await;
 
@@ -97,7 +97,7 @@ pub async fn get_systems() -> Result<Vec<SystemSummary>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     let result = state
         .cache
-        .cached_systems(&state.storage(), &state.metadata_pool)
+        .cached_systems(&state.storage(), &state.library_pool)
         .await;
     #[cfg(feature = "ssr")]
     tracing::debug!(
@@ -127,8 +127,8 @@ pub async fn get_recents() -> Result<Vec<RecentWithArt>, ServerFnError> {
 
     // Batch-lookup box_art_url from game_library (most entries will have it).
     let db_entries = state
-        .metadata_pool
-        .read(move |conn| MetadataDb::lookup_game_entries(conn, &keys).unwrap_or_default())
+        .library_pool
+        .read(move |conn| LibraryDb::lookup_game_entries(conn, &keys).unwrap_or_default())
         .await
         .unwrap_or_default();
     #[cfg(feature = "ssr")]

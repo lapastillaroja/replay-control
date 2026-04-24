@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
-use crate::metadata_db::{BoxArtGenreRating, MetadataDb};
+use crate::library_db::{BoxArtGenreRating, LibraryDb};
 use crate::thumbnail_manifest::ManifestMatch;
 use replay_control_core::developer::normalize_developer;
 
@@ -53,7 +53,7 @@ pub struct EnrichmentResult {
 /// The app layer is responsible for writing updates and cache invalidation.
 ///
 /// # Arguments
-/// * `conn` - Metadata DB connection (same DB has both game_library and game_metadata)
+/// * `conn` - Library DB connection (same DB has both game_library and game_metadata)
 /// * `system` - System folder name
 /// * `index` - Pre-built image index for this system
 /// * `auto_matched_ratings` - Ratings from auto-matching (pre-computed by app)
@@ -66,39 +66,39 @@ pub fn enrich_system(
 ) -> EnrichmentResult {
     // Load LaunchBox metadata from game_metadata table.
     let lb = LaunchBoxMetadata {
-        ratings: MetadataDb::system_ratings(conn, system)
+        ratings: LibraryDb::system_ratings(conn, system)
             .ok()
             .unwrap_or_default(),
-        genres: MetadataDb::system_metadata_genres(conn, system)
+        genres: LibraryDb::system_metadata_genres(conn, system)
             .ok()
             .unwrap_or_default(),
-        players: MetadataDb::system_metadata_players(conn, system)
+        players: LibraryDb::system_metadata_players(conn, system)
             .ok()
             .unwrap_or_default(),
-        rating_counts: MetadataDb::system_metadata_rating_counts(conn, system)
+        rating_counts: LibraryDb::system_metadata_rating_counts(conn, system)
             .ok()
             .unwrap_or_default(),
-        developers: MetadataDb::system_metadata_developers(conn, system)
+        developers: LibraryDb::system_metadata_developers(conn, system)
             .ok()
             .unwrap_or_default(),
-        release_years: MetadataDb::system_metadata_release_years(conn, system)
+        release_years: LibraryDb::system_metadata_release_years(conn, system)
             .ok()
             .unwrap_or_default(),
-        cooperative: MetadataDb::system_metadata_cooperative(conn, system)
+        cooperative: LibraryDb::system_metadata_cooperative(conn, system)
             .ok()
             .unwrap_or_default(),
     };
 
     // Load existing game_library values to know which are already set.
-    let existing_genres: HashSet<String> = MetadataDb::system_rom_genres(conn, system)
+    let existing_genres: HashSet<String> = LibraryDb::system_rom_genres(conn, system)
         .map(|map| map.into_keys().collect())
         .unwrap_or_default();
     let existing_players: HashSet<String> =
-        MetadataDb::system_rom_players(conn, system).unwrap_or_default();
+        LibraryDb::system_rom_players(conn, system).unwrap_or_default();
     let existing_developers: HashSet<String> =
-        MetadataDb::system_rom_developers(conn, system).unwrap_or_default();
+        LibraryDb::system_rom_developers(conn, system).unwrap_or_default();
     let existing_years: HashSet<String> =
-        MetadataDb::system_rom_release_years(conn, system).unwrap_or_default();
+        LibraryDb::system_rom_release_years(conn, system).unwrap_or_default();
 
     // Merge auto-matched ratings into the main ratings map.
     let mut all_ratings = lb.ratings;
@@ -107,8 +107,7 @@ pub fn enrich_system(
     }
 
     // Read visible filenames from game_library.
-    let rom_filenames: Vec<String> =
-        MetadataDb::visible_filenames(conn, system).unwrap_or_default();
+    let rom_filenames: Vec<String> = LibraryDb::visible_filenames(conn, system).unwrap_or_default();
 
     if rom_filenames.is_empty() {
         return EnrichmentResult {
@@ -122,7 +121,7 @@ pub fn enrich_system(
 
     // Load hash_matched_names for No-Intro-based thumbnail fallback.
     let hash_matched_names: HashMap<String, String> =
-        MetadataDb::visible_hash_matched_names(conn, system).unwrap_or_default();
+        LibraryDb::visible_hash_matched_names(conn, system).unwrap_or_default();
 
     // Build enrichment entries + collect manifest download requests.
     let mut manifest_downloads: Vec<(String, ManifestMatch)> = Vec::new();
@@ -203,7 +202,7 @@ pub fn enrich_system(
     // Cooperative enrichment: set cooperative=1 for ROMs flagged by LaunchBox.
     // Only update ROMs that are not already cooperative (existing_cooperative tracks those).
     let existing_cooperative: HashSet<String> =
-        MetadataDb::system_rom_cooperative(conn, system).unwrap_or_default();
+        LibraryDb::system_rom_cooperative(conn, system).unwrap_or_default();
     let cooperative_updates: Vec<String> = rom_filenames
         .iter()
         .filter(|f| !existing_cooperative.contains(*f))
@@ -234,7 +233,7 @@ fn apply_base_title_fallback(
     rom_filenames: &[String],
 ) -> Vec<BoxArtGenreRating> {
     // Load base_title for every ROM in this system.
-    let base_titles: HashMap<String, String> = MetadataDb::visible_base_titles(conn, system)
+    let base_titles: HashMap<String, String> = LibraryDb::visible_base_titles(conn, system)
         .unwrap_or_default()
         .into_iter()
         .collect();
@@ -304,10 +303,10 @@ mod tests {
 
     // ── base_title fallback tests ────────────────────────────────────
 
-    /// Open a temp metadata DB for enrichment tests.
+    /// Open a temp library DB for enrichment tests.
     fn open_temp_db() -> (rusqlite::Connection, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let (conn, _path) = MetadataDb::open(dir.path()).unwrap();
+        let (conn, _path) = LibraryDb::open(dir.path()).unwrap();
         (conn, dir)
     }
 
@@ -316,8 +315,8 @@ mod tests {
         system: &str,
         filename: &str,
         base_title: &str,
-    ) -> crate::metadata_db::GameEntry {
-        crate::metadata_db::GameEntry {
+    ) -> crate::library_db::GameEntry {
+        crate::library_db::GameEntry {
             system: system.into(),
             rom_filename: filename.into(),
             rom_path: format!("/roms/{system}/{filename}"),
@@ -354,7 +353,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
 
         // Two ROMs with the same base_title "sonic".
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_smd",
             &[
@@ -408,7 +407,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
 
         // "Sonic" on sega_smd with art.
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_smd",
             &[make_entry_with_base_title(
@@ -421,7 +420,7 @@ mod tests {
         .unwrap();
 
         // "Sonic" on sega_gg with no art.
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_gg",
             &[make_entry_with_base_title(
@@ -452,7 +451,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
 
         // Two ROMs with empty base_title.
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_smd",
             &[
@@ -492,10 +491,10 @@ mod tests {
         // Insert a game into game_library with cooperative = false.
         let mut entry = make_entry_with_base_title("sega_smd", "Streets (USA).md", "streets");
         entry.cooperative = false;
-        MetadataDb::save_system_entries(&mut conn, "sega_smd", &[entry], None).unwrap();
+        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[entry], None).unwrap();
 
         // Insert same game into game_metadata with cooperative = true.
-        let meta = crate::metadata_db::GameMetadata {
+        let meta = crate::library_db::GameMetadata {
             cooperative: true,
             description: None,
             rating: None,
@@ -512,29 +511,29 @@ mod tests {
             screenshot_path: None,
             title_path: None,
         };
-        MetadataDb::bulk_upsert(
+        LibraryDb::bulk_upsert(
             &mut conn,
             &[("sega_smd".into(), "Streets (USA).md".into(), meta)],
         )
         .unwrap();
 
         // Verify game_library starts with cooperative = false.
-        let before = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        let before = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
         assert!(!before[0].cooperative, "should start non-cooperative");
 
         // Simulate the enrichment cooperative update (the enrich_system pipeline
         // reads game_metadata cooperative and produces cooperative_updates).
-        let coop_set = MetadataDb::system_metadata_cooperative(&conn, "sega_smd").unwrap();
+        let coop_set = LibraryDb::system_metadata_cooperative(&conn, "sega_smd").unwrap();
         assert!(coop_set.contains("Streets (USA).md"));
 
-        let existing = MetadataDb::system_rom_cooperative(&conn, "sega_smd").unwrap();
+        let existing = LibraryDb::system_rom_cooperative(&conn, "sega_smd").unwrap();
         let updates: Vec<String> = coop_set
             .into_iter()
             .filter(|f| !existing.contains(f))
             .collect();
-        MetadataDb::update_cooperative(&mut conn, "sega_smd", &updates).unwrap();
+        LibraryDb::update_cooperative(&mut conn, "sega_smd", &updates).unwrap();
 
-        let after = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        let after = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
         assert!(
             after[0].cooperative,
             "should be cooperative after enrichment (OR merge)"
@@ -555,7 +554,7 @@ mod tests {
         // Game with no genre.
         let entry_no_genre = make_entry_with_base_title("sega_smd", "Streets (USA).md", "streets");
 
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "sega_smd",
             &[entry_with_genre, entry_no_genre],
@@ -564,11 +563,11 @@ mod tests {
         .unwrap();
 
         // Enrichment tries to set genre for both.
-        MetadataDb::update_box_art_genre_rating(
+        LibraryDb::update_box_art_genre_rating(
             &mut conn,
             "sega_smd",
             &[
-                crate::metadata_db::BoxArtGenreRating {
+                crate::library_db::BoxArtGenreRating {
                     rom_filename: "Sonic (USA).md".into(),
                     box_art_url: None,
                     genre: Some("Adventure".into()),
@@ -576,7 +575,7 @@ mod tests {
                     rating: None,
                     rating_count: None,
                 },
-                crate::metadata_db::BoxArtGenreRating {
+                crate::library_db::BoxArtGenreRating {
                     rom_filename: "Streets (USA).md".into(),
                     box_art_url: None,
                     genre: Some("Adventure".into()),
@@ -588,7 +587,7 @@ mod tests {
         )
         .unwrap();
 
-        let roms = MetadataDb::load_system_entries(&conn, "sega_smd").unwrap();
+        let roms = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
         let sonic = roms
             .iter()
             .find(|r| r.rom_filename == "Sonic (USA).md")
@@ -615,7 +614,7 @@ mod tests {
         let (mut conn, _dir) = open_temp_db();
 
         // ROM with art and ROM without any enrichment data (no art, no rating, nothing).
-        MetadataDb::save_system_entries(
+        LibraryDb::save_system_entries(
             &mut conn,
             "snes",
             &[

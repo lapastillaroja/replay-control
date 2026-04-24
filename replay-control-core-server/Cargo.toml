@@ -8,7 +8,7 @@ repository.workspace = true
 
 [features]
 default = []
-metadata = ["dep:quick-xml"]
+library = ["dep:quick-xml"]
 http = ["dep:reqwest"]
 
 [dependencies]
@@ -29,8 +29,8 @@ quick-xml = { version = "0.39", optional = true }
 reqwest = { workspace = true, optional = true }
 
 [[bin]]
-name = "metadata_report"
-required-features = ["metadata"]
+name = "library_report"
+required-features = ["library"]
 
 [dev-dependencies]
 tempfile = "3"

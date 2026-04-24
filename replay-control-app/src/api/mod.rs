@@ -29,7 +29,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use deadpool_sqlite::rusqlite;
 use replay_control_core_server::config::SystemConfig;
-use replay_control_core_server::db_common::JournalMode;
+use replay_control_core_server::sqlite::JournalMode;
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
 // ── Custom deadpool Manager ───────────────────────────────────────
@@ -37,7 +37,7 @@ use replay_control_core_server::storage::{StorageKind, StorageLocation};
 use deadpool::managed::{self, Metrics, RecycleError};
 use deadpool_sync::SyncWrapper;
 
-/// Custom deadpool Manager that uses `db_common::open_connection()` for
+/// Custom deadpool Manager that uses `sqlite::open_connection()` for
 /// proper WAL/nolock/PRAGMA configuration instead of plain `Connection::open()`.
 struct SqliteManager {
     db_path: PathBuf,
@@ -75,7 +75,7 @@ impl managed::Manager for SqliteManager {
         let label = self.label.clone();
 
         SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
-            let conn = replay_control_core_server::db_common::open_connection(&db_path, &label)
+            let conn = replay_control_core_server::sqlite::open_connection(&db_path, &label)
                 .map_err(|e| {
                     rusqlite::Error::SqliteFailure(
                         rusqlite::ffi::Error::new(1),
@@ -266,7 +266,7 @@ impl DbPool {
         // Open a warmup connection to detect the actual journal mode.
         // open_connection() picks WAL or DELETE based on filesystem capabilities,
         // so we query the result rather than guessing.
-        let warmup = replay_control_core_server::db_common::open_connection(&db_path, label)
+        let warmup = replay_control_core_server::sqlite::open_connection(&db_path, label)
             .map_err(|e| format!("{label}: failed to open warmup connection: {e}"))?;
         let journal_mode = query_journal_mode(&warmup);
         drop(warmup);
@@ -538,8 +538,8 @@ pub struct AppState {
     /// Cached user preferences (skin, locale, region, font size).
     /// Loaded once at startup; updated in-memory on every settings change.
     pub prefs: Arc<std::sync::RwLock<replay_control_core_server::settings::UserPreferences>>,
-    /// Metadata DB pool (deadpool-backed, concurrent reads).
-    pub metadata_pool: DbPool,
+    /// Library DB pool (deadpool-backed, concurrent reads).
+    pub library_pool: DbPool,
     /// User data DB pool (deadpool-backed, concurrent reads).
     pub user_data_pool: DbPool,
     /// Import pipeline (metadata import operations).
@@ -557,11 +557,11 @@ pub struct AppState {
     pub activity_tx: tokio::sync::broadcast::Sender<Activity>,
 }
 
-/// Opener for metadata DB.
-fn open_metadata_db(
+/// Opener for library DB.
+fn open_library_db(
     storage_root: &std::path::Path,
 ) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    replay_control_core_server::metadata_db::MetadataDb::open(storage_root)
+    replay_control_core_server::library_db::LibraryDb::open(storage_root)
 }
 
 /// Opener for user data DB.
@@ -642,15 +642,15 @@ impl AppState {
             }
         };
 
-        let (metadata_pool, user_data_pool) = if let Some(ref storage) = storage {
+        let (library_pool, user_data_pool) = if let Some(ref storage) = storage {
             tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
             // Open DBs eagerly at startup so they're ready for the first request.
             let (_meta_conn, meta_path) =
-                replay_control_core_server::metadata_db::MetadataDb::open(&storage.root)
-                    .map_err(|e| format!("Failed to open metadata DB: {e}"))?;
-            tracing::info!("Metadata DB ready at {}", meta_path.display());
-            let metadata_pool = DbPool::new(meta_path.clone(), "metadata_db", open_metadata_db)?;
+                replay_control_core_server::library_db::LibraryDb::open(&storage.root)
+                    .map_err(|e| format!("Failed to open library DB: {e}"))?;
+            tracing::info!("Library DB ready at {}", meta_path.display());
+            let library_pool = DbPool::new(meta_path.clone(), "library_db", open_library_db)?;
 
             let (_ud_conn, ud_path, ud_corrupt) =
                 replay_control_core_server::user_data_db::UserDataDb::open(&storage.root)
@@ -669,13 +669,13 @@ impl AppState {
                 }
             }
 
-            (metadata_pool, user_data_pool)
+            (library_pool, user_data_pool)
         } else {
             tracing::warn!(
                 "Starting without storage — all requests will redirect to /waiting until storage appears"
             );
             (
-                DbPool::new_closed("metadata_db"),
+                DbPool::new_closed("library_db"),
                 DbPool::new_closed("user_data_db"),
             )
         };
@@ -715,7 +715,7 @@ impl AppState {
             storage_path_override,
             settings,
             prefs: Arc::new(std::sync::RwLock::new(prefs)),
-            metadata_pool,
+            library_pool,
             user_data_pool,
             import,
             thumbnails,
@@ -749,10 +749,10 @@ impl AppState {
     }
 
     /// Check if either database has been flagged as corrupt.
-    /// Returns `(metadata_corrupt, user_data_corrupt)`.
+    /// Returns `(library_corrupt, user_data_corrupt)`.
     pub fn is_db_corrupt(&self) -> (bool, bool) {
         (
-            self.metadata_pool.is_corrupt(),
+            self.library_pool.is_corrupt(),
             self.user_data_pool.is_corrupt(),
         )
     }
@@ -872,11 +872,11 @@ impl AppState {
             }
 
             // Close old DB connections so they re-open at the new storage root.
-            self.metadata_pool.close();
+            self.library_pool.close();
             self.user_data_pool.close();
             // Re-open at the new storage root.
             let new_storage_ref = self.storage();
-            self.metadata_pool.reopen(&new_storage_ref.root);
+            self.library_pool.reopen(&new_storage_ref.root);
             self.user_data_pool.reopen(&new_storage_ref.root);
 
             // Back up user_data.db after opening at the new location.
@@ -889,7 +889,7 @@ impl AppState {
                 }
             }
 
-            self.cache.invalidate(&self.metadata_pool).await;
+            self.cache.invalidate(&self.library_pool).await;
             self.response_cache.invalidate_all();
 
             // Reload user preferences from the settings store.

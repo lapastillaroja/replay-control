@@ -4,6 +4,21 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## Unreleased
+
+### Changed
+
+- Renamed the on-storage `metadata.db` to `library.db` and folded the grab-bag `metadata::` module into the existing `library::` module across both `replay-control-core` and `replay-control-core-server`. The old module name was a holdover from before the catalog migration — with `catalog.sqlite` now owning embedded reference data, `library.db` clearly names the user's on-storage rebuildable DB.
+- Reorganized the former `metadata::` grab-bag into purpose-scoped submodules: `library/db/` (SQLite), `library/imports/` (LaunchBox XML), `library/matching/` (pure alias + metadata matching), `library/thumbnails/` (manifest, fuzzy match, resolution), `library/manuals/` (game docs + retrokit). Hoisted `user_data_db` to its own top-level `user_data/` module (persistent user data is semantically distinct from rebuildable library data). Moved shared SQLite helpers from `metadata/db_common.rs` to top-level `src/sqlite.rs`.
+- Renamed the `metadata` cargo feature on `replay-control-core-server` to `library`. Renamed the `metadata_report` bin to `library_report` (`cargo run --bin library_report --features library`).
+- User-facing "metadata" vocabulary is preserved where it describes external-enrichment sources (the `/settings/metadata` page, the `Game Metadata` i18n label, the `game_metadata` SQL table, the `download_metadata` / `clear_metadata` / `get_metadata_stats` server functions, and `launchbox-metadata.xml`). Only the container DB file and module changed names.
+
+### Migration
+
+- Legacy `metadata.db`, `metadata.db-wal`, `metadata.db-shm`, and `metadata.db-journal` files are removed on first boot via an idempotent `cleanup_legacy_metadata_db` step inside `LibraryDb::open`. No data migration is needed: the startup pipeline re-scans ROMs into the new `library.db`, re-imports LaunchBox data from `launchbox-metadata.xml` (Phase 1), and rebuilds the thumbnail index from disk (Phase 3).
+
+---
+
 ## [0.4.0-beta.3](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.3) - 2026-04-23
 
 ### Added
@@ -27,7 +42,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Other
 
 - Pool warmup validates the catalog schema at `init_catalog` time and surfaces a clear error if the file is missing or schemaless. Previously a 0-byte `/catalog.sqlite` left at the systemd CWD would silently break every query and show bare filenames in the UI.
-- Local `DpSql(DatePrecision)` newtype in `metadata_db` carries the `rusqlite::ToSql` / `FromSql` impls without violating Rust's orphan rule (`DatePrecision` stays pure in core).
+- Local `DpSql(DatePrecision)` newtype in `library_db` carries the `rusqlite::ToSql` / `FromSql` impls without violating Rust's orphan rule (`DatePrecision` stays pure in core).
 - `docs/architecture/` updated for the 3-crate layout with a new "Crate split" design-decisions entry. `CLAUDE.md` gains a "Crate boundary" rule listing the deps forbidden in core.
 - `docs/features/benchmarks.md` refreshed for v0.4.0 (Pi 5, 2GB, ~23K ROMs). Memory section now shows idle / right-after-load / +60s-settled: peak 189 MB, settled 62 MB within a minute (jemalloc returns cleanly).
 - CI self-heal: `build-release.yml` now creates a missing release instead of failing when fired from a pushed tag without one.
@@ -352,7 +367,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - region preference styling, SSR genres, and box art swap design
 - auto-delete image repos after match, add cache management
 - keep cloned image repos on disk, add staleness check to Download All
-- validate metadata DB image paths against disk to catch fake-symlink artifacts
+- validate library DB image paths against disk to catch fake-symlink artifacts
 - search input focus on client-side navigation, inline genre loading
 - revert dropdown arrow to SVG data URI for reliable positioning
 
@@ -447,7 +462,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - split cache.rs, extract image matching, Arc-wrap ROM cache
 - address code review findings — perf, safety, dedup
 - sequenced startup pipeline, extract AppState, single DB connection
-- split metadata_db.rs into sub-modules and consolidate utils
+- split library_db.rs into sub-modules and consolidate utils
 - Revert "feat: add pull-to-refresh for PWA standalone mode"
 - derive thumbnail counts from game_library.box_art_url
 - migrate video storage from videos.json to SQLite user_data.db
@@ -548,7 +563,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Features
 - feat: TOSEC version stripping + country code recognition — improves display names and thumbnail matching for TOSEC-named ROM sets (`18bfe9f`)
 - feat: auto-generate M3U playlists for multi-part TOSEC games — detects `(Disc N of M)` / `(Disk N of M)` patterns, groups siblings, writes M3U files at scan time (`7895689`)
-- feat: runtime SQLite corruption detection with recovery UI — error-triggered `SQLITE_CORRUPT` detection, per-DB corrupt flag, full-page banner with Rebuild (metadata.db) or Restore/Repair (user_data.db) options (`1f6aa8c`)
+- feat: runtime SQLite corruption detection with recovery UI — error-triggered `SQLITE_CORRUPT` detection, per-DB corrupt flag, full-page banner with Rebuild (library.db) or Restore/Repair (user_data.db) options (`1f6aa8c`)
 - feat: user_data.db backup at startup — copies healthy DB to `.bak` before background pipeline runs; corruption recovery offers restore from backup (`1f6aa8c`)
 - feat: organize favorites by developer — new `Developer` criterion in favorites organize, with `normalize_developer()` handling MAME manufacturer variations (licensing, regional suffixes, joint ventures) (`643bf31`)
 
@@ -587,7 +602,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Features
 - feat: multi-file ROM delete — enumerates and deletes all associated files (M3U discs, CUE BINs, ScummVM data dirs, SBI companions, arcade CHDs) with file count + total size in confirmation dialog (`445abc9`)
 - feat: ROM rename restrictions — block rename for CUE+BIN, ScummVM, binary M3U with reason displayed below actions (`445abc9`)
-- feat: orphan cascade on delete/rename — favorites, screenshots, user_data.db (videos, box art), metadata.db all cleaned up via new `delete_for_rom`/`rename_for_rom` methods (`445abc9`)
+- feat: orphan cascade on delete/rename — favorites, screenshots, user_data.db (videos, box art), library.db all cleaned up via new `delete_for_rom`/`rename_for_rom` methods (`445abc9`)
 - feat: multi-disc detection — `detect_disc_set` finds (Disc N) siblings for Saturn-style CHDs without M3U wrappers (`445abc9`)
 - feat: genre badges in favorites cards (`e8e3a8b`)
 - feat: improved driver_status UX — hide green "Working" dots (noise for 56% of games), user-friendly labels replacing MAME jargon, "Emulation" heading (`5273f51`)
@@ -623,7 +638,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - fix: SystemTime unwrap → unwrap_or_default in videos.rs (`478f6ec`)
 
 ### Code Quality
-- refactor: make MetadataDb + UserDataDb stateless query namespaces — methods take `conn: &Connection` (`40072d9`)
+- refactor: make LibraryDb + UserDataDb stateless query namespaces — methods take `conn: &Connection` (`40072d9`)
 - refactor: add Copy derive to 9 qualifying types (`f21652a`)
 - refactor: split global_search (295 lines) into focused helper functions (`dbbb2b0`)
 - refactor: extract rom_docs_handler from 127-line inline closure in main.rs (`1952b30`)
@@ -699,7 +714,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - refactor: sequenced startup pipeline replacing 4 independent racing tasks with ordered phases — auto-import → populate → enrich → watchers (`5a7abc8`)
 - refactor: extract ImportPipeline + ThumbnailPipeline from AppState with shared busy flag for mutual exclusion (`5a7abc8`)
 - feat: non-blocking startup — server responds immediately with empty data during warmup, "Scanning game library..." banner shown (`5a7abc8`)
-- fix: single DB connection policy — import holds Mutex directly, eliminated 3 rogue MetadataDb::open() calls causing SQLite corruption (`f38f77a`)
+- fix: single DB connection policy — import holds Mutex directly, eliminated 3 rogue LibraryDb::open() calls causing SQLite corruption (`f38f77a`)
 - fix: filesystem-aware SQLite locking — WAL mode on local storage (USB/exFAT, SD/ext4), nolock+DELETE on NFS only (`257831f`)
 - feat: auto-rebuild thumbnail index at startup when data_sources exists but index is empty (data loss recovery) (`257831f`)
 - feat: single-pass LaunchBox XML parsing — was triple-parse taking 15min on Pi, now ~6s (`5a7abc8`)
@@ -717,7 +732,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - feat: add pull-to-refresh for iOS PWA standalone mode — PullToRefresh.js lazy-loaded (`c53b6f9`)
 - feat: show arcade clone siblings as "Arcade Versions" on game detail page (`8ca1cf2`)
 - fix: unify box art resolution between cards and detail page — single resolve_box_art() path (`fa14928`)
-- refactor: split metadata_db.rs (2,895 lines) into 7 focused sub-modules (`84cf3d5`)
+- refactor: split library_db.rs (2,895 lines) into 7 focused sub-modules (`84cf3d5`)
 - fix: tilde dual-title boxart matching — split on ~ and match either half (`84cf3d5`)
 - fix: non-blocking startup when game library is empty (`f55ed74`)
 - fix: eliminate rogue DB connections causing corruption (`f38f77a`)
@@ -822,7 +837,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - refactor: split server functions and API into domain modules (`efc04b5`)
 - refactor: extract reusable components — RebootButton, unified Transition, auto-close SSE stream (`e37ee72`)
 - feat: arcade driver status badges, favorites filter, rating display, multiplayer filter (`7ef4564`, `54ceb93`)
-- fix: validate metadata DB image paths against disk to catch fake-symlink artifacts (`49413d9`)
+- fix: validate library DB image paths against disk to catch fake-symlink artifacts (`49413d9`)
 - feat: box art thumbnails on home page and favorites, storage disk usage bar (`1926e53`)
 - feat: extended search filters and ROM list filter persistence (`5349b87`)
 - refactor: merge Games tab into Home page, rename to Games (`ab1695b`)

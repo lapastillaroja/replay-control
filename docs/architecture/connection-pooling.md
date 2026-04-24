@@ -6,7 +6,7 @@ Defined in `replay-control-app/src/api/mod.rs`.
 
 Each SQLite database gets a `DbPool` instance backed by `deadpool` with a custom `SqliteManager`. The app has two pools:
 
-- `metadata_pool` -- for `metadata.db` (game library, thumbnails, imported metadata)
+- `library_pool` -- for `library.db` (game library, thumbnails, imported metadata)
 - `user_data_pool` -- for `user_data.db` (box art overrides, saved videos)
 
 Each `DbPool` contains two internal deadpool pools:
@@ -18,7 +18,7 @@ Load tests on USB storage (DELETE journal mode) showed no performance improvemen
 
 ## Custom SqliteManager
 
-Instead of deadpool-sqlite's default `Connection::open()`, the custom manager uses `db_common::open_connection()` which handles WAL/nolock/PRAGMA configuration based on filesystem capabilities.
+Instead of deadpool-sqlite's default `Connection::open()`, the custom manager uses `sqlite::open_connection()` which handles WAL/nolock/PRAGMA configuration based on filesystem capabilities.
 
 ### Connection creation
 
