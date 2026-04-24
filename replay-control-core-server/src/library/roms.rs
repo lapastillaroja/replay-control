@@ -1343,6 +1343,25 @@ fn is_rom_file(path: &Path, system: &System) -> bool {
     true
 }
 
+/// Write an uploaded ROM to `<storage>/roms/<system>/<filename>`.
+///
+/// Creates the system directory if missing. Writes the whole payload at once —
+/// fine for typical ROM sizes; large uploads should use a streaming variant.
+pub async fn write_rom(
+    storage: &StorageLocation,
+    system: &str,
+    filename: &str,
+    bytes: &[u8],
+) -> std::io::Result<PathBuf> {
+    let system_dir = storage.system_roms_dir(system);
+    if !system_dir.exists() {
+        std::fs::create_dir_all(&system_dir)?;
+    }
+    let dest = system_dir.join(filename);
+    tokio::fs::write(&dest, bytes).await?;
+    Ok(dest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

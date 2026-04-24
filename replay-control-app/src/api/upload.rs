@@ -10,11 +10,7 @@ async fn upload_rom(
     Path(system): Path<String>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let system_dir = state.storage().system_roms_dir(&system);
-    if !system_dir.exists() {
-        std::fs::create_dir_all(&system_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
+    let storage = state.storage();
     let mut uploaded = Vec::new();
 
     while let Ok(Some(field)) = multipart.next_field().await {
@@ -29,8 +25,7 @@ async fn upload_rom(
         // are rare and typically single files.
         let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        let dest = system_dir.join(&filename);
-        tokio::fs::write(&dest, &data)
+        replay_control_core_server::roms::write_rom(&storage, &system, &filename, &data)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
