@@ -276,3 +276,345 @@ pub async fn download_asset(
     file.flush().await?;
     Ok(downloaded)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const REPO: &str = "lapastillaroja/replay-control";
+
+    fn make_release_json(tag: &str, prerelease: bool) -> serde_json::Value {
+        serde_json::json!({
+            "tag_name": tag,
+            "prerelease": prerelease,
+            "html_url": format!("https://github.com/test/releases/tag/{tag}"),
+            "published_at": "2026-04-01T00:00:00Z",
+            "assets": [
+                {"name": "replay-control-app-aarch64.tar.gz", "size": 10000000,
+                 "browser_download_url": format!("https://example.com/{tag}/binary.tar.gz")},
+                {"name": "site.tar.gz", "size": 4000000,
+                 "browser_download_url": format!("https://example.com/{tag}/site.tar.gz")}
+            ]
+        })
+    }
+
+    /// Stub the `/releases/latest` and `/releases` GitHub endpoints.
+    /// Pass `latest = None` to make `/releases/latest` return 404.
+    /// Returned mocks must be kept alive for the duration of the test —
+    /// dropping a Mock removes it from the server.
+    struct GhMocks {
+        server: mockito::ServerGuard,
+        _mocks: Vec<mockito::Mock>,
+    }
+
+    async fn mock_github(
+        latest: Option<serde_json::Value>,
+        releases: serde_json::Value,
+    ) -> GhMocks {
+        let mut server = mockito::Server::new_async().await;
+        let latest_path = format!("/repos/{REPO}/releases/latest");
+        let m_latest = match latest {
+            Some(json) => server
+                .mock("GET", latest_path.as_str())
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(json.to_string())
+                .create_async()
+                .await,
+            None => server
+                .mock("GET", latest_path.as_str())
+                .with_status(404)
+                .create_async()
+                .await,
+        };
+        let m_releases = server
+            .mock(
+                "GET",
+                mockito::Matcher::Regex(format!("^/repos/{REPO}/releases(\\?.*)?$")),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(releases.to_string())
+            .create_async()
+            .await;
+        GhMocks {
+            server,
+            _mocks: vec![m_latest, m_releases],
+        }
+    }
+
+    // ── parse_release ───────────────────────────────────────────────
+
+    #[test]
+    fn parse_release_valid() {
+        let json = make_release_json("v0.3.0", false);
+        let update = parse_release(&json).unwrap();
+        assert_eq!(update.version, "0.3.0");
+        assert_eq!(update.tag, "v0.3.0");
+        assert!(!update.prerelease);
+        assert_eq!(update.binary_size, 10000000);
+        assert_eq!(update.site_size, 4000000);
+    }
+
+    #[test]
+    fn parse_release_prerelease() {
+        let json = make_release_json("v0.3.0-beta.1", true);
+        let update = parse_release(&json).unwrap();
+        assert_eq!(update.version, "0.3.0-beta.1");
+        assert!(update.prerelease);
+    }
+
+    #[test]
+    fn parse_release_no_v_prefix() {
+        let json = serde_json::json!({
+            "tag_name": "1.0.0",
+            "prerelease": false,
+            "html_url": "https://example.com",
+            "published_at": "2026-01-01T00:00:00Z",
+            "assets": []
+        });
+        let update = parse_release(&json).unwrap();
+        assert_eq!(update.version, "1.0.0");
+        assert_eq!(update.tag, "1.0.0");
+    }
+
+    #[test]
+    fn parse_release_invalid_semver() {
+        let json = serde_json::json!({
+            "tag_name": "not-semver",
+            "prerelease": false,
+            "html_url": "",
+            "published_at": "",
+            "assets": []
+        });
+        assert!(parse_release(&json).is_none());
+    }
+
+    #[test]
+    fn parse_release_missing_tag() {
+        let json = serde_json::json!({"prerelease": false});
+        assert!(parse_release(&json).is_none());
+    }
+
+    #[test]
+    fn parse_release_no_assets() {
+        let json = serde_json::json!({
+            "tag_name": "v1.0.0",
+            "prerelease": false,
+            "html_url": "",
+            "published_at": ""
+        });
+        let update = parse_release(&json).unwrap();
+        assert_eq!(update.binary_size, 0);
+        assert_eq!(update.site_size, 0);
+    }
+
+    // ── check_github_update ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn check_finds_newer_stable() {
+        let gh = mock_github(
+            Some(make_release_json("v0.3.0", false)),
+            serde_json::json!([]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Stable,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap().version, "0.3.0");
+    }
+
+    #[tokio::test]
+    async fn check_no_update_when_current() {
+        let gh = mock_github(
+            Some(make_release_json("v0.1.0", false)),
+            serde_json::json!([]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Stable,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn check_no_update_when_newer_current() {
+        let gh = mock_github(
+            Some(make_release_json("v0.1.0", false)),
+            serde_json::json!([]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.2.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Stable,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn check_skipped_version_ignored() {
+        let gh = mock_github(
+            Some(make_release_json("v0.3.0", false)),
+            serde_json::json!([]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Stable,
+            Some("0.3.0"),
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn check_skipped_version_superseded() {
+        let gh = mock_github(
+            Some(make_release_json("v0.3.0", false)),
+            serde_json::json!([]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Stable,
+            Some("0.2.0"),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap().version, "0.3.0");
+    }
+
+    #[tokio::test]
+    async fn check_beta_channel_finds_prerelease() {
+        let gh = mock_github(
+            Some(make_release_json("v0.1.0", false)),
+            serde_json::json!([
+                make_release_json("v0.2.0-beta.1", true),
+                make_release_json("v0.1.0", false),
+            ]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Beta,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap().version, "0.2.0-beta.1");
+    }
+
+    #[tokio::test]
+    async fn check_beta_channel_prefers_newest() {
+        let gh = mock_github(
+            Some(make_release_json("v0.1.0", false)),
+            serde_json::json!([
+                make_release_json("v0.3.0-beta.2", true),
+                make_release_json("v0.3.0-beta.1", true),
+                make_release_json("v0.2.0", false),
+                make_release_json("v0.1.0", false),
+            ]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Beta,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap().version, "0.3.0-beta.2");
+    }
+
+    #[tokio::test]
+    async fn check_beta_prerelease_not_newer_than_current() {
+        let gh = mock_github(
+            Some(make_release_json("v0.1.0", false)),
+            serde_json::json!([
+                make_release_json("v0.1.0-beta.4", true),
+                make_release_json("v0.1.0", false),
+            ]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Beta,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn check_stable_no_releases_returns_none() {
+        let gh = mock_github(None, serde_json::json!([])).await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Stable,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn check_beta_with_no_stable_finds_prerelease() {
+        let gh = mock_github(
+            None,
+            serde_json::json!([make_release_json("v0.2.0-beta.1", true)]),
+        )
+        .await;
+        let result = check_github_update(
+            "0.1.0",
+            &gh.server.url(),
+            REPO,
+            &UpdateChannel::Beta,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap().version, "0.2.0-beta.1");
+    }
+}

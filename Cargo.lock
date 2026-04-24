@@ -2402,6 +2402,7 @@ dependencies = [
  "deadpool",
  "deadpool-sqlite",
  "deadpool-sync",
+ "mockito",
  "quick-xml",
  "replay-control-core",
  "reqwest",

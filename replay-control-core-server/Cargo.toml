@@ -35,3 +35,5 @@ required-features = ["library"]
 
 [dev-dependencies]
 tempfile = "3"
+mockito = "1"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
