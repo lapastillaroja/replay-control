@@ -617,7 +617,7 @@ pub async fn save_update_channel(channel: String) -> Result<(), ServerFnError> {
     replay_control_core_server::settings::write_update_channel(&state.settings, channel_val)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     // Nuke stale update state and trigger re-check with new channel.
-    crate::api::background::BackgroundManager::nuke_update_dir();
+    replay_control_core_server::update::nuke_update_dir();
     let state_clone = state.clone();
     tokio::spawn(async move {
         match crate::api::background::BackgroundManager::perform_update_check(&state_clone).await {

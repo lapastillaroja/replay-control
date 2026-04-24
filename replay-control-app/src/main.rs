@@ -113,7 +113,7 @@ mod ssr {
             } else {
                 "none".to_string()
             };
-            let available_update = api::background::BackgroundManager::read_available_update();
+            let available_update = replay_control_core_server::update::read_available_update();
             let version = replay_control_app::VERSION;
             yield Ok::<_, Infallible>(Event::default().data(serde_json::json!({
                 "type": "init",

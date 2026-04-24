@@ -9,7 +9,7 @@ repository.workspace = true
 [features]
 default = []
 library = ["dep:quick-xml"]
-http = ["dep:reqwest"]
+http = ["dep:reqwest", "dep:tokio-stream"]
 
 [dependencies]
 replay-control-core = { path = "../replay-control-core" }
@@ -24,9 +24,10 @@ rusqlite = { version = "0.38", features = ["bundled"] }
 deadpool-sqlite = { version = "0.13", features = ["rt_tokio_1"] }
 deadpool = "0.13"
 deadpool-sync = "0.2"
-tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread", "process"] }
+tokio = { workspace = true, features = ["fs", "sync", "macros", "rt-multi-thread", "process", "io-util"] }
+tokio-stream = { version = "0.1", optional = true }
 quick-xml = { version = "0.39", optional = true }
-reqwest = { workspace = true, optional = true }
+reqwest = { workspace = true, features = ["stream"], optional = true }
 
 [[bin]]
 name = "library_report"

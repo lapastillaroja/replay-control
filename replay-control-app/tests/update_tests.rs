@@ -1,6 +1,6 @@
 #![cfg(feature = "ssr")]
 
-use replay_control_app::api::background::BackgroundManager;
+use replay_control_core_server::update as update_io;
 
 /// Start a mock GitHub API server that serves canned release JSON.
 async fn mock_github_server(
@@ -60,7 +60,7 @@ fn make_release_json(tag: &str, prerelease: bool) -> serde_json::Value {
 #[test]
 fn parse_release_valid() {
     let json = make_release_json("v0.3.0", false);
-    let update = BackgroundManager::parse_release(&json).unwrap();
+    let update = update_io::parse_release(&json).unwrap();
     assert_eq!(update.version, "0.3.0");
     assert_eq!(update.tag, "v0.3.0");
     assert!(!update.prerelease);
@@ -71,7 +71,7 @@ fn parse_release_valid() {
 #[test]
 fn parse_release_prerelease() {
     let json = make_release_json("v0.3.0-beta.1", true);
-    let update = BackgroundManager::parse_release(&json).unwrap();
+    let update = update_io::parse_release(&json).unwrap();
     assert_eq!(update.version, "0.3.0-beta.1");
     assert!(update.prerelease);
 }
@@ -85,7 +85,7 @@ fn parse_release_no_v_prefix() {
         "published_at": "2026-01-01T00:00:00Z",
         "assets": []
     });
-    let update = BackgroundManager::parse_release(&json).unwrap();
+    let update = update_io::parse_release(&json).unwrap();
     assert_eq!(update.version, "1.0.0");
     assert_eq!(update.tag, "1.0.0");
 }
@@ -99,13 +99,13 @@ fn parse_release_invalid_semver() {
         "published_at": "",
         "assets": []
     });
-    assert!(BackgroundManager::parse_release(&json).is_none());
+    assert!(update_io::parse_release(&json).is_none());
 }
 
 #[test]
 fn parse_release_missing_tag() {
     let json = serde_json::json!({"prerelease": false});
-    assert!(BackgroundManager::parse_release(&json).is_none());
+    assert!(update_io::parse_release(&json).is_none());
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn parse_release_no_assets() {
         "html_url": "",
         "published_at": ""
     });
-    let update = BackgroundManager::parse_release(&json).unwrap();
+    let update = update_io::parse_release(&json).unwrap();
     assert_eq!(update.binary_size, 0);
     assert_eq!(update.site_size, 0);
 }
@@ -129,9 +129,10 @@ async fn check_finds_newer_stable() {
     let releases = serde_json::json!([]);
     let (base_url, handle) = mock_github_server(latest, releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Stable,
         None,
         None,
@@ -150,9 +151,10 @@ async fn check_no_update_when_current() {
     let releases = serde_json::json!([]);
     let (base_url, handle) = mock_github_server(latest, releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Stable,
         None,
         None,
@@ -170,9 +172,10 @@ async fn check_no_update_when_newer_current() {
     let releases = serde_json::json!([]);
     let (base_url, handle) = mock_github_server(latest, releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.2.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Stable,
         None,
         None,
@@ -190,9 +193,10 @@ async fn check_skipped_version_ignored() {
     let releases = serde_json::json!([]);
     let (base_url, handle) = mock_github_server(latest, releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Stable,
         Some("0.3.0"),
         None,
@@ -210,9 +214,10 @@ async fn check_skipped_version_superseded() {
     let releases = serde_json::json!([]);
     let (base_url, handle) = mock_github_server(latest, releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Stable,
         Some("0.2.0"),
         None,
@@ -234,9 +239,10 @@ async fn check_beta_channel_finds_prerelease() {
     ]);
     let (base_url, handle) = mock_github_server(latest, releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Beta,
         None,
         None,
@@ -260,9 +266,10 @@ async fn check_beta_channel_prefers_newest() {
     ]);
     let (base_url, handle) = mock_github_server(latest, releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Beta,
         None,
         None,
@@ -284,9 +291,10 @@ async fn check_beta_prerelease_not_newer_than_current() {
     ]);
     let (base_url, handle) = mock_github_server(latest, releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Beta,
         None,
         None,
@@ -339,9 +347,10 @@ async fn check_stable_no_releases_returns_none() {
     let releases = serde_json::json!([]);
     let (base_url, handle) = mock_github_server_no_stable(releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Stable,
         None,
         None,
@@ -358,9 +367,10 @@ async fn check_beta_with_no_stable_finds_prerelease() {
     let releases = serde_json::json!([make_release_json("v0.2.0-beta.1", true),]);
     let (base_url, handle) = mock_github_server_no_stable(releases).await;
 
-    let result = BackgroundManager::check_github_update(
+    let result = update_io::check_github_update(
         "0.1.0",
         &base_url,
+        "lapastillaroja/replay-control",
         &replay_control_core::update::UpdateChannel::Beta,
         None,
         None,

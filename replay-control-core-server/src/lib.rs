@@ -20,6 +20,9 @@ pub use capture::screenshots;
 #[cfg(feature = "http")]
 pub mod http;
 
+#[cfg(feature = "http")]
+pub mod update;
+
 pub mod platform;
 pub use platform::config;
 pub use platform::storage;

@@ -1,4 +1,5 @@
 use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::update as update_io;
 use std::time::Duration;
 
 use super::AppState;
@@ -8,13 +9,6 @@ use super::library::dir_mtime;
 
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
-
-/// Download URLs for a specific release, resolved fresh from GitHub API.
-#[derive(Debug)]
-pub struct AssetUrls {
-    pub binary_url: String,
-    pub site_url: String,
-}
 
 /// Orchestrates the ordered background startup pipeline and long-running watchers.
 ///
@@ -30,7 +24,7 @@ impl BackgroundManager {
     /// Start the ordered background pipeline.
     pub fn start(state: AppState) {
         // Clean up stale update temp files from a previous run.
-        Self::nuke_update_dir();
+        update_io::nuke_update_dir();
 
         // Spawn the ordered pipeline as an async task.
         let pipeline_state = state.clone();
@@ -488,44 +482,6 @@ impl BackgroundManager {
     /// Maximum time for the entire StartUpdate operation (5 minutes).
     const UPDATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
-    /// GitHub API base URL. Overridable via `REPLAY_GITHUB_API_URL` for testing.
-    pub fn github_api_base_url() -> String {
-        std::env::var("REPLAY_GITHUB_API_URL")
-            .unwrap_or_else(|_| "https://api.github.com".to_string())
-    }
-
-    /// Nuke the update temp directory (idempotent).
-    pub fn nuke_update_dir() {
-        use replay_control_core::update::{UPDATE_DIR, UPDATE_SCRIPT};
-        let dir = std::path::Path::new(UPDATE_DIR);
-        if dir.exists() {
-            let _ = std::fs::remove_dir_all(dir);
-        }
-        let script = std::path::Path::new(UPDATE_SCRIPT);
-        if script.exists() {
-            let _ = std::fs::remove_file(script);
-        }
-    }
-
-    /// Read `available.json` from the update temp directory.
-    pub fn read_available_update() -> Option<replay_control_core::update::AvailableUpdate> {
-        let path =
-            std::path::Path::new(replay_control_core::update::UPDATE_DIR).join("available.json");
-        let data = std::fs::read_to_string(&path).ok()?;
-        serde_json::from_str(&data).ok()
-    }
-
-    /// Write `available.json` to the update temp directory.
-    fn write_available_update(
-        update: &replay_control_core::update::AvailableUpdate,
-    ) -> std::io::Result<()> {
-        let dir = std::path::Path::new(replay_control_core::update::UPDATE_DIR);
-        std::fs::create_dir_all(dir)?;
-        let path = dir.join("available.json");
-        let json = serde_json::to_string(update).map_err(std::io::Error::other)?;
-        std::fs::write(path, json)
-    }
-
     /// Periodically checks GitHub for new releases.
     async fn update_check_loop(state: AppState) {
         // Delay first check to let WiFi come up on Pi.
@@ -570,9 +526,10 @@ impl BackgroundManager {
         let github_key = settings.github_api_key().map(|s| s.to_string());
         drop(settings);
 
-        match Self::check_github_update(
+        match update_io::check_github_update(
             crate::VERSION,
-            &Self::github_api_base_url(),
+            &update_io::github_api_base_url(),
+            Self::REPO,
             &channel,
             skipped.as_deref(),
             github_key.as_deref(),
@@ -591,15 +548,15 @@ impl BackgroundManager {
                     );
                     return Ok(());
                 }
-                Self::nuke_update_dir();
-                Self::write_available_update(&available).ok();
+                update_io::nuke_update_dir();
+                update_io::write_available_update(&available).ok();
                 let _ = state
                     .config_tx
                     .send(super::ConfigEvent::UpdateAvailable { update: available });
             }
             None => {
                 // No update found — nuke stale state.
-                Self::nuke_update_dir();
+                update_io::nuke_update_dir();
             }
         }
         Ok(())
@@ -612,7 +569,7 @@ impl BackgroundManager {
         Option<replay_control_core::update::AvailableUpdate>,
         Box<dyn std::error::Error + Send + Sync>,
     > {
-        Self::nuke_update_dir();
+        update_io::nuke_update_dir();
 
         let settings = state.settings.load();
         let channel =
@@ -620,9 +577,10 @@ impl BackgroundManager {
         let skipped = settings.skipped_version().map(|s| s.to_string());
         let github_key = settings.github_api_key().map(|s| s.to_string());
 
-        match Self::check_github_update(
+        match update_io::check_github_update(
             crate::VERSION,
-            &Self::github_api_base_url(),
+            &update_io::github_api_base_url(),
+            Self::REPO,
             &channel,
             skipped.as_deref(),
             github_key.as_deref(),
@@ -630,7 +588,7 @@ impl BackgroundManager {
         .await?
         {
             Some(available) => {
-                Self::write_available_update(&available).ok();
+                update_io::write_available_update(&available).ok();
                 let _ = state.config_tx.send(super::ConfigEvent::UpdateAvailable {
                     update: available.clone(),
                 });
@@ -638,240 +596,6 @@ impl BackgroundManager {
             }
             None => Ok(None),
         }
-    }
-
-    /// Check GitHub for a newer release than the running version.
-    pub async fn check_github_update(
-        current_version: &str,
-        base_url: &str,
-        channel: &replay_control_core::update::UpdateChannel,
-        skipped_version: Option<&str>,
-        github_api_key: Option<&str>,
-    ) -> Result<
-        Option<replay_control_core::update::AvailableUpdate>,
-        Box<dyn std::error::Error + Send + Sync>,
-    > {
-        let release = match channel {
-            replay_control_core::update::UpdateChannel::Beta => {
-                Self::fetch_latest_beta(current_version, base_url, Self::REPO, github_api_key)
-                    .await?
-            }
-            replay_control_core::update::UpdateChannel::Stable => {
-                Self::fetch_latest_stable(base_url, Self::REPO, github_api_key).await?
-            }
-        };
-
-        let Some(release) = release else {
-            return Ok(None);
-        };
-
-        if !replay_control_core::update::is_newer(current_version, &release.version) {
-            return Ok(None);
-        }
-
-        if let Some(skipped) = skipped_version
-            && release.version == skipped
-        {
-            return Ok(None);
-        }
-
-        Ok(Some(release))
-    }
-
-    /// Fetch the latest stable release via /releases/latest.
-    /// Returns Ok(None) if no stable release exists (GitHub returns 404).
-    async fn fetch_latest_stable(
-        base_url: &str,
-        repo: &str,
-        api_key: Option<&str>,
-    ) -> Result<
-        Option<replay_control_core::update::AvailableUpdate>,
-        Box<dyn std::error::Error + Send + Sync>,
-    > {
-        let url = format!("{base_url}/repos/{repo}/releases/latest");
-        match Self::github_get(&url, api_key).await {
-            Ok(json) => Ok(Self::parse_release(&json)),
-            Err(e) => {
-                // 404 means no stable release exists — not an error.
-                if e.to_string().contains("404") {
-                    Ok(None)
-                } else {
-                    Err(e)
-                }
-            }
-        }
-    }
-
-    /// Fetch the latest beta by querying /releases and picking newest by semver.
-    async fn fetch_latest_beta(
-        current_version: &str,
-        base_url: &str,
-        repo: &str,
-        api_key: Option<&str>,
-    ) -> Result<
-        Option<replay_control_core::update::AvailableUpdate>,
-        Box<dyn std::error::Error + Send + Sync>,
-    > {
-        let url = format!("{base_url}/repos/{repo}/releases?per_page=10");
-        let json = Self::github_get(&url, api_key).await?;
-
-        let empty = vec![];
-        let releases = json.as_array().unwrap_or(&empty);
-
-        let mut best: Option<replay_control_core::update::AvailableUpdate> = None;
-        for release in releases {
-            if let Some(parsed) = Self::parse_release(release)
-                && replay_control_core::update::is_newer(current_version, &parsed.version)
-                && best.as_ref().is_none_or(|b| {
-                    replay_control_core::update::is_newer(&b.version, &parsed.version)
-                })
-            {
-                best = Some(parsed);
-            }
-        }
-        Ok(best)
-    }
-
-    /// Parse a GitHub release JSON object into an AvailableUpdate.
-    pub fn parse_release(
-        json: &serde_json::Value,
-    ) -> Option<replay_control_core::update::AvailableUpdate> {
-        let tag = json.get("tag_name")?.as_str()?;
-        let version = tag.strip_prefix('v').unwrap_or(tag);
-
-        if semver::Version::parse(version).is_err() {
-            return None;
-        }
-
-        let prerelease = json
-            .get("prerelease")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let html_url = json
-            .get("html_url")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let published_at = json
-            .get("published_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        let assets = json.get("assets").and_then(|v| v.as_array());
-        let mut binary_size = 0u64;
-        let mut site_size = 0u64;
-        if let Some(assets) = assets {
-            for asset in assets {
-                let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let size = asset.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
-                if name.contains("replay-control-app") {
-                    binary_size = size;
-                } else if name.contains("site") {
-                    site_size = size;
-                }
-            }
-        }
-
-        Some(replay_control_core::update::AvailableUpdate {
-            version: version.to_string(),
-            tag: tag.to_string(),
-            prerelease,
-            release_notes_url: html_url,
-            published_at,
-            binary_size,
-            site_size,
-        })
-    }
-
-    /// HTTP GET with optional Authorization for the GitHub API.
-    pub async fn github_get(
-        url: &str,
-        api_key: Option<&str>,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let mut req = replay_control_core_server::http::shared_client()
-            .get(url)
-            .header("Accept", "application/vnd.github+json");
-
-        if let Some(key) = api_key {
-            req = req.header("Authorization", format!("Bearer {key}"));
-        }
-
-        let resp = req.send().await?.error_for_status()?;
-        Ok(resp.json().await?)
-    }
-
-    /// Resolve fresh download URLs for a given release tag.
-    pub async fn resolve_asset_urls(
-        base_url: &str,
-        tag: &str,
-        api_key: Option<&str>,
-    ) -> Result<AssetUrls, Box<dyn std::error::Error + Send + Sync>> {
-        let url = format!("{base_url}/repos/{}/releases/tags/{tag}", Self::REPO);
-        let release = Self::github_get(&url, api_key).await?;
-
-        let assets = release
-            .get("assets")
-            .and_then(|v| v.as_array())
-            .ok_or("No assets found in release")?;
-
-        let mut binary_url = None;
-        let mut site_url = None;
-
-        for asset in assets {
-            let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let download_url = asset.get("browser_download_url").and_then(|v| v.as_str());
-            if let Some(url) = download_url {
-                if name.contains("replay-control-app") && name.ends_with(".tar.gz") {
-                    binary_url = Some(url.to_string());
-                } else if name.contains("site") && name.ends_with(".tar.gz") {
-                    site_url = Some(url.to_string());
-                }
-            }
-        }
-
-        Ok(AssetUrls {
-            binary_url: binary_url.ok_or("Binary asset not found in release")?,
-            site_url: site_url.ok_or("Site asset not found in release")?,
-        })
-    }
-
-    /// Download a file from a URL to a local path, reporting progress via callback.
-    /// Progress callback is throttled to at most once per 250ms.
-    pub async fn download_asset(
-        url: &str,
-        dest: &std::path::Path,
-        progress_cb: &(dyn Fn(u64) + Send + Sync),
-    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        use tokio::io::AsyncWriteExt;
-        use tokio_stream::StreamExt;
-
-        let resp = replay_control_core_server::http::shared_client()
-            .get(url)
-            .timeout(Duration::from_secs(300))
-            .send()
-            .await?
-            .error_for_status()?;
-
-        let mut file = tokio::fs::File::create(dest).await?;
-        let mut stream = resp.bytes_stream();
-        let mut downloaded = 0u64;
-        let mut last_report = std::time::Instant::now();
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            file.write_all(&chunk).await?;
-            downloaded += chunk.len() as u64;
-
-            if last_report.elapsed() >= std::time::Duration::from_millis(250) {
-                progress_cb(downloaded);
-                last_report = std::time::Instant::now();
-            }
-        }
-
-        progress_cb(downloaded);
-        file.flush().await?;
-        Ok(downloaded)
     }
 
     /// Generate the helper shell script that performs the actual file swap + restart.
@@ -972,7 +696,7 @@ exit 1
         {
             Ok(result) => result,
             Err(_) => {
-                Self::nuke_update_dir();
+                update_io::nuke_update_dir();
                 Err("Update timed out after 5 minutes".into())
             }
         }
@@ -1025,7 +749,7 @@ exit 1
                         progress.elapsed_secs = start_time.elapsed().as_secs();
                     }
                 });
-                Self::nuke_update_dir();
+                update_io::nuke_update_dir();
                 result
             }
         }
@@ -1041,7 +765,7 @@ exit 1
         use replay_control_core::update::{UPDATE_DIR, UPDATE_LOCK, UPDATE_SCRIPT};
 
         let github_key = replay_control_core_server::settings::read_github_api_key(&state.settings);
-        let base_url = Self::github_api_base_url();
+        let base_url = update_io::github_api_base_url();
         let update_dir = std::path::PathBuf::from(UPDATE_DIR);
 
         // Acquire file lock (outside update dir, survives nukes).
@@ -1053,14 +777,16 @@ exit 1
         }
 
         // Nuke update dir before starting.
-        Self::nuke_update_dir();
+        update_io::nuke_update_dir();
         tokio::fs::create_dir_all(&update_dir).await?;
 
         // Resolve asset URLs.
-        let assets = Self::resolve_asset_urls(&base_url, tag, github_key.as_deref()).await?;
+        let assets =
+            update_io::resolve_asset_urls(&base_url, Self::REPO, tag, github_key.as_deref())
+                .await?;
 
         // Use actual sizes from available.json for progress reporting.
-        let stored_update = Self::read_available_update();
+        let stored_update = update_io::read_available_update();
         let binary_size = stored_update.as_ref().map(|u| u.binary_size).unwrap_or(0);
         let total_bytes = stored_update
             .map(|u| u.binary_size + u.site_size)
@@ -1088,7 +814,7 @@ exit 1
             let activity_tx = state.activity_tx.clone();
             let start = start_time;
 
-            Self::download_asset(&assets.binary_url, &binary_archive, &move |bytes| {
+            update_io::download_asset(&assets.binary_url, &binary_archive, &move |bytes| {
                 let mut act = activity_state.write().expect("activity lock");
                 if let super::activity::Activity::Update { progress } = &mut *act {
                     progress.downloaded_bytes = bytes;
@@ -1110,7 +836,7 @@ exit 1
             let activity_tx = state.activity_tx.clone();
             let start = start_time;
 
-            Self::download_asset(&assets.site_url, &site_archive, &move |bytes| {
+            update_io::download_asset(&assets.site_url, &site_archive, &move |bytes| {
                 let mut act = activity_state.write().expect("activity lock");
                 if let super::activity::Activity::Update { progress } = &mut *act {
                     progress.downloaded_bytes = binary_size + bytes;
