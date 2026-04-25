@@ -141,6 +141,8 @@ type SqlitePool = managed::Pool<SqliteManager>;
 ///
 /// The pools are wrapped in `Arc<RwLock<>>` so that `close()` / `reopen()` can
 /// swap them across all clones of the same `DbPool`.
+type CorruptionCallback = Arc<std::sync::RwLock<Option<Box<dyn Fn() + Send + Sync>>>>;
+
 #[derive(Clone)]
 pub struct DbPool {
     /// Multiple read connections (WAL concurrent readers).
@@ -166,7 +168,7 @@ pub struct DbPool {
     /// false→true (`mark_corrupt`) and true→false (`reopen` success path).
     /// Lets the host crate broadcast a status event without each call site
     /// needing to remember to do so. Idempotent flag writes do not re-fire.
-    on_corruption_change: Arc<std::sync::RwLock<Option<Box<dyn Fn() + Send + Sync>>>>,
+    on_corruption_change: CorruptionCallback,
 }
 
 /// Number of read connections per pool. Load tests on USB storage (DELETE journal
