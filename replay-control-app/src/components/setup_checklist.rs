@@ -12,8 +12,10 @@ use crate::server_fns::{self, Activity, SetupStatus};
 #[component]
 pub fn SetupChecklist() -> impl IntoView {
     let query = use_query_map();
-    let force = query.read().get_str("setup").is_some();
-    let status = Resource::new(move || force, server_fns::get_setup_status);
+    let status = Resource::new(
+        move || query.read().get_str("setup").is_some(),
+        server_fns::get_setup_status,
+    );
 
     view! {
         <Suspense fallback=|| ()>
