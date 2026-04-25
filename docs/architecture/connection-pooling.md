@@ -1,6 +1,6 @@
 # Connection Pooling
 
-Defined in `replay-control-app/src/api/mod.rs`.
+`DbPool`, `WriteGate`, and the custom `SqliteManager` live in `replay-control-core-server/src/db_pool.rs` as a generic, app-agnostic utility. `replay-control-app/src/api/mod.rs` constructs the two app-specific pool instances and stores them on `AppState`.
 
 ## Pool Architecture
 
@@ -52,7 +52,7 @@ The detected mode controls whether WAL-specific PRAGMAs are set.
 On exFAT filesystems (DELETE journal mode), concurrent reads during bulk writes can cause SQLite corruption. The write gate works by setting an `AtomicBool` flag on the pool:
 
 ```rust
-pub(crate) struct WriteGate(Arc<AtomicBool>);
+pub struct WriteGate(Arc<AtomicBool>);
 ```
 
 When activated, `DbPool::read()` checks the flag and returns `None` immediately, preventing any read connections from being acquired. The gate auto-clears on drop (panic-safe).

@@ -83,7 +83,7 @@ Non-blocking resources use `<Suspense>` with skeleton fallbacks. The pattern:
 
 ## Response Cache
 
-Defined in `replay-control-app/src/api/cache/response.rs`.
+Defined in `replay-control-app/src/api/response_cache.rs`.
 
 A `ResponseCache` on `AppState` caches fully assembled server function responses with a 10-second TTL:
 

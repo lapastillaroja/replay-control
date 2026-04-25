@@ -20,14 +20,17 @@ This crate is the default home for new code. If code touches SQLite, fs, HTTP, o
 
 Server-only native implementation. Compiled for native targets only (never wasm). Pulls `rusqlite`, `deadpool-sqlite`, `tokio`, `reqwest` (optional), `quick-xml` (optional). Contains:
 
+- **DbPool**: generic `deadpool-sqlite` wrapper with read/write pools, journal mode detection, `WriteGate` RAII guard for exFAT safety, and corruption auto-close. App constructs `library_pool` and `user_data_pool` instances on top.
 - **Catalog pool**: async read-only `deadpool-sqlite` pool for the bundled `catalog.sqlite` (game databases, arcade DB, series DB)
 - **Game DB queries**: native SQL lookups for arcade/console metadata, display name resolution, release dates
-- **Library scanning**: ROM discovery, favorites/recents I/O, hashing, disc-group detection
-- **Metadata pipeline**: LaunchBox XML parsing, thumbnail manifest download, image resolution, library DB writes
+- **Library scanning + uploads**: ROM discovery, favorites/recents I/O, hashing, disc-group detection, `roms::write_rom` for upload writes
+- **Metadata pipeline**: LaunchBox XML parsing (`launchbox::run_bulk_import` bridges sync XML parsing to the async pool, `import_launchbox_aliases` writes the alias table), thumbnail manifest download, image resolution, library DB writes, `thumbnails::update_image_paths_from_disk`
+- **Update I/O**: GitHub release polling (`update::check_github_update`), asset download (`update::download_asset`), and `available.json` filesystem helpers — gated on the `http` feature
 - **Platform adapters**: `/proc/mounts` filesystem detection, `df` disk usage, storage location detection
 - **HTTP client**: `reqwest`-backed helpers (feature-gated)
 - **Settings store**: `replay.cfg` / `settings.cfg` reader+writer
 - **Launch**: spawns `replay` process for game playback
+- **Test utilities**: `test_utils` module with shared fixtures (`build_library_pool`, `insert_game_library_row`) used by both inline `#[cfg(test)]` modules and any `tests/*.rs` integration tests
 
 Re-exports `replay-control-core`'s pure types at each matching module level (e.g. `replay_control_core_server::arcade_db::ArcadeGameInfo` resolves via `pub use replay_control_core::arcade_db::*`), so SSR callers have a single import path for both type and native fn.
 
@@ -38,7 +41,7 @@ Feature-gated: `metadata` enables `quick-xml`; `http` enables `reqwest`. The `me
 Leptos 0.7 SSR + WASM hydration app built on Axum. Depends on `replay-control-core` unconditionally (both SSR and hydrate builds) and on `replay-control-core-server` only when the `ssr` feature is active. Contains:
 
 - **Server functions**: ~70 registered server functions for all UI data needs
-- **API layer** (`src/api/`): AppState, connection pools, background pipeline, activity system, game library cache, enrichment, import/thumbnail pipelines
+- **API layer** (`src/api/`): `AppState` (owns the two `DbPool` instances + activity broadcast), background pipeline + filesystem watchers, activity system, L1 game library cache (`api/library/`), thin Axum handlers (upload, recents, favorites, etc.). Pure I/O — pool wrappers, update HTTP, ROM writes, pipeline cores — lives in core-server.
 - **Pages** (`src/pages/`): home, system browser, game detail, favorites, settings, metadata management, search
 - **Components** (`src/components/`): reusable UI components (hero cards, game rows, skeleton loaders, modals)
 - **Internationalization**: runtime i18n with locale-keyed translation strings
@@ -53,17 +56,20 @@ Standalone cdylib (not in the workspace) that implements the libretro API. Runs 
 | Concern | Path |
 |---------|------|
 | App entry point | `replay-control-app/src/main.rs` |
-| AppState + pools | `replay-control-app/src/api/mod.rs` |
-| Background pipeline | `replay-control-app/src/api/background.rs` |
+| AppState (owns pool instances) | `replay-control-app/src/api/mod.rs` |
+| DbPool / SqliteManager / WriteGate | `replay-control-core-server/src/db_pool.rs` |
+| Background pipeline + watchers | `replay-control-app/src/api/background.rs` |
+| Update polling + asset download (HTTP/fs) | `replay-control-core-server/src/update.rs` |
 | Activity system | `replay-control-app/src/api/activity.rs` |
-| Enrichment | `replay-control-app/src/api/cache/enrichment.rs` |
-| Image resolution | `replay-control-app/src/api/cache/images.rs` |
+| App-side enrichment orchestration | `replay-control-app/src/api/library/enrichment.rs` |
+| Image resolution | `replay-control-core-server/src/library/thumbnails/resolution.rs` |
 | DB schema | `replay-control-core-server/src/library/db/mod.rs` |
 | User data DB | `replay-control-core-server/src/user_data/db.rs` |
 | Catalog pool | `replay-control-core-server/src/catalog_pool.rs` |
 | ROM tag parsing | `replay-control-core/src/game/rom_tags.rs` |
 | Image matching | `replay-control-core-server/src/library/thumbnails/matching.rs` |
 | HTTP client | `replay-control-core-server/src/http.rs` |
+| Shared test fixtures | `replay-control-core-server/src/test_utils.rs` |
 
 ## Stack
 
@@ -179,7 +185,7 @@ The app checks GitHub releases for new versions and handles the full download-in
 
 **Configuration**: `UpdateChannel` (stable/beta) is stored in `AppSettings`. An optional GitHub API key raises the rate limit from 60 to 5,000 requests/hour.
 
-Key types: `UpdateState`, `AvailableUpdate`, `UpdateChannel` in `replay-control-core/src/update.rs`. Server functions in `replay-control-app/src/server_fns/`. Background logic in `replay-control-app/src/api/background.rs`. UI in `replay-control-app/src/pages/updating.rs` and `replay-control-app/src/pages/settings.rs`.
+Key types: `UpdateState`, `AvailableUpdate`, `UpdateChannel` in `replay-control-core/src/update.rs`. HTTP polling, asset download, and `available.json` fs helpers in `replay-control-core-server/src/update.rs` (gated on `http`). Server functions in `replay-control-app/src/server_fns/`. App-side orchestration (24h timer, SSE broadcast, systemctl restart of the running service) in `replay-control-app/src/api/background.rs`. UI in `replay-control-app/src/pages/updating.rs` and `replay-control-app/src/pages/settings.rs`.
 
 ## Internationalization
 

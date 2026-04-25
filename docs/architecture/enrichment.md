@@ -1,25 +1,24 @@
 # Enrichment Pipeline
 
-Pure data logic in `replay-control-core-server/src/metadata/enrichment.rs`.
-App orchestration in `replay-control-app/src/api/cache/enrichment.rs` and `images.rs`.
+Pure data logic in `replay-control-core-server/src/library/enrichment.rs` plus image resolution in `replay-control-core-server/src/library/thumbnails/resolution.rs`.
+App orchestration in `replay-control-app/src/api/library/enrichment.rs`.
 
-## Architecture: Core / App Split
+## Architecture: Core-server / App Split
 
-### Core (`replay_control_core::enrichment`)
+### Core-server (`replay_control_core_server::enrichment` + `image_resolution`)
 
-Pure data pipeline — no web server state, connection pools, or caches:
+Pure data + native I/O — no web server state, no broadcast channels:
 
 - **`build_image_index()`** — takes `&Connection`, system, storage_root, user_overrides → `ImageIndex`
 - **`resolve_box_art()`** — takes `&ImageIndex`, system, rom_filename → `BoxArtResult` (Found / ManifestHit / NotFound)
 - **`enrich_system()`** — takes `&Connection`, system, `&ImageIndex`, auto_matched_ratings → `EnrichmentResult`
 - **`format_box_art_url()`** — converts a relative path to a URL path (`/media/{system}/...`)
 
-### App (`replay-control-app/src/api/cache/`)
+### App (`replay-control-app/src/api/library/`)
 
-Thin orchestration wrappers that handle AppState, pool access, and side effects:
+Thin orchestration wrapper that handles AppState, pool access, and side effects:
 
-- **`images.rs`** — `build_image_index()` fetches user overrides from `user_data_pool`, delegates to core. `queue_on_demand_download()` spawns background threads for manifest-matched images.
-- **`enrichment.rs`** — `enrich_system_cache()` coordinates the pipeline: builds the image index, runs auto-matching, calls core `enrich_system()` inside a DB read, then writes results and queues manifest downloads.
+- **`enrichment.rs`** — `enrich_system_cache()` coordinates the pipeline: fetches user overrides from `user_data_pool`, builds the image index via core-server, runs auto-matching, calls core-server's `enrich_system()` inside a DB read, then writes results and queues manifest downloads via the on-demand download path.
 
 ## Purpose
 
