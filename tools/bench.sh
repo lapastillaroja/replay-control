@@ -189,14 +189,24 @@ measure_asset() {
     fi
 }
 
-WASM_FILE="$SITE_ROOT/pkg/replay_control_app_bg.wasm"
+# Discover the hashed wasm URL from the home HTML so bench.sh tracks whatever
+# the server is actually serving (Leptos emits the hashed asset URL in the
+# <link rel="preload"> tag).
+HOME_HTML=$(curl -s --max-time 60 "$TARGET/" 2>/dev/null || true)
+WASM_URL_PATH=$(echo "$HOME_HTML" | grep -oE 'href="[^"]*replay_control_app\.[a-f0-9]+\.wasm"' | head -1 | sed 's/^href="//; s/"$//' || true)
+if [[ -z "$WASM_URL_PATH" ]]; then
+    echo "WARN: could not discover hashed wasm URL from $TARGET/ — falling back to legacy filename" >&2
+    WASM_URL_PATH="/static/pkg/replay_control_app_bg.wasm"
+fi
+WASM_FILENAME=$(basename "$WASM_URL_PATH")
+WASM_FILE="$SITE_ROOT/pkg/$WASM_FILENAME"
 CSS_FILE="$SITE_ROOT/style.css"
 
 measure_asset "WASM bundle" "$WASM_FILE"
 measure_asset "CSS" "$CSS_FILE"
 
 # HTML sizes via curl (uncompressed to measure actual content size).
-home_size=$(curl -s --max-time 60 "$TARGET/" 2>/dev/null | wc -c)
+home_size=$(echo -n "$HOME_HTML" | wc -c)
 games_size=$(curl -s --max-time 60 "${TARGET}/games/nintendo_nes" 2>/dev/null | wc -c)
 home_kb=$(echo "scale=1; $home_size / 1024" | bc -l)
 games_kb=$(echo "scale=1; $games_size / 1024" | bc -l)
@@ -206,7 +216,7 @@ ASSET_RESULTS+=("$(printf '{"name":"Home HTML","raw_kb":%.1f,"gzip_kb":0}' "$hom
 ASSET_RESULTS+=("$(printf '{"name":"Games NES HTML","raw_kb":%.1f,"gzip_kb":0}' "$games_kb")")
 
 # Check gzip on WASM response.
-wasm_encoding=$(curl -sI "${TARGET}/pkg/replay_control_app_bg.wasm" -H "Accept-Encoding: gzip" 2>/dev/null | grep -i "content-encoding" | tr -d '\r' || echo "")
+wasm_encoding=$(curl -sI "${TARGET}${WASM_URL_PATH}" -H "Accept-Encoding: gzip" 2>/dev/null | grep -i "content-encoding" | tr -d '\r' || echo "")
 if [[ -n "$wasm_encoding" ]]; then
     printf "  %-30s  %s\n" "WASM Content-Encoding" "$wasm_encoding"
 else

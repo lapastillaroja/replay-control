@@ -596,10 +596,18 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSetupStatus>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DismissSetup>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLibrarySummary>();
+        let site_root_abs = std::fs::canonicalize(&cli.site_root).unwrap_or_else(|e| {
+            panic!("site root '{}' not found: {e}", cli.site_root);
+        });
+        let hash_file_path = site_root_abs.join("hash.txt");
         let leptos_options = LeptosOptions::builder()
             .output_name("replay_control_app")
             .site_root(cli.site_root.clone())
             .site_pkg_dir("static/pkg")
+            .hash_files(true)
+            .hash_file(std::sync::Arc::from(
+                hash_file_path.to_string_lossy().as_ref(),
+            ))
             .build();
 
         let site_root = cli.site_root.clone();
@@ -786,7 +794,7 @@ mod ssr {
                 tower::ServiceBuilder::new()
                     .layer(SetResponseHeaderLayer::overriding(
                         http::header::CACHE_CONTROL,
-                        http::HeaderValue::from_static(api::CACHE_1H),
+                        http::HeaderValue::from_static(api::CACHE_IMMUTABLE),
                     ))
                     .service(ServeDir::new(format!("{site_root}/pkg")).precompressed_gzip()),
             )

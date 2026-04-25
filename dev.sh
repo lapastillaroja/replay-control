@@ -22,6 +22,7 @@ set -euo pipefail
 # ── Constants ────────────────────────────────────────────────────────────────
 
 CRATE="replay-control-app"
+CRATE_SNAKE="${CRATE//-/_}"
 TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 OUT_DIR="$TARGET_DIR/site"
 PKG_DIR="$OUT_DIR/pkg"
@@ -165,21 +166,32 @@ build_wasm() {
 
     info "Running wasm-bindgen..."
     mkdir -p "$PKG_DIR"
+    # Drop previously hashed assets so old hashes don't accumulate locally.
+    rm -f "$PKG_DIR/${CRATE_SNAKE}".*.wasm "$PKG_DIR/${CRATE_SNAKE}".*.wasm.gz "$PKG_DIR/${CRATE_SNAKE}".*.js
     wasm-bindgen \
-        "$TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm" \
+        "$TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE_SNAKE}.wasm" \
         --out-dir "$PKG_DIR" \
-        --out-name "${CRATE//-/_}" \
+        --out-name "${CRATE_SNAKE}" \
         --target web \
         --no-typescript
 
-    local wasm_file="$PKG_DIR/${CRATE//-/_}_bg.wasm"
-    # Remove stale pre-compressed file — the server uses .precompressed_gzip()
-    # so a leftover .gz from build.sh would be served instead of the fresh .wasm.
-    rm -f "${wasm_file}.gz"
-    if [[ -f "$wasm_file" ]]; then
+    info "Hashing assets..."
+    local wasm_file="$PKG_DIR/${CRATE_SNAKE}_bg.wasm"
+    local js_file="$PKG_DIR/${CRATE_SNAKE}.js"
+    local wasm_hash hashed_wasm js_hash hashed_js
+    wasm_hash=$(sha256sum "$wasm_file" | cut -c1-16)
+    hashed_wasm="$PKG_DIR/${CRATE_SNAKE}.${wasm_hash}.wasm"
+    mv "$wasm_file" "$hashed_wasm"
+    sed -i "s|${CRATE_SNAKE}_bg\.wasm|${CRATE_SNAKE}.${wasm_hash}.wasm|g" "$js_file"
+    js_hash=$(sha256sum "$js_file" | cut -c1-16)
+    hashed_js="$PKG_DIR/${CRATE_SNAKE}.${js_hash}.js"
+    mv "$js_file" "$hashed_js"
+    printf 'js: %s\nwasm: %s\n' "$js_hash" "$wasm_hash" > "$OUT_DIR/hash.txt"
+
+    if [[ -f "$hashed_wasm" ]]; then
         local size
-        size=$(stat -c%s "$wasm_file" 2>/dev/null || echo 0)
-        success "WASM: $(human_size "$size")"
+        size=$(stat -c%s "$hashed_wasm" 2>/dev/null || echo 0)
+        success "WASM: $(human_size "$size")  hash: ${wasm_hash}"
     fi
 }
 
@@ -419,8 +431,14 @@ run_local() {
 set -e
 BUILD_START=\$(date +%s)
 cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile wasm-dev --features hydrate --no-default-features
-wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
-rm -f $PKG_DIR/${CRATE//-/_}_bg.wasm.gz
+rm -f $PKG_DIR/${CRATE_SNAKE}.*.wasm $PKG_DIR/${CRATE_SNAKE}.*.wasm.gz $PKG_DIR/${CRATE_SNAKE}.*.js
+wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE_SNAKE}.wasm --out-dir $PKG_DIR --out-name ${CRATE_SNAKE} --target web --no-typescript
+WASM_HASH=\$(sha256sum $PKG_DIR/${CRATE_SNAKE}_bg.wasm | cut -c1-16)
+mv $PKG_DIR/${CRATE_SNAKE}_bg.wasm $PKG_DIR/${CRATE_SNAKE}.\${WASM_HASH}.wasm
+sed -i "s|${CRATE_SNAKE}_bg\\.wasm|${CRATE_SNAKE}.\${WASM_HASH}.wasm|g" $PKG_DIR/${CRATE_SNAKE}.js
+JS_HASH=\$(sha256sum $PKG_DIR/${CRATE_SNAKE}.js | cut -c1-16)
+mv $PKG_DIR/${CRATE_SNAKE}.js $PKG_DIR/${CRATE_SNAKE}.\${JS_HASH}.js
+printf 'js: %s\nwasm: %s\n' "\${JS_HASH}" "\${WASM_HASH}" > $OUT_DIR/hash.txt
 cat replay-control-app/style/_*.css > $OUT_DIR/style.css
 cargo build -p $CRATE --bin $CRATE --features $features --no-default-features
 BUILD_END=\$(date +%s)

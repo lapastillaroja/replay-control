@@ -2,6 +2,7 @@
 set -euo pipefail
 
 CRATE="replay-control-app"
+CRATE_SNAKE="${CRATE//-/_}"
 TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 OUT_DIR="$TARGET_DIR/site"
 PKG_DIR="$OUT_DIR/pkg"
@@ -27,26 +28,30 @@ TARGET="${TARGET:-${BUILD_TARGET:-}}"
 # ── Download data files if missing ─────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-data_missing=false
-[[ ! -d "$SCRIPT_DIR/data/arcade" || -z "$(ls "$SCRIPT_DIR/data/arcade/"*.dat "$SCRIPT_DIR/data/arcade/"*.xml 2>/dev/null)" ]] && data_missing=true
-[[ ! -f "$SCRIPT_DIR/data/thegamesdb-latest.json" ]] && data_missing=true
-[[ ! -f "$SCRIPT_DIR/data/wikidata/series.json" ]] && data_missing=true
-
-if [[ "$data_missing" == "true" ]]; then
-    echo "==> Downloading data files..."
-    bash "$SCRIPT_DIR/scripts/download-arcade-data.sh"
-    bash "$SCRIPT_DIR/scripts/download-metadata.sh"
-    mkdir -p "$SCRIPT_DIR/data/wikidata"
-    python3 "$SCRIPT_DIR/scripts/wikidata-series-extract.py" > "$SCRIPT_DIR/data/wikidata/series.json"
-    echo "    Data files ready."
+if [[ "${SKIP_DATA:-}" == "1" ]]; then
+    echo "==> SKIP_DATA=1: skipping data download + catalog rebuild."
 else
-    echo "==> Data files present, skipping download."
-fi
+    data_missing=false
+    [[ ! -d "$SCRIPT_DIR/data/arcade" || -z "$(ls "$SCRIPT_DIR/data/arcade/"*.dat "$SCRIPT_DIR/data/arcade/"*.xml 2>/dev/null)" ]] && data_missing=true
+    [[ ! -f "$SCRIPT_DIR/data/thegamesdb-latest.json" ]] && data_missing=true
+    [[ ! -f "$SCRIPT_DIR/data/wikidata/series.json" ]] && data_missing=true
 
-echo "==> Building game catalog..."
-if ! cargo run --release -p build-catalog -- --output catalog.sqlite; then
-    echo "ERROR: catalog build failed" >&2
-    exit 1
+    if [[ "$data_missing" == "true" ]]; then
+        echo "==> Downloading data files..."
+        bash "$SCRIPT_DIR/scripts/download-arcade-data.sh"
+        bash "$SCRIPT_DIR/scripts/download-metadata.sh"
+        mkdir -p "$SCRIPT_DIR/data/wikidata"
+        python3 "$SCRIPT_DIR/scripts/wikidata-series-extract.py" > "$SCRIPT_DIR/data/wikidata/series.json"
+        echo "    Data files ready."
+    else
+        echo "==> Data files present, skipping download."
+    fi
+
+    echo "==> Building game catalog..."
+    if ! cargo run --release -p build-catalog -- --output catalog.sqlite; then
+        echo "ERROR: catalog build failed" >&2
+        exit 1
+    fi
 fi
 
 echo "==> Building WASM (hydrate)..."
@@ -59,14 +64,15 @@ cargo build -p "$CRATE" --lib \
 echo "==> Running wasm-bindgen..."
 mkdir -p "$PKG_DIR"
 wasm-bindgen \
-  "$TARGET_DIR/wasm32-unknown-unknown/wasm-release/${CRATE//-/_}.wasm" \
+  "$TARGET_DIR/wasm32-unknown-unknown/wasm-release/${CRATE_SNAKE}.wasm" \
   --out-dir "$PKG_DIR" \
-  --out-name "${CRATE//-/_}" \
+  --out-name "${CRATE_SNAKE}" \
   --target web \
   --no-typescript
 
 # Optimize WASM with wasm-opt if available.
-WASM_FILE="$PKG_DIR/${CRATE//-/_}_bg.wasm"
+WASM_FILE="$PKG_DIR/${CRATE_SNAKE}_bg.wasm"
+JS_FILE="$PKG_DIR/${CRATE_SNAKE}.js"
 if command -v wasm-opt &>/dev/null; then
     echo "==> Running wasm-opt -Oz..."
     BEFORE=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
@@ -82,11 +88,24 @@ else
     echo "    (wasm-opt not found, skipping)"
 fi
 
+# Content-hash assets for cache busting (Leptos hash_files convention).
+echo "==> Hashing assets..."
+WASM_HASH=$(sha256sum "$WASM_FILE" | cut -c1-16)
+HASHED_WASM="$PKG_DIR/${CRATE_SNAKE}.${WASM_HASH}.wasm"
+mv "$WASM_FILE" "$HASHED_WASM"
+sed -i "s|${CRATE_SNAKE}_bg\.wasm|${CRATE_SNAKE}.${WASM_HASH}.wasm|g" "$JS_FILE"
+JS_HASH=$(sha256sum "$JS_FILE" | cut -c1-16)
+HASHED_JS="$PKG_DIR/${CRATE_SNAKE}.${JS_HASH}.js"
+mv "$JS_FILE" "$HASHED_JS"
+printf 'js: %s\nwasm: %s\n' "$JS_HASH" "$WASM_HASH" > "$OUT_DIR/hash.txt"
+echo "    js:   ${JS_HASH}"
+echo "    wasm: ${WASM_HASH}"
+
 # Pre-compress WASM for static serving.
 echo "==> Pre-compressing WASM..."
-gzip -9 -k -f "$WASM_FILE"
-GZ_SIZE=$(stat -c%s "${WASM_FILE}.gz" 2>/dev/null || echo 0)
-echo "    ${WASM_FILE}.gz: ${GZ_SIZE} bytes"
+gzip -9 -k -f "$HASHED_WASM"
+GZ_SIZE=$(stat -c%s "${HASHED_WASM}.gz" 2>/dev/null || echo 0)
+echo "    ${HASHED_WASM}.gz: ${GZ_SIZE} bytes"
 
 # Copy static assets
 cat replay-control-app/style/_*.css > "$OUT_DIR/style.css"

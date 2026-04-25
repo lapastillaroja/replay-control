@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -67,13 +68,30 @@ def make_tarball(name: str, content: bytes) -> bytes:
 
 
 def make_site_tarball() -> bytes:
-    """Create a tar.gz containing a minimal site directory."""
+    """Create a tar.gz containing a minimal site directory.
+
+    Mirrors build.sh's hashing convention: WASM + JS get content-hashed
+    filenames and a hash.txt sidecar so the post-update server can resolve
+    Leptos's hashed asset URLs.
+    """
+    wasm_bytes = b"\x00"
+    wasm_hash = hashlib.sha256(wasm_bytes).hexdigest()[:16]
+    wasm_name = f"replay_control_app.{wasm_hash}.wasm"
+
+    # The wasm-bindgen JS imports the wasm by name; build.sh sed-replaces
+    # `replay_control_app_bg.wasm` with the hashed name. Mimic that here.
+    js_bytes = f"// placeholder importing ./{wasm_name}\n".encode()
+    js_hash = hashlib.sha256(js_bytes).hexdigest()[:16]
+    js_name = f"replay_control_app.{js_hash}.js"
+
+    hash_txt = f"js: {js_hash}\nwasm: {wasm_hash}\n".encode()
+
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        # Create site/pkg/ directory with a dummy file
         for path, content in [
-            ("site/pkg/replay_control_app.js", b"// placeholder\n"),
-            ("site/pkg/replay_control_app_bg.wasm", b"\x00"),
+            (f"site/pkg/{js_name}", js_bytes),
+            (f"site/pkg/{wasm_name}", wasm_bytes),
+            ("site/hash.txt", hash_txt),
             ("site/style.css", b"/* placeholder */\n"),
         ]:
             info = tarfile.TarInfo(name=path)
