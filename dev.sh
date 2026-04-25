@@ -9,7 +9,6 @@ set -euo pipefail
 # Usage:
 #   ./dev.sh [--storage-path /path/to/roms] [--port 8091]
 #   ./dev.sh --pi [IP]
-#   ./dev.sh --pi [IP] --watch
 #
 #   ./dev.sh --clean                  # clear cargo + sccache caches before build
 #
@@ -18,7 +17,6 @@ set -euo pipefail
 #
 # Pi mode (--pi):
 #   Cross-compiles for aarch64 using dev profiles (fast!), deploys to Pi.
-#   --watch: auto-rebuild + redeploy on file changes.
 #
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -67,7 +65,6 @@ fatal()   { error "$@"; exit 1; }
 
 MODE="local"        # local or pi
 PI_IP=""
-PI_WATCH=false
 CLEAN=false
 
 SERVER_ARGS=""
@@ -97,10 +94,6 @@ parse_args() {
                     shift
                 fi
                 ;;
-            --watch)
-                PI_WATCH=true
-                shift
-                ;;
             --clean)
                 CLEAN=true
                 shift
@@ -117,11 +110,6 @@ parse_args() {
                 ;;
         esac
     done
-
-    # Validate flag combinations
-    if [[ "$MODE" != "pi" ]]; then
-        $PI_WATCH && fatal "--watch requires --pi"
-    fi
 
     # Default Pi IP
     if [[ "$MODE" == "pi" ]] && [[ -z "$PI_IP" ]]; then
@@ -451,61 +439,7 @@ run_pi() {
     setup_ssh
     check_pi_connectivity
 
-    # Build + deploy
     pi_build_and_deploy
-
-    # Watch mode: rebuild + redeploy on changes
-    if $PI_WATCH; then
-        phase "Watching for changes (Pi auto-deploy)"
-        info "Watching: replay-control-app/src, replay-control-core/src, replay-control-app/style"
-        info "Press Ctrl+C to stop."
-        echo ""
-
-        # The cargo-watch subprocess inherits our environment (SSH_ASKPASS etc.)
-        # but we need to pass the resolved values for SSH control socket and CFLAGS
-        # since those are set up by functions that ran in this process.
-        local resolved_cflags="${CFLAGS_aarch64_unknown_linux_gnu:-}"
-
-        cargo watch \
-            -w replay-control-app/src \
-            -w replay-control-core/src \
-            -w replay-control-app/style \
-            -s "$(cat <<INNER
-set -e
-BUILD_START=\$(date +%s)
-
-echo ""
-echo "${BOLD}${BLUE}==> Rebuilding WASM (wasm-dev)${RESET}"
-cargo build -p $CRATE --lib --target wasm32-unknown-unknown --profile wasm-dev --features hydrate --no-default-features
-wasm-bindgen $TARGET_DIR/wasm32-unknown-unknown/wasm-dev/${CRATE//-/_}.wasm --out-dir $PKG_DIR --out-name ${CRATE//-/_} --target web --no-typescript
-cat replay-control-app/style/_*.css > $OUT_DIR/style.css
-rm -rf $OUT_DIR/icons $OUT_DIR/branding
-cp -r replay-control-app/static/icons $OUT_DIR/icons 2>/dev/null || true
-cp -r replay-control-app/static/branding $OUT_DIR/branding 2>/dev/null || true
-
-echo "${BOLD}${BLUE}==> Rebuilding server (dev, aarch64)${RESET}"
-export CFLAGS_aarch64_unknown_linux_gnu="$resolved_cflags"
-cargo build -p $CRATE --bin $CRATE --target $TARGET_TRIPLE --features $(ssr_features) --no-default-features
-
-BUILD_END=\$(date +%s)
-echo ""
-echo "${CYAN}    Rebuilt in \$(( BUILD_END - BUILD_START ))s${RESET}"
-
-echo "${BOLD}${BLUE}==> Deploying to Pi ($PI_IP)${RESET}"
-SSH_CMD="ssh $SSH_OPTS -o ControlMaster=auto -o ControlPath=$SSH_CONTROL_SOCK -o ControlPersist=300"
-
-\$SSH_CMD ${PI_USER}@${PI_IP} "systemctl stop $PI_SERVICE 2>/dev/null || true"
-rsync -e "\$SSH_CMD" --compress $TARGET_DIR/$TARGET_TRIPLE/debug/$CRATE ${PI_USER}@${PI_IP}:${PI_INSTALL_DIR}/replay-control-app
-\$SSH_CMD ${PI_USER}@${PI_IP} "chmod +x ${PI_INSTALL_DIR}/replay-control-app"
-rsync -e "\$SSH_CMD" -r --compress --delete $OUT_DIR/ ${PI_USER}@${PI_IP}:${PI_SITE_DIR}/
-\$SSH_CMD ${PI_USER}@${PI_IP} "systemctl start $PI_SERVICE"
-
-echo ""
-echo "${GREEN}    Deployed! ${BOLD}http://${PI_IP}:8080${RESET}"
-echo ""
-INNER
-)"
-    fi
 }
 
 pi_build_and_deploy() {
