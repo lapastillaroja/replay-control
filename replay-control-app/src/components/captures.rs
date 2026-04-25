@@ -47,7 +47,14 @@ pub fn CapturesLightbox(
         use leptos::ev;
         let handle =
             leptos::prelude::window_event_listener(ev::keydown, move |ev: ev::KeyboardEvent| {
-                if current_index.get().is_none() {
+                // `try_get` returns None if the signal has already been
+                // disposed (page unmounted before this listener detached).
+                // Bail rather than panic; the rest of the closure can then
+                // assume the signal is alive for its duration.
+                let Some(idx) = current_index.try_get() else {
+                    return;
+                };
+                if idx.is_none() {
                     return;
                 }
                 match ev.key().as_str() {
