@@ -476,3 +476,145 @@ impl DbPool {
         result.ok()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use replay_control_core::error::{Error, Result as CoreResult};
+
+    /// Test opener that creates a tiny `kv` table on first open.
+    /// Returns the same path it was given. Used by `reopen` tests.
+    fn test_opener(path: &Path) -> CoreResult<(rusqlite::Connection, PathBuf)> {
+        let conn = sqlite::open_connection(path, "test_db")
+            .map_err(|e| Error::Other(format!("open: {e}")))?;
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);")
+            .map_err(|e| Error::Other(format!("create: {e}")))?;
+        Ok((conn, path.to_path_buf()))
+    }
+
+    /// Build a pool over a fresh DB inside `tmp`, returning (pool, db_path).
+    /// Pool is fully warmed and ready for read/write.
+    fn build_test_pool(tmp: &tempfile::TempDir) -> DbPool {
+        let path = tmp.path().join("test.db");
+        // Pre-create the schema so DbPool::new()'s warmup connection sees a
+        // valid DB (otherwise the empty file would still work, but writes
+        // below need the kv table).
+        let (_, _) = test_opener(&path).unwrap();
+        DbPool::new(path, "test_db", test_opener).expect("pool::new")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn read_write_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        let written = pool
+            .write(|conn| conn.execute("INSERT INTO kv VALUES ('greeting', 'hello')", []))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(written, 1);
+
+        let value: Option<String> = pool
+            .read(|conn| {
+                conn.query_row("SELECT v FROM kv WHERE k = 'greeting'", [], |r| r.get(0))
+                    .ok()
+            })
+            .await
+            .flatten();
+        assert_eq!(value.as_deref(), Some("hello"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn closed_pool_returns_none() {
+        let pool = DbPool::new_closed("test_db");
+        assert!(pool.read(|_| 1u32).await.is_none());
+        assert!(pool.write(|_| 1u32).await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn close_then_read_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+        // Sanity: works before close.
+        assert_eq!(pool.read(|_| 42u32).await, Some(42));
+        pool.close();
+        assert!(pool.read(|_| 42u32).await.is_none());
+        assert!(pool.write(|_| 42u32).await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reopen_after_close_resumes_traffic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+        pool.write(|conn| conn.execute("INSERT INTO kv VALUES ('a', '1')", []))
+            .await
+            .unwrap()
+            .unwrap();
+        pool.close();
+        assert!(pool.read(|_| 1u32).await.is_none());
+
+        // Reopen at the same storage root (the opener resolves the path).
+        // The opener's `path` arg is the *storage root*; our test_opener
+        // ignores that distinction and uses whatever it was given, so we
+        // pass tmp's path verbatim.
+        let opened = pool.reopen(&tmp.path().join("test.db"));
+        assert!(opened, "reopen should succeed for valid DB");
+
+        let value: Option<String> = pool
+            .read(|conn| {
+                conn.query_row("SELECT v FROM kv WHERE k = 'a'", [], |r| r.get(0))
+                    .ok()
+            })
+            .await
+            .flatten();
+        assert_eq!(value.as_deref(), Some("1"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn mark_corrupt_flips_flag_and_closes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+        assert!(!pool.is_corrupt());
+
+        pool.mark_corrupt();
+
+        assert!(pool.is_corrupt());
+        assert!(pool.read(|_| 1u32).await.is_none());
+        assert!(pool.write(|_| 1u32).await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn write_gate_blocks_reads_until_dropped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        // Sanity: read works before gate.
+        assert_eq!(pool.read(|_| 1u32).await, Some(1));
+
+        let gate = WriteGate::activate(pool.write_gate_flag());
+        assert!(
+            pool.read(|_| 1u32).await.is_none(),
+            "gate should block reads"
+        );
+        // Writes are *not* gated — they still work.
+        assert!(pool.write(|_| 1u32).await.is_some());
+
+        drop(gate);
+
+        assert_eq!(pool.read(|_| 1u32).await, Some(1));
+    }
+
+    #[test]
+    fn db_path_and_db_file_exists_track_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("nope.db");
+        let pool = DbPool::new_closed("test_db");
+        // Closed pool starts with empty path and no file.
+        assert!(!pool.db_file_exists());
+        // db_path() reflects whatever was set at construction.
+        assert_eq!(pool.db_path(), PathBuf::new());
+        // Sanity: helper doesn't blow up on a non-existent path either.
+        assert!(!path.exists());
+    }
+}

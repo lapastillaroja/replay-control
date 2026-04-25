@@ -68,3 +68,6 @@ pub use library::thumbnails::resolution as image_resolution;
 pub mod user_data;
 #[cfg(feature = "library")]
 pub use user_data::db as user_data_db;
+
+#[cfg(feature = "library")]
+pub mod test_utils;

@@ -683,6 +683,69 @@ pub async fn update_image_paths_from_disk(pool: &crate::DbPool, storage_root: &P
 mod tests {
     use super::*;
 
+    // --- update_image_paths_from_disk ---
+
+    use crate::DbPool;
+    use crate::test_utils::{build_library_pool, insert_game_library_row};
+    use rusqlite::params;
+
+    /// Place a media file with enough bytes to pass `is_valid_image_sync`'s
+    /// 200-byte minimum. Matching is filename-stem-based so the contents
+    /// don't have to be a real PNG for these unit tests.
+    fn place_media_file(storage_root: &Path, system: &str, kind: &str, filename: &str) -> PathBuf {
+        let dir = storage_root
+            .join(crate::storage::RC_DIR)
+            .join("media")
+            .join(system)
+            .join(kind);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(filename);
+        std::fs::write(&path, vec![0u8; 256]).unwrap();
+        path
+    }
+
+    async fn read_box_art_path(pool: &DbPool, system: &str, rom: &str) -> Option<String> {
+        let system = system.to_string();
+        let rom = rom.to_string();
+        pool.read(move |conn| {
+            conn.query_row(
+                "SELECT box_art_path FROM game_metadata WHERE system = ?1 AND rom_filename = ?2",
+                params![system, rom],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten()
+        })
+        .await
+        .flatten()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn writes_box_art_path_for_matching_image() {
+        let (pool, tmp) = build_library_pool();
+        insert_game_library_row(&pool, "nintendo_nes", "", "smb.nes").await;
+        place_media_file(tmp.path(), "nintendo_nes", "boxart", "smb.png");
+
+        update_image_paths_from_disk(&pool, tmp.path(), "nintendo_nes").await;
+
+        assert_eq!(
+            read_box_art_path(&pool, "nintendo_nes", "smb.nes").await,
+            Some("boxart/smb.png".to_string())
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn no_op_when_no_matching_images() {
+        let (pool, tmp) = build_library_pool();
+        insert_game_library_row(&pool, "nintendo_nes", "", "orphan.nes").await;
+        // No media files placed.
+        update_image_paths_from_disk(&pool, tmp.path(), "nintendo_nes").await;
+        assert_eq!(
+            read_box_art_path(&pool, "nintendo_nes", "orphan.nes").await,
+            None
+        );
+    }
+
     // --- thumbnail_filename ---
 
     #[test]

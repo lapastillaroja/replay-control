@@ -881,4 +881,136 @@ mod tests {
             "gamev2specialedition"
         );
     }
+
+    // ── Pool-backed integration tests ───────────────────────────────
+
+    use crate::DbPool;
+    use crate::test_utils::{build_library_pool, insert_game_library_row};
+
+    async fn count_aliases(pool: &DbPool) -> i64 {
+        pool.read(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM game_alias", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap_or(0)
+        })
+        .await
+        .unwrap_or(0)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn import_launchbox_aliases_skips_when_no_alternates() {
+        let (pool, _tmp) = build_library_pool();
+        let parse_result = ParseResult {
+            alternate_names: vec![],
+            game_names: HashMap::new(),
+        };
+        import_launchbox_aliases(&pool, &parse_result).await;
+        assert_eq!(count_aliases(&pool).await, 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn import_launchbox_aliases_writes_for_matched_base_title() {
+        let (pool, _tmp) = build_library_pool();
+        // base_title in game_library is the normalized form (lowercase, no
+        // punctuation) — matching alias_matching::resolve_to_library_title's
+        // output. See alias.rs `launchbox_aliases_resolves_primary_to_library`
+        // for the same convention.
+        insert_game_library_row(&pool, "nintendo_nes", "super mario bros", "smb.nes").await;
+
+        let mut game_names = HashMap::new();
+        game_names.insert("1".to_string(), "Super Mario Bros.".to_string());
+
+        // A genuinely different alt — must not normalize to the same form as
+        // the primary, otherwise alias_matching skips it (no point storing
+        // an alias equal to the base title).
+        let parse_result = ParseResult {
+            alternate_names: vec![LbAlternateName {
+                database_id: "1".to_string(),
+                alternate_name: "Mario 1".to_string(),
+                region: "".to_string(),
+            }],
+            game_names,
+        };
+
+        import_launchbox_aliases(&pool, &parse_result).await;
+        assert!(
+            count_aliases(&pool).await > 0,
+            "expected at least one alias inserted"
+        );
+    }
+
+    // ── run_bulk_import ─────────────────────────────────────────────
+
+    /// Minimal LaunchBox-style XML with one game on a known platform.
+    fn minimal_launchbox_xml() -> &'static str {
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<LaunchBox>
+  <Game>
+    <Name>Super Mario Bros</Name>
+    <Platform>Nintendo Entertainment System</Platform>
+    <DatabaseID>7</DatabaseID>
+    <Overview>Classic platformer.</Overview>
+    <Genre>Platform</Genre>
+    <Developer>Nintendo</Developer>
+    <MaxPlayers>2</MaxPlayers>
+    <Cooperative>true</Cooperative>
+  </Game>
+</LaunchBox>
+"#
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn run_bulk_import_inserts_metadata_and_reports_progress() {
+        use std::io::Write;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let (pool, tmp) = build_library_pool();
+
+        // Write the XML fixture into the tempdir.
+        let xml_path = tmp.path().join("launchbox.xml");
+        let mut f = std::fs::File::create(&xml_path).unwrap();
+        f.write_all(minimal_launchbox_xml().as_bytes()).unwrap();
+        drop(f);
+
+        // ROM index keyed by (system_folder, normalized_title).
+        let mut rom_index: HashMap<(String, String), Vec<String>> = HashMap::new();
+        rom_index.insert(
+            (
+                "nintendo_nes".to_string(),
+                normalize_title("Super Mario Bros"),
+            ),
+            vec!["smb.nes".to_string()],
+        );
+
+        // Progress callback fires every 5000 source entries; with a 1-game
+        // fixture it may legitimately never fire — we just verify the
+        // callback wiring compiles and the count is non-negative.
+        let progress_calls = Arc::new(AtomicUsize::new(0));
+        let progress_calls_cb = progress_calls.clone();
+
+        let (stats, _parse) = run_bulk_import(&pool, &xml_path, rom_index, move |_, _, _| {
+            progress_calls_cb.fetch_add(1, Ordering::Relaxed);
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(stats.matched, 1, "the single ROM should match");
+        assert_eq!(stats.inserted, 1, "one row should be inserted");
+
+        // Verify the row actually landed in game_metadata via the pool.
+        let count: i64 = pool
+            .read(|conn| {
+                conn.query_row(
+                    "SELECT COUNT(*) FROM game_metadata WHERE rom_filename = 'smb.nes'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0)
+            })
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
 }
