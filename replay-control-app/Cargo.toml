@@ -113,3 +113,4 @@ tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 mockito = "1"
+serial_test = "3"
