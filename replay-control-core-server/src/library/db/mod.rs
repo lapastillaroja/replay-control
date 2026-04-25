@@ -448,6 +448,11 @@ impl LibraryDb {
     /// Returns a raw `Connection` — the caller (or pool manager) owns it.
     ///
     /// Also removes any legacy pre-0.5 `metadata.db` sidecars on first run.
+    ///
+    /// Library is a rebuildable cache, so any startup corruption (bad header
+    /// caught pre-flight, or `probe_tables` failure post-open) is recovered
+    /// silently by deleting the file and reopening. Runtime corruption is
+    /// surfaced via the pool's banner instead.
     pub fn open(storage_root: &Path) -> Result<(Connection, PathBuf)> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
@@ -455,6 +460,14 @@ impl LibraryDb {
         cleanup_legacy_metadata_db(&dir);
 
         let db_path = dir.join(LIBRARY_DB_FILE);
+
+        if crate::sqlite::has_invalid_sqlite_header(&db_path) {
+            tracing::warn!(
+                "Library DB at {} has invalid SQLite header — deleting and recreating",
+                db_path.display()
+            );
+            crate::sqlite::delete_db_files(&db_path);
+        }
 
         let conn = crate::sqlite::open_connection(&db_path, "library.db")?;
         Self::init_tables(&conn)?;
@@ -882,6 +895,28 @@ mod tests {
             has_cooperative,
             "rebuilt table should have cooperative column"
         );
+    }
+
+    #[test]
+    fn open_recovers_from_clobbered_header() {
+        // Header is checked pre-open because `Connection::open` errors on a
+        // bad header before `probe_tables`-based recovery can run.
+        let dir = tempfile::tempdir().unwrap();
+        let rc = dir.path().join(RC_DIR);
+        std::fs::create_dir_all(&rc).unwrap();
+
+        let lib_path = rc.join(LIBRARY_DB_FILE);
+        std::fs::write(&lib_path, [0xDEu8; 4096]).unwrap();
+
+        let (conn, returned_path) =
+            LibraryDb::open(dir.path()).expect("open must recover from clobbered header");
+        assert_eq!(returned_path, lib_path);
+
+        // Fresh DB → expected tables exist and are empty.
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM game_library", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]

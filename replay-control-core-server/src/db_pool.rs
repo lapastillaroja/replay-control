@@ -152,14 +152,21 @@ pub struct DbPool {
     /// Opener function for creating additional connections (used by `reopen()`
     /// to verify the DB is accessible before rebuilding pools).
     opener: fn(&Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
-    /// Set when a query returns SQLITE_CORRUPT (error code 11).
+    /// Set when a query returns SQLITE_CORRUPT (11) or SQLITE_NOTADB (26).
     /// Once set, the pool is closed and all reads/writes return None until
-    /// the DB is rebuilt/repaired and the flag is cleared.
+    /// the DB is rebuilt/repaired and the flag is cleared. NOTADB covers the
+    /// case where the file's 16-byte magic header has been overwritten and
+    /// SQLite refuses to identify it as a database at all.
     corrupt: Arc<AtomicBool>,
     /// When set, `read()` returns `None` immediately without acquiring a
     /// connection. Prevents SQLite corruption on exFAT (DELETE journal mode)
     /// during heavy write operations (import, rebuild, thumbnail index).
     write_gate: Arc<AtomicBool>,
+    /// Fires on every actual transition of the corruption flag — both
+    /// false→true (`mark_corrupt`) and true→false (`reopen` success path).
+    /// Lets the host crate broadcast a status event without each call site
+    /// needing to remember to do so. Idempotent flag writes do not re-fire.
+    on_corruption_change: Arc<std::sync::RwLock<Option<Box<dyn Fn() + Send + Sync>>>>,
 }
 
 /// Number of read connections per pool. Load tests on USB storage (DELETE journal
@@ -271,6 +278,7 @@ impl DbPool {
             opener,
             corrupt: Arc::new(AtomicBool::new(false)),
             write_gate: Arc::new(AtomicBool::new(false)),
+            on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
         })
     }
 
@@ -285,6 +293,33 @@ impl DbPool {
             opener: |_| Err(replay_control_core::error::Error::Other("closed".into())),
             corrupt: Arc::new(AtomicBool::new(false)),
             write_gate: Arc::new(AtomicBool::new(false)),
+            on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
+        }
+    }
+
+    /// Create a pool that starts in the corrupt state — no live connections,
+    /// `is_corrupt()` returns true. Differs from `new_closed` in that the DB
+    /// path and the real opener are wired, so `reopen()` (called by recovery
+    /// flows like Restore/Reset) can rebuild the pool against the file once
+    /// it has been replaced or recreated.
+    ///
+    /// Used at startup when the user-data DB on disk has an invalid SQLite
+    /// header (NOTADB-class corruption) and `open_connection` would otherwise
+    /// crash the service.
+    pub fn new_corrupt(
+        db_path: PathBuf,
+        label: &'static str,
+        opener: fn(&Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+    ) -> Self {
+        Self {
+            read_pool: Arc::new(std::sync::RwLock::new(None)),
+            write_pool: Arc::new(std::sync::RwLock::new(None)),
+            db_path: Arc::new(std::sync::RwLock::new(db_path)),
+            label,
+            opener,
+            corrupt: Arc::new(AtomicBool::new(true)),
+            write_gate: Arc::new(AtomicBool::new(false)),
+            on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
@@ -311,25 +346,14 @@ impl DbPool {
         }
         let pool = self.read_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
-        let corrupt_flag = self.corrupt.clone();
-        let result = conn
-            .interact(move |conn| {
-                let result = f(conn);
-                // SAFETY: sqlite3_errcode reads the error code of the most recent
-                // API call on this connection. It's a single integer read from the
-                // db handle struct — no side effects, no memory issues.
-                let rc = unsafe { rusqlite::ffi::sqlite3_errcode(conn.handle()) };
-                if rc == rusqlite::ffi::SQLITE_CORRUPT {
-                    corrupt_flag.store(true, Ordering::Relaxed);
-                }
-                result
-            })
-            .await
-            .ok();
-        if self.is_corrupt() {
-            self.close();
-        }
-        result
+        let pool_for_corrupt = self.clone();
+        conn.interact(move |conn| {
+            let result = f(conn);
+            check_for_corruption(conn, &pool_for_corrupt);
+            result
+        })
+        .await
+        .ok()
     }
 
     /// Run a mutable closure with the single write connection.
@@ -342,22 +366,14 @@ impl DbPool {
     {
         let pool = self.write_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
-        let corrupt_flag = self.corrupt.clone();
-        let result = conn
-            .interact(move |conn| {
-                let result = f(conn);
-                let rc = unsafe { rusqlite::ffi::sqlite3_errcode(conn.handle()) };
-                if rc == rusqlite::ffi::SQLITE_CORRUPT {
-                    corrupt_flag.store(true, Ordering::Relaxed);
-                }
-                result
-            })
-            .await
-            .ok();
-        if self.is_corrupt() {
-            self.close();
-        }
-        result
+        let pool_for_corrupt = self.clone();
+        conn.interact(move |conn| {
+            let result = f(conn);
+            check_for_corruption(conn, &pool_for_corrupt);
+            result
+        })
+        .await
+        .ok()
     }
 
     /// Close the pools (e.g., after storage change).
@@ -415,7 +431,10 @@ impl DbPool {
                 if let Ok(mut guard) = self.db_path.write() {
                     *guard = path;
                 }
-                self.corrupt.store(false, Ordering::Relaxed);
+                let was_corrupt = self.corrupt.swap(false, Ordering::AcqRel);
+                if was_corrupt {
+                    self.fire_corruption_callback();
+                }
                 true
             }
             Err(e) => {
@@ -436,11 +455,55 @@ impl DbPool {
     }
 
     /// Flag the DB as corrupt and close all connections.
-    /// Idempotent: safe to call from multiple threads simultaneously.
+    /// Idempotent: safe to call from multiple threads simultaneously. The
+    /// corruption callback fires only on the actual false→true transition,
+    /// not on subsequent redundant calls.
     pub fn mark_corrupt(&self) {
-        tracing::error!("{}: database flagged as corrupt", self.label);
-        self.corrupt.store(true, Ordering::Relaxed);
-        self.close();
+        if self
+            .corrupt
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            tracing::error!("{}: database flagged as corrupt", self.label);
+            self.close();
+            self.fire_corruption_callback();
+        }
+    }
+
+    /// Cloneable handle to the corruption flag. Used by host crates to query
+    /// state from a shared callback closure without holding a `DbPool` clone
+    /// (which would form a cycle through `on_corruption_change`).
+    pub fn corrupt_flag(&self) -> Arc<AtomicBool> {
+        self.corrupt.clone()
+    }
+
+    /// Cloneable handle to the current DB path. The path can change across
+    /// `reopen()`, so callbacks that need to derive sibling paths (e.g. a
+    /// `.bak` next to the DB) should hold this and read on each fire. Holding
+    /// the handle (rather than a `DbPool` clone) avoids a reference cycle
+    /// through `on_corruption_change`.
+    pub fn db_path_handle(&self) -> Arc<std::sync::RwLock<PathBuf>> {
+        self.db_path.clone()
+    }
+
+    /// Register (or replace) the callback fired on corruption-flag transitions.
+    /// Fires only on actual false→true (`mark_corrupt`) and true→false
+    /// (successful `reopen`) edges.
+    pub fn set_corruption_callback<F>(&self, cb: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        if let Ok(mut guard) = self.on_corruption_change.write() {
+            *guard = Some(Box::new(cb));
+        }
+    }
+
+    fn fire_corruption_callback(&self) {
+        if let Ok(guard) = self.on_corruption_change.read()
+            && let Some(cb) = guard.as_ref()
+        {
+            cb();
+        }
     }
 
     /// Run a passive WAL checkpoint on the write connection.
@@ -465,6 +528,16 @@ impl DbPool {
         self.db_path.read().expect("db_path lock poisoned").exists()
     }
 
+    /// Check if a `<db>.bak` sibling exists next to the current DB file.
+    /// Re-reads the path each call so it stays correct across `reopen()`.
+    pub fn backup_path_exists(&self) -> bool {
+        self.db_path
+            .read()
+            .expect("db_path lock poisoned")
+            .with_extension("db.bak")
+            .exists()
+    }
+
     /// Synchronously warm a connection from a deadpool pool at startup.
     ///
     /// **Only for use during `DbPool::new()`** — before the server starts
@@ -477,10 +550,28 @@ impl DbPool {
     }
 }
 
+/// Inspect the connection's most recent error code and flag the pool as
+/// corrupt for any code that means "this file is unusable as a SQLite DB."
+///
+/// We look at both the primary code (`SQLITE_CORRUPT` 11) and `SQLITE_NOTADB`
+/// (26). The latter fires when the 16-byte magic header at the start of the
+/// file doesn't match — e.g. a partial write, a torn page on power loss, or
+/// (in our test harness) `dd` clobbering page 1.
+fn check_for_corruption(conn: &rusqlite::Connection, pool: &DbPool) {
+    // SAFETY: sqlite3_errcode reads the error code of the most recent API call
+    // on this connection. It's a single integer read from the db handle struct
+    // — no side effects, no memory issues.
+    let rc = unsafe { rusqlite::ffi::sqlite3_errcode(conn.handle()) };
+    if rc == rusqlite::ffi::SQLITE_CORRUPT || rc == rusqlite::ffi::SQLITE_NOTADB {
+        pool.mark_corrupt();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use replay_control_core::error::{Error, Result as CoreResult};
+    use std::sync::atomic::AtomicU32;
 
     /// Test opener that creates a tiny `kv` table on first open.
     /// Returns the same path it was given. Used by `reopen` tests.
@@ -582,6 +673,43 @@ mod tests {
         assert!(pool.is_corrupt());
         assert!(pool.read(|_| 1u32).await.is_none());
         assert!(pool.write(|_| 1u32).await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn corruption_callback_fires_on_transitions_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        let calls = Arc::new(AtomicU32::new(0));
+        {
+            let calls = calls.clone();
+            pool.set_corruption_callback(move || {
+                calls.fetch_add(1, Ordering::Relaxed);
+            });
+        }
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+
+        pool.mark_corrupt();
+        assert_eq!(calls.load(Ordering::Relaxed), 1, "false→true fires once");
+
+        pool.mark_corrupt();
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "idempotent re-mark does not re-fire"
+        );
+
+        let opened = pool.reopen(&tmp.path().join("test.db"));
+        assert!(opened);
+        assert_eq!(calls.load(Ordering::Relaxed), 2, "true→false fires once");
+
+        let opened = pool.reopen(&tmp.path().join("test.db"));
+        assert!(opened);
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            2,
+            "reopen on healthy pool does not re-fire"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

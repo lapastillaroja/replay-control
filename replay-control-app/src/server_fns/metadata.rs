@@ -360,28 +360,14 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
 // ── Corruption status & recovery ──────────────────────────────────
 
 /// Corruption status for both databases.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Pushed to clients via `ConfigEvent::CorruptionChanged` on `/sse/config`
+/// (see `api::ConfigEvent`); also included in the stream's `init` payload.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CorruptionStatus {
     pub library_corrupt: bool,
     pub user_data_corrupt: bool,
     pub user_data_backup_exists: bool,
-}
-
-/// Check if either database is flagged as corrupt.
-#[server(prefix = "/sfn")]
-pub async fn get_corruption_status() -> Result<CorruptionStatus, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    let (library_corrupt, user_data_corrupt) = state.is_db_corrupt();
-    let backup_exists = state
-        .user_data_pool
-        .db_path()
-        .with_extension("db.bak")
-        .exists();
-    Ok(CorruptionStatus {
-        library_corrupt,
-        user_data_corrupt,
-        user_data_backup_exists: backup_exists,
-    })
 }
 
 /// Rebuild a corrupt library database: close, delete, reopen, trigger pipeline.

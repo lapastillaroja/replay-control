@@ -65,12 +65,14 @@ NOT used during enrichment writes (small per-system UPDATEs, not bulk INSERTs --
 
 ## Corruption Detection
 
-Every `read()` and `write()` call checks `sqlite3_errcode()` after the user closure runs. If `SQLITE_CORRUPT` (error code 11) is detected, the pool sets a `corrupt` flag and closes all connections. Subsequent calls return `None` until the DB is rebuilt and the flag is cleared.
+Every `read()` and `write()` call checks `sqlite3_errcode()` after the user closure runs. If `SQLITE_CORRUPT` (error code 11) is detected, the pool routes through `mark_corrupt()`, which flips the `corrupt` flag and closes all connections. Subsequent calls return `None` until the DB is rebuilt and the flag is cleared. `reopen()` clears the flag on the success path.
+
+`DbPool` exposes a `set_corruption_callback()` hook that fires on every actual transition of the corrupt flag — both false→true (`mark_corrupt`) and true→false (`reopen`). Idempotent calls do not re-fire. The host crate (`replay-control-app::api`) registers a callback that broadcasts `ConfigEvent::CorruptionChanged` over `/sse/config`, so the UI banner reflects pool state changes without polling and without each callsite needing to remember to broadcast.
 
 ## Pool Lifecycle
 
 - **Startup**: Pools open eagerly. One read + one write connection are warmed immediately. Failure to warm means the DB is inaccessible -- the server exits.
-- **Storage change**: `close()` drops all connections. `reopen()` verifies the new DB path, rebuilds both pools, and clears the corrupt flag.
+- **Storage change**: `close()` drops all connections. `reopen()` verifies the new DB path, rebuilds both pools, and clears the corrupt flag (firing the corruption callback if it was set).
 - **Closed state**: `DbPool::new_closed()` creates a pool where all reads/writes return `None`. Used at startup when storage is unavailable.
 
 ## Manual Checkpointing

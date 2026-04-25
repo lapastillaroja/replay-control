@@ -106,7 +106,7 @@ Two SSE streams provide real-time updates without polling:
 Broadcasts `Activity` enum as tagged JSON. Clients receive import progress, thumbnail download counts, rebuild status. See [Activity System](activity-system.md).
 
 ### /sse/config
-Broadcasts config changes (skin changes, storage changes). Sends initial state snapshot on connect, then event-driven updates. Keep-alive every 30 seconds.
+Broadcasts skin changes, storage changes, available-update notifications, and database-corruption flag transitions. Sends an initial state snapshot on connect (which seeds the client's corruption banner among other things), then event-driven updates. Keep-alive every 30 seconds. The corruption events come from the pool-level callback in `DbPool::set_corruption_callback`; see [Connection Pooling](connection-pooling.md#corruption-detection).
 
 ## Storage Guard Middleware
 

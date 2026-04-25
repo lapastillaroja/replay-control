@@ -59,6 +59,35 @@ pub fn open_connection(db_path: &Path, label: &str) -> Result<Connection> {
     }
 }
 
+/// Cheap sanity check for the SQLite magic header.
+///
+/// Returns `true` when the file exists with content that SQLite would refuse
+/// to recognize as a database — i.e. either:
+/// - it's at least 16 bytes long and the first 16 don't match `b"SQLite format 3\0"`, or
+/// - it's between 1 and 15 bytes long (too short to even hold a header).
+///
+/// Returns `false` when the file is missing or zero-bytes — SQLite treats
+/// both as a fresh DB and `open_connection` handles them correctly.
+///
+/// Used at startup to detect a `user_data.db` whose header has been clobbered
+/// (torn write on power loss, manual corruption testing, etc.) so the host
+/// crate can degrade gracefully instead of letting `open_connection` crash
+/// the service in a restart loop.
+pub fn has_invalid_sqlite_header(path: &Path) -> bool {
+    use std::io::Read;
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut buf = [0u8; 16];
+    match f.read_exact(&mut buf) {
+        Ok(()) => &buf != b"SQLite format 3\0",
+        // Short read: 0 bytes means a fresh-DB placeholder SQLite handles
+        // fine; 1-15 bytes is a torn write and SQLite will reject it.
+        // Use the same handle to disambiguate (no path-level TOCTOU).
+        Err(_) => f.metadata().map(|m| m.len() > 0).unwrap_or(false),
+    }
+}
+
 /// Probe tables for corruption. Returns `Err` if any table is unreadable.
 ///
 /// `PRAGMA quick_check` misses corrupt data pages, so we touch every table
@@ -173,4 +202,62 @@ fn open_wal(db_path: &Path, label: &str) -> Result<Connection> {
     )
     .map_err(|e| Error::Other(format!("{label}: failed to set pragmas: {e}")))?;
     Ok(conn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    fn tmp_path(tag: &str) -> std::path::PathBuf {
+        static N: AtomicU32 = AtomicU32::new(0);
+        std::env::temp_dir().join(format!(
+            "rc-sqlite-header-{}-{}-{}",
+            tag,
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed),
+        ))
+    }
+
+    #[test]
+    fn header_check_missing_file_is_not_invalid() {
+        let p = tmp_path("missing");
+        assert!(!has_invalid_sqlite_header(&p));
+    }
+
+    #[test]
+    fn header_check_zero_byte_file_is_not_invalid() {
+        let p = tmp_path("empty");
+        std::fs::write(&p, b"").unwrap();
+        assert!(!has_invalid_sqlite_header(&p));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn header_check_partial_header_is_invalid() {
+        // 5-byte file: too short to hold the 16-byte magic. Pre-fix this slipped
+        // through and crash-looped the service. Lock in the catch.
+        let p = tmp_path("partial");
+        std::fs::write(&p, b"SQLit").unwrap();
+        assert!(has_invalid_sqlite_header(&p));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn header_check_clobbered_header_is_invalid() {
+        let p = tmp_path("clobbered");
+        std::fs::write(&p, [0xDEu8; 4096]).unwrap();
+        assert!(has_invalid_sqlite_header(&p));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn header_check_valid_header_is_not_invalid() {
+        let p = tmp_path("valid");
+        let mut bytes = b"SQLite format 3\0".to_vec();
+        bytes.extend(std::iter::repeat_n(0u8, 4080));
+        std::fs::write(&p, &bytes).unwrap();
+        assert!(!has_invalid_sqlite_header(&p));
+        let _ = std::fs::remove_file(&p);
+    }
 }

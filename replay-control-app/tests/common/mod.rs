@@ -115,7 +115,6 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::RandomGame>();
     server_fn::axum::register_explicit::<server_fns::GetRegionPreference>();
     server_fn::axum::register_explicit::<server_fns::GetRecommendations>();
-    server_fn::axum::register_explicit::<server_fns::GetCorruptionStatus>();
     server_fn::axum::register_explicit::<server_fns::RebuildCorruptLibrary>();
     server_fn::axum::register_explicit::<server_fns::RepairCorruptUserData>();
     server_fn::axum::register_explicit::<server_fns::RestoreUserDataBackup>();

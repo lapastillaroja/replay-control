@@ -115,6 +115,8 @@ mod ssr {
             };
             let available_update = replay_control_core_server::update::read_available_update();
             let version = replay_control_app::VERSION;
+            let (library_corrupt, user_data_corrupt, user_data_backup_exists) =
+                state.corruption_status();
             yield Ok::<_, Infallible>(Event::default().data(serde_json::json!({
                 "type": "init",
                 "skin_index": skin,
@@ -122,6 +124,9 @@ mod ssr {
                 "storage_kind": storage_kind,
                 "available_update": available_update,
                 "version": version,
+                "library_corrupt": library_corrupt,
+                "user_data_corrupt": user_data_corrupt,
+                "user_data_backup_exists": user_data_backup_exists,
             }).to_string()));
 
             // Then wait for broadcast events (no polling).
@@ -563,7 +568,6 @@ mod ssr {
         // GetRebuildProgress removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetCorruptionStatus>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildCorruptLibrary>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RepairCorruptUserData>(

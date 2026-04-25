@@ -41,6 +41,7 @@ use pages::settings::SettingsPage;
 use pages::skin::SkinPage;
 use pages::updating::UpdatingPage;
 use pages::wifi::WifiPage;
+use server_fns::{Activity, CorruptionStatus};
 
 /// The HTML shell wrapping the App component for SSR.
 #[cfg(feature = "ssr")]
@@ -105,9 +106,15 @@ pub fn App() -> impl IntoView {
     let update_state = RwSignal::new(replay_control_core::update::UpdateState::None);
     provide_context(update_state);
 
+    // Push-based status signals fed by SSE listeners below.
+    // Banners and other consumers subscribe to these via use_context.
+    provide_context(RwSignal::new(Activity::Idle));
+    provide_context(RwSignal::new(CorruptionStatus::default()));
+
     view! {
         <Router>
             <SseConfigListener />
+            <SseActivityListener />
             <SearchShortcut />
             <div class="app">
                 <header class="top-bar">
@@ -155,16 +162,27 @@ pub fn App() -> impl IntoView {
     }
 }
 
-/// SSE listener for config changes (skin, storage).
+#[cfg(feature = "hydrate")]
+fn corruption_status_from_payload(payload: &serde_json::Value) -> CorruptionStatus {
+    let bool_field = |key: &str| payload.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+    CorruptionStatus {
+        library_corrupt: bool_field("library_corrupt"),
+        user_data_corrupt: bool_field("user_data_corrupt"),
+        user_data_backup_exists: bool_field("user_data_backup_exists"),
+    }
+}
+
+/// SSE listener for config changes (skin, storage, update, corruption).
 ///
 /// Connects to `/sse/config` on hydration. This is a broadcast-based endpoint
-/// (no polling) — the server pushes events only when skin or storage actually
-/// changes.
+/// (no polling) — the server pushes events only when state actually changes.
 ///
 /// Handles:
-/// - `init`: records current skin/storage state from server
+/// - `init`: records current skin/storage state and corruption flags from server
 /// - `SkinChanged`: updates the `<style id="skin-theme">` element in-place
 /// - `StorageChanged`: reloads the page so all data is re-fetched
+/// - `UpdateAvailable`: sets the update-state signal
+/// - `CorruptionChanged`: writes to the `RwSignal<CorruptionStatus>` context
 #[component]
 fn SseConfigListener() -> impl IntoView {
     #[cfg(feature = "hydrate")]
@@ -178,9 +196,10 @@ fn SseConfigListener() -> impl IntoView {
         // Track the last storage kind to detect real transitions.
         let last_storage_kind = RwSignal::new(String::new());
 
-        // Capture update_state signal before closures.
+        // Capture signals before closures.
         let update_state_signal =
             use_context::<RwSignal<replay_control_core::update::UpdateState>>();
+        let corruption_signal = use_context::<RwSignal<CorruptionStatus>>();
 
         Effect::new(move || {
             let es = match web_sys::EventSource::new("/sse/config") {
@@ -233,6 +252,9 @@ fn SseConfigListener() -> impl IntoView {
                                         ),
                                     );
                                 }
+                            }
+                            if let Some(sig) = corruption_signal {
+                                sig.set(corruption_status_from_payload(&payload));
                             }
                             // Version-based reload for stale tabs.
                             if let Some(server_version) =
@@ -316,6 +338,11 @@ fn SseConfigListener() -> impl IntoView {
                                 }
                             }
                         }
+                        "CorruptionChanged" => {
+                            if let Some(sig) = corruption_signal {
+                                sig.set(corruption_status_from_payload(&payload));
+                            }
+                        }
                         _ => {}
                     }
                 },
@@ -332,6 +359,54 @@ fn SseConfigListener() -> impl IntoView {
             // Leak the EventSource so its wbindgen wrapper isn't dropped at the
             // end of this Effect — the listener is mounted at the App root and
             // never unmounts.
+            std::mem::forget(es);
+        });
+    }
+}
+
+/// SSE listener for activity state (import, thumbnail, rebuild, maintenance, etc.).
+///
+/// Connects to `/sse/activity` once at hydration and stays open for the
+/// lifetime of the tab. Each event payload is a JSON-encoded `Activity`;
+/// this writes it into the `RwSignal<Activity>` provided by `App`. Banners
+/// and other consumers subscribe via `use_context::<RwSignal<Activity>>()`.
+///
+/// No `onerror` handler — the browser's built-in EventSource retry reconnects
+/// after server restarts, the same as `SseConfigListener`.
+#[component]
+fn SseActivityListener() -> impl IntoView {
+    #[cfg(feature = "hydrate")]
+    {
+        use wasm_bindgen::prelude::*;
+
+        let activity_signal = use_context::<RwSignal<Activity>>();
+
+        Effect::new(move || {
+            let Some(signal) = activity_signal else {
+                return;
+            };
+            let es = match web_sys::EventSource::new("/sse/activity") {
+                Ok(es) => es,
+                Err(_) => return,
+            };
+
+            let on_message = Closure::<dyn Fn(web_sys::MessageEvent)>::new(
+                move |event: web_sys::MessageEvent| {
+                    let data = event.data().as_string().unwrap_or_default();
+                    if data.is_empty() {
+                        return;
+                    }
+                    if let Ok(activity) = serde_json::from_str::<Activity>(&data) {
+                        signal.set(activity);
+                    }
+                },
+            );
+
+            es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+            on_message.forget();
+
+            // Listener mounted at App root, never unmounts — leaking the
+            // EventSource keeps its wbindgen wrapper alive past Effect end.
             std::mem::forget(es);
         });
     }

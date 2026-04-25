@@ -44,6 +44,11 @@ pub enum ConfigEvent {
     UpdateAvailable {
         update: replay_control_core::update::AvailableUpdate,
     },
+    CorruptionChanged {
+        library_corrupt: bool,
+        user_data_corrupt: bool,
+        user_data_backup_exists: bool,
+    },
 }
 
 /// Shared application state.
@@ -79,6 +84,45 @@ pub struct AppState {
     pub config_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
     /// Broadcast channel for activity state changes (import, thumbnail, rebuild).
     pub activity_tx: tokio::sync::broadcast::Sender<Activity>,
+}
+
+/// Register a corruption-change callback on each pool.
+///
+/// Both pools share a closure that reads the latest combined corruption state
+/// and broadcasts `ConfigEvent::CorruptionChanged` on `config_tx`. The closure
+/// captures atomic flag handles and the user-data path handle (no `DbPool`
+/// clones), so there is no Pool ↔ callback reference cycle.
+fn register_corruption_callbacks(
+    library_pool: &DbPool,
+    user_data_pool: &DbPool,
+    config_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
+) {
+    use std::sync::atomic::Ordering;
+
+    let lib_flag = library_pool.corrupt_flag();
+    let ud_flag = user_data_pool.corrupt_flag();
+    let ud_path = user_data_pool.db_path_handle();
+
+    let make_cb = || {
+        let lib_flag = lib_flag.clone();
+        let ud_flag = ud_flag.clone();
+        let ud_path = ud_path.clone();
+        let tx = config_tx.clone();
+        move || {
+            let _ = tx.send(ConfigEvent::CorruptionChanged {
+                library_corrupt: lib_flag.load(Ordering::Relaxed),
+                user_data_corrupt: ud_flag.load(Ordering::Relaxed),
+                user_data_backup_exists: ud_path
+                    .read()
+                    .ok()
+                    .map(|p| p.with_extension("db.bak").exists())
+                    .unwrap_or(false),
+            });
+        }
+    };
+
+    library_pool.set_corruption_callback(make_cb());
+    user_data_pool.set_corruption_callback(make_cb());
 }
 
 /// Opener for library DB.
@@ -166,6 +210,11 @@ impl AppState {
             }
         };
 
+        // Channels are constructed before the pools so the corruption
+        // callbacks registered below can capture `config_tx`.
+        let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
+        let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
+
         let (library_pool, user_data_pool) = if let Some(ref storage) = storage {
             tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
@@ -176,32 +225,54 @@ impl AppState {
             tracing::info!("Library DB ready at {}", meta_path.display());
             let library_pool = DbPool::new(meta_path.clone(), "library_db", open_library_db)?;
 
-            let (_ud_conn, ud_path, ud_corrupt) =
-                replay_control_core_server::user_data_db::UserDataDb::open(&storage.root)
-                    .map_err(|e| format!("Failed to open user data DB: {e}"))?;
-            tracing::info!("User data DB ready at {}", ud_path.display());
-            let user_data_pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;
-
-            if ud_corrupt {
-                tracing::warn!("User data DB is corrupt — marking pool, awaiting user action");
-                user_data_pool.mark_corrupt();
+            // Pre-flight: a clobbered SQLite header makes `UserDataDb::open`
+            // return Err and crash-loop the service via systemd. Detect that
+            // case and start with a `new_corrupt` pool so the user sees the
+            // recovery banner via the SSE init payload and can pick Restore
+            // or Reset — both of which call `pool.reopen()` against the path
+            // we wire up here.
+            let ud_path =
+                replay_control_core_server::user_data_db::UserDataDb::db_path(&storage.root);
+            let user_data_pool = if replay_control_core_server::sqlite::has_invalid_sqlite_header(
+                &ud_path,
+            ) {
+                tracing::error!(
+                    "User data DB at {} has invalid SQLite header — starting in corrupt state; user can recover via Restore from backup or Reset",
+                    ud_path.display()
+                );
+                DbPool::new_corrupt(ud_path, "user_data_db", open_user_data_db)
             } else {
-                let backup_path = ud_path.with_extension("db.bak");
-                match std::fs::copy(&ud_path, &backup_path) {
-                    Ok(_) => tracing::info!("User data backup saved to {}", backup_path.display()),
-                    Err(e) => tracing::debug!("Could not back up user_data.db: {e}"),
+                let (_ud_conn, ud_path, ud_corrupt) =
+                    replay_control_core_server::user_data_db::UserDataDb::open(&storage.root)
+                        .map_err(|e| format!("Failed to open user data DB: {e}"))?;
+                tracing::info!("User data DB ready at {}", ud_path.display());
+                let pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;
+                if ud_corrupt {
+                    tracing::warn!("User data DB is corrupt — marking pool, awaiting user action");
+                    pool.mark_corrupt();
+                } else {
+                    let backup_path = ud_path.with_extension("db.bak");
+                    match std::fs::copy(&ud_path, &backup_path) {
+                        Ok(_) => {
+                            tracing::info!("User data backup saved to {}", backup_path.display())
+                        }
+                        Err(e) => tracing::debug!("Could not back up user_data.db: {e}"),
+                    }
                 }
-            }
+                pool
+            };
+
+            register_corruption_callbacks(&library_pool, &user_data_pool, config_tx.clone());
 
             (library_pool, user_data_pool)
         } else {
             tracing::warn!(
                 "Starting without storage — all requests will redirect to /waiting until storage appears"
             );
-            (
-                DbPool::new_closed("library_db"),
-                DbPool::new_closed("user_data_db"),
-            )
+            let library_pool = DbPool::new_closed("library_db");
+            let user_data_pool = DbPool::new_closed("user_data_db");
+            register_corruption_callbacks(&library_pool, &user_data_pool, config_tx.clone());
+            (library_pool, user_data_pool)
         };
 
         let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
@@ -226,9 +297,6 @@ impl AppState {
 
         // Load all user preferences from settings.cfg once at startup.
         let prefs = replay_control_core_server::settings::UserPreferences::load(&settings);
-
-        let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
-        let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
 
         Ok(Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
@@ -278,6 +346,17 @@ impl AppState {
         (
             self.library_pool.is_corrupt(),
             self.user_data_pool.is_corrupt(),
+        )
+    }
+
+    /// Returns `(library_corrupt, user_data_corrupt, user_data_backup_exists)`.
+    /// Used by `sse_config_stream` to seed the `init` payload.
+    pub fn corruption_status(&self) -> (bool, bool, bool) {
+        let (library_corrupt, user_data_corrupt) = self.is_db_corrupt();
+        (
+            library_corrupt,
+            user_data_corrupt,
+            self.user_data_pool.backup_path_exists(),
         )
     }
 

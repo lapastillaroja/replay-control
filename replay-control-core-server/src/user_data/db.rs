@@ -28,6 +28,14 @@ impl UserDataDb {
     /// NOTE: update this list when adding new tables.
     pub const TABLES: &[&str] = &["box_art_overrides", "game_videos"];
 
+    /// Resolve the user_data.db path under `<storage_root>/.replay-control/`
+    /// without touching the filesystem. Useful for callers that need the path
+    /// to pre-flight-check it (e.g. `has_invalid_sqlite_header`) before
+    /// invoking `open`, which would crash on a clobbered header.
+    pub fn db_path(storage_root: &Path) -> PathBuf {
+        storage_root.join(RC_DIR).join(USER_DATA_DB_FILE)
+    }
+
     /// Open (or create) the user data database at `<storage_root>/.replay-control/user_data.db`.
     ///
     /// Uses the shared nolock->WAL open strategy (see `sqlite`), runs table
@@ -40,7 +48,7 @@ impl UserDataDb {
     pub fn open(storage_root: &Path) -> Result<(Connection, PathBuf, bool)> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
-        let db_path = dir.join(USER_DATA_DB_FILE);
+        let db_path = Self::db_path(storage_root);
 
         let conn = crate::sqlite::open_connection(&db_path, "user_data.db")?;
         Self::init_tables(&conn)?;

@@ -14,10 +14,13 @@ Usage:
     APP_URL=http://localhost:8091 python -m pytest tests/e2e/ -v
 """
 
+import atexit
 import json
 import os
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -66,6 +69,32 @@ def _detect_engine() -> str:
     return "docker"
 
 
+# SSH password is fed to ssh via SSH_ASKPASS instead of sshpass — same trick
+# dev.sh uses, removes the system dep. The askpass file is created lazily on
+# first use and removed at interpreter exit.
+_ASKPASS_PATH: str | None = None
+
+
+def _askpass_path() -> str:
+    global _ASKPASS_PATH
+    if _ASKPASS_PATH is None:
+        fd, path = tempfile.mkstemp(prefix="e2e-askpass-", suffix=".sh")
+        with os.fdopen(fd, "w") as f:
+            f.write(f'#!/bin/sh\necho "{PI_PASS}"\n')
+        os.chmod(path, stat.S_IRWXU)
+        atexit.register(lambda p=path: os.path.exists(p) and os.unlink(p))
+        _ASKPASS_PATH = path
+    return _ASKPASS_PATH
+
+
+def _ssh_env() -> dict:
+    env = os.environ.copy()
+    env["SSH_ASKPASS"] = _askpass_path()
+    env["SSH_ASKPASS_REQUIRE"] = "force"
+    env["DISPLAY"] = ""
+    return env
+
+
 def exec_cmd(cmd: str, timeout: int = 30) -> str:
     """Run a command on the target (Pi via SSH or container via exec)."""
     if CONTAINER:
@@ -77,11 +106,13 @@ def exec_cmd(cmd: str, timeout: int = 30) -> str:
     else:
         result = subprocess.run(
             [
-                "sshpass", "-p", PI_PASS,
-                "ssh", "-o", "StrictHostKeyChecking=no",
+                "ssh",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "LogLevel=ERROR",
                 f"{PI_USER}@{PI_HOST}", cmd,
             ],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, timeout=timeout, env=_ssh_env(),
         )
     return result.stdout.strip()
 
