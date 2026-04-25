@@ -23,9 +23,17 @@ This is a personal project born from my love for retro gaming on real hardware. 
 
 ---
 
-## Screenshots
+<p align="center">
+  <img src="site/static/screenshots/home-desktop.png" alt="Home page on desktop — Last Played, Recently Played, and bottom navigation" width="640">
+</p>
 
-> Screenshots coming soon.
+<p align="center">
+  <em>Home page on desktop. Mobile game detail below.</em>
+</p>
+
+<p align="center">
+  <img src="site/static/screenshots/detail-sonic2-mobile.png" alt="Sonic the Hedgehog 2 game detail on mobile — box art, Launch on TV, and game info" width="280">
+</p>
 
 ## Features
 
