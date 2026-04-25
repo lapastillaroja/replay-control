@@ -83,7 +83,9 @@ HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
 
 EXPOSE 8080
 
-CMD ["/usr/local/bin/replay-control-app", \
-     "--port", "8080", \
-     "--site-root", "/usr/local/share/replay/site", \
-     "--storage-path", "/media/usb"]
+# Launch via mock_systemctl so the PID file is populated and tests can
+# actually stop/start the service (e.g. test_corruption_banner). Direct
+# CMD execution would make the app PID 1, untracked by the mock — every
+# `systemctl stop` would no-op and `systemctl start` would fail on
+# port-in-use.
+CMD ["/bin/sh", "-c", "systemctl start replay-control && exec tail -f /dev/null"]

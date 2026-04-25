@@ -28,7 +28,13 @@ do_start() {
         echo "replay-control already running (pid $pid)"
         return 0
     fi
-    $APP_BIN --port "$PORT" --site-root /usr/local/share/replay/site --storage-path /media/usb &
+    # Redirect app output to PID 1's stdout/stderr so logs reach the
+    # container's `podman logs` regardless of who called systemctl. Without
+    # this, when an exec session (e.g. a test step) starts the service, the
+    # app inherits the exec's pipe and dies with SIGPIPE the moment the
+    # session closes — the new instance lives only a few ms.
+    $APP_BIN --port "$PORT" --site-root /usr/local/share/replay/site --storage-path /media/usb \
+        </dev/null >/proc/1/fd/1 2>/proc/1/fd/2 &
     echo $! > "$PIDFILE"
     echo "Started replay-control (pid $!)"
 }
