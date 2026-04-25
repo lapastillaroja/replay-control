@@ -192,4 +192,11 @@ Handled inline in `init_tables()` with idempotent `ALTER TABLE ... ADD COLUMN` s
 
 ## Corruption Handling
 
-Both databases probe all tables at open time via `probe_tables()`. For `library.db`, corruption triggers automatic delete-and-recreate (it's a rebuildable cache). For `user_data.db`, corruption is flagged but the DB is **not** destroyed -- the caller decides (user data is irreplaceable).
+Two layers of detection run at open time:
+
+1. **Magic-header pre-flight** -- `sqlite::has_invalid_sqlite_header` reads the first 16 bytes of the file. If they're non-empty but don't match the SQLite magic string, the file has been clobbered by a torn write or partial overwrite. SQLite itself would refuse to open the file with a generic `SQLITE_NOTADB`, which previously crash-looped the systemd service before any recovery code could run. The pre-flight short-circuits to recovery instead.
+2. **Table probe** -- `probe_tables()` issues a row-scan against every known table. Catches logical/index corruption that the file-level magic check can't see.
+
+Both layers feed the same recovery model. For `library.db`, corruption triggers automatic delete-and-recreate (it's a rebuildable cache). For `user_data.db`, corruption is flagged via `DbPool::new_corrupt` but the DB is **not** destroyed -- the user gets a banner with a one-click **Reset** action (user data is irreplaceable, so the choice belongs to the user). The banner is delivered via the `/sse/config` push channel, so it appears immediately on every connected tab without polling.
+
+Both `SQLITE_CORRUPT (11)` and `SQLITE_NOTADB (26)` route through the same `check_for_corruption` path, so runtime queries that fail either way trigger the same recovery flow.

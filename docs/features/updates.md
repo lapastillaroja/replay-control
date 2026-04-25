@@ -49,6 +49,8 @@ Clicking **Update Now** navigates to a dedicated updating page that shows progre
 
 The entire process is protected by a 5-minute timeout. If something goes wrong, temporary update files are cleaned up automatically.
 
+Any tabs you had open during the update will pick up the new version on their own, no manual refresh or cache clear needed.
+
 ## Rollback
 
 The previous binary is preserved as a backup file (`.bak`) during each update. If an update causes problems, the previous version can be restored manually via SSH.
