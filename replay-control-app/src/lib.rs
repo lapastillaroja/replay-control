@@ -188,7 +188,6 @@ fn SseConfigListener() -> impl IntoView {
                 Err(_) => return,
             };
 
-            let es_ref = es.clone();
             let on_message = Closure::<dyn Fn(web_sys::MessageEvent)>::new(
                 move |event: web_sys::MessageEvent| {
                     let data = event.data().as_string().unwrap_or_default();
@@ -325,17 +324,15 @@ fn SseConfigListener() -> impl IntoView {
             es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
             on_message.forget();
 
-            // On error (server restart, network issue) just close.
-            // EventSource auto-reconnects by default; closing prevents
-            // rapid reconnect loops if the server is truly down.
-            let on_error = Closure::<dyn Fn()>::new(move || {
-                es_ref.close();
-            });
-            es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-            on_error.forget();
-
-            // Keep the EventSource alive for the app lifetime (this component
-            // is mounted at the App root and never unmounts).
+            // No onerror handler: rely on EventSource's built-in retry so the
+            // listener reconnects after a server restart (e.g. auto-update).
+            // The fresh `init` payload that follows is what triggers the
+            // version-mismatch reload for stale tabs.
+            //
+            // Leak the EventSource so its wbindgen wrapper isn't dropped at the
+            // end of this Effect — the listener is mounted at the App root and
+            // never unmounts.
+            std::mem::forget(es);
         });
     }
 }
