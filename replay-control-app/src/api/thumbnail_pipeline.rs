@@ -99,44 +99,27 @@ impl ThumbnailPipeline {
         let api_key = replay_control_core_server::settings::read_github_api_key(&state.settings);
 
         let index_result = {
-            let cancel_flag = cancel.clone();
-            let api_key_owned = api_key.clone();
             let activity_ref = activity_lock.clone();
             let activity_tx = state.activity_tx.clone();
-            let rt = tokio::runtime::Handle::current();
-            state
-                .library_pool
-                .write(move |db| {
-                    // The closure passed to `pool.write` runs inside
-                    // `deadpool::interact()`, which dispatches to a dedicated
-                    // blocking thread — not a tokio runtime worker. That's
-                    // why `rt.block_on(...)` is safe here: we are not
-                    // blocking a shared runtime worker.
-                    rt.block_on(thumbnail_manifest::import_all_manifests(
-                        db,
-                        &|repos_done, repos_total, current_repo| {
-                            let mut guard = write_lock(&activity_ref, "activity");
-                            if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
-                                progress.phase = ThumbnailPhase::Indexing;
-                                progress.step_done = repos_done;
-                                progress.step_total = repos_total;
-                                progress.current_label = current_repo.to_string();
-                                progress.elapsed_secs = start.elapsed().as_secs();
-                            }
-                            let activity = guard.clone();
-                            drop(guard);
-                            let _ = activity_tx.send(activity);
-                        },
-                        &cancel_flag,
-                        api_key_owned.as_deref(),
-                    ))
-                })
-                .await
-                .unwrap_or_else(|| {
-                    Err(replay_control_core::error::Error::Other(
-                        "Library DB unavailable during thumbnail index".to_string(),
-                    ))
-                })
+            thumbnail_manifest::import_all_manifests(
+                &state.library_pool,
+                &|repos_done, repos_total, current_repo| {
+                    let mut guard = write_lock(&activity_ref, "activity");
+                    if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
+                        progress.phase = ThumbnailPhase::Indexing;
+                        progress.step_done = repos_done;
+                        progress.step_total = repos_total;
+                        progress.current_label = current_repo.to_string();
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                    }
+                    let activity = guard.clone();
+                    drop(guard);
+                    let _ = activity_tx.send(activity);
+                },
+                &cancel,
+                api_key.as_deref(),
+            )
+            .await
         };
 
         let index_stats = match index_result {

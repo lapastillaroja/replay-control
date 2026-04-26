@@ -209,10 +209,14 @@ pub fn insert_thumbnail_entries(
 /// Orchestrate the full manifest import for all repos.
 /// Calls `on_progress(repos_done, repos_total, current_repo_display_name)`.
 /// Returns import stats. Skips repos whose commit SHA hasn't changed.
+///
+/// Takes `&DbPool` rather than `&mut Connection` so the write connection is
+/// only held during the per-repo SQL transaction — not the entire import,
+/// which interleaves SQL with GitHub HTTP fetches that can take seconds each.
 #[cfg(feature = "http")]
 pub async fn import_all_manifests(
-    conn: &mut Connection,
-    on_progress: &dyn Fn(usize, usize, &str),
+    pool: &crate::DbPool,
+    on_progress: &(dyn Fn(usize, usize, &str) + Send + Sync),
     cancel: &AtomicBool,
     api_key: Option<&str>,
 ) -> Result<ManifestImportStats> {
@@ -221,6 +225,8 @@ pub async fn import_all_manifests(
     let mut total_entries = 0usize;
     let mut repos_fetched = 0usize;
     let mut errors: Vec<String> = Vec::new();
+
+    let db_unavailable = || Error::Other("library DB unavailable during manifest import".into());
 
     for (i, repo) in repos.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
@@ -232,7 +238,12 @@ pub async fn import_all_manifests(
         let source_name = thumbnails::libretro_source_name(&repo.display_name);
 
         // Check if repo has changed since last import.
-        if let Ok(Some(status)) = LibraryDb::get_data_source(conn, &source_name) {
+        let source_name_read = source_name.clone();
+        let existing = pool
+            .read(move |conn| LibraryDb::get_data_source(conn, &source_name_read))
+            .await
+            .ok_or_else(db_unavailable)?;
+        if let Ok(Some(status)) = existing {
             let existing_hash = status.version_hash.as_deref().unwrap_or("");
             if !existing_hash.is_empty() {
                 match check_repo_freshness(&repo.url_name, existing_hash, api_key).await {
@@ -268,47 +279,46 @@ pub async fn import_all_manifests(
                 }
             };
 
-        // Upsert data_source BEFORE inserting thumbnail entries (FK constraint).
-        if let Err(e) = LibraryDb::upsert_data_source(
-            conn,
-            &source_name,
-            "libretro-thumbnails",
-            &commit_sha,
-            actual_branch,
-            0,
-        ) {
-            errors.push(format!(
-                "{}: failed to upsert data_source: {e}",
-                repo.display_name
-            ));
-            continue;
-        }
+        // Single transaction per repo: upsert source row (FK parent), insert
+        // thumbnail entries, then patch source row's count. Batching these
+        // amortizes the deadpool round-trip and keeps the trio atomic — a
+        // partial state would leave entries pointing at a row claiming count=0.
+        let source_name_w = source_name.clone();
+        let result: Option<Result<usize>> = pool
+            .write(move |conn| {
+                LibraryDb::upsert_data_source(
+                    conn,
+                    &source_name_w,
+                    "libretro-thumbnails",
+                    &commit_sha,
+                    actual_branch,
+                    0,
+                )?;
+                let count = insert_thumbnail_entries(conn, &source_name_w, &entries)?;
+                LibraryDb::upsert_data_source(
+                    conn,
+                    &source_name_w,
+                    "libretro-thumbnails",
+                    &commit_sha,
+                    actual_branch,
+                    count,
+                )?;
+                Ok(count)
+            })
+            .await;
 
-        let count = match insert_thumbnail_entries(conn, &source_name, &entries) {
-            Ok(c) => c,
-            Err(e) => {
-                errors.push(format!("{}: {e}", repo.display_name));
-                continue;
+        match result {
+            Some(Ok(count)) => {
+                total_entries += count;
+                repos_fetched += 1;
             }
-        };
-
-        // Update with actual entry count.
-        if let Err(e) = LibraryDb::upsert_data_source(
-            conn,
-            &source_name,
-            "libretro-thumbnails",
-            &commit_sha,
-            actual_branch,
-            count,
-        ) {
-            errors.push(format!(
-                "{}: failed to update data_source count: {e}",
-                repo.display_name
-            ));
+            Some(Err(e)) => {
+                errors.push(format!("{}: {e}", repo.display_name));
+            }
+            None => {
+                errors.push(format!("{}: library DB unavailable", repo.display_name));
+            }
         }
-
-        total_entries += count;
-        repos_fetched += 1;
     }
 
     on_progress(total, total, "");
