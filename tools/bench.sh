@@ -171,7 +171,18 @@ echo ""
 echo "=== Asset Sizes ==="
 echo ""
 
-SITE_ROOT="$(cd "$(dirname "$0")/.." && pwd)/target/site"
+# Mirror build.sh / install.sh: honour CARGO_TARGET_DIR (absolute or relative
+# to the project root), fall back to the in-tree target/.
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+    if [[ "$CARGO_TARGET_DIR" = /* ]]; then
+        SITE_ROOT="$CARGO_TARGET_DIR/site"
+    else
+        SITE_ROOT="$PROJECT_ROOT/$CARGO_TARGET_DIR/site"
+    fi
+else
+    SITE_ROOT="$PROJECT_ROOT/target/site"
+fi
 declare -a ASSET_RESULTS=()
 
 measure_asset() {
@@ -229,8 +240,26 @@ echo ""
 
 declare -a LIGHTHOUSE_RESULTS=()
 
-if [[ "$SKIP_LIGHTHOUSE" == "false" ]] && command -v lighthouse &>/dev/null; then
-    echo "=== Lighthouse (headless Chrome) ==="
+# Pick how to invoke lighthouse: prefer system install, fall back to npx.
+LIGHTHOUSE_CMD=""
+if command -v lighthouse &>/dev/null; then
+    LIGHTHOUSE_CMD="lighthouse"
+elif command -v npx &>/dev/null; then
+    LIGHTHOUSE_CMD="npx -y lighthouse"
+fi
+
+# If no Chrome on PATH, try the Playwright-bundled one (handy on dev boxes
+# that have run e2e tests but never installed Chrome system-wide).
+if [[ -z "${CHROME_PATH:-}" ]] && ! command -v chromium &>/dev/null && ! command -v google-chrome &>/dev/null; then
+    PW_CHROME=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux*/chrome 2>/dev/null | sort -V | tail -1)
+    if [[ -n "$PW_CHROME" && -x "$PW_CHROME" ]]; then
+        export CHROME_PATH="$PW_CHROME"
+    fi
+fi
+
+if [[ "$SKIP_LIGHTHOUSE" == "false" ]] && [[ -n "$LIGHTHOUSE_CMD" ]]; then
+    echo "=== Lighthouse (headless Chrome via $LIGHTHOUSE_CMD) ==="
+    [[ -n "${CHROME_PATH:-}" ]] && echo "    CHROME_PATH=$CHROME_PATH"
     echo ""
 
     run_lighthouse() {
@@ -239,10 +268,10 @@ if [[ "$SKIP_LIGHTHOUSE" == "false" ]] && command -v lighthouse &>/dev/null; the
         local tmp_json
         tmp_json=$(mktemp /tmp/lh-XXXXXX.json)
 
-        lighthouse "$url" \
+        $LIGHTHOUSE_CMD "$url" \
             --output=json \
             --output-path="$tmp_json" \
-            --chrome-flags="--headless --no-sandbox" \
+            --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage --disable-gpu" \
             --only-categories=performance \
             --quiet 2>/dev/null || true
 
