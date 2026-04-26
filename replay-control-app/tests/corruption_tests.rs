@@ -16,7 +16,6 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use serial_test::serial;
 use server_fn::ServerFn;
 use tokio::time::timeout;
 use tower::ServiceExt;
@@ -24,11 +23,6 @@ use tower::ServiceExt;
 use common::{TestEnv, init_executor, register_server_fns, test_router};
 use replay_control_app::api::{AppState, ConfigEvent, DbPool};
 use replay_control_app::server_fns;
-
-// All tests are #[serial] because they pass cleanly locally but hang in CI
-// when run in parallel (suspected DB-init / leptos reactive runtime races
-// triggered by tighter CPU budgets). Serializing trades a few seconds of
-// wall time for reliability on shared CI runners.
 
 fn setup() {
     init_executor();
@@ -109,7 +103,6 @@ impl Drop for StandaloneStorage {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn user_data_mark_corrupt_broadcasts_event() {
     setup();
     let env = TestEnv::new();
@@ -133,7 +126,6 @@ async fn user_data_mark_corrupt_broadcasts_event() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn library_mark_corrupt_broadcasts_event() {
     setup();
     let env = TestEnv::new();
@@ -156,7 +148,6 @@ async fn library_mark_corrupt_broadcasts_event() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn idempotent_mark_corrupt_does_not_re_broadcast() {
     setup();
     let env = TestEnv::new();
@@ -215,7 +206,6 @@ async fn run_recovery_test<F: ServerFn>(pick_pool: fn(&AppState) -> &DbPool) -> 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn repair_corrupt_user_data_clears_flag_and_broadcasts_inverse() {
     let cleared =
         run_recovery_test::<server_fns::RepairCorruptUserData>(|s| &s.user_data_pool).await;
@@ -228,7 +218,6 @@ async fn repair_corrupt_user_data_clears_flag_and_broadcasts_inverse() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn restore_user_data_backup_clears_flag_and_broadcasts_inverse() {
     setup();
     let env = TestEnv::new();
@@ -260,7 +249,6 @@ async fn restore_user_data_backup_clears_flag_and_broadcasts_inverse() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn rebuild_corrupt_library_clears_flag_and_broadcasts_inverse() {
     let cleared = run_recovery_test::<server_fns::RebuildCorruptLibrary>(|s| &s.library_pool).await;
     match cleared {
@@ -272,7 +260,6 @@ async fn rebuild_corrupt_library_clears_flag_and_broadcasts_inverse() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn startup_with_clobbered_user_data_header_does_not_crash() {
     setup();
     let storage = StandaloneStorage::new("nocrash");
@@ -307,7 +294,6 @@ async fn startup_with_clobbered_user_data_header_does_not_crash() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[serial]
 async fn restore_after_startup_corruption_recovers_pool() {
     setup();
     let storage = StandaloneStorage::new("recover");

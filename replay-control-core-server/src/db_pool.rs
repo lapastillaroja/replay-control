@@ -236,16 +236,19 @@ fn query_journal_mode(conn: &rusqlite::Connection) -> JournalMode {
 }
 
 impl DbPool {
-    /// Create a new pool. Opens the DB eagerly (via `opener`) to fail fast at
-    /// startup, then queries the actual journal mode to size pools correctly.
+    /// Create a new pool. Opens the DB synchronously to detect journal mode and
+    /// fail fast on inaccessible files. Deadpool connections are created lazily
+    /// on first use — `Manager::create` only adds trivial role PRAGMAs
+    /// (`cache_size`, `query_only`, `wal_autocheckpoint`) on top of the open
+    /// path we just exercised, so eagerly warming them adds no error coverage.
+    /// Avoiding `block_in_place + block_on` here keeps `DbPool::new` callable
+    /// from any tokio runtime flavor (including `current_thread`), which lets
+    /// integration tests run without the multi-thread runtime requirement.
     pub fn new(
         db_path: PathBuf,
         label: &'static str,
         opener: fn(&Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        // Open a warmup connection to detect the actual journal mode.
-        // open_connection() picks WAL or DELETE based on filesystem capabilities,
-        // so we query the result rather than guessing.
         let warmup = sqlite::open_connection(&db_path, label)
             .map_err(|e| format!("{label}: failed to open warmup connection: {e}"))?;
         let journal_mode = query_journal_mode(&warmup);
@@ -259,18 +262,6 @@ impl DbPool {
             READ_POOL_SIZE,
         )?;
         let write_pool = build_pool(&db_path, journal_mode, true, &format!("{label}_write"), 1)?;
-
-        // Warm one read + one write connection eagerly. If this fails, the DB
-        // is inaccessible and there is no point starting the server.
-        drop(
-            Self::warmup_get(&read_pool)
-                .ok_or_else(|| format!("{label}: failed to warm read connection"))?,
-        );
-        drop(
-            Self::warmup_get(&write_pool)
-                .ok_or_else(|| format!("{label}: failed to warm write connection"))?,
-        );
-        // Remaining read connections (2 more on WAL) created lazily on demand.
 
         Ok(Self {
             read_pool: Arc::new(std::sync::RwLock::new(Some(read_pool))),
@@ -538,17 +529,6 @@ impl DbPool {
             .expect("db_path lock poisoned")
             .with_extension("db.bak")
             .exists()
-    }
-
-    /// Synchronously warm a connection from a deadpool pool at startup.
-    ///
-    /// **Only for use during `DbPool::new()`** — before the server starts
-    /// accepting requests. Production read/write paths use the async API
-    /// (`pool.get().await` + `interact()`).
-    fn warmup_get(pool: &SqlitePool) -> Option<managed::Object<SqliteManager>> {
-        let handle = tokio::runtime::Handle::try_current().ok()?;
-        let result = tokio::task::block_in_place(|| handle.block_on(pool.get()));
-        result.ok()
     }
 }
 
