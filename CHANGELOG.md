@@ -6,20 +6,66 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## Unreleased
 
+---
+
+## [0.4.0-beta.4](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.4) - 2026-04-25
+
+### Highlights
+
+- A torn-write or clobbered library database no longer crash-loops the service. Rebuildable caches recover silently on the next start; if your saved overrides and videos are affected, a banner appears with a one-click **Reset** (renamed from Repair).
+- Auto-update no longer leaves browsers stuck in a reload loop. After the service restarts, open tabs cleanly pick up the new version on their own.
+- Corruption banners now appear instantly instead of after a few seconds of polling, and stale browser tabs reconnect on their own after a server restart.
+- Smaller fixes: the captures lightbox no longer crashes when navigating away mid-keypress.
+
+### Added
+
+- Corruption status now pushes over `/sse/config` instead of being polled. Pool-flag transitions broadcast on the existing config stream (init payload + push events); banners read from context `RwSignal`s fed by `SseConfigListener` and a new `SseActivityListener`. The `get_corruption_status` server fn is removed. A new `sqlite::has_invalid_sqlite_header` pre-flight survives torn-write magic-header damage so a clobbered DB no longer crash-loops the service via systemd: `LibraryDb::open` silently delete-recreates (rebuildable cache, no banner), and `user_data` wires through new `DbPool::new_corrupt` so the recovery banner appears via the SSE init payload. `check_for_corruption` now also flags `SQLITE_NOTADB (26)` alongside `SQLITE_CORRUPT (11)`. The user-data "Repair" button is renamed to "Reset".
+- Content-hashed WASM and JS asset filenames break the browser cache cleanly across server restarts. `LeptosOptions` sets `hash_files` and reads `hash.txt` from the resolved site root; `build.sh` and `dev.sh` hash the bundle, write `hash.txt`, and rewrite the wasm import inside the JS so wasm-bindgen still resolves. `/static/pkg` now sends `Cache-Control: immutable` since URLs are versioned. Fixes an update-reload loop where the cached pre-restart WASM hydrated with the old `VERSION`, the SSE init reported a mismatch, `location.reload()` re-fetched the same cache, and the loop repeated.
+- `build.sh` gains `SKIP_DATA=1` to skip catalog rebuilds for fast iterative WASM-only test builds.
+
 ### Changed
 
 - Renamed the on-storage `metadata.db` to `library.db` and folded the grab-bag `metadata::` module into the existing `library::` module across both `replay-control-core` and `replay-control-core-server`. The old module name was a holdover from before the catalog migration — with `catalog.sqlite` now owning embedded reference data, `library.db` clearly names the user's on-storage rebuildable DB.
 - Reorganized the former `metadata::` grab-bag into purpose-scoped submodules: `library/db/` (SQLite), `library/imports/` (LaunchBox XML), `library/matching/` (pure alias + metadata matching), `library/thumbnails/` (manifest, fuzzy match, resolution), `library/manuals/` (game docs + retrokit). Hoisted `user_data_db` to its own top-level `user_data/` module (persistent user data is semantically distinct from rebuildable library data). Moved shared SQLite helpers from `metadata/db_common.rs` to top-level `src/sqlite.rs`.
-- Renamed the `metadata` cargo feature on `replay-control-core-server` to `library`. Renamed the `metadata_report` bin to `library_report` (`cargo run --bin library_report --features library`).
+- Renamed the `metadata` cargo feature on `replay-control-core-server` to `library`. Renamed the `metadata_report` bin to `library_report` (`cargo run --bin library_report --features library`). Server fns `rebuild_corrupt_metadata` / `metadata_corrupt` become `rebuild_corrupt_library` / `library_corrupt`; the recovery banner copy reads "Library database is corrupt".
 - User-facing "metadata" vocabulary is preserved where it describes external-enrichment sources (the `/settings/metadata` page, the `Game Metadata` i18n label, the `game_metadata` SQL table, the `download_metadata` / `clear_metadata` / `get_metadata_stats` server functions, and `launchbox-metadata.xml`). Only the container DB file and module changed names.
+- `DbPool`, `SqliteManager`, and `WriteGate` move from `replay-control-app/src/api/mod.rs` to `replay-control-core-server/src/db_pool.rs`. The types had no app-specific coupling — they just wrap `deadpool-sqlite` around `core-server::sqlite::open_connection` — so SSR consumers now see a single crate for pool + open helpers. App's `api/mod.rs` re-exports `DbPool` / `WriteGate` / `rusqlite` so existing imports keep resolving; `deadpool-*` deps drop out of `replay-control-app`.
+- Native I/O for the update system (GitHub release polling, asset download, `available.json` handling) moves from `BackgroundManager` in the app crate into `replay-control-core-server::update` (gated behind the `http` feature). `BackgroundManager` keeps the `AppState` / `Activity` / `systemctl`-coupled orchestration (`update_check_loop`, `start_update*`, `generate_update_script`, etc.). `check_github_update` and `resolve_asset_urls` now take `repo: &str` instead of reading a const.
+- Native I/O for the LaunchBox import and thumbnail pipelines extracted into three pure core-server fns: `launchbox::run_bulk_import` (sync XML importer wrapped in `spawn_blocking` with the `Handle::block_on` → `pool.write` bridge for batched flushes), `launchbox::import_launchbox_aliases`, and `thumbnails::update_image_paths_from_disk`. App-side `ImportPipeline::run_import` loses ~50 lines of boilerplate and just wires per-batch ticks into Activity; pipeline ownership stays on the AppState side of the boundary.
+- The Axum upload handler delegates filesystem writes to a new `replay_control_core_server::roms::write_rom`, which also creates the system directory if missing. No behavior change.
+- `dev.sh` drops the unused `--watch` flag (the Pi auto-redeploy-on-save mode was unused — removed CLI arg, `cargo-watch` loop, and the inline build recipe inside it).
+
+### Fixed
+
+- `CapturesLightbox` keydown listener no longer panics when the page unmounts before the listener detaches. The handler now uses `try_get` on the parent's `current_index` signal so it bails silently on a disposed `RwSignal` instead of unwrapping.
+- `setup_checklist` no longer logs a reactive-graph warning on every hydrate. The `query.read().get_str("setup")` call ran in the component body, eagerly reading an `ArcMemo<ParamsMap>` with no tracking context established yet; moved into the `Resource::new` source closure so the read happens inside a tracked context (and the resource now also re-runs if `?setup` is added or removed).
+- `SseConfigListener` reconnects after a server restart. The `onerror` handler called `es.close()`, canceling `EventSource`'s built-in retry — stale tabs open during an auto-update therefore never received the fresh init payload that triggers the version-mismatch reload, and silently kept running the previous WASM. Dropped the `onerror` handler so the browser's default ~3s retry kicks in.
 
 ### Migration
 
-- Legacy `metadata.db`, `metadata.db-wal`, `metadata.db-shm`, and `metadata.db-journal` files are removed on first boot via an idempotent `cleanup_legacy_metadata_db` step inside `LibraryDb::open`. No data migration is needed: the startup pipeline re-scans ROMs into the new `library.db`, re-imports LaunchBox data from `launchbox-metadata.xml` (Phase 1), and rebuilds the thumbnail index from disk (Phase 3).
+- Legacy `metadata.db`, `metadata.db-wal`, `metadata.db-shm`, and `metadata.db-journal` files are removed on first boot via an idempotent `cleanup_legacy_metadata_db` step inside `LibraryDb::open`. No data migration is needed: the startup pipeline re-scans ROMs into the new `library.db`, re-imports LaunchBox data from `launchbox-metadata.xml` (Phase 1), and rebuilds the thumbnail index from disk (Phase 3). User overrides and saved videos (`user_data.db`) are untouched.
+- `sqlite::delete_db_files` extended to cover `.db-journal`, closing a stale-sidecar gap in the four existing corruption-recovery callers.
+
+### Other
+
+- 7-test lifecycle suite for `DbPool` (read/write roundtrip, closed-pool returns `None`, close-then-read, reopen after close, `mark_corrupt` closing the pool, `WriteGate` RAII guard blocking reads — the last is the exFAT data-corruption guard that justifies the type's existence). Adds tests for `launchbox::run_bulk_import` (covers the `spawn_blocking` + `Handle::block_on` async bridge), `launchbox::import_launchbox_aliases`, `thumbnails::update_image_paths_from_disk`, and `roms::write_rom`. Update tests relocate from app to core-server and switch from an in-process axum listener to mockito; 16/16 green via `cargo test --features http -p replay-control-core-server`.
+- Shared `test_utils` pub module in `core-server` (`build_library_pool`, `insert_game_library_row`) avoids fixture duplication across launchbox and thumbnails test modules. No feature flag — workspace-internal helpers compile in unconditionally and are LTO-dropped from release binaries. `tempfile` moves from dev-dep to regular dep.
+- 8 Rust integration tests, 6 Rust unit tests, and 4 Playwright e2e tests covering the SSE corruption broadcast, recovery server fns, idempotent `mark_corrupt`, clobbered-header startup, the live browser SSE wire, and the library no-crash-loop path. `conftest` switches from `sshpass` to `SSH_ASKPASS` to drop the system dep.
+- `bench.sh` discovers the hashed wasm URL from the served HTML so it tracks whatever the deploy is actually serving; pipefail-safe when the server is on a pre-hash build (falls back with a warning). `mock_github.py`'s fake site tarball ships hashed filenames + `hash.txt` so the post-update server can serve the hydration scripts in container/e2e auto-update tests.
+- Architecture docs (`connection-pooling.md`, `technical-foundation.md`, `design-decisions.md`, `enrichment.md`, `server-functions.md`) updated for the core-server extraction: `DbPool` / `SqliteManager` / `WriteGate`, update I/O, `run_bulk_import`, `write_rom`, and `update_image_paths_from_disk` now point at `replay-control-core-server`. Stale `api/cache/*` paths swept after the metadata→library rename.
+- `DbPool::new` no longer warms deadpool connections via `block_in_place` + `Handle::block_on`. The sync `sqlite::open_connection` warmup already validates the file (used to detect journal mode); the deadpool warmup it then ran caught no error the sync warmup didn't, since `Manager::create` only adds trivial role pragmas (`cache_size`, `query_only`, `wal_autocheckpoint`). Connections now create lazily on first `pool.get()`. The `block_in_place` pattern requires multi-thread runtime and interacts pathologically with thread oversubscription on small CI runners — corruption_tests had to be marked `#[serial]` to dodge a CI hang triggered by it. With the pattern gone, `#[serial]` and the `serial_test` dev-dep are removed; the 8 corruption tests run in parallel again.
+- `thumbnails::manifest::import_all_manifests` takes `&DbPool` instead of `&mut Connection`. The thumbnail-pipeline caller drops the `pool.write(|db| Handle::current().block_on(...))` bridge, and the write connection is now only checked out for each repo's SQL trio (source upsert + entries insert + count patch, still atomic in one tx) rather than held across the per-repo GitHub HTTP fetches. Same on-disk behaviour, lower deadpool occupancy.
+- `release-plz` config fix.
 
 ---
 
 ## [0.4.0-beta.3](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.3) - 2026-04-23
+
+### Highlights
+
+- Snappier homepage, log viewer, and game launches under load. Subprocess and database calls that used to block for 1–2 seconds at a time now run asynchronously, and the new connection pool more than doubles homepage throughput.
+- Arcade box art now matches games with apostrophes in their names (e.g. "Galaga '88") instead of falling back to a placeholder.
+- A failed game launch no longer leaves behind a stale autostart trigger that could fire on the next boot.
 
 ### Added
 
@@ -51,6 +97,11 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ## [0.4.0-beta.2](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.2) - 2026-04-21
 
+### Highlights
+
+- Game detail pages now show the full release date (e.g. "Aug 31, 2000") whenever the data is precise enough, instead of always showing only the year.
+- Changing your region preference re-resolves release dates instantly — no library re-import needed.
+
 ### Added
 
 - Per-region release dates with precision: new `game_release_date` side table stores ISO 8601 partial dates (`YYYY` / `YYYY-MM` / `YYYY-MM-DD`) per (system, base_title, region). `game_library` gets `release_date`, `release_precision`, and `release_region_used` mirror columns resolved against the user's region preference, with `idx_release_date_chrono` for indexed range scans.
@@ -77,6 +128,11 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ---
 
 ## [0.4.0-beta.1](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.1) - 2026-04-19
+
+### Highlights
+
+- Metadata page redesigned: six summary cards (Total Games, Enrichment, Systems, Co-op, Year Span, Library Size) and a mobile-friendly per-system accordion replace the cramped 7-column table.
+- Summary cards now refresh automatically after import, rebuild, thumbnail update, or clear — no full page reload required.
 
 ### Added
 
@@ -134,6 +190,14 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ---
 
 ## [0.3.0](https://github.com/lapastillaroja/replay-control/releases/tag/v0.3.0) - 2026-04-13
+
+### Highlights
+
+- ROMs with non-standard filenames now display the correct canonical name and box art (~1,105 name fixes, ~1,682 thumbnail fixes), thanks to CRC hash matching.
+- Redesigned Settings page with a two-pane layout, scroll-spy sidebar, and five sections.
+- A first-run setup checklist on the home page now guides you through LaunchBox metadata import and thumbnail indexing.
+- LaunchBox metadata downloads automatically at install time (skip with `--no-metadata`).
+- Anonymous usage analytics are enabled by default; opt out from Settings > Privacy.
 
 ### Added
 
