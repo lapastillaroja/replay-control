@@ -108,3 +108,13 @@ jobs:
             install.sh \
             checksums.sha256 \
             --clobber
+
+          # SemVer prerelease tags (vX.Y.Z-foo) must be flagged as prerelease and
+          # excluded from /releases/latest. release-plz creates the release without
+          # these flags, so normalize after upload.
+          if [[ "$TAG" == *-* ]]; then
+            gh release edit "$TAG" \
+              --repo "${{ github.repository }}" \
+              --prerelease \
+              --latest=false
+          fi
