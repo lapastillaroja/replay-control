@@ -400,9 +400,17 @@ fn UpdatesSection() -> impl IntoView {
 
     let on_channel_change = move |ev: leptos::ev::Event| {
         let value = leptos::prelude::event_target_value(&ev);
+        let prev = channel_value.get_untracked();
+        channel_value.set(value.clone());
+        check_error.set(None);
+        up_to_date.set(false);
         leptos::task::spawn_local(async move {
-            if server_fns::save_update_channel(value).await.is_ok() {
-                run_check();
+            match server_fns::save_update_channel(value).await {
+                Ok(()) => run_check(),
+                Err(e) => {
+                    channel_value.set(prev);
+                    check_error.set(Some(server_fns::format_error(e)));
+                }
             }
         });
     };
