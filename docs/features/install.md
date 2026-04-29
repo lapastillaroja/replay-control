@@ -32,6 +32,14 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 
 The service is stopped and disabled, and the binary, site assets, systemd unit, and Avahi service are removed. The environment file is preserved in case you reinstall.
 
+To wipe everything Replay Control has put on the Pi — binary, service files, environment file, and the on-storage `.replay-control/` directory (DBs, settings, downloaded media, LaunchBox XML):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --purge --yes
+```
+
+`--purge` prompts for confirmation when run interactively; pass `--yes` to skip the prompt (required when piping from `curl`). ROMs, saves, captures, and BIOS files are not touched.
+
 ## Options
 
 Append flags after `bash -s --`:
@@ -42,7 +50,9 @@ Append flags after `bash -s --`:
 | `--pi-pass PASSWORD` | SSH password for the Pi (default: `replayos`). |
 | `--version v0.3.0` | Install a specific release. Use `beta` for the latest pre-release. |
 | `--dry-run` | Print what would happen without making changes. |
-| `--uninstall` | Remove the app from the Pi. |
+| `--uninstall` | Remove the app from the Pi. Preserves `.replay-control/` data and the env file. |
+| `--purge` | Like `--uninstall` but also wipes `.replay-control/` and `/etc/default/replay-control`. ROMs/saves/captures/BIOS untouched. |
+| `--yes` | Skip the confirmation prompt (required for `--purge` when piping from `curl`). |
 
 Or set environment variables before the curl call:
 

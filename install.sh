@@ -50,17 +50,43 @@ error()   { echo "${RED}✗${RESET} $*" >&2; }
 fatal()   { error "$@"; exit 1; }
 dry()     { echo "${YELLOW}[DRY RUN]${RESET} $*"; }
 
+# ── Confirmation prompt (destructive actions) ──────────────────────────────
+
+# Reads a yes/no from /dev/tty so it works even when the script is piped
+# (e.g. `curl ... | bash -s -- --purge`). Returns 0 on yes, 1 otherwise.
+confirm_destructive() {
+    local prompt="$1"
+    if $ASSUME_YES; then
+        return 0
+    fi
+    if [[ ! -r /dev/tty ]]; then
+        error "$prompt"
+        error "No TTY available — re-run with --yes to confirm non-interactively."
+        return 1
+    fi
+    local reply=""
+    printf '%s%s%s [y/N] ' "${YELLOW}" "$prompt" "${RESET}" > /dev/tty
+    IFS= read -r reply < /dev/tty || reply=""
+    [[ "$reply" =~ ^[Yy]([Ee][Ss])?$ ]]
+}
+
 # ── Globals ─────────────────────────────────────────────────────────────────
 
 MODE="ssh"           # ssh, sdcard, or local
 ACTION="install"     # install or uninstall
 DRY_RUN=false
+PURGE_DATA=false     # uninstall additionally wipes .replay-control/ and the env file
+ASSUME_YES=false     # skip the destructive-action confirmation prompt
 LOCAL=false
 LOCAL_DIR=""
 PI_ADDR="${REPLAY_PI_ADDR:-}"
 VERSION="${REPLAY_CONTROL_VERSION:-latest}"
 SDCARD_PATH=""
 TMPDIR_WORK=""
+
+# Candidate storage roots that may hold the .replay-control/ data dir.
+# Mirrors replay-control-core-server/src/platform/storage.rs.
+REPLAY_STORAGE_ROOTS=(/media/usb /media/nvme /media/sd /media/nfs)
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 
@@ -86,6 +112,12 @@ ${BOLD}USAGE${RESET}
 ${BOLD}FLAGS${RESET}
     --help              Show this help message
     --uninstall         Remove the app from a connected Pi via SSH
+                        (preserves .replay-control/ data and the env file)
+    --purge             Like --uninstall but also wipes ALL Replay Control
+                        data: .replay-control/ on storage (DBs, settings,
+                        downloaded media, LaunchBox XML) and the env file.
+                        ROMs, saves, captures, and BIOS are NOT touched.
+    --yes               Skip the confirmation prompt for --purge
     --sdcard [PATH]     Write directly to a mounted RePlayOS SD card
     --ip ADDRESS        Skip Pi discovery, use this IP address
     --pi-pass PASSWORD  SSH password for the Pi (default: "replayos")
@@ -123,6 +155,12 @@ ${BOLD}EXAMPLES${RESET}
 
     ${BOLD}Pipe from curl (auto-detects if running on Pi):${RESET}
         curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash
+
+    ${BOLD}Wipe everything (destructive — prompts for confirmation):${RESET}
+        bash install.sh --purge
+
+    ${BOLD}Wipe everything non-interactively (e.g. when piped from curl):${RESET}
+        curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash -s -- --purge --yes
 EOF
 }
 
@@ -137,6 +175,15 @@ parse_args() {
                 ;;
             --uninstall)
                 ACTION="uninstall"
+                shift
+                ;;
+            --purge)
+                ACTION="uninstall"
+                PURGE_DATA=true
+                shift
+                ;;
+            --yes|-y)
+                ASSUME_YES=true
                 shift
                 ;;
             --sdcard)
@@ -726,11 +773,72 @@ REMOTE_INSTALL
     echo ""
 }
 
-# ── SSH uninstall ───────────────────────────────────────────────────────────
+# ── Uninstall / purge ───────────────────────────────────────────────────────
+
+# Confirms the destructive --purge action up front. Aborts the script if the
+# user declines. Idempotent for plain --uninstall (PURGE_DATA=false).
+maybe_confirm_purge() {
+    $PURGE_DATA || return 0
+    $DRY_RUN && return 0
+    echo ""
+    warn "${BOLD}--purge${RESET}${YELLOW} will delete all Replay Control data on the Pi:${RESET}"
+    echo "  - ${ENV_FILE}"
+    for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
+        echo "  - ${root}/.replay-control/  (DBs, settings, downloaded media, LaunchBox XML)"
+    done
+    echo "ROMs, saves, captures, and BIOS files are NOT touched."
+    echo ""
+    if ! confirm_destructive "Proceed with --purge?"; then
+        fatal "Aborted by user"
+    fi
+}
+
+uninstall_local() {
+    maybe_confirm_purge
+
+    if $DRY_RUN; then
+        dry "Would stop and disable ${SERVICE_NAME}"
+        dry "Would remove: ${SERVICE_FILE} ${AVAHI_FILE} ${INSTALL_DIR}/replay-control-app"
+        dry "Would remove: ${SITE_DIR}"
+        dry "Would run: systemctl daemon-reload"
+        if $PURGE_DATA; then
+            dry "Would remove: ${ENV_FILE}"
+            for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
+                dry "Would remove: ${root}/.replay-control/ (if present)"
+            done
+        else
+            dry "Note: ${ENV_FILE} would be preserved"
+        fi
+        return
+    fi
+
+    info "Uninstalling locally..."
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+    rm -f "$SERVICE_FILE" "$AVAHI_FILE" "$INSTALL_DIR/replay-control-app"
+    rm -rf "$SITE_DIR"
+    systemctl daemon-reload
+
+    if $PURGE_DATA; then
+        info "Purging Replay Control data..."
+        rm -f "$ENV_FILE"
+        for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
+            local data_dir="${root}/.replay-control"
+            if [[ -d "$data_dir" ]]; then
+                info "  removing ${data_dir}"
+                rm -rf "$data_dir"
+            fi
+        done
+        success "Replay Control purged (binary, service files, env file, data)"
+    else
+        success "Replay Control uninstalled"
+    fi
+}
 
 uninstall_ssh() {
     discover_pi
     check_ssh_connectivity
+    maybe_confirm_purge
 
     if $DRY_RUN; then
         dry "Would set up SSH_ASKPASS for password automation"
@@ -742,15 +850,29 @@ uninstall_ssh() {
         dry "  - Remove: ${INSTALL_DIR}/replay-control-app"
         dry "  - Remove: ${SITE_DIR}/"
         dry "  - Run: systemctl daemon-reload"
-        dry "  Note: ${ENV_FILE} would be preserved"
+        if $PURGE_DATA; then
+            dry "  - Remove: ${ENV_FILE}"
+            for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
+                dry "  - Remove: ${root}/.replay-control/ (if present)"
+            done
+        else
+            dry "  Note: ${ENV_FILE} would be preserved"
+        fi
         return
     fi
 
     setup_askpass
 
-    info "Uninstalling from Pi..."
+    if $PURGE_DATA; then
+        info "Purging Replay Control from Pi (binary, service files, env file, data)..."
+    else
+        info "Uninstalling from Pi..."
+    fi
 
-    run_ssh bash -s <<'REMOTE_UNINSTALL'
+    # Pass PURGE_DATA into the remote script via env. Storage roots are
+    # hard-coded on the remote side because the array can't cross the
+    # heredoc boundary cleanly.
+    run_ssh PURGE_DATA="$PURGE_DATA" bash -s <<'REMOTE_UNINSTALL'
 set -euo pipefail
 
 systemctl stop replay-control 2>/dev/null || true
@@ -761,12 +883,27 @@ rm -f /usr/local/bin/replay-control-app
 rm -rf /usr/local/share/replay
 systemctl daemon-reload
 
-echo "Note: /etc/default/replay-control was preserved (remove manually if desired)"
+if [[ "${PURGE_DATA:-false}" == "true" ]]; then
+    rm -f /etc/default/replay-control
+    for root in /media/usb /media/nvme /media/sd /media/nfs; do
+        if [[ -d "${root}/.replay-control" ]]; then
+            echo "Removing ${root}/.replay-control/"
+            rm -rf "${root}/.replay-control"
+        fi
+    done
+    echo "Replay Control fully purged."
+else
+    echo "Note: /etc/default/replay-control was preserved (remove manually if desired)"
+fi
 REMOTE_UNINSTALL
 
     teardown_askpass
 
-    success "Replay Control uninstalled from Pi"
+    if $PURGE_DATA; then
+        success "Replay Control purged from Pi"
+    else
+        success "Replay Control uninstalled from Pi"
+    fi
 }
 
 # ── SD card detection ───────────────────────────────────────────────────────
@@ -1095,26 +1232,15 @@ main() {
             install_sdcard
             ;;
         uninstall-local)
-            if $DRY_RUN; then
-                dry "Would stop and disable ${SERVICE_NAME}"
-                dry "Would remove: ${SERVICE_FILE} ${AVAHI_FILE} ${INSTALL_DIR}/replay-control-app"
-                dry "Would remove: ${SITE_DIR}"
-                dry "Would run: systemctl daemon-reload"
-            else
-                info "Uninstalling locally..."
-                systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-                systemctl disable "$SERVICE_NAME" 2>/dev/null || true
-                rm -f "$SERVICE_FILE" "$AVAHI_FILE" "$INSTALL_DIR/replay-control-app"
-                rm -rf "$SITE_DIR"
-                systemctl daemon-reload
-                success "Replay Control uninstalled"
-            fi
+            uninstall_local
             ;;
         uninstall-ssh)
             uninstall_ssh
             ;;
         uninstall-sdcard)
-            fatal "--uninstall is only supported via SSH, not SD card mode."
+            local flag
+            flag=$($PURGE_DATA && echo "--purge" || echo "--uninstall")
+            fatal "${flag} is only supported via SSH or locally, not SD card mode."
             ;;
     esac
 }
