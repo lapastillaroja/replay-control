@@ -11,6 +11,16 @@ pub struct SkinPalette {
     pub accent_hover: &'static str,
 }
 
+/// `true` when `skin_index` falls outside our built-in palette table.
+///
+/// ReplayOS reserves slots beyond [`SKIN_NAMES`] for user-customizable skins
+/// defined by PNG files under `/opt/replay/images/`. We don't yet extract
+/// colors from those files, so [`palette`] and [`theme_css`] return `None`
+/// and rendering falls back to the default palette.
+pub fn is_custom(skin_index: u32) -> bool {
+    (skin_index as usize) >= SKIN_NAMES.len()
+}
+
 /// Names of the 11 built-in skins (indices 0-10).
 pub const SKIN_NAMES: [&str; 11] = [
     "REPLAY",
@@ -155,12 +165,19 @@ const PALETTES: [SkinPalette; 11] = [
     },
 ];
 
-/// Look up the palette for a skin index.
+/// Look up the palette for a built-in skin index.
 ///
-/// Returns `None` for out-of-range indices (custom skin slots 11+ are not
-/// supported yet).
+/// Returns `None` for [`is_custom`] indices — those are PNG-based and we
+/// don't extract colors at runtime. Use [`palette_or_default`] when a
+/// fallback to the default palette is acceptable.
 pub fn palette(skin_index: u32) -> Option<&'static SkinPalette> {
     PALETTES.get(skin_index as usize)
+}
+
+/// Like [`palette`], but falls back to the default skin (0) for any index
+/// without a built-in palette.
+pub fn palette_or_default(skin_index: u32) -> &'static SkinPalette {
+    palette(skin_index).unwrap_or(&PALETTES[0])
 }
 
 /// Generate a CSS `<style>` block that overrides `:root` custom properties
@@ -219,9 +236,19 @@ mod tests {
     }
 
     #[test]
-    fn out_of_range_returns_none() {
+    fn palette_returns_none_for_non_builtin() {
+        assert!(palette(11).is_none()); // first custom slot
+        assert!(palette(99).is_none()); // far outside the table
         assert!(theme_css(11).is_none());
-        assert!(palette(99).is_none());
+    }
+
+    #[test]
+    fn is_custom_starts_after_builtins() {
+        assert!(!is_custom(0));
+        assert!(!is_custom(10));
+        assert!(is_custom(11));
+        assert!(is_custom(36));
+        assert!(is_custom(99));
     }
 
     #[test]
