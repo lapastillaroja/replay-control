@@ -33,6 +33,24 @@ pub struct SkinInfo {
 }
 
 #[cfg(feature = "ssr")]
+impl SkinInfo {
+    fn from_palette(index: u32, name: String, p: &replay_control_core::skins::SkinPalette) -> Self {
+        Self {
+            index,
+            name,
+            bg: p.bg.to_string(),
+            surface: p.surface.to_string(),
+            surface_hover: p.surface_hover.to_string(),
+            border: p.border.to_string(),
+            text: p.text.to_string(),
+            text_secondary: p.text_secondary.to_string(),
+            accent: p.accent.to_string(),
+            accent_hover: p.accent_hover.to_string(),
+        }
+    }
+}
+
+#[cfg(feature = "ssr")]
 pub(crate) fn is_replayos() -> bool {
     std::path::Path::new("/opt/replay").exists()
 }
@@ -207,25 +225,29 @@ pub async fn get_skins() -> Result<(u32, bool, Vec<SkinInfo>), ServerFnError> {
     });
     let sync = skin_pref.is_none();
 
-    let skins = replay_control_core::skins::SKIN_NAMES
+    let mut skins: Vec<SkinInfo> = replay_control_core::skins::SKIN_NAMES
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let p = replay_control_core::skins::palette(i as u32).unwrap();
-            SkinInfo {
-                index: i as u32,
-                name: name.to_string(),
-                bg: p.bg.to_string(),
-                surface: p.surface.to_string(),
-                surface_hover: p.surface_hover.to_string(),
-                border: p.border.to_string(),
-                text: p.text.to_string(),
-                text_secondary: p.text_secondary.to_string(),
-                accent: p.accent.to_string(),
-                accent_hover: p.accent_hover.to_string(),
-            }
+            let idx = i as u32;
+            SkinInfo::from_palette(
+                idx,
+                name.to_string(),
+                replay_control_core::skins::palette(idx).unwrap(),
+            )
         })
         .collect();
+
+    // Without a synthetic entry the grid would have nothing to highlight as
+    // active when the user is on a custom replayos skin, leaving them with
+    // no signal about what's selected.
+    if replay_control_core::skins::is_custom(current) {
+        skins.push(SkinInfo::from_palette(
+            current,
+            format!("CUSTOM #{current}"),
+            replay_control_core::skins::palette_or_default(current),
+        ));
+    }
 
     Ok((current, sync, skins))
 }

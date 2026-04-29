@@ -116,9 +116,10 @@ fn SkinCard(
 ) -> impl IntoView {
     let i18n = use_i18n();
     let index = skin.index;
+    let is_custom = replay_control_core::skins::is_custom(index);
 
     let is_active = move || active.get() == index;
-    let is_disabled = move || saving.get() || sync_enabled.get();
+    let is_disabled = move || saving.get() || sync_enabled.get() || is_custom;
     let card_class = move || {
         if is_active() {
             "skin-card skin-card-active"
