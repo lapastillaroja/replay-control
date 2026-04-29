@@ -112,7 +112,7 @@ curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/
 
 **Custom password:**
 ```bash
-PI_PASS=mypassword curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --pi-pass mypassword
 ```
 
 **Install to SD card (before first boot):**

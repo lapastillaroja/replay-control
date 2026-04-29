@@ -88,6 +88,7 @@ ${BOLD}FLAGS${RESET}
     --uninstall         Remove the app from a connected Pi via SSH
     --sdcard [PATH]     Write directly to a mounted RePlayOS SD card
     --ip ADDRESS        Skip Pi discovery, use this IP address
+    --pi-pass PASSWORD  SSH password for the Pi (default: "replayos")
     --version VERSION   Version to install: tag (v0.2.0), "latest", or "beta"
     --dry-run           Show what would be done without making changes
     --local [DIR]       Use locally built artifacts instead of downloading
@@ -96,6 +97,7 @@ ${BOLD}FLAGS${RESET}
 ${BOLD}ENVIRONMENT VARIABLES${RESET}
     REPLAY_CONTROL_VERSION  Release to install: tag, "latest" (default), or "beta"
     REPLAY_PI_ADDR          Pi address, same as --ip
+    PI_PASS                 SSH password, same as --pi-pass
 
 ${BOLD}EXAMPLES${RESET}
     ${BOLD}Install latest stable via SSH:${RESET}
@@ -149,6 +151,12 @@ parse_args() {
                 shift
                 [[ $# -eq 0 ]] && fatal "Missing address after --ip"
                 PI_ADDR="$1"
+                shift
+                ;;
+            --pi-pass)
+                shift
+                [[ $# -eq 0 ]] && fatal "Missing password after --pi-pass"
+                PI_PASSWORD="$1"
                 shift
                 ;;
             --local)
