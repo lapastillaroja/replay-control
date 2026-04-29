@@ -107,10 +107,22 @@ class TestUpdateCleanup:
             "ls /usr/local/bin/replay-control-app.bak 2>/dev/null "
             "&& echo EXISTS || echo CLEAN"
         )
+        catalog_bak = ssh_cmd(
+            "ls /usr/local/bin/catalog.sqlite.bak 2>/dev/null "
+            "&& echo EXISTS || echo CLEAN"
+        )
+        # The mock release ships a catalog asset; after update it should be
+        # in place next to the binary so init_catalog can open it on restart.
+        catalog = ssh_cmd(
+            "ls /usr/local/bin/catalog.sqlite 2>/dev/null "
+            "&& echo EXISTS || echo MISSING"
+        )
 
         assert temp == "CLEAN", f"Temp files not cleaned: {temp}"
         assert script == "CLEAN", f"Script not cleaned: {script}"
         assert bak == "CLEAN", f"Backup not cleaned: {bak}"
+        assert catalog_bak == "CLEAN", f"Catalog backup not cleaned: {catalog_bak}"
+        assert catalog == "EXISTS", f"Catalog missing after update: {catalog}"
 
 
 class TestUpdateError:

@@ -465,13 +465,11 @@ fn ThumbnailProgressDisplay(
                                 }
                             }
                             ThumbnailPhase::Downloading => {
-                                format!(
-                                    "{} {} ({} {})",
-                                    t(locale, Key::MetadataThumbnailPhaseDownloading),
-                                    p.current_label,
-                                    p.downloaded,
-                                    t(locale, Key::MetadataThumbnailDownloaded),
-                                )
+                                if p.current_label.is_empty() {
+                                    t(locale, Key::MetadataThumbnailPhaseDownloading).to_string()
+                                } else {
+                                    p.current_label.clone()
+                                }
                             }
                             ThumbnailPhase::Complete => format!(
                                 "{}: {} {}, {} {}",

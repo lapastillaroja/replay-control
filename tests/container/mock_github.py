@@ -101,9 +101,20 @@ def make_site_tarball() -> bytes:
     return buf.getvalue()
 
 
+def make_catalog_tarball() -> bytes:
+    """Create a tar.gz containing a stub catalog.sqlite.
+
+    The real file is a SQLite DB, but for the swap+restart path we only need
+    the helper script to find a file named `catalog.sqlite` next to the binary.
+    The dummy binary doesn't actually open it, so any non-empty bytes work.
+    """
+    return make_tarball("catalog.sqlite", b"-- stub catalog.sqlite\n")
+
+
 # Pre-generate assets at module level
 BINARY_TARBALL = make_tarball("replay-control-app", make_dummy_binary())
 SITE_TARBALL = make_site_tarball()
+CATALOG_TARBALL = make_catalog_tarball()
 
 
 def release_json(tag: str, port: int, prerelease: bool = False) -> dict:
@@ -125,6 +136,12 @@ def release_json(tag: str, port: int, prerelease: bool = False) -> dict:
                 "name": "replay-control-site.tar.gz",
                 "browser_download_url": f"{base}/download/replay-control-site.tar.gz",
                 "size": len(SITE_TARBALL),
+                "content_type": "application/gzip",
+            },
+            {
+                "name": "replay-catalog.tar.gz",
+                "browser_download_url": f"{base}/download/replay-catalog.tar.gz",
+                "size": len(CATALOG_TARBALL),
                 "content_type": "application/gzip",
             },
         ],
@@ -187,6 +204,14 @@ class MockGitHubHandler(BaseHTTPRequestHandler):
                 self.send_error(503, "Service Unavailable")
                 return
             self._binary_response(SITE_TARBALL, "application/gzip")
+            return
+
+        # Catalog download
+        if self.path == "/download/replay-catalog.tar.gz":
+            if getattr(self.server, "fail_downloads", False):
+                self.send_error(503, "Service Unavailable")
+                return
+            self._binary_response(CATALOG_TARBALL, "application/gzip")
             return
 
         self.send_error(404, f"Not found: {self.path}")

@@ -2367,6 +2367,7 @@ dependencies = [
  "serde_json",
  "server_fn",
  "tar",
+ "tempfile",
  "tikv-jemallocator",
  "tokio",
  "tokio-stream",

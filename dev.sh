@@ -328,6 +328,60 @@ check_pi_connectivity() {
 
 # ── Pi deployment ────────────────────────────────────────────────────────────
 
+# Write the systemd unit + env file on the Pi when missing. Mirrors what
+# install.sh emits via systemd_service_content + env_file_content; keep them
+# in sync. No-op when the unit already exists, so it stays cheap on every run.
+bootstrap_pi_if_needed() {
+    if run_ssh "systemctl cat $PI_SERVICE >/dev/null 2>&1"; then
+        return 0
+    fi
+    info "Service unit missing on Pi — writing systemd unit + env file..."
+    run_ssh "bash -s" <<'BOOTSTRAP'
+set -euo pipefail
+
+mkdir -p /etc/systemd/system /etc/default
+
+cat > /etc/systemd/system/replay-control.service <<'UNIT'
+[Unit]
+Description=Replay Control
+After=network.target
+After=media-sd.mount media-usb.mount
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/replay-control
+ExecStart=/usr/local/bin/replay-control-app \
+    --port ${REPLAY_PORT} \
+    --site-root ${REPLAY_SITE_ROOT}
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/replay-control.log
+StandardError=append:/var/log/replay-control.log
+SyslogIdentifier=replay-control
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+if [ ! -f /etc/default/replay-control ]; then
+    cat > /etc/default/replay-control <<'ENV'
+# Port for the web UI
+REPLAY_PORT=8080
+
+# Path to static site assets
+REPLAY_SITE_ROOT=/usr/local/share/replay/site
+
+# Log level (trace, debug, info, warn, error)
+RUST_LOG=replay_control_app=info,replay_control_core=info
+ENV
+fi
+
+systemctl daemon-reload
+systemctl enable replay-control >/dev/null 2>&1 || true
+BOOTSTRAP
+    success "Bootstrapped systemd unit"
+}
+
 deploy_to_pi() {
     local bin_path="$TARGET_DIR/$TARGET_TRIPLE/debug/$CRATE"
 
@@ -343,10 +397,21 @@ deploy_to_pi() {
 
     phase "Deploying to Pi (${PI_IP})"
 
+    # Bootstrap the service unit + env file if missing (e.g. fresh OS image
+    # or after `install.sh --purge`). Keep this in sync with install.sh's
+    # systemd_service_content / env_file_content — drift here means dev.sh
+    # would deploy onto a Pi that disagrees with what install.sh produces.
+    bootstrap_pi_if_needed
+
     # Stop service before overwriting binary
     info "Stopping service..."
     run_ssh "systemctl stop $PI_SERVICE 2>/dev/null || true"
     run_ssh "rm -rf /var/tmp/replay-control-update /var/tmp/replay-control-update.lock /var/tmp/replay-control-do-update.sh 2>/dev/null || true"
+
+    # Ensure install dirs exist — rsync only auto-creates the last component
+    # of the destination path, so a missing $PI_SITE_DIR parent (e.g. after
+    # `install.sh --purge`) makes the site sync below fail.
+    run_ssh "mkdir -p $PI_INSTALL_DIR $PI_SITE_DIR"
 
     # Transfer binary
     info "Syncing binary ($(human_size "$bin_size"))..."

@@ -599,11 +599,17 @@ impl BackgroundManager {
     }
 
     /// Generate the helper shell script that performs the actual file swap + restart.
+    /// `catalog_path` is `None` for releases that don't ship a catalog asset
+    /// (< v0.4.0-beta.3); the script then leaves the existing catalog in place.
     pub fn generate_update_script(
         binary_path: &std::path::Path,
         site_path: &std::path::Path,
+        catalog_path: Option<&std::path::Path>,
         version: &str,
     ) -> String {
+        let catalog_src = catalog_path
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
         format!(
             r#"#!/bin/bash
 
@@ -628,21 +634,31 @@ PORT="${{PORT:-8080}}"
 
 BINARY_SRC="{binary_src}"
 SITE_SRC="{site_src}"
+CATALOG_SRC="{catalog_src}"
 BINARY_DST="/usr/local/bin/replay-control-app"
 SITE_DST="/usr/local/share/replay/site"
+CATALOG_DST="/usr/local/bin/catalog.sqlite"
+
+# Asset helpers — applied to each (src, dst) pair.
+# An empty SRC means "skip this asset" (e.g. catalog on releases < v0.4.0-beta.3).
+backup()  {{ local dst="$1"; [ -e "$dst" ] && cp -a "$dst" "${{dst}}.bak" 2>/dev/null || true; }}
+# swap returns non-zero when src is empty so callers' `&& chmod` is skipped.
+swap()    {{ local src="$1" dst="$2"; [ -n "$src" ] || return 1; rm -rf "$dst"; mv "$src" "$dst"; }}
+unbak()   {{ rm -rf "$1.bak"; }}
+restore() {{ local dst="$1"; [ -e "${{dst}}.bak" ] || return 0; rm -rf "$dst"; mv "${{dst}}.bak" "$dst"; }}
 
 # Wait for the HTTP response to reach the client
 sleep 2
 
 # Back up current files
-cp "$BINARY_DST" "${{BINARY_DST}}.bak" 2>/dev/null
-cp -a "$SITE_DST" "${{SITE_DST}}.bak" 2>/dev/null
+backup "$BINARY_DST"
+backup "$SITE_DST"
+backup "$CATALOG_DST"
 
 # Swap files
-mv "$BINARY_SRC" "$BINARY_DST"
-rm -rf "$SITE_DST"
-mv "$SITE_SRC" "$SITE_DST"
-chmod +x "$BINARY_DST"
+swap "$BINARY_SRC" "$BINARY_DST" && chmod +x "$BINARY_DST"
+swap "$SITE_SRC"   "$SITE_DST"
+swap "$CATALOG_SRC" "$CATALOG_DST" && chmod 644 "$CATALOG_DST"
 
 # Restart service
 systemctl restart replay-control
@@ -655,8 +671,9 @@ while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
     ATTEMPT=$((ATTEMPT + 1))
     if curl -sf --max-time 10 "http://localhost:${{PORT}}/api/version" > /dev/null 2>&1; then
         # Success: remove backups
-        rm -f "${{BINARY_DST}}.bak"
-        rm -rf "${{SITE_DST}}.bak"
+        unbak "$BINARY_DST"
+        unbak "$SITE_DST"
+        unbak "$CATALOG_DST"
         rm -rf "{update_dir}"
         rm -f "$0"
         exit 0
@@ -664,13 +681,9 @@ while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
 done
 
 # Failure: restore backups
-if [ -f "${{BINARY_DST}}.bak" ]; then
-    mv "${{BINARY_DST}}.bak" "$BINARY_DST"
-fi
-if [ -d "${{SITE_DST}}.bak" ]; then
-    rm -rf "$SITE_DST"
-    mv "${{SITE_DST}}.bak" "$SITE_DST"
-fi
+restore "$BINARY_DST"
+restore "$SITE_DST"
+restore "$CATALOG_DST"
 systemctl restart replay-control
 rm -rf "{update_dir}"
 rm -f "$0"
@@ -679,6 +692,7 @@ exit 1
             version = version,
             binary_src = binary_path.display(),
             site_src = site_path.display(),
+            catalog_src = catalog_src,
             update_dir = replay_control_core::update::UPDATE_DIR,
         )
     }
@@ -788,9 +802,15 @@ exit 1
         // Use actual sizes from available.json for progress reporting.
         let stored_update = update_io::read_available_update();
         let binary_size = stored_update.as_ref().map(|u| u.binary_size).unwrap_or(0);
-        let total_bytes = stored_update
-            .map(|u| u.binary_size + u.site_size)
+        let site_size = stored_update.as_ref().map(|u| u.site_size).unwrap_or(0);
+        // Catalog may be absent on releases < v0.4.0-beta.3 — assets.catalog_url
+        // is the source of truth; the size hint just feeds progress reporting.
+        let catalog_size = stored_update
+            .as_ref()
+            .map(|u| u.catalog_size)
+            .filter(|_| assets.catalog_url.is_some())
             .unwrap_or(0);
+        let total_bytes = binary_size + site_size + catalog_size;
 
         // Check disk space (require 2x total for archives + extracted).
         if total_bytes > 0 {
@@ -851,6 +871,28 @@ exit 1
             .await?;
         }
 
+        let catalog_archive = update_dir.join("catalog.tar.gz");
+        if let Some(catalog_url) = &assets.catalog_url {
+            let activity_state = state.activity.clone();
+            let activity_tx = state.activity_tx.clone();
+            let start = start_time;
+            let downloaded_so_far = binary_size + site_size;
+
+            update_io::download_asset(catalog_url, &catalog_archive, &move |bytes| {
+                let mut act = activity_state.write().expect("activity lock");
+                if let super::activity::Activity::Update { progress } = &mut *act {
+                    progress.downloaded_bytes = downloaded_so_far + bytes;
+                    progress.total_bytes = total_bytes;
+                    progress.phase_detail = "Downloading catalog...".to_string();
+                    progress.elapsed_secs = start.elapsed().as_secs();
+                }
+                let activity = act.clone();
+                drop(act);
+                let _ = activity_tx.send(activity);
+            })
+            .await?;
+        }
+
         // Extract archives.
         guard.update(|act| {
             if let super::activity::Activity::Update { progress } = act {
@@ -864,30 +906,20 @@ exit 1
         let site_dir = update_dir.join("site");
         tokio::fs::create_dir_all(&binary_dir).await?;
         tokio::fs::create_dir_all(&site_dir).await?;
+        Self::extract_tarball(&binary_archive, &binary_dir).await?;
+        Self::extract_tarball(&site_archive, &site_dir).await?;
 
-        // Extract binary tarball.
-        let binary_archive_path = binary_archive.clone();
-        let binary_dir_path = binary_dir.clone();
-        tokio::task::spawn_blocking(move || {
-            let file = std::fs::File::open(&binary_archive_path)?;
-            let gz = flate2::read::GzDecoder::new(file);
-            let mut archive = tar::Archive::new(gz);
-            archive.unpack(&binary_dir_path)?;
-            Ok::<_, std::io::Error>(())
-        })
-        .await??;
-
-        // Extract site tarball.
-        let site_archive_path = site_archive.clone();
-        let site_dir_path = site_dir.clone();
-        tokio::task::spawn_blocking(move || {
-            let file = std::fs::File::open(&site_archive_path)?;
-            let gz = flate2::read::GzDecoder::new(file);
-            let mut archive = tar::Archive::new(gz);
-            archive.unpack(&site_dir_path)?;
-            Ok::<_, std::io::Error>(())
-        })
-        .await??;
+        let mut catalog_path: Option<std::path::PathBuf> = None;
+        if assets.catalog_url.is_some() {
+            let catalog_dir = update_dir.join("catalog");
+            tokio::fs::create_dir_all(&catalog_dir).await?;
+            Self::extract_tarball(&catalog_archive, &catalog_dir).await?;
+            catalog_path = Some(
+                Self::find_extracted_file(&catalog_dir, "catalog.sqlite")
+                    .await
+                    .ok_or("Extracted catalog archive does not contain catalog.sqlite")?,
+            );
+        }
 
         // Resilient: search for the binary within extracted contents.
         let binary_path = Self::find_extracted_file(&binary_dir, "replay-control-app")
@@ -901,7 +933,12 @@ exit 1
 
         // Generate helper script.
         let version = tag.strip_prefix('v').unwrap_or(tag);
-        let script = Self::generate_update_script(&binary_path, &actual_site_dir, version);
+        let script = Self::generate_update_script(
+            &binary_path,
+            &actual_site_dir,
+            catalog_path.as_deref(),
+            version,
+        );
         let script_path = std::path::PathBuf::from(UPDATE_SCRIPT);
         tokio::fs::write(&script_path, &script).await?;
 
@@ -930,6 +967,21 @@ exit 1
         drop(lock_file);
 
         Ok(())
+    }
+
+    /// Streaming gunzip + untar of a `.tar.gz` archive into `dest`.
+    async fn extract_tarball(
+        archive: &std::path::Path,
+        dest: &std::path::Path,
+    ) -> Result<(), std::io::Error> {
+        let archive = archive.to_path_buf();
+        let dest = dest.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let gz = flate2::read::GzDecoder::new(std::fs::File::open(&archive)?);
+            tar::Archive::new(gz).unpack(&dest)
+        })
+        .await
+        .map_err(std::io::Error::other)?
     }
 
     /// Search for a file by name within an extracted directory tree.
@@ -1626,5 +1678,102 @@ impl AppState {
 
             affected_systems.insert(system_name.into_owned());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    // ── generate_update_script ──────────────────────────────────────
+
+    #[test]
+    fn script_includes_catalog_handling_when_path_some() {
+        let script = BackgroundManager::generate_update_script(
+            Path::new("/tmp/extracted/replay-control-app"),
+            Path::new("/tmp/extracted/site"),
+            Some(Path::new("/tmp/extracted/catalog.sqlite")),
+            "0.5.0",
+        );
+        assert!(script.contains(r#"CATALOG_SRC="/tmp/extracted/catalog.sqlite""#));
+        assert!(script.contains(r#"CATALOG_DST="/usr/local/bin/catalog.sqlite""#));
+        assert!(script.contains(r#"backup "$CATALOG_DST""#));
+        assert!(script.contains(r#"swap "$CATALOG_SRC" "$CATALOG_DST""#));
+        assert!(script.contains(r#"restore "$CATALOG_DST""#));
+        assert!(script.contains("chmod 644"));
+    }
+
+    #[test]
+    fn script_omits_catalog_swap_when_path_none() {
+        let script = BackgroundManager::generate_update_script(
+            Path::new("/tmp/extracted/replay-control-app"),
+            Path::new("/tmp/extracted/site"),
+            None,
+            "0.5.0",
+        );
+        // Empty CATALOG_SRC makes swap return non-zero; backup/restore are
+        // still emitted but become no-ops on a non-existent backup file.
+        assert!(script.contains(r#"CATALOG_SRC="""#));
+        // Helper functions are always declared (they're cheap).
+        assert!(script.contains(r#"swap()"#));
+    }
+
+    #[test]
+    fn script_validates_version() {
+        let script = BackgroundManager::generate_update_script(
+            Path::new("/tmp/binary"),
+            Path::new("/tmp/site"),
+            None,
+            "0.5.0",
+        );
+        assert!(script.contains(r#"validate_version "0.5.0""#));
+        assert!(script.contains("Invalid version string"));
+    }
+
+    // ── extract_tarball ─────────────────────────────────────────────
+
+    fn build_tarball(files: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        let mut buf = Vec::new();
+        {
+            let gz = flate2::write::GzEncoder::new(&mut buf, flate2::Compression::fast());
+            let mut tar = tar::Builder::new(gz);
+            for (path, content) in files {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(content.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                tar.append_data(&mut header, path, *content).unwrap();
+            }
+            tar.into_inner().unwrap().finish().unwrap();
+        }
+        buf
+    }
+
+    #[tokio::test]
+    async fn extract_tarball_writes_expected_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("test.tar.gz");
+        std::fs::write(
+            &archive_path,
+            build_tarball(&[("hello.txt", b"hello"), ("nested/world.txt", b"world")]),
+        )
+        .unwrap();
+
+        let dest = dir.path().join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        BackgroundManager::extract_tarball(&archive_path, &dest)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join("hello.txt")).unwrap(),
+            "hello"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("nested/world.txt")).unwrap(),
+            "world"
+        );
     }
 }

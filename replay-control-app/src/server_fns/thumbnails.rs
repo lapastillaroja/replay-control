@@ -18,6 +18,7 @@ pub struct DataSourceSummary {
 /// Trigger the two-phase thumbnail pipeline: (1) refresh index, (2) download images.
 #[server(prefix = "/sfn")]
 pub async fn update_thumbnails() -> Result<(), ServerFnError> {
+    tracing::info!("update_thumbnails: handler entered");
     let state = expect_context::<crate::api::AppState>();
     if !state.thumbnails.start_thumbnail_update(&state) {
         return Err(ServerFnError::new(

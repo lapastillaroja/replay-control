@@ -45,7 +45,7 @@ pub fn MetadataBusyBanner() -> impl IntoView {
             if progress.current_label.is_empty() {
                 "Updating thumbnails...".to_string()
             } else {
-                format!("Updating thumbnails ({})...", progress.current_label)
+                format!("Updating thumbnails: {}", progress.current_label)
             }
         }
         Activity::Rebuild { progress } => {

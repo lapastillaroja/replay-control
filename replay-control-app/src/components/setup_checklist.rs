@@ -39,6 +39,13 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     let thumbnail_done = RwSignal::new(status.has_thumbnail_index);
     let metadata_error = RwSignal::new(None::<String>);
     let thumbnail_error = RwSignal::new(None::<String>);
+    // Local "pending" flags give immediate visual feedback on click — the
+    // server fn round-trip + SSE delivery takes a beat, and without these
+    // the row sits on the Start button for that beat (looks like the click
+    // didn't register). Cleared when SSE confirms the activity (Effect below)
+    // or when the server fn returns Err (handler).
+    let metadata_pending = RwSignal::new(false);
+    let thumbnail_pending = RwSignal::new(false);
     let dismissed = RwSignal::new(false);
 
     // "Setup complete!" view is only shown when the user landed here with
@@ -51,10 +58,32 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     // the App root). Per-row busy flags derive from it, so activity from
     // another tab/process is reflected here without a second SSE connection.
     let activity = use_context::<RwSignal<Activity>>().expect("Activity context");
-    let is_busy = Memo::new(move |_| activity.with(|a| !matches!(a, Activity::Idle)));
-    let metadata_busy = Memo::new(move |_| activity.with(|a| matches!(a, Activity::Import { .. })));
-    let thumbnail_busy =
-        Memo::new(move |_| activity.with(|a| matches!(a, Activity::ThumbnailUpdate { .. })));
+    let is_busy = Memo::new(move |_| {
+        metadata_pending.get()
+            || thumbnail_pending.get()
+            || activity.with(|a| !matches!(a, Activity::Idle))
+    });
+    let metadata_busy = Memo::new(move |_| {
+        metadata_pending.get() || activity.with(|a| matches!(a, Activity::Import { .. }))
+    });
+    let thumbnail_busy = Memo::new(move |_| {
+        thumbnail_pending.get() || activity.with(|a| matches!(a, Activity::ThumbnailUpdate { .. }))
+    });
+
+    // Clear pending once SSE confirms the matching activity is running. Once
+    // confirmed, the global signal drives `..._busy` and `pending` is no
+    // longer needed.
+    Effect::new(move |_| {
+        activity.with(|a| match a {
+            Activity::Import { .. } if metadata_pending.get_untracked() => {
+                metadata_pending.set(false);
+            }
+            Activity::ThumbnailUpdate { .. } if thumbnail_pending.get_untracked() => {
+                thumbnail_pending.set(false);
+            }
+            _ => {}
+        });
+    });
 
     // Latch the per-row "done" flag only when the activity reports a
     // successful Complete phase. Failures and cancellations leave `done`
@@ -111,8 +140,10 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
             return;
         }
         metadata_error.set(None);
+        metadata_pending.set(true);
         leptos::task::spawn_local(async move {
             if let Err(e) = server_fns::download_metadata().await {
+                metadata_pending.set(false);
                 metadata_error.set(Some(format!("Error: {e}")));
             }
         });
@@ -123,8 +154,10 @@ fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
             return;
         }
         thumbnail_error.set(None);
+        thumbnail_pending.set(true);
         leptos::task::spawn_local(async move {
             if let Err(e) = server_fns::update_thumbnails().await {
+                thumbnail_pending.set(false);
                 thumbnail_error.set(Some(format!("Error: {e}")));
             }
         });

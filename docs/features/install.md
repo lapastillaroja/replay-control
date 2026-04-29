@@ -91,6 +91,7 @@ The app will start automatically when the Pi boots. Uninstall isn't supported in
 | Path | Contents |
 |---|---|
 | `/usr/local/bin/replay-control-app` | Application binary. |
+| `/usr/local/bin/catalog.sqlite` | Read-only embedded game catalog. The service won't start without it. |
 | `/usr/local/share/replay/site/` | Static web assets (CSS, WASM, icons). |
 | `/etc/systemd/system/replay-control.service` | Systemd service unit. |
 | `/etc/default/replay-control` | Environment configuration. |

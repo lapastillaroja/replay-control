@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 #[cfg(feature = "http")]
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::Connection;
 
@@ -229,8 +229,24 @@ pub async fn import_all_manifests(
 
     let db_unavailable = || Error::Other("library DB unavailable during manifest import".into());
 
+    // Bail out after this many repos in a row fail. Sustained failures are
+    // almost always GitHub API rate limiting (HTTP 403) or no network — the
+    // rest of the run will hit the same wall, and the WriteGate stays held
+    // the whole time, blocking SSR reads. Three is enough to distinguish
+    // a flaky single repo from a systemic outage.
+    const MAX_CONSECUTIVE_FAILURES: usize = 3;
+    let mut consecutive_failures = 0usize;
+
     for (i, repo) in repos.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+            tracing::warn!(
+                "Manifest import: aborting after {consecutive_failures} consecutive failures \
+                 (likely GitHub API rate-limited); {} repo(s) skipped",
+                repos.len() - i
+            );
             break;
         }
 
@@ -254,6 +270,7 @@ pub async fn import_all_manifests(
                         // Repo unchanged -- skip.
                         total_entries += status.entry_count;
                         repos_fetched += 1;
+                        consecutive_failures = 0;
                         continue;
                     }
                     Ok(true) => { /* Repo changed, re-fetch below. */ }
@@ -276,6 +293,7 @@ pub async fn import_all_manifests(
                         Ok((sha, entries)) => (sha, entries, alt),
                         Err(e) => {
                             errors.push(format!("{}: {e}", repo.display_name));
+                            consecutive_failures += 1;
                             continue;
                         }
                     }
@@ -314,12 +332,15 @@ pub async fn import_all_manifests(
             Some(Ok(count)) => {
                 total_entries += count;
                 repos_fetched += 1;
+                consecutive_failures = 0;
             }
             Some(Err(e)) => {
                 errors.push(format!("{}: {e}", repo.display_name));
+                consecutive_failures += 1;
             }
             None => {
                 errors.push(format!("{}: library DB unavailable", repo.display_name));
+                consecutive_failures += 1;
             }
         }
     }
@@ -1173,73 +1194,68 @@ pub async fn download_system_thumbnails(
         });
     }
 
-    // Download with limited concurrency using tokio semaphore.
-    let downloaded = AtomicUsize::new(0);
-    let failed = AtomicUsize::new(0);
-    let processed = AtomicUsize::new(0);
+    // JoinSet collects tasks in completion order so a single slow request
+    // can't block progress reporting on the ones that already finished.
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
 
     let kind_dir = kind.repo_dir().to_string();
     let root = storage_root.to_path_buf();
     let sys = system.to_string();
 
-    let mut handles = Vec::with_capacity(work.len());
+    let mut tasks: tokio::task::JoinSet<(ManifestMatch, Result<Vec<u8>>)> =
+        tokio::task::JoinSet::new();
 
     for m in work {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
-
-        let permit = semaphore.clone().acquire_owned().await.unwrap();
+        let semaphore = semaphore.clone();
         let m = m.clone();
         let kind_dir = kind_dir.clone();
-
-        let handle = tokio::spawn(async move {
-            let result = download_thumbnail(&m, &kind_dir).await;
-            drop(permit); // Release semaphore permit.
-            result.map(|bytes| (m, bytes))
+        tasks.spawn(async move {
+            let _permit = match semaphore.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    return (m, Err(Error::Other("semaphore closed".into())));
+                }
+            };
+            let bytes = download_thumbnail(&m, &kind_dir).await;
+            (m, bytes)
         });
-
-        handles.push(handle);
     }
 
-    // Collect results and save to disk (I/O-bound, done sequentially).
-    for handle in handles {
+    let mut downloaded_count = 0usize;
+    let mut failed_count = 0usize;
+    let mut processed = 0usize;
+
+    while let Some(join_result) = tasks.join_next().await {
         if cancel.load(Ordering::Relaxed) {
+            // JoinSet aborts remaining tasks on drop.
             break;
         }
-
-        match handle.await {
-            Ok(Ok((m, bytes))) => {
+        match join_result {
+            Ok((m, Ok(bytes))) => {
                 match save_thumbnail(&root, &sys, kind, &m.filename, bytes).await {
-                    Ok(_) => {
-                        downloaded.fetch_add(1, Ordering::Relaxed);
-                    }
+                    Ok(_) => downloaded_count += 1,
                     Err(e) => {
                         tracing::warn!("Failed to save {}: {e}", m.filename);
-                        failed.fetch_add(1, Ordering::Relaxed);
+                        failed_count += 1;
                     }
                 }
             }
-            Ok(Err(e)) => {
-                tracing::debug!("Failed to download: {e}");
-                failed.fetch_add(1, Ordering::Relaxed);
+            Ok((m, Err(e))) => {
+                tracing::debug!("Failed to download {}: {e}", m.filename);
+                failed_count += 1;
             }
             Err(e) => {
                 tracing::debug!("Download task panicked: {e}");
-                failed.fetch_add(1, Ordering::Relaxed);
+                failed_count += 1;
             }
         }
 
-        processed.fetch_add(1, Ordering::Relaxed);
-        let done = processed.load(Ordering::Relaxed);
-        if done.is_multiple_of(5) {
-            on_progress(skipped + done, total, downloaded.load(Ordering::Relaxed));
-        }
+        processed += 1;
+        on_progress(skipped + processed, total, downloaded_count);
     }
-
-    let downloaded_count = downloaded.load(Ordering::Relaxed);
-    let failed_count = failed.load(Ordering::Relaxed);
 
     on_progress(total, total, downloaded_count);
 

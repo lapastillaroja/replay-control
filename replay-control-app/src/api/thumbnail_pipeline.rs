@@ -52,7 +52,9 @@ impl ThumbnailPipeline {
         let state = state.clone();
         tokio::spawn(async move {
             let start = std::time::Instant::now();
+            tracing::info!("run_thumbnail_update: starting");
             Self::run_thumbnail_update(&state, start, cancel, guard).await;
+            tracing::info!("run_thumbnail_update: finished");
         });
 
         true
@@ -68,6 +70,8 @@ impl ThumbnailPipeline {
         use super::WriteGate;
         use replay_control_core_server::thumbnail_manifest;
         use replay_control_core_server::thumbnails::ALL_THUMBNAIL_KINDS;
+
+        tracing::info!("run_thumbnail_update: phase 0 (db check)");
 
         let storage_root = state.storage().root.clone();
 
@@ -90,6 +94,7 @@ impl ThumbnailPipeline {
         // Gate reads while thumbnail index writes to the library DB.
         // On exFAT (DELETE journal), concurrent reads during heavy writes corrupt the DB.
         // Activated after the DB availability check; dropped after Phase 1 checkpoint.
+        tracing::info!("run_thumbnail_update: phase 1 (manifest import) — write gate up");
         let write_gate = WriteGate::activate(state.library_pool.write_gate_flag());
 
         // ── Phase 1: Index refresh ──────────────────────────────────
@@ -192,6 +197,10 @@ impl ThumbnailPipeline {
 
         // Release the write gate — Phase 1 heavy writes are done. Phase 2
         // (downloads) needs to read the DB for thumbnail index lookups.
+        tracing::info!(
+            "run_thumbnail_update: phase 1 done in {}s — write gate down",
+            start.elapsed().as_secs()
+        );
         drop(write_gate);
 
         // Check cancellation between phases.
@@ -213,6 +222,9 @@ impl ThumbnailPipeline {
                 progress.step_total = 0;
                 progress.downloaded = 0;
                 progress.elapsed_secs = start.elapsed().as_secs();
+                // Drop the trailing Phase 1 repo name — banners fall back to
+                // a generic label until the system loop sets a real one.
+                progress.current_label = String::new();
             }
         });
 
@@ -306,6 +318,8 @@ impl ThumbnailPipeline {
                 let storage_root_dl = storage_root.clone();
                 let system_dl = system.clone();
 
+                let kind_name = kind.media_dir();
+                let plan_skipped = plan.skipped;
                 let result = thumbnail_manifest::download_system_thumbnails(
                     &plan,
                     &storage_root_dl,
@@ -318,10 +332,11 @@ impl ThumbnailPipeline {
                             progress.step_total = total_systems;
                             progress.downloaded = prev_downloaded + downloaded;
                             progress.elapsed_secs = start.elapsed().as_secs();
-                            if total > 0 {
-                                let display_n = (processed + 1).min(total);
-                                progress.current_label =
-                                    format!("{system_display_owned}: {display_n}/{total}");
+                            if let Some(pct) = (processed * 100).checked_div(total) {
+                                progress.current_label = format!(
+                                    "{system_display_owned} · {kind_name} {pct}% · \
+                                     {downloaded} new, {plan_skipped} cached"
+                                );
                             }
                         }
                         let activity = guard.clone();

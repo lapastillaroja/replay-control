@@ -11,6 +11,11 @@ pub struct AvailableUpdate {
     pub published_at: String,
     pub binary_size: u64,
     pub site_size: u64,
+    /// Catalog asset size. Zero when the release predates the catalog asset
+    /// (anything before v0.4.0-beta.3) — the updater treats zero as "no
+    /// catalog to fetch" and leaves the existing one in place.
+    #[serde(default)]
+    pub catalog_size: u64,
 }
 
 /// Client-side update lifecycle state.
@@ -201,6 +206,7 @@ mod tests {
                 published_at: String::new(),
                 binary_size: 10000,
                 site_size: 4000,
+                catalog_size: 8000,
             }),
             UpdateState::Restarting {
                 expected_version: "0.3.0".to_string(),

@@ -8,6 +8,51 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0) - 2026-04-29
+
+The 0.4.0 stable consolidates four beta releases plus a final round of polish. The summary below is user-facing — see the beta entries below for technical detail.
+
+### Highlights
+
+**Resilience**
+
+- A torn-write or clobbered library database no longer crash-loops the service. Rebuildable caches recover silently on the next start; if your saved overrides and videos are affected, a one-click **Reset** banner appears.
+- Auto-update no longer leaves browsers stuck in a reload loop. After the service restarts, open tabs cleanly pick up the new version on their own.
+- Corruption banners now appear instantly via push instead of after a few seconds of polling, and stale browser tabs reconnect on their own after a server restart.
+- A failed game launch no longer leaves behind a stale autostart trigger that could fire on the next boot.
+
+**Performance**
+
+- Snappier homepage, log viewer, and game launches under load. Subprocess and database calls that used to block for 1–2 seconds at a time now run asynchronously, and the new connection pool more than doubles homepage throughput on Pi 5 (113 → 265 req/s).
+- LaunchBox import is ~40% faster on WAL-mode storage thanks to a pipelined parser/writer.
+
+**Library & metadata**
+
+- Game detail pages now show the full release date (e.g. "Aug 31, 2000") whenever the data is precise enough, instead of always falling back to the year. Changing your region preference re-resolves dates instantly — no library re-import needed.
+- Metadata page redesigned: six summary cards (Total Games, Enrichment, Systems, Co-op, Year Span, Library Size) and a mobile-friendly per-system accordion replace the cramped 7-column table. Cards refresh automatically after import, rebuild, thumbnail update, or clear — no full page reload.
+- Arcade box art now matches games with apostrophes in their names (e.g. "Galaga '88") instead of falling back to a placeholder.
+
+**Skins**
+
+- ReplayOS custom user skins (slots 11+) are no longer invisible — the selector now shows a disabled `CUSTOM #N` entry so you can see which one is active. The active-skin badge also follows live changes from the Pi. Rendering with the user's actual extracted colors is still pending.
+
+**Install & ops**
+
+- `install.sh` no longer downloads the 489 MB LaunchBox metadata XML at install time. Fetch on demand from Settings → Download metadata when you need it; the catalog ships embedded with the binary.
+- New `install.sh --pi-pass` flag handles non-default RePlayOS SSH passwords from the curl-piped one-liner.
+- Saving an update-channel selection now surfaces errors instead of silently failing.
+- The captures lightbox no longer crashes when navigating away mid-keypress.
+
+### Migration
+
+If you're upgrading from 0.3.x, the legacy on-storage `metadata.db` (and its `-wal`/`-shm`/`-journal` sidecars) is removed automatically on first boot, and a fresh `library.db` is rebuilt from scratch. No data migration is needed — the startup pipeline re-scans ROMs and re-imports LaunchBox data. User overrides and saved videos (`user_data.db`) are untouched.
+
+### Details
+
+For per-area technical detail — the new async connection pool, `replay-control-core-server` crate split, hashed asset filenames, SSE corruption stream, async I/O migration, per-region date-precision schema, pipelined LaunchBox import, custom-skin handling — see the four beta release notes below.
+
+---
+
 ## [0.4.0-beta.4](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.4) - 2026-04-25
 
 ### Highlights

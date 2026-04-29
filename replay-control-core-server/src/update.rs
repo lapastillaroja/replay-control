@@ -18,11 +18,37 @@ pub use replay_control_core::update::{
 
 use crate::http::shared_client;
 
+/// Classification of a release asset by filename.
+/// Order of checks matters: `replay-control-app` and `replay-catalog` are
+/// disjoint, but `site` would partially match against future asset names —
+/// keeping it last avoids false positives if a new asset is ever introduced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssetKind {
+    Binary,
+    Catalog,
+    Site,
+}
+
+fn classify_asset(name: &str) -> Option<AssetKind> {
+    if name.contains("replay-control-app") {
+        Some(AssetKind::Binary)
+    } else if name.contains("catalog") {
+        Some(AssetKind::Catalog)
+    } else if name.contains("site") {
+        Some(AssetKind::Site)
+    } else {
+        None
+    }
+}
+
 /// Download URLs for a specific release, resolved fresh from GitHub API.
 #[derive(Debug)]
 pub struct AssetUrls {
     pub binary_url: String,
     pub site_url: String,
+    /// `None` for releases that predate the catalog asset (< v0.4.0-beta.3).
+    /// The updater skips the catalog swap entirely in that case.
+    pub catalog_url: Option<String>,
 }
 
 /// GitHub API base URL. Overridable via `REPLAY_GITHUB_API_URL` for testing.
@@ -111,14 +137,16 @@ pub fn parse_release(json: &serde_json::Value) -> Option<AvailableUpdate> {
     let assets = json.get("assets").and_then(|v| v.as_array());
     let mut binary_size = 0u64;
     let mut site_size = 0u64;
+    let mut catalog_size = 0u64;
     if let Some(assets) = assets {
         for asset in assets {
             let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let size = asset.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
-            if name.contains("replay-control-app") {
-                binary_size = size;
-            } else if name.contains("site") {
-                site_size = size;
+            match classify_asset(name) {
+                Some(AssetKind::Binary) => binary_size = size,
+                Some(AssetKind::Site) => site_size = size,
+                Some(AssetKind::Catalog) => catalog_size = size,
+                None => {}
             }
         }
     }
@@ -131,6 +159,7 @@ pub fn parse_release(json: &serde_json::Value) -> Option<AvailableUpdate> {
         published_at,
         binary_size,
         site_size,
+        catalog_size,
     })
 }
 
@@ -232,22 +261,27 @@ pub async fn resolve_asset_urls(
 
     let mut binary_url = None;
     let mut site_url = None;
+    let mut catalog_url = None;
 
     for asset in assets {
         let name = asset.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let download_url = asset.get("browser_download_url").and_then(|v| v.as_str());
-        if let Some(url) = download_url {
-            if name.contains("replay-control-app") && name.ends_with(".tar.gz") {
-                binary_url = Some(url.to_string());
-            } else if name.contains("site") && name.ends_with(".tar.gz") {
-                site_url = Some(url.to_string());
-            }
+        if !name.ends_with(".tar.gz") {
+            continue;
+        }
+        let Some(url) = download_url else { continue };
+        match classify_asset(name) {
+            Some(AssetKind::Binary) => binary_url = Some(url.to_string()),
+            Some(AssetKind::Site) => site_url = Some(url.to_string()),
+            Some(AssetKind::Catalog) => catalog_url = Some(url.to_string()),
+            None => {}
         }
     }
 
     Ok(AssetUrls {
         binary_url: binary_url.ok_or("Binary asset not found in release")?,
         site_url: site_url.ok_or("Site asset not found in release")?,
+        catalog_url,
     })
 }
 
@@ -303,6 +337,7 @@ mod tests {
             published_at: "2026-04-01T00:00:00Z".to_string(),
             binary_size: 10_000_000,
             site_size: 4_000_000,
+            catalog_size: 8_000_000,
         }
     }
 
@@ -369,7 +404,9 @@ mod tests {
                 {"name": "replay-control-app-aarch64.tar.gz", "size": 10000000,
                  "browser_download_url": format!("https://example.com/{tag}/binary.tar.gz")},
                 {"name": "site.tar.gz", "size": 4000000,
-                 "browser_download_url": format!("https://example.com/{tag}/site.tar.gz")}
+                 "browser_download_url": format!("https://example.com/{tag}/site.tar.gz")},
+                {"name": "replay-catalog.tar.gz", "size": 8000000,
+                 "browser_download_url": format!("https://example.com/{tag}/catalog.tar.gz")}
             ]
         })
     }
@@ -434,6 +471,7 @@ mod tests {
         assert!(!update.prerelease);
         assert_eq!(update.binary_size, 10000000);
         assert_eq!(update.site_size, 4000000);
+        assert_eq!(update.catalog_size, 8000000);
     }
 
     #[test]
@@ -487,6 +525,103 @@ mod tests {
         let update = parse_release(&json).unwrap();
         assert_eq!(update.binary_size, 0);
         assert_eq!(update.site_size, 0);
+        assert_eq!(update.catalog_size, 0);
+    }
+
+    // ── classify_asset ──────────────────────────────────────────────
+
+    #[test]
+    fn classify_asset_recognises_binary_site_catalog() {
+        assert_eq!(
+            classify_asset("replay-control-app-aarch64-linux.tar.gz"),
+            Some(AssetKind::Binary)
+        );
+        assert_eq!(
+            classify_asset("replay-catalog.tar.gz"),
+            Some(AssetKind::Catalog)
+        );
+        assert_eq!(
+            classify_asset("replay-control-site.tar.gz"),
+            Some(AssetKind::Site)
+        );
+        assert_eq!(classify_asset("checksums.sha256"), None);
+        assert_eq!(classify_asset("install.sh"), None);
+    }
+
+    // ── resolve_asset_urls ──────────────────────────────────────────
+
+    fn mock_release_endpoint(server: &mut mockito::ServerGuard, body: serde_json::Value) {
+        let path = format!("/repos/{REPO}/releases/tags/v0.5.0");
+        server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body.to_string())
+            .create();
+    }
+
+    #[tokio::test]
+    async fn resolve_asset_urls_includes_catalog_when_present() {
+        let mut server = mockito::Server::new_async().await;
+        mock_release_endpoint(&mut server, make_release_json("v0.5.0", false));
+        let assets = resolve_asset_urls(&server.url(), REPO, "v0.5.0", None)
+            .await
+            .unwrap();
+        assert!(assets.binary_url.ends_with("/binary.tar.gz"));
+        assert!(assets.site_url.ends_with("/site.tar.gz"));
+        assert_eq!(
+            assets.catalog_url.as_deref(),
+            Some("https://example.com/v0.5.0/catalog.tar.gz")
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_asset_urls_catalog_none_for_legacy_release() {
+        // Releases before v0.4.0-beta.3 don't ship a catalog asset.
+        let legacy = serde_json::json!({
+            "tag_name": "v0.4.0-beta.2",
+            "prerelease": true,
+            "html_url": "",
+            "published_at": "",
+            "assets": [
+                {"name": "replay-control-app-aarch64.tar.gz", "size": 1,
+                 "browser_download_url": "https://example.com/binary.tar.gz"},
+                {"name": "replay-site.tar.gz", "size": 1,
+                 "browser_download_url": "https://example.com/site.tar.gz"}
+            ]
+        });
+        let mut server = mockito::Server::new_async().await;
+        let path = format!("/repos/{REPO}/releases/tags/v0.4.0-beta.2");
+        server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(legacy.to_string())
+            .create();
+        let assets = resolve_asset_urls(&server.url(), REPO, "v0.4.0-beta.2", None)
+            .await
+            .unwrap();
+        assert!(assets.catalog_url.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_asset_urls_errors_when_binary_missing() {
+        let no_binary = serde_json::json!({
+            "tag_name": "v0.5.0",
+            "prerelease": false,
+            "html_url": "",
+            "published_at": "",
+            "assets": [
+                {"name": "replay-site.tar.gz", "size": 1,
+                 "browser_download_url": "https://example.com/site.tar.gz"}
+            ]
+        });
+        let mut server = mockito::Server::new_async().await;
+        mock_release_endpoint(&mut server, no_binary);
+        let err = resolve_asset_urls(&server.url(), REPO, "v0.5.0", None)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Binary asset not found"));
     }
 
     // ── check_github_update ─────────────────────────────────────────

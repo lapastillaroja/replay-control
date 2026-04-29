@@ -69,7 +69,7 @@ This is a personal project born from my love for retro gaming on real hardware. 
 ### Metadata & Media
 
 - Embedded databases: ~34K console ROMs and ~15K playable arcade games — display names, genres, player counts, developer, and year data with no internet required
-- One-click LaunchBox XML import (~460 MB) for descriptions, ratings, genres, publishers — fast streaming parse (~6s on Pi)
+- One-click LaunchBox metadata import (~100 MB download, ~460 MB XML) for descriptions, ratings, genres, publishers — fast streaming parse (~6s on Pi)
 - Per-system or batch box art download from libretro-thumbnails with smart multi-tier matching
 - ~5,345 game series entries across 194+ franchises with sequel/prequel chains from Wikidata
 - Box art swap — pick alternate region-variant covers from the full libretro-thumbnails catalog
