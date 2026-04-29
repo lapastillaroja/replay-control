@@ -21,8 +21,10 @@ pub fn MetadataPage() -> impl IntoView {
     let builtin_stats = Resource::new(|| (), |_| server_fns::get_builtin_db_stats());
     let library_summary = Resource::new(|| (), |_| server_fns::get_library_summary());
 
-    // Single activity signal (replaces importing + thumb_updating + rebuilding).
-    let activity = RwSignal::new(Activity::Idle);
+    // App-level activity signal (populated by SseActivityListener at the App
+    // root). Shared with banners, the setup checklist, and other consumers
+    // — activity from another tab/process is reflected here too.
+    let activity = use_context::<RwSignal<Activity>>().expect("Activity context");
 
     // Per-operation result messages — prevents a rebuild message from showing in LaunchBox/Thumbnail sections.
     let import_result = RwSignal::new(None::<String>);
@@ -40,44 +42,44 @@ pub fn MetadataPage() -> impl IntoView {
     });
 
     // Derived helpers.
-    let is_busy = Memo::new(move |_| !matches!(activity.get(), Activity::Idle));
-    let is_importing = Memo::new(move |_| matches!(activity.get(), Activity::Import { .. }));
+    let is_busy = Memo::new(move |_| activity.with(|a| !matches!(a, Activity::Idle)));
+    let is_importing = Memo::new(move |_| activity.with(|a| matches!(a, Activity::Import { .. })));
     let is_thumb_updating =
-        Memo::new(move |_| matches!(activity.get(), Activity::ThumbnailUpdate { .. }));
-    let can_cancel = Memo::new(move |_| matches!(activity.get(), Activity::ThumbnailUpdate { .. }));
+        Memo::new(move |_| activity.with(|a| matches!(a, Activity::ThumbnailUpdate { .. })));
+    let can_cancel =
+        Memo::new(move |_| activity.with(|a| matches!(a, Activity::ThumbnailUpdate { .. })));
 
     // Thumbnail cancel UI state (local, not derived from server).
     let thumb_cancelling = RwSignal::new(false);
 
-    // Close any leaked EventSource connections when this component unmounts.
-    #[cfg(target_arch = "wasm32")]
-    {
-        on_cleanup(move || {
-            close_activity_sse();
-        });
-    }
-
-    // Check for in-progress operations on page load.
-    Effect::new(move || {
-        leptos::task::spawn_local(async move {
-            if let Ok(act) = server_fns::get_activity().await
-                && !matches!(act, Activity::Idle)
-            {
-                activity.set(act);
-                watch_activity(
-                    activity,
-                    import_result,
-                    thumb_result,
-                    rebuild_result,
-                    thumb_cancelling,
-                    stats,
-                    coverage,
-                    data_source,
-                    image_stats,
-                    library_summary,
-                );
-            }
-        });
+    // When the activity transitions back to Idle, dispatch the result message
+    // and refetch the relevant resources based on what was running. The last
+    // non-Idle activity is captured in a StoredValue so its terminal_message
+    // and kind survive past the Idle transition.
+    let last_active: StoredValue<Option<Activity>> = StoredValue::new(None);
+    Effect::new(move |_| {
+        let act = activity.get();
+        if matches!(act, Activity::Idle) {
+            let prev = last_active.get_value();
+            last_active.set_value(None);
+            let Some(prev) = prev else {
+                return;
+            };
+            dispatch_terminal(
+                prev,
+                import_result,
+                thumb_result,
+                rebuild_result,
+                thumb_cancelling,
+                stats,
+                coverage,
+                data_source,
+                image_stats,
+                library_summary,
+            );
+        } else {
+            last_active.set_value(Some(act));
+        }
     });
 
     let on_download = move |_| {
@@ -86,37 +88,8 @@ pub fn MetadataPage() -> impl IntoView {
         }
         import_result.set(None);
         leptos::task::spawn_local(async move {
-            match server_fns::download_metadata().await {
-                Ok(()) => {
-                    // Set a placeholder activity so buttons disable immediately.
-                    activity.set(Activity::Import {
-                        progress: server_fns::ImportProgress {
-                            state: ImportState::Downloading,
-                            processed: 0,
-                            matched: 0,
-                            inserted: 0,
-                            elapsed_secs: 0,
-                            error: None,
-                            download_bytes: 0,
-                            download_total: None,
-                        },
-                    });
-                    watch_activity(
-                        activity,
-                        import_result,
-                        thumb_result,
-                        rebuild_result,
-                        thumb_cancelling,
-                        stats,
-                        coverage,
-                        data_source,
-                        image_stats,
-                        library_summary,
-                    );
-                }
-                Err(e) => {
-                    import_result.set(Some(format!("Error: {e}")));
-                }
+            if let Err(e) = server_fns::download_metadata().await {
+                import_result.set(Some(format!("Error: {e}")));
             }
         });
     };
@@ -128,36 +101,8 @@ pub fn MetadataPage() -> impl IntoView {
         thumb_cancelling.set(false);
         thumb_result.set(None);
         leptos::task::spawn_local(async move {
-            match server_fns::update_thumbnails().await {
-                Ok(()) => {
-                    activity.set(server_fns::make_thumbnail_update_activity(
-                        server_fns::ThumbnailProgress {
-                            phase: ThumbnailPhase::Indexing,
-                            current_label: String::new(),
-                            step_done: 0,
-                            step_total: 0,
-                            downloaded: 0,
-                            entries_indexed: 0,
-                            elapsed_secs: 0,
-                            error: None,
-                        },
-                    ));
-                    watch_activity(
-                        activity,
-                        import_result,
-                        thumb_result,
-                        rebuild_result,
-                        thumb_cancelling,
-                        stats,
-                        coverage,
-                        data_source,
-                        image_stats,
-                        library_summary,
-                    );
-                }
-                Err(e) => {
-                    thumb_result.set(Some(format!("Error: {e}")));
-                }
+            if let Err(e) = server_fns::update_thumbnails().await {
+                thumb_result.set(Some(format!("Error: {e}")));
             }
         });
     };
@@ -387,28 +332,13 @@ pub fn MetadataPage() -> impl IntoView {
     }
 }
 
-// ── EventSource lifecycle management ─────────────────────────────────────
-
-#[cfg(target_arch = "wasm32")]
-thread_local! {
-    static ACTIVITY_ES: std::cell::RefCell<Option<web_sys::EventSource>> = const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(target_arch = "wasm32")]
-fn close_activity_sse() {
-    ACTIVITY_ES.with(|cell| {
-        if let Some(es) = cell.borrow_mut().take() {
-            es.close();
-        }
-    });
-}
-
-/// Watches activity progress via single SSE endpoint.
-///
-/// On SSR this is a no-op; the real work happens client-side via EventSource.
-#[allow(clippy::too_many_arguments)] // SSE watcher needs activity + 3 result signals + resources
-fn watch_activity(
-    activity: RwSignal<Activity>,
+/// React to a non-Idle → Idle transition: surface the activity's terminal
+/// message in the matching result signal, refetch the resources whose values
+/// the operation could have changed, and clear thumbnail-cancel UI state if
+/// it was a thumbnail update.
+#[allow(clippy::too_many_arguments)]
+fn dispatch_terminal(
+    prev: Activity,
     import_result: RwSignal<Option<String>>,
     thumb_result: RwSignal<Option<String>>,
     rebuild_result: RwSignal<Option<String>>,
@@ -419,116 +349,30 @@ fn watch_activity(
     image_stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
     library_summary: Resource<Result<server_fns::LibrarySummary, ServerFnError>>,
 ) {
-    #[cfg(not(target_arch = "wasm32"))]
-    let _ = (
-        &activity,
-        &import_result,
-        &thumb_result,
-        &rebuild_result,
-        &thumb_cancelling,
-        &stats,
-        &coverage,
-        &data_source,
-        &image_stats,
-        &library_summary,
-    );
+    let target = match &prev {
+        Activity::Import { .. } => Some(import_result),
+        Activity::ThumbnailUpdate { .. } => {
+            thumb_cancelling.set(false);
+            Some(thumb_result)
+        }
+        Activity::Rebuild { .. } => Some(rebuild_result),
+        _ => None,
+    };
 
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::prelude::*;
-
-        // Close any existing SSE connection before opening a new one.
-        close_activity_sse();
-
-        let es = match web_sys::EventSource::new("/sse/activity") {
-            Ok(es) => es,
-            Err(_) => return,
-        };
-
-        // Track this connection so on_cleanup or a future call can close it.
-        ACTIVITY_ES.with(|cell| {
-            *cell.borrow_mut() = Some(es.clone());
-        });
-
-        let es_clone = es.clone();
-        let on_message =
-            Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-                let data = event.data().as_string().unwrap_or_default();
-                if data.is_empty() {
-                    return;
-                }
-                let act: Activity = match serde_json::from_str(&data) {
-                    Ok(act) => act,
-                    Err(_) => return,
-                };
-
-                if act.is_terminal() {
-                    let message = act.terminal_message();
-
-                    if matches!(act, Activity::ThumbnailUpdate { .. }) {
-                        thumb_cancelling.set(false);
-                    }
-
-                    activity.set(Activity::Idle);
-
-                    if !message.is_empty() {
-                        let target = match &act {
-                            Activity::Import { .. } => import_result,
-                            Activity::ThumbnailUpdate { .. } => thumb_result,
-                            Activity::Rebuild { .. } => rebuild_result,
-                            _ => import_result,
-                        };
-                        target.set(Some(message));
-
-                        gloo_timers::callback::Timeout::new(5_000, move || {
-                            target.set(None);
-                        })
-                        .forget();
-                    }
-
-                    stats.refetch();
-                    coverage.refetch();
-                    data_source.refetch();
-                    image_stats.refetch();
-                    library_summary.refetch();
-
-                    es_clone.close();
-                    ACTIVITY_ES.with(|cell| {
-                        cell.borrow_mut().take();
-                    });
-                } else if matches!(act, Activity::Idle) {
-                    activity.set(Activity::Idle);
-                    stats.refetch();
-                    coverage.refetch();
-                    data_source.refetch();
-                    image_stats.refetch();
-                    library_summary.refetch();
-
-                    es_clone.close();
-                    ACTIVITY_ES.with(|cell| {
-                        cell.borrow_mut().take();
-                    });
-                } else {
-                    activity.set(act);
-                }
-            });
-
-        es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        on_message.forget();
-
-        // When the server closes the stream (idle timeout), close our side
-        // to prevent EventSource auto-reconnect spam.
-        let es_err = es.clone();
-        let on_error = Closure::<dyn Fn()>::new(move || {
-            es_err.close();
-            activity.set(Activity::Idle);
-            ACTIVITY_ES.with(|cell| {
-                cell.borrow_mut().take();
-            });
-        });
-        es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-        on_error.forget();
+    if let Some(target) = target {
+        let msg = prev.terminal_message();
+        if !msg.is_empty() {
+            target.set(Some(msg));
+            #[cfg(target_arch = "wasm32")]
+            gloo_timers::callback::Timeout::new(5_000, move || target.set(None)).forget();
+        }
     }
+
+    stats.refetch();
+    coverage.refetch();
+    data_source.refetch();
+    image_stats.refetch();
+    library_summary.refetch();
 }
 
 /// Displays real-time import progress.
@@ -740,27 +584,8 @@ fn DataManagementSection(
         result_message.set(None);
         confirming_rebuild.set(false);
         leptos::task::spawn_local(async move {
-            match server_fns::rebuild_game_library().await {
-                Ok(()) => {
-                    if let Ok(act) = server_fns::get_activity().await {
-                        activity.set(act);
-                    }
-                    watch_activity(
-                        activity,
-                        RwSignal::new(None),
-                        RwSignal::new(None),
-                        result_message,
-                        RwSignal::new(false),
-                        stats,
-                        coverage,
-                        Resource::new_blocking(|| (), |_| server_fns::get_thumbnail_data_source()),
-                        Resource::new_blocking(|| (), |_| server_fns::get_image_stats()),
-                        library_summary,
-                    );
-                }
-                Err(e) => {
-                    result_message.set(Some(format!("Error: {e}")));
-                }
+            if let Err(e) = server_fns::rebuild_game_library().await {
+                result_message.set(Some(format!("Error: {e}")));
             }
         });
     });
