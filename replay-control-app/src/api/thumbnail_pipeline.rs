@@ -103,6 +103,7 @@ impl ThumbnailPipeline {
             let activity_tx = state.activity_tx.clone();
             thumbnail_manifest::import_all_manifests(
                 &state.library_pool,
+                &write_gate,
                 &|repos_done, repos_total, current_repo| {
                     let mut guard = write_lock(&activity_ref, "activity");
                     if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {

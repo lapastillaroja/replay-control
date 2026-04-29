@@ -337,6 +337,26 @@ impl DbPool {
         if self.write_gate.load(Ordering::Acquire) {
             return None;
         }
+        self.read_inner(f).await
+    }
+
+    /// Like `read`, but for the task that holds the `WriteGate`. Its reads
+    /// are sequential with its writes, so the exFAT corruption window the
+    /// gate protects against doesn't apply. Holding the borrow makes misuse
+    /// impossible: callers without a guard must use `read`.
+    pub async fn read_through_gate<F, R>(&self, _gate: &WriteGate, f: F) -> Option<R>
+    where
+        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.read_inner(f).await
+    }
+
+    async fn read_inner<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
         let pool = self.read_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
         let pool_for_corrupt = self.clone();

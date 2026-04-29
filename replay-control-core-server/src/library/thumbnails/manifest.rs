@@ -216,6 +216,7 @@ pub fn insert_thumbnail_entries(
 #[cfg(feature = "http")]
 pub async fn import_all_manifests(
     pool: &crate::DbPool,
+    write_gate: &crate::db_pool::WriteGate,
     on_progress: &(dyn Fn(usize, usize, &str) + Send + Sync),
     cancel: &AtomicBool,
     api_key: Option<&str>,
@@ -240,7 +241,9 @@ pub async fn import_all_manifests(
         // Check if repo has changed since last import.
         let source_name_read = source_name.clone();
         let existing = pool
-            .read(move |conn| LibraryDb::get_data_source(conn, &source_name_read))
+            .read_through_gate(write_gate, move |conn| {
+                LibraryDb::get_data_source(conn, &source_name_read)
+            })
             .await
             .ok_or_else(db_unavailable)?;
         if let Ok(Some(status)) = existing {
