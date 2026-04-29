@@ -110,6 +110,9 @@ pub fn App() -> impl IntoView {
     // Banners and other consumers subscribe to these via use_context.
     provide_context(RwSignal::new(Activity::Idle));
     provide_context(RwSignal::new(CorruptionStatus::default()));
+    // Fed by SseConfigListener; the skin page subscribes so its "current"
+    // badge follows external skin changes (e.g. changed from the Pi).
+    provide_context(RwSignal::<Option<u32>>::new(None));
 
     view! {
         <Router>
@@ -189,10 +192,8 @@ fn SseConfigListener() -> impl IntoView {
     {
         use wasm_bindgen::prelude::*;
 
-        // Track the last skin index to avoid unnecessary CSS updates on init.
-        // u32::MAX means "not yet initialized". These are internal tracking
-        // signals — nothing subscribes to them reactively.
-        let last_skin = RwSignal::new(u32::MAX);
+        // `None` until the `init` event below seeds it.
+        let current_skin = expect_context::<RwSignal<Option<u32>>>();
         // Track the last storage kind to detect real transitions.
         let last_storage_kind = RwSignal::new(String::new());
 
@@ -227,7 +228,7 @@ fn SseConfigListener() -> impl IntoView {
                         "init" => {
                             // Record initial state from server.
                             if let Some(idx) = payload.get("skin_index").and_then(|v| v.as_u64()) {
-                                last_skin.set(idx as u32);
+                                current_skin.set(Some(idx as u32));
                             }
                             if let Some(kind) = payload.get("storage_kind").and_then(|v| v.as_str())
                             {
@@ -268,8 +269,8 @@ fn SseConfigListener() -> impl IntoView {
                         "SkinChanged" => {
                             if let Some(idx) = payload.get("skin_index").and_then(|v| v.as_u64()) {
                                 let idx = idx as u32;
-                                let prev = last_skin.get_untracked();
-                                if prev != idx {
+                                let prev = current_skin.get_untracked();
+                                if prev != Some(idx) {
                                     // Update the <style id="skin-theme"> element.
                                     if let Some(doc) = web_sys::window().and_then(|w| w.document())
                                     {
@@ -299,7 +300,7 @@ fn SseConfigListener() -> impl IntoView {
                                             let _ = meta.set_attribute("content", bg);
                                         }
                                     }
-                                    last_skin.set(idx);
+                                    current_skin.set(Some(idx));
                                 }
                             }
                         }

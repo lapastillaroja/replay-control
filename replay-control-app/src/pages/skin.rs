@@ -37,6 +37,17 @@ fn SkinGrid(current: u32, sync: bool, skins: Vec<server_fns::SkinInfo>) -> impl 
     let saving = RwSignal::new(false);
     let status = RwSignal::new(Option::<(bool, String)>::None);
 
+    // Follow external skin changes (e.g. from the Pi) so the "current" badge moves.
+    if let Some(current_skin) = use_context::<RwSignal<Option<u32>>>() {
+        Effect::new(move |_| {
+            if let Some(idx) = current_skin.get()
+                && active.get_untracked() != idx
+            {
+                active.set(idx);
+            }
+        });
+    }
+
     // Keep a lookup so we can apply skin CSS when toggling sync.
 
     let on_toggle_sync = move |_| {
