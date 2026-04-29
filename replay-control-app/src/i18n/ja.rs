@@ -569,5 +569,6 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupInProgress => "処理中\u{2026}",
         Key::SetupTaskDone => "完了",
         Key::SetupStart => "開始",
+        Key::SetupUpdate => "更新",
     }
 }

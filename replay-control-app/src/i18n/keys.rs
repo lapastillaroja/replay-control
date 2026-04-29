@@ -536,4 +536,5 @@ pub enum Key {
     SetupInProgress,
     SetupTaskDone,
     SetupStart,
+    SetupUpdate,
 }

@@ -14,35 +14,30 @@ pub struct SetupStatus {
 }
 
 /// Check whether the first-run setup card should be displayed.
-/// Fast path: if the user has dismissed it, returns immediately (no DB I/O).
-/// Pass `force: true` (via `/?setup` query param) to always show the card.
+/// Fast path: if the user has dismissed it (and not forced), returns
+/// immediately with `show_setup: false` (no DB I/O).
+/// Pass `force: true` (via `/?setup` query param) to always show the card —
+/// the real `has_metadata` / `has_thumbnail_index` values are still queried
+/// so the UI can label buttons "Update" instead of "Start".
 #[server(prefix = "/sfn")]
 pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    if force {
-        return Ok(SetupStatus {
-            show_setup: true,
-            has_metadata: false,
-            has_thumbnail_index: false,
-        });
+    if !force {
+        let dismissed = state
+            .prefs
+            .read()
+            .expect("prefs lock poisoned")
+            .setup_dismissed;
+        if dismissed {
+            return Ok(SetupStatus {
+                show_setup: false,
+                has_metadata: true,
+                has_thumbnail_index: true,
+            });
+        }
     }
 
-    // Fast path: check cached prefs (in-memory, no file/DB I/O).
-    let dismissed = state
-        .prefs
-        .read()
-        .expect("prefs lock poisoned")
-        .setup_dismissed;
-    if dismissed {
-        return Ok(SetupStatus {
-            show_setup: false,
-            has_metadata: true,
-            has_thumbnail_index: true,
-        });
-    }
-
-    // Slow path: check DB for metadata and thumbnail index presence.
     let has_metadata = state
         .library_pool
         .read(|conn| !LibraryDb::is_empty(conn).unwrap_or(true))
@@ -59,7 +54,7 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
         .await
         .unwrap_or(false);
 
-    let show_setup = !has_metadata || !has_thumbnail_index;
+    let show_setup = force || !has_metadata || !has_thumbnail_index;
 
     Ok(SetupStatus {
         show_setup,

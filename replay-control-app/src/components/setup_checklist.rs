@@ -39,35 +39,33 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
     let metadata_done = RwSignal::new(status.has_metadata);
     let thumbnail_done = RwSignal::new(status.has_thumbnail_index);
     let dismissed = RwSignal::new(false);
-    let metadata_busy = RwSignal::new(false);
-    let thumbnail_busy = RwSignal::new(false);
-    let activity = RwSignal::new(Activity::Idle);
 
-    // Check if a background task is already running when the component mounts.
-    #[cfg(target_arch = "wasm32")]
-    Effect::new(move || {
-        leptos::task::spawn_local(async move {
-            if let Ok(act) = server_fns::get_activity().await {
-                if matches!(act, Activity::Import { .. }) {
-                    metadata_busy.set(true);
-                } else if matches!(act, Activity::ThumbnailUpdate { .. }) {
-                    thumbnail_busy.set(true);
-                }
-                if !matches!(act, Activity::Idle) {
-                    activity.set(act);
-                    watch_setup_activity(
-                        activity,
-                        metadata_done,
-                        thumbnail_done,
-                        metadata_busy,
-                        thumbnail_busy,
-                    );
-                }
+    // Read the app-level activity signal (populated by SseActivityListener at
+    // the App root). Per-row busy flags derive from it, so activity from
+    // another tab/process is reflected here without a second SSE connection.
+    let activity = use_context::<RwSignal<Activity>>().expect("Activity context");
+    let is_busy = Memo::new(move |_| !matches!(activity.get(), Activity::Idle));
+    let metadata_busy = Memo::new(move |_| matches!(activity.get(), Activity::Import { .. }));
+    let thumbnail_busy =
+        Memo::new(move |_| matches!(activity.get(), Activity::ThumbnailUpdate { .. }));
+
+    // Latch the per-row "done" flag on a busy → not-busy transition.
+    // Treats both Complete and Failed as "done"; the next page load re-derives
+    // truth from the DB via get_setup_status.
+    Effect::new(move |prev: Option<(bool, bool)>| {
+        let met = metadata_busy.get();
+        let thm = thumbnail_busy.get();
+        if let Some((prev_met, prev_thm)) = prev {
+            if prev_met && !met {
+                metadata_done.set(true);
             }
-        });
+            if prev_thm && !thm {
+                thumbnail_done.set(true);
+            }
+        }
+        (met, thm)
     });
 
-    let is_busy = Memo::new(move |_| !matches!(activity.get(), Activity::Idle));
     let all_done = Memo::new(move |_| metadata_done.get() && thumbnail_done.get());
 
     let on_download_metadata = move |_: leptos::ev::MouseEvent| {
@@ -75,29 +73,7 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
             return;
         }
         leptos::task::spawn_local(async move {
-            if server_fns::download_metadata().await.is_ok() {
-                metadata_busy.set(true);
-                activity.set(Activity::Import {
-                    progress: server_fns::ImportProgress {
-                        state: server_fns::ImportState::Downloading,
-                        processed: 0,
-                        matched: 0,
-                        inserted: 0,
-                        elapsed_secs: 0,
-                        error: None,
-                        download_bytes: 0,
-                        download_total: None,
-                    },
-                });
-                #[cfg(target_arch = "wasm32")]
-                watch_setup_activity(
-                    activity,
-                    metadata_done,
-                    thumbnail_done,
-                    metadata_busy,
-                    thumbnail_busy,
-                );
-            }
+            let _ = server_fns::download_metadata().await;
         });
     };
 
@@ -106,29 +82,7 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
             return;
         }
         leptos::task::spawn_local(async move {
-            if server_fns::update_thumbnails().await.is_ok() {
-                thumbnail_busy.set(true);
-                activity.set(server_fns::make_thumbnail_update_activity(
-                    server_fns::ThumbnailProgress {
-                        phase: server_fns::ThumbnailPhase::Indexing,
-                        current_label: String::new(),
-                        step_done: 0,
-                        step_total: 0,
-                        downloaded: 0,
-                        entries_indexed: 0,
-                        elapsed_secs: 0,
-                        error: None,
-                    },
-                ));
-                #[cfg(target_arch = "wasm32")]
-                watch_setup_activity(
-                    activity,
-                    metadata_done,
-                    thumbnail_done,
-                    metadata_busy,
-                    thumbnail_busy,
-                );
-            }
+            let _ = server_fns::update_thumbnails().await;
         });
     };
 
@@ -194,7 +148,7 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
 #[component]
 fn SetupTaskRow(
     done: RwSignal<bool>,
-    busy: RwSignal<bool>,
+    busy: Memo<bool>,
     global_busy: Memo<bool>,
     title_key: Key,
     hint_key: Key,
@@ -204,10 +158,10 @@ fn SetupTaskRow(
     let on_go = StoredValue::new(on_go);
 
     let status_class = move || {
-        if done.get() {
-            "setup-task done"
-        } else if busy.get() {
+        if busy.get() {
             "setup-task in-progress"
+        } else if done.get() {
+            "setup-task done"
         } else {
             "setup-task"
         }
@@ -221,11 +175,7 @@ fn SetupTaskRow(
             </div>
             <div class="setup-task-action">
                 {move || {
-                    if done.get() {
-                        view! {
-                            <span class="setup-task-done">{t(i18n.locale.get(), Key::SetupTaskDone)}</span>
-                        }.into_any()
-                    } else if busy.get() {
+                    if busy.get() {
                         view! {
                             <span class="setup-task-status">
                                 <span class="metadata-busy-spinner"></span>
@@ -233,13 +183,14 @@ fn SetupTaskRow(
                             </span>
                         }.into_any()
                     } else {
+                        let label_key = if done.get() { Key::SetupUpdate } else { Key::SetupStart };
                         view! {
                             <button
                                 class="btn btn-accent btn-sm"
                                 on:click=move |ev| on_go.with_value(|f| f(ev))
                                 disabled=move || global_busy.get()
                             >
-                                {t(i18n.locale.get(), Key::SetupStart)}
+                                {t(i18n.locale.get(), label_key)}
                             </button>
                         }.into_any()
                     }
@@ -247,63 +198,4 @@ fn SetupTaskRow(
             </div>
         </div>
     }
-}
-
-/// Watch activity via SSE (client-side only).
-/// Closes the connection when activity returns to Idle.
-#[cfg(target_arch = "wasm32")]
-fn watch_setup_activity(
-    activity: RwSignal<Activity>,
-    metadata_done: RwSignal<bool>,
-    thumbnail_done: RwSignal<bool>,
-    metadata_busy: RwSignal<bool>,
-    thumbnail_busy: RwSignal<bool>,
-) {
-    use wasm_bindgen::prelude::*;
-
-    let es = match web_sys::EventSource::new("/sse/activity") {
-        Ok(es) => es,
-        Err(_) => return,
-    };
-
-    let es_for_idle = es.clone();
-    let on_message =
-        Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-            let data = event.data().as_string().unwrap_or_default();
-            if data.is_empty() {
-                return;
-            }
-            let act: Activity = match serde_json::from_str(&data) {
-                Ok(act) => act,
-                Err(_) => return,
-            };
-
-            let is_done = act.is_terminal() || matches!(act, Activity::Idle);
-            if is_done {
-                if metadata_busy.get_untracked() {
-                    metadata_done.set(true);
-                    metadata_busy.set(false);
-                }
-                if thumbnail_busy.get_untracked() {
-                    thumbnail_done.set(true);
-                    thumbnail_busy.set(false);
-                }
-                activity.set(Activity::Idle);
-                es_for_idle.close();
-            } else {
-                activity.set(act);
-            }
-        });
-
-    es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-    on_message.forget();
-
-    // Close on server-side stream end to prevent auto-reconnect.
-    let es_for_err = es.clone();
-    let on_error = Closure::<dyn Fn()>::new(move || {
-        es_for_err.close();
-        activity.set(Activity::Idle);
-    });
-    es.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-    on_error.forget();
 }
