@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
 
 use crate::i18n::{Key, t, use_i18n};
-use crate::server_fns::{self, Activity, SetupStatus};
+use crate::server_fns::{self, Activity, ImportState, SetupStatus, ThumbnailPhase};
 
 /// Dismissible first-run setup checklist shown at the top of the Home page.
 ///
@@ -12,17 +12,16 @@ use crate::server_fns::{self, Activity, SetupStatus};
 #[component]
 pub fn SetupChecklist() -> impl IntoView {
     let query = use_query_map();
-    let status = Resource::new(
-        move || query.read().get_str("setup").is_some(),
-        server_fns::get_setup_status,
-    );
+    let force = Memo::new(move |_| query.read().get_str("setup").is_some());
+    let status = Resource::new(move || force.get(), server_fns::get_setup_status);
 
     view! {
         <Suspense fallback=|| ()>
             {move || Suspend::new(async move {
                 let status = status.await?;
+                let force = force.get_untracked();
                 Ok::<_, server_fn::ServerFnError>(if status.show_setup {
-                    view! { <SetupCard status /> }.into_any()
+                    view! { <SetupCard status force /> }.into_any()
                 } else {
                     ().into_any()
                 })
@@ -33,47 +32,89 @@ pub fn SetupChecklist() -> impl IntoView {
 
 /// The actual setup card with two task rows and dismiss controls.
 #[component]
-fn SetupCard(status: SetupStatus) -> impl IntoView {
+fn SetupCard(status: SetupStatus, force: bool) -> impl IntoView {
     let i18n = use_i18n();
 
     let metadata_done = RwSignal::new(status.has_metadata);
     let thumbnail_done = RwSignal::new(status.has_thumbnail_index);
+    let metadata_error = RwSignal::new(None::<String>);
+    let thumbnail_error = RwSignal::new(None::<String>);
     let dismissed = RwSignal::new(false);
+
+    // "Setup complete!" view is only shown when the user landed here with
+    // both tasks already done (organic visit). Re-runs from `?setup` or
+    // tasks completed in-page leave the checklist visible so the user
+    // can see the result and re-run if needed.
+    let show_complete_view = !force && status.has_metadata && status.has_thumbnail_index;
 
     // Read the app-level activity signal (populated by SseActivityListener at
     // the App root). Per-row busy flags derive from it, so activity from
     // another tab/process is reflected here without a second SSE connection.
     let activity = use_context::<RwSignal<Activity>>().expect("Activity context");
-    let is_busy = Memo::new(move |_| !matches!(activity.get(), Activity::Idle));
-    let metadata_busy = Memo::new(move |_| matches!(activity.get(), Activity::Import { .. }));
+    let is_busy = Memo::new(move |_| activity.with(|a| !matches!(a, Activity::Idle)));
+    let metadata_busy = Memo::new(move |_| activity.with(|a| matches!(a, Activity::Import { .. })));
     let thumbnail_busy =
-        Memo::new(move |_| matches!(activity.get(), Activity::ThumbnailUpdate { .. }));
+        Memo::new(move |_| activity.with(|a| matches!(a, Activity::ThumbnailUpdate { .. })));
 
-    // Latch the per-row "done" flag on a busy → not-busy transition.
-    // Treats both Complete and Failed as "done"; the next page load re-derives
-    // truth from the DB via get_setup_status.
+    // Latch the per-row "done" flag only when the activity reports a
+    // successful Complete phase. Failures and cancellations leave `done`
+    // false so the user can see the Start button and retry.
+    let metadata_completed = Memo::new(move |_| {
+        activity.with(|a| {
+            matches!(a, Activity::Import { progress } if matches!(progress.state, ImportState::Complete))
+        })
+    });
+    let thumbnail_completed = Memo::new(move |_| {
+        activity.with(|a| {
+            matches!(a, Activity::ThumbnailUpdate { progress, .. } if matches!(progress.phase, ThumbnailPhase::Complete))
+        })
+    });
+
     Effect::new(move |prev: Option<(bool, bool)>| {
-        let met = metadata_busy.get();
-        let thm = thumbnail_busy.get();
+        let met = metadata_completed.get();
+        let thm = thumbnail_completed.get();
         if let Some((prev_met, prev_thm)) = prev {
-            if prev_met && !met {
+            if !prev_met && met {
                 metadata_done.set(true);
             }
-            if prev_thm && !thm {
+            if !prev_thm && thm {
                 thumbnail_done.set(true);
             }
         }
         (met, thm)
     });
 
-    let all_done = Memo::new(move |_| metadata_done.get() && thumbnail_done.get());
+    // Surface terminal failure/cancellation messages so the user sees why an
+    // action didn't complete. The corresponding click handler clears these
+    // when a new action is started.
+    Effect::new(move |_| {
+        activity.with(|a| match a {
+            Activity::Import { progress } if matches!(progress.state, ImportState::Failed) => {
+                metadata_error.set(Some(format_error("Failed", progress.error.as_deref())));
+            }
+            Activity::ThumbnailUpdate { progress, .. }
+                if matches!(progress.phase, ThumbnailPhase::Failed) =>
+            {
+                thumbnail_error.set(Some(format_error("Failed", progress.error.as_deref())));
+            }
+            Activity::ThumbnailUpdate { progress, .. }
+                if matches!(progress.phase, ThumbnailPhase::Cancelled) =>
+            {
+                thumbnail_error.set(Some(format_error("Cancelled", progress.error.as_deref())));
+            }
+            _ => {}
+        });
+    });
 
     let on_download_metadata = move |_: leptos::ev::MouseEvent| {
         if is_busy.get() {
             return;
         }
+        metadata_error.set(None);
         leptos::task::spawn_local(async move {
-            let _ = server_fns::download_metadata().await;
+            if let Err(e) = server_fns::download_metadata().await {
+                metadata_error.set(Some(format!("Error: {e}")));
+            }
         });
     };
 
@@ -81,8 +122,11 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
         if is_busy.get() {
             return;
         }
+        thumbnail_error.set(None);
         leptos::task::spawn_local(async move {
-            let _ = server_fns::update_thumbnails().await;
+            if let Err(e) = server_fns::update_thumbnails().await {
+                thumbnail_error.set(Some(format!("Error: {e}")));
+            }
         });
     };
 
@@ -100,7 +144,7 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
         <Show when=move || !dismissed.get() fallback=|| ()>
             <div class="setup-checklist">
                 {move || {
-                    if all_done.get() {
+                    if show_complete_view {
                         view! {
                             <p class="setup-complete">{t(i18n.locale.get(), Key::SetupComplete)}</p>
                             <button class="btn btn-text" on:click=on_dismiss_complete>
@@ -117,6 +161,7 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
                                     done=metadata_done
                                     busy=metadata_busy
                                     global_busy=is_busy
+                                    error=metadata_error
                                     title_key=Key::SetupMetadataTitle
                                     hint_key=Key::SetupMetadataHint
                                     on_go=on_download_metadata
@@ -125,6 +170,7 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
                                     done=thumbnail_done
                                     busy=thumbnail_busy
                                     global_busy=is_busy
+                                    error=thumbnail_error
                                     title_key=Key::SetupThumbnailTitle
                                     hint_key=Key::SetupThumbnailHint
                                     on_go=on_update_thumbnails
@@ -144,12 +190,20 @@ fn SetupCard(status: SetupStatus) -> impl IntoView {
     }
 }
 
+fn format_error(prefix: &str, detail: Option<&str>) -> String {
+    match detail {
+        Some(msg) if !msg.is_empty() => format!("{prefix}: {msg}"),
+        _ => prefix.to_string(),
+    }
+}
+
 /// A single task row in the setup checklist.
 #[component]
 fn SetupTaskRow(
     done: RwSignal<bool>,
     busy: Memo<bool>,
     global_busy: Memo<bool>,
+    error: RwSignal<Option<String>>,
     title_key: Key,
     hint_key: Key,
     on_go: impl Fn(leptos::ev::MouseEvent) + Send + Sync + 'static,
@@ -168,34 +222,39 @@ fn SetupTaskRow(
     };
 
     view! {
-        <div class=status_class>
-            <div class="setup-task-info">
-                <span class="setup-task-title">{move || t(i18n.locale.get(), title_key)}</span>
-                <span class="setup-task-hint">{move || t(i18n.locale.get(), hint_key)}</span>
+        <div class="setup-task-row">
+            <div class=status_class>
+                <div class="setup-task-info">
+                    <span class="setup-task-title">{move || t(i18n.locale.get(), title_key)}</span>
+                    <span class="setup-task-hint">{move || t(i18n.locale.get(), hint_key)}</span>
+                </div>
+                <div class="setup-task-action">
+                    {move || {
+                        if busy.get() {
+                            view! {
+                                <span class="setup-task-status">
+                                    <span class="metadata-busy-spinner"></span>
+                                    {t(i18n.locale.get(), Key::SetupInProgress)}
+                                </span>
+                            }.into_any()
+                        } else {
+                            let label_key = if done.get() { Key::SetupUpdate } else { Key::SetupStart };
+                            view! {
+                                <button
+                                    class="btn btn-accent btn-sm"
+                                    on:click=move |ev| on_go.with_value(|f| f(ev))
+                                    disabled=move || global_busy.get()
+                                >
+                                    {t(i18n.locale.get(), label_key)}
+                                </button>
+                            }.into_any()
+                        }
+                    }}
+                </div>
             </div>
-            <div class="setup-task-action">
-                {move || {
-                    if busy.get() {
-                        view! {
-                            <span class="setup-task-status">
-                                <span class="metadata-busy-spinner"></span>
-                                {t(i18n.locale.get(), Key::SetupInProgress)}
-                            </span>
-                        }.into_any()
-                    } else {
-                        let label_key = if done.get() { Key::SetupUpdate } else { Key::SetupStart };
-                        view! {
-                            <button
-                                class="btn btn-accent btn-sm"
-                                on:click=move |ev| on_go.with_value(|f| f(ev))
-                                disabled=move || global_busy.get()
-                            >
-                                {t(i18n.locale.get(), label_key)}
-                            </button>
-                        }.into_any()
-                    }
-                }}
-            </div>
+            <Show when=move || error.read().is_some()>
+                <p class="setup-task-error">{move || error.get().unwrap_or_default()}</p>
+            </Show>
         </div>
     }
 }

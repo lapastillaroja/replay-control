@@ -512,14 +512,12 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ChangeRootPassword>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetActivity>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportLaunchboxMetadata>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RegenerateMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadMetadata>();
-        // GetImportProgress removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemCoverage>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetImageStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearImages>();
@@ -555,7 +553,6 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::UpdateThumbnails>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CancelThumbnailUpdate>(
         );
-        // GetThumbnailProgress removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetThumbnailDataSource>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearThumbnailIndex>();
@@ -565,7 +562,6 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SetBoxartOverride>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ResetBoxartOverride>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetRelatedGames>();
-        // GetRebuildProgress removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildGameLibrary>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetBuiltinDbStats>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RebuildCorruptLibrary>(
@@ -574,7 +570,6 @@ mod ssr {
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RestoreUserDataBackup>(
         );
-        // IsScanning removed — use GetActivity instead.
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameDocuments>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLocalManuals>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SearchGameManuals>();

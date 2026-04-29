@@ -38,6 +38,19 @@
     margin-bottom: 12px;
 }
 
+.setup-task-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.setup-task-error {
+    font-size: 0.8rem;
+    color: var(--error);
+    margin: 0;
+    padding: 0 12px;
+}
+
 .setup-task {
     display: flex;
     align-items: center;

@@ -95,29 +95,6 @@ pub use replay_control_core::library_db::{
     SystemCoverage,
 };
 
-/// Create an `Activity::ThumbnailUpdate` for client-side placeholder use.
-/// Handles the difference between SSR (has `cancel` field) and WASM (no `cancel` field).
-#[cfg(feature = "ssr")]
-pub fn make_thumbnail_update_activity(progress: ThumbnailProgress) -> Activity {
-    Activity::ThumbnailUpdate {
-        progress,
-        cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    }
-}
-
-#[cfg(not(feature = "ssr"))]
-pub fn make_thumbnail_update_activity(progress: ThumbnailProgress) -> Activity {
-    Activity::ThumbnailUpdate { progress }
-}
-
-/// Get current activity (replaces is_metadata_busy, get_busy_label, is_scanning,
-/// get_import_progress, get_thumbnail_progress, get_rebuild_progress).
-#[server(prefix = "/sfn")]
-pub async fn get_activity() -> Result<Activity, ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    Ok(state.activity())
-}
-
 /// Get metadata coverage stats.
 /// Returns empty stats when the DB is unavailable (e.g., during import).
 #[server(prefix = "/sfn")]
@@ -138,7 +115,7 @@ pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
 }
 
 /// Start a background metadata import from a LaunchBox metadata XML file.
-/// Returns immediately; poll `get_activity` for status.
+/// Returns immediately; subscribe to `/sse/activity` for progress.
 #[server(prefix = "/sfn")]
 pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -298,7 +275,7 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 }
 
 /// Clear library DB and trigger re-import from launchbox-metadata.xml.
-/// The import runs in the background; poll `get_activity` for status.
+/// The import runs in the background; subscribe to `/sse/activity` for progress.
 #[server(prefix = "/sfn")]
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -310,7 +287,7 @@ pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
 }
 
 /// Download LaunchBox metadata from the internet, extract, and import.
-/// The entire process runs in the background; poll `get_activity` for status.
+/// The entire process runs in the background; subscribe to `/sse/activity` for progress.
 #[server(prefix = "/sfn")]
 pub async fn download_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
