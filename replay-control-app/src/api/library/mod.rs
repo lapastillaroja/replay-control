@@ -97,11 +97,26 @@ impl LibraryService {
             }
             Some(_) => {
                 // L3: full filesystem scan and write-through to L2.
-                let summaries = replay_control_core_server::roms::scan_systems(storage).await;
-                *guard = Some(summaries.clone());
-                drop(guard);
-                self.save_systems_to_db(storage, &summaries, db).await;
-                summaries
+                // On a racy NFS / autofs / USB hot-plug, scan_systems may
+                // return Err (storage not ready). Don't cache — let the next
+                // call retry once storage settles. Don't write-through either:
+                // the DB-level zero-overwrite guard would normally save us,
+                // but on a fresh DB there's no existing row to protect, so
+                // a partially-mounted scan would still poison persistent state.
+                match replay_control_core_server::roms::scan_systems(storage).await {
+                    Ok(summaries) => {
+                        *guard = Some(summaries.clone());
+                        drop(guard);
+                        self.save_systems_to_db(storage, &summaries, db).await;
+                        summaries
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "cached_systems: L3 scan rejected ({e}); not caching, will retry on next call"
+                        );
+                        Vec::new()
+                    }
+                }
             }
             None => {
                 // DB unavailable; return empty without caching so the next
@@ -160,6 +175,10 @@ impl LibraryService {
     }
 
     /// Write system summaries to SQLite game_library_meta.
+    ///
+    /// `save_system_meta` itself enforces the zero-overwrite guard at SQL
+    /// level. We additionally log a warning here when the guard fires so a
+    /// racy scan is *visible* in the journal rather than silently absorbed.
     async fn save_systems_to_db(
         &self,
         storage: &StorageLocation,
@@ -176,17 +195,25 @@ impl LibraryService {
                         .ok()
                         .map(|d| d.as_secs() as i64)
                 });
-                if let Err(e) = LibraryDb::save_system_meta(
+                match LibraryDb::save_system_meta(
                     conn,
                     &summary.folder_name,
                     mtime_secs,
                     summary.game_count,
                     summary.total_size_bytes,
                 ) {
-                    tracing::warn!(
+                    Ok(stored) if stored != summary.game_count => {
+                        tracing::warn!(
+                            "Refusing to overwrite system {} rom_count: existing={}, scanned=0 (likely scan-time race)",
+                            summary.folder_name,
+                            stored,
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(
                         "Failed to save system meta for {}: {e}",
                         summary.folder_name
-                    );
+                    ),
                 }
             }
         })

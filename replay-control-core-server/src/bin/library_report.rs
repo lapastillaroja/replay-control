@@ -54,7 +54,13 @@ async fn main() {
     // Open library DB (may not exist yet on fresh storage).
     let meta_conn = LibraryDb::open(&storage.root).ok().map(|(c, _)| c);
 
-    let summaries = roms::scan_systems(&storage).await;
+    let summaries = match roms::scan_systems(&storage).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Scan failed: {e}");
+            std::process::exit(1);
+        }
+    };
     let active: Vec<_> = summaries.iter().filter(|s| s.game_count > 0).collect();
 
     if active.is_empty() {

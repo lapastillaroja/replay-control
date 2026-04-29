@@ -516,26 +516,48 @@ impl LibraryDb {
 
     /// Save just the system-level metadata (counts, mtime) without replacing game entries.
     /// Used when we know game counts from scan_systems but haven't loaded entries yet.
+    ///
+    /// **Zero-overwrite protection.** A racy NFS / autofs / USB hot-plug scan
+    /// can return rom_count=0 for a system that actually has games on disk.
+    /// On UPDATE conflicts the SQL refuses to lower a non-zero rom_count to
+    /// zero — the existing count is preserved instead. INSERTs into a fresh
+    /// row are not affected. Explicit clears go through `clear_*` (DELETE).
+    /// See `2026-04-29-nfs-startup-race-and-thumbnail-silent-failure.md`.
+    ///
+    /// Returns the rom_count that ended up in the row after the operation.
+    /// Callers can compare against the input to detect when the protection
+    /// fired and log a warning.
     pub fn save_system_meta(
         conn: &Connection,
         system: &str,
         dir_mtime_secs: Option<i64>,
         rom_count: usize,
         total_size_bytes: u64,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let now = unix_now();
-        conn.execute(
+        let final_count: i64 = conn
+            .query_row(
                 "INSERT INTO game_library_meta (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes)
                  VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(system) DO UPDATE SET
                     dir_mtime_secs = excluded.dir_mtime_secs,
                     scanned_at = excluded.scanned_at,
-                    rom_count = excluded.rom_count,
-                    total_size_bytes = excluded.total_size_bytes",
+                    rom_count = CASE
+                        WHEN excluded.rom_count = 0 AND game_library_meta.rom_count > 0
+                            THEN game_library_meta.rom_count
+                        ELSE excluded.rom_count
+                    END,
+                    total_size_bytes = CASE
+                        WHEN excluded.rom_count = 0 AND game_library_meta.rom_count > 0
+                            THEN game_library_meta.total_size_bytes
+                        ELSE excluded.total_size_bytes
+                    END
+                 RETURNING rom_count",
                 rusqlite::params![system, dir_mtime_secs, now, rom_count as i64, total_size_bytes as i64],
+                |row| row.get(0),
             )
             .map_err(|e| Error::Other(format!("Upsert game_library_meta: {e}")))?;
-        Ok(())
+        Ok(final_count as usize)
     }
 
     /// Load library metadata for a single system.
@@ -3055,5 +3077,63 @@ mod tests {
         assert_eq!(summary.with_developer, 1);
         // total_size_bytes comes from game_library_meta, populated by save_system_entries.
         assert_eq!(summary.total_size_bytes, 6 * 1024 * 1024);
+    }
+
+    // ── save_system_meta zero-overwrite protection ─────────────────────
+    //
+    // Defends against the NFS startup race documented in
+    // `2026-04-29-nfs-startup-race-and-thumbnail-silent-failure.md`: when
+    // `scan_systems` returns rom_count=0 for a system that actually has
+    // games (because the storage subdirectory hadn't materialised yet),
+    // the UPSERT must not lower a previously valid non-zero count to zero.
+
+    #[test]
+    fn save_system_meta_inserts_zero_on_fresh_row() {
+        let (conn, _dir) = open_temp_db();
+        let stored = LibraryDb::save_system_meta(&conn, "snes", None, 0, 0).unwrap();
+        assert_eq!(stored, 0, "fresh insert with 0 is allowed");
+    }
+
+    #[test]
+    fn save_system_meta_inserts_nonzero_on_fresh_row() {
+        let (conn, _dir) = open_temp_db();
+        let stored = LibraryDb::save_system_meta(&conn, "snes", Some(123), 42, 1024).unwrap();
+        assert_eq!(stored, 42);
+    }
+
+    #[test]
+    fn save_system_meta_updates_nonzero_to_nonzero() {
+        let (conn, _dir) = open_temp_db();
+        LibraryDb::save_system_meta(&conn, "snes", None, 10, 1024).unwrap();
+        let stored = LibraryDb::save_system_meta(&conn, "snes", None, 20, 2048).unwrap();
+        assert_eq!(stored, 20, "non-zero updates pass through");
+        let meta = LibraryDb::load_system_meta(&conn, "snes").unwrap().unwrap();
+        assert_eq!(meta.total_size_bytes, 2048);
+    }
+
+    #[test]
+    fn save_system_meta_preserves_nonzero_on_zero_overwrite_attempt() {
+        let (conn, _dir) = open_temp_db();
+        LibraryDb::save_system_meta(&conn, "snes", Some(100), 8421, 1_000_000).unwrap();
+
+        // Simulate a racy scan returning 0 for a system that has games.
+        let stored = LibraryDb::save_system_meta(&conn, "snes", Some(200), 0, 0).unwrap();
+        assert_eq!(
+            stored, 8421,
+            "existing non-zero rom_count must not be clobbered by a zero scan"
+        );
+
+        // total_size_bytes is preserved alongside.
+        let meta = LibraryDb::load_system_meta(&conn, "snes").unwrap().unwrap();
+        assert_eq!(meta.rom_count, 8421);
+        assert_eq!(meta.total_size_bytes, 1_000_000);
+    }
+
+    #[test]
+    fn save_system_meta_zero_to_zero_is_idempotent() {
+        let (conn, _dir) = open_temp_db();
+        LibraryDb::save_system_meta(&conn, "snes", None, 0, 0).unwrap();
+        let stored = LibraryDb::save_system_meta(&conn, "snes", Some(1), 0, 0).unwrap();
+        assert_eq!(stored, 0, "zero-to-zero update is a no-op");
     }
 }

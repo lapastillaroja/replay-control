@@ -48,6 +48,27 @@ impl BackgroundManager {
         // Brief delay to let the server start accepting requests.
         tokio::time::sleep(Duration::from_secs(2)).await;
 
+        // Phase 0: wait for the roms_dir to be readable AND non-empty before
+        // attempting any scan. On NFS / autofs / USB hot-plug the storage
+        // root may resolve before subdirectories surface; without this, the
+        // first L3 scan returns "all systems empty" and persists zeros into
+        // game_library_meta. Capped at 30s — the worst case (legitimately
+        // empty library) just falls through to a no-op populate.
+        // See `2026-04-29-nfs-startup-race-and-thumbnail-silent-failure.md`.
+        let storage = state.storage();
+        if let Err(e) = replay_control_core_server::roms::wait_for_storage_ready(
+            &storage.roms_dir(),
+            Duration::from_secs(30),
+        )
+        .await
+        {
+            tracing::warn!(
+                "Startup: roms_dir readiness check timed out: {e}. Proceeding; \
+                 subsequent scans will retry on demand."
+            );
+        }
+        drop(storage);
+
         // Phase 1: Auto-import (if launchbox XML exists + DB empty).
         // Import claims/releases its own Activity::Import via try_start_activity.
         Self::phase_auto_import(state).await;
