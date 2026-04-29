@@ -381,8 +381,14 @@ impl ImportPipeline {
         // Re-enrich game library with freshly imported data.
         // Skip during startup auto-import: the pipeline handles populate/enrichment
         // sequentially to avoid races. For user-triggered imports, enrich immediately.
+        // (When skip_enrichment is true the startup pipeline owns the
+        // metadata-page invalidation; otherwise spawn_cache_enrichment does.)
         if succeeded && !skip_enrichment {
             state.spawn_cache_enrichment();
+        } else if succeeded {
+            // Skipped enrichment but the import itself changed library data;
+            // drop the snapshot so the next /settings/metadata read recomputes.
+            state.cache.invalidate_metadata_page().await;
         }
 
         // _guard drops here → Idle

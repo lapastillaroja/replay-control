@@ -177,6 +177,21 @@ pub struct DbPool {
 /// concurrent readers. Keeping 1 reduces memory by ~2MB per saved connection.
 const READ_POOL_SIZE: usize = 1;
 
+/// Wall-clock cap on a single `interact()` closure. The closure runs on
+/// the blocking pool via `spawn_blocking`, which is **not cancellable** when
+/// the awaiting future drops — a stuck closure will hold the SyncWrapper
+/// inner mutex until it completes, blocking every subsequent `interact()` on
+/// the same connection. This timeout doesn't actually stop the closure (we
+/// can't), but it lets the awaiting caller bail with `None` instead of being
+/// dragged along, and surfaces the bug loudly via tracing::error so we know
+/// to find and fix the offending site.
+///
+/// 15 s matches the proposal in
+/// `2026-04-29-ssr-cache-snapshot-vs-pool-starvation.md`. SSR-style callers
+/// should layer a tighter `tokio::time::timeout` on top if they care about
+/// faster fall-back.
+const INTERACT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// RAII guard that gates DB reads during heavy writes.
 ///
 /// While held, `DbPool::read()` returns `None` for the gated pool.
@@ -348,13 +363,27 @@ impl DbPool {
         let pool = self.read_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
         let pool_for_corrupt = self.clone();
-        conn.interact(move |conn| {
+        let label = self.label;
+        let interact = conn.interact(move |conn| {
             let result = f(conn);
             check_for_corruption(conn, &pool_for_corrupt);
             result
-        })
-        .await
-        .ok()
+        });
+        match tokio::time::timeout(INTERACT_TIMEOUT, interact).await {
+            Ok(Ok(value)) => Some(value),
+            Ok(Err(e)) => {
+                tracing::warn!("{label}: read interact failed: {e}");
+                None
+            }
+            Err(_) => {
+                tracing::error!(
+                    "{label}: read interact exceeded {:?}; closure still running on \
+                     blocking pool — connection mutex pinned until it completes",
+                    INTERACT_TIMEOUT
+                );
+                None
+            }
+        }
     }
 
     /// Run a mutable closure with the single write connection.
@@ -375,13 +404,27 @@ impl DbPool {
         let pool = self.write_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
         let pool_for_corrupt = self.clone();
-        conn.interact(move |conn| {
+        let label = self.label;
+        let interact = conn.interact(move |conn| {
             let result = f(conn);
             check_for_corruption(conn, &pool_for_corrupt);
             result
-        })
-        .await
-        .ok()
+        });
+        match tokio::time::timeout(INTERACT_TIMEOUT, interact).await {
+            Ok(Ok(value)) => Some(value),
+            Ok(Err(e)) => {
+                tracing::warn!("{label}: write interact failed: {e}");
+                None
+            }
+            Err(_) => {
+                tracing::error!(
+                    "{label}: write interact exceeded {:?}; closure still running on \
+                     blocking pool — connection mutex pinned until it completes",
+                    INTERACT_TIMEOUT
+                );
+                None
+            }
+        }
     }
 
     /// Close the pools (e.g., after storage change).

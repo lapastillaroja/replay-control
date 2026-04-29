@@ -3,7 +3,7 @@ use super::*;
 use replay_control_core_server::library_db::LibraryDb;
 
 /// Data source info for the UI.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DataSourceSummary {
     /// For LaunchBox: entry count. For thumbnails: total across all repos.
     pub entry_count: usize,
@@ -104,6 +104,8 @@ pub async fn clear_thumbnail_index() -> Result<(), ServerFnError> {
         .await
         .ok_or_else(|| ServerFnError::new("Cannot open library DB"))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    state.cache.invalidate_metadata_page().await;
 
     // _guard drops → Idle
     Ok(())

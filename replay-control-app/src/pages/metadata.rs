@@ -5,21 +5,20 @@ use server_fn::ServerFnError;
 use crate::components::stat_card::StatCard;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
-    self, Activity, DriverStatusCounts, ImportState, LibrarySummary, RebuildPhase, SystemCoverage,
-    ThumbnailPhase,
+    self, Activity, DriverStatusCounts, ImportState, LibrarySummary, MetadataPageSnapshot,
+    RebuildPhase, SystemCoverage, ThumbnailPhase,
 };
 use crate::util::{format_number, format_size, format_year_range, pct};
+
+type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
 
 #[component]
 pub fn MetadataPage() -> impl IntoView {
     let i18n = use_i18n();
-    // Non-blocking: each section is wrapped in Suspense with skeleton fallbacks.
-    let stats = Resource::new(|| (), |_| server_fns::get_metadata_stats());
-    let coverage = Resource::new(|| (), |_| server_fns::get_system_coverage());
-    let data_source = Resource::new(|| (), |_| server_fns::get_thumbnail_data_source());
-    let image_stats = Resource::new(|| (), |_| server_fns::get_image_stats());
-    let builtin_stats = Resource::new(|| (), |_| server_fns::get_builtin_db_stats());
-    let library_summary = Resource::new(|| (), |_| server_fns::get_library_summary());
+    // Single snapshot resource replaces six per-stat server fns. SSR fan-out
+    // collapses to one DB pool acquisition and one closure regardless of how
+    // many sections render. See `api/library/metadata_snapshot.rs`.
+    let snapshot: SnapshotRes = Resource::new(|| (), |_| server_fns::get_metadata_page_snapshot());
 
     // App-level activity signal (populated by SseActivityListener at the App
     // root). Shared with banners, the setup checklist, and other consumers
@@ -71,11 +70,7 @@ pub fn MetadataPage() -> impl IntoView {
                 thumb_result,
                 rebuild_result,
                 thumb_cancelling,
-                stats,
-                coverage,
-                data_source,
-                image_stats,
-                library_summary,
+                snapshot,
             );
         } else {
             last_active.set_value(Some(act));
@@ -128,7 +123,8 @@ pub fn MetadataPage() -> impl IntoView {
                 <Suspense fallback=move || view! { <SummaryCardsSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
-                        let s = library_summary.await?;
+                        let snap = snapshot.await?;
+                        let s = snap.library_summary;
                         Ok::<_, ServerFnError>(if s.total_games == 0 {
                             view! { <span></span> }.into_any()
                         } else {
@@ -138,7 +134,7 @@ pub fn MetadataPage() -> impl IntoView {
                 </Suspense>
             </section>
 
-            <SystemOverviewSection coverage />
+            <SystemOverviewSection snapshot />
 
             // ── Data Sources ──────────────────────────────────────────
             <section class="section">
@@ -148,7 +144,8 @@ pub fn MetadataPage() -> impl IntoView {
                 <Suspense fallback=move || view! { <MetadataCardSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
-                        let bs = builtin_stats.await?;
+                        let snap = snapshot.await?;
+                        let bs = snap.builtin_stats;
                         Ok::<_, ServerFnError>(view! {
                             <div class="data-source-card builtin-info">
                                 <div class="data-source-header">
@@ -184,7 +181,8 @@ pub fn MetadataPage() -> impl IntoView {
                     <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
-                            let data = stats.await?;
+                            let snap = snapshot.await?;
+                            let data = snap.stats;
                             Ok::<_, ServerFnError>(if data.total_entries == 0 {
                                 view! {
                                     <p class="data-source-summary dim">{t(locale, Key::MetadataNoData)}</p>
@@ -232,8 +230,9 @@ pub fn MetadataPage() -> impl IntoView {
                     <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
-                            let ds = data_source.await?;
-                            let (with_boxart, with_snap, media_size) = image_stats.await?;
+                            let snap = snapshot.await?;
+                            let ds = snap.data_source;
+                            let (with_boxart, with_snap, media_size) = snap.image_stats;
 
                             Ok::<_, ServerFnError>(if ds.entry_count == 0 && with_boxart == 0 {
                                 view! {
@@ -321,7 +320,7 @@ pub fn MetadataPage() -> impl IntoView {
             </section>
 
             // ── Data Management ───────────────────────────────────────
-            <DataManagementSection stats coverage library_summary activity result_message=rebuild_result is_busy />
+            <DataManagementSection snapshot activity result_message=rebuild_result is_busy />
 
             // ── Attribution ───────────────────────────────────────────
             <section class="section">
@@ -343,11 +342,7 @@ fn dispatch_terminal(
     thumb_result: RwSignal<Option<String>>,
     rebuild_result: RwSignal<Option<String>>,
     thumb_cancelling: RwSignal<bool>,
-    stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
-    coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
-    data_source: Resource<Result<server_fns::DataSourceSummary, ServerFnError>>,
-    image_stats: Resource<Result<(usize, usize, u64), ServerFnError>>,
-    library_summary: Resource<Result<server_fns::LibrarySummary, ServerFnError>>,
+    snapshot: SnapshotRes,
 ) {
     let target = match &prev {
         Activity::Import { .. } => Some(import_result),
@@ -368,11 +363,7 @@ fn dispatch_terminal(
         }
     }
 
-    stats.refetch();
-    coverage.refetch();
-    data_source.refetch();
-    image_stats.refetch();
-    library_summary.refetch();
+    snapshot.refetch();
 }
 
 /// Displays real-time import progress.
@@ -509,9 +500,7 @@ fn ThumbnailProgressDisplay(
 /// Data Management section with main and advanced actions.
 #[component]
 fn DataManagementSection(
-    stats: Resource<Result<server_fns::MetadataStats, ServerFnError>>,
-    coverage: Resource<Result<Vec<server_fns::SystemCoverage>, ServerFnError>>,
-    library_summary: Resource<Result<server_fns::LibrarySummary, ServerFnError>>,
+    snapshot: SnapshotRes,
     activity: RwSignal<Activity>,
     result_message: RwSignal<Option<String>>,
     is_busy: Memo<bool>,
@@ -666,9 +655,7 @@ fn DataManagementSection(
                     metadata_result.set(Some(
                         t(i18n.locale.get(), Key::MetadataMetadataCleared).to_string(),
                     ));
-                    stats.refetch();
-                    coverage.refetch();
-                    library_summary.refetch();
+                    snapshot.refetch();
                 }
                 Err(e) => {
                     metadata_result.set(Some(format!("Error: {e}")));
@@ -860,9 +847,7 @@ fn SummaryCards(summary: LibrarySummary, locale: crate::i18n::Locale) -> impl In
 // ── System overview accordion ────────────────────────────────────────────
 
 #[component]
-fn SystemOverviewSection(
-    coverage: Resource<Result<Vec<SystemCoverage>, ServerFnError>>,
-) -> impl IntoView {
+fn SystemOverviewSection(snapshot: SnapshotRes) -> impl IntoView {
     let i18n = use_i18n();
     let expand_all = RwSignal::new(false);
     let toggle_all = move |_: leptos::ev::MouseEvent| expand_all.update(|v| *v = !*v);
@@ -883,7 +868,8 @@ fn SystemOverviewSection(
             </div>
             <Suspense fallback=move || view! { <AccordionSkeleton /> }>
                 {move || Suspend::new(async move {
-                    let data = coverage.await?;
+                    let snap = snapshot.await?;
+                    let data = snap.coverage;
                     let rows = data
                         .into_iter()
                         .filter(|c| c.total_games > 0)

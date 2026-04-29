@@ -391,6 +391,9 @@ impl ThumbnailPipeline {
             if cancelled { " (cancelled)" } else { "" }
         );
 
+        // Coverage / data_source / image_stats all changed.
+        state.cache.invalidate_metadata_page().await;
+
         // Set final progress (terminal state).
         state.update_activity(|act| {
             if let Activity::ThumbnailUpdate { progress, .. } = act {

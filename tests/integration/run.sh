@@ -185,6 +185,16 @@ assert_status "Favorites page returns 200" "$BASE/favorites" "200"
 echo ""
 echo "--- Settings ---"
 assert_status "Settings page returns 200" "$BASE/settings" "200"
+assert_status "Metadata page returns 200" "$BASE/settings/metadata" "200"
+assert_contains "Metadata page mentions Built-in" "$BASE/settings/metadata" "Built"
+
+# Tier 1 snapshot warm-cache check: a second request should be markedly
+# faster than the first because the metadata-page snapshot stays warm
+# until something invalidates it.
+echo "--- Metadata snapshot warm cache ---"
+COLD=$(curl -s -o /dev/null -w "%{time_total}" "$BASE/settings/metadata" 2>/dev/null || echo "0")
+WARM=$(curl -s -o /dev/null -w "%{time_total}" "$BASE/settings/metadata" 2>/dev/null || echo "0")
+echo "  cold=${COLD}s warm=${WARM}s (informational)"
 
 # 6. Non-existent routes
 echo ""

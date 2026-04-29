@@ -595,6 +595,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSetupStatus>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DismissSetup>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLibrarySummary>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataPageSnapshot>(
+        );
         let site_root_abs = std::fs::canonicalize(&cli.site_root).unwrap_or_else(|e| {
             panic!("site root '{}' not found: {e}", cli.site_root);
         });

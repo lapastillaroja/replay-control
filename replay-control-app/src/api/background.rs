@@ -103,6 +103,13 @@ impl BackgroundManager {
             });
             Self::phase_auto_rebuild_thumbnail_index(state).await;
 
+            // Pre-warm the metadata-page snapshot so the very first user
+            // request after boot gets a hot cache instead of paying the
+            // ~250 ms compute on demand. Invalidations later in the run
+            // (post-import / post-thumbnail-update) drop it again so the
+            // next reload picks up fresh state.
+            let _ = state.cache.metadata_page_snapshot(state).await;
+
             // _guard drops → Idle
         }
     }
@@ -495,6 +502,10 @@ impl BackgroundManager {
             with_games.len(),
             start.elapsed().as_secs_f64()
         );
+
+        // Drop the metadata-page snapshot — coverage / library_summary /
+        // image_stats / data_source all change as systems get populated.
+        state.cache.invalidate_metadata_page().await;
     }
     // ── Update system ─────────────────────────────────────────────────
 
@@ -1114,6 +1125,9 @@ impl AppState {
                     enrich_start.elapsed().as_secs_f64()
                 );
             }
+
+            // Coverage / image_stats / library_summary all changed.
+            state.cache.invalidate_metadata_page().await;
         });
     }
 
@@ -1205,6 +1219,9 @@ impl AppState {
                     enrich_start.elapsed().as_secs_f64()
                 );
             }
+
+            // Coverage / image_stats / library_summary all changed.
+            state.cache.invalidate_metadata_page().await;
 
             // Mark rebuild complete (terminal state).
             state.update_activity(|act| {

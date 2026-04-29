@@ -42,6 +42,7 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     }
 
     state.response_cache.invalidate_all();
+    state.cache.invalidate_metadata_page().await;
 
     // _guard drops → Idle
     Ok(())
@@ -80,6 +81,8 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
         })
         .await
         .unwrap_or((0, 0, 0));
+
+    state.cache.invalidate_metadata_page().await;
 
     // _guard drops → Idle
     Ok((metadata_deleted, files_deleted, bytes_freed))

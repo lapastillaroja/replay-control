@@ -95,6 +95,35 @@ pub use replay_control_core::library_db::{
     SystemCoverage,
 };
 
+/// Aggregated `/settings/metadata` payload. Server-side this is built by
+/// `LibraryService::metadata_page_snapshot` from a single `pool.read()`
+/// closure plus off-pool helpers; clients render six panels from one
+/// resource. See `api/library/metadata_snapshot.rs`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MetadataPageSnapshot {
+    pub stats: MetadataStats,
+    pub library_summary: LibrarySummary,
+    pub coverage: Vec<SystemCoverage>,
+    pub data_source: super::DataSourceSummary,
+    /// (boxart_count, snap_count, media_size_bytes)
+    pub image_stats: (usize, usize, u64),
+    pub builtin_stats: BuiltinDbStats,
+}
+
+/// Single-flight cache-backed snapshot of the metadata page.
+///
+/// Six per-stat server fns previously fanned out from this page; under SSR
+/// fan-out they all queued through the size-1 read pool and a force-refresh
+/// cancellation could orphan multiple in-flight closures. This server fn
+/// returns the whole page in one call from an in-memory snapshot, with one
+/// pool acquisition on cache miss. Invalidated at the same write-completion
+/// sites that already invalidate `cached_systems`.
+#[server(prefix = "/sfn")]
+pub async fn get_metadata_page_snapshot() -> Result<MetadataPageSnapshot, ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    Ok(state.cache.metadata_page_snapshot(&state).await)
+}
+
 /// Get metadata coverage stats.
 /// Returns empty stats when the DB is unavailable (e.g., during import).
 #[server(prefix = "/sfn")]
@@ -225,7 +254,7 @@ pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError>
 }
 
 /// Stats for the bundled catalog (arcade, game, and series reference data).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BuiltinDbStats {
     pub arcade_entries: usize,
     pub arcade_mame_version: String,
@@ -270,6 +299,11 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
 
     // Checkpoint WAL after the DELETE + VACUUM.
     state.library_pool.checkpoint().await;
+
+    // Drop the metadata-page snapshot — stats / coverage / image_stats just
+    // changed.
+    state.cache.invalidate_metadata_page().await;
+
     // _guard drops → Idle
     Ok(())
 }

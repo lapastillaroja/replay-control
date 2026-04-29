@@ -1,6 +1,7 @@
 mod aliases;
 mod enrichment;
 mod favorites;
+pub mod metadata_snapshot;
 pub(crate) mod query;
 mod scan_pipeline;
 
@@ -44,12 +45,16 @@ pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
 }
 
 use favorites::FavoritesCache;
+use metadata_snapshot::MetadataPageSnapshot;
 
 pub struct LibraryService {
     pub(crate) query_cache: query::QueryCache,
     pub(super) systems: RwLock<Option<Vec<SystemSummary>>>,
     pub(super) favorites: RwLock<Option<FavoritesCache>>,
     pub(super) recents: RwLock<Option<Vec<RecentEntry>>>,
+    /// In-memory snapshot of the `/settings/metadata` page payload. See
+    /// `metadata_snapshot.rs` for the rationale.
+    pub(super) metadata_page: RwLock<Option<MetadataPageSnapshot>>,
 }
 
 impl LibraryService {
@@ -59,8 +64,47 @@ impl LibraryService {
             systems: RwLock::new(None),
             favorites: RwLock::new(None),
             recents: RwLock::new(None),
+            metadata_page: RwLock::new(None),
             query_cache,
         }
+    }
+
+    /// Get the metadata-page snapshot, rebuilding on miss with single-flight
+    /// semantics (RwLock + double-check). Concurrent SSR requests share the
+    /// single rebuild.
+    ///
+    /// **Stale-on-`None` rule.** When the rebuild itself can't complete (DB
+    /// transiently unavailable — e.g. a write is in flight on a non-WAL FS),
+    /// we keep whatever was previously cached rather than overwriting with
+    /// an empty payload. The next caller after the write completes triggers
+    /// a fresh rebuild. This is what lets `/settings/metadata` keep
+    /// rendering during long-running operations.
+    pub async fn metadata_page_snapshot(&self, state: &super::AppState) -> MetadataPageSnapshot {
+        if let Some(s) = self.metadata_page.read().await.clone() {
+            return s;
+        }
+        let mut guard = self.metadata_page.write().await;
+        if let Some(s) = guard.clone() {
+            return s;
+        }
+        let started = std::time::Instant::now();
+        match metadata_snapshot::compute(state).await {
+            Some(fresh) => {
+                metadata_snapshot::log_rebuild_elapsed("metadata_page_snapshot", started);
+                *guard = Some(fresh.clone());
+                fresh
+            }
+            None => match guard.clone() {
+                Some(stale) => stale,
+                None => MetadataPageSnapshot::default(),
+            },
+        }
+    }
+
+    /// Invalidate just the metadata-page snapshot. Hooked into the same
+    /// write-completion sites that already invalidate the other caches.
+    pub async fn invalidate_metadata_page(&self) {
+        *self.metadata_page.write().await = None;
     }
 
     /// Get cached systems or scan and cache.
@@ -380,6 +424,7 @@ impl LibraryService {
         *self.systems.write().await = None;
         *self.favorites.write().await = None;
         *self.recents.write().await = None;
+        *self.metadata_page.write().await = None;
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library.
         db.write(|conn| {
@@ -394,6 +439,7 @@ impl LibraryService {
     /// Clears L1 systems cache and L2 (SQLite game_library) for the system.
     pub async fn invalidate_system(&self, system: String, db: &DbPool) {
         *self.systems.write().await = None;
+        *self.metadata_page.write().await = None;
         self.query_cache.invalidate_all();
         // L2: Clear SQLite game_library for this system.
         db.write(move |conn| {
