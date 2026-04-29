@@ -2,196 +2,106 @@
 
 How to install, update, and uninstall Replay Control on a Raspberry Pi running RePlayOS.
 
-## Quick Install
+## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
 ```
 
-No arguments needed. The installer:
+Run this on your Pi over SSH or from any computer on the same network — the installer detects which case it's in and does the right thing. It auto-discovers the Pi via mDNS, downloads the latest stable release (falling back to the latest beta if no stable exists), installs the systemd service, and starts it. The web UI will be at `http://replay.local:8080`.
 
-- **Auto-discovers** your Pi on the network via mDNS
-- **Installs locally** when run directly on the Pi (auto-detected)
-- **Falls back to beta** if no stable release exists yet
-- Downloads the latest release from GitHub and deploys over SSH
+### If auto-discovery fails
 
-## Install Methods
-
-### Remote Install (from another computer)
-
-The default method. Run the one-liner above from any computer on the same network. The installer finds the Pi automatically via mDNS.
-
-If auto-discovery doesn't work, specify the address:
+Pass the Pi's IP address explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip your-pi-ip
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --ip 192.168.1.50
 ```
 
-> **Tip:** To find your Pi's IP address, check your router's connected devices list, or run `hostname -I` on the Pi.
+Find the IP in your router's connected-devices list, or run `hostname -I` on the Pi.
 
-If you already downloaded `install.sh`:
+## Update / Uninstall
+
+Re-run the install command to update; the binary and site assets are replaced and the service is restarted, while `/etc/default/replay-control` is preserved.
+
+To remove the app:
 
 ```bash
-bash install.sh
-bash install.sh --ip your-pi-ip
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --uninstall
 ```
 
-### Local Install (on the Pi itself)
+The service is stopped and disabled, and the binary, site assets, systemd unit, and Avahi service are removed. The environment file is preserved in case you reinstall.
 
-When run on a RePlayOS Pi, the installer auto-detects that it's running locally and installs without SSH:
+## Options
+
+Append flags after `bash -s --`:
+
+| Flag | Effect |
+|---|---|
+| `--ip ADDRESS` | Skip mDNS discovery and use this address. |
+| `--pi-pass PASSWORD` | SSH password for the Pi (default: `replayos`). |
+| `--version v0.3.0` | Install a specific release. Use `beta` for the latest pre-release. |
+| `--dry-run` | Print what would happen without making changes. |
+| `--uninstall` | Remove the app from the Pi. |
+
+Or set environment variables before the curl call:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `PI_PASS` | `replayos` | Same as `--pi-pass`. |
+| `REPLAY_PI_ADDR` | (mDNS) | Same as `--ip`. |
+| `REPLAY_CONTROL_VERSION` | `latest` | Same as `--version`. |
+
+Combining options:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash -s -- --pi-pass mypassword --version v0.3.0
 ```
 
-### SD Card Install (from a computer)
+## SD card install
 
-Write directly to a mounted RePlayOS SD card before first boot. The app will start automatically when the Pi boots.
+Write to a mounted RePlayOS SD card before first boot — useful when the Pi isn't on the network yet. This mode needs the script on disk because the SD partitions need to be mountable from the same machine:
 
 ```bash
-# Auto-detect the SD card
+wget https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh
 bash install.sh --sdcard
-
-# Or specify the rootfs mount point
-bash install.sh --sdcard /run/media/user/rootfs
 ```
 
-The installer looks for mounted partitions with the RePlayOS signature (data partition with `roms/`, `bios/`, `config/replay.cfg`; boot partition with `issue.txt`). It needs the **rootfs** partition (ext4), not the data partition.
-
-On Linux, you may need to mount the rootfs partition manually:
+The installer needs the **rootfs** (ext4) partition mounted, not the data partition. On Linux that partition often doesn't auto-mount — `lsblk -o NAME,LABEL,FSTYPE` shows the labels; mount it manually if needed:
 
 ```bash
 sudo mount /dev/sdX2 /mnt/replayos-rootfs
 bash install.sh --sdcard /mnt/replayos-rootfs
 ```
 
-## Options
+The app will start automatically when the Pi boots. Uninstall isn't supported in SD-card mode — remove via SSH after first boot instead.
 
-### Custom Password
+## What gets installed
 
-The default SSH password for RePlayOS is `replayos`. If you have changed it:
+| Path | Contents |
+|---|---|
+| `/usr/local/bin/replay-control-app` | Application binary. |
+| `/usr/local/share/replay/site/` | Static web assets (CSS, WASM, icons). |
+| `/etc/systemd/system/replay-control.service` | Systemd service unit. |
+| `/etc/default/replay-control` | Environment configuration. |
+| `/etc/avahi/services/replay-control.service` | mDNS service advertisement. |
 
-```bash
-PI_PASS=mypassword bash install.sh --ip replay.local
-```
+The service starts automatically on boot and listens on port 8080. Customise behaviour by editing `/etc/default/replay-control`:
 
-Or with curl:
-
-```bash
-PI_PASS=mypassword curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
-```
-
-### Specific Version
-
-Install a particular release instead of the latest:
-
-```bash
-bash install.sh --version v0.2.0
-bash install.sh --version beta
-```
-
-The environment variable `REPLAY_CONTROL_VERSION` also works:
-
-```bash
-REPLAY_CONTROL_VERSION=v0.2.0 bash install.sh
-```
-
-### Pi Address via Environment Variable
-
-Instead of `--ip`, you can set the address via environment variable:
-
-```bash
-REPLAY_PI_ADDR=your-pi-ip bash install.sh
-```
-
-### Dry Run
-
-Preview what the installer would do without making any changes:
-
-```bash
-bash install.sh --dry-run
-```
-
-### Local Build Install
-
-Deploy a locally built binary instead of downloading a release:
-
-```bash
-# Use artifacts from the current directory
-bash install.sh --local
-
-# Use artifacts from a specific directory
-bash install.sh --local /path/to/replay-control
-```
-
-This expects `target/release/replay-control-app` (or `target/aarch64-unknown-linux-gnu/release/replay-control-app`) and `target/site/` to exist. Run `./build.sh` or `./build.sh aarch64` first.
-
-## What Gets Installed
-
-The installer places these files on the Pi:
-
-| File | Purpose |
-|------|---------|
-| `/usr/local/bin/replay-control-app` | Application binary |
-| `/usr/local/share/replay/site/` | Static web assets (CSS, WASM, icons) |
-| `/etc/systemd/system/replay-control.service` | Systemd service unit |
-| `/etc/default/replay-control` | Environment configuration |
-| `/etc/avahi/services/replay-control.service` | mDNS service advertisement |
-
-The service starts automatically on boot and listens on port 8080.
-
-During installation, the installer also downloads the LaunchBox library database (~100 MB) to provide game descriptions, ratings, and genres out of the box. To skip this step:
-
-```bash
-bash install.sh --no-metadata
-```
-
-## Update
-
-To update to the latest version, run the installer again. It overwrites the binary and site assets, restarts the service, and preserves your environment configuration.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/lapastillaroja/replay-control/main/install.sh | bash
-```
-
-To update to a specific version:
-
-```bash
-bash install.sh --version v0.3.0
-```
-
-## Uninstall
-
-Remove the app from the Pi:
-
-```bash
-bash install.sh --uninstall
-```
-
-This stops and disables the service, removes the binary, site assets, systemd unit, and Avahi service file. The environment file (`/etc/default/replay-control`) is preserved in case you want to reinstall later.
-
-Uninstall is only supported via SSH, not in SD card mode.
-
-## Environment Configuration
-
-After installation, you can customize behavior by editing `/etc/default/replay-control` on the Pi:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REPLAY_PORT` | `8080` | Web UI port |
-| `REPLAY_SITE_ROOT` | `/usr/local/share/replay/site` | Static assets path |
-| `REPLAY_STORAGE_PATH` | (auto-detected) | Override ROM storage path |
-| `REPLAY_CONFIG_PATH` | (auto-detected) | Override RePlayOS config path |
-| `RUST_LOG` | `replay_control_app=info,replay_control_core=info` | Log level |
-
-## Windows Users
-
-Run the install commands in [WSL](https://learn.microsoft.com/en-us/windows/wsl/) (Windows Subsystem for Linux).
+| Variable | Default | Effect |
+|---|---|---|
+| `REPLAY_PORT` | `8080` | Web UI port. |
+| `REPLAY_SITE_ROOT` | `/usr/local/share/replay/site` | Static-assets path. |
+| `REPLAY_STORAGE_PATH` | (auto-detected) | Override ROM storage path. |
+| `REPLAY_CONFIG_PATH` | (auto-detected) | Override the RePlayOS config path. |
+| `RUST_LOG` | `replay_control_app=info,replay_control_core=info` | Log level. |
 
 ## Troubleshooting
 
-**Pi not found:** Ensure the Pi is powered on and connected to the same network. Try specifying the IP directly with `--ip`.
+**Pi not found.** Make sure the Pi is powered on and on the same network. Check your router for its IP and pass `--ip <addr>`.
 
-**SSH authentication failed:** Check the password. The default is `replayos`. Use `PI_PASS=yourpassword` if you have changed it.
+**SSH authentication failed.** The default password is `replayos`. If you've changed it, pass `--pi-pass yourpassword`.
 
-**SD card rootfs not mounted:** On Linux, the ext4 rootfs partition may not auto-mount. Use `lsblk -o NAME,LABEL,FSTYPE` to find the right partition and mount it manually.
+**SD card rootfs not mounted.** On Linux, the ext4 rootfs partition often doesn't auto-mount. Use `lsblk -o NAME,LABEL,FSTYPE` to find it and mount it manually.
+
+**Windows.** Run the install commands inside [WSL](https://learn.microsoft.com/en-us/windows/wsl/).
