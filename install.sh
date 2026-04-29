@@ -271,6 +271,7 @@ resolve_download_urls() {
 
     BINARY_URL="${base_url}/replay-control-app-aarch64-linux.tar.gz"
     SITE_URL="${base_url}/replay-site.tar.gz"
+    CATALOG_URL="${base_url}/replay-catalog.tar.gz"
 }
 
 # ── Download / prepare artifacts ───────────────────────────────────────────
@@ -316,6 +317,14 @@ prepare_local_artifacts() {
   Run ./build.sh first, or specify the project directory: --local /path/to/replay"
     fi
 
+    # The catalog lives at the project root in dev (mirrors dev.sh / build.sh).
+    local catalog="$project_dir/catalog.sqlite"
+    if [[ ! -s "$catalog" ]]; then
+        fatal "Local catalog not found or empty: $catalog
+  Run: cargo run -p build-catalog -- --output catalog.sqlite
+  Or run ./build.sh, which builds it as part of the release flow."
+    fi
+
     TMPDIR_WORK="$(mktemp -d)"
 
     info "Packaging local build artifacts..."
@@ -323,6 +332,7 @@ prepare_local_artifacts() {
     if $DRY_RUN; then
         dry "Would package binary from: $binary"
         dry "Would package site assets from: $site_dir"
+        dry "Would package catalog from: $catalog"
         dry "Would save to temp directory: $TMPDIR_WORK"
         return
     fi
@@ -330,6 +340,7 @@ prepare_local_artifacts() {
     # Create the same tar archives the remote flow expects
     tar -czf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C "$(dirname "$binary")" "$(basename "$binary")"
     tar -czf "$TMPDIR_WORK/replay-site.tar.gz" -C "$(dirname "$site_dir")" "$(basename "$site_dir")"
+    tar -czf "$TMPDIR_WORK/replay-catalog.tar.gz" -C "$(dirname "$catalog")" "$(basename "$catalog")"
 
     success "Packaged local artifacts"
 }
@@ -342,6 +353,7 @@ download_artifacts() {
     if $DRY_RUN; then
         dry "Would download: $BINARY_URL"
         dry "Would download: $SITE_URL"
+        dry "Would download: $CATALOG_URL"
         dry "Would save to temp directory: $TMPDIR_WORK"
         return
     fi
@@ -356,6 +368,17 @@ download_artifacts() {
 
     if ! curl -fSL --progress-bar -o "$TMPDIR_WORK/replay-site.tar.gz" "$SITE_URL"; then
         fatal "Cannot download site assets. Check your internet connection."
+    fi
+
+    # The catalog is required at startup (init_catalog opens catalog.sqlite
+    # next to the binary). Older betas (< 0.4.0-beta.5) didn't ship it as a
+    # release asset; warn rather than abort so users on those versions can
+    # still get the binary in place and add the catalog manually.
+    if ! curl -fSL --progress-bar -o "$TMPDIR_WORK/replay-catalog.tar.gz" "$CATALOG_URL"; then
+        warn "Could not download catalog from $CATALOG_URL"
+        warn "The service will not start without catalog.sqlite next to the binary."
+        warn "If this release predates the catalog asset, build it locally and copy it to ${INSTALL_DIR}/."
+        rm -f "$TMPDIR_WORK/replay-catalog.tar.gz"
     fi
 
     success "Downloaded release artifacts"
@@ -562,6 +585,7 @@ install_local() {
 
     if $DRY_RUN; then
         dry "Would extract binary to ${INSTALL_DIR}/replay-control-app"
+        dry "Would extract catalog to ${INSTALL_DIR}/catalog.sqlite"
         dry "Would extract site assets to ${SITE_DIR}/site/"
         dry "Would write systemd service to ${SERVICE_FILE}"
         dry "Would write environment file to ${ENV_FILE} (only if not present)"
@@ -579,6 +603,15 @@ install_local() {
     tar -xzf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C /tmp/
     mkdir -p "$INSTALL_DIR"
     install -m755 /tmp/replay-control-app "$INSTALL_DIR/replay-control-app"
+
+    # Extract catalog next to the binary so resolve_catalog_path picks it up
+    # without needing --catalog-path. Required for the service to start.
+    if [[ -s "$TMPDIR_WORK/replay-catalog.tar.gz" ]]; then
+        tar -xzf "$TMPDIR_WORK/replay-catalog.tar.gz" -C /tmp/
+        install -m644 /tmp/catalog.sqlite "$INSTALL_DIR/catalog.sqlite"
+    else
+        warn "No catalog tarball found — service will fail to start without ${INSTALL_DIR}/catalog.sqlite"
+    fi
 
     # Extract site assets
     rm -rf "$SITE_DIR/site"
@@ -602,7 +635,7 @@ install_local() {
     systemctl restart "$SERVICE_NAME"
 
     # Cleanup
-    rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
+    rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-catalog.tar.gz /tmp/replay-control-app /tmp/catalog.sqlite
 
     success "Installation complete"
 
@@ -632,9 +665,11 @@ install_ssh() {
         dry "Would set up SSH_ASKPASS for password automation"
         dry "Would transfer replay-control-app-aarch64-linux.tar.gz to ${PI_USER}@${PI_ADDR}:/tmp/"
         dry "Would transfer replay-site.tar.gz to ${PI_USER}@${PI_ADDR}:/tmp/"
+        dry "Would transfer replay-catalog.tar.gz to ${PI_USER}@${PI_ADDR}:/tmp/"
         echo ""
         dry "Would run installation commands on Pi via SSH:"
         dry "  - Extract binary to ${INSTALL_DIR}/replay-control-app"
+        dry "  - Extract catalog to ${INSTALL_DIR}/catalog.sqlite"
         dry "  - Extract site assets to ${SITE_DIR}/site/"
         dry "  - Write systemd service to ${SERVICE_FILE}"
         dry "  - Write environment file to ${ENV_FILE} (only if not present)"
@@ -661,6 +696,15 @@ install_ssh() {
         fatal "Failed to transfer site archive."
     }
 
+    if [[ -s "$TMPDIR_WORK/replay-catalog.tar.gz" ]]; then
+        run_scp "$TMPDIR_WORK/replay-catalog.tar.gz" "${PI_USER}@${PI_ADDR}:/tmp/" || {
+            teardown_askpass
+            fatal "Failed to transfer catalog archive."
+        }
+    else
+        warn "No catalog tarball to transfer — service will fail to start without ${INSTALL_DIR}/catalog.sqlite"
+    fi
+
     success "Files transferred"
 
     info "Installing on Pi..."
@@ -675,6 +719,15 @@ mkdir -p /etc/replay-control
 tar -xzf /tmp/replay-control-app-aarch64-linux.tar.gz -C /tmp/
 mkdir -p /usr/local/bin
 install -m755 /tmp/replay-control-app /usr/local/bin/replay-control-app
+
+# Extract catalog next to the binary so resolve_catalog_path picks it up
+# without --catalog-path. Required for the service to start.
+if [ -s /tmp/replay-catalog.tar.gz ]; then
+    tar -xzf /tmp/replay-catalog.tar.gz -C /tmp/
+    install -m644 /tmp/catalog.sqlite /usr/local/bin/catalog.sqlite
+else
+    echo "warning: catalog tarball missing — service will fail to start without /usr/local/bin/catalog.sqlite" >&2
+fi
 
 # Extract site assets
 rm -rf /usr/local/share/replay/site
@@ -750,7 +803,7 @@ systemctl enable replay-control
 systemctl restart replay-control
 
 # Cleanup
-rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-control-app
+rm -f /tmp/replay-control-app-aarch64-linux.tar.gz /tmp/replay-site.tar.gz /tmp/replay-catalog.tar.gz /tmp/replay-control-app /tmp/catalog.sqlite
 REMOTE_INSTALL
 
     teardown_askpass
@@ -798,7 +851,7 @@ uninstall_local() {
 
     if $DRY_RUN; then
         dry "Would stop and disable ${SERVICE_NAME}"
-        dry "Would remove: ${SERVICE_FILE} ${AVAHI_FILE} ${INSTALL_DIR}/replay-control-app"
+        dry "Would remove: ${SERVICE_FILE} ${AVAHI_FILE} ${INSTALL_DIR}/replay-control-app ${INSTALL_DIR}/catalog.sqlite"
         dry "Would remove: ${SITE_DIR}"
         dry "Would run: systemctl daemon-reload"
         if $PURGE_DATA; then
@@ -815,7 +868,7 @@ uninstall_local() {
     info "Uninstalling locally..."
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
-    rm -f "$SERVICE_FILE" "$AVAHI_FILE" "$INSTALL_DIR/replay-control-app"
+    rm -f "$SERVICE_FILE" "$AVAHI_FILE" "$INSTALL_DIR/replay-control-app" "$INSTALL_DIR/catalog.sqlite"
     rm -rf "$SITE_DIR"
     systemctl daemon-reload
 
@@ -848,6 +901,7 @@ uninstall_ssh() {
         dry "  - Remove: ${SERVICE_FILE}"
         dry "  - Remove: ${AVAHI_FILE}"
         dry "  - Remove: ${INSTALL_DIR}/replay-control-app"
+        dry "  - Remove: ${INSTALL_DIR}/catalog.sqlite"
         dry "  - Remove: ${SITE_DIR}/"
         dry "  - Run: systemctl daemon-reload"
         if $PURGE_DATA; then
@@ -880,6 +934,7 @@ systemctl disable replay-control 2>/dev/null || true
 rm -f /etc/systemd/system/replay-control.service
 rm -f /etc/avahi/services/replay-control.service
 rm -f /usr/local/bin/replay-control-app
+rm -f /usr/local/bin/catalog.sqlite
 rm -rf /usr/local/share/replay
 systemctl daemon-reload
 
@@ -1134,6 +1189,9 @@ install_sdcard() {
         dry "Would extract and install binary:"
         dry "  install -m755 replay-control-app -> ${sd}${INSTALL_DIR}/replay-control-app"
         echo ""
+        dry "Would extract and install catalog:"
+        dry "  install -m644 catalog.sqlite -> ${sd}${INSTALL_DIR}/catalog.sqlite"
+        echo ""
         dry "Would extract and install site assets:"
         dry "  mkdir -p ${sd}${SITE_DIR}"
         dry "  site/ -> ${sd}${SITE_DIR}/site/"
@@ -1164,6 +1222,15 @@ install_sdcard() {
     mkdir -p "${sd}${INSTALL_DIR}"
     install -m755 "$TMPDIR_WORK/replay-control-app" "${sd}${INSTALL_DIR}/replay-control-app"
     success "Installed binary"
+
+    # Extract catalog next to the binary
+    if [[ -s "$TMPDIR_WORK/replay-catalog.tar.gz" ]]; then
+        tar -xzf "$TMPDIR_WORK/replay-catalog.tar.gz" -C "$TMPDIR_WORK/"
+        install -m644 "$TMPDIR_WORK/catalog.sqlite" "${sd}${INSTALL_DIR}/catalog.sqlite"
+        success "Installed catalog"
+    else
+        warn "No catalog tarball — service will fail to start on first boot without ${INSTALL_DIR}/catalog.sqlite"
+    fi
 
     # Extract site assets
     rm -rf "${sd}${SITE_DIR}/site"
