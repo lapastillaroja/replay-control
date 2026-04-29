@@ -268,7 +268,6 @@ impl ImportPipeline {
         skip_enrichment: bool,
         _guard: ActivityGuard,
     ) {
-        use super::WriteGate;
         use replay_control_core_server::library_db::ImportState;
 
         // Build ROM index (no DB needed).
@@ -307,13 +306,10 @@ impl ImportPipeline {
             }
         });
 
-        // Gate reads while import writes to the library DB.
-        // On exFAT (DELETE journal), concurrent reads during heavy writes corrupt the DB.
-        // Activated after the DB availability check; dropped after checkpoint.
-        let write_gate = WriteGate::activate(state.library_pool.write_gate_flag());
-
         // Bridge the sync XML parser to the async pool in core-server; here we
         // just translate per-batch progress ticks into activity updates.
+        // The write gate is auto-applied by `pool.write()` per batch, so SSR
+        // readers stay responsive between batch writes throughout the import.
         let activity_lock = state.activity.clone();
         let activity_tx = state.activity_tx.clone();
         let start_ref = start;
@@ -338,10 +334,6 @@ impl ImportPipeline {
 
         // Checkpoint WAL after the heavy batch writes.
         state.library_pool.checkpoint().await;
-
-        // Release the write gate — heavy writes are done. The alias import
-        // below needs to read from the DB.
-        drop(write_gate);
 
         // Image index is no longer cached — enrichment builds it fresh each run.
 

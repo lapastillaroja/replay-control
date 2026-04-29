@@ -82,23 +82,33 @@ impl LibraryService {
             return cached.clone();
         }
 
-        // L2: Try SQLite game_library_meta (reconstructs SystemSummary from cached metadata).
-        if let Some(summaries) = self.load_systems_from_db(storage, db).await
-            && !summaries.is_empty()
-        {
-            *guard = Some(summaries.clone());
-            return summaries;
+        // L2: Try SQLite game_library_meta. `Some(non-empty)` is a hit;
+        // `Some(empty)` means the DB is reachable but has no systems cached
+        // (true cache miss → fall through to L3); `None` means the pool was
+        // unavailable (closed, or briefly write-gated). In the unavailable
+        // case we deliberately skip L3 — kicking off a multi-thousand-ROM
+        // filesystem scan because of a transient DB-unavailable would pin
+        // the L1 write lock for minutes and starve every concurrent SSR
+        // request that needs the systems list.
+        match self.load_systems_from_db(storage, db).await {
+            Some(summaries) if !summaries.is_empty() => {
+                *guard = Some(summaries.clone());
+                summaries
+            }
+            Some(_) => {
+                // L3: full filesystem scan and write-through to L2.
+                let summaries = replay_control_core_server::roms::scan_systems(storage).await;
+                *guard = Some(summaries.clone());
+                drop(guard);
+                self.save_systems_to_db(storage, &summaries, db).await;
+                summaries
+            }
+            None => {
+                // DB unavailable; return empty without caching so the next
+                // caller retries once the pool is reachable.
+                Vec::new()
+            }
         }
-
-        // L3: Cache miss — full filesystem scan.
-        let summaries = replay_control_core_server::roms::scan_systems(storage).await;
-        *guard = Some(summaries.clone());
-        drop(guard);
-
-        // Write-through to L2 (lock released to avoid holding it across DB IO).
-        self.save_systems_to_db(storage, &summaries, db).await;
-
-        summaries
     }
 
     /// Try to reconstruct SystemSummary list from SQLite game_library_meta.

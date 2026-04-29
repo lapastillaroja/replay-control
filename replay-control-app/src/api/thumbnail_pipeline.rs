@@ -67,7 +67,6 @@ impl ThumbnailPipeline {
         cancel: Arc<AtomicBool>,
         _guard: ActivityGuard,
     ) {
-        use super::WriteGate;
         use replay_control_core_server::thumbnail_manifest;
         use replay_control_core_server::thumbnails::ALL_THUMBNAIL_KINDS;
 
@@ -91,13 +90,11 @@ impl ThumbnailPipeline {
             }
         }
 
-        // Gate reads while thumbnail index writes to the library DB.
-        // On exFAT (DELETE journal), concurrent reads during heavy writes corrupt the DB.
-        // Activated after the DB availability check; dropped after Phase 1 checkpoint.
-        tracing::info!("run_thumbnail_update: phase 1 (manifest import) — write gate up");
-        let write_gate = WriteGate::activate(state.library_pool.write_gate_flag());
-
         // ── Phase 1: Index refresh ──────────────────────────────────
+        // The write gate (which blocks SSR `pool.read()`) is held only around
+        // each per-repo write inside `import_all_manifests`, not across the
+        // multi-minute GitHub HTTP loop. SSR pages stay responsive throughout.
+        tracing::info!("run_thumbnail_update: phase 1 (manifest import)");
         let activity_lock = state.activity.clone();
 
         // Read GitHub API key from settings (if configured).
@@ -108,7 +105,6 @@ impl ThumbnailPipeline {
             let activity_tx = state.activity_tx.clone();
             thumbnail_manifest::import_all_manifests(
                 &state.library_pool,
-                &write_gate,
                 &|repos_done, repos_total, current_repo| {
                     let mut guard = write_lock(&activity_ref, "activity");
                     if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
@@ -194,14 +190,10 @@ impl ThumbnailPipeline {
 
         // Checkpoint WAL after the index phase's bulk writes.
         state.library_pool.checkpoint().await;
-
-        // Release the write gate — Phase 1 heavy writes are done. Phase 2
-        // (downloads) needs to read the DB for thumbnail index lookups.
         tracing::info!(
-            "run_thumbnail_update: phase 1 done in {}s — write gate down",
+            "run_thumbnail_update: phase 1 done in {}s",
             start.elapsed().as_secs()
         );
-        drop(write_gate);
 
         // Check cancellation between phases.
         if cancel.load(Ordering::Relaxed) {

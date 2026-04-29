@@ -340,18 +340,6 @@ impl DbPool {
         self.read_inner(f).await
     }
 
-    /// Like `read`, but for the task that holds the `WriteGate`. Its reads
-    /// are sequential with its writes, so the exFAT corruption window the
-    /// gate protects against doesn't apply. Holding the borrow makes misuse
-    /// impossible: callers without a guard must use `read`.
-    pub async fn read_through_gate<F, R>(&self, _gate: &WriteGate, f: F) -> Option<R>
-    where
-        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.read_inner(f).await
-    }
-
     async fn read_inner<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
@@ -371,12 +359,19 @@ impl DbPool {
 
     /// Run a mutable closure with the single write connection.
     ///
+    /// While the write is in flight, `read()` callers will see `None` so
+    /// concurrent readers can't race the writer on exFAT (DELETE journal).
+    /// The gate is held only for the duration of this single write — long
+    /// write *sequences* should call `write()` per logical write, not hold
+    /// an outer gate, so SSR readers stay responsive between calls.
+    ///
     /// Returns `None` if the pool is closed (DB unavailable).
     pub async fn write<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        let _gate = WriteGate::activate(&self.write_gate);
         let pool = self.write_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
         let pool_for_corrupt = self.clone();

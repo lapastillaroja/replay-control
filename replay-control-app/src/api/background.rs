@@ -1051,8 +1051,8 @@ impl AppState {
 
             if is_empty {
                 tracing::info!("Post-import: game library is empty, running full populate");
-                // Gate reads during heavy writes to prevent exFAT corruption.
-                let _write_gate = super::WriteGate::activate(state.library_pool.write_gate_flag());
+                // Per-write gating happens inside `pool.write()` — SSR readers
+                // stay responsive between the populate's individual writes.
                 BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
@@ -1061,7 +1061,6 @@ impl AppState {
                 )
                 .await;
                 state.library_pool.checkpoint().await;
-                drop(_write_gate);
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
@@ -1129,8 +1128,8 @@ impl AppState {
                         progress.elapsed_secs = start.elapsed().as_secs();
                     }
                 });
-                // Gate reads during heavy writes to prevent exFAT corruption.
-                let _write_gate = super::WriteGate::activate(state.library_pool.write_gate_flag());
+                // Per-write gating happens inside `pool.write()` — SSR readers
+                // stay responsive between the populate's individual writes.
                 BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
@@ -1139,7 +1138,6 @@ impl AppState {
                 )
                 .await;
                 state.library_pool.checkpoint().await;
-                drop(_write_gate);
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
