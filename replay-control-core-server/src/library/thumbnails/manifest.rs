@@ -47,11 +47,22 @@ pub struct RepoInfo {
 }
 
 /// Stats returned after a manifest import.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct ManifestImportStats {
     pub repos_fetched: usize,
     pub total_entries: usize,
     pub errors: Vec<String>,
+    /// Set when a 403 + `X-RateLimit-Remaining: 0` was observed during the
+    /// run. `import_all_manifests` bails early when this flips to true — every
+    /// further request would hit the same wall, and the WriteGate/HTTP loop
+    /// would just keep churning. UI surfaces a "configure GitHub API key"
+    /// hint when this is true.
+    #[serde(default)]
+    pub rate_limited: bool,
+    /// Unix timestamp at which GitHub says the rate limit resets, when
+    /// available from the `X-RateLimit-Reset` header on the offending response.
+    #[serde(default)]
+    pub rate_limit_reset_unix: Option<u64>,
 }
 
 /// Collect the unique list of libretro-thumbnails repos from all supported systems.
@@ -86,18 +97,99 @@ pub fn default_branch(repo_display_name: &str) -> &'static str {
     }
 }
 
+/// Outcome of a GitHub API GET, distinguishing rate-limit responses from
+/// other errors so the manifest pipeline can bail early instead of charging
+/// through 70 doomed requests.
+#[cfg(feature = "http")]
+#[derive(Debug)]
+pub enum GhResponse {
+    Json {
+        body: serde_json::Value,
+        rate_limit_remaining: Option<u64>,
+    },
+    /// 403 with `X-RateLimit-Remaining: 0`. `reset_unix` is the value of
+    /// `X-RateLimit-Reset` if present.
+    RateLimited {
+        reset_unix: Option<u64>,
+        message: String,
+    },
+    Error(replay_control_core::error::Error),
+}
+
+/// GET a GitHub API endpoint and return a structured outcome that the
+/// caller can use to drive observable behaviour (logging, early bail).
+#[cfg(feature = "http")]
+async fn gh_api_get(
+    url: &str,
+    headers: &[(&str, &str)],
+    timeout: std::time::Duration,
+) -> GhResponse {
+    let mut req = crate::http::shared_client().get(url).timeout(timeout);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return GhResponse::Error(replay_control_core::error::Error::Other(format!(
+                "HTTP request failed for {url}: {e}"
+            )));
+        }
+    };
+    let status = resp.status();
+    let parse_header = |name: &str| -> Option<u64> {
+        resp.headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+    };
+    let rl_remaining = parse_header("x-ratelimit-remaining");
+    let rl_reset = parse_header("x-ratelimit-reset");
+
+    if status.as_u16() == 403 && rl_remaining == Some(0) {
+        // Drain the body for the message field — best-effort.
+        let body = resp.text().await.unwrap_or_default();
+        let message = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
+            .unwrap_or_else(|| "GitHub API rate limit exceeded".into());
+        return GhResponse::RateLimited {
+            reset_unix: rl_reset,
+            message,
+        };
+    }
+    if !status.is_success() {
+        return GhResponse::Error(replay_control_core::error::Error::Other(format!(
+            "HTTP {status} for {url}"
+        )));
+    }
+    match resp.json::<serde_json::Value>().await {
+        Ok(body) => GhResponse::Json {
+            body,
+            rate_limit_remaining: rl_remaining,
+        },
+        Err(e) => GhResponse::Error(replay_control_core::error::Error::Other(format!(
+            "JSON parse error for {url}: {e}"
+        ))),
+    }
+}
+
 /// Fetch the full tree listing for a libretro-thumbnails repo via GitHub REST API.
 /// Returns `(commit_sha, entries)`.
 ///
 /// Uses `GET /repos/libretro-thumbnails/{url_name}/git/trees/{branch}?recursive=1`.
 /// Filters and parses the response inline, returning only Named_Boxarts and Named_Snaps
 /// entries as `ThumbnailEntry` values.
+///
+/// Returns the structured `GhResponse` so callers can distinguish rate-limit
+/// responses from network/parse errors. Use `fetch_repo_tree_simple` if all
+/// you need is the legacy `Result<(String, Vec)>` shape.
 #[cfg(feature = "http")]
 pub async fn fetch_repo_tree(
     url_name: &str,
     branch: &str,
     api_key: Option<&str>,
-) -> Result<(String, Vec<ThumbnailEntry>)> {
+) -> std::result::Result<(String, Vec<ThumbnailEntry>), GhResponse> {
     let url = format!(
         "https://api.github.com/repos/libretro-thumbnails/{url_name}/git/trees/{branch}?recursive=1"
     );
@@ -109,15 +201,16 @@ pub async fn fetch_repo_tree(
         headers.push(("Authorization", auth_header.as_str()));
     }
 
-    let json =
-        crate::http::get_json_with_headers(&url, &headers, std::time::Duration::from_secs(60))
-            .await?;
+    let json = match gh_api_get(&url, &headers, std::time::Duration::from_secs(60)).await {
+        GhResponse::Json { body, .. } => body,
+        other => return Err(other),
+    };
 
-    // Check for API error responses (e.g. rate limit, not found).
+    // Check for API error responses (e.g. rate limit message embedded in 200).
     if let Some(msg) = json.get("message").and_then(|v| v.as_str()) {
-        return Err(Error::Other(format!(
+        return Err(GhResponse::Error(Error::Other(format!(
             "GitHub API error for {url_name}/{branch}: {msg}"
-        )));
+        ))));
     }
 
     let commit_sha = json
@@ -126,10 +219,11 @@ pub async fn fetch_repo_tree(
         .unwrap_or("")
         .to_string();
 
-    let tree = json
-        .get("tree")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| Error::Other("Missing 'tree' field in API response".to_string()))?;
+    let tree = json.get("tree").and_then(|v| v.as_array()).ok_or_else(|| {
+        GhResponse::Error(Error::Other(
+            "Missing 'tree' field in API response".to_string(),
+        ))
+    })?;
 
     let mut entries = Vec::new();
     for item in tree {
@@ -222,28 +316,61 @@ pub async fn import_all_manifests(
 ) -> Result<ManifestImportStats> {
     let repos = collect_all_repos();
     let total = repos.len();
-    let mut total_entries = 0usize;
-    let mut repos_fetched = 0usize;
-    let mut errors: Vec<String> = Vec::new();
+    let mut stats = ManifestImportStats::default();
 
     let db_unavailable = || Error::Other("library DB unavailable during manifest import".into());
 
+    tracing::info!(
+        "Manifest import: starting ({} repos, api_key={})",
+        total,
+        if api_key.is_some() { "yes" } else { "no" }
+    );
+
     // Bail out after this many repos in a row fail. Sustained failures are
     // almost always GitHub API rate limiting (HTTP 403) or no network — the
-    // rest of the run will hit the same wall, and the WriteGate stays held
-    // the whole time, blocking SSR reads. Three is enough to distinguish
-    // a flaky single repo from a systemic outage.
+    // rest of the run will hit the same wall.
     const MAX_CONSECUTIVE_FAILURES: usize = 3;
     let mut consecutive_failures = 0usize;
+
+    // Helper: when fetch_repo_tree / check_repo_freshness flag rate limiting,
+    // record it on stats and emit one user-actionable warning per pipeline run.
+    let mark_rate_limited = |stats: &mut ManifestImportStats,
+                             reset_unix: Option<u64>,
+                             message: &str| {
+        if !stats.rate_limited {
+            stats.rate_limited = true;
+            stats.rate_limit_reset_unix = reset_unix;
+            let hint = if api_key.is_none() {
+                " (no GitHub API key configured; configure one in Settings → GitHub API key for 5 000 req/h)"
+            } else {
+                ""
+            };
+            let reset_msg = match reset_unix {
+                Some(t) => format!(" (resets at unix={t})"),
+                None => String::new(),
+            };
+            tracing::warn!("GitHub API rate limit exceeded: {message}{reset_msg}{hint}");
+        }
+    };
 
     for (i, repo) in repos.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
+        if stats.rate_limited {
+            // No point continuing — every request will hit the same wall.
+            // Surface the run as a structured rate-limit failure instead of
+            // pretending it was a transient flake.
+            tracing::warn!(
+                "Manifest import: aborting after rate limit detected; {} repo(s) skipped",
+                repos.len() - i
+            );
+            break;
+        }
         if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
             tracing::warn!(
-                "Manifest import: aborting after {consecutive_failures} consecutive failures \
-                 (likely GitHub API rate-limited); {} repo(s) skipped",
+                "Manifest import: aborting after {consecutive_failures} consecutive failures; \
+                 {} repo(s) skipped",
                 repos.len() - i
             );
             break;
@@ -263,17 +390,25 @@ pub async fn import_all_manifests(
             let existing_hash = status.version_hash.as_deref().unwrap_or("");
             if !existing_hash.is_empty() {
                 match check_repo_freshness(&repo.url_name, existing_hash, api_key).await {
-                    Ok(false) => {
-                        // Repo unchanged -- skip.
-                        total_entries += status.entry_count;
-                        repos_fetched += 1;
+                    FreshnessOutcome::Unchanged => {
+                        stats.total_entries += status.entry_count;
+                        stats.repos_fetched += 1;
                         consecutive_failures = 0;
                         continue;
                     }
-                    Ok(true) => { /* Repo changed, re-fetch below. */ }
-                    Err(e) => {
-                        tracing::warn!("Freshness check failed for {}: {e}", repo.display_name);
-                        // Can't tell -- re-fetch to be safe.
+                    FreshnessOutcome::Changed => { /* Re-fetch below. */ }
+                    FreshnessOutcome::Unknown(e) => {
+                        tracing::debug!(
+                            "Freshness check inconclusive for {}: {e}",
+                            repo.display_name
+                        );
+                    }
+                    FreshnessOutcome::RateLimited {
+                        reset_unix,
+                        message,
+                    } => {
+                        mark_rate_limited(&mut stats, reset_unix, &message);
+                        continue; // Will trip the early-bail check at top of loop.
                     }
                 }
             }
@@ -283,13 +418,36 @@ pub async fn import_all_manifests(
         let (commit_sha, entries, actual_branch) =
             match fetch_repo_tree(&repo.url_name, branch, api_key).await {
                 Ok((sha, entries)) => (sha, entries, branch),
+                Err(GhResponse::RateLimited {
+                    reset_unix,
+                    message,
+                }) => {
+                    mark_rate_limited(&mut stats, reset_unix, &message);
+                    continue;
+                }
                 Err(_) => {
                     // Try the other branch before giving up.
                     let alt = if branch == "master" { "main" } else { "master" };
                     match fetch_repo_tree(&repo.url_name, alt, api_key).await {
                         Ok((sha, entries)) => (sha, entries, alt),
-                        Err(e) => {
-                            errors.push(format!("{}: {e}", repo.display_name));
+                        Err(GhResponse::RateLimited {
+                            reset_unix,
+                            message,
+                        }) => {
+                            mark_rate_limited(&mut stats, reset_unix, &message);
+                            continue;
+                        }
+                        Err(GhResponse::Error(e)) => {
+                            stats.errors.push(format!("{}: {e}", repo.display_name));
+                            consecutive_failures += 1;
+                            continue;
+                        }
+                        Err(GhResponse::Json { .. }) => {
+                            // Unreachable: Ok path returns Json upstream.
+                            stats.errors.push(format!(
+                                "{}: unexpected upstream response shape",
+                                repo.display_name
+                            ));
                             consecutive_failures += 1;
                             continue;
                         }
@@ -327,16 +485,18 @@ pub async fn import_all_manifests(
 
         match result {
             Some(Ok(count)) => {
-                total_entries += count;
-                repos_fetched += 1;
+                stats.total_entries += count;
+                stats.repos_fetched += 1;
                 consecutive_failures = 0;
             }
             Some(Err(e)) => {
-                errors.push(format!("{}: {e}", repo.display_name));
+                stats.errors.push(format!("{}: {e}", repo.display_name));
                 consecutive_failures += 1;
             }
             None => {
-                errors.push(format!("{}: library DB unavailable", repo.display_name));
+                stats
+                    .errors
+                    .push(format!("{}: library DB unavailable", repo.display_name));
                 consecutive_failures += 1;
             }
         }
@@ -344,43 +504,77 @@ pub async fn import_all_manifests(
 
     on_progress(total, total, "");
 
-    Ok(ManifestImportStats {
-        repos_fetched,
-        total_entries,
-        errors,
-    })
+    tracing::info!(
+        "Manifest import: complete — {} repo(s) fetched, {} entries indexed, {} error(s){}",
+        stats.repos_fetched,
+        stats.total_entries,
+        stats.errors.len(),
+        if stats.rate_limited {
+            ", rate-limited"
+        } else {
+            ""
+        }
+    );
+
+    Ok(stats)
+}
+
+/// Outcome of `check_repo_freshness`. Distinguishes "unchanged / changed /
+/// unknown" from rate-limit responses so the caller can bail rather than
+/// falling through to a re-fetch (which would also be rate-limited).
+#[cfg(feature = "http")]
+enum FreshnessOutcome {
+    Unchanged,
+    Changed,
+    Unknown(String),
+    RateLimited {
+        reset_unix: Option<u64>,
+        message: String,
+    },
 }
 
 /// Check if a repo has changed by comparing the latest commit SHA via GitHub API
-/// with the stored hash. Returns `Ok(true)` if the repo has changed.
+/// with the stored hash. Returns `FreshnessOutcome` so the caller can react to
+/// rate-limit responses without re-fetching.
 ///
-/// Uses `GET /repos/libretro-thumbnails/{url_name}/commits/HEAD` with
-/// `Accept: application/vnd.github.sha` which returns just the SHA as plain text.
+/// Uses `GET /repos/libretro-thumbnails/{url_name}/commits/HEAD`. We send
+/// `Accept: application/vnd.github+json` (instead of the SHA media type) so
+/// rate-limit responses come back as JSON we can introspect via `gh_api_get`.
 #[cfg(feature = "http")]
 async fn check_repo_freshness(
     url_name: &str,
     stored_hash: &str,
     api_key: Option<&str>,
-) -> Result<bool> {
+) -> FreshnessOutcome {
     let url = format!("https://api.github.com/repos/libretro-thumbnails/{url_name}/commits/HEAD");
 
-    let mut headers = vec![("Accept", "application/vnd.github.sha")];
+    let mut headers = vec![("Accept", "application/vnd.github+json")];
     let auth_header;
     if let Some(key) = api_key {
         auth_header = format!("Bearer {key}");
         headers.push(("Authorization", auth_header.as_str()));
     }
 
-    let sha =
-        crate::http::get_text_with_headers(&url, &headers, std::time::Duration::from_secs(15))
-            .await?;
-
-    let sha = sha.trim();
-    if sha.is_empty() {
-        return Ok(true); // Can't tell -- assume changed.
+    match gh_api_get(&url, &headers, std::time::Duration::from_secs(15)).await {
+        GhResponse::Json { body, .. } => {
+            let sha = body.get("sha").and_then(|v| v.as_str()).unwrap_or("");
+            if sha.is_empty() {
+                FreshnessOutcome::Unknown("empty 'sha' in response".to_string())
+            } else if sha == stored_hash {
+                FreshnessOutcome::Unchanged
+            } else {
+                FreshnessOutcome::Changed
+            }
+        }
+        GhResponse::RateLimited {
+            reset_unix,
+            message,
+        } => FreshnessOutcome::RateLimited {
+            reset_unix,
+            message,
+        },
+        GhResponse::Error(e) => FreshnessOutcome::Unknown(e.to_string()),
     }
-
-    Ok(sha != stored_hash)
 }
 
 // ── Phase 2: Image Download ─────────────────────────────────────────────
@@ -1731,5 +1925,41 @@ mod tests {
             }
         }
         None
+    }
+
+    #[test]
+    fn manifest_import_stats_default_is_not_rate_limited() {
+        let s = ManifestImportStats::default();
+        assert!(!s.rate_limited);
+        assert!(s.rate_limit_reset_unix.is_none());
+        assert_eq!(s.repos_fetched, 0);
+        assert_eq!(s.total_entries, 0);
+        assert!(s.errors.is_empty());
+    }
+
+    #[test]
+    fn manifest_import_stats_serde_round_trip_preserves_rate_limit() {
+        let s = ManifestImportStats {
+            repos_fetched: 12,
+            total_entries: 4321,
+            errors: vec!["one: bad".to_string()],
+            rate_limited: true,
+            rate_limit_reset_unix: Some(1_733_000_000),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back: ManifestImportStats = serde_json::from_str(&json).unwrap();
+        assert!(back.rate_limited);
+        assert_eq!(back.rate_limit_reset_unix, Some(1_733_000_000));
+    }
+
+    /// Backwards-compat: stats serialized by older clients (without the
+    /// rate_limited / rate_limit_reset_unix fields) must still deserialize.
+    #[test]
+    fn manifest_import_stats_deserializes_legacy_payload() {
+        let json = r#"{"repos_fetched":3,"total_entries":900,"errors":[]}"#;
+        let s: ManifestImportStats = serde_json::from_str(json).unwrap();
+        assert_eq!(s.repos_fetched, 3);
+        assert!(!s.rate_limited);
+        assert!(s.rate_limit_reset_unix.is_none());
     }
 }

@@ -134,29 +134,42 @@ impl ThumbnailPipeline {
                     );
                 }
 
-                // If ALL repos failed (0 entries), report as Failed.
-                if stats.total_entries == 0 && !stats.errors.is_empty() {
-                    let is_rate_limited = stats
-                        .errors
-                        .iter()
-                        .any(|e| e.contains("403") || e.contains("rate"));
-                    let msg = if is_rate_limited {
-                        format!(
-                            "GitHub API rate limit exceeded ({}/{} repos failed). Wait ~1 hour and try again.",
-                            stats.errors.len(),
-                            stats.errors.len() + stats.repos_fetched,
-                        )
-                    } else {
-                        format!(
-                            "All repos failed to index ({} errors). First: {}",
-                            stats.errors.len(),
-                            stats
-                                .errors
-                                .first()
-                                .map(|s| s.as_str())
-                                .unwrap_or("unknown"),
-                        )
+                // Treat rate-limited or all-repos-failed as a structural failure.
+                // The rate_limited flag (set by manifest::import_all_manifests
+                // when 403 + X-RateLimit-Remaining: 0 was observed) takes
+                // precedence over the generic "all failed" message — the user
+                // can act on the rate-limit hint.
+                if stats.rate_limited {
+                    let reset_hint = match stats.rate_limit_reset_unix {
+                        Some(t) => format!(" (resets at unix={t})"),
+                        None => String::new(),
                     };
+                    let key_hint = if api_key.is_some() {
+                        ""
+                    } else {
+                        ". Configure a GitHub API key in Settings → GitHub API key for 5 000 req/h."
+                    };
+                    let msg = format!("GitHub API rate limit exceeded{reset_hint}{key_hint}");
+                    tracing::warn!("Thumbnail update aborted: {msg}");
+                    state.update_activity(|act| {
+                        if let Activity::ThumbnailUpdate { progress, .. } = act {
+                            progress.phase = ThumbnailPhase::Failed;
+                            progress.error = Some(msg);
+                            progress.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    });
+                    return;
+                }
+                if stats.total_entries == 0 && !stats.errors.is_empty() {
+                    let msg = format!(
+                        "All repos failed to index ({} errors). First: {}",
+                        stats.errors.len(),
+                        stats
+                            .errors
+                            .first()
+                            .map(|s| s.as_str())
+                            .unwrap_or("unknown"),
+                    );
                     state.update_activity(|act| {
                         if let Activity::ThumbnailUpdate { progress, .. } = act {
                             progress.phase = ThumbnailPhase::Failed;
@@ -368,6 +381,15 @@ impl ThumbnailPipeline {
         if !cancelled {
             state.spawn_cache_enrichment();
         }
+
+        tracing::info!(
+            "Thumbnail update done: {} downloaded, {} failed across {} systems in {:.1}s{}",
+            total_downloaded,
+            total_failed,
+            total_systems,
+            start.elapsed().as_secs_f64(),
+            if cancelled { " (cancelled)" } else { "" }
+        );
 
         // Set final progress (terminal state).
         state.update_activity(|act| {
