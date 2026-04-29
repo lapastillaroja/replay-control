@@ -298,7 +298,7 @@ impl AppState {
         // Load all user preferences from settings.cfg once at startup.
         let prefs = replay_control_core_server::settings::UserPreferences::load(&settings);
 
-        Ok(Self {
+        let state = Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
@@ -315,7 +315,18 @@ impl AppState {
             activity,
             config_tx,
             activity_tx,
-        })
+        };
+
+        // Surface custom-skin fallback in the log; without this it's invisible
+        // that the user's configured palette isn't being honoured.
+        let effective_skin = state.effective_skin();
+        if replay_control_core::skins::is_custom(effective_skin) {
+            tracing::info!(
+                "system_skin={effective_skin} is a ReplayOS custom user skin; rendering with default palette until PNG-based color extraction is added"
+            );
+        }
+
+        Ok(state)
     }
 
     /// Check whether storage is available.
