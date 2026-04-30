@@ -47,13 +47,21 @@ from conftest import PI_URL
 # Real routes from `replay-control-app/src/lib.rs`. /system/<x> is NOT a
 # valid route — it falls through to the router fallback.
 #
-# Marker text is the literal in the SSR HTML. Don't use ALL-CAPS strings
-# from the rendered visual — those come from CSS `text-transform: uppercase`
-# and never appear in source.
+# Marker text is the literal in the SSR HTML. Two requirements:
+#   1. Don't use ALL-CAPS strings from the rendered visual — those come
+#      from CSS `text-transform: uppercase` and never appear in source.
+#   2. Pick markers that render whether or not the test fixture has games
+#      in the system. The CI e2e container ships an empty roms_dir, so
+#      filter UI like "Hide Hacks" / "All Genres" is omitted (those only
+#      render when the system has games). The system display name and the
+#      `rom-count` element render regardless.
 MAIN_ROUTES = [
     ("/", ["Replay Control", "Last Played"]),
-    ("/games/nintendo_snes", ["Hide Hacks", "All Genres"]),
-    ("/games/sega_smd", ["Hide Hacks", "All Genres"]),
+    # rom-count is the literal CSS class on the count <p>; it's emitted
+    # whether the system has games or not. Anchors that we're not on the
+    # 404 fallback (which lacks any of this UI).
+    ("/games/nintendo_snes", ["rom-count", "Super Nintendo"]),
+    ("/games/sega_smd", ["rom-count", "Sega Mega Drive"]),
     ("/favorites", ["Replay Control"]),
     ("/search?q=mario", ["Replay Control"]),
     ("/settings", ["Replay Control"]),
