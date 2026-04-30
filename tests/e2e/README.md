@@ -1,6 +1,14 @@
 # End-to-End Tests
 
-Browser-based tests for the auto-update UI using Playwright.
+Browser-based tests using Playwright. Two flavours of test live here:
+
+1. **Auto-update UI tests** (`test_update_check.py`, `test_update_install.py`).
+2. **Page health + responsiveness tests** (`test_page_health.py`,
+   `test_response_cache.py`, `test_corruption_banner.py`). These guard
+   the user-facing behaviours the pool-design / cancellation-orphan work
+   was supposed to fix; they catch regressions in route definitions,
+   navigation latency, force-refresh resilience, and response-cache
+   warmth.
 
 ## Prerequisites
 
@@ -51,6 +59,34 @@ is `v0.1.0-beta.4`, a prerelease).
 - /updating shows restarting + auto-reloads
 - Direct navigation to /updating without update redirects
 - Temp files cleaned after update
+
+### `test_page_health.py` — Safe, read-only
+
+Catches regressions surfaced during the 2026-04-29 pool-design work:
+
+- `TestRoutesRenderRealContent` — every main route renders real content,
+  not the Leptos router fallback ("Page not found"). Anchors the lesson
+  that `/system/<x>` is **not** a real route (it's `/games/<x>`); the
+  earlier integration suite's status-only check missed this for a year.
+- `TestSpaNavigationIsResponsive` — clicks through the bottom-nav and
+  asserts each transition makes new content visible within a budget
+  (1.5 s cold, 800 ms warm). The first user-facing complaint that
+  drove the pool-design work lives here.
+- `TestForceRefreshDoesNotHang` — rapid double force-reload on each
+  main page, asserting the second reload completes within 3 s. The
+  original cancellation-orphan bug surfaced as a multi-second hang
+  exactly here.
+- `TestServerFnsRegistered` — POST-smoke each server fn we added
+  (notably `GetMetadataPageSnapshot`) so a missing `register_explicit`
+  in `main.rs` flips a 200/400/405 to 404 and trips the test.
+
+### `test_response_cache.py` — Safe, read-only
+
+Anchors `RESPONSE_TTL` >= ~30 s. Loads a page, waits 12 s (slightly
+longer than the *old* 10 s TTL), reloads, and asserts the post-pause
+hit is in the same ballpark as the warm hit. If the TTL is reverted
+to 10 s this test fails immediately. Includes a baseline
+absolute-warm-time check (`/favorites` warm < 200 ms on Pi 4).
 
 ### `test_corruption_banner.py` — Triggers service restart + DB corruption
 Covers the live client wire that the Rust integration suite can't reach:

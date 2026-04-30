@@ -160,14 +160,20 @@ echo "--- Home page ---"
 assert_status "Home page returns 200" "$BASE/" "200"
 assert_contains "Home page has app title" "$BASE/" "Replay Control"
 
-# 2. System pages
+# 2. System (games) pages — the route is /games/<system>, NOT /system/<system>.
+# /system/* falls through to the leptos route fallback ("Page not found")
+# and still returns HTTP 200; that's why an earlier `assert_status … 200`
+# style here was passing while the actual page was broken. We anchor the
+# real route by checking content (the system display name + filter UI),
+# not just status.
 echo ""
-echo "--- System pages ---"
-assert_status "SNES system page returns 200" "$BASE/system/nintendo_snes" "200"
-assert_status "Genesis system page returns 200" "$BASE/system/sega_smd" "200"
-assert_status "Arcade system page returns 200" "$BASE/system/arcade_fbneo" "200"
-assert_status "N64 system page returns 200" "$BASE/system/nintendo_n64" "200"
-assert_contains "SNES page shows games" "$BASE/system/nintendo_snes" "<"
+echo "--- Games pages ---"
+assert_status     "SNES games page returns 200"   "$BASE/games/nintendo_snes" "200"
+assert_status     "Genesis games page returns 200" "$BASE/games/sega_smd"     "200"
+assert_status     "Arcade games page returns 200" "$BASE/games/arcade_fbneo" "200"
+assert_status     "N64 games page returns 200"    "$BASE/games/nintendo_n64" "200"
+assert_contains   "Games page is not the 404 fallback" "$BASE/games/nintendo_snes" "Hide Hacks"
+assert_contains   "Games page mentions filter UI" "$BASE/games/nintendo_snes" "All Genres"
 
 # 3. Search
 echo ""
@@ -199,7 +205,24 @@ echo "  cold=${COLD}s warm=${WARM}s (informational)"
 # 6. Non-existent routes
 echo ""
 echo "--- Error handling ---"
-assert_status "Unknown system returns 404" "$BASE/system/nonexistent_xyz" "404"
+# Leptos returns 200 for any URL but renders a "Page not found" body for
+# unknown routes. Anchor the negative case via content, not status.
+assert_contains "Unknown route renders fallback" "$BASE/games/nonexistent_xyz" "Page not found"
+
+# 7. New server fns from the pool-design work — make sure they're
+# registered and reachable. These are POST endpoints (server fn calls).
+echo ""
+echo "--- Server fns wired ---"
+GMS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
+    "$BASE/sfn/GetMetadataPageSnapshot" -d '{}' 2>/dev/null || echo "000")
+if [[ "$GMS_STATUS" =~ ^(200|400|405)$ ]]; then
+    # 200 = success; 400 = bad request body (still wired); 405 = method allowed list (still wired).
+    echo "  PASS: GetMetadataPageSnapshot is registered (HTTP $GMS_STATUS)"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: GetMetadataPageSnapshot not reachable (HTTP $GMS_STATUS)"
+    FAIL=$((FAIL + 1))
+fi
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
