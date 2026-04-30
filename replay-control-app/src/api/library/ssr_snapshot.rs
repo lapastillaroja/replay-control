@@ -102,10 +102,7 @@ impl<T: Clone + Default> SsrSnapshot<T> {
                 *guard = Some(fresh.clone());
                 fresh
             }
-            None => match guard.clone() {
-                Some(stale) => stale,
-                None => T::default(),
-            },
+            None => guard.clone().unwrap_or_default(),
         }
     }
 
