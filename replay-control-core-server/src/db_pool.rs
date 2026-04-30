@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use deadpool::managed::{self, Metrics, RecycleError};
 use deadpool_sync::SyncWrapper;
@@ -60,9 +60,20 @@ impl managed::Manager for SqliteManager {
             })?;
 
             // Per-role PRAGMAs (on top of the base PRAGMAs from open_connection):
-            // Reduce page cache from default 2000 pages (8MB) to 500 (2MB).
-            // With 4 connections per pool this saves ~24MB of RSS.
-            conn.execute_batch("PRAGMA cache_size = 500;")?;
+            // Read connections: 1000 pages (~4 MB). Big enough that the
+            // recommendations / system_coverage_stats / metadata snapshot
+            // queries can hold their working set in cache without paging
+            // hot indexes back from disk between calls.
+            // Write connection: 500 pages (~2 MB) — its working set is
+            // dominated by per-batch dirty pages and rolled into the WAL.
+            // 1×4 + 1×4 + 1×2 = 10 MB per DbPool, ~20 MB across both
+            // mutable DBs. Plenty of headroom on Pi 4 / Pi 5.
+            // See Tier 5 of `2026-04-29-pool-design-findings.md`.
+            if is_write {
+                conn.execute_batch("PRAGMA cache_size = 500;")?;
+            } else {
+                conn.execute_batch("PRAGMA cache_size = 1000;")?;
+            }
             if is_write && is_wal {
                 // Disable automatic WAL checkpoints so we can checkpoint
                 // manually after heavy writes (import, thumbnail rebuild).
@@ -178,6 +189,60 @@ pub struct DbPool {
     /// Lets the host crate broadcast a status event without each call site
     /// needing to remember to do so. Idempotent flag writes do not re-fire.
     on_corruption_change: CorruptionCallback,
+    /// Lifetime counters per pool. Cheap (atomic adds) and surfaced via
+    /// `metrics()` for the next "is the DB pool starved?" investigation.
+    /// See Tier 5 of `2026-04-29-pool-design-findings.md`.
+    metrics: Arc<PoolMetrics>,
+}
+
+/// Per-`DbPool` lifetime counters. All fields are monotonically increasing
+/// `AtomicU64` so reading is a single atomic load — no synchronisation cost
+/// in the steady state.
+#[derive(Debug, Default)]
+pub struct PoolMetrics {
+    pub reads_started: AtomicU64,
+    pub reads_completed: AtomicU64,
+    pub reads_returned_none: AtomicU64,
+    pub reads_timed_out: AtomicU64,
+    pub reads_bg_started: AtomicU64,
+    pub reads_bg_completed: AtomicU64,
+    pub writes_started: AtomicU64,
+    pub writes_completed: AtomicU64,
+    pub writes_timed_out: AtomicU64,
+    pub gate_blocked_reads: AtomicU64,
+}
+
+/// Snapshot of `PoolMetrics`. Plain `u64`s, easy to serialize for a future
+/// `/debug/pool` endpoint.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
+pub struct PoolMetricsSnapshot {
+    pub reads_started: u64,
+    pub reads_completed: u64,
+    pub reads_returned_none: u64,
+    pub reads_timed_out: u64,
+    pub reads_bg_started: u64,
+    pub reads_bg_completed: u64,
+    pub writes_started: u64,
+    pub writes_completed: u64,
+    pub writes_timed_out: u64,
+    pub gate_blocked_reads: u64,
+}
+
+impl PoolMetrics {
+    fn snapshot(&self) -> PoolMetricsSnapshot {
+        PoolMetricsSnapshot {
+            reads_started: self.reads_started.load(Ordering::Relaxed),
+            reads_completed: self.reads_completed.load(Ordering::Relaxed),
+            reads_returned_none: self.reads_returned_none.load(Ordering::Relaxed),
+            reads_timed_out: self.reads_timed_out.load(Ordering::Relaxed),
+            reads_bg_started: self.reads_bg_started.load(Ordering::Relaxed),
+            reads_bg_completed: self.reads_bg_completed.load(Ordering::Relaxed),
+            writes_started: self.writes_started.load(Ordering::Relaxed),
+            writes_completed: self.writes_completed.load(Ordering::Relaxed),
+            writes_timed_out: self.writes_timed_out.load(Ordering::Relaxed),
+            gate_blocked_reads: self.gate_blocked_reads.load(Ordering::Relaxed),
+        }
+    }
 }
 
 /// Number of read connections per pool. Load tests on USB storage (DELETE journal
@@ -311,6 +376,7 @@ impl DbPool {
             corrupt: Arc::new(AtomicBool::new(false)),
             write_gate: Arc::new(AtomicBool::new(false)),
             on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
+            metrics: Arc::new(PoolMetrics::default()),
         })
     }
 
@@ -327,6 +393,7 @@ impl DbPool {
             corrupt: Arc::new(AtomicBool::new(false)),
             write_gate: Arc::new(AtomicBool::new(false)),
             on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
+            metrics: Arc::new(PoolMetrics::default()),
         }
     }
 
@@ -354,7 +421,14 @@ impl DbPool {
             corrupt: Arc::new(AtomicBool::new(true)),
             write_gate: Arc::new(AtomicBool::new(false)),
             on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
+            metrics: Arc::new(PoolMetrics::default()),
         }
+    }
+
+    /// Snapshot the lifetime counters. Cheap atomic loads — fine to call
+    /// from a debug HTTP endpoint or test.
+    pub fn metrics(&self) -> PoolMetricsSnapshot {
+        self.metrics.snapshot()
     }
 
     /// Run a read-only closure with a database connection from the read pool.
@@ -373,12 +447,27 @@ impl DbPool {
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        self.metrics.reads_started.fetch_add(1, Ordering::Relaxed);
         // Write gate: heavy writes in progress, return None to prevent
         // concurrent reads that corrupt the DB on exFAT (DELETE journal mode).
         if self.write_gate.load(Ordering::Acquire) {
+            self.metrics
+                .gate_blocked_reads
+                .fetch_add(1, Ordering::Relaxed);
+            self.metrics
+                .reads_returned_none
+                .fetch_add(1, Ordering::Relaxed);
             return None;
         }
-        self.run_read(&self.read_pool, "read", f).await
+        let result = self.run_read(&self.read_pool, "read", f).await;
+        match &result {
+            Some(_) => self.metrics.reads_completed.fetch_add(1, Ordering::Relaxed),
+            None => self
+                .metrics
+                .reads_returned_none
+                .fetch_add(1, Ordering::Relaxed),
+        };
+        result
     }
 
     /// Run a read-only closure on the **background** pool slot.
@@ -393,10 +482,22 @@ impl DbPool {
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        self.metrics
+            .reads_bg_started
+            .fetch_add(1, Ordering::Relaxed);
         if self.write_gate.load(Ordering::Acquire) {
+            self.metrics
+                .gate_blocked_reads
+                .fetch_add(1, Ordering::Relaxed);
             return None;
         }
-        self.run_read(&self.read_bg_pool, "read_bg", f).await
+        let result = self.run_read(&self.read_bg_pool, "read_bg", f).await;
+        if result.is_some() {
+            self.metrics
+                .reads_bg_completed
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        result
     }
 
     async fn run_read<F, R>(
@@ -430,6 +531,7 @@ impl DbPool {
                      blocking pool — connection mutex pinned until it completes",
                     INTERACT_TIMEOUT
                 );
+                self.metrics.reads_timed_out.fetch_add(1, Ordering::Relaxed);
                 None
             }
         }
@@ -449,6 +551,7 @@ impl DbPool {
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        self.metrics.writes_started.fetch_add(1, Ordering::Relaxed);
         let _gate = WriteGate::activate(&self.write_gate);
         let pool = self.write_pool.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
@@ -460,7 +563,12 @@ impl DbPool {
             result
         });
         match tokio::time::timeout(INTERACT_TIMEOUT, interact).await {
-            Ok(Ok(value)) => Some(value),
+            Ok(Ok(value)) => {
+                self.metrics
+                    .writes_completed
+                    .fetch_add(1, Ordering::Relaxed);
+                Some(value)
+            }
             Ok(Err(e)) => {
                 tracing::warn!("{label}: write interact failed: {e}");
                 None
@@ -471,6 +579,9 @@ impl DbPool {
                      blocking pool — connection mutex pinned until it completes",
                     INTERACT_TIMEOUT
                 );
+                self.metrics
+                    .writes_timed_out
+                    .fetch_add(1, Ordering::Relaxed);
                 None
             }
         }
@@ -801,6 +912,40 @@ mod tests {
             "hot read should not have waited for the background read; took {hot_elapsed:?}"
         );
         let _ = bg.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn metrics_track_reads_writes_and_gate_blocks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        // Baseline: a fresh pool starts at zero.
+        let m0 = pool.metrics();
+        assert_eq!(m0.reads_started, 0);
+        assert_eq!(m0.writes_started, 0);
+        assert_eq!(m0.gate_blocked_reads, 0);
+
+        pool.read(|_| 1u32).await.unwrap();
+        pool.write(|_| 1u32).await.unwrap();
+        pool.read_bg(|_| 1u32).await.unwrap();
+
+        let m1 = pool.metrics();
+        assert_eq!(m1.reads_started, 1);
+        assert_eq!(m1.reads_completed, 1);
+        assert_eq!(m1.writes_started, 1);
+        assert_eq!(m1.writes_completed, 1);
+        assert_eq!(m1.reads_bg_started, 1);
+        assert_eq!(m1.reads_bg_completed, 1);
+        assert_eq!(m1.gate_blocked_reads, 0);
+
+        // Gate-blocked read increments both gate_blocked_reads and the
+        // appropriate "returned None" counter.
+        let gate = WriteGate::activate(pool.write_gate_flag());
+        assert!(pool.read(|_| 1u32).await.is_none());
+        let m2 = pool.metrics();
+        assert_eq!(m2.gate_blocked_reads, 1);
+        assert!(m2.reads_returned_none >= 1);
+        drop(gate);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
