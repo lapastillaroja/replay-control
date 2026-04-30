@@ -3,11 +3,16 @@ use std::time::{Duration, Instant};
 
 use crate::server_fns::{GameSection, RecommendationData};
 
-/// TTL for response-level cache entries. Short on purpose: long enough to
-/// absorb back-navigation and rapid reloads, short enough that the UI still
-/// feels live when background activity (enrichment, downloads, scans) updates
-/// the underlying data without going through `invalidate_all()`.
-const RESPONSE_TTL: Duration = Duration::from_secs(10);
+/// TTL for response-level cache entries. Generous on purpose: every cache
+/// expiry forces a 200-300 ms recompute on a Pi 4 / USB storage, which the
+/// user perceives as "stale browser load" on the next navigation. Five
+/// minutes is well within the freshness window for these payloads —
+/// recommendations and favorites_recommendations are mostly random
+/// curation, and every write path that *could* invalidate them already
+/// calls `invalidate_all()` (favorites toggle, library invalidate, image
+/// clear, etc.). The TTL is the *upper bound* for staleness when no write
+/// invalidation has fired in that window.
+const RESPONSE_TTL: Duration = Duration::from_secs(300);
 
 /// Single TTL-gated slot holding at most one value.
 pub struct TtlSlot<T: Clone> {
