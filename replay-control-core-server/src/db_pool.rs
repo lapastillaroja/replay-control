@@ -145,8 +145,17 @@ type CorruptionCallback = Arc<std::sync::RwLock<Option<Box<dyn Fn() + Send + Syn
 
 #[derive(Clone)]
 pub struct DbPool {
-    /// Multiple read connections (WAL concurrent readers).
+    /// Hot-path read connection (SSR pages, server fns).
     read_pool: Arc<std::sync::RwLock<Option<SqlitePool>>>,
+    /// Background-read connection: a dedicated slot for long-running reads
+    /// (`build_image_index`, `plan_system_thumbnails`, the manifest fuzzy-
+    /// index build) so they don't park on the SSR-serving connection's
+    /// mutex while the planning loop walks tens of thousands of rows.
+    /// One connection on WAL is plenty (writers don't block readers); on
+    /// non-WAL the gate path covers correctness, and this slot still
+    /// keeps the SSR connection free for SSR fan-out.
+    /// See Tier 3 of `2026-04-29-pool-design-findings.md`.
+    read_bg_pool: Arc<std::sync::RwLock<Option<SqlitePool>>>,
     /// Single write connection (SQLite serialises writes).
     write_pool: Arc<std::sync::RwLock<Option<SqlitePool>>>,
     db_path: Arc<std::sync::RwLock<PathBuf>>,
@@ -176,6 +185,13 @@ pub struct DbPool {
 /// single-user access pattern and fast queries (<50ms) don't benefit from
 /// concurrent readers. Keeping 1 reduces memory by ~2MB per saved connection.
 const READ_POOL_SIZE: usize = 1;
+
+/// Number of read connections in the **background** pool, used for long-
+/// running reads (`build_image_index`, `plan_system_thumbnails`, manifest
+/// fuzzy-index builds). One slot is enough — these calls are sequential
+/// inside the import / thumbnail pipelines — and it keeps the SSR-serving
+/// `read_pool` free of long-held connections. ~2 MB additional RSS.
+const READ_BG_POOL_SIZE: usize = 1;
 
 /// Wall-clock cap on a single `interact()` closure. The closure runs on
 /// the blocking pool via `spawn_blocking`, which is **not cancellable** when
@@ -276,10 +292,18 @@ impl DbPool {
             &format!("{label}_read"),
             READ_POOL_SIZE,
         )?;
+        let read_bg_pool = build_pool(
+            &db_path,
+            journal_mode,
+            false,
+            &format!("{label}_read_bg"),
+            READ_BG_POOL_SIZE,
+        )?;
         let write_pool = build_pool(&db_path, journal_mode, true, &format!("{label}_write"), 1)?;
 
         Ok(Self {
             read_pool: Arc::new(std::sync::RwLock::new(Some(read_pool))),
+            read_bg_pool: Arc::new(std::sync::RwLock::new(Some(read_bg_pool))),
             write_pool: Arc::new(std::sync::RwLock::new(Some(write_pool))),
             db_path: Arc::new(std::sync::RwLock::new(db_path)),
             label,
@@ -295,6 +319,7 @@ impl DbPool {
     pub fn new_closed(label: &'static str) -> Self {
         Self {
             read_pool: Arc::new(std::sync::RwLock::new(None)),
+            read_bg_pool: Arc::new(std::sync::RwLock::new(None)),
             write_pool: Arc::new(std::sync::RwLock::new(None)),
             db_path: Arc::new(std::sync::RwLock::new(PathBuf::new())),
             label,
@@ -321,6 +346,7 @@ impl DbPool {
     ) -> Self {
         Self {
             read_pool: Arc::new(std::sync::RwLock::new(None)),
+            read_bg_pool: Arc::new(std::sync::RwLock::new(None)),
             write_pool: Arc::new(std::sync::RwLock::new(None)),
             db_path: Arc::new(std::sync::RwLock::new(db_path)),
             label,
@@ -352,15 +378,38 @@ impl DbPool {
         if self.write_gate.load(Ordering::Acquire) {
             return None;
         }
-        self.read_inner(f).await
+        self.run_read(&self.read_pool, "read", f).await
     }
 
-    async fn read_inner<F, R>(&self, f: F) -> Option<R>
+    /// Run a read-only closure on the **background** pool slot.
+    ///
+    /// Use for long-running reads (image-index build, manifest planning,
+    /// fuzzy-index build) so they don't park on the SSR-serving read
+    /// connection's mutex. Same write-gate semantics as `read()` — on
+    /// non-WAL filesystems we still refuse to overlap reads with an
+    /// in-flight writer.
+    pub async fn read_bg<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let pool = self.read_pool.read().ok()?.as_ref()?.clone();
+        if self.write_gate.load(Ordering::Acquire) {
+            return None;
+        }
+        self.run_read(&self.read_bg_pool, "read_bg", f).await
+    }
+
+    async fn run_read<F, R>(
+        &self,
+        pool_slot: &Arc<std::sync::RwLock<Option<SqlitePool>>>,
+        kind: &'static str,
+        f: F,
+    ) -> Option<R>
+    where
+        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        let pool = pool_slot.read().ok()?.as_ref()?.clone();
         let conn = pool.get().await.ok()?;
         let pool_for_corrupt = self.clone();
         let label = self.label;
@@ -372,12 +421,12 @@ impl DbPool {
         match tokio::time::timeout(INTERACT_TIMEOUT, interact).await {
             Ok(Ok(value)) => Some(value),
             Ok(Err(e)) => {
-                tracing::warn!("{label}: read interact failed: {e}");
+                tracing::warn!("{label}: {kind} interact failed: {e}");
                 None
             }
             Err(_) => {
                 tracing::error!(
-                    "{label}: read interact exceeded {:?}; closure still running on \
+                    "{label}: {kind} interact exceeded {:?}; closure still running on \
                      blocking pool — connection mutex pinned until it completes",
                     INTERACT_TIMEOUT
                 );
@@ -433,6 +482,9 @@ impl DbPool {
         if let Ok(mut guard) = self.read_pool.write() {
             *guard = None;
         }
+        if let Ok(mut guard) = self.read_bg_pool.write() {
+            *guard = None;
+        }
         if let Ok(mut guard) = self.write_pool.write() {
             *guard = None;
         }
@@ -459,6 +511,19 @@ impl DbPool {
                         return false;
                     }
                 };
+                let new_read_bg = match build_pool(
+                    &path,
+                    journal_mode,
+                    false,
+                    &format!("{}_read_bg", self.label),
+                    READ_BG_POOL_SIZE,
+                ) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::debug!("Could not rebuild {} read_bg pool: {e}", self.label);
+                        return false;
+                    }
+                };
                 let new_write = match build_pool(
                     &path,
                     journal_mode,
@@ -475,6 +540,9 @@ impl DbPool {
                 // Swap pools (old connections drain naturally when Objects are returned).
                 if let Ok(mut guard) = self.read_pool.write() {
                     *guard = Some(new_read);
+                }
+                if let Ok(mut guard) = self.read_bg_pool.write() {
+                    *guard = Some(new_read_bg);
                 }
                 if let Ok(mut guard) = self.write_pool.write() {
                     *guard = Some(new_write);
@@ -660,7 +728,94 @@ mod tests {
     async fn closed_pool_returns_none() {
         let pool = DbPool::new_closed("test_db");
         assert!(pool.read(|_| 1u32).await.is_none());
+        assert!(pool.read_bg(|_| 1u32).await.is_none());
         assert!(pool.write(|_| 1u32).await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn read_bg_pool_serves_separate_connection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        // Seed via write.
+        pool.write(|conn| conn.execute("INSERT INTO kv VALUES ('k', 'v')", []))
+            .await
+            .unwrap()
+            .unwrap();
+
+        // The hot-path read pool sees the row.
+        let v_hot: Option<String> = pool
+            .read(|conn| {
+                conn.query_row("SELECT v FROM kv WHERE k = 'k'", [], |r| r.get(0))
+                    .ok()
+            })
+            .await
+            .flatten();
+        assert_eq!(v_hot.as_deref(), Some("v"));
+
+        // The background read pool sees the same data (separate connection,
+        // same DB file).
+        let v_bg: Option<String> = pool
+            .read_bg(|conn| {
+                conn.query_row("SELECT v FROM kv WHERE k = 'k'", [], |r| r.get(0))
+                    .ok()
+            })
+            .await
+            .flatten();
+        assert_eq!(v_bg.as_deref(), Some("v"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn read_bg_runs_in_parallel_with_read() {
+        // The whole point of the background pool: a long read on read_bg
+        // must not block a concurrent SSR-style read on the hot pool.
+        // (WAL allows true concurrency; on non-WAL/DELETE the writer gate
+        // is what enforces correctness, not this pool split — but reads
+        // still don't block other reads.)
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        let pool_bg = pool.clone();
+        let bg = tokio::spawn(async move {
+            pool_bg
+                .read_bg(|conn| {
+                    // Simulate a multi-second read by sleeping inside the
+                    // closure. The hot read should still complete fast.
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    let _ = conn.query_row("SELECT 1", [], |r| r.get::<_, i64>(0));
+                })
+                .await
+        });
+
+        // Give bg a head start so it's holding its connection.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let hot_started = std::time::Instant::now();
+        let hot = pool
+            .read(|conn| conn.query_row("SELECT 1", [], |r| r.get::<_, i64>(0)).ok())
+            .await
+            .flatten();
+        let hot_elapsed = hot_started.elapsed();
+        assert_eq!(hot, Some(1));
+        assert!(
+            hot_elapsed < std::time::Duration::from_millis(200),
+            "hot read should not have waited for the background read; took {hot_elapsed:?}"
+        );
+        let _ = bg.await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn write_gate_also_blocks_read_bg() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+        // Sanity: read_bg works before gate.
+        assert_eq!(pool.read_bg(|_| 1u32).await, Some(1));
+        let gate = WriteGate::activate(pool.write_gate_flag());
+        assert!(
+            pool.read_bg(|_| 1u32).await.is_none(),
+            "background reads also gated — non-WAL correctness"
+        );
+        drop(gate);
+        assert_eq!(pool.read_bg(|_| 1u32).await, Some(1));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

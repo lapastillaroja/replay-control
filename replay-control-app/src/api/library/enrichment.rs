@@ -29,8 +29,11 @@ impl LibraryService {
         let arcade_lookup = ArcadeInfoLookup::build(&system, &rom_filenames).await;
 
         let sys = system.clone();
+        // Heavy enrichment pass (per-row matching, manifest cross-ref, image
+        // index lookups) runs on the background pool slot so it doesn't
+        // park the SSR-serving connection mutex for seconds.
         let result = db
-            .read(move |conn| {
+            .read_bg(move |conn| {
                 replay_control_core_server::enrichment::enrich_system(
                     conn,
                     &sys,
@@ -139,11 +142,13 @@ impl LibraryService {
 
         let db = &state.library_pool;
 
-        // Gather inputs: existing metadata from DB.
+        // Gather inputs: existing metadata from DB. May return thousands of
+        // rows for large libraries — runs on the background slot so SSR
+        // reads aren't queued behind it.
         let sys = system.to_string();
         let all_metadata = state
             .library_pool
-            .read(move |conn| LibraryDb::system_metadata_all(conn, &sys).ok())
+            .read_bg(move |conn| LibraryDb::system_metadata_all(conn, &sys).ok())
             .await
             .flatten()
             .unwrap_or_default();
@@ -215,11 +220,17 @@ async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageI
         .unwrap_or_default();
 
     // Build the image index using the metadata pool connection.
+    // This is a long-running read (walks every visible filename for the
+    // system, resolves matched images), so it goes on the background read
+    // slot to keep the SSR-serving connection free. See Tier 3 of
+    // `2026-04-29-pool-design-findings.md`.
     let sys = system.to_string();
     let storage_root = state.storage().root.clone();
     state
         .library_pool
-        .read(move |conn| enrichment::build_image_index(conn, &sys, &storage_root, user_overrides))
+        .read_bg(move |conn| {
+            enrichment::build_image_index(conn, &sys, &storage_root, user_overrides)
+        })
         .await
         .unwrap_or_else(|| {
             // Pool unavailable — return an empty index.

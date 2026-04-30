@@ -291,9 +291,13 @@ impl ThumbnailPipeline {
                 let storage_root_plan = storage_root.clone();
                 let system_plan = system.clone();
                 let arcade_lookup_plan = arcade_lookup.clone();
+                // Long-running read: builds an in-memory fuzzy index over
+                // every thumbnail entry for the system, then fans matches.
+                // Goes on the background pool slot so it doesn't park the
+                // SSR-serving read connection. Tier 3.
                 let plan = state
                     .library_pool
-                    .read(move |conn| {
+                    .read_bg(move |conn| {
                         thumbnail_manifest::plan_system_thumbnails(
                             conn,
                             &storage_root_plan,
