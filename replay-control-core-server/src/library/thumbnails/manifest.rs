@@ -604,8 +604,13 @@ pub struct ManifestFuzzyIndex {
     pub by_version: HashMap<String, ManifestMatch>,
     /// base_title(stem) -> ManifestMatch (tilde split + article normalization + lowercase)
     pub by_base_title: HashMap<String, ManifestMatch>,
-    /// Aggressively normalized (all punctuation stripped) -> ManifestMatch
+    /// Aggressively normalized (all punctuation stripped, spaces preserved) -> ManifestMatch
     pub by_aggressive: HashMap<String, ManifestMatch>,
+    /// Compact-aggressive normalization (punctuation AND spaces stripped) -> ManifestMatch.
+    /// Last-resort tier for the case where one side has internal whitespace
+    /// and the other doesn't, e.g. arcade catalog `"Galaga88"` vs libretro
+    /// `"Galaga '88"` — both collapse to `"galaga88"` here.
+    pub by_aggressive_compact: HashMap<String, ManifestMatch>,
 }
 
 /// Build a ManifestFuzzyIndex from the DB for the given repos and kind.
@@ -614,7 +619,9 @@ pub fn build_manifest_fuzzy_index(
     repo_display_names: &[&str],
     kind: &str,
 ) -> ManifestFuzzyIndex {
-    use replay_control_core::title_utils::{base_title, normalize_aggressive};
+    use replay_control_core::title_utils::{
+        base_title, normalize_aggressive, normalize_aggressive_compact,
+    };
     use thumbnails::{strip_tags, strip_version};
 
     let mut exact = HashMap::new();
@@ -623,6 +630,7 @@ pub fn build_manifest_fuzzy_index(
     let mut by_version = HashMap::new();
     let mut by_base_title = HashMap::new();
     let mut by_aggressive = HashMap::new();
+    let mut by_aggressive_compact = HashMap::new();
 
     for display_name in repo_display_names {
         let url_name = thumbnails::repo_url_name(display_name);
@@ -675,9 +683,17 @@ pub fn build_manifest_fuzzy_index(
                 by_base_title.entry(bt.clone()).or_insert_with(|| m.clone());
             }
 
-            // Tier 5: aggressive normalization (strip all punctuation)
+            // Tier 5: aggressive normalization (strip all punctuation, keep spaces)
             let agg = normalize_aggressive(&bt);
-            by_aggressive.entry(agg).or_insert(m);
+            by_aggressive.entry(agg).or_insert_with(|| m.clone());
+
+            // Tier 6: compact-aggressive (also strips spaces). Catches
+            // "Galaga '88" ↔ "Galaga88" where the apostrophe-as-space
+            // expansion at tier 5 leaves a space mismatch.
+            let agg_compact = normalize_aggressive_compact(&bt);
+            if !agg_compact.is_empty() {
+                by_aggressive_compact.entry(agg_compact).or_insert(m);
+            }
         }
     }
 
@@ -688,6 +704,7 @@ pub fn build_manifest_fuzzy_index(
         by_version,
         by_base_title,
         by_aggressive,
+        by_aggressive_compact,
     }
 }
 
@@ -699,7 +716,9 @@ pub fn build_manifest_fuzzy_index(
 pub fn build_manifest_fuzzy_index_from_raw(
     repo_data: &[(String, String, Vec<crate::library_db::ThumbnailIndexEntry>)],
 ) -> ManifestFuzzyIndex {
-    use replay_control_core::title_utils::{base_title, normalize_aggressive};
+    use replay_control_core::title_utils::{
+        base_title, normalize_aggressive, normalize_aggressive_compact,
+    };
     use thumbnails::{strip_tags, strip_version};
 
     let mut exact = HashMap::new();
@@ -708,6 +727,7 @@ pub fn build_manifest_fuzzy_index_from_raw(
     let mut by_version = HashMap::new();
     let mut by_base_title = HashMap::new();
     let mut by_aggressive = HashMap::new();
+    let mut by_aggressive_compact = HashMap::new();
 
     for (url_name, branch, entries) in repo_data {
         for entry in entries {
@@ -747,9 +767,16 @@ pub fn build_manifest_fuzzy_index_from_raw(
                 by_base_title.entry(bt.clone()).or_insert_with(|| m.clone());
             }
 
-            // Tier 5: aggressive normalization (strip all punctuation)
+            // Tier 5: aggressive normalization (strip all punctuation, keep spaces)
             let agg = normalize_aggressive(&bt);
-            by_aggressive.entry(agg).or_insert(m);
+            by_aggressive.entry(agg).or_insert_with(|| m.clone());
+
+            // Tier 6: compact-aggressive (also strips spaces). See doc on
+            // ManifestFuzzyIndex::by_aggressive_compact for the rationale.
+            let agg_compact = normalize_aggressive_compact(&bt);
+            if !agg_compact.is_empty() {
+                by_aggressive_compact.entry(agg_compact).or_insert(m);
+            }
         }
     }
 
@@ -760,6 +787,7 @@ pub fn build_manifest_fuzzy_index_from_raw(
         by_version,
         by_base_title,
         by_aggressive,
+        by_aggressive_compact,
     }
 }
 
@@ -898,12 +926,34 @@ pub fn find_in_manifest<'a>(
         }
     }
 
-    // Tier 8: aggressive normalization (strip all punctuation, last resort).
+    // Tier 8: aggressive normalization (strip all punctuation, keep spaces).
     let agg_key = replay_control_core::title_utils::normalize_aggressive(&base);
     if !agg_key.is_empty()
         && let Some(m) = index.by_aggressive.get(&agg_key)
     {
         return Some(m);
+    }
+
+    // Tier 9: compact-aggressive (also strips spaces). Concrete case:
+    // arcade catalog ships `display_name="Galaga88"` (no space, no
+    // apostrophe) while libretro-thumbnails ships `"Galaga '88"`
+    // (apostrophe → space at tier 8, leaves a space mismatch). Both
+    // collapse to `"galaga88"` here.
+    //
+    // **Guard**: only fire when the source's aggressive form has no
+    // internal whitespace. Without this guard, transliterated names like
+    // "Dong Gu Ri Te Chi Jak Jeon" would compact-match thumbnails like
+    // "Dongguri Techi Jakjeon" — sometimes the same game, sometimes not,
+    // and those callers go through `hash_matched_name` for a more
+    // reliable fix. The compact tier is for the catalog-stripped-name
+    // case where one side has *no spaces at all*.
+    if !agg_key.contains(' ') {
+        let agg_compact_key = replay_control_core::title_utils::normalize_aggressive_compact(&base);
+        if !agg_compact_key.is_empty()
+            && let Some(m) = index.by_aggressive_compact.get(&agg_compact_key)
+        {
+            return Some(m);
+        }
     }
 
     None
@@ -1505,6 +1555,7 @@ mod tests {
             by_version,
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
+            by_aggressive_compact: HashMap::new(),
         };
 
         // ROM "Sonic the Hedgehog 3 (USA).md" (lowercase "the") should match USA via CI-exact
@@ -1538,6 +1589,7 @@ mod tests {
             by_version,
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
+            by_aggressive_compact: HashMap::new(),
         };
 
         let result = find_in_manifest(&index, "Game (USA).md", None);
@@ -1571,6 +1623,7 @@ mod tests {
             by_version,
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
+            by_aggressive_compact: HashMap::new(),
         };
 
         // ROM stem after tag stripping matches
@@ -1654,6 +1707,7 @@ mod tests {
             by_version: HashMap::new(),
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
+            by_aggressive_compact: HashMap::new(),
         };
 
         // Simulate: ROM "anmlbskt.zip" resolves via arcade_db to
@@ -1693,6 +1747,7 @@ mod tests {
             by_version: HashMap::new(),
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
+            by_aggressive_compact: HashMap::new(),
         };
 
         // After thumbnail_filename and strip_tags, the search key would be
@@ -1725,6 +1780,7 @@ mod tests {
             by_version: HashMap::new(),
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
+            by_aggressive_compact: HashMap::new(),
         };
 
         // Source has "&" not "/", so " _ " splitting should be suppressed.
@@ -1758,6 +1814,7 @@ mod tests {
             by_version: HashMap::new(),
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
+            by_aggressive_compact: HashMap::new(),
         };
 
         let source = "Spider-Man & Venom - Maximum Carnage (USA)";
@@ -1847,6 +1904,7 @@ mod tests {
             by_version: HashMap::new(),
             by_base_title: HashMap::new(),
             by_aggressive: HashMap::new(),
+            by_aggressive_compact: HashMap::new(),
         };
 
         // Parent: MAME 2003+ display "Galaga '88 (set 1)".
@@ -1925,6 +1983,50 @@ mod tests {
             }
         }
         None
+    }
+
+    /// Regression: real-world arcade match where the catalog ships
+    /// `display_name="Galaga88"` (no apostrophe, no space — that's how
+    /// the build-time arcade DB stripped MAME's "Galaga '88 (set 1)")
+    /// while libretro-thumbnails ships `"Galaga '88.png"` (apostrophe +
+    /// space). At tier 8 (`normalize_aggressive`) the apostrophe expands
+    /// to a space, leaving `"galaga 88"` ≠ `"galaga88"`. Tier 9
+    /// (`normalize_aggressive_compact`) collapses both to `"galaga88"`.
+    /// Without this tier, the FBNeo Galaga '88 thumbnail never downloads
+    /// for any of the three galaga88 ROM variants.
+    #[test]
+    fn find_in_manifest_galaga88_no_apostrophe_catalog_matches_apostrophe_thumbnail() {
+        let entries = vec![
+            crate::library_db::ThumbnailIndexEntry {
+                filename: "Galaga '88".into(),
+                symlink_target: None,
+            },
+            crate::library_db::ThumbnailIndexEntry {
+                filename: "Galaga '88 (Japan)".into(),
+                symlink_target: None,
+            },
+        ];
+        let index = build_manifest_fuzzy_index_from_raw(&[(
+            "FBNeo_-_Arcade_Games".to_string(),
+            "master".to_string(),
+            entries,
+        )]);
+
+        // Catalog says "Galaga88" — drives the find_in_manifest source arg.
+        let m = find_in_manifest(&index, "galaga88.zip", Some("Galaga88"));
+        assert!(
+            m.is_some(),
+            "Galaga88 (catalog) must match Galaga '88 (libretro) via tier 9"
+        );
+        assert_eq!(m.unwrap().filename, "Galaga '88");
+
+        // Clones too: "Galaga88 (02-03-88)" should still find the
+        // unsuffixed Galaga '88 entry via tier-strip.
+        let m = find_in_manifest(&index, "galaga88a.zip", Some("Galaga88 (02-03-88)"));
+        assert!(m.is_some());
+
+        let m = find_in_manifest(&index, "galaga88j.zip", Some("Galaga88 (Japan)"));
+        assert!(m.is_some());
     }
 
     #[test]

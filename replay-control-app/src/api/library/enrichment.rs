@@ -241,6 +241,7 @@ async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageI
                     fuzzy: Default::default(),
                     version: Default::default(),
                     aggressive: Default::default(),
+                    aggressive_compact: Default::default(),
                 },
                 db_paths: Default::default(),
                 manifest: None,

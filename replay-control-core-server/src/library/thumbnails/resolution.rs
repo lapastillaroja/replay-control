@@ -351,10 +351,13 @@ mod tests {
         let mut fuzzy: HashMap<String, String> = HashMap::new();
         let mut version: HashMap<String, String> = HashMap::new();
         let mut aggressive: HashMap<String, String> = HashMap::new();
+        let mut aggressive_compact: HashMap<String, String> = HashMap::new();
 
         for &(stem, path) in entries {
             use crate::thumbnails::{base_title, strip_version};
-            use replay_control_core::title_utils::normalize_aggressive;
+            use replay_control_core::title_utils::{
+                normalize_aggressive, normalize_aggressive_compact,
+            };
 
             exact.insert(stem.to_string(), path.to_string());
             exact_ci
@@ -394,6 +397,17 @@ mod tests {
                     }
                 })
                 .or_insert_with(|| path.to_string());
+            let agg_compact = normalize_aggressive_compact(&bt);
+            if !agg_compact.is_empty() {
+                aggressive_compact
+                    .entry(agg_compact)
+                    .and_modify(|existing| {
+                        if path < existing.as_str() {
+                            *existing = path.to_string();
+                        }
+                    })
+                    .or_insert_with(|| path.to_string());
+            }
         }
 
         ImageIndex {
@@ -403,6 +417,7 @@ mod tests {
                 fuzzy,
                 version,
                 aggressive,
+                aggressive_compact,
             },
             db_paths: HashMap::new(),
             manifest: None,

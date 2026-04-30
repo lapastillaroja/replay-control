@@ -9,7 +9,9 @@ use std::path::Path;
 use crate::thumbnails::{
     base_title, is_valid_image_sync, strip_image_ext, strip_version, thumbnail_filename,
 };
-use replay_control_core::title_utils::{normalize_aggressive, strip_n64dd_prefix, strip_tags};
+use replay_control_core::title_utils::{
+    normalize_aggressive, normalize_aggressive_compact, strip_n64dd_prefix, strip_tags,
+};
 
 /// Directory index for matching ROM filenames to image files.
 ///
@@ -24,8 +26,13 @@ pub struct DirIndex {
     pub fuzzy: HashMap<String, String>,
     /// version-stripped base_title → relative path
     pub version: HashMap<String, String>,
-    /// Aggressively normalized (all punctuation stripped) → relative path
+    /// Aggressively normalized (all punctuation stripped, spaces preserved)
     pub aggressive: HashMap<String, String>,
+    /// Compact-aggressive normalization (punctuation AND spaces stripped).
+    /// Last-resort tier; mirrors `ManifestFuzzyIndex::by_aggressive_compact`.
+    /// Catches "Galaga '88.png" ↔ catalog "Galaga88" both collapsing to
+    /// "galaga88".
+    pub aggressive_compact: HashMap<String, String>,
 }
 
 /// Build a `DirIndex` by scanning a media subdirectory (boxart or snap).
@@ -40,6 +47,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
     let mut fuzzy = HashMap::new();
     let mut version = HashMap::new();
     let mut aggressive = HashMap::new();
+    let mut aggressive_compact = HashMap::new();
 
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -80,7 +88,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
                         })
                         .or_insert_with(|| path.clone());
                 }
-                // Aggressive: strip all punctuation for last-resort matching.
+                // Aggressive: strip all punctuation, keep spaces.
                 let agg = normalize_aggressive(&bt);
                 aggressive
                     .entry(agg)
@@ -89,7 +97,21 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
                             *existing = path.clone();
                         }
                     })
-                    .or_insert(path);
+                    .or_insert_with(|| path.clone());
+
+                // Aggressive-compact: also strips spaces. See doc on the
+                // `aggressive_compact` field.
+                let agg_compact = normalize_aggressive_compact(&bt);
+                if !agg_compact.is_empty() {
+                    aggressive_compact
+                        .entry(agg_compact)
+                        .and_modify(|existing| {
+                            if path < *existing {
+                                *existing = path.clone();
+                            }
+                        })
+                        .or_insert(path);
+                }
             }
         }
     }
@@ -100,6 +122,7 @@ pub fn build_dir_index(dir: &Path, kind: &str) -> DirIndex {
         fuzzy,
         version,
         aggressive,
+        aggressive_compact,
     }
 }
 
@@ -199,12 +222,25 @@ pub fn find_best_match(
         return Some(path.clone());
     }
 
-    // Tier 7: aggressive normalization (strip all punctuation, last resort)
+    // Tier 7: aggressive normalization (strip all punctuation, keep spaces)
     let agg = normalize_aggressive(&base);
     if !agg.is_empty()
         && let Some(path) = index.aggressive.get(&agg)
     {
         return Some(path.clone());
+    }
+
+    // Tier 8: compact-aggressive (also strips spaces). Mirror of
+    // find_in_manifest tier 9. Same guard: only fire when the source's
+    // aggressive form has no internal whitespace, to avoid over-matching
+    // transliterated names that have spaces on one side.
+    if !agg.contains(' ') {
+        let agg_compact = normalize_aggressive_compact(&base);
+        if !agg_compact.is_empty()
+            && let Some(path) = index.aggressive_compact.get(&agg_compact)
+        {
+            return Some(path.clone());
+        }
     }
 
     None
@@ -310,6 +346,7 @@ mod tests {
         let mut fuzzy = HashMap::new();
         let mut version = HashMap::new();
         let mut aggressive = HashMap::new();
+        let mut aggressive_compact = HashMap::new();
 
         for &(stem, path) in entries {
             exact.insert(stem.to_string(), path.to_string());
@@ -350,6 +387,17 @@ mod tests {
                     }
                 })
                 .or_insert_with(|| path.to_string());
+            let agg_compact = normalize_aggressive_compact(&bt);
+            if !agg_compact.is_empty() {
+                aggressive_compact
+                    .entry(agg_compact)
+                    .and_modify(|existing: &mut String| {
+                        if path < existing.as_str() {
+                            *existing = path.to_string();
+                        }
+                    })
+                    .or_insert_with(|| path.to_string());
+            }
         }
 
         DirIndex {
@@ -358,6 +406,7 @@ mod tests {
             fuzzy,
             version,
             aggressive,
+            aggressive_compact,
         }
     }
 

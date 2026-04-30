@@ -94,6 +94,33 @@ pub fn normalize_aggressive(name: &str) -> String {
         .to_lowercase()
 }
 
+/// Compact-aggressive normalization: like `normalize_aggressive` but ALSO
+/// drops spaces. Used as the final fallback when one side of a match has
+/// internal whitespace that the other doesn't.
+///
+/// Concrete case from the wild: arcade catalog ships `display_name="Galaga88"`
+/// (no space, no apostrophe — strip-all-punctuation produces `"galaga88"`)
+/// while libretro-thumbnails ships `"Galaga '88.png"` (apostrophe + space —
+/// `normalize_aggressive` produces `"galaga 88"`). The space discriminates
+/// them at the regular aggressive tier; this compact form collapses both
+/// sides to `"galaga88"`.
+///
+/// Use sparingly — false-positive risk is higher than `normalize_aggressive`
+/// because two unrelated short titles can collide once spaces are stripped.
+/// Only callers that have already exhausted every other tier should rely on
+/// it.
+pub fn normalize_aggressive_compact(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        if ch.is_alphanumeric() {
+            for c in ch.to_lowercase() {
+                out.push(c);
+            }
+        }
+    }
+    out
+}
+
 /// Roman numeral values for series key extraction.
 const ROMAN_NUMERALS: &[(&str, u32)] = &[
     ("xviii", 18),
