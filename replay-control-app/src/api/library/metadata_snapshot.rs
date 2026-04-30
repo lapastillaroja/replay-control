@@ -17,8 +17,6 @@
 //! See `investigations/2026-04-29-ssr-cache-snapshot-vs-pool-starvation.md`
 //! for the design rationale.
 
-use std::time::Instant;
-
 use replay_control_core::library_db::{
     DriverStatusCounts, LibrarySummary, MetadataStats, SystemCoverage,
 };
@@ -208,15 +206,5 @@ async fn build_builtin_stats() -> BuiltinDbStats {
         game_system_count: game_db::system_count().await,
         wikidata_series_entries: series_db::entry_count().await,
         wikidata_series_count: series_db::all_series_names().await.len(),
-    }
-}
-
-/// Wall-clock timer marker emitted to the journal when a snapshot rebuilds.
-pub(super) fn log_rebuild_elapsed(label: &'static str, started: Instant) {
-    let elapsed = started.elapsed();
-    if elapsed.as_millis() > 200 {
-        tracing::info!("{label}: rebuilt in {elapsed:?}");
-    } else {
-        tracing::debug!("{label}: rebuilt in {elapsed:?}");
     }
 }
