@@ -155,6 +155,15 @@ impl LibraryService {
     }
 
     /// Try to reconstruct SystemSummary list from SQLite game_library_meta.
+    ///
+    /// Three-state outcome (matches the `cached_systems` matcher):
+    /// - `None` → pool unavailable (closed / write-gated / SQL error). Caller
+    ///   should NOT fall through to a filesystem scan; return empty without
+    ///   caching so the next call retries.
+    /// - `Some(empty)` → DB reachable but `game_library_meta` has no rows
+    ///   yet. Caller should fall through to an L3 filesystem scan (this is
+    ///   the fresh-DB and post-clear case).
+    /// - `Some(non-empty)` → genuine cache hit; use as L1.
     async fn load_systems_from_db(
         &self,
         _storage: &StorageLocation,
@@ -166,7 +175,10 @@ impl LibraryService {
         let cached_meta = cached_meta.ok()?;
 
         if cached_meta.is_empty() {
-            return None;
+            // DB reachable but no rows yet — signal "fall through to L3" via
+            // `Some(empty)`. `None` is reserved for the pool-unavailable case
+            // above, where we don't want to trigger an expensive scan.
+            return Some(Vec::new());
         }
 
         // Build a lookup map from cached data.
@@ -448,6 +460,78 @@ impl LibraryService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression: `cached_systems` must fall through to the L3 filesystem
+    /// scan when the DB is reachable but `game_library_meta` is empty
+    /// (fresh install, post-clear, or any time before the first populate).
+    ///
+    /// The bug this guards: an earlier refactor made
+    /// `load_systems_from_db` return `None` for *both* "pool unavailable"
+    /// and "cached_meta empty". `cached_systems` then treated empty-DB
+    /// like pool-unavailable and skipped L3 — fresh installs returned an
+    /// empty systems list and the api_tests integration suite went red.
+    /// `Some(empty)` is the correct signal for "DB reachable, no rows".
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cached_systems_falls_through_to_l3_scan_on_empty_db() {
+        use replay_control_core_server::storage::{StorageKind, StorageLocation};
+        use std::path::Path;
+
+        // Build a temp storage layout that scan_systems will recognise.
+        let tmp = tempfile::tempdir().unwrap();
+        let roms = tmp.path().join("roms");
+        std::fs::create_dir_all(roms.join("nintendo_nes")).unwrap();
+        std::fs::write(roms.join("nintendo_nes/Game.nes"), b"x").unwrap();
+
+        // Empty library DB (no game_library_meta rows, no game_library rows).
+        let db_path = tmp.path().join("library.db");
+        // Minimal opener: just open with our standard pragmas + ensure the
+        // game_library_meta table exists so load_all_system_meta succeeds.
+        fn opener(
+            root: &Path,
+        ) -> replay_control_core::error::Result<(
+            replay_control_core_server::db_pool::rusqlite::Connection,
+            std::path::PathBuf,
+        )> {
+            let path = root.join("library.db");
+            let conn = replay_control_core_server::sqlite::open_connection(&path, "test_lib")
+                .map_err(|e| replay_control_core::error::Error::Other(format!("open: {e}")))?;
+            // Use the same schema bootstrap LibraryDb::open relies on, but
+            // we only need the meta table for this test.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS game_library_meta (
+                    system TEXT PRIMARY KEY,
+                    dir_mtime_secs INTEGER,
+                    scanned_at INTEGER NOT NULL,
+                    rom_count INTEGER NOT NULL,
+                    total_size_bytes INTEGER NOT NULL
+                );",
+            )
+            .map_err(|e| replay_control_core::error::Error::Other(format!("schema: {e}")))?;
+            Ok((conn, path))
+        }
+        // Trigger schema creation up front so DbPool::new sees a usable file.
+        let _ = opener(tmp.path()).unwrap();
+        let pool = super::DbPool::new(db_path, "test_lib", opener).unwrap();
+
+        let storage = StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Sd);
+        let svc = LibraryService::new();
+
+        let summaries = svc.cached_systems(&storage, &pool).await;
+        assert!(
+            summaries.iter().any(|s| s.game_count > 0),
+            "fresh DB + populated roms_dir should fall through to L3 scan and \
+             find at least one system with games — got {:?}",
+            summaries
+                .iter()
+                .map(|s| (&s.folder_name, s.game_count))
+                .collect::<Vec<_>>()
+        );
+        let nes = summaries
+            .iter()
+            .find(|s| s.folder_name == "nintendo_nes")
+            .expect("nintendo_nes should be in scan result");
+        assert_eq!(nes.game_count, 1);
+    }
 
     /// Per-batch DB locking: verify that the DB Mutex is released between
     /// batch operations, allowing other threads to access the DB.

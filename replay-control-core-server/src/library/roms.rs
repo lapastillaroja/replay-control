@@ -130,13 +130,20 @@ pub async fn scan_systems(
     })
 }
 
-/// Block until `roms_dir` is readable and contains at least one entry, or
-/// the timeout elapses. Used at startup to dodge the NFS / autofs / USB
-/// hot-plug race where the storage root resolves before child directories
-/// surface. Caller is expected to proceed even on timeout — better to scan
-/// "empty" once than to wedge boot indefinitely.
+/// Block until `roms_dir` is **readable**, or the timeout elapses. Used at
+/// startup to dodge the NFS / autofs / USB hot-plug race where the storage
+/// root resolves before `read_dir` succeeds.
 ///
-/// Returns `Ok(())` once a non-empty listing succeeds; `Err` on timeout or
+/// **Empty readable directory counts as ready.** A legitimately empty roms
+/// folder is a real state (fresh install, empty USB drive, e2e test
+/// fixture); waiting for non-zero entries would block boot for the full
+/// timeout in those cases. The race we defend against is `read_dir` itself
+/// erroring (NotFound / permission / IO) — once it succeeds, the mount has
+/// surfaced. Subdirectory visibility lag is handled separately via the
+/// `ScanError::AllSystemsMissing` signal from `scan_systems` and the
+/// SQL-level zero-overwrite guard in `save_system_meta`.
+///
+/// Returns `Ok(())` on the first successful `read_dir`; `Err` on timeout or
 /// repeated `read_dir` failures.
 pub async fn wait_for_storage_ready(
     roms_dir: &Path,
@@ -149,18 +156,15 @@ pub async fn wait_for_storage_ready(
     loop {
         let p = roms_dir.clone();
         let res =
-            tokio::task::spawn_blocking(move || -> std::result::Result<bool, std::io::Error> {
-                let mut iter = std::fs::read_dir(&p)?;
-                Ok(iter.next().is_some())
+            tokio::task::spawn_blocking(move || -> std::result::Result<(), std::io::Error> {
+                // We don't care whether the iterator yields anything; we
+                // only care that `read_dir` itself succeeds. Successful
+                // open = mount has surfaced.
+                std::fs::read_dir(&p).map(|_| ())
             })
             .await;
         match res {
-            Ok(Ok(true)) => return Ok(()),
-            Ok(Ok(false)) => {
-                // read_dir succeeded but returned empty — could be a
-                // legitimate empty roms folder or a partial mount. We can't
-                // tell, so wait a tick and try again until timeout.
-            }
+            Ok(Ok(())) => return Ok(()),
             Ok(Err(e)) => {
                 tracing::debug!("wait_for_storage_ready: read_dir failed: {e}");
             }
@@ -1575,14 +1579,17 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn wait_for_storage_ready_times_out_when_empty() {
+    async fn wait_for_storage_ready_succeeds_when_empty_but_readable() {
+        // A legitimately empty roms_dir (fresh install, empty USB) must
+        // not block the boot pipeline for the full 30s timeout. Successful
+        // read_dir is the readiness signal; subdirectory visibility lag
+        // is handled by ScanError::AllSystemsMissing and the SQL guard.
         let tmp = tempdir();
         let roms = tmp.join("roms");
         fs::create_dir_all(&roms).unwrap();
-        let err = wait_for_storage_ready(&roms, std::time::Duration::from_millis(300))
+        wait_for_storage_ready(&roms, std::time::Duration::from_millis(500))
             .await
-            .unwrap_err();
-        assert!(matches!(err, ScanError::RomsDirUnreadable(_)));
+            .expect("empty dir is ready");
     }
 
     #[tokio::test(flavor = "current_thread")]
