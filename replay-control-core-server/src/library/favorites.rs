@@ -370,7 +370,7 @@ impl CatalogLookup {
                     .iter()
                     .map(|f| replay_control_core::title_utils::filename_stem(f))
                     .collect();
-                let hits = arcade_db::lookup_arcade_games_batch(&stems).await;
+                let hits = arcade_db::lookup_arcade_games_batch(system, &stems).await;
                 for (stem, info) in hits {
                     batch.arcade.insert(((*system).to_string(), stem), info);
                 }

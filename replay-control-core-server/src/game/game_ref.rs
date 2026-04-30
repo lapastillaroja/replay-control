@@ -17,7 +17,7 @@ use replay_control_core::systems;
 /// (No-Intro filename lookup).
 pub async fn new(system: &str, rom_filename: String, rom_path: String) -> GameRef {
     let resolved_name = if systems::is_arcade_system(system) {
-        let resolved = arcade_db::arcade_display_name(&rom_filename).await;
+        let resolved = arcade_db::arcade_display_name_for_system(system, &rom_filename).await;
         if resolved != rom_filename {
             Some(resolved)
         } else {

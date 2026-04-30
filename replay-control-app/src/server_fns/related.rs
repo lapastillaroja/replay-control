@@ -565,7 +565,7 @@ async fn build_arcade_versions(
         .iter()
         .map(|f| replay_control_core::title_utils::filename_stem(f))
         .collect();
-    let mut batch = arcade_db::lookup_arcade_games_batch(&stems).await;
+    let mut batch = arcade_db::lookup_arcade_games_batch(system, &stems).await;
 
     let current_info = match batch.get(current_stem).cloned() {
         Some(info) => info,
@@ -583,7 +583,7 @@ async fn build_arcade_versions(
     // Parent may not be in the system's ROM list, so fall back to a singular lookup.
     let parent_display = if let Some(info) = batch.get(parent_name.as_str()) {
         info.display_name.clone()
-    } else if let Some(info) = arcade_db::lookup_arcade_game(&parent_name).await {
+    } else if let Some(info) = arcade_db::lookup_arcade_game(system, &parent_name).await {
         let name = info.display_name.clone();
         batch.insert(parent_name.clone(), info);
         name

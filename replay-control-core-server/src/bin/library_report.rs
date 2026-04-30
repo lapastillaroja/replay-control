@@ -117,7 +117,7 @@ async fn main() {
                 .iter()
                 .map(|r| title_utils::filename_stem(r.game.rom_filename.as_str()))
                 .collect();
-            arcade_db::lookup_arcade_games_batch(&stems).await
+            arcade_db::lookup_arcade_games_batch(system_name, &stems).await
         } else {
             Default::default()
         };

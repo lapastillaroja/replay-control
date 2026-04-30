@@ -295,7 +295,7 @@ pub(crate) async fn build_game_detail(
     // Arcade-only fields from static arcade_db lookup.
     let (rotation, parent_rom, arcade_category, arcade_display) = if is_arcade {
         let stem = replay_control_core::title_utils::filename_stem(&entry.rom_filename);
-        match arcade_db::lookup_arcade_game(stem).await {
+        match arcade_db::lookup_arcade_game(&entry.system, stem).await {
             Some(info) => {
                 let rotation = match info.rotation {
                     arcade_db::Rotation::Horizontal => "Horizontal",

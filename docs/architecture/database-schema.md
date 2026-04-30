@@ -1,11 +1,74 @@
 # Database Schema
 
-Two SQLite databases live at `<storage>/.replay-control/`:
+Three SQLite databases:
 
-- **library.db** -- rebuildable cache (game library, external metadata, thumbnail index)
-- **user_data.db** -- persistent user customizations (never auto-deleted)
+- **catalog.sqlite** -- read-only, bundled with the binary; built from upstream DATs/XMLs at compile time (No-Intro, MAME, FBNeo, Flycast, Wikidata, etc.)
+- **library.db** -- rebuildable cache at `<storage>/.replay-control/` (game library, external metadata, thumbnail index)
+- **user_data.db** -- persistent user customizations at `<storage>/.replay-control/` (never auto-deleted)
 
-Schema defined in `replay-control-core-server/src/library/db/mod.rs` and `replay-control-core-server/src/user_data/db.rs`.
+Schema defined in `tools/build-catalog/src/main.rs` (catalog), `replay-control-core-server/src/library/db/mod.rs` (library), and `replay-control-core-server/src/user_data/db.rs` (user data).
+
+## catalog.sqlite
+
+Read-only, mounted via the catalog pool (`replay-control-core-server/src/catalog_pool.rs`). Lives next to the binary on disk; auto-update swaps it atomically alongside the binary on each release.
+
+### arcade_games
+
+One row per `(rom_name, source)`. Each upstream curates ROMs in its own style — for example, MAME current ships `display_name="Galaga88"` for `rom_name="galaga88"` while FBNeo ships `"Galaga '88"`. Storing one row per source preserves each upstream's data; the runtime [merges fields by per-system priority](#per-system-arcade-merge) so each system shows its own upstream's curated values, with field-level fallback to other sources for fields the primary doesn't fill.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| rom_name | TEXT | MAME-style ROM short name (PK part 1, e.g. `"sf2"`, `"galaga88"`) |
+| source | TEXT | Upstream tag: `"fbneo"`, `"mame"`, `"mame_2k3p"`, `"naomi"` (PK part 2) |
+| display_name | TEXT | Human-readable name *as the source wrote it* |
+| year | TEXT | Release year (4-digit string or empty) |
+| manufacturer | TEXT | Hardware manufacturer / publisher |
+| players | INTEGER | Max player count (0 = unset) |
+| rotation | TEXT | `"horizontal"`, `"vertical"`, or `"unknown"` |
+| status | TEXT | Driver status: `"working"`, `"imperfect"`, `"preliminary"`, `"unknown"` |
+| is_clone | INTEGER | Whether this ROM is a clone of another |
+| is_bios | INTEGER | Whether this is a BIOS entry (filtered from playable lists) |
+| parent | TEXT | Parent ROM short name if this is a clone |
+| category | TEXT | Detail genre, e.g. `"Shooter / Gallery"` |
+| normalized_genre | TEXT | Canonicalized genre group, e.g. `"Shooter"` |
+
+**PRIMARY KEY**: `(rom_name, source)` — covers `WHERE rom_name = ?` lookups via leading-prefix scan, so no separate index is needed.
+
+**Coverage** (~15.4K distinct ROMs, ~27.3K rows): MAME current 88%, FBNeo 53%, MAME 2003+ 34%, Naomi 2%. Production catalog is ~14.8 MB.
+
+#### Per-system arcade merge
+
+`replay-control-core-server/src/game/arcade_db.rs` exposes `lookup_arcade_game(system, rom_name)` and `lookup_arcade_games_batch(system, &[rom_names])`. Both return a single merged `ArcadeGameInfo` per ROM, built from the up-to-four source rows for that ROM.
+
+The priority order per system lives in `replay_control_core::systems::arcade_source_priority`:
+
+| System | Priority order |
+|--------|----------------|
+| `arcade_fbneo` | FBNeo → MAME → MAME 2003+ |
+| `arcade_mame` | MAME → MAME 2003+ → FBNeo |
+| `arcade_mame_2k3p` | MAME 2003+ → MAME → FBNeo |
+| `arcade_dc` | Naomi → MAME → MAME 2003+ → FBNeo |
+| (any other) | empty — uses deterministic fallback |
+
+After the priority list is exhausted, the merge walks any remaining sources (`ArcadeSource::ALL`) so that a ROM present *only* in (e.g.) the Naomi catalog still resolves on `arcade_mame`.
+
+For each field the first source with a non-default value wins. Booleans (`is_clone`, `is_bios`) take the value from the first source that has the row at all, since `false` is a valid value rather than "missing". Concrete consequence for `galaga88` on `arcade_fbneo`: `display_name="Galaga '88"` from FBNeo + `rotation=vertical` from MAME (FBNeo's row has `rotation=unknown`, so the merge falls through field-by-field).
+
+### arcade_release_dates
+
+Per-source year attribution for arcade ROMs. Used by the year-precision resolver in `library_db::resolve_release_date_for_library`.
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| rom_name | TEXT | MAME-style short name |
+| year | TEXT | 4-digit year |
+| source | TEXT | Same source tags as `arcade_games.source` |
+
+One row per source per ROM (BIOS entries excluded). Aligned with the `arcade_games` row-per-source layout.
+
+### Other catalog tables
+
+The catalog also holds `canonical_games` (console games + metadata), `rom_entries` (No-Intro filename → canonical_games mapping), `rom_alternates` (alternate region/version names), `series_entries` (Wikidata series), `console_release_dates` (year attribution for console ROMs), and `db_meta` (build metadata). All written by `tools/build-catalog/src/main.rs` from raw upstream files.
 
 ## library.db
 

@@ -193,7 +193,7 @@ impl ArcadeInfoLookup {
         // Include parent stems via a second pass (follow-up batch below).
         stems.sort();
         stems.dedup();
-        let mut map = crate::arcade_db::lookup_arcade_games_batch(&stems).await;
+        let mut map = crate::arcade_db::lookup_arcade_games_batch(system, &stems).await;
         let parent_stems: Vec<String> = map
             .values()
             .filter(|info| !info.parent.is_empty() && !map.contains_key(info.parent.as_str()))
@@ -201,7 +201,7 @@ impl ArcadeInfoLookup {
             .collect();
         if !parent_stems.is_empty() {
             let parent_refs: Vec<&str> = parent_stems.iter().map(String::as_str).collect();
-            let parents = crate::arcade_db::lookup_arcade_games_batch(&parent_refs).await;
+            let parents = crate::arcade_db::lookup_arcade_games_batch(system, &parent_refs).await;
             map.extend(parents);
         }
         Self { map }
@@ -232,6 +232,9 @@ pub fn resolve_box_art_with_hash<'a>(
     } else {
         None
     };
+    // `info.display_name` is already the per-system merged value (the lookup
+    // batch was built with `system`), so each arcade system's thumbnail
+    // matching uses its upstream's curated name.
     let arcade_display: Option<&str> = arcade_info.map(|i| i.display_name.as_str());
 
     // Delegate all filesystem-based matching tiers to core image_matching.

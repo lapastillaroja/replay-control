@@ -142,24 +142,20 @@ Activated in `import.rs` and `background.rs` before batch writes, dropped after 
 
 **Files**: `replay-control-core-server/src/db_pool.rs`, `replay-control-app/src/api/import.rs`, `replay-control-app/src/api/thumbnail_pipeline.rs`, `replay-control-app/src/api/background.rs`
 
-### 10. Embedded game databases
+### 10. Bundled `catalog.sqlite`
 
-No-Intro DATs (11 systems), TheGamesDB metadata, arcade databases (FBNeo, MAME 2003+, MAME 0.285, Flycast), Wikidata series data, and genre/category INI files are compiled into the binary at build time via `build.rs` using PHF (perfect hash function) maps.
+No-Intro DATs (11 systems), TheGamesDB metadata, arcade databases (FBNeo, MAME 2003+, MAME 0.285, Flycast), Wikidata series data, and genre/category INI files are baked into a single read-only `catalog.sqlite` by `tools/build-catalog/src/main.rs` and shipped alongside the binary. Auto-update swaps the catalog atomically with the binary on each release (see [Release Updates](../features/release-updates.md)).
 
 ```rust
-// replay-control-core-server/src/game/arcade_db.rs
-include!(concat!(env!("OUT_DIR"), "/arcade_db.rs"));
-
-// replay-control-core-server/src/game/game_db.rs
-include!(concat!(env!("OUT_DIR"), "/game_db.rs"));
-
-// replay-control-core-server/src/game/series_db.rs
-include!(concat!(env!("OUT_DIR"), "/series_db.rs"));
+// replay-control-core-server/src/catalog_pool.rs
+pub async fn with_catalog<F, T>(f: F) -> Option<T> { … }
 ```
 
-This adds ~34MB to the binary but avoids runtime file I/O for metadata lookups. PHF maps provide O(1) lookups from ROM filename stem or CRC32 hash to canonical game data (title, year, genre, developer, players).
+The pool runs as read-only with `mmap_size=64 MiB` and `cache_size=8 MiB`. SQL lookups replace the older PHF (perfect hash function) maps that lived inside the binary — same O(log n) effective cost for the typical query, but a much smaller binary (~13 MiB savings) and much cheaper rebuilds when upstream DATs update.
 
-**Files**: `replay-control-core/build.rs`, `replay-control-core-server/src/game/arcade_db.rs`, `replay-control-core-server/src/game/game_db.rs`, `replay-control-core-server/src/game/series_db.rs`
+For arcade ROMs the catalog stores **one row per (rom_name, source)** in `arcade_games`, so each upstream's curated names and metadata are preserved. The runtime merges fields per system using `arcade_source_priority` — see [Database Schema → catalog.sqlite](database-schema.md#per-system-arcade-merge).
+
+**Files**: `tools/build-catalog/src/main.rs`, `replay-control-core-server/src/catalog_pool.rs`, `replay-control-core-server/src/game/arcade_db.rs`, `replay-control-core-server/src/game/game_db.rs`, `replay-control-core-server/src/game/series_db.rs`
 
 ### 11. Enrichment as background pipeline
 

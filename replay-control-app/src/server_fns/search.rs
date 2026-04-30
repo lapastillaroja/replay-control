@@ -51,7 +51,7 @@ pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
 
     let stem = replay_control_core::title_utils::filename_stem(rom_filename);
     let baked_genre = if is_arcade {
-        arcade_db::lookup_arcade_game(stem)
+        arcade_db::lookup_arcade_game(system, stem)
             .await
             .map(|info| info.normalized_genre.to_string())
             .unwrap_or_default()

@@ -52,7 +52,7 @@ pub async fn match_roms_to_metadata(
         stems.sort();
         stems.dedup();
         let refs: Vec<&str> = stems.iter().map(|s| s.as_str()).collect();
-        crate::arcade_db::lookup_arcade_games_batch(&refs).await
+        crate::arcade_db::lookup_arcade_games_batch(system, &refs).await
     } else {
         HashMap::new()
     };

@@ -988,9 +988,10 @@ mod tests {
         let stem = replay_control_core::title_utils::filename_stem(rom_filename);
         let is_arcade = replay_control_core::systems::is_arcade_system(system);
         let display_name = if is_arcade {
-            crate::arcade_db::lookup_arcade_game(stem)
+            crate::arcade_db::lookup_arcade_game(system, stem)
                 .await
                 .map(|info| info.display_name)
+                .filter(|s| !s.is_empty())
         } else {
             None
         };
@@ -1067,7 +1068,9 @@ mod tests {
         );
 
         // Colon variant: ": " → " - "
-        let info = crate::arcade_db::lookup_arcade_game("sf2").await.unwrap();
+        let info = crate::arcade_db::lookup_arcade_game("arcade_fbneo", "sf2")
+            .await
+            .unwrap();
         let dash_variant =
             thumbnail_filename(&info.display_name.replace(": ", " - ").replace(':', " -"));
         assert!(

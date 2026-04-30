@@ -1201,10 +1201,13 @@ async fn materialize_rom_entries(system: &System, raw: Vec<RawRom>) -> Vec<RomEn
             .iter()
             .map(|r| replay_control_core::title_utils::filename_stem(&r.rom_filename))
             .collect();
-        let mut batch = arcade_db::lookup_arcade_games_batch(&stems).await;
+        let mut batch = arcade_db::lookup_arcade_games_batch(system.folder_name, &stems).await;
         for r in raw {
             let stem = replay_control_core::title_utils::filename_stem(&r.rom_filename);
-            let resolved = batch.remove(stem).map(|info| info.display_name);
+            let resolved = batch
+                .remove(stem)
+                .map(|info| info.display_name)
+                .filter(|s| !s.is_empty());
             let game =
                 GameRef::from_parts(system.folder_name, r.rom_filename, r.rom_path, resolved);
             out.push(RomEntry {

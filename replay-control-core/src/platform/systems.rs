@@ -580,6 +580,76 @@ pub fn is_arcade_system(folder_name: &str) -> bool {
     find_system(folder_name).is_some_and(|s| s.category == SystemCategory::Arcade)
 }
 
+/// Which upstream curates a given arcade ROM's metadata.
+///
+/// Each upstream (FBNeo DAT, MAME 2003+ XML, MAME current XML, Flycast CSV)
+/// has its own row per ROM in `arcade_games`. The runtime merges these by
+/// per-system priority — see [`arcade_source_priority`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(usize)]
+pub enum ArcadeSource {
+    Fbneo = 0,
+    Mame = 1,
+    Mame2k3p = 2,
+    Naomi = 3,
+}
+
+impl ArcadeSource {
+    /// All variants, in deterministic order. Used as the runtime fallback
+    /// after a system's priority list is exhausted.
+    pub const ALL: [ArcadeSource; 4] = [
+        ArcadeSource::Mame,
+        ArcadeSource::Mame2k3p,
+        ArcadeSource::Fbneo,
+        ArcadeSource::Naomi,
+    ];
+
+    /// String tag stored in `arcade_games.source` and `arcade_release_dates.source`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ArcadeSource::Fbneo => "fbneo",
+            ArcadeSource::Mame => "mame",
+            ArcadeSource::Mame2k3p => "mame_2k3p",
+            ArcadeSource::Naomi => "naomi",
+        }
+    }
+
+    /// Inverse of `as_str`. Returns `None` for unknown tags.
+    pub fn from_tag(tag: &str) -> Option<Self> {
+        match tag {
+            "fbneo" => Some(ArcadeSource::Fbneo),
+            "mame" => Some(ArcadeSource::Mame),
+            "mame_2k3p" => Some(ArcadeSource::Mame2k3p),
+            "naomi" => Some(ArcadeSource::Naomi),
+            _ => None,
+        }
+    }
+
+    /// 0-based index, matching the position in [`ArcadeSource::ALL`] when used
+    /// to index into a fixed-size `[Option<T>; 4]` keyed by source.
+    pub const fn idx(self) -> usize {
+        self as usize
+    }
+}
+
+/// Ordered upstream priority for an arcade system. Highest-priority first;
+/// later entries are field-by-field fallbacks during merge.
+///
+/// Mirrors the per-system fallback shape used by `thumbnail_repo_names` in
+/// `replay_control_core_server::thumbnails`.
+///
+/// Returns an empty slice for non-arcade systems.
+pub fn arcade_source_priority(folder_name: &str) -> &'static [ArcadeSource] {
+    use ArcadeSource::*;
+    match folder_name {
+        "arcade_fbneo" => &[Fbneo, Mame, Mame2k3p],
+        "arcade_mame" => &[Mame, Mame2k3p, Fbneo],
+        "arcade_mame_2k3p" => &[Mame2k3p, Mame, Fbneo],
+        "arcade_dc" => &[Naomi, Mame, Mame2k3p, Fbneo],
+        _ => &[],
+    }
+}
+
 /// Extract the system folder name from a favorite/recent filename.
 /// E.g., "sega_smd@Sonic.md.fav" → "sega_smd"
 pub fn system_from_fav_filename(filename: &str) -> Option<&str> {

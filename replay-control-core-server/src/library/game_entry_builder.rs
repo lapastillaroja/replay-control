@@ -193,7 +193,7 @@ async fn prefetch_catalog(
             .map(|r| title_utils::filename_stem(&r.game.rom_filename).to_string())
             .collect();
         let refs: Vec<&str> = stems.iter().map(|s| s.as_str()).collect();
-        let arcade = arcade_db::lookup_arcade_games_batch(&refs).await;
+        let arcade = arcade_db::lookup_arcade_games_batch(system, &refs).await;
         CatalogLookup {
             arcade,
             ..Default::default()

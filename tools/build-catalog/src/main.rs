@@ -48,8 +48,17 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
 
+        -- One row per (rom_name, source). Each upstream (FBNeo DAT, MAME 2003+,
+        -- MAME current, Flycast CSV) writes its rows independently. The runtime
+        -- looks up by rom_name (returns up to N rows) and merges fields by
+        -- per-system priority, so a system can prefer its own upstream's
+        -- curated name/manufacturer/etc. and fall back to others field-by-field.
+        --
+        -- The PK index `(rom_name, source)` covers `WHERE rom_name = ?` via
+        -- leading-column prefix scan, so no separate index is needed.
         CREATE TABLE arcade_games (
-            rom_name TEXT PRIMARY KEY,
+            rom_name TEXT NOT NULL,
+            source TEXT NOT NULL,
             display_name TEXT NOT NULL DEFAULT '',
             year TEXT NOT NULL DEFAULT '',
             manufacturer TEXT NOT NULL DEFAULT '',
@@ -60,7 +69,8 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             is_bios INTEGER NOT NULL DEFAULT 0,
             parent TEXT NOT NULL DEFAULT '',
             category TEXT NOT NULL DEFAULT '',
-            normalized_genre TEXT NOT NULL DEFAULT ''
+            normalized_genre TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (rom_name, source)
         );
 
         CREATE TABLE canonical_games (
@@ -696,164 +706,65 @@ fn normalize_arcade_genre(category: &str) -> &'static str {
 
 fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Result<()> {
     let arcade_dir = sources_dir.join("arcade");
-    let mut entries_map: HashMap<String, ArcadeEntry> = HashMap::new();
-    let mut entry_source: HashMap<String, &'static str> = HashMap::new();
-    let mut flycast_rom_names: HashSet<String> = HashSet::new();
 
-    // 1. Flycast CSV
+    // Per-source row buckets. Each loader fills its own bucket; rows are
+    // written directly to arcade_games with the source tag — no merge.
+    // Categorisation overlays (catver, nplayers) apply to the *runtime
+    // merged* result, so they're applied across all buckets indiscriminately
+    // (the merge picks per-system priority so a category from one bucket
+    // can fall back to another).
+    let mut buckets: Vec<(&'static str, Vec<ArcadeEntry>)> = Vec::new();
+
     let flycast_path = arcade_dir.join("flycast_games.csv");
     if flycast_path.exists() {
-        let flycast_entries = parse_csv(&flycast_path);
-        eprintln!(
-            "Arcade DB: Flycast CSV loaded {} entries",
-            flycast_entries.len()
-        );
-        for entry in flycast_entries {
-            flycast_rom_names.insert(entry.rom_name.clone());
-            entry_source.insert(entry.rom_name.clone(), "naomi");
-            entries_map.insert(entry.rom_name.clone(), entry);
-        }
+        let entries = parse_csv(&flycast_path);
+        eprintln!("Arcade DB: Flycast CSV loaded {} entries", entries.len());
+        buckets.push(("naomi", entries));
     }
 
-    // 2. FBNeo DAT
     let fbneo_path = sources_dir.join("fbneo-arcade.dat");
     if fbneo_path.exists() {
-        let fbneo_entries = parse_fbneo_dat(&fbneo_path);
-        eprintln!(
-            "Arcade DB: FBNeo DAT loaded {} entries",
-            fbneo_entries.len()
-        );
-        for entry in fbneo_entries {
-            let rom_name = entry.rom_name.clone();
-            if let std::collections::hash_map::Entry::Vacant(v) =
-                entries_map.entry(rom_name.clone())
-            {
-                v.insert(entry);
-                entry_source.insert(rom_name, "fbneo");
-            }
-        }
+        let entries = parse_fbneo_dat(&fbneo_path);
+        eprintln!("Arcade DB: FBNeo DAT loaded {} entries", entries.len());
+        buckets.push(("fbneo", entries));
     }
 
-    // 3. MAME 2003+
-    let mame_path = sources_dir.join("mame2003plus.xml");
-    if mame_path.exists() {
-        let mame_entries = parse_mame2003plus_xml(&mame_path);
-        eprintln!(
-            "Arcade DB: MAME 2003+ loaded {} entries",
-            mame_entries.len()
-        );
-        for entry in mame_entries {
-            let rom_name = entry.rom_name.clone();
-            match entries_map.entry(rom_name.clone()) {
-                std::collections::hash_map::Entry::Occupied(mut occ) => {
-                    let existing = occ.get();
-                    if existing.players == 0
-                        && existing.rotation == "unknown"
-                        && existing.status == "unknown"
-                    {
-                        occ.insert(entry);
-                        entry_source.insert(rom_name, "mame");
-                    }
-                }
-                std::collections::hash_map::Entry::Vacant(v) => {
-                    v.insert(entry);
-                    entry_source.insert(rom_name, "mame");
-                }
-            }
-        }
+    let mame_2k3p_path = sources_dir.join("mame2003plus.xml");
+    if mame_2k3p_path.exists() {
+        let entries = parse_mame2003plus_xml(&mame_2k3p_path);
+        eprintln!("Arcade DB: MAME 2003+ loaded {} entries", entries.len());
+        buckets.push(("mame_2k3p", entries));
     }
 
-    // 4. MAME current
     let mame_current_path = sources_dir.join("mame0285-arcade.xml");
     if mame_current_path.exists() {
-        let mame_current_entries = parse_mame_current_xml(&mame_current_path);
-        eprintln!(
-            "Arcade DB: MAME current loaded {} entries",
-            mame_current_entries.len()
-        );
-        let mut new_count = 0u32;
-        let mut override_count = 0u32;
-        for entry in mame_current_entries {
-            let rom_name = entry.rom_name.clone();
-            match entries_map.entry(rom_name.clone()) {
-                std::collections::hash_map::Entry::Occupied(mut occ) => {
-                    if !flycast_rom_names.contains(&rom_name) {
-                        occ.insert(entry);
-                        entry_source.insert(rom_name, "mame");
-                        override_count += 1;
-                    }
-                }
-                std::collections::hash_map::Entry::Vacant(v) => {
-                    v.insert(entry);
-                    entry_source.insert(rom_name, "mame");
-                    new_count += 1;
-                }
+        let entries = parse_mame_current_xml(&mame_current_path);
+        eprintln!("Arcade DB: MAME current loaded {} entries", entries.len());
+        buckets.push(("mame", entries));
+    }
+
+    // Apply category overlays to every bucket — catver.ini lacks source-
+    // attribution, so a category found in either ini fills any row whose
+    // category is empty. Same for nplayers.
+    let catver: HashMap<String, String> = {
+        let mut m: HashMap<String, String> = HashMap::new();
+        for ini in ["catver.ini", "catver-mame-current.ini"] {
+            let path = sources_dir.join(ini);
+            if path.exists() {
+                m.extend(parse_catver_ini(&path));
             }
         }
-        eprintln!(
-            "Arcade DB: MAME current added {} new, overrode {} existing",
-            new_count, override_count
-        );
-    }
-
-    // 5. catver.ini overlays
-    let catver_path = sources_dir.join("catver.ini");
-    if catver_path.exists() {
-        let categories = parse_catver_ini(&catver_path);
-        let mut applied = 0u32;
-        for (rom_name, category) in &categories {
-            if let Some(entry) = entries_map.get_mut(rom_name)
-                && entry.category.is_empty()
-            {
-                entry.category = category.clone();
-                applied += 1;
-            }
+        m
+    };
+    let nplayers: HashMap<String, u8> = {
+        let path = sources_dir.join("nplayers.ini");
+        if path.exists() {
+            parse_nplayers_ini(&path)
+        } else {
+            HashMap::new()
         }
-        eprintln!("Arcade DB: Applied {} catver.ini overlays", applied);
-    }
+    };
 
-    let catver_current_path = sources_dir.join("catver-mame-current.ini");
-    if catver_current_path.exists() {
-        let categories = parse_catver_ini(&catver_current_path);
-        let mut applied = 0u32;
-        for (rom_name, category) in &categories {
-            if let Some(entry) = entries_map.get_mut(rom_name)
-                && entry.category.is_empty()
-            {
-                entry.category = category.clone();
-                applied += 1;
-            }
-        }
-        eprintln!(
-            "Arcade DB: Applied {} catver-mame-current.ini overlays",
-            applied
-        );
-    }
-
-    // 6. nplayers.ini overlay
-    let nplayers_path = sources_dir.join("nplayers.ini");
-    if nplayers_path.exists() {
-        let nplayers = parse_nplayers_ini(&nplayers_path);
-        let mut applied = 0u32;
-        for (rom_name, players) in &nplayers {
-            if let Some(entry) = entries_map.get_mut(rom_name)
-                && entry.players == 0
-            {
-                entry.players = *players;
-                applied += 1;
-            }
-        }
-        eprintln!("Arcade DB: Applied {} nplayers.ini overlays", applied);
-    }
-
-    // 7. Mark BIOS by category
-    for entry in entries_map.values_mut() {
-        if entry.category.starts_with("System / BIOS") {
-            entry.is_bios = true;
-        }
-    }
-
-    // 8. Filter non-game machines
     let non_game_prefixes = [
         "Electromechanical",
         "Slot Machine",
@@ -866,70 +777,85 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
         "Utilities",
         "System",
     ];
-    let total_before = entries_map.len();
-    entries_map.retain(|_, entry| {
-        if entry.is_bios {
-            return true;
-        }
-        if entry.category.is_empty() {
-            return true;
-        }
-        !non_game_prefixes
-            .iter()
-            .any(|p| entry.category.starts_with(p))
-    });
-    eprintln!(
-        "Arcade DB: Filtered {} non-game machines",
-        total_before - entries_map.len()
-    );
 
-    let mut entries: Vec<ArcadeEntry> = entries_map.into_values().collect();
-    entries.sort_by(|a, b| a.rom_name.cmp(&b.rom_name));
+    let mut total_inserted = 0u32;
+    let mut total_filtered = 0u32;
+    let mut total_bios = 0u32;
 
-    eprintln!(
-        "Arcade DB: Total {} entries ({} playable, {} BIOS)",
-        entries.len(),
-        entries.iter().filter(|e| !e.is_bios).count(),
-        entries.iter().filter(|e| e.is_bios).count()
-    );
-
-    // Insert into arcade_games
     let mut stmt = conn.prepare(
-        "INSERT INTO arcade_games (rom_name, display_name, year, manufacturer, players, rotation, status, is_clone, is_bios, parent, category, normalized_genre) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
+        "INSERT INTO arcade_games \
+         (rom_name, source, display_name, year, manufacturer, players, rotation, status, \
+          is_clone, is_bios, parent, category, normalized_genre) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     )?;
-    for entry in &entries {
-        let norm_genre = normalize_arcade_genre(&entry.category);
-        stmt.execute(params![
-            entry.rom_name,
-            entry.display_name,
-            entry.year,
-            entry.manufacturer,
-            entry.players as i64,
-            rotation_str(&entry.rotation),
-            status_str(&entry.status),
-            entry.is_clone as i64,
-            entry.is_bios as i64,
-            entry.parent,
-            entry.category,
-            norm_genre,
-        ])?;
-    }
-
-    // Insert arcade_release_dates
     let mut stmt_rd = conn
         .prepare("INSERT INTO arcade_release_dates (rom_name, year, source) VALUES (?1, ?2, ?3)")?;
     let mut rd_count = 0u32;
-    for entry in &entries {
-        if entry.is_bios {
-            continue;
+
+    for (source, mut entries) in buckets {
+        // Apply overlays + BIOS marking + filtering per row.
+        for entry in &mut entries {
+            if entry.category.is_empty()
+                && let Some(c) = catver.get(&entry.rom_name)
+            {
+                entry.category = c.clone();
+            }
+            if entry.players == 0
+                && let Some(p) = nplayers.get(&entry.rom_name)
+            {
+                entry.players = *p;
+            }
+            if entry.category.starts_with("System / BIOS") {
+                entry.is_bios = true;
+            }
         }
-        let y = entry.year.trim();
-        if y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()) {
-            let src = entry_source.get(&entry.rom_name).copied().unwrap_or("mame");
-            stmt_rd.execute(params![entry.rom_name, y, src])?;
-            rd_count += 1;
+        entries.sort_by(|a, b| a.rom_name.cmp(&b.rom_name));
+
+        for entry in &entries {
+            let drop_non_game = !entry.is_bios
+                && !entry.category.is_empty()
+                && non_game_prefixes
+                    .iter()
+                    .any(|p| entry.category.starts_with(p));
+            if drop_non_game {
+                total_filtered += 1;
+                continue;
+            }
+            if entry.is_bios {
+                total_bios += 1;
+            }
+            let norm_genre = normalize_arcade_genre(&entry.category);
+            stmt.execute(params![
+                entry.rom_name,
+                source,
+                entry.display_name,
+                entry.year,
+                entry.manufacturer,
+                entry.players as i64,
+                rotation_str(&entry.rotation),
+                status_str(&entry.status),
+                entry.is_clone as i64,
+                entry.is_bios as i64,
+                entry.parent,
+                entry.category,
+                norm_genre,
+            ])?;
+            total_inserted += 1;
+
+            if !entry.is_bios {
+                let y = entry.year.trim();
+                if y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()) {
+                    stmt_rd.execute(params![entry.rom_name, y, source])?;
+                    rd_count += 1;
+                }
+            }
         }
     }
+
+    eprintln!(
+        "Arcade DB: Inserted {} rows ({} BIOS), filtered {} non-game",
+        total_inserted, total_bios, total_filtered
+    );
     eprintln!("Arcade DB: Inserted {} release date rows", rd_count);
 
     Ok(())

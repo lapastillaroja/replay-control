@@ -84,9 +84,9 @@ If the enrichment pipeline finds no local image but the thumbnail manifest (from
 
 Enrichment draws from three sources:
 
-1. **Embedded game_db** (`replay-control-core`): compiled-in via `phf`. Provides genre, players, and rating for known games. Applied at scan time.
+1. **Bundled `catalog.sqlite` — game_db** (`replay-control-core-server::game_db`): No-Intro / TheGamesDB derived. Provides genre, players, and rating for known console ROMs. Applied at scan time.
 2. **LaunchBox metadata** (`game_metadata` table): imported from XML. Provides description, genre, developer, publisher, rating, rating_count, players, release_year. Applied during enrichment.
-3. **Embedded arcade_db** (`replay-control-core`): MAME-derived database. Provides display names, manufacturer, driver status, and genre for arcade ROMs. Developer is applied at scan time.
+3. **Bundled `catalog.sqlite` — arcade_db** (`replay-control-core-server::arcade_db`): MAME / FBNeo / Flycast derived, with one row per upstream source. The runtime merges fields per arcade system's source priority (see [Database Schema](database-schema.md#per-system-arcade-merge)) so `arcade_fbneo` shows FBNeo's curated names and `arcade_mame` shows MAME's, with field-level fallback when the primary source lacks data. Developer/manufacturer is applied at scan time, with display name and box art picked from the per-system merged result.
 
 ## Auto-Matching
 

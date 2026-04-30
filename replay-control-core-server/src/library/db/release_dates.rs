@@ -52,7 +52,8 @@ pub async fn fetch_static_release_data() -> StaticReleaseData {
     let console_rows = game_db::console_release_dates().await;
     let arcade_rows = arcade_db::arcade_release_dates().await;
     let rom_refs: Vec<&str> = arcade_rows.iter().map(|(r, _, _)| r.as_str()).collect();
-    let arcade_info = arcade_db::lookup_arcade_games_batch(&rom_refs).await;
+    // System-agnostic context — empty system uses default priority order.
+    let arcade_info = arcade_db::lookup_arcade_games_batch("", &rom_refs).await;
     let arcade_rom_to_display: HashMap<String, String> = arcade_info
         .into_iter()
         .map(|(rom, info)| (rom, info.display_name))

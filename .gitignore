@@ -116,6 +116,7 @@ PLAN.md
 
 # Build-time catalog (generated from data/ — not committed; only fixture is tracked)
 /catalog.sqlite
+/catalog.sqlite.*
 *.sqlite-shm
 *.sqlite-wal
 

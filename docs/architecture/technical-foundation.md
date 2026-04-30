@@ -88,17 +88,19 @@ The entire app compiles to a single binary — no Node.js runtime, no separate b
 
 Pages use Leptos `Resource::new_blocking` for critical-path data (page structure loads immediately) and `Resource::new` for slower data (recommendations, recents). Non-blocking resources render with `<Suspense>` skeleton fallbacks — the page shell streams immediately, then content fills in progressively. See [Server Functions](server-functions.md) for the resource patterns and nesting rules.
 
-## Embedded Game Databases
+## Bundled Game Databases
 
-~34K console ROMs across 20+ systems (No-Intro + TheGamesDB + libretro-database) and ~15K playable arcade entries (MAME 0.285 + MAME 2003+ + FBNeo + Flycast/Naomi/Atomiswave) are compiled into the binary at build time via PHF (perfect hash function) maps. This provides O(1) lookups from ROM filename stem or CRC32 hash to canonical game data (title, year, genre, developer, players) with zero runtime file I/O.
+~34K console ROMs across 20+ systems (No-Intro + TheGamesDB + libretro-database) and ~15K playable arcade entries (MAME 0.285 + MAME 2003+ + FBNeo + Flycast/Naomi/Atomiswave) are baked into a read-only `catalog.sqlite` shipped alongside the binary. The catalog pool serves SQL lookups from ROM filename stem or CRC32 hash to canonical game data (title, year, genre, developer, players) with no filesystem access beyond the `mmap`-ed catalog file.
+
+For arcade ROMs the catalog stores **one row per (rom_name, source)** so each upstream's curation is preserved; the runtime merges fields per system using `arcade_source_priority`. See [Database Schema](database-schema.md#per-system-arcade-merge) for the merge semantics.
 
 Non-playable arcade machines (slot machines, gambling, etc.) are filtered at build time.
 
-Systems with embedded data include SG-1000, 32X, and all major consoles from the No-Intro catalog.
+Systems with bundled data include SG-1000, 32X, and all major consoles from the No-Intro catalog.
 
-See [Design Decisions #10](design-decisions.md) for the trade-offs.
+See [Design Decisions #10](design-decisions.md) for the trade-offs and the migration from the older PHF-based design.
 
-**Files**: `tools/build-catalog/src/main.rs`, `replay-control-core-server/src/game/arcade_db.rs`, `replay-control-core-server/src/game/game_db.rs`
+**Files**: `tools/build-catalog/src/main.rs`, `replay-control-core-server/src/catalog_pool.rs`, `replay-control-core-server/src/game/arcade_db.rs`, `replay-control-core-server/src/game/game_db.rs`
 
 ## Embedded Series Database
 
