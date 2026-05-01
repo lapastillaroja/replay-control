@@ -314,6 +314,117 @@ async fn rebuild_corrupt_library_wipes_table_content() {
     );
 }
 
+/// `repair_corrupt_user_data` actually drains and unlinks the user_data
+/// file. A no-op refactor that just flipped the corrupt flag would pass
+/// `repair_corrupt_user_data_clears_flag_and_broadcasts_inverse` above —
+/// the content assertion here closes that gap symmetrically with the
+/// library-side test.
+#[tokio::test(flavor = "multi_thread")]
+async fn repair_corrupt_user_data_wipes_table_content() {
+    setup();
+    let env = TestEnv::new();
+
+    let inserted = env
+        .state
+        .user_data_pool
+        .write(|conn| {
+            conn.execute(
+                "INSERT INTO box_art_overrides \
+                 (system, rom_filename, override_path, set_at) \
+                 VALUES ('test_sys', 'sentinel.rom', '/tmp/x.png', 0)",
+                [],
+            )
+        })
+        .await;
+    assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
+
+    env.state.user_data_pool.mark_corrupt();
+
+    let status =
+        invoke_server_fn::<server_fns::RepairCorruptUserData>(env.state.clone(), "").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let count: i64 = env
+        .state
+        .user_data_pool
+        .read(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM box_art_overrides WHERE rom_filename = 'sentinel.rom'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(-1)
+        })
+        .await
+        .unwrap_or(-1);
+    assert_eq!(
+        count, 0,
+        "repair must wipe user_data content; sentinel row should not survive"
+    );
+}
+
+/// `restore_user_data_backup` actually copies the .bak content over the
+/// live DB. The flag-flip-only `restore_user_data_backup_clears_flag_and_
+/// broadcasts_inverse` test would pass even if `replace_with_file` was a
+/// no-op — this asserts the *contract*: a sentinel row in the backup
+/// shows up in the live DB after restore.
+#[tokio::test(flavor = "multi_thread")]
+async fn restore_user_data_backup_actually_restores_content() {
+    setup();
+    let env = TestEnv::new();
+
+    // Insert a sentinel BEFORE creating the backup. (TestEnv's auto-backup
+    // ran at startup against an empty DB, so it doesn't have our row.)
+    let inserted = env
+        .state
+        .user_data_pool
+        .write(|conn| {
+            conn.execute(
+                "INSERT INTO box_art_overrides \
+                 (system, rom_filename, override_path, set_at) \
+                 VALUES ('test_sys', 'restore_sentinel.rom', '/tmp/y.png', 42)",
+                [],
+            )
+        })
+        .await;
+    assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
+
+    // Checkpoint so the WAL is rolled into the main file before we copy —
+    // otherwise the .bak we make is missing the row.
+    env.state.user_data_pool.checkpoint().await;
+
+    // Manually refresh the .bak so it carries the sentinel row.
+    let ud_path = env.state.user_data_pool.db_path();
+    let bak_path = ud_path.with_extension("db.bak");
+    std::fs::copy(&ud_path, &bak_path).expect("manual backup snapshot");
+
+    env.state.user_data_pool.mark_corrupt();
+
+    let status =
+        invoke_server_fn::<server_fns::RestoreUserDataBackup>(env.state.clone(), "").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let restored: Option<String> = env
+        .state
+        .user_data_pool
+        .read(|conn| {
+            conn.query_row(
+                "SELECT override_path FROM box_art_overrides \
+                 WHERE rom_filename = 'restore_sentinel.rom'",
+                [],
+                |r| r.get(0),
+            )
+            .ok()
+        })
+        .await
+        .flatten();
+    assert_eq!(
+        restored.as_deref(),
+        Some("/tmp/y.png"),
+        "restore must round-trip the backup's content into the live DB"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn startup_with_clobbered_user_data_header_does_not_crash() {
     setup();
