@@ -153,6 +153,63 @@ mod ssr {
         Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(30)))
     }
 
+    /// Strong ETag from file metadata (mtime + size). `None` means the file
+    /// is missing or its metadata is unreadable — callers map both to 404.
+    async fn file_etag(path: &std::path::Path) -> Option<String> {
+        let meta = tokio::fs::metadata(path).await.ok()?;
+        let mtime = meta.modified().ok()?;
+        let nanos = mtime.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+        Some(format!("\"{nanos}-{}\"", meta.len()))
+    }
+
+    /// True if the request's `If-None-Match` matches `etag` (or is `*`).
+    fn etag_matches(headers: &axum::http::HeaderMap, etag: &str) -> bool {
+        headers
+            .get(axum::http::header::IF_NONE_MATCH)
+            .and_then(|v| v.to_str().ok())
+            .map(|inm| inm.split(',').map(str::trim).any(|t| t == etag || t == "*"))
+            .unwrap_or(false)
+    }
+
+    /// Serve a file with ETag-based revalidation. Returns 304 when the client's
+    /// `If-None-Match` matches the file's mtime+size tag, 200 with body otherwise,
+    /// and 404 if the file is missing or unreadable.
+    async fn serve_file_etagged(
+        file_path: &std::path::Path,
+        content_type: &str,
+        headers: &axum::http::HeaderMap,
+        cache_control: &'static str,
+    ) -> axum::response::Response {
+        use axum::http::StatusCode;
+        use axum::response::IntoResponse;
+
+        let Some(etag) = file_etag(file_path).await else {
+            return StatusCode::NOT_FOUND.into_response();
+        };
+
+        if etag_matches(headers, &etag) {
+            return (
+                StatusCode::NOT_MODIFIED,
+                [("cache-control", cache_control), ("etag", etag.as_str())],
+            )
+                .into_response();
+        }
+
+        match tokio::fs::read(file_path).await {
+            Ok(data) => (
+                StatusCode::OK,
+                [
+                    ("content-type", content_type),
+                    ("cache-control", cache_control),
+                    ("etag", etag.as_str()),
+                ],
+                data,
+            )
+                .into_response(),
+            Err(_) => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+
     /// Serve in-folder documents (PDFs, text files, images) from a game's ROM directory.
     ///
     /// URL format: `/rom-docs/<system>/<base64_rom_filename>/<relative_doc_path>`
@@ -161,7 +218,11 @@ mod ssr {
     /// - `.svm` files: reads the file to find the ScummVM game directory
     /// - `.m3u` playlists: looks for a sibling directory or follows .svm references
     /// - Directories: serves directly from the ROM path
-    async fn serve_rom_doc(state: api::AppState, path: String) -> axum::response::Response {
+    async fn serve_rom_doc(
+        state: api::AppState,
+        path: String,
+        headers: axum::http::HeaderMap,
+    ) -> axum::response::Response {
         use axum::http::StatusCode;
         use axum::response::IntoResponse;
 
@@ -274,36 +335,24 @@ mod ssr {
             Err(_) => return StatusCode::NOT_FOUND.into_response(),
         }
 
-        match tokio::fs::read(&file_path).await {
-            Ok(data) => {
-                let content_type = match doc_relative
-                    .rsplit('.')
-                    .next()
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .as_str()
-                {
-                    "pdf" => "application/pdf",
-                    "txt" => "text/plain; charset=utf-8",
-                    "html" | "htm" => "text/html; charset=utf-8",
-                    "jpg" | "jpeg" => "image/jpeg",
-                    "png" => "image/png",
-                    "gif" => "image/gif",
-                    "doc" => "application/msword",
-                    _ => "application/octet-stream",
-                };
-                (
-                    StatusCode::OK,
-                    [
-                        ("content-type", content_type),
-                        ("cache-control", api::CACHE_1D),
-                    ],
-                    data,
-                )
-                    .into_response()
-            }
-            Err(_) => StatusCode::NOT_FOUND.into_response(),
-        }
+        let content_type = match doc_relative
+            .rsplit('.')
+            .next()
+            .unwrap_or("")
+            .to_lowercase()
+            .as_str()
+        {
+            "pdf" => "application/pdf",
+            "txt" => "text/plain; charset=utf-8",
+            "html" | "htm" => "text/html; charset=utf-8",
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "gif" => "image/gif",
+            "doc" => "application/msword",
+            _ => "application/octet-stream",
+        };
+
+        serve_file_etagged(&file_path, content_type, &headers, api::CACHE_1D).await
     }
 
     /// Paths that bypass the storage guard middleware.
@@ -625,7 +674,8 @@ mod ssr {
         // Media handler: serves images from <storage>/.replay-control/media/<system>/<kind>/<file>
         let media_state = app_state.clone();
         let media_handler = axum::routing::get(
-            move |axum::extract::Path(path): axum::extract::Path<String>| {
+            move |axum::extract::Path(path): axum::extract::Path<String>,
+                  headers: axum::http::HeaderMap| {
                 let state = media_state.clone();
                 async move {
                     use axum::http::StatusCode;
@@ -639,27 +689,15 @@ mod ssr {
 
                     let file_path = state.storage().rc_dir().join("media").join(&path);
 
-                    match tokio::fs::read(&file_path).await {
-                        Ok(data) => {
-                            let content_type = if path.ends_with(".png") {
-                                "image/png"
-                            } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
-                                "image/jpeg"
-                            } else {
-                                "application/octet-stream"
-                            };
-                            (
-                                StatusCode::OK,
-                                [
-                                    ("content-type", content_type),
-                                    ("cache-control", api::CACHE_1D),
-                                ],
-                                data,
-                            )
-                                .into_response()
-                        }
-                        Err(_) => StatusCode::NOT_FOUND.into_response(),
-                    }
+                    let content_type = if path.ends_with(".png") {
+                        "image/png"
+                    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+                        "image/jpeg"
+                    } else {
+                        "application/octet-stream"
+                    };
+
+                    serve_file_etagged(&file_path, content_type, &headers, api::CACHE_1D).await
                 }
             },
         );
@@ -738,9 +776,10 @@ mod ssr {
 
         let rom_docs_state = app_state.clone();
         let rom_docs_handler = axum::routing::get(
-            move |axum::extract::Path(path): axum::extract::Path<String>| {
+            move |axum::extract::Path(path): axum::extract::Path<String>,
+                  headers: axum::http::HeaderMap| {
                 let state = rom_docs_state.clone();
-                async move { serve_rom_doc(state, path).await }
+                async move { serve_rom_doc(state, path, headers).await }
             },
         );
 
