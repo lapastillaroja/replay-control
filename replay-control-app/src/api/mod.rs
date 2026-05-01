@@ -757,3 +757,65 @@ pub fn build_router(
         .fallback(ssr_handler)
         .with_state(app_state)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `refresh_storage`'s symmetric pre-flight: when the re-attached
+    /// storage has a clobbered user_data.db magic header, the helper
+    /// flags the pool corrupt instead of leaving `reopen` to fail
+    /// silently. This is the §A2 fix from the WAL-unlink investigation;
+    /// without the test a future refactor that drops the header check
+    /// would silently break the corruption banner on storage swap.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reopen_user_data_or_mark_corrupt_flags_bad_header() {
+        let tmp = tempfile::tempdir().unwrap();
+        let valid_path = tmp.path().join("good.db");
+        let bad_path = tmp.path().join("bad.db");
+
+        replay_control_core_server::user_data_db::UserDataDb::open_at(&valid_path).unwrap();
+
+        let pool = DbPool::new(
+            valid_path,
+            "user_data_db",
+            open_user_data_db,
+            USER_DATA_READ_POOL_SIZE,
+        )
+        .unwrap();
+        assert!(!pool.is_corrupt());
+
+        // 4 KiB of garbage = clobbered SQLite magic header.
+        std::fs::write(&bad_path, [0xDEu8; 4096]).unwrap();
+
+        reopen_user_data_or_mark_corrupt(&pool, &bad_path).await;
+
+        assert!(
+            pool.is_corrupt(),
+            "bad-header path must flag the pool corrupt so the banner fires"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reopen_user_data_or_mark_corrupt_proceeds_on_healthy_header() {
+        let tmp = tempfile::tempdir().unwrap();
+        let initial_path = tmp.path().join("a.db");
+        let new_path = tmp.path().join("b.db");
+
+        replay_control_core_server::user_data_db::UserDataDb::open_at(&initial_path).unwrap();
+        replay_control_core_server::user_data_db::UserDataDb::open_at(&new_path).unwrap();
+
+        let pool = DbPool::new(
+            initial_path,
+            "user_data_db",
+            open_user_data_db,
+            USER_DATA_READ_POOL_SIZE,
+        )
+        .unwrap();
+
+        reopen_user_data_or_mark_corrupt(&pool, &new_path).await;
+
+        assert!(!pool.is_corrupt(), "healthy header must not flag corrupt");
+        assert_eq!(pool.db_path(), new_path, "pool must reopen at new path");
+    }
+}
