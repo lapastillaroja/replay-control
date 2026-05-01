@@ -5,13 +5,16 @@ use server_fn::ServerFnError;
 
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
-use crate::components::captures::{CapturesLightbox, INITIAL_CAPTURE_COUNT};
+use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
 use crate::util::format_size_for_system;
+
+/// Maximum number of capture thumbnails shown before "View all".
+const INITIAL_CAPTURE_COUNT: usize = 12;
 
 /// Split a filename into `(stem, extension)` using `std::path::Path`.
 ///
@@ -208,6 +211,41 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let captures_show_all = RwSignal::new(false);
     let lightbox_index = RwSignal::new(Option::<usize>::None);
 
+    // Combined lightbox image list: box art (reactive — picker can swap it),
+    // then title screen, in-game screenshot, then user captures. Indices below
+    // are derived from the same offsets so the click handlers stay in sync.
+    let title_offset = move || usize::from(box_art_url.read().is_some());
+    let screenshot_offset = move || title_offset() + usize::from(has_title);
+    let captures_offset = move || screenshot_offset() + usize::from(has_screenshot);
+    let lightbox_images = Memo::new(move |_| {
+        let mut imgs: Vec<LightboxImage> = Vec::new();
+        if let Some(url) = box_art_url.get() {
+            imgs.push(LightboxImage {
+                url,
+                pixelated: false,
+            });
+        }
+        if let Some(url) = title_url.get_value() {
+            imgs.push(LightboxImage {
+                url,
+                pixelated: true,
+            });
+        }
+        if let Some(url) = screenshot_url.get_value() {
+            imgs.push(LightboxImage {
+                url,
+                pixelated: true,
+            });
+        }
+        for s in user_screenshots.get_value() {
+            imgs.push(LightboxImage {
+                url: s.url,
+                pixelated: true,
+            });
+        }
+        imgs
+    });
+
     // Delete confirmation state
     let confirming_delete = RwSignal::new(false);
 
@@ -280,15 +318,10 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                     }
                 >
                     <img
-                        class="game-cover-img"
-                        class:game-cover-tappable=has_variants
+                        class="game-cover-img game-cover-tappable"
                         src=move || box_art_url.get().unwrap_or_default()
                         alt=game_name_sv.get_value()
-                        on:click=move |_| {
-                            if has_variants {
-                                show_picker.set(true);
-                            }
-                        }
+                        on:click=move |_| lightbox_index.set(Some(0))
                     />
                 </Show>
             </div>
@@ -460,13 +493,23 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                 <div class="game-screenshots">
                     {title_url.get_value().map(|url| view! {
                         <div class="game-screenshot-item">
-                            <img class="game-screenshot-img" src=url alt="Title screen" />
+                            <img
+                                class="game-screenshot-img game-screenshot-tappable"
+                                src=url
+                                alt="Title screen"
+                                on:click=move |_| lightbox_index.set(Some(title_offset()))
+                            />
                             <span class="game-screenshot-label">{move || t(i18n.locale.get(), Key::GameDetailTitleScreen)}</span>
                         </div>
                     })}
                     {screenshot_url.get_value().map(|url| view! {
                         <div class="game-screenshot-item">
-                            <img class="game-screenshot-img" src=url alt="In-game screenshot" />
+                            <img
+                                class="game-screenshot-img game-screenshot-tappable"
+                                src=url
+                                alt="In-game screenshot"
+                                on:click=move |_| lightbox_index.set(Some(screenshot_offset()))
+                            />
                             <span class="game-screenshot-label">{move || t(i18n.locale.get(), Key::GameDetailInGame)}</span>
                         </div>
                     })}
@@ -496,7 +539,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                                     class="user-capture-thumb"
                                     src=url
                                     alt="Capture"
-                                    on:click=move |_| lightbox_index.set(Some(i))
+                                    on:click=move |_| lightbox_index.set(Some(captures_offset() + i))
                                 />
                             }
                         }).collect::<Vec<_>>()
@@ -511,12 +554,10 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
                         {move || format!(" ({})", user_screenshots.get_value().len())}
                     </button>
                 </Show>
-                <CapturesLightbox
-                    screenshots=user_screenshots.get_value()
-                    current_index=lightbox_index
-                />
             </Show>
         </section>
+
+        <ImageLightbox images=lightbox_images current_index=lightbox_index />
 
         // Videos — base_title enables cross-variant video sharing
         <GameVideoSection

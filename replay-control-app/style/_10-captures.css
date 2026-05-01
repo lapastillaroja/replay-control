@@ -41,8 +41,11 @@
 .lightbox-img {
     max-width: 90vw;
     max-height: 85vh;
-    image-rendering: pixelated;
     object-fit: contain;
+}
+
+.lightbox-img.pixelated {
+    image-rendering: pixelated;
 }
 
 .lightbox-close {
