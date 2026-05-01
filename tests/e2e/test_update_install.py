@@ -113,8 +113,13 @@ class TestUpdateCleanup:
         )
         # The mock release ships a catalog asset; after update it should be
         # in place next to the binary so init_catalog can open it on restart.
+        # `test -f` rather than `ls`: when the file exists, ls prints the
+        # path to stdout and the && branch echoes EXISTS, producing
+        # "<path>\nEXISTS" — the four CLEAN checks above don't notice
+        # because their files don't exist, but this assertion needs a clean
+        # one-line answer.
         catalog = ssh_cmd(
-            "ls /usr/local/bin/catalog.sqlite 2>/dev/null "
+            "test -f /usr/local/bin/catalog.sqlite "
             "&& echo EXISTS || echo MISSING"
         )
 

@@ -23,22 +23,34 @@ from conftest import PI_URL, exec_cmd
 SEL_CORRUPTION_BANNER = ".corruption-banner"
 USER_DATA_DB = "/media/usb/.replay-control/user_data.db"
 # library.db moved to a per-host central location keyed by storage id in
-# v0.4.0-beta.5. Resolve the active id at runtime via the marker file so
-# the test doesn't drift on storage swaps.
+# v0.4.0-beta.5. Resolve at runtime via the marker file so the test doesn't
+# drift on storage swaps. The data dir is `/var/lib/replay-control` on Pi
+# (default) but `<storage>/.replay-control-data` when the app is started
+# with `--storage-path` (the container test runner does this); probe both.
 STORAGE_ID_MARKER = "/media/usb/.replay-control/storage-id"
-LIBRARY_DB_DIR = "/var/lib/replay-control/storages"
+DATA_DIR_CANDIDATES = (
+    "/var/lib/replay-control/storages",
+    "/media/usb/.replay-control-data/storages",
+)
 
 
 def _library_db_path() -> str:
     """Resolve the central library.db file for the currently-attached
-    storage. Reads the marker file the service wrote on first attach."""
+    storage."""
     storage_id = exec_cmd(f"cat {STORAGE_ID_MARKER}").strip()
     if not storage_id:
         pytest.fail(
             f"storage-id marker missing at {STORAGE_ID_MARKER}; "
             "service hasn't attached this storage yet"
         )
-    return f"{LIBRARY_DB_DIR}/{storage_id}/library.db"
+    for root in DATA_DIR_CANDIDATES:
+        candidate = f"{root}/{storage_id}/library.db"
+        if exec_cmd(f"test -f {candidate} && echo ok").strip() == "ok":
+            return candidate
+    pytest.fail(
+        f"library.db missing under any known data dir for id {storage_id}; "
+        f"checked {DATA_DIR_CANDIDATES}"
+    )
 
 
 def _wait_for_server(timeout_s: int = 30) -> None:

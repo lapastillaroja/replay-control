@@ -75,22 +75,31 @@ The storage path should point to a directory with ROMs organized by system (e.g.
 
 ## Running Tests
 
-Three test layers; each is independent and runs from the repo root.
+Four test layers; each is independent and runs from the repo root.
 
 ```bash
 # 1. Rust tests (unit + in-process integration). Fastest. ~1100 tests.
 cargo test --features ssr
 
-# 2. Container integration. Boots the app inside a network-isolated
+# 2. Container HTTP smoke. Boots the app inside a network-isolated
 #    podman/docker container and runs HTTP-level assertions with curl.
 ./build.sh
 cargo run -p generate-test-fixtures
 ./tests/integration/run.sh
 
-# 3. Browser e2e (Playwright). Hits a running app on the Pi, container,
-#    or localhost. ~60 tests across page-health, response-cache,
-#    auto-update, and the corruption banner. One-time setup uses a venv
-#    because system Pythons block plain `pip install` under PEP 668:
+# 3. Container Playwright (the same suite CI runs in `e2e`). Boots the
+#    Containerfile.replayos image with a mock GitHub server attached and
+#    drives the e2e pytest suite against it. This is the recommended
+#    way to reproduce CI failures locally.
+./tests/container/run.sh
+# To re-use an existing build: SKIP_BUILD=1 ./tests/container/run.sh
+# To force docker on a podman host: CONTAINER_ENGINE=docker ./tests/container/run.sh
+
+# 4. Browser e2e (Playwright) against a live target on the LAN — the Pi
+#    or a localhost dev server. ~60 tests across page-health,
+#    response-cache, auto-update, and the corruption banner. One-time
+#    setup uses a venv because system Pythons block plain `pip install`
+#    under PEP 668:
 python3 -m venv tests/e2e/.venv
 tests/e2e/.venv/bin/pip install playwright pytest pytest-timeout
 tests/e2e/.venv/bin/playwright install chromium
