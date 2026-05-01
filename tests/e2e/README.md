@@ -13,11 +13,19 @@ Browser-based tests using Playwright. Two flavours of test live here:
 ## Prerequisites
 
 - Raspberry Pi running Replay Control at `replay.local:8080`
-- Python 3.10+ with Playwright:
+- Python 3.10+ with Playwright + pytest-timeout in a venv (`pip install`
+  outside a venv is blocked by PEP 668 on modern Debian/Ubuntu/Fedora;
+  the `--timeout` flag in the examples below is a `pytest-timeout`
+  plugin flag, without it pytest exits with `error: unrecognized
+  arguments: --timeout`):
   ```bash
-  pip install playwright pytest
-  playwright install chromium
+  python3 -m venv tests/e2e/.venv
+  tests/e2e/.venv/bin/pip install playwright pytest pytest-timeout
+  tests/e2e/.venv/bin/playwright install chromium
   ```
+  Then either prefix every command with `tests/e2e/.venv/bin/python`
+  (used in the examples below) or `source tests/e2e/.venv/bin/activate`
+  for the session.
 
 ## Running
 

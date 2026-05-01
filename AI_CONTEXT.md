@@ -17,9 +17,10 @@
 
 - Add unit, integration, and/or e2e tests for new features and bug fixes to prevent regressions
 - Unit tests: in-module `#[cfg(test)]` blocks for pure logic (settings, config, utilities)
-- Integration tests: `tests/server_fn_tests.rs` for server function behavior via `test_router`
-- E2e/SSR tests: `tests/ssr_tests.rs` for full-page rendering through the Axum router
-- Run tests with `cargo test --features ssr`
+- Integration tests: `replay-control-app/tests/*.rs` (e.g. `corruption_tests.rs`) — server functions exercised via `test_router`
+- Container integration: `tests/integration/run.sh` — boots the app in a podman/docker container and asserts HTTP responses
+- Browser e2e: `tests/e2e/*.py` — Playwright; see `tests/e2e/README.md`
+- See [CONTRIBUTING.md "Running Tests"](CONTRIBUTING.md#running-tests) for the full command set, including useful subsets and the local-dev-server path
 
 ## Docs Site
 

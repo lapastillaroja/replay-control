@@ -340,8 +340,7 @@ async fn repair_corrupt_user_data_wipes_table_content() {
 
     env.state.user_data_pool.mark_corrupt();
 
-    let status =
-        invoke_server_fn::<server_fns::RepairCorruptUserData>(env.state.clone(), "").await;
+    let status = invoke_server_fn::<server_fns::RepairCorruptUserData>(env.state.clone(), "").await;
     assert_eq!(status, StatusCode::OK);
 
     let count: i64 = env
@@ -400,8 +399,7 @@ async fn restore_user_data_backup_actually_restores_content() {
 
     env.state.user_data_pool.mark_corrupt();
 
-    let status =
-        invoke_server_fn::<server_fns::RestoreUserDataBackup>(env.state.clone(), "").await;
+    let status = invoke_server_fn::<server_fns::RestoreUserDataBackup>(env.state.clone(), "").await;
     assert_eq!(status, StatusCode::OK);
 
     let restored: Option<String> = env

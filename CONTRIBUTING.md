@@ -73,6 +73,64 @@ Options:
 The storage path should point to a directory with ROMs organized by system (e.g., `roms/Nintendo - Super Nintendo Entertainment System/`).
 
 
+## Running Tests
+
+Three test layers; each is independent and runs from the repo root.
+
+```bash
+# 1. Rust tests (unit + in-process integration). Fastest. ~1100 tests.
+cargo test --features ssr
+
+# 2. Container integration. Boots the app inside a network-isolated
+#    podman/docker container and runs HTTP-level assertions with curl.
+./build.sh
+cargo run -p generate-test-fixtures
+./tests/integration/run.sh
+
+# 3. Browser e2e (Playwright). Hits a running app on the Pi, container,
+#    or localhost. ~60 tests across page-health, response-cache,
+#    auto-update, and the corruption banner. One-time setup uses a venv
+#    because system Pythons block plain `pip install` under PEP 668:
+python3 -m venv tests/e2e/.venv
+tests/e2e/.venv/bin/pip install playwright pytest pytest-timeout
+tests/e2e/.venv/bin/playwright install chromium
+# Then run:
+PI_IP=192.168.10.30 tests/e2e/.venv/bin/python -m pytest tests/e2e/ -v --timeout=180
+```
+
+Useful subsets:
+
+```bash
+# Only the corruption-recovery suite (Rust):
+cargo test --features ssr --test corruption_tests
+
+# Only the DbPool property tests (locks in the WAL-unlink regression):
+cargo test --features ssr -p replay-control-core-server --lib db_pool
+
+# Only the e2e corruption-banner test (stops + restarts the service on
+# the target — run on a Pi you're OK with seeing a 30 s blip):
+PI_IP=192.168.10.30 tests/e2e/.venv/bin/python -m pytest \
+    tests/e2e/test_corruption_banner.py -v
+```
+
+E2e against a local dev server (page-health and response-cache only —
+the corruption-banner test needs SSH/docker to clobber DB files):
+
+```bash
+APP_URL=http://localhost:8091 tests/e2e/.venv/bin/python -m pytest \
+    tests/e2e/test_page_health.py tests/e2e/test_response_cache.py -v
+```
+
+(Or `source tests/e2e/.venv/bin/activate` once per shell to drop the
+prefix; `deactivate` to leave.)
+
+When adding new behaviour, add unit/integration tests in-tree and an e2e
+test only for cross-layer flows (SSE push → DOM signal → user action).
+Match the existing pattern: write a *content-survival* assertion when
+the fix touches data — flag-flip-only tests pass even if the underlying
+work is no-oped.
+
+
 ## Deploying to Pi
 
 ### Fast iteration (recommended)

@@ -109,6 +109,7 @@ $RECYCLE.BIN/
 server_debug.log
 /reference/
 __pycache__/
+.venv/
 research/investigations/load-tests/
 tools/bench-results/
 PLAN.md
