@@ -22,7 +22,23 @@ from conftest import PI_URL, exec_cmd
 
 SEL_CORRUPTION_BANNER = ".corruption-banner"
 USER_DATA_DB = "/media/usb/.replay-control/user_data.db"
-LIBRARY_DB = "/media/usb/.replay-control/library.db"
+# library.db moved to a per-host central location keyed by storage id in
+# v0.4.0-beta.5. Resolve the active id at runtime via the marker file so
+# the test doesn't drift on storage swaps.
+STORAGE_ID_MARKER = "/media/usb/.replay-control/storage-id"
+LIBRARY_DB_DIR = "/var/lib/replay-control/storages"
+
+
+def _library_db_path() -> str:
+    """Resolve the central library.db file for the currently-attached
+    storage. Reads the marker file the service wrote on first attach."""
+    storage_id = exec_cmd(f"cat {STORAGE_ID_MARKER}").strip()
+    if not storage_id:
+        pytest.fail(
+            f"storage-id marker missing at {STORAGE_ID_MARKER}; "
+            "service hasn't attached this storage yet"
+        )
+    return f"{LIBRARY_DB_DIR}/{storage_id}/library.db"
 
 
 def _wait_for_server(timeout_s: int = 30) -> None:
@@ -91,7 +107,7 @@ def preserve_user_data():
 
 @pytest.fixture()
 def preserve_library_db():
-    yield from _preserve_db(LIBRARY_DB)
+    yield from _preserve_db(_library_db_path())
 
 
 # ── user_data.db ─────────────────────────────────────────────────────────────
@@ -168,9 +184,9 @@ def test_library_clobbered_header_does_not_crash_service(
     page, pi_url, preserve_library_db
 ):
     """Service must not crash-loop on a clobbered library.db header at
-    startup. `LibraryDb::open`'s pre-flight should detect the bad header
+    startup. `LibraryDb::open_at`'s pre-flight should detect the bad header
     and delete the file before `Connection::open` errors."""
-    _corrupt_db_and_restart(LIBRARY_DB)
+    _corrupt_db_and_restart(_library_db_path())
 
     page.goto(pi_url, wait_until="load", timeout=30000)
     page.wait_for_selector("body", timeout=10000)
