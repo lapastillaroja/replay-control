@@ -350,7 +350,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataThumbnailSystems => "システムで利用可能",
         Key::MetadataThumbnailStop => "停止",
         Key::MetadataThumbnailCancelling => "キャンセル中...",
-        Key::MetadataThumbnailPhaseIndexing => "インデックス取得中...",
+        Key::MetadataThumbnailPhaseIndexing => "リスト取得中...",
         Key::MetadataThumbnailPhaseDownloading => "ダウンロード中...",
         Key::MetadataThumbnailComplete => "更新完了",
         Key::MetadataThumbnailFailed => "更新失敗",
@@ -407,6 +407,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummaryYearSpan => "年代",
         Key::MetadataSummaryLibrarySize => "ライブラリ容量",
         Key::MetadataSummarySystems => "システム数",
+        Key::MetadataSummaryStorage => "ストレージ",
 
         // System accordion rows
         Key::MetadataSystemCoverage => "充実度",

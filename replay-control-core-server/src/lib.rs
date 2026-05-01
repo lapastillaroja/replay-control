@@ -6,13 +6,15 @@
 // or referenced directly via `replay_control_core::*`.
 
 pub mod catalog_pool;
+pub mod data_dir;
 pub mod db_pool;
 pub mod launch;
 pub mod settings;
 pub mod sqlite;
+pub mod storage_id;
 
 pub use catalog_pool::{CatalogInitError, init_catalog, with_catalog};
-pub use db_pool::{DbPool, WriteGate};
+pub use db_pool::{DbError, DbPool};
 
 pub mod capture;
 pub use capture::screenshots;

@@ -40,6 +40,13 @@ mod ssr {
         #[arg(long)]
         settings_path: Option<String>,
 
+        /// Override the data directory used for per-storage library DBs
+        /// (default: /var/lib/replay-control on Pi). With --storage-path,
+        /// defaults to <storage>/.replay-control-data so dev runs are
+        /// self-contained.
+        #[arg(long)]
+        data_dir: Option<String>,
+
         /// Path to the game catalog SQLite file
         #[arg(long, default_value = "catalog.sqlite")]
         catalog_path: String,
@@ -460,17 +467,19 @@ mod ssr {
         }
         tracing::info!("catalog loaded from {}", catalog_path.display());
 
-        let app_state =
-            match api::AppState::new(cli.storage_path, cli.config_path, cli.settings_path) {
-                Ok(state) => state,
-                Err(e) => {
-                    tracing::error!("Failed to initialize: {e}");
-                    tracing::info!(
-                        "Hint: use --storage-path to point to a RePlayOS storage location"
-                    );
-                    std::process::exit(1);
-                }
-            };
+        let app_state = match api::AppState::new(
+            cli.storage_path,
+            cli.config_path,
+            cli.settings_path,
+            cli.data_dir,
+        ) {
+            Ok(state) => state,
+            Err(e) => {
+                tracing::error!("Failed to initialize: {e}");
+                tracing::info!("Hint: use --storage-path to point to a RePlayOS storage location");
+                std::process::exit(1);
+            }
+        };
 
         // Start background pipeline only if storage is available.
         // When no storage, the storage watcher polls every 10s and starts

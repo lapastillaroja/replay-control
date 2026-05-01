@@ -20,7 +20,7 @@ This crate is the default home for new code. If code touches SQLite, fs, HTTP, o
 
 Server-only native implementation. Compiled for native targets only (never wasm). Pulls `rusqlite`, `deadpool-sqlite`, `tokio`, `reqwest` (optional), `quick-xml` (optional). Contains:
 
-- **DbPool**: generic `deadpool-sqlite` wrapper with read/write pools, journal mode detection, `WriteGate` RAII guard for exFAT safety, and corruption auto-close. App constructs `library_pool` and `user_data_pool` instances on top.
+- **DbPool**: generic `deadpool-sqlite` wrapper with read/write pools, journal mode detection, internal `WriteGate` (auto-activated on DELETE-mode pools only), `try_read`/`try_write` returning typed `DbError`, and atomic lifecycle (`reset_to_empty`, `replace_with_file`, drained `close`/`reopen`). App constructs `library_pool` and `user_data_pool` on top, sized 3 readers / 1 reader respectively.
 - **Catalog pool**: async read-only `deadpool-sqlite` pool for the bundled `catalog.sqlite` (game databases, arcade DB, series DB)
 - **Game DB queries**: native SQL lookups for arcade/console metadata, display name resolution, release dates
 - **Library scanning + uploads**: ROM discovery, favorites/recents I/O, hashing, disc-group detection, `roms::write_rom` for upload writes
@@ -57,7 +57,9 @@ Standalone cdylib (not in the workspace) that implements the libretro API. Runs 
 |---------|------|
 | App entry point | `replay-control-app/src/main.rs` |
 | AppState (owns pool instances) | `replay-control-app/src/api/mod.rs` |
-| DbPool / SqliteManager / WriteGate | `replay-control-core-server/src/db_pool.rs` |
+| DbPool / SqliteManager | `replay-control-core-server/src/db_pool.rs` |
+| Storage id (`<kind>-<8 hex>`) | `replay-control-core-server/src/storage_id.rs` |
+| Central data dir resolver | `replay-control-core-server/src/data_dir.rs` |
 | Background pipeline + watchers | `replay-control-app/src/api/background.rs` |
 | Update polling + asset download (HTTP/fs) | `replay-control-core-server/src/update.rs` |
 | Activity system | `replay-control-app/src/api/activity.rs` |
@@ -124,7 +126,7 @@ See [ROM Classification](rom-classification.md) for the full tier system and tag
 
 ## Connection Pooling
 
-`deadpool-sqlite` connection pool with separate read/write pools per database. Async API (`pool.get().await` + `conn.interact().await`) prevents tokio worker starvation. Pool sizes tuned for single-user Pi deployment (1 reader + 1 writer per DB). Filesystem-aware journal mode selection (WAL on POSIX, DELETE on exFAT/NFS). WriteGate RAII guard prevents corruption on exFAT during bulk writes.
+`deadpool-sqlite` connection pool with separate read/write pools per database. Async API (`pool.get().await` + `conn.interact().await`) prevents tokio worker starvation. Library pool sized at 3 readers / 1 writer (always WAL on the host SD); user_data pool at 1 / 1 (DELETE-mode on the storage filesystem). Filesystem-aware journal mode selection. Pool-internal write gate auto-activates around writes on DELETE-mode pools only — WAL pools never block readers. `try_read`/`try_write` return typed `DbError`; cascade gates must distinguish "pool unavailable" from "no rows".
 
 See [Connection Pooling](connection-pooling.md) for the full architecture.
 

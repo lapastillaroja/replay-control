@@ -1,7 +1,10 @@
 //! Local SQLite database for the user's game library.
 //!
-//! Stored at `<rom_storage>/.replay-control/library.db`. Rebuildable from the
-//! ROM filesystem plus the bundled catalog and optional LaunchBox XML import.
+//! Stored centrally at `<data_dir>/storages/<storage_id>/library.db` (the
+//! `data_dir` defaults to `/var/lib/replay-control` on Pi). Rebuildable from
+//! the ROM filesystem plus the bundled catalog and optional LaunchBox XML
+//! import. The companion `user_data.db` stays per-storage and is not managed
+//! here.
 
 mod aliases_series;
 mod data_sources;
@@ -17,7 +20,7 @@ pub use release_dates::{
     ReleaseDateRow, StaticReleaseData, fetch_static_release_data, region_pref_to_db_region,
 };
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use rusqlite::Connection;
 
@@ -134,15 +137,6 @@ pub struct GameMetadata {
     pub box_art_path: Option<String>,
     pub screenshot_path: Option<String>,
     pub title_path: Option<String>,
-}
-
-impl GameMetadata {
-    /// Derive the release year from `release_date` (if any).
-    pub fn release_year(&self) -> Option<u16> {
-        self.release_date
-            .as_deref()
-            .and_then(year_from_release_date)
-    }
 }
 
 /// A cached ROM entry from the `game_library` table.
@@ -441,56 +435,130 @@ impl LibraryDb {
         "game_series",
     ];
 
-    /// Open (or create) the library database at `<storage_root>/.replay-control/library.db`.
-    ///
-    /// Opens the library DB with strategy appropriate for the filesystem.
-    /// Runs table init, probes for corruption, auto-recreates if corrupt.
-    /// Returns a raw `Connection` — the caller (or pool manager) owns it.
-    ///
-    /// Also removes any legacy pre-0.5 `metadata.db` sidecars on first run.
-    ///
-    /// Library is a rebuildable cache, so any startup corruption (bad header
-    /// caught pre-flight, or `probe_tables` failure post-open) is recovered
-    /// silently by deleting the file and reopening. Runtime corruption is
-    /// surfaced via the pool's banner instead.
-    pub fn open(storage_root: &Path) -> Result<(Connection, PathBuf)> {
-        let dir = storage_root.join(RC_DIR);
-        std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+    /// Open (or create) the library database at the given file path.
+    /// Library is rebuildable cache, so a bad-header / probe-failure file
+    /// is silently deleted and recreated; runtime corruption is surfaced
+    /// via the pool's corruption banner instead.
+    pub fn open_at(db_path: &Path) -> Result<Connection> {
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        }
 
-        cleanup_legacy_metadata_db(&dir);
-
-        let db_path = dir.join(LIBRARY_DB_FILE);
-
-        if crate::sqlite::has_invalid_sqlite_header(&db_path) {
+        if crate::sqlite::has_invalid_sqlite_header(db_path) {
             tracing::warn!(
                 "Library DB at {} has invalid SQLite header — deleting and recreating",
                 db_path.display()
             );
-            crate::sqlite::delete_db_files(&db_path);
+            crate::sqlite::delete_db_files(db_path);
         }
 
-        let conn = crate::sqlite::open_connection(&db_path, "library.db")?;
+        let conn = crate::sqlite::open_connection(db_path, "library.db")?;
         Self::init_tables(&conn)?;
+        Self::run_migrations(&conn)?;
 
         if let Err(detail) = crate::sqlite::probe_tables(&conn, Self::TABLES) {
             tracing::warn!("Library DB corrupt ({detail}), deleting and recreating");
             drop(conn);
-            crate::sqlite::delete_db_files(&db_path);
-            let conn = crate::sqlite::open_connection(&db_path, "library.db")?;
+            crate::sqlite::delete_db_files(db_path);
+            let conn = crate::sqlite::open_connection(db_path, "library.db")?;
             Self::init_tables(&conn)?;
-            // Fresh DB after corruption recovery — no need to validate schema.
-            return Ok((conn, db_path));
+            Self::run_migrations(&conn)?;
+            return Ok(conn);
         }
 
-        Ok((conn, db_path))
+        Ok(conn)
+    }
+
+    /// Back-compat shim: open under `<storage_root>/.replay-control/library.db`.
+    /// Used by tests and the `library_report` CLI; production goes through
+    /// `open_at` directly with the central data dir path.
+    pub fn open(storage_root: &Path) -> Result<Connection> {
+        let dir = storage_root.join(RC_DIR);
+        std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+        cleanup_legacy_metadata_db(&dir);
+        Self::open_at(&dir.join(LIBRARY_DB_FILE))
+    }
+
+    /// Move an existing per-storage `library.db` (and its WAL/SHM/journal
+    /// sidecars) from `<storage>/.replay-control/library.db` to `dest`.
+    ///
+    /// Mirrors [`crate::settings::SettingsStore::migrate_from_storage`]:
+    /// no-op if `dest` already exists; no-op if the old file is missing;
+    /// atomic rename when possible, copy + delete fallback across filesystems.
+    /// The legacy `metadata.db` sidecar is cleaned up regardless.
+    pub fn migrate_from_storage(storage_root: &Path, dest: &Path) -> Result<()> {
+        let old_dir = storage_root.join(RC_DIR);
+        cleanup_legacy_metadata_db(&old_dir);
+
+        if dest.exists() {
+            tracing::debug!(
+                "Library DB already at {}, skipping migration",
+                dest.display()
+            );
+            return Ok(());
+        }
+
+        let old_path = old_dir.join(LIBRARY_DB_FILE);
+        if !old_path.exists() {
+            return Ok(());
+        }
+
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        }
+
+        // Move the main DB file. Try rename first; fall back to copy+delete
+        // when the source and destination are on different filesystems
+        // (the common case here — old is on ROM storage, new is on the OS SD).
+        if std::fs::rename(&old_path, dest).is_err() {
+            std::fs::copy(&old_path, dest).map_err(|e| Error::io(dest, e))?;
+            if let Err(e) = std::fs::remove_file(&old_path) {
+                tracing::warn!(
+                    "Failed to delete old library.db at {}: {e}",
+                    old_path.display()
+                );
+            }
+        }
+
+        // SQLite would recover any sidecars left behind, but moving them
+        // alongside the main file keeps the storage clean.
+        for ext in ["db-wal", "db-shm", "db-journal"] {
+            let src = old_path.with_extension(ext);
+            let dst = dest.with_extension(ext);
+            match std::fs::rename(&src, &dst) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => {
+                    if std::fs::copy(&src, &dst).is_ok()
+                        && let Err(e) = std::fs::remove_file(&src)
+                    {
+                        tracing::warn!("Failed to delete sidecar {}: {e}", src.display());
+                    }
+                }
+            }
+        }
+
+        tracing::info!(
+            "Library DB migrated: {} -> {}",
+            old_path.display(),
+            dest.display()
+        );
+        Ok(())
     }
 
     /// Create all tables if they don't exist.
     ///
-    /// Also validates existing schemas: if a table has missing or extra columns
-    /// (stale schema from a previous version), it's dropped and recreated.
+    /// On column-set mismatch, drop the four rebuildable derived tables
+    /// (`game_library`, `game_library_meta`, `game_metadata`,
+    /// `game_release_date`) so `CREATE TABLE IF NOT EXISTS` recreates
+    /// them at the new shape. Their content comes from filesystem scans,
+    /// LaunchBox import, and build-time seed — all reproducible, so the
+    /// drop is a cache flush, not data loss.
+    ///
+    /// Real *additive* schema upgrades (new column on an existing table
+    /// the user has populated and we don't want to wipe) should go
+    /// through `run_migrations` instead.
     pub fn init_tables(conn: &Connection) -> Result<()> {
-        // Drop stale tables so CREATE TABLE IF NOT EXISTS recreates them.
         if Self::table_needs_rebuild(conn, "game_library", GAME_LIBRARY_COLUMNS) {
             let _ = conn.execute_batch(
                 "DROP TABLE IF EXISTS game_library; DROP TABLE IF EXISTS game_library_meta;",
@@ -628,6 +696,65 @@ impl LibraryDb {
         // to cover top_developers query (COUNT(DISTINCT base_title) GROUP BY developer).
         let _ = conn.execute_batch("DROP INDEX IF EXISTS idx_game_library_developer");
 
+        Ok(())
+    }
+
+    /// Current schema version. Bump when adding a new `migrate_v{N-1}_v{N}`
+    /// step in [`Self::run_migrations`].
+    pub const SCHEMA_VERSION: i64 = 1;
+
+    /// Run pending additive migrations.
+    ///
+    /// Reads the stored version from `schema_version`, applies each
+    /// `migrate_v{N-1}_v{N}` step in a single transaction, stamps on
+    /// success. Use this for `ADD COLUMN` / `CREATE INDEX` upgrades on
+    /// tables we don't want to drop (e.g. user-settings). The four
+    /// derived tables in `init_tables` use the simpler drop-and-recreate
+    /// path on column-set mismatch since their content is reproducible.
+    pub fn run_migrations(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at INTEGER NOT NULL
+            )",
+        )
+        .map_err(|e| Error::Other(format!("create schema_version: {e}")))?;
+
+        let current: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| Error::Other(format!("read schema_version: {e}")))?;
+
+        if current >= Self::SCHEMA_VERSION {
+            return Ok(());
+        }
+
+        // Each step is gated by `if current < N` so a brand-new DB (which
+        // already had `init_tables` build the v1 shape) just stamps to
+        // SCHEMA_VERSION; an upgrade from N-1 runs the bridge step.
+        // No destructive `DROP TABLE` paths — if a future migration
+        // genuinely needs to clear data, log a WARN above the SQL.
+        //
+        // (No migrations defined yet — SCHEMA_VERSION = 1 is the
+        // current shape that `init_tables` builds. Future changes:
+        // `if current < 2 { migrate_v1_v2(conn)?; }`.)
+
+        let now = unix_now();
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2)",
+            rusqlite::params![Self::SCHEMA_VERSION, now],
+        )
+        .map_err(|e| Error::Other(format!("stamp schema_version: {e}")))?;
+
+        if current > 0 {
+            tracing::info!(
+                "Library DB migrated from v{current} to v{}",
+                Self::SCHEMA_VERSION
+            );
+        }
         Ok(())
     }
 
@@ -774,7 +901,7 @@ mod tests {
     /// Returns a mutable `Connection` so tests can call both read and write methods.
     pub(crate) fn open_temp_db() -> (Connection, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let (conn, _path) = LibraryDb::open(dir.path()).unwrap();
+        let conn = LibraryDb::open(dir.path()).unwrap();
         (conn, dir)
     }
 
@@ -875,7 +1002,7 @@ mod tests {
         }
 
         // Open via LibraryDb — this runs validate_game_library_schema.
-        let (conn, _path) = LibraryDb::open(dir.path()).unwrap();
+        let conn = LibraryDb::open(dir.path()).unwrap();
 
         // The old row should be gone (table was dropped and recreated).
         let count: i64 = conn
@@ -908,15 +1035,83 @@ mod tests {
         let lib_path = rc.join(LIBRARY_DB_FILE);
         std::fs::write(&lib_path, [0xDEu8; 4096]).unwrap();
 
-        let (conn, returned_path) =
-            LibraryDb::open(dir.path()).expect("open must recover from clobbered header");
-        assert_eq!(returned_path, lib_path);
+        let conn = LibraryDb::open(dir.path()).expect("open must recover from clobbered header");
+        assert!(lib_path.exists());
 
         // Fresh DB → expected tables exist and are empty.
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM game_library", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn migrate_from_storage_moves_db_and_sidecars() {
+        let storage = tempfile::tempdir().unwrap();
+        let central = tempfile::tempdir().unwrap();
+
+        // Plant a per-storage library.db with WAL/SHM sidecars.
+        let old_dir = storage.path().join(RC_DIR);
+        std::fs::create_dir_all(&old_dir).unwrap();
+        let old_path = old_dir.join(LIBRARY_DB_FILE);
+        std::fs::write(&old_path, b"old-db").unwrap();
+        std::fs::write(old_path.with_extension("db-wal"), b"wal").unwrap();
+        std::fs::write(old_path.with_extension("db-shm"), b"shm").unwrap();
+
+        let dest = central.path().join("library.db");
+        LibraryDb::migrate_from_storage(storage.path(), &dest).unwrap();
+
+        assert!(dest.exists(), "destination library.db should exist");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"old-db");
+        assert!(
+            dest.with_extension("db-wal").exists(),
+            "WAL sidecar should follow"
+        );
+        assert!(
+            dest.with_extension("db-shm").exists(),
+            "SHM sidecar should follow"
+        );
+        assert!(!old_path.exists(), "old library.db should be gone");
+    }
+
+    #[test]
+    fn migrate_from_storage_skips_when_dest_exists() {
+        let storage = tempfile::tempdir().unwrap();
+        let central = tempfile::tempdir().unwrap();
+
+        let old_dir = storage.path().join(RC_DIR);
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::write(old_dir.join(LIBRARY_DB_FILE), b"old-db").unwrap();
+
+        let dest = central.path().join("library.db");
+        std::fs::write(&dest, b"newer-db").unwrap();
+
+        LibraryDb::migrate_from_storage(storage.path(), &dest).unwrap();
+
+        // Destination is unchanged; old file is left alone.
+        assert_eq!(std::fs::read(&dest).unwrap(), b"newer-db");
+        assert!(old_dir.join(LIBRARY_DB_FILE).exists());
+    }
+
+    #[test]
+    fn migrate_from_storage_noop_when_no_old_file() {
+        let storage = tempfile::tempdir().unwrap();
+        let central = tempfile::tempdir().unwrap();
+        let dest = central.path().join("library.db");
+        LibraryDb::migrate_from_storage(storage.path(), &dest).unwrap();
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn open_at_creates_parent_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nested = tmp
+            .path()
+            .join("storages")
+            .join("a-b-c-d")
+            .join("library.db");
+        let _conn = LibraryDb::open_at(&nested).unwrap();
+        assert!(nested.exists());
     }
 
     #[test]
@@ -932,9 +1127,9 @@ mod tests {
         std::fs::write(legacy.with_extension("db-shm"), b"shm").unwrap();
         std::fs::write(legacy.with_extension("db-journal"), b"journal").unwrap();
 
-        let (_conn, lib_path) = LibraryDb::open(dir.path()).unwrap();
+        let _conn = LibraryDb::open(dir.path()).unwrap();
+        let lib_path = dir.path().join(RC_DIR).join(LIBRARY_DB_FILE);
 
-        assert!(lib_path.ends_with("library.db"));
         assert!(lib_path.exists(), "new library.db should be created");
         assert!(!legacy.exists(), "legacy metadata.db should be gone");
         assert!(

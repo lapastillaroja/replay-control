@@ -107,6 +107,8 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
         data_source,
         image_stats,
         builtin_stats,
+        storage_kind: format!("{:?}", storage.kind).to_lowercase(),
+        storage_root: storage.root.display().to_string(),
     })
 }
 

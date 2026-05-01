@@ -352,7 +352,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataThumbnailSystems => "sistemas",
         Key::MetadataThumbnailStop => "Detener",
         Key::MetadataThumbnailCancelling => "Cancelando...",
-        Key::MetadataThumbnailPhaseIndexing => "Obteniendo índice...",
+        Key::MetadataThumbnailPhaseIndexing => "Obteniendo lista...",
         Key::MetadataThumbnailPhaseDownloading => "Descargando...",
         Key::MetadataThumbnailComplete => "Actualización completada",
         Key::MetadataThumbnailFailed => "Error en la actualización",
@@ -411,6 +411,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataSummaryYearSpan => "Rango de años",
         Key::MetadataSummaryLibrarySize => "Tamaño",
         Key::MetadataSummarySystems => "Sistemas",
+        Key::MetadataSummaryStorage => "Almacenamiento",
 
         // System accordion rows
         Key::MetadataSystemCoverage => "cobertura",

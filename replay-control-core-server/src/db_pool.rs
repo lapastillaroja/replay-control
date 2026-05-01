@@ -1,17 +1,26 @@
 //! Async SQLite connection pool built on deadpool-sqlite.
 //!
-//! Separate read and write pools per database, with filesystem-aware journal
-//! mode selection (WAL on POSIX, DELETE on exFAT/NFS) via `sqlite::open_connection`.
-//! Includes a corruption flag (set on SQLITE_CORRUPT and closes the pool) and a
-//! `WriteGate` RAII guard that prevents concurrent reads during heavy writes
-//! on non-WAL filesystems.
+//! Two pools per DB (read N, write 1), filesystem-aware journal-mode
+//! selection (WAL on POSIX, DELETE on exFAT/NFS), corruption flag, internal
+//! write gate that auto-activates on DELETE-mode pools.
+//!
+//! Safety contract:
+//! - WAL recovery runs once per `DbPool` instance before any deadpool
+//!   connection exists. Per-connection opens never touch sidecar files.
+//! - Destructive ops (`reset_to_empty`, `replace_with_file`, `reopen` to a
+//!   new path) drain in-flight connections before mutating files; abort if
+//!   drain times out so a stuck closure can't race the unlink.
+//! - `try_read` / `try_write` return typed `DbError`. Cascade gates that
+//!   treat unavailability as "no rows" produce silent data loss; see
+//!   `investigations/2026-05-01-library-wal-unlink-under-live-connections.md`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 use deadpool::managed::{self, Metrics, RecycleError};
 use deadpool_sync::SyncWrapper;
+use thiserror::Error;
 
 pub use rusqlite;
 
@@ -137,6 +146,47 @@ impl managed::Manager for SqliteManager {
 /// Alias for a deadpool pool using our custom manager.
 type SqlitePool = managed::Pool<SqliteManager>;
 
+/// Read vs. write — drives gate handling and metric routing in
+/// [`DbPool::dispatch`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Op {
+    Read,
+    Write,
+}
+
+impl Op {
+    fn kind(self) -> &'static str {
+        match self {
+            Op::Read => "read",
+            Op::Write => "write",
+        }
+    }
+}
+
+/// Why a `try_read`/`try_write` could not complete. `Closed`/`Corrupt`/`Busy`
+/// are pool-state signals (treat as "skip", never as "no rows"); `Sql`,
+/// `Acquire`, `Interact` carry the underlying typed error so callers can
+/// match (e.g. on `rusqlite::ErrorCode::DatabaseBusy`).
+#[derive(Debug, Error)]
+pub enum DbError {
+    #[error("DB pool is closed")]
+    Closed,
+    #[error("DB pool is corrupt — awaiting recovery")]
+    Corrupt,
+    #[error("DB is busy (write in flight)")]
+    Busy,
+    #[error("DB operation timed out after {0:?}")]
+    Timeout(std::time::Duration),
+    #[error("connection acquire failed: {0}")]
+    Acquire(#[from] deadpool::managed::PoolError<rusqlite::Error>),
+    #[error("interact dispatch failed: {0}")]
+    Interact(#[from] deadpool_sync::InteractError),
+    #[error("SQL: {0}")]
+    Sql(#[from] rusqlite::Error),
+    #[error("{0}")]
+    Other(String),
+}
+
 /// Connection pool for a single SQLite database.
 ///
 /// Uses `deadpool` for true concurrent reads (WAL mode allows multiple readers)
@@ -156,33 +206,35 @@ type CorruptionCallback = Arc<std::sync::RwLock<Option<Box<dyn Fn() + Send + Syn
 
 #[derive(Clone)]
 pub struct DbPool {
-    /// Hot-path read connection (SSR pages, server fns).
+    /// Read pool. WAL allows true concurrent reads, so multi-slot pools let
+    /// SSR fan-out and long enrichment / image-index passes overlap. Sized
+    /// per-pool at construction (library: 3, user_data: 1).
     read_pool: Arc<std::sync::RwLock<Option<SqlitePool>>>,
-    /// Background-read connection: a dedicated slot for long-running reads
-    /// (`build_image_index`, `plan_system_thumbnails`, the manifest fuzzy-
-    /// index build) so they don't park on the SSR-serving connection's
-    /// mutex while the planning loop walks tens of thousands of rows.
-    /// One connection on WAL is plenty (writers don't block readers); on
-    /// non-WAL the gate path covers correctness, and this slot still
-    /// keeps the SSR connection free for SSR fan-out.
-    /// See Tier 3 of `2026-04-29-pool-design-findings.md`.
-    read_bg_pool: Arc<std::sync::RwLock<Option<SqlitePool>>>,
     /// Single write connection (SQLite serialises writes).
     write_pool: Arc<std::sync::RwLock<Option<SqlitePool>>>,
     db_path: Arc<std::sync::RwLock<PathBuf>>,
     label: &'static str,
+    /// Read-pool size, captured for `reopen()`.
+    read_size: usize,
+    /// Journal mode. Atomic so `reopen()` can swap mode → pool slots in
+    /// that order; a `write()` arriving mid-reopen never sees stale mode
+    /// + new pool.
+    journal_mode: Arc<AtomicU8>,
     /// Opener function for creating additional connections (used by `reopen()`
     /// to verify the DB is accessible before rebuilding pools).
-    opener: fn(&Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+    opener: fn(&Path) -> replay_control_core::error::Result<rusqlite::Connection>,
     /// Set when a query returns SQLITE_CORRUPT (11) or SQLITE_NOTADB (26).
     /// Once set, the pool is closed and all reads/writes return None until
     /// the DB is rebuilt/repaired and the flag is cleared. NOTADB covers the
     /// case where the file's 16-byte magic header has been overwritten and
     /// SQLite refuses to identify it as a database at all.
     corrupt: Arc<AtomicBool>,
-    /// When set, `read()` returns `None` immediately without acquiring a
-    /// connection. Prevents SQLite corruption on exFAT (DELETE journal mode)
-    /// during heavy write operations (import, rebuild, thumbnail index).
+    /// True once recovery has run for `db_path`. Reopen to a different
+    /// path or to a freshly-unlinked file resets to false.
+    recovered: Arc<AtomicBool>,
+    /// Auto-activated by `try_write` on DELETE-mode pools. Blocks reads
+    /// for the duration of a write so they don't race the rollback
+    /// journal. WAL pools never set it.
     write_gate: Arc<AtomicBool>,
     /// Fires on every actual transition of the corruption flag — both
     /// false→true (`mark_corrupt`) and true→false (`reopen` success path).
@@ -195,33 +247,24 @@ pub struct DbPool {
     metrics: Arc<PoolMetrics>,
 }
 
-/// Per-`DbPool` lifetime counters. All fields are monotonically increasing
-/// `AtomicU64` so reading is a single atomic load — no synchronisation cost
-/// in the steady state.
 #[derive(Debug, Default)]
 pub struct PoolMetrics {
     pub reads_started: AtomicU64,
     pub reads_completed: AtomicU64,
     pub reads_returned_none: AtomicU64,
     pub reads_timed_out: AtomicU64,
-    pub reads_bg_started: AtomicU64,
-    pub reads_bg_completed: AtomicU64,
     pub writes_started: AtomicU64,
     pub writes_completed: AtomicU64,
     pub writes_timed_out: AtomicU64,
     pub gate_blocked_reads: AtomicU64,
 }
 
-/// Snapshot of `PoolMetrics`. Plain `u64`s, easy to serialize for a future
-/// `/debug/pool` endpoint.
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub struct PoolMetricsSnapshot {
     pub reads_started: u64,
     pub reads_completed: u64,
     pub reads_returned_none: u64,
     pub reads_timed_out: u64,
-    pub reads_bg_started: u64,
-    pub reads_bg_completed: u64,
     pub writes_started: u64,
     pub writes_completed: u64,
     pub writes_timed_out: u64,
@@ -235,8 +278,6 @@ impl PoolMetrics {
             reads_completed: self.reads_completed.load(Ordering::Relaxed),
             reads_returned_none: self.reads_returned_none.load(Ordering::Relaxed),
             reads_timed_out: self.reads_timed_out.load(Ordering::Relaxed),
-            reads_bg_started: self.reads_bg_started.load(Ordering::Relaxed),
-            reads_bg_completed: self.reads_bg_completed.load(Ordering::Relaxed),
             writes_started: self.writes_started.load(Ordering::Relaxed),
             writes_completed: self.writes_completed.load(Ordering::Relaxed),
             writes_timed_out: self.writes_timed_out.load(Ordering::Relaxed),
@@ -244,19 +285,6 @@ impl PoolMetrics {
         }
     }
 }
-
-/// Number of read connections per pool. Load tests on USB storage (DELETE journal
-/// mode, no WAL) showed no performance improvement with more than 1 reader — the
-/// single-user access pattern and fast queries (<50ms) don't benefit from
-/// concurrent readers. Keeping 1 reduces memory by ~2MB per saved connection.
-const READ_POOL_SIZE: usize = 1;
-
-/// Number of read connections in the **background** pool, used for long-
-/// running reads (`build_image_index`, `plan_system_thumbnails`, manifest
-/// fuzzy-index builds). One slot is enough — these calls are sequential
-/// inside the import / thumbnail pipelines — and it keeps the SSR-serving
-/// `read_pool` free of long-held connections. ~2 MB additional RSS.
-const READ_BG_POOL_SIZE: usize = 1;
 
 /// Wall-clock cap on a single `interact()` closure. The closure runs on
 /// the blocking pool via `spawn_blocking`, which is **not cancellable** when
@@ -273,14 +301,12 @@ const READ_BG_POOL_SIZE: usize = 1;
 /// faster fall-back.
 const INTERACT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// RAII guard that gates DB reads during heavy writes.
-///
-/// While held, `DbPool::read()` returns `None` for the gated pool.
-/// Automatically clears the gate on drop (including panic).
-pub struct WriteGate(Arc<AtomicBool>);
+/// RAII gate. While held, reads on the pool short-circuit to
+/// `Err(DbError::Busy)`. Auto-activated by `try_write` on DELETE-mode pools.
+pub(crate) struct WriteGate(Arc<AtomicBool>);
 
 impl WriteGate {
-    pub fn activate(flag: &Arc<AtomicBool>) -> Self {
+    pub(crate) fn activate(flag: &Arc<AtomicBool>) -> Self {
         flag.store(true, Ordering::Release);
         tracing::debug!("WriteGate: activated");
         Self(Arc::clone(flag))
@@ -292,6 +318,26 @@ impl Drop for WriteGate {
         self.0.store(false, Ordering::Release);
         tracing::debug!("WriteGate: released");
     }
+}
+
+/// Close `pool` and wait for in-flight `Object`s to drop. Returns `true`
+/// on a clean drain, `false` on timeout — destructive callers
+/// (`with_fresh_file`) abort on `false` so a stuck `interact()` closure
+/// doesn't race a follow-up `delete_db_files`.
+async fn drain_pool(pool: SqlitePool, kind: &'static str, label: &'static str) -> bool {
+    pool.close();
+    let deadline = std::time::Instant::now() + INTERACT_TIMEOUT * 2;
+    while pool.status().size > 0 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let remaining = pool.status().size;
+    if remaining > 0 {
+        tracing::warn!(
+            "{label}: {kind} pool drain timed out — {remaining} connection(s) still outstanding"
+        );
+        return false;
+    }
+    true
 }
 
 /// Build a deadpool `SqlitePool` with the given size.
@@ -343,8 +389,13 @@ impl DbPool {
     pub fn new(
         db_path: PathBuf,
         label: &'static str,
-        opener: fn(&Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+        opener: fn(&Path) -> replay_control_core::error::Result<rusqlite::Connection>,
+        read_size: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Recovery before any connection exists — sibling deadpool opens
+        // skip it (per-connection recovery would unlink WAL under live fds).
+        sqlite::recover_after_unclean_shutdown(&db_path);
+
         let warmup = sqlite::open_connection(&db_path, label)
             .map_err(|e| format!("{label}: failed to open warmup connection: {e}"))?;
         let journal_mode = query_journal_mode(&warmup);
@@ -355,42 +406,42 @@ impl DbPool {
             journal_mode,
             false,
             &format!("{label}_read"),
-            READ_POOL_SIZE,
-        )?;
-        let read_bg_pool = build_pool(
-            &db_path,
-            journal_mode,
-            false,
-            &format!("{label}_read_bg"),
-            READ_BG_POOL_SIZE,
+            read_size,
         )?;
         let write_pool = build_pool(&db_path, journal_mode, true, &format!("{label}_write"), 1)?;
 
         Ok(Self {
             read_pool: Arc::new(std::sync::RwLock::new(Some(read_pool))),
-            read_bg_pool: Arc::new(std::sync::RwLock::new(Some(read_bg_pool))),
             write_pool: Arc::new(std::sync::RwLock::new(Some(write_pool))),
             db_path: Arc::new(std::sync::RwLock::new(db_path)),
             label,
+            read_size,
+            journal_mode: Arc::new(AtomicU8::new(journal_mode.as_u8())),
             opener,
             corrupt: Arc::new(AtomicBool::new(false)),
+            recovered: Arc::new(AtomicBool::new(true)),
             write_gate: Arc::new(AtomicBool::new(false)),
             on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
             metrics: Arc::new(PoolMetrics::default()),
         })
     }
 
-    /// Create a closed (empty) pool. All reads/writes return `None`.
+    /// Create a closed (empty) pool. All reads/writes return `None`
+    /// (and `try_*` variants return `Err(DbError::Closed)`).
     /// Used at startup when storage is unavailable, and in tests.
     pub fn new_closed(label: &'static str) -> Self {
         Self {
             read_pool: Arc::new(std::sync::RwLock::new(None)),
-            read_bg_pool: Arc::new(std::sync::RwLock::new(None)),
             write_pool: Arc::new(std::sync::RwLock::new(None)),
             db_path: Arc::new(std::sync::RwLock::new(PathBuf::new())),
             label,
+            read_size: 1,
+            // No file → mode is moot; Delete is the safer default in case
+            // an accidental write reaches the pool somehow.
+            journal_mode: Arc::new(AtomicU8::new(JournalMode::Delete.as_u8())),
             opener: |_| Err(replay_control_core::error::Error::Other("closed".into())),
             corrupt: Arc::new(AtomicBool::new(false)),
+            recovered: Arc::new(AtomicBool::new(false)),
             write_gate: Arc::new(AtomicBool::new(false)),
             on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
             metrics: Arc::new(PoolMetrics::default()),
@@ -402,23 +453,23 @@ impl DbPool {
     /// path and the real opener are wired, so `reopen()` (called by recovery
     /// flows like Restore/Reset) can rebuild the pool against the file once
     /// it has been replaced or recreated.
-    ///
-    /// Used at startup when the user-data DB on disk has an invalid SQLite
-    /// header (NOTADB-class corruption) and `open_connection` would otherwise
-    /// crash the service.
     pub fn new_corrupt(
         db_path: PathBuf,
         label: &'static str,
-        opener: fn(&Path) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)>,
+        opener: fn(&Path) -> replay_control_core::error::Result<rusqlite::Connection>,
+        read_size: usize,
     ) -> Self {
         Self {
             read_pool: Arc::new(std::sync::RwLock::new(None)),
-            read_bg_pool: Arc::new(std::sync::RwLock::new(None)),
             write_pool: Arc::new(std::sync::RwLock::new(None)),
             db_path: Arc::new(std::sync::RwLock::new(db_path)),
             label,
+            read_size,
+            // Mode learned on next `reopen`.
+            journal_mode: Arc::new(AtomicU8::new(JournalMode::Delete.as_u8())),
             opener,
             corrupt: Arc::new(AtomicBool::new(true)),
+            recovered: Arc::new(AtomicBool::new(false)),
             write_gate: Arc::new(AtomicBool::new(false)),
             on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
             metrics: Arc::new(PoolMetrics::default()),
@@ -431,251 +482,279 @@ impl DbPool {
         self.metrics.snapshot()
     }
 
-    /// Run a read-only closure with a database connection from the read pool.
-    ///
-    /// Multiple concurrent `read()` calls get different connections (up to
-    /// `max_size`), enabling true concurrent reads under WAL mode.
-    ///
-    /// Uses deadpool's async API: `pool.get().await` suspends the task without
-    /// pinning a tokio worker, and `interact()` runs the closure via
-    /// `spawn_blocking`. This prevents worker thread starvation when many
-    /// resources compete for a small pool.
-    ///
-    /// Returns `None` if the pool is closed (DB unavailable).
+    /// Run a read-only closure. `None` = pool unavailable; **don't read it
+    /// as "no rows"**. Use [`Self::try_read`] when the result gates
+    /// destructive work and the caller must distinguish unavailable from
+    /// genuinely empty.
     pub async fn read<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        self.try_read(f).await.ok()
+    }
+
+    pub async fn try_read<F, R>(&self, f: F) -> Result<R, DbError>
+    where
+        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
         self.metrics.reads_started.fetch_add(1, Ordering::Relaxed);
-        // Write gate: heavy writes in progress, return None to prevent
-        // concurrent reads that corrupt the DB on exFAT (DELETE journal mode).
-        if self.write_gate.load(Ordering::Acquire) {
-            self.metrics
-                .gate_blocked_reads
-                .fetch_add(1, Ordering::Relaxed);
-            self.metrics
-                .reads_returned_none
-                .fetch_add(1, Ordering::Relaxed);
-            return None;
-        }
-        let result = self.run_read(&self.read_pool, "read", f).await;
+        // `dispatch` is single-typed over `&mut Connection`; reads borrow
+        // immutably via reborrow. `query_only=ON` is set on read connections
+        // (see `SqliteManager::create`) so a misbehaving closure can't write.
+        let result = self.dispatch(Op::Read, &self.read_pool, |c| f(c)).await;
         match &result {
-            Some(_) => self.metrics.reads_completed.fetch_add(1, Ordering::Relaxed),
-            None => self
-                .metrics
-                .reads_returned_none
-                .fetch_add(1, Ordering::Relaxed),
+            Ok(_) => {
+                self.metrics.reads_completed.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(e) => {
+                if matches!(e, DbError::Busy) {
+                    self.metrics
+                        .gate_blocked_reads
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                self.metrics
+                    .reads_returned_none
+                    .fetch_add(1, Ordering::Relaxed);
+            }
         };
         result
     }
 
-    /// Run a read-only closure on the **background** pool slot.
-    ///
-    /// Use for long-running reads (image-index build, manifest planning,
-    /// fuzzy-index build) so they don't park on the SSR-serving read
-    /// connection's mutex. Same write-gate semantics as `read()` — on
-    /// non-WAL filesystems we still refuse to overlap reads with an
-    /// in-flight writer.
-    pub async fn read_bg<F, R>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.metrics
-            .reads_bg_started
-            .fetch_add(1, Ordering::Relaxed);
-        if self.write_gate.load(Ordering::Acquire) {
-            self.metrics
-                .gate_blocked_reads
-                .fetch_add(1, Ordering::Relaxed);
-            return None;
-        }
-        let result = self.run_read(&self.read_bg_pool, "read_bg", f).await;
-        if result.is_some() {
-            self.metrics
-                .reads_bg_completed
-                .fetch_add(1, Ordering::Relaxed);
-        }
-        result
-    }
-
-    async fn run_read<F, R>(
-        &self,
-        pool_slot: &Arc<std::sync::RwLock<Option<SqlitePool>>>,
-        kind: &'static str,
-        f: F,
-    ) -> Option<R>
-    where
-        F: FnOnce(&rusqlite::Connection) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        let pool = pool_slot.read().ok()?.as_ref()?.clone();
-        let conn = pool.get().await.ok()?;
-        let pool_for_corrupt = self.clone();
-        let label = self.label;
-        let interact = conn.interact(move |conn| {
-            let result = f(conn);
-            check_for_corruption(conn, &pool_for_corrupt);
-            result
-        });
-        match tokio::time::timeout(INTERACT_TIMEOUT, interact).await {
-            Ok(Ok(value)) => Some(value),
-            Ok(Err(e)) => {
-                tracing::warn!("{label}: {kind} interact failed: {e}");
-                None
-            }
-            Err(_) => {
-                tracing::error!(
-                    "{label}: {kind} interact exceeded {:?}; closure still running on \
-                     blocking pool — connection mutex pinned until it completes",
-                    INTERACT_TIMEOUT
-                );
-                self.metrics.reads_timed_out.fetch_add(1, Ordering::Relaxed);
-                None
-            }
-        }
-    }
-
-    /// Run a mutable closure with the single write connection.
-    ///
-    /// While the write is in flight, `read()` callers will see `None` so
-    /// concurrent readers can't race the writer on exFAT (DELETE journal).
-    /// The gate is held only for the duration of this single write — long
-    /// write *sequences* should call `write()` per logical write, not hold
-    /// an outer gate, so SSR readers stay responsive between calls.
-    ///
-    /// Returns `None` if the pool is closed (DB unavailable).
+    /// Run a mutable closure. On DELETE-mode pools the write gate
+    /// auto-activates around this call; concurrent reads get
+    /// `Err(DbError::Busy)`. On WAL pools the gate stays unset.
     pub async fn write<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        self.try_write(f).await.ok()
+    }
+
+    pub async fn try_write<F, R>(&self, f: F) -> Result<R, DbError>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
         self.metrics.writes_started.fetch_add(1, Ordering::Relaxed);
-        let _gate = WriteGate::activate(&self.write_gate);
-        let pool = self.write_pool.read().ok()?.as_ref()?.clone();
-        let conn = pool.get().await.ok()?;
+        let _gate = self
+            .is_delete_mode()
+            .then(|| WriteGate::activate(&self.write_gate));
+        let result = self.dispatch(Op::Write, &self.write_pool, f).await;
+        if result.is_ok() {
+            self.metrics
+                .writes_completed
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        result
+    }
+
+    /// Pool acquisition + interact + timeout — the shared body of
+    /// `try_read` and `try_write`. Pre-flight gates (`Corrupt`, write-gate
+    /// `Busy`) are checked here so both paths stay aligned.
+    async fn dispatch<F, R>(
+        &self,
+        op: Op,
+        slot: &Arc<std::sync::RwLock<Option<SqlitePool>>>,
+        f: F,
+    ) -> Result<R, DbError>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        if self.corrupt.load(Ordering::Acquire) {
+            return Err(DbError::Corrupt);
+        }
+        if op == Op::Read && self.write_gate.load(Ordering::Acquire) {
+            return Err(DbError::Busy);
+        }
+        let pool = slot
+            .read()
+            .map_err(|_| DbError::Other("pool slot lock poisoned".into()))?
+            .as_ref()
+            .ok_or(DbError::Closed)?
+            .clone();
+        let conn = pool.get().await?;
         let pool_for_corrupt = self.clone();
         let label = self.label;
-        let interact = conn.interact(move |conn| {
-            let result = f(conn);
-            check_for_corruption(conn, &pool_for_corrupt);
-            result
+        let kind = op.kind();
+        let interact = conn.interact(move |c| {
+            let r = f(c);
+            check_for_corruption(c, &pool_for_corrupt);
+            r
         });
         match tokio::time::timeout(INTERACT_TIMEOUT, interact).await {
-            Ok(Ok(value)) => {
-                self.metrics
-                    .writes_completed
-                    .fetch_add(1, Ordering::Relaxed);
-                Some(value)
-            }
+            Ok(Ok(value)) => Ok(value),
             Ok(Err(e)) => {
-                tracing::warn!("{label}: write interact failed: {e}");
-                None
+                tracing::warn!("{label}: {kind} interact failed: {e}");
+                Err(DbError::Interact(e))
             }
             Err(_) => {
                 tracing::error!(
-                    "{label}: write interact exceeded {:?}; closure still running on \
-                     blocking pool — connection mutex pinned until it completes",
+                    "{label}: {kind} exceeded {:?}; closure still running on blocking pool",
                     INTERACT_TIMEOUT
                 );
-                self.metrics
-                    .writes_timed_out
-                    .fetch_add(1, Ordering::Relaxed);
-                None
+                let counter = if op == Op::Read {
+                    &self.metrics.reads_timed_out
+                } else {
+                    &self.metrics.writes_timed_out
+                };
+                counter.fetch_add(1, Ordering::Relaxed);
+                Err(DbError::Timeout(INTERACT_TIMEOUT))
             }
         }
     }
 
-    /// Close the pools (e.g., after storage change).
-    /// Next call to `read`/`write` will return `None` until `reopen` is called.
-    pub fn close(&self) {
-        if let Ok(mut guard) = self.read_pool.write() {
-            *guard = None;
-        }
-        if let Ok(mut guard) = self.read_bg_pool.write() {
-            *guard = None;
-        }
-        if let Ok(mut guard) = self.write_pool.write() {
-            *guard = None;
-        }
+    fn is_delete_mode(&self) -> bool {
+        JournalMode::from_u8(self.journal_mode.load(Ordering::Acquire)) == JournalMode::Delete
     }
 
-    /// Re-open at a new storage root. Rebuilds both pools with fresh connections.
-    pub fn reopen(&self, storage_root: &Path) -> bool {
-        // Verify we can open the DB at the new location.
-        match (self.opener)(storage_root) {
-            Ok((conn, path)) => {
-                let journal_mode = query_journal_mode(&conn);
-                drop(conn);
+    /// Close pools and drain in-flight `Object`s. Returns `true` on clean
+    /// drain, `false` on timeout (in which case destructive followups
+    /// must NOT unlink files — a stuck closure may still write to them).
+    pub async fn close(&self) -> bool {
+        let read = self.read_pool.write().ok().and_then(|mut g| g.take());
+        let write = self.write_pool.write().ok().and_then(|mut g| g.take());
+        let read_ok = match read {
+            Some(p) => drain_pool(p, "read", self.label).await,
+            None => true,
+        };
+        let write_ok = match write {
+            Some(p) => drain_pool(p, "write", self.label).await,
+            None => true,
+        };
+        read_ok && write_ok
+    }
 
-                let new_read = match build_pool(
-                    &path,
-                    journal_mode,
-                    false,
-                    &format!("{}_read", self.label),
-                    READ_POOL_SIZE,
-                ) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::debug!("Could not rebuild {} read pool: {e}", self.label);
-                        return false;
-                    }
-                };
-                let new_read_bg = match build_pool(
-                    &path,
-                    journal_mode,
-                    false,
-                    &format!("{}_read_bg", self.label),
-                    READ_BG_POOL_SIZE,
-                ) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::debug!("Could not rebuild {} read_bg pool: {e}", self.label);
-                        return false;
-                    }
-                };
-                let new_write = match build_pool(
-                    &path,
-                    journal_mode,
-                    true,
-                    &format!("{}_write", self.label),
-                    1,
-                ) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::debug!("Could not rebuild {} write pool: {e}", self.label);
-                        return false;
-                    }
-                };
-                // Swap pools (old connections drain naturally when Objects are returned).
-                if let Ok(mut guard) = self.read_pool.write() {
-                    *guard = Some(new_read);
-                }
-                if let Ok(mut guard) = self.read_bg_pool.write() {
-                    *guard = Some(new_read_bg);
-                }
-                if let Ok(mut guard) = self.write_pool.write() {
-                    *guard = Some(new_write);
-                }
-                if let Ok(mut guard) = self.db_path.write() {
-                    *guard = path;
-                }
-                let was_corrupt = self.corrupt.swap(false, Ordering::AcqRel);
-                if was_corrupt {
-                    self.fire_corruption_callback();
-                }
-                true
+    /// Reopen at a new DB *file* path. Drains current connections, runs
+    /// WAL recovery (skipped when same path and already recovered),
+    /// rebuilds both pools. Returns `false` if any step fails — pool
+    /// stays closed.
+    ///
+    /// `db_path` is the actual SQLite file (not a storage root). All
+    /// configured openers must take a file path, return a `Connection`,
+    /// and not perform any path resolution of their own — that
+    /// responsibility now lives at the call site, where it's typed.
+    pub async fn reopen(&self, db_path: &Path) -> bool {
+        if let Err(e) = (self.opener)(db_path) {
+            tracing::debug!("Could not re-open {} DB: {e}", self.label);
+            return false;
+        }
+        let path = db_path.to_path_buf();
+
+        self.close().await;
+
+        let same_path = self.db_path.read().map(|p| *p == path).unwrap_or(false);
+        if !same_path || !self.recovered.load(Ordering::Acquire) {
+            sqlite::recover_after_unclean_shutdown(&path);
+            self.recovered.store(true, Ordering::Release);
+        }
+
+        let journal_mode = match sqlite::open_connection(&path, self.label) {
+            Ok(c) => {
+                let m = query_journal_mode(&c);
+                drop(c);
+                m
             }
             Err(e) => {
-                tracing::debug!("Could not re-open {} DB: {e}", self.label);
-                false
+                tracing::debug!("Could not warm-open {} DB: {e}", self.label);
+                return false;
             }
+        };
+
+        let make = |is_write, max_size, role: &str| {
+            build_pool(
+                &path,
+                journal_mode,
+                is_write,
+                &format!("{}_{role}", self.label),
+                max_size,
+            )
+        };
+        let new_read = match make(false, self.read_size, "read") {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::debug!("Could not rebuild {} read pool: {e}", self.label);
+                return false;
+            }
+        };
+        let new_write = match make(true, 1, "write") {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::debug!("Could not rebuild {} write pool: {e}", self.label);
+                return false;
+            }
+        };
+        // Mode swap precedes pool swap: a concurrent `try_write` arriving
+        // mid-reopen sees (new mode, old pool=closed→retry) — never the
+        // unsafe (old mode, new pool) combination on a WAL↔DELETE crossover.
+        self.journal_mode
+            .store(journal_mode.as_u8(), Ordering::Release);
+        if let Ok(mut guard) = self.read_pool.write() {
+            *guard = Some(new_read);
         }
+        if let Ok(mut guard) = self.write_pool.write() {
+            *guard = Some(new_write);
+        }
+        if let Ok(mut guard) = self.db_path.write() {
+            *guard = path;
+        }
+        let was_corrupt = self.corrupt.swap(false, Ordering::AcqRel);
+        if was_corrupt {
+            self.fire_corruption_callback();
+        }
+        true
     }
 
-    /// Get the write gate flag for use with `WriteGate::activate()`.
-    pub fn write_gate_flag(&self) -> &Arc<AtomicBool> {
+    /// Drain → unlink → reopen empty. The supported "clear and rebuild"
+    /// entry point.
+    pub async fn reset_to_empty(&self) -> bool {
+        self.with_fresh_file(|_| Ok(())).await
+    }
+
+    /// Drain → unlink → copy `src` over → reopen. Used by user-data
+    /// restore-from-backup. If the restored file is corrupt the inner
+    /// `reopen()` returns `false` and callers fall back to
+    /// `reset_to_empty()`.
+    pub async fn replace_with_file(&self, src: &Path) -> bool {
+        let src = src.to_path_buf();
+        self.with_fresh_file(move |dst| std::fs::copy(&src, dst).map(|_| ()))
+            .await
+    }
+
+    /// Drain (abort on timeout — stuck closures must not race the
+    /// unlink), unlink sidecars, populate via `mutate`, reopen.
+    async fn with_fresh_file<F>(&self, mutate: F) -> bool
+    where
+        F: FnOnce(&Path) -> std::io::Result<()> + Send + 'static,
+    {
+        let path = self.db_path();
+        if path.as_os_str().is_empty() {
+            return false;
+        }
+        if !self.close().await {
+            tracing::error!(
+                "{}: aborting destructive op — pool drain timed out, refusing to unlink",
+                self.label
+            );
+            return false;
+        }
+        sqlite::delete_db_files(&path);
+        if let Err(e) = mutate(&path) {
+            tracing::warn!("{}: with_fresh_file mutate failed: {e}", self.label);
+            return false;
+        }
+        self.recovered.store(false, Ordering::Release);
+        self.reopen(&path).await
+    }
+
+    /// Test-only access to the gate flag. Production code does not need
+    /// this — `write()` auto-activates on DELETE-mode pools. Tests use it
+    /// to construct a `WriteGate` and assert read-side behaviour.
+    #[cfg(test)]
+    pub(crate) fn write_gate_flag(&self) -> &Arc<AtomicBool> {
         &self.write_gate
     }
 
@@ -684,10 +763,10 @@ impl DbPool {
         self.corrupt.load(Ordering::Relaxed)
     }
 
-    /// Flag the DB as corrupt and close all connections.
-    /// Idempotent: safe to call from multiple threads simultaneously. The
-    /// corruption callback fires only on the actual false→true transition,
-    /// not on subsequent redundant calls.
+    /// Flag corrupt. Subsequent `try_*` return `Err(DbError::Corrupt)`;
+    /// pool slots stay populated (mark_corrupt is sync, called from
+    /// inside `interact()`). Idempotent. Recovery is the host crate's
+    /// callback: `reset_to_empty()` or `replace_with_file()`.
     pub fn mark_corrupt(&self) {
         if self
             .corrupt
@@ -695,7 +774,6 @@ impl DbPool {
             .is_ok()
         {
             tracing::error!("{}: database flagged as corrupt", self.label);
-            self.close();
             self.fire_corruption_callback();
         }
     }
@@ -792,25 +870,24 @@ mod tests {
     use replay_control_core::error::{Error, Result as CoreResult};
     use std::sync::atomic::AtomicU32;
 
-    /// Test opener that creates a tiny `kv` table on first open.
-    /// Returns the same path it was given. Used by `reopen` tests.
-    fn test_opener(path: &Path) -> CoreResult<(rusqlite::Connection, PathBuf)> {
+    /// Test opener that creates a `kv` table on first open. Idempotent
+    /// across reopens.
+    fn test_opener(path: &Path) -> CoreResult<rusqlite::Connection> {
         let conn = sqlite::open_connection(path, "test_db")
             .map_err(|e| Error::Other(format!("open: {e}")))?;
         conn.execute_batch("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);")
             .map_err(|e| Error::Other(format!("create: {e}")))?;
-        Ok((conn, path.to_path_buf()))
+        Ok(conn)
     }
 
-    /// Build a pool over a fresh DB inside `tmp`, returning (pool, db_path).
-    /// Pool is fully warmed and ready for read/write.
     fn build_test_pool(tmp: &tempfile::TempDir) -> DbPool {
+        build_test_pool_with(tmp, 1)
+    }
+
+    fn build_test_pool_with(tmp: &tempfile::TempDir, read_size: usize) -> DbPool {
         let path = tmp.path().join("test.db");
-        // Pre-create the schema so DbPool::new()'s warmup connection sees a
-        // valid DB (otherwise the empty file would still work, but writes
-        // below need the kv table).
-        let (_, _) = test_opener(&path).unwrap();
-        DbPool::new(path, "test_db", test_opener).expect("pool::new")
+        let _ = test_opener(&path).unwrap();
+        DbPool::new(path, "test_db", test_opener, read_size).expect("pool::new")
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -839,66 +916,28 @@ mod tests {
     async fn closed_pool_returns_none() {
         let pool = DbPool::new_closed("test_db");
         assert!(pool.read(|_| 1u32).await.is_none());
-        assert!(pool.read_bg(|_| 1u32).await.is_none());
         assert!(pool.write(|_| 1u32).await.is_none());
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn read_bg_pool_serves_separate_connection() {
-        let tmp = tempfile::tempdir().unwrap();
-        let pool = build_test_pool(&tmp);
-
-        // Seed via write.
-        pool.write(|conn| conn.execute("INSERT INTO kv VALUES ('k', 'v')", []))
-            .await
-            .unwrap()
-            .unwrap();
-
-        // The hot-path read pool sees the row.
-        let v_hot: Option<String> = pool
-            .read(|conn| {
-                conn.query_row("SELECT v FROM kv WHERE k = 'k'", [], |r| r.get(0))
-                    .ok()
-            })
-            .await
-            .flatten();
-        assert_eq!(v_hot.as_deref(), Some("v"));
-
-        // The background read pool sees the same data (separate connection,
-        // same DB file).
-        let v_bg: Option<String> = pool
-            .read_bg(|conn| {
-                conn.query_row("SELECT v FROM kv WHERE k = 'k'", [], |r| r.get(0))
-                    .ok()
-            })
-            .await
-            .flatten();
-        assert_eq!(v_bg.as_deref(), Some("v"));
-    }
-
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn read_bg_runs_in_parallel_with_read() {
-        // The whole point of the background pool: a long read on read_bg
-        // must not block a concurrent SSR-style read on the hot pool.
-        // (WAL allows true concurrency; on non-WAL/DELETE the writer gate
-        // is what enforces correctness, not this pool split — but reads
-        // still don't block other reads.)
+    async fn multi_slot_reads_run_in_parallel() {
+        // With a 3-slot read pool, a long-running read must not block
+        // concurrent short reads — that's the WAL-concurrency win that
+        // lets SSR fan-out (3+ server fns per page) complete in parallel
+        // instead of serialising on a single connection mutex.
         let tmp = tempfile::tempdir().unwrap();
-        let pool = build_test_pool(&tmp);
+        let pool = build_test_pool_with(&tmp, 3);
 
-        let pool_bg = pool.clone();
-        let bg = tokio::spawn(async move {
-            pool_bg
-                .read_bg(|conn| {
-                    // Simulate a multi-second read by sleeping inside the
-                    // closure. The hot read should still complete fast.
-                    std::thread::sleep(std::time::Duration::from_millis(400));
-                    let _ = conn.query_row("SELECT 1", [], |r| r.get::<_, i64>(0));
-                })
-                .await
+        let slow = pool.clone();
+        let slow_handle = tokio::spawn(async move {
+            slow.read(|conn| {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                let _ = conn.query_row("SELECT 1", [], |r| r.get::<_, i64>(0));
+            })
+            .await
         });
 
-        // Give bg a head start so it's holding its connection.
+        // Give the slow read a head start so it's holding its connection.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let hot_started = std::time::Instant::now();
         let hot = pool
@@ -909,9 +948,9 @@ mod tests {
         assert_eq!(hot, Some(1));
         assert!(
             hot_elapsed < std::time::Duration::from_millis(200),
-            "hot read should not have waited for the background read; took {hot_elapsed:?}"
+            "fast read should not have queued behind the slow one; took {hot_elapsed:?}"
         );
-        let _ = bg.await;
+        let _ = slow_handle.await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -927,15 +966,12 @@ mod tests {
 
         pool.read(|_| 1u32).await.unwrap();
         pool.write(|_| 1u32).await.unwrap();
-        pool.read_bg(|_| 1u32).await.unwrap();
 
         let m1 = pool.metrics();
         assert_eq!(m1.reads_started, 1);
         assert_eq!(m1.reads_completed, 1);
         assert_eq!(m1.writes_started, 1);
         assert_eq!(m1.writes_completed, 1);
-        assert_eq!(m1.reads_bg_started, 1);
-        assert_eq!(m1.reads_bg_completed, 1);
         assert_eq!(m1.gate_blocked_reads, 0);
 
         // Gate-blocked read increments both gate_blocked_reads and the
@@ -949,27 +985,12 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn write_gate_also_blocks_read_bg() {
-        let tmp = tempfile::tempdir().unwrap();
-        let pool = build_test_pool(&tmp);
-        // Sanity: read_bg works before gate.
-        assert_eq!(pool.read_bg(|_| 1u32).await, Some(1));
-        let gate = WriteGate::activate(pool.write_gate_flag());
-        assert!(
-            pool.read_bg(|_| 1u32).await.is_none(),
-            "background reads also gated — non-WAL correctness"
-        );
-        drop(gate);
-        assert_eq!(pool.read_bg(|_| 1u32).await, Some(1));
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn close_then_read_returns_none() {
         let tmp = tempfile::tempdir().unwrap();
         let pool = build_test_pool(&tmp);
         // Sanity: works before close.
         assert_eq!(pool.read(|_| 42u32).await, Some(42));
-        pool.close();
+        pool.close().await;
         assert!(pool.read(|_| 42u32).await.is_none());
         assert!(pool.write(|_| 42u32).await.is_none());
     }
@@ -982,14 +1003,14 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        pool.close();
+        pool.close().await;
         assert!(pool.read(|_| 1u32).await.is_none());
 
         // Reopen at the same storage root (the opener resolves the path).
         // The opener's `path` arg is the *storage root*; our test_opener
         // ignores that distinction and uses whatever it was given, so we
         // pass tmp's path verbatim.
-        let opened = pool.reopen(&tmp.path().join("test.db"));
+        let opened = pool.reopen(&tmp.path().join("test.db")).await;
         assert!(opened, "reopen should succeed for valid DB");
 
         let value: Option<String> = pool
@@ -1039,11 +1060,11 @@ mod tests {
             "idempotent re-mark does not re-fire"
         );
 
-        let opened = pool.reopen(&tmp.path().join("test.db"));
-        assert!(opened);
+        let opened = pool.reopen(&tmp.path().join("test.db")).await;
+        assert!(opened, "true→false fires once");
         assert_eq!(calls.load(Ordering::Relaxed), 2, "true→false fires once");
 
-        let opened = pool.reopen(&tmp.path().join("test.db"));
+        let opened = pool.reopen(&tmp.path().join("test.db")).await;
         assert!(opened);
         assert_eq!(
             calls.load(Ordering::Relaxed),
@@ -1084,5 +1105,265 @@ mod tests {
         assert_eq!(pool.db_path(), PathBuf::new());
         // Sanity: helper doesn't blow up on a non-existent path either.
         assert!(!path.exists());
+    }
+
+    // Invariant tests — each maps to a real regression.
+
+    /// Every commit is visible to every concurrent reader, even ones whose
+    /// connection deadpool created lazily. Locks in the WAL-unlink fix.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_writes_visible_to_all_readers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool_with(&tmp, 3);
+
+        // Force lazy connection creation by holding several reads
+        // concurrently. The first commit happens here.
+        pool.write(|conn| conn.execute("INSERT INTO kv VALUES ('seed', 'one')", []))
+            .await
+            .unwrap()
+            .unwrap();
+
+        let reads: Vec<_> = (0..6)
+            .map(|_| {
+                let p = pool.clone();
+                tokio::spawn(async move {
+                    p.read(|conn| {
+                        conn.query_row("SELECT v FROM kv WHERE k = 'seed'", [], |r| {
+                            r.get::<_, String>(0)
+                        })
+                        .ok()
+                    })
+                    .await
+                    .flatten()
+                })
+            })
+            .collect();
+
+        for r in reads {
+            assert_eq!(
+                r.await.unwrap().as_deref(),
+                Some("one"),
+                "every reader, even ones whose connection deadpool created \
+                 lazily, must see committed writes"
+            );
+        }
+
+        // Second commit, then read again — a fresh post-commit fan-out.
+        pool.write(|conn| conn.execute("UPDATE kv SET v = 'two' WHERE k = 'seed'", []))
+            .await
+            .unwrap()
+            .unwrap();
+
+        let reads: Vec<_> = (0..6)
+            .map(|_| {
+                let p = pool.clone();
+                tokio::spawn(async move {
+                    p.read(|conn| {
+                        conn.query_row("SELECT v FROM kv WHERE k = 'seed'", [], |r| {
+                            r.get::<_, String>(0)
+                        })
+                        .ok()
+                    })
+                    .await
+                    .flatten()
+                })
+            })
+            .collect();
+        for r in reads {
+            assert_eq!(
+                r.await.unwrap().as_deref(),
+                Some("two"),
+                "post-commit fan-out reads must observe the latest write"
+            );
+        }
+    }
+
+    /// `reset_to_empty` drains in-flight reads before unlinking files.
+    /// This is the primitive `rebuild_corrupt_library` and friends must
+    /// use — the previous `pool.close(); delete_db_files(); reopen()`
+    /// dance unlinked while live `Object`s held the inode.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn reset_to_empty_blocks_until_drain() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool_with(&tmp, 2);
+
+        pool.write(|conn| conn.execute("INSERT INTO kv VALUES ('a', '1')", []))
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Long-running read in flight.
+        let pool_for_read = pool.clone();
+        let read = tokio::spawn(async move {
+            pool_for_read
+                .read(|conn| {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    conn.query_row("SELECT v FROM kv WHERE k = 'a'", [], |r| {
+                        r.get::<_, String>(0)
+                    })
+                    .ok()
+                })
+                .await
+                .flatten()
+        });
+
+        // Give the read a head start so it's holding its connection.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let reset_started = std::time::Instant::now();
+        let ok = pool.reset_to_empty().await;
+        let reset_elapsed = reset_started.elapsed();
+
+        assert!(ok, "reset_to_empty should succeed against valid path");
+        // The read must have finished cleanly (drain semantics) and seen
+        // the row that existed *before* the reset.
+        assert_eq!(read.await.unwrap().as_deref(), Some("1"));
+        // And reset must have actually waited for it (>~150ms remaining).
+        assert!(
+            reset_elapsed >= std::time::Duration::from_millis(150),
+            "reset should have drained the 250ms read before unlinking; \
+             took only {reset_elapsed:?}"
+        );
+
+        // Post-reset the kv table is empty (schema preserved by opener).
+        let row: Option<String> = pool
+            .read(|conn| {
+                conn.query_row("SELECT v FROM kv WHERE k = 'a'", [], |r| r.get(0))
+                    .ok()
+            })
+            .await
+            .flatten();
+        assert_eq!(row, None, "reset_to_empty must clear the user data");
+    }
+
+    /// SQLite handles its own WAL recovery on first open in WAL mode.
+    /// The pool's `recover_after_unclean_shutdown` is the
+    /// cross-FS-mode-migration safety net, *not* the path that recovers
+    /// committed-but-not-checkpointed writes — those are recovered by
+    /// SQLite itself when the next process opens the DB.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn crash_recovery_simulation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("crash.db");
+        // Pre-create the schema so the pool's warmup connection sees a
+        // usable DB. In production this is `LibraryDb::open_at` running
+        // before `DbPool::new`.
+        let _ = test_opener(&path).unwrap();
+
+        {
+            let pool = DbPool::new(path.clone(), "crash", test_opener, 1).unwrap();
+            pool.write(|conn| {
+                conn.execute("INSERT INTO kv VALUES ('survive_crash', 'committed')", [])
+            })
+            .await
+            .unwrap()
+            .unwrap();
+            // Drop without checkpoint — the row lives in the WAL only.
+            // Simulates a process crash between commit and checkpoint.
+            drop(pool);
+        }
+
+        // New "process" opens the same file. Must observe the committed row.
+        let pool = DbPool::new(path, "crash", test_opener, 1).unwrap();
+        let row: Option<String> = pool
+            .read(|conn| {
+                conn.query_row("SELECT v FROM kv WHERE k = 'survive_crash'", [], |r| {
+                    r.get(0)
+                })
+                .ok()
+            })
+            .await
+            .flatten();
+        assert_eq!(
+            row.as_deref(),
+            Some("committed"),
+            "committed-but-not-checkpointed row must survive a process \
+             restart — SQLite rolls forward the WAL on first open"
+        );
+    }
+
+    /// Gate-blocked reads return `Err(DbError::Busy)` via `try_read`,
+    /// not `Ok(default)`. This is the typed signal that destructive
+    /// cascade code (e.g. is-empty checks) needs to distinguish "skip"
+    /// from "library is empty".
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gate_blocked_read_returns_typed_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        // Manually activate the gate to simulate a write in progress.
+        let _gate = WriteGate::activate(pool.write_gate_flag());
+        let result = pool.try_read(|_| 1u32).await;
+        assert!(
+            matches!(result, Err(DbError::Busy)),
+            "try_read must surface Busy as a typed error, never silently default; got {result:?}"
+        );
+    }
+
+    /// Closed pool returns `Err(DbError::Closed)` from `try_read`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn closed_pool_try_read_returns_typed_error() {
+        let pool = DbPool::new_closed("test_db");
+        let result = pool.try_read(|_| 1u32).await;
+        assert!(
+            matches!(result, Err(DbError::Closed)),
+            "closed pool must return Err(Closed), not Err(Op); got {result:?}"
+        );
+    }
+
+    /// Corrupt pool returns `Err(DbError::Corrupt)` from `try_read`/`try_write`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn corrupt_pool_try_read_returns_typed_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+        pool.mark_corrupt();
+        let r = pool.try_read(|_| 1u32).await;
+        assert!(matches!(r, Err(DbError::Corrupt)), "got {r:?}");
+        let w = pool.try_write(|_| 1u32).await;
+        assert!(matches!(w, Err(DbError::Corrupt)), "got {w:?}");
+    }
+
+    /// The auto-gate is conditional on journal mode: WAL pools never
+    /// activate the gate from `write()`. This test runs on whatever FS
+    /// the temp dir lives on — typically ext4 in CI, so WAL — and
+    /// asserts a write doesn't briefly block reads.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn wal_writes_do_not_block_concurrent_reads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool_with(&tmp, 2);
+
+        // Skip on filesystems that fall back to DELETE mode (e.g. NFS).
+        let path = tmp.path().to_path_buf();
+        if !crate::storage::supports_wal(&path) {
+            eprintln!("skipping wal_writes_do_not_block_concurrent_reads on non-WAL FS");
+            return;
+        }
+
+        // Long-running write — 200ms inside the closure.
+        let writer_pool = pool.clone();
+        let writer = tokio::spawn(async move {
+            writer_pool
+                .write(|conn| {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    conn.execute("INSERT INTO kv VALUES ('w', 'late')", [])
+                })
+                .await
+        });
+
+        // Give the write time to enter the closure.
+        tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+
+        let read_started = std::time::Instant::now();
+        let result = pool.try_read(|_| 1u32).await;
+        let read_elapsed = read_started.elapsed();
+        assert!(
+            matches!(result, Ok(1)),
+            "WAL pool must not gate the read; got {result:?}"
+        );
+        assert!(
+            read_elapsed < std::time::Duration::from_millis(120),
+            "WAL read must overlap with the write, not queue behind it; took {read_elapsed:?}"
+        );
+        let _ = writer.await;
     }
 }

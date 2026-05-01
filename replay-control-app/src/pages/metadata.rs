@@ -125,10 +125,13 @@ pub fn MetadataPage() -> impl IntoView {
                         let locale = i18n.locale.get();
                         let snap = snapshot.await?;
                         let s = snap.library_summary;
+                        let storage_kind = snap.storage_kind;
                         Ok::<_, ServerFnError>(if s.total_games == 0 {
-                            view! { <span></span> }.into_any()
+                            // Empty library: still show the storage-type card —
+                            // it's infrastructure info, not derived from games.
+                            view! { <StorageOnlyCard storage_kind locale /> }.into_any()
                         } else {
-                            view! { <SummaryCards summary=s locale /> }.into_any()
+                            view! { <SummaryCards summary=s storage_kind locale /> }.into_any()
                         })
                     })}
                 </Suspense>
@@ -801,9 +804,39 @@ fn ClearActionCard(
     }
 }
 
-/// Renders the six library summary stat cards.
+/// User-facing label for a `StorageKind` tag (`"sd"` / `"usb"` / `"nvme"` /
+/// `"nfs"`). Returns `"--"` for empty input.
+fn storage_label(kind: &str) -> String {
+    match kind {
+        "sd" => "SD".to_string(),
+        "usb" => "USB".to_string(),
+        "nvme" => "NVMe".to_string(),
+        "nfs" => "NFS".to_string(),
+        other if !other.is_empty() => other.to_uppercase(),
+        _ => "--".to_string(),
+    }
+}
+
+/// Single stat card showing only the storage type. Rendered when the library
+/// is empty so users still see infrastructure info.
 #[component]
-fn SummaryCards(summary: LibrarySummary, locale: crate::i18n::Locale) -> impl IntoView {
+fn StorageOnlyCard(storage_kind: String, locale: crate::i18n::Locale) -> impl IntoView {
+    view! {
+        <div class="stats-grid">
+            <StatCard compact=true
+                value=storage_label(&storage_kind)
+                label=t(locale, Key::MetadataSummaryStorage) />
+        </div>
+    }
+}
+
+/// Renders the library summary stat cards.
+#[component]
+fn SummaryCards(
+    summary: LibrarySummary,
+    storage_kind: String,
+    locale: crate::i18n::Locale,
+) -> impl IntoView {
     let s = summary;
 
     // Enrichment: weighted average of genre/developer/rating/art coverage.
@@ -819,6 +852,8 @@ fn SummaryCards(summary: LibrarySummary, locale: crate::i18n::Locale) -> impl In
     };
 
     let year_value = format_year_range(s.min_year, s.max_year).unwrap_or_else(|| "--".to_string());
+
+    let storage_label = storage_label(&storage_kind);
 
     view! {
         <div class="stats-grid">
@@ -840,6 +875,9 @@ fn SummaryCards(summary: LibrarySummary, locale: crate::i18n::Locale) -> impl In
             <StatCard compact=true
                 value=format_size(s.total_size_bytes)
                 label=t(locale, Key::MetadataSummaryLibrarySize) />
+            <StatCard compact=true
+                value=storage_label
+                label=t(locale, Key::MetadataSummaryStorage) />
         </div>
     }
 }

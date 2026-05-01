@@ -449,11 +449,13 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
         delete_rom_cleanup(&state, &storage, &system, fname).await;
     }
 
-    // Invalidate caches.
-    state
+    if let Err(e) = state
         .cache
         .invalidate_system(system, &state.library_pool)
-        .await;
+        .await
+    {
+        tracing::debug!("post-mutation invalidate_system skipped: {e}");
+    }
     state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
 
@@ -585,11 +587,13 @@ pub async fn rename_rom(
     // Phase 3: Rename cascade — update all associated data.
     rename_rom_cascade(&state, &storage, &system, &old_filename, &new_filename).await;
 
-    // Invalidate caches.
-    state
+    if let Err(e) = state
         .cache
         .invalidate_system(system, &state.library_pool)
-        .await;
+        .await
+    {
+        tracing::debug!("post-mutation invalidate_system skipped: {e}");
+    }
     state.cache.invalidate_favorites().await;
     state.response_cache.invalidate_all();
 

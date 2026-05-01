@@ -38,10 +38,13 @@ async fn upload_rom(
     }
 
     if !uploaded.is_empty() {
-        state
+        if let Err(e) = state
             .cache
             .invalidate_system(system.clone(), &state.library_pool)
-            .await;
+            .await
+        {
+            tracing::debug!("post-upload invalidate_system skipped: {e}");
+        }
         state.response_cache.invalidate_all();
     }
 

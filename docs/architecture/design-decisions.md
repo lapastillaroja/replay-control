@@ -37,31 +37,31 @@ glibc malloc retained ~296MB RSS after a heavy metadata import; jemalloc returns
 
 **Dependency**: `tikv-jemallocator` in `replay-control-app/Cargo.toml`, gated behind `ssr` feature.
 
-### 3. SQLite cache_size = 500
+### 3. SQLite cache_size: 500 (write) / 1000 (read)
 
 ```rust
 // replay-control-core-server/src/db_pool.rs (SqliteManager::create)
-conn.execute_batch("PRAGMA cache_size = 500;")?;
+conn.execute_batch("PRAGMA cache_size = 500;")?;   // write conn
+conn.execute_batch("PRAGMA cache_size = 1000;")?;  // read conn
 ```
 
-Reduced from the SQLite default of 2000 pages (8MB at 4KB/page) to 500 pages (2MB). With the connection pools, this saves ~6MB per connection. Trade-off: queries that scan large result sets may need more disk I/O, but most queries are indexed lookups returning <100 rows.
+Reduced from the SQLite default of 2000 pages (8MB at 4KB/page). Read connections keep 1000 pages (~4 MB) so the recommendations / system_coverage / metadata-snapshot working set stays cached between calls; write connection runs at 500 pages (~2 MB) since its working set is dominated by per-batch dirty pages rolled into the WAL.
 
-The base `open_connection()` in `sqlite.rs` sets `cache_size = -8000` (8MB), then the pool manager overrides to 500 per-connection. This means the warmup connection (used once) gets the larger cache, while the pooled connections stay lean.
+The base `open_connection()` in `sqlite.rs` sets `cache_size = -8000` (8MB) for the warmup connection, then the pool manager overrides per role.
 
 **File**: `replay-control-core-server/src/db_pool.rs` (`SqliteManager::create`)
 
-### 4. One read connection per pool
+### 4. Read pool size — per pool
 
 ```rust
-// replay-control-core-server/src/db_pool.rs
-const READ_POOL_SIZE: usize = 1;
+// replay-control-app/src/api/mod.rs
+const LIBRARY_READ_POOL_SIZE: usize = 3;
+const USER_DATA_READ_POOL_SIZE: usize = 1;
 ```
 
-Load tests on USB storage with DELETE journal mode showed no benefit from concurrent readers. The single-user access pattern and fast queries (<50ms) don't benefit from reader concurrency. Each saved connection frees ~2MB of RSS (page cache + connection overhead).
+Sized at construction time, per pool, by the host crate. The library DB lives centrally on the host SD (always WAL on ext4); 3 readers cover SSR fan-out — recommendations + recents + favorites + system info — overlapping with one long enrichment / thumbnail-planning pass without queueing. The user_data DB stays on ROM storage (often exFAT/NFS, DELETE-mode), where the gate serialises readers vs. writers and extra reader slots don't help.
 
-Under WAL mode (ext4/btrfs), multiple readers would help, but the primary deployment target is USB/exFAT.
-
-**File**: `replay-control-core-server/src/db_pool.rs`
+**Files**: `replay-control-app/src/api/mod.rs`, `replay-control-core-server/src/db_pool.rs`
 
 ### 5. Response cache (10s TTL)
 
@@ -127,20 +127,21 @@ Reversing the order (ErrorBoundary outside Suspense) breaks hydration in streami
 
 **Files**: `replay-control-app/src/pages/home.rs`, `replay-control-app/src/pages/favorites.rs`, `replay-control-app/src/pages/game_detail.rs`
 
-### 9. WriteGate for exFAT
+### 9. Write gate (DELETE-mode only, pool-private)
 
 ```rust
 // replay-control-core-server/src/db_pool.rs
-pub struct WriteGate(Arc<AtomicBool>);
+pub(crate) struct WriteGate(Arc<AtomicBool>);
 ```
 
-An RAII guard that blocks all DB reads during heavy write operations (metadata import, thumbnail index rebuild, game library rebuild). While the WriteGate is held, `DbPool::read()` returns `None`, which the UI handles gracefully (skeleton/empty states).
+A pool-internal RAII guard that gates concurrent reads during a write. The pool itself decides whether to activate based on `journal_mode`:
 
-This prevents SQLite corruption on exFAT with DELETE journal mode, where concurrent reads and writes through the same `nolock=1` connection can cause "database disk image is malformed" errors.
+- **WAL pool** (library on ext4 SD): the gate is never activated. SQLite's MVCC means writers don't conflict with readers — gating would just block fan-out for nothing.
+- **DELETE pool** (user_data on exFAT/NFS): auto-activated inside every `try_write` for the duration of the closure. Concurrent `try_read` calls return `Err(DbError::Busy)` instead of racing the rollback journal. Releases on drop (panic-safe).
 
-Activated in `import.rs` and `background.rs` before batch writes, dropped after each write phase.
+`WriteGate` was previously public and manually wrapped around batch writes in `import.rs` / `background.rs` / `thumbnail_pipeline.rs`. That was a footgun on WAL pools (it blocked readers for nothing) and required every caller to remember to wrap. The gate is now `pub(crate)`, scoped to a single `try_write` call, with mode awareness baked in.
 
-**Files**: `replay-control-core-server/src/db_pool.rs`, `replay-control-app/src/api/import.rs`, `replay-control-app/src/api/thumbnail_pipeline.rs`, `replay-control-app/src/api/background.rs`
+**Files**: `replay-control-core-server/src/db_pool.rs`
 
 ### 10. Bundled `catalog.sqlite`
 
@@ -221,6 +222,25 @@ No disk reads for these assets at runtime. CSS partials (`style/_*.css`) are con
 WASM bundle and icons are served from disk (`target/site/pkg/`, `target/site/icons/`) via `tower_http::ServeDir` since they are larger binary files where embedding would bloat startup memory.
 
 **Files**: `replay-control-app/src/main.rs`, `replay-control-app/src/api/mod.rs`, `replay-control-app/build.rs`
+
+### 15. Library DB centralised on the host SD, keyed by storage id
+
+```
+/var/lib/replay-control/storages/<storage-id>/library.db
+```
+
+`library.db` is a rebuildable cache (ROM index, metadata, thumbnail index). It used to live at `<storage>/.replay-control/library.db` — once per ROM storage. After moving it to a host-side path keyed by a stable storage id:
+
+- WAL is unconditional for the library pool (always ext4 SD), so concurrent reads parallelise (see decision #4).
+- Re-plugging a USB after a reboot keeps the library state — the storage id is derived deterministically from the filesystem identifier (volume UUID for block devices, `server:/share` for NFS), so the same storage maps back to the same `<storage-id>/` folder.
+- Loss of the marker file is self-healing: the FS-UUID derivation regenerates the same id.
+- `user_data.db` (overrides, videos) and `media/` (thumbnails) **stay** on the ROM storage — user data travels with the ROMs, and thumbnails stay close to the ROMs they describe (preserves I/O locality and SD lifetime).
+
+Storage id format: `<kind>-<8 hex>` (e.g. `usb-9a3a700d`). Kind is one of `usb` / `sd` / `nvme` / `nfs`; hex is CRC32(filesystem_id). Random fallback only when no FS identifier can be obtained (tmpfs, exotic mounts).
+
+On first attach after upgrade from a release with the per-storage layout, `LibraryDb::migrate_from_storage` atomic-renames (or copy+deletes cross-FS) the old `<storage>/.replay-control/library.db` plus its sidecars into the central path. Idempotent: skips when the destination already exists.
+
+**Files**: `replay-control-core-server/src/storage_id.rs`, `replay-control-core-server/src/data_dir.rs`, `replay-control-core-server/src/library/db/mod.rs` (`migrate_from_storage`), `replay-control-app/src/api/mod.rs` (`prepare_storage_dbs`).
 
 ### Crate split: `replay-control-core` vs `replay-control-core-server`
 

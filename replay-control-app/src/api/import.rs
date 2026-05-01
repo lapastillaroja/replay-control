@@ -135,14 +135,16 @@ impl ImportPipeline {
             })
             .map_err(|e| e.to_string())?;
 
-        // Clear existing metadata (safe: we own the activity slot).
-        if let Some(result) = state
+        // Clear existing metadata. Pool-closed must propagate — silently
+        // skipping the clear and proceeding to the import would write
+        // new rows over old data with no audit (the same conflation that
+        // produced the WAL-unlink visible bug).
+        state
             .library_pool
-            .write(|conn| LibraryDb::clear(conn))
+            .try_write(|conn| LibraryDb::clear(conn))
             .await
-        {
-            result.map_err(|e| e.to_string())?;
-        }
+            .map_err(|e| format!("library pool unavailable: {e}"))?
+            .map_err(|e| e.to_string())?;
 
         // Spawn the import task, passing the guard so the slot stays claimed.
         let state = state.clone();

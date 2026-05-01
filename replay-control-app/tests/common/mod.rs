@@ -62,7 +62,7 @@ fn create_test_storage() -> PathBuf {
 }
 
 fn test_app_state(tmp: &std::path::Path) -> AppState {
-    AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None).unwrap()
+    AppState::new(Some(tmp.to_string_lossy().into_owned()), None, None, None).unwrap()
 }
 
 /// Build the full application router (API + server functions + SSR fallback).

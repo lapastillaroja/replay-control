@@ -384,6 +384,7 @@ pub enum Key {
     MetadataSummaryYearSpan,
     MetadataSummaryLibrarySize,
     MetadataSummarySystems,
+    MetadataSummaryStorage,
 
     // System accordion rows
     MetadataSystemCoverage,

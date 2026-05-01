@@ -31,8 +31,7 @@ async fn main() {
         eprintln!("ROM index: {} entries", rom_index.len());
 
         eprintln!("Opening library DB...");
-        let (mut conn, _db_path) =
-            LibraryDb::open(&storage.root).expect("Failed to open library DB");
+        let mut conn = LibraryDb::open(&storage.root).expect("Failed to open library DB");
 
         eprintln!("Importing LaunchBox XML from {}...", xml_path.display());
         let (stats, _parse_result) = launchbox::import_launchbox(
@@ -52,7 +51,7 @@ async fn main() {
     }
 
     // Open library DB (may not exist yet on fresh storage).
-    let meta_conn = LibraryDb::open(&storage.root).ok().map(|(c, _)| c);
+    let meta_conn = LibraryDb::open(&storage.root).ok();
 
     let summaries = match roms::scan_systems(&storage).await {
         Ok(s) => s,

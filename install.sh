@@ -112,11 +112,14 @@ ${BOLD}USAGE${RESET}
 ${BOLD}FLAGS${RESET}
     --help              Show this help message
     --uninstall         Remove the app from a connected Pi via SSH
-                        (preserves .replay-control/ data and the env file)
+                        (preserves user data on storage, /var/lib/replay-control,
+                        and the env file)
     --purge             Like --uninstall but also wipes ALL Replay Control
-                        data: .replay-control/ on storage (DBs, settings,
-                        downloaded media, LaunchBox XML) and the env file.
-                        ROMs, saves, captures, and BIOS are NOT touched.
+                        data: /var/lib/replay-control/ (per-storage library
+                        DBs), .replay-control/ on storage (user_data.db,
+                        downloaded media, LaunchBox XML, storage-id), and the
+                        env file. ROMs, saves, captures, and BIOS are NOT
+                        touched.
     --yes               Skip the confirmation prompt for --purge
     --sdcard [PATH]     Write directly to a mounted RePlayOS SD card
     --ip ADDRESS        Skip Pi discovery, use this IP address
@@ -598,6 +601,9 @@ install_local() {
 
     # Create settings directory (Pi-level settings live here after migration)
     mkdir -p /etc/replay-control
+    # Create central data directory for per-storage library DBs.
+    # Each ROM storage gets a `storages/<storage_id>/library.db` once attached.
+    mkdir -p /var/lib/replay-control/storages
 
     # Extract binary
     tar -xzf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C /tmp/
@@ -714,6 +720,9 @@ set -euo pipefail
 
 # Create settings directory (Pi-level settings live here after migration)
 mkdir -p /etc/replay-control
+# Create central data directory for per-storage library DBs.
+# Each ROM storage gets a `storages/<storage_id>/library.db` once attached.
+mkdir -p /var/lib/replay-control/storages
 
 # Extract binary
 tar -xzf /tmp/replay-control-app-aarch64-linux.tar.gz -C /tmp/
@@ -836,8 +845,9 @@ maybe_confirm_purge() {
     echo ""
     warn "${BOLD}--purge${RESET}${YELLOW} will delete all Replay Control data on the Pi:${RESET}"
     echo "  - ${ENV_FILE}"
+    echo "  - /var/lib/replay-control/  (central per-storage library DBs)"
     for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
-        echo "  - ${root}/.replay-control/  (DBs, settings, downloaded media, LaunchBox XML)"
+        echo "  - ${root}/.replay-control/  (user_data.db, downloaded media, LaunchBox XML, storage-id)"
     done
     echo "ROMs, saves, captures, and BIOS files are NOT touched."
     echo ""
@@ -856,6 +866,7 @@ uninstall_local() {
         dry "Would run: systemctl daemon-reload"
         if $PURGE_DATA; then
             dry "Would remove: ${ENV_FILE}"
+            dry "Would remove: /var/lib/replay-control/ (central library DBs)"
             for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
                 dry "Would remove: ${root}/.replay-control/ (if present)"
             done
@@ -875,6 +886,10 @@ uninstall_local() {
     if $PURGE_DATA; then
         info "Purging Replay Control data..."
         rm -f "$ENV_FILE"
+        if [[ -d /var/lib/replay-control ]]; then
+            info "  removing /var/lib/replay-control"
+            rm -rf /var/lib/replay-control
+        fi
         for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
             local data_dir="${root}/.replay-control"
             if [[ -d "$data_dir" ]]; then
@@ -906,6 +921,7 @@ uninstall_ssh() {
         dry "  - Run: systemctl daemon-reload"
         if $PURGE_DATA; then
             dry "  - Remove: ${ENV_FILE}"
+            dry "  - Remove: /var/lib/replay-control/ (central library DBs)"
             for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
                 dry "  - Remove: ${root}/.replay-control/ (if present)"
             done
@@ -940,6 +956,10 @@ systemctl daemon-reload
 
 if [[ "${PURGE_DATA:-false}" == "true" ]]; then
     rm -f /etc/default/replay-control
+    if [[ -d /var/lib/replay-control ]]; then
+        echo "Removing /var/lib/replay-control/"
+        rm -rf /var/lib/replay-control
+    fi
     for root in /media/usb /media/nvme /media/sd /media/nfs; do
         if [[ -d "${root}/.replay-control" ]]; then
             echo "Removing ${root}/.replay-control/"
@@ -1216,6 +1236,8 @@ install_sdcard() {
 
     # Create settings directory (Pi-level settings live here after migration)
     mkdir -p "${sd}/etc/replay-control"
+    # Create central data directory for per-storage library DBs.
+    mkdir -p "${sd}/var/lib/replay-control/storages"
 
     # Extract binary
     tar -xzf "$TMPDIR_WORK/replay-control-app-aarch64-linux.tar.gz" -C "$TMPDIR_WORK/"

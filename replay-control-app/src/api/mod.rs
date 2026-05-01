@@ -16,7 +16,7 @@ pub use activity::{Activity, ActivityGuard, MaintenanceKind, StartupPhase};
 pub use background::BackgroundManager;
 pub use import::ImportPipeline;
 pub use library::LibraryService;
-pub use replay_control_core_server::db_pool::{DbPool, WriteGate, rusqlite};
+pub use replay_control_core_server::db_pool::{DbError, DbPool, rusqlite};
 pub use thumbnail_pipeline::ThumbnailPipeline;
 
 /// Cache-control header values for static asset responses.
@@ -24,10 +24,22 @@ pub const CACHE_1H: &str = "public, max-age=3600";
 pub const CACHE_1D: &str = "public, max-age=86400";
 pub const CACHE_IMMUTABLE: &str = "public, max-age=31536000, immutable";
 
+/// Read pool size for the library DB. WAL on ext4 SD lets concurrent reads
+/// actually parallelise; 3 covers typical SSR fan-out (recommendations +
+/// recents + favorites + system info) overlapping with one long enrichment
+/// or thumbnail-planning pass.
+const LIBRARY_READ_POOL_SIZE: usize = 3;
+
+/// Read pool size for the user_data DB. The DB lives on the ROM storage,
+/// which can be DELETE-mode (exFAT/NFS); extra readers don't help there
+/// and the WriteGate path still serializes against writers.
+const USER_DATA_READ_POOL_SIZE: usize = 1;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use replay_control_core_server::config::SystemConfig;
+use replay_control_core_server::data_dir::DataDir;
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
 /// Config change events pushed to clients via the `/sse/config` broadcast channel.
@@ -64,6 +76,8 @@ pub struct AppState {
     pub storage_path_override: Option<PathBuf>,
     /// Resolved settings store (owns the directory path for settings.cfg).
     pub settings: replay_control_core_server::settings::SettingsStore,
+    /// Resolved data directory (per-host root for storage-id-keyed library DBs).
+    pub data_dir: DataDir,
     /// Cached user preferences (skin, locale, region, font size).
     /// Loaded once at startup; updated in-memory on every settings change.
     pub prefs: Arc<std::sync::RwLock<replay_control_core_server::settings::UserPreferences>>,
@@ -125,20 +139,71 @@ fn register_corruption_callbacks(
     user_data_pool.set_corruption_callback(make_cb());
 }
 
-/// Opener for library DB.
-fn open_library_db(
-    storage_root: &std::path::Path,
-) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    replay_control_core_server::library_db::LibraryDb::open(storage_root)
+/// User-data opener: drops the corruption probe flag, since `DbPool::reopen`
+/// just needs the connection. The caller running the *initial* open in
+/// `AppState::new` calls `open_at` directly so it can act on the flag.
+fn open_user_data_db(
+    db_path: &std::path::Path,
+) -> replay_control_core::error::Result<rusqlite::Connection> {
+    replay_control_core_server::user_data_db::UserDataDb::open_at(db_path).map(|(c, _)| c)
 }
 
-/// Opener for user data DB.
-fn open_user_data_db(
-    storage_root: &std::path::Path,
-) -> replay_control_core::error::Result<(rusqlite::Connection, PathBuf)> {
-    let (conn, path, _corrupt) =
-        replay_control_core_server::user_data_db::UserDataDb::open(storage_root)?;
-    Ok((conn, path))
+/// Resolved per-storage DB paths after one-time pre-attach steps.
+struct ResolvedDbPaths {
+    library: PathBuf,
+    user_data: PathBuf,
+}
+
+/// Run the pre-attach pipeline shared by `AppState::new` and
+/// `refresh_storage`: wait for the FS to surface (production only),
+/// assign/read the storage id, migrate any per-storage `library.db`
+/// into the central data dir, and resolve both DB paths.
+///
+/// Centralising this is what kept §A2 from drifting again — adding a
+/// new step (migration, marker rewrite, validation) only happens here,
+/// so init and refresh stay in lockstep by construction.
+fn prepare_storage_dbs(
+    storage: &replay_control_core_server::storage::StorageLocation,
+    data_dir: &replay_control_core_server::data_dir::DataDir,
+    is_production: bool,
+) -> Result<ResolvedDbPaths, String> {
+    if is_production {
+        storage
+            .wait_until_ready()
+            .map_err(|e| format!("Storage not ready: {e}"))?;
+    }
+    let storage_id = storage
+        .ensure_storage_id()
+        .map_err(|e| format!("Failed to assign storage id: {e}"))?;
+    tracing::info!("Storage id: {storage_id}");
+
+    let library = data_dir.library_db_path(&storage_id);
+    replay_control_core_server::library_db::LibraryDb::migrate_from_storage(
+        &storage.root,
+        &library,
+    )
+    .map_err(|e| format!("Failed to migrate library DB: {e}"))?;
+
+    let user_data = replay_control_core_server::user_data_db::UserDataDb::db_path(&storage.root);
+
+    Ok(ResolvedDbPaths { library, user_data })
+}
+
+/// Reopen `pool` at `db_path`, but flag corrupt without opening when the
+/// SQLite magic header is invalid. Used by both initial open and storage
+/// swap so the corruption banner fires on either path. Library DBs don't
+/// need this — `LibraryDb::open_at` deletes-and-recreates on bad header
+/// (the file is rebuildable cache); user_data is not rebuildable.
+async fn reopen_user_data_or_mark_corrupt(pool: &DbPool, db_path: &std::path::Path) {
+    if replay_control_core_server::sqlite::has_invalid_sqlite_header(db_path) {
+        tracing::error!(
+            "user_data.db at {} has invalid SQLite header — flagging pool corrupt",
+            db_path.display()
+        );
+        pool.mark_corrupt();
+    } else {
+        pool.reopen(db_path).await;
+    }
 }
 
 /// Resolve the settings directory from CLI arguments.
@@ -163,14 +228,36 @@ fn resolve_settings_dir(
     SettingsStore::new("/etc/replay-control")
 }
 
+/// Resolve the data directory (per-host root for storage-id-keyed DBs).
+///
+/// Priority:
+/// 1. `--data-dir` explicit override
+/// 2. `--storage-path` given -> `<storage>/.replay-control-data` (local dev,
+///    keeps the dev tree self-contained — does not collide with the
+///    in-storage `.replay-control/` folder used by user_data + thumbnails)
+/// 3. Pi production fallback -> `/var/lib/replay-control`
+fn resolve_data_dir(data_dir: Option<&str>, storage_path: Option<&str>) -> DataDir {
+    if let Some(p) = data_dir {
+        return DataDir::new(p);
+    }
+    if let Some(s) = storage_path {
+        return DataDir::new(PathBuf::from(s).join(".replay-control-data"));
+    }
+    DataDir::default_root()
+}
+
 impl AppState {
     pub fn new(
         storage_path: Option<String>,
         config_path: Option<String>,
         settings_path: Option<String>,
+        data_dir: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config_path = config_path.map(PathBuf::from);
         let storage_path_override = storage_path.as_ref().map(PathBuf::from);
+
+        let data_dir = resolve_data_dir(data_dir.as_deref(), storage_path.as_deref());
+        tracing::info!("Data dir: {}", data_dir.root().display());
 
         let (storage, config) = if let Some(path) = storage_path {
             let storage_root = PathBuf::from(&path);
@@ -218,41 +305,52 @@ impl AppState {
         let (library_pool, user_data_pool) = if let Some(ref storage) = storage {
             tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
-            // Open DBs eagerly at startup so they're ready for the first request.
-            let (_meta_conn, meta_path) =
-                replay_control_core_server::library_db::LibraryDb::open(&storage.root)
-                    .map_err(|e| format!("Failed to open library DB: {e}"))?;
-            tracing::info!("Library DB ready at {}", meta_path.display());
-            let library_pool = DbPool::new(meta_path.clone(), "library_db", open_library_db)?;
+            let paths = prepare_storage_dbs(storage, &data_dir, storage_path_override.is_none())?;
 
-            // Pre-flight: a clobbered SQLite header makes `UserDataDb::open`
-            // return Err and crash-loop the service via systemd. Detect that
-            // case and start with a `new_corrupt` pool so the user sees the
-            // recovery banner via the SSE init payload and can pick Restore
-            // or Reset — both of which call `pool.reopen()` against the path
-            // we wire up here.
-            let ud_path =
-                replay_control_core_server::user_data_db::UserDataDb::db_path(&storage.root);
+            replay_control_core_server::library_db::LibraryDb::open_at(&paths.library)
+                .map_err(|e| format!("Failed to open library DB: {e}"))?;
+            tracing::info!("Library DB ready at {}", paths.library.display());
+            let library_pool = DbPool::new(
+                paths.library.clone(),
+                "library_db",
+                replay_control_core_server::library_db::LibraryDb::open_at,
+                LIBRARY_READ_POOL_SIZE,
+            )?;
+
+            // user_data isn't rebuildable, so a clobbered header → start in
+            // corrupt state with the recovery banner instead of crashing.
+            // The probe-failed-but-loadable path is handled separately
+            // (open + mark_corrupt below).
             let user_data_pool = if replay_control_core_server::sqlite::has_invalid_sqlite_header(
-                &ud_path,
+                &paths.user_data,
             ) {
                 tracing::error!(
                     "User data DB at {} has invalid SQLite header — starting in corrupt state; user can recover via Restore from backup or Reset",
-                    ud_path.display()
+                    paths.user_data.display()
                 );
-                DbPool::new_corrupt(ud_path, "user_data_db", open_user_data_db)
+                DbPool::new_corrupt(
+                    paths.user_data,
+                    "user_data_db",
+                    open_user_data_db,
+                    USER_DATA_READ_POOL_SIZE,
+                )
             } else {
-                let (_ud_conn, ud_path, ud_corrupt) =
-                    replay_control_core_server::user_data_db::UserDataDb::open(&storage.root)
+                let (_ud_conn, ud_corrupt) =
+                    replay_control_core_server::user_data_db::UserDataDb::open_at(&paths.user_data)
                         .map_err(|e| format!("Failed to open user data DB: {e}"))?;
-                tracing::info!("User data DB ready at {}", ud_path.display());
-                let pool = DbPool::new(ud_path.clone(), "user_data_db", open_user_data_db)?;
+                tracing::info!("User data DB ready at {}", paths.user_data.display());
+                let pool = DbPool::new(
+                    paths.user_data.clone(),
+                    "user_data_db",
+                    open_user_data_db,
+                    USER_DATA_READ_POOL_SIZE,
+                )?;
                 if ud_corrupt {
                     tracing::warn!("User data DB is corrupt — marking pool, awaiting user action");
                     pool.mark_corrupt();
                 } else {
-                    let backup_path = ud_path.with_extension("db.bak");
-                    match std::fs::copy(&ud_path, &backup_path) {
+                    let backup_path = paths.user_data.with_extension("db.bak");
+                    match std::fs::copy(&paths.user_data, &backup_path) {
                         Ok(_) => {
                             tracing::info!("User data backup saved to {}", backup_path.display())
                         }
@@ -306,6 +404,7 @@ impl AppState {
             response_cache: Arc::new(response_cache::ResponseCache::new()),
             storage_path_override,
             settings,
+            data_dir,
             prefs: Arc::new(std::sync::RwLock::new(prefs)),
             library_pool,
             user_data_pool,
@@ -480,18 +579,19 @@ impl AppState {
                 new_storage.root.display()
             );
 
+            let paths = prepare_storage_dbs(
+                &new_storage,
+                &self.data_dir,
+                self.storage_path_override.is_none(),
+            )?;
+
             {
                 let mut guard = self.storage.write().expect("storage lock poisoned");
                 *guard = Some(new_storage);
             }
 
-            // Close old DB connections so they re-open at the new storage root.
-            self.library_pool.close();
-            self.user_data_pool.close();
-            // Re-open at the new storage root.
-            let new_storage_ref = self.storage();
-            self.library_pool.reopen(&new_storage_ref.root);
-            self.user_data_pool.reopen(&new_storage_ref.root);
+            self.library_pool.reopen(&paths.library).await;
+            reopen_user_data_or_mark_corrupt(&self.user_data_pool, &paths.user_data).await;
 
             // Back up user_data.db after opening at the new location.
             if !had_storage {
@@ -503,7 +603,9 @@ impl AppState {
                 }
             }
 
-            self.cache.invalidate(&self.library_pool).await;
+            if let Err(e) = self.cache.invalidate(&self.library_pool).await {
+                tracing::debug!("storage-change cache.invalidate skipped: {e}");
+            }
             self.response_cache.invalidate_all();
 
             // Reload user preferences from the settings store.
@@ -511,7 +613,7 @@ impl AppState {
                 replay_control_core_server::settings::UserPreferences::load(&self.settings);
             *self.prefs.write().expect("prefs lock poisoned") = new_prefs;
 
-            let kind = format!("{:?}", new_storage_ref.kind).to_lowercase();
+            let kind = format!("{:?}", self.storage().kind).to_lowercase();
             let _ = self
                 .config_tx
                 .send(ConfigEvent::StorageChanged { storage_kind: kind });

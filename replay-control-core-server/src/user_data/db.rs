@@ -36,31 +36,25 @@ impl UserDataDb {
         storage_root.join(RC_DIR).join(USER_DATA_DB_FILE)
     }
 
-    /// Open (or create) the user data database at `<storage_root>/.replay-control/user_data.db`.
-    ///
-    /// Uses the shared nolock->WAL open strategy (see `sqlite`), runs table
-    /// init, then probes all tables for corruption.
-    ///
-    /// Returns `(connection, path, is_corrupt)`. When corrupt, the connection
-    /// is still usable (it opened successfully) but queries on corrupt tables
-    /// will fail. The caller decides whether to delete/restore — user data
-    /// should never be silently destroyed.
-    pub fn open(storage_root: &Path) -> Result<(Connection, PathBuf, bool)> {
-        let dir = storage_root.join(RC_DIR);
-        std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
-        let db_path = Self::db_path(storage_root);
-
-        let conn = crate::sqlite::open_connection(&db_path, "user_data.db")?;
+    /// Open (or create) the user data DB at `db_path`. Returns the
+    /// connection plus a corruption flag — the connection is always
+    /// usable on `Ok`; `is_corrupt = true` means a follow-up
+    /// `probe_tables` failed and the caller should surface the recovery
+    /// banner. User data is never silently destroyed.
+    pub fn open_at(db_path: &Path) -> Result<(Connection, bool)> {
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        }
+        let conn = crate::sqlite::open_connection(db_path, "user_data.db")?;
         Self::init_tables(&conn)?;
-
-        let is_corrupt = if let Err(detail) = crate::sqlite::probe_tables(&conn, Self::TABLES) {
-            tracing::warn!("User data DB corrupt ({detail})");
-            true
-        } else {
-            false
+        let is_corrupt = match crate::sqlite::probe_tables(&conn, Self::TABLES) {
+            Ok(()) => false,
+            Err(detail) => {
+                tracing::warn!("User data DB corrupt ({detail})");
+                true
+            }
         };
-
-        Ok((conn, db_path, is_corrupt))
+        Ok((conn, is_corrupt))
     }
 
     /// Create all tables if they don't exist.

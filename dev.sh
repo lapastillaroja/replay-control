@@ -340,6 +340,8 @@ bootstrap_pi_if_needed() {
 set -euo pipefail
 
 mkdir -p /etc/systemd/system /etc/default
+# Ensure central data dir exists (per-storage library DBs land here).
+mkdir -p /var/lib/replay-control/storages
 
 cat > /etc/systemd/system/replay-control.service <<'UNIT'
 [Unit]

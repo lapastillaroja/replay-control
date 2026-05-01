@@ -20,9 +20,22 @@ use replay_control_core::error::{Error, Result};
 /// warmed connection. Used for WAL-specific PRAGMAs (autocheckpoint) and
 /// pool sizing (WAL allows concurrent readers; DELETE does not).
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u8)]
 pub enum JournalMode {
-    Wal,
-    Delete,
+    Wal = 0,
+    Delete = 1,
+}
+
+impl JournalMode {
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => JournalMode::Wal,
+            _ => JournalMode::Delete,
+        }
+    }
+    pub fn as_u8(self) -> u8 {
+        self as u8
+    }
 }
 
 /// Open a SQLite connection with strategy appropriate for the filesystem.
@@ -33,11 +46,14 @@ pub enum JournalMode {
 /// - **Non-WAL** (NFS, exFAT, FAT32, etc.): `nolock=1` + DELETE journal.
 ///   Falls back to WAL if nolock open fails.
 ///
-/// No caller-supplied hints are needed — the DB layer has zero knowledge of
-/// storage kind.
+/// **Does not run WAL recovery.** Recovery from a previous process's
+/// unclean shutdown is `recover_after_unclean_shutdown` and must be called
+/// *before any connection exists* for this path in this process — the pool
+/// owns that ordering. Calling it from per-connection open used to unlink
+/// `-wal`/`-shm` while sibling connections held them, returning empty
+/// reads to live callers; see
+/// `investigations/2026-05-01-library-wal-unlink-under-live-connections.md`.
 pub fn open_connection(db_path: &Path, label: &str) -> Result<Connection> {
-    recover_stale_wal(db_path);
-
     let db_dir = db_path.parent().unwrap_or(db_path);
     if crate::storage::supports_wal(db_dir) {
         match open_wal(db_path, label) {
@@ -103,22 +119,39 @@ pub fn probe_tables(conn: &Connection, tables: &[&str]) -> std::result::Result<(
 
 /// Delete a DB and its WAL/SHM/journal sidecar files.
 ///
+/// **Destructive — must only be called when no connection to `db_path` is
+/// open in this process.** `DbPool::reset_to_empty` and
+/// `DbPool::replace_with_file` are the supported entry points; they drain
+/// the pool first. The free function is `pub(crate)` to keep new callers
+/// from re-introducing the unlink-under-live-fds bug.
+///
 /// Covers both journal modes: `.db-wal` / `.db-shm` for WAL (ext4/btrfs) and
 /// `.db-journal` for DELETE rollback mode (exFAT/NFS). Any of them can linger
 /// depending on which journal mode was active when the DB was last open.
-pub fn delete_db_files(db_path: &Path) {
+pub(crate) fn delete_db_files(db_path: &Path) {
     let _ = std::fs::remove_file(db_path);
     let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
     let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
     let _ = std::fs::remove_file(db_path.with_extension("db-journal"));
 }
 
-/// If WAL or SHM files exist alongside a SQLite database, open with normal
-/// locking to let SQLite run WAL recovery (checkpoint), then close.
+/// One-shot WAL recovery from a *previous process's* unclean shutdown.
 ///
-/// Without this, `nolock` mode skips WAL recovery and the leftover WAL/SHM
-/// files cause "database disk image is malformed" errors.
-pub fn recover_stale_wal(db_path: &Path) {
+/// **Must be called before any connection to `db_path` exists in this
+/// process.** Owned by `DbPool::new` / `DbPool::reopen`; do not call from
+/// `open_connection`, from a per-connection deadpool `Manager::create`, or
+/// from any code path that runs while sibling connections may be live —
+/// running it then unlinks `-wal`/`-shm` while live fds reference them and
+/// silently strands the writes those connections committed but didn't
+/// checkpoint.
+///
+/// Steady-state SQLite handles its own WAL recovery on first open in WAL
+/// mode. This helper is only needed for the cross-mode case (a DB whose
+/// previous process opened in WAL but whose current process opens with
+/// `nolock=1`, e.g. an exFAT/NFS migration), where `nolock` skips WAL
+/// recovery and the leftover sidecars cause
+/// "database disk image is malformed" errors.
+pub fn recover_after_unclean_shutdown(db_path: &Path) {
     let wal_path = db_path.with_extension("db-wal");
     let shm_path = db_path.with_extension("db-shm");
 

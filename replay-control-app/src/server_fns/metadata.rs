@@ -108,6 +108,10 @@ pub struct MetadataPageSnapshot {
     /// (boxart_count, snap_count, media_size_bytes)
     pub image_stats: (usize, usize, u64),
     pub builtin_stats: BuiltinDbStats,
+    /// Storage type tag (e.g. `"sd"`, `"usb"`, `"nvme"`, `"nfs"`).
+    pub storage_kind: String,
+    /// Mount point for ROM storage (e.g. `"/media/usb"`).
+    pub storage_root: String,
 }
 
 /// Single-flight cache-backed snapshot of the metadata page.
@@ -354,11 +358,17 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Clear L1+L2 cache.
-    state.cache.invalidate(&state.library_pool).await;
+    // Clear L1+L2 cache. Surface errors instead of dropping them — a
+    // rebuild that proceeds after a no-op clear writes new rows over the
+    // *previous* table contents, which is the exact data-loss vector the
+    // typed-error refactor exists to close.
+    state
+        .cache
+        .invalidate(&state.library_pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Could not clear library: {e}")))?;
     state.response_cache.invalidate_all();
 
-    // Rebuild in background; the guard drops → Idle when done (or on panic).
     state.spawn_rebuild_enrichment(guard);
     Ok(())
 }
@@ -388,19 +398,18 @@ pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
     let db_path = state.library_pool.db_path();
     tracing::info!("Rebuilding corrupt library DB at {}", db_path.display());
 
-    // Close pool (already closed by mark_corrupt, but be safe).
-    state.library_pool.close();
-    // Delete the corrupt DB files.
-    replay_control_core_server::sqlite::delete_db_files(&db_path);
-    // Reopen at the current storage root — creates fresh schema.
-    let storage = state.storage();
-    if !state.library_pool.reopen(&storage.root) {
+    // Drain in-flight ops, unlink files, and reopen with a fresh empty
+    // schema — single atomic lifecycle transition. The previous
+    // close/unlink/reopen choreography raced in-flight reads.
+    if !state.library_pool.reset_to_empty().await {
         return Err(ServerFnError::new(
             "Failed to reopen library DB after rebuild",
         ));
     }
-    // Invalidate cache so stale data doesn't persist.
-    state.cache.invalidate(&state.library_pool).await;
+    // L2 was already wiped by reset_to_empty; this drops L1.
+    if let Err(e) = state.cache.invalidate(&state.library_pool).await {
+        tracing::warn!("post-rebuild cache.invalidate failed: {e}");
+    }
     state.response_cache.invalidate_all();
     // Trigger background re-import if XML exists.
     let _ = state.import.regenerate_metadata(&state).await;
@@ -419,10 +428,7 @@ pub async fn repair_corrupt_user_data() -> Result<(), ServerFnError> {
     let db_path = state.user_data_pool.db_path();
     tracing::info!("Repairing corrupt user data DB at {}", db_path.display());
 
-    state.user_data_pool.close();
-    replay_control_core_server::sqlite::delete_db_files(&db_path);
-    let storage = state.storage();
-    if !state.user_data_pool.reopen(&storage.root) {
+    if !state.user_data_pool.reset_to_empty().await {
         return Err(ServerFnError::new(
             "Failed to reopen user data DB after repair",
         ));
@@ -450,18 +456,11 @@ pub async fn restore_user_data_backup() -> Result<(), ServerFnError> {
         backup_path.display()
     );
 
-    // Close pool, copy backup over the DB, reopen.
-    state.user_data_pool.close();
-    replay_control_core_server::sqlite::delete_db_files(&db_path);
-    std::fs::copy(&backup_path, &db_path)
-        .map_err(|e| ServerFnError::new(format!("Failed to copy backup: {e}")))?;
-
-    let storage = state.storage();
-    if !state.user_data_pool.reopen(&storage.root) {
+    // Drain → copy backup over current DB → reopen.
+    if !state.user_data_pool.replace_with_file(&backup_path).await {
         // Restored copy is also corrupt — fall back to fresh DB.
         tracing::warn!("Restored user_data.db backup is also corrupt, creating fresh DB");
-        replay_control_core_server::sqlite::delete_db_files(&db_path);
-        if !state.user_data_pool.reopen(&storage.root) {
+        if !state.user_data_pool.reset_to_empty().await {
             return Err(ServerFnError::new(
                 "Failed to reopen user data DB after restore",
             ));

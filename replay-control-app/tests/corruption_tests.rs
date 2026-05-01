@@ -92,7 +92,13 @@ impl StandaloneStorage {
     }
 
     fn build_state(&self) -> AppState {
-        AppState::new(Some(self.path.to_string_lossy().into_owned()), None, None).unwrap()
+        AppState::new(
+            Some(self.path.to_string_lossy().into_owned()),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
     }
 }
 
@@ -257,6 +263,55 @@ async fn rebuild_corrupt_library_clears_flag_and_broadcasts_inverse() {
         } => assert!(!library_corrupt),
         _ => unreachable!(),
     }
+}
+
+/// Content-survival assertion: rebuild must actually wipe the library file,
+/// not just flip the corrupt flag. A future refactor that no-ops the
+/// drain/unlink while still setting the flag would pass the broadcast tests
+/// above; this one fails it.
+#[tokio::test(flavor = "multi_thread")]
+async fn rebuild_corrupt_library_wipes_table_content() {
+    setup();
+    let env = TestEnv::new();
+
+    // Pre-populate a sentinel row that survives only if reset_to_empty is a
+    // no-op. game_library_meta is the simplest table with a known schema.
+    let inserted = env
+        .state
+        .library_pool
+        .write(|conn| {
+            conn.execute(
+                "INSERT INTO game_library_meta \
+                 (system, dir_mtime_secs, scanned_at, rom_count, total_size_bytes) \
+                 VALUES ('rebuild_sentinel', NULL, 0, 1, 0)",
+                [],
+            )
+        })
+        .await;
+    assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
+
+    env.state.library_pool.mark_corrupt();
+
+    let status = invoke_server_fn::<server_fns::RebuildCorruptLibrary>(env.state.clone(), "").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let count: i64 = env
+        .state
+        .library_pool
+        .read(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM game_library_meta WHERE system = 'rebuild_sentinel'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(-1)
+        })
+        .await
+        .unwrap_or(-1);
+    assert_eq!(
+        count, 0,
+        "rebuild must wipe library content; sentinel row should not survive"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

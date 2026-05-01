@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use replay_control_core::rom_tags::RegionPreference;
+use replay_control_core_server::db_pool::DbError;
 use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::recents::RecentEntry;
 use replay_control_core_server::roms::{RomEntry, SystemSummary};
@@ -414,36 +415,33 @@ impl LibraryService {
         Ok(entries)
     }
 
-    /// Invalidate all caches (after delete, rename, upload).
-    /// Clears L1 in-memory caches and L2 (SQLite game_library).
-    pub async fn invalidate(&self, db: &DbPool) {
+    /// Invalidate all caches (after delete, rename, upload). Clears L1
+    /// in-memory caches *and* L2 (SQLite). Returns `Ok(())` only if the
+    /// L2 clear actually ran — caller-driven destructive flows (rebuild,
+    /// re-import) must propagate the error rather than proceeding to write
+    /// over a not-actually-cleared table.
+    pub async fn invalidate(&self, db: &DbPool) -> Result<(), DbError> {
         *self.systems.write().await = None;
         *self.favorites.write().await = None;
         *self.recents.write().await = None;
         self.metadata_page.invalidate().await;
         self.query_cache.invalidate_all();
-        // L2: Clear SQLite game_library.
-        db.write(|conn| {
-            if let Err(e) = LibraryDb::clear_all_game_library(conn) {
-                tracing::error!("Failed to clear game library: {e}");
-            }
-        })
-        .await;
+        db.try_write(|conn| LibraryDb::clear_all_game_library(conn))
+            .await?
+            .map_err(|e| DbError::Other(format!("clear_all_game_library: {e}")))
     }
 
-    /// Invalidate cache for a specific system.
-    /// Clears L1 systems cache and L2 (SQLite game_library) for the system.
-    pub async fn invalidate_system(&self, system: String, db: &DbPool) {
+    /// Invalidate cache for a specific system. Same semantics as
+    /// `invalidate()` — typed error so destructive callers can detect a
+    /// no-op clear.
+    pub async fn invalidate_system(&self, system: String, db: &DbPool) -> Result<(), DbError> {
         *self.systems.write().await = None;
         self.metadata_page.invalidate().await;
         self.query_cache.invalidate_all();
-        // L2: Clear SQLite game_library for this system.
-        db.write(move |conn| {
-            if let Err(e) = LibraryDb::clear_system_game_library(conn, &system) {
-                tracing::error!("Failed to clear game library for {system}: {e}");
-            }
-        })
-        .await;
+        let sys = system.clone();
+        db.try_write(move |conn| LibraryDb::clear_system_game_library(conn, &sys))
+            .await?
+            .map_err(|e| DbError::Other(format!("clear_system_game_library({system}): {e}")))
     }
 
     /// Invalidate only the favorites cache (after add/remove favorite).
@@ -487,16 +485,12 @@ mod tests {
         // Minimal opener: just open with our standard pragmas + ensure the
         // game_library_meta table exists so load_all_system_meta succeeds.
         fn opener(
-            root: &Path,
-        ) -> replay_control_core::error::Result<(
+            db_path: &Path,
+        ) -> replay_control_core::error::Result<
             replay_control_core_server::db_pool::rusqlite::Connection,
-            std::path::PathBuf,
-        )> {
-            let path = root.join("library.db");
-            let conn = replay_control_core_server::sqlite::open_connection(&path, "test_lib")
+        > {
+            let conn = replay_control_core_server::sqlite::open_connection(db_path, "test_lib")
                 .map_err(|e| replay_control_core::error::Error::Other(format!("open: {e}")))?;
-            // Use the same schema bootstrap LibraryDb::open relies on, but
-            // we only need the meta table for this test.
             conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS game_library_meta (
                     system TEXT PRIMARY KEY,
@@ -507,11 +501,10 @@ mod tests {
                 );",
             )
             .map_err(|e| replay_control_core::error::Error::Other(format!("schema: {e}")))?;
-            Ok((conn, path))
+            Ok(conn)
         }
-        // Trigger schema creation up front so DbPool::new sees a usable file.
-        let _ = opener(tmp.path()).unwrap();
-        let pool = super::DbPool::new(db_path, "test_lib", opener).unwrap();
+        let _ = opener(&db_path).unwrap();
+        let pool = super::DbPool::new(db_path, "test_lib", opener, 1).unwrap();
 
         let storage = StorageLocation::from_path(tmp.path().to_path_buf(), StorageKind::Sd);
         let svc = LibraryService::new();

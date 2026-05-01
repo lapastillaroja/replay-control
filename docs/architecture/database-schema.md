@@ -3,8 +3,8 @@
 Three SQLite databases:
 
 - **catalog.sqlite** -- read-only, bundled with the binary; built from upstream DATs/XMLs at compile time (No-Intro, MAME, FBNeo, Flycast, Wikidata, etc.)
-- **library.db** -- rebuildable cache at `<storage>/.replay-control/` (game library, external metadata, thumbnail index)
-- **user_data.db** -- persistent user customizations at `<storage>/.replay-control/` (never auto-deleted)
+- **library.db** -- rebuildable cache at `/var/lib/replay-control/storages/<storage-id>/library.db` on the host SD. Centralised + keyed by a stable per-storage id so it stays on ext4/WAL and survives storage swaps. See [Design Decision #15](design-decisions.md#15-library-db-centralised-on-the-host-sd-keyed-by-storage-id).
+- **user_data.db** -- persistent user customizations at `<storage>/.replay-control/user_data.db`. Stays on the ROM storage so it travels with the ROMs; never auto-deleted.
 
 Schema defined in `tools/build-catalog/src/main.rs` (catalog), `replay-control-core-server/src/library/db/mod.rs` (library), and `replay-control-core-server/src/user_data/db.rs` (user data).
 

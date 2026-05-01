@@ -1,20 +1,19 @@
 # Connection Pooling
 
-`DbPool`, `WriteGate`, and the custom `SqliteManager` live in `replay-control-core-server/src/db_pool.rs` as a generic, app-agnostic utility. `replay-control-app/src/api/mod.rs` constructs the two app-specific pool instances and stores them on `AppState`.
+`DbPool`, the private `WriteGate`, and the custom `SqliteManager` live in `replay-control-core-server/src/db_pool.rs` as a generic, app-agnostic utility. `replay-control-app/src/api/mod.rs` constructs the two app-specific pool instances and stores them on `AppState`.
 
 ## Pool Architecture
 
 Each SQLite database gets a `DbPool` instance backed by `deadpool` with a custom `SqliteManager`. The app has two pools:
 
-- `library_pool` -- for `library.db` (game library, thumbnails, imported metadata)
-- `user_data_pool` -- for `user_data.db` (box art overrides, saved videos)
+- `library_pool` — for `library.db` (game library, thumbnails, imported metadata). Stored centrally on the host SD at `/var/lib/replay-control/storages/<storage-id>/library.db`. Always WAL on ext4.
+- `user_data_pool` — for `user_data.db` (box art overrides, saved videos). Stays per-storage at `<storage>/.replay-control/user_data.db`. Mode follows the storage filesystem (WAL on ext4, DELETE on exFAT/NFS).
 
-Each `DbPool` contains two internal deadpool pools:
+Each `DbPool` contains two internal deadpool pools, sized per-pool at construction:
 
-- **Read pool**: `READ_POOL_SIZE = 1` connection
-- **Write pool**: 1 connection (SQLite serializes writes)
-
-Load tests on USB storage (DELETE journal mode) showed no performance improvement with more than 1 reader -- the single-user access pattern and fast queries (<50ms) don't benefit from concurrent readers. Keeping 1 saves ~2MB per unused connection.
+- **Library read pool**: `LIBRARY_READ_POOL_SIZE = 3`. WAL on ext4 lets concurrent readers actually parallelise; 3 covers SSR fan-out (recommendations + recents + favorites + system info) overlapping with one long enrichment / thumbnail-planning pass.
+- **User data read pool**: `USER_DATA_READ_POOL_SIZE = 1`. exFAT/NFS DELETE-mode pools serialise readers vs. writers via the gate; extra readers don't help.
+- **Write pool**: 1 connection (SQLite serialises writes).
 
 ## Custom SqliteManager
 
@@ -25,7 +24,8 @@ Instead of deadpool-sqlite's default `Connection::open()`, the custom manager us
 Per-role PRAGMAs applied on top of base PRAGMAs from `open_connection()`:
 
 ```
-PRAGMA cache_size = 500;           -- All connections: reduce from 2000 pages (8MB) to 500 (2MB)
+PRAGMA cache_size = 1000;          -- Read connections: ~4 MB
+PRAGMA cache_size = 500;           -- Write connection: ~2 MB
 PRAGMA wal_autocheckpoint = 0;     -- Write + WAL only: manual checkpoint control
 PRAGMA query_only = ON;            -- Read only: defense-in-depth, prevents accidental writes
 ```
@@ -38,42 +38,48 @@ Runs `PRAGMA optimize` (with `analysis_limit = 400`) at most once per hour to ke
 
 ## Journal Mode Detection
 
-At pool creation, a warmup connection queries `PRAGMA journal_mode` to determine the actual mode:
+At pool creation, a warmup connection queries `PRAGMA journal_mode` to determine the actual mode. The mode is stored on the pool as an `AtomicU8` and is fixed for the lifetime of the pool — `reopen()` re-detects after a path change. The mode swap precedes the pool-slot swap on `reopen` so a concurrent `try_write` arriving mid-reopen never observes (old mode, new pool).
 
-- **WAL mode**: Used on filesystems that support it (ext4, btrfs). Enables concurrent readers, manual checkpointing after heavy writes.
-- **DELETE mode**: Fallback for exFAT (USB drives). `open_connection()` detects this automatically.
+## WAL Recovery
 
-The detected mode controls whether WAL-specific PRAGMAs are set.
+`sqlite::recover_after_unclean_shutdown(path)` runs **once per `DbPool` instance**, before any deadpool connection exists, inside `DbPool::new` and `DbPool::reopen`. Per-connection opens never touch sidecar files — historical bug: running recovery from inside a per-connection opener unlinks `-wal`/`-shm` while sibling connections hold them, returning empty reads to live callers (see `investigations/2026-05-01-library-wal-unlink-under-live-connections.md`).
 
-## WriteGate: exFAT Corruption Prevention
-
-`WriteGate` is an RAII guard that prevents concurrent reads during heavy write operations.
-
-On exFAT filesystems (DELETE journal mode), concurrent reads during bulk writes can cause SQLite corruption. The write gate works by setting an `AtomicBool` flag on the pool:
+## API: Result, not Option
 
 ```rust
-pub struct WriteGate(Arc<AtomicBool>);
+pub async fn try_read<F, R>(&self, f: F) -> Result<R, DbError>;
+pub async fn try_write<F, R>(&self, f: F) -> Result<R, DbError>;
 ```
 
-When activated, `DbPool::read()` checks the flag and returns `None` immediately, preventing any read connections from being acquired. The gate auto-clears on drop (panic-safe).
+`DbError::{Closed, Corrupt, Busy, Timeout, Sql, Acquire, Interact, Other}` distinguishes "pool can't answer" from "query ran and returned nothing." Cascade gates (e.g. *is the library empty?* before a destructive populate) **must** use `try_read` and treat `Err(_)` as "skip — pool unavailable", never as "no rows" — silently defaulting `None`/`Err` to a destructive default is what produced the visible "library shows 0 games" regression.
 
-Used during:
-- Full system populate (`populate_all_systems`)
-- Rebuild game library
+`read()` / `write()` are kept as `try_*().ok()` adapters for sites where best-effort is genuinely correct (cache-clearing afterthoughts, log-only metrics queries).
 
-NOT used during enrichment writes (small per-system UPDATEs, not bulk INSERTs -- low corruption risk, and gating would block the reads that enrichment itself needs).
+## Write Gate (DELETE-mode only)
+
+`WriteGate` is private (`pub(crate)`). The pool itself decides whether to activate it based on `journal_mode`:
+
+- **WAL pool** (`library_pool` on ext4): the gate is never set. SQLite's MVCC means writers don't conflict with readers.
+- **DELETE pool** (`user_data_pool` on exFAT/NFS): the gate auto-activates inside `try_write` for the duration of the closure. Concurrent `try_read` calls return `Err(DbError::Busy)`. Releases on drop (panic-safe).
+
+Gate scope is **a single `try_write` call**. Long write sequences should call `try_write` per logical write rather than holding an outer gate, so SSR readers stay responsive between calls.
 
 ## Corruption Detection
 
-Every `read()` and `write()` call checks `sqlite3_errcode()` after the user closure runs. If `SQLITE_CORRUPT` (error code 11) is detected, the pool routes through `mark_corrupt()`, which flips the `corrupt` flag and closes all connections. Subsequent calls return `None` until the DB is rebuilt and the flag is cleared. `reopen()` clears the flag on the success path.
+After every `interact()` closure runs, `check_for_corruption` reads `sqlite3_errcode()`. `SQLITE_CORRUPT` (11) or `SQLITE_NOTADB` (26) flips the pool's `corrupt` flag and fires the corruption callback. Subsequent `try_*` calls short-circuit with `Err(DbError::Corrupt)` *before* acquiring a connection — pool slots stay populated until the host explicitly recovers.
 
-`DbPool` exposes a `set_corruption_callback()` hook that fires on every actual transition of the corrupt flag — both false→true (`mark_corrupt`) and true→false (`reopen`). Idempotent calls do not re-fire. The host crate (`replay-control-app::api`) registers a callback that broadcasts `ConfigEvent::CorruptionChanged` over `/sse/config`, so the UI banner reflects pool state changes without polling and without each callsite needing to remember to broadcast.
+`mark_corrupt` is sync (it's reached from the corruption probe inside `interact()`, a sync context). It does **not** drain the pool; `reset_to_empty` / `replace_with_file` do that work explicitly.
+
+`DbPool` exposes a `set_corruption_callback()` hook that fires on the actual transitions of the corrupt flag — both false→true (`mark_corrupt`) and true→false (`reopen`). Idempotent calls do not re-fire. The host crate registers a callback that broadcasts `ConfigEvent::CorruptionChanged` over `/sse/config`, so the UI banner reflects pool state without polling.
 
 ## Pool Lifecycle
 
-- **Startup**: Pools open eagerly. One read + one write connection are warmed immediately. Failure to warm means the DB is inaccessible -- the server exits.
-- **Storage change**: `close()` drops all connections. `reopen()` verifies the new DB path, rebuilds both pools, and clears the corrupt flag (firing the corruption callback if it was set).
-- **Closed state**: `DbPool::new_closed()` creates a pool where all reads/writes return `None`. Used at startup when storage is unavailable.
+- **Startup**: pre-flight WAL recovery → warmup connection (detects journal mode) → pool slots populated. Failure to warm means the DB is inaccessible — server exits.
+- **`close()`**: async. Calls deadpool's `pool.close()`, polls `status().size > 0` until in-flight `Object`s drain or `INTERACT_TIMEOUT * 2` elapses. Returns `bool` — destructive callers (`reset_to_empty`, `replace_with_file`) abort if drain timed out, so a stuck closure can't race a follow-up `delete_db_files`.
+- **`reopen(db_path)`**: drains current connections, runs WAL recovery (skipped if same path and already recovered), rebuilds both pools. Atomic in the order `journal_mode` swap → pool-slot swap so a concurrent `try_write` mid-reopen never sees stale mode + new pool.
+- **`reset_to_empty()`**: drain → `delete_db_files` → reopen empty. The supported "clear and rebuild" entry point. Direct `pool.close(); delete_db_files; pool.reopen()` is racy because old `Object`s can still hold inodes when the unlink runs.
+- **`replace_with_file(src)`**: drain → unlink sidecars → copy `src` over → reopen. Used by user-data restore-from-backup.
+- **Closed state**: `DbPool::new_closed()` creates a pool where all `try_*` return `Err(DbError::Closed)`. Used at startup when storage is unavailable.
 
 ## Manual Checkpointing
 

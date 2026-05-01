@@ -1,3 +1,5 @@
+use replay_control_core_server::DbPool;
+use replay_control_core_server::db_pool::rusqlite;
 use replay_control_core_server::library_db::LibraryDb;
 use replay_control_core_server::update as update_io;
 use std::time::Duration;
@@ -6,6 +8,30 @@ use super::AppState;
 use super::activity::{Activity, StartupPhase};
 use super::import::ImportPipeline;
 use super::library::dir_mtime;
+
+/// Read a value from the pool or skip the calling phase. Pool unavailability
+/// is logged at `debug` ("transient — retry later"), inner SQL errors at
+/// `warn`. Used by destructive cascade gates that must distinguish
+/// "DB unavailable" from "DB has no rows" — defaulting unavailability to
+/// "empty" is what triggered the
+/// `2026-05-01-library-wal-unlink-under-live-connections` regression.
+async fn try_read_or_skip<T, F>(pool: &DbPool, phase: &'static str, f: F) -> Option<T>
+where
+    F: FnOnce(&rusqlite::Connection) -> replay_control_core::error::Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    match pool.try_read(f).await {
+        Ok(Ok(value)) => Some(value),
+        Ok(Err(e)) => {
+            tracing::warn!("{phase}: SQL failed: {e}");
+            None
+        }
+        Err(e) => {
+            tracing::debug!("{phase}: pool unavailable ({e}); skipping");
+            None
+        }
+    }
+}
 
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
@@ -170,13 +196,15 @@ impl BackgroundManager {
         let region_pref = state.region_preference();
         let region_secondary = state.region_preference_secondary();
 
-        // Load cached system metadata directly from DB (no cache layer).
-        let cached_meta = state
-            .library_pool
-            .read(|conn| LibraryDb::load_all_system_meta(conn).ok())
-            .await
-            .flatten()
-            .unwrap_or_default();
+        let Some(cached_meta) = try_read_or_skip(
+            &state.library_pool,
+            "cache_verification",
+            LibraryDb::load_all_system_meta,
+        )
+        .await
+        else {
+            return;
+        };
 
         if cached_meta.is_empty() {
             // Fresh DB — full populate.
@@ -1070,16 +1098,13 @@ impl AppState {
             let region_pref = state.region_preference();
             let region_secondary = state.region_preference_secondary();
 
-            // Check if game library is empty -- if so, populate before enriching.
-            let is_empty = state
-                .library_pool
-                .read(|conn| {
-                    LibraryDb::load_all_system_meta(conn)
-                        .map(|m| m.is_empty())
-                        .unwrap_or(true)
-                })
-                .await
-                .unwrap_or(true);
+            let Some(is_empty) = try_read_or_skip(&state.library_pool, "post_import", |conn| {
+                LibraryDb::load_all_system_meta(conn).map(|m| m.is_empty())
+            })
+            .await
+            else {
+                return;
+            };
 
             if is_empty {
                 tracing::info!("Post-import: game library is empty, running full populate");
@@ -1144,16 +1169,13 @@ impl AppState {
             let region_pref = state.region_preference();
             let region_secondary = state.region_preference_secondary();
 
-            // Check if game library is empty -- if so, populate before enriching.
-            let is_empty = state
-                .library_pool
-                .read(|conn| {
-                    LibraryDb::load_all_system_meta(conn)
-                        .map(|m| m.is_empty())
-                        .unwrap_or(true)
-                })
-                .await
-                .unwrap_or(true);
+            let Some(is_empty) = try_read_or_skip(&state.library_pool, "rebuild", |conn| {
+                LibraryDb::load_all_system_meta(conn).map(|m| m.is_empty())
+            })
+            .await
+            else {
+                return;
+            };
 
             if is_empty {
                 tracing::info!("Rebuild: game library is empty, running full populate");
@@ -1574,10 +1596,13 @@ impl AppState {
                 // Invalidate L1+L2 for each affected system so get_roms
                 // does a fresh L3 filesystem scan.
                 for system in &affected_systems {
-                    state
+                    if let Err(e) = state
                         .cache
                         .invalidate_system(system.clone(), &state.library_pool)
-                        .await;
+                        .await
+                    {
+                        tracing::debug!("rom-watch invalidate_system({system}) skipped: {e}");
+                    }
                     state.response_cache.invalidate_all();
                 }
 
@@ -1770,7 +1795,6 @@ mod tests {
     // ── extract_tarball ─────────────────────────────────────────────
 
     fn build_tarball(files: &[(&str, &[u8])]) -> Vec<u8> {
-        use std::io::Write;
         let mut buf = Vec::new();
         {
             let gz = flate2::write::GzEncoder::new(&mut buf, flate2::Compression::fast());

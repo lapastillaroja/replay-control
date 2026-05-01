@@ -18,8 +18,9 @@ use crate::library_db::LibraryDb;
 /// reference to it.
 pub fn build_library_pool() -> (DbPool, TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let (_, db_path) = LibraryDb::open(tmp.path()).expect("open library db");
-    let pool = DbPool::new(db_path, "library_db", LibraryDb::open).expect("build pool");
+    let db_path = tmp.path().join("library.db");
+    LibraryDb::open_at(&db_path).expect("open library db");
+    let pool = DbPool::new(db_path, "library_db", LibraryDb::open_at, 1).expect("build pool");
     (pool, tmp)
 }
 

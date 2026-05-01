@@ -306,7 +306,7 @@ mod tests {
     /// Open a temp library DB for enrichment tests.
     fn open_temp_db() -> (rusqlite::Connection, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let (conn, _path) = LibraryDb::open(dir.path()).unwrap();
+        let conn = LibraryDb::open(dir.path()).unwrap();
         (conn, dir)
     }
 

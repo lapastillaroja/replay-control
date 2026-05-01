@@ -62,7 +62,9 @@ async fn delete_rom(
         &payload.relative_path,
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
-    state.cache.invalidate(&state.library_pool).await;
+    if let Err(e) = state.cache.invalidate(&state.library_pool).await {
+        tracing::debug!("post-mutation cache.invalidate skipped: {e}");
+    }
     state.response_cache.invalidate_all();
     Ok(StatusCode::NO_CONTENT)
 }
@@ -77,7 +79,9 @@ async fn rename_rom(
         &payload.new_filename,
     )
     .map_err(|_| StatusCode::NOT_FOUND)?;
-    state.cache.invalidate(&state.library_pool).await;
+    if let Err(e) = state.cache.invalidate(&state.library_pool).await {
+        tracing::debug!("post-mutation cache.invalidate skipped: {e}");
+    }
     state.response_cache.invalidate_all();
     Ok(Json(serde_json::json!({
         "new_path": new_path.display().to_string()
