@@ -538,4 +538,14 @@ pub enum Key {
     SetupTaskDone,
     SetupStart,
     SetupUpdate,
+
+    // Game notes
+    GameNotesTitle,
+    GameNotesPlaceholder,
+    GameNotesSave,
+    GameNotesSaving,
+    GameNotesEdit,
+    GameNotesClear,
+    GameNotesAdd,
+    GameNotesEmpty,
 }

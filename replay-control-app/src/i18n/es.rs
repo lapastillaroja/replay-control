@@ -581,5 +581,15 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupTaskDone => "Hecho",
         Key::SetupStart => "Iniciar",
         Key::SetupUpdate => "Actualizar",
+
+        // Game notes
+        Key::GameNotesTitle => "Notas",
+        Key::GameNotesPlaceholder => "Añade notas sobre este juego...",
+        Key::GameNotesSave => "Guardar",
+        Key::GameNotesSaving => "Guardando...",
+        Key::GameNotesEdit => "Editar",
+        Key::GameNotesClear => "Borrar",
+        Key::GameNotesAdd => "Añadir Nota",
+        Key::GameNotesEmpty => "Aún no hay notas",
     }
 }

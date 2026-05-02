@@ -26,7 +26,7 @@ pub struct UserDataDb;
 impl UserDataDb {
     /// Tables to probe for corruption detection.
     /// NOTE: update this list when adding new tables.
-    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos"];
+    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos", "game_notes"];
 
     /// Resolve the user_data.db path under `<storage_root>/.replay-control/`
     /// without touching the filesystem. Useful for callers that need the path
@@ -87,7 +87,15 @@ impl UserDataDb {
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_game_videos_base_title
-                    ON game_videos (system, base_title);",
+                    ON game_videos (system, base_title);
+
+                CREATE TABLE IF NOT EXISTS game_notes (
+                    system TEXT NOT NULL,
+                    rom_filename TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (system, rom_filename)
+                );",
         )
         .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
         Ok(())
@@ -285,7 +293,7 @@ impl UserDataDb {
         Ok(())
     }
 
-    /// Delete all user data entries for a ROM (box art overrides + videos).
+    /// Delete all user data entries for a ROM (box art overrides + videos + notes).
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(
             "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
@@ -295,9 +303,13 @@ impl UserDataDb {
             "DELETE FROM game_videos WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
         );
+        let _ = conn.execute(
+            "DELETE FROM game_notes WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
     }
 
-    /// Rename a ROM across all user data tables (box art overrides + videos).
+    /// Rename a ROM across all user data tables (box art overrides + videos + notes).
     pub fn rename_for_rom(conn: &Connection, system: &str, old_filename: &str, new_filename: &str) {
         if let Err(e) = conn.execute(
             "UPDATE box_art_overrides SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
@@ -311,5 +323,59 @@ impl UserDataDb {
         ) {
             tracing::warn!("Failed to update game_videos: {e}");
         }
+        if let Err(e) = conn.execute(
+            "UPDATE game_notes SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            params![system, old_filename, new_filename],
+        ) {
+            tracing::warn!("Failed to update game_notes: {e}");
+        }
+    }
+
+    // --- Game Notes ---
+
+    /// Get the note for a single game. Returns None if no note exists.
+    pub fn get_game_note(conn: &Connection, system: &str, rom_filename: &str) -> Result<Option<(String, u64)>> {
+        conn.query_row(
+            "SELECT note, updated_at FROM game_notes WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+            |row| {
+                let note: String = row.get(0)?;
+                let updated_at: i64 = row.get(1)?;
+                Ok((note, updated_at as u64))
+            },
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Failed to query game_notes: {e}")))
+    }
+
+    /// Set or update the note for a game.
+    pub fn set_game_note(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        note: &str,
+    ) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO game_notes (system, rom_filename, note, updated_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![system, rom_filename, note, now],
+        )
+        .map_err(|e| Error::Other(format!("Failed to set game_note: {e}")))?;
+        Ok(())
+    }
+
+    /// Remove the note for a game.
+    pub fn clear_game_note(conn: &Connection, system: &str, rom_filename: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM game_notes WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        )
+        .map_err(|e| Error::Other(format!("Failed to clear game_note: {e}")))?;
+        Ok(())
     }
 }

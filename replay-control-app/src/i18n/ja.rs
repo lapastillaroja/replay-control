@@ -571,5 +571,15 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupTaskDone => "完了",
         Key::SetupStart => "開始",
         Key::SetupUpdate => "更新",
+
+        // Game notes
+        Key::GameNotesTitle => "メモ",
+        Key::GameNotesPlaceholder => "このゲームについてのメモを追加...",
+        Key::GameNotesSave => "保存",
+        Key::GameNotesSaving => "保存中...",
+        Key::GameNotesEdit => "編集",
+        Key::GameNotesClear => "削除",
+        Key::GameNotesAdd => "メモを追加",
+        Key::GameNotesEmpty => "まだメモはありません",
     }
 }

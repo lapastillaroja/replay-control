@@ -5,6 +5,7 @@ use replay_control_core_server::user_data_db::UserDataDb;
 
 mod boxart;
 mod favorites;
+mod game_notes;
 mod images;
 mod manuals;
 mod metadata;
@@ -19,6 +20,7 @@ mod videos;
 
 pub use boxart::*;
 pub use favorites::*;
+pub use game_notes::*;
 pub use images::*;
 pub use manuals::*;
 pub use metadata::*;
