@@ -139,62 +139,131 @@ async fn get_search_key() -> Result<String> {
     Ok(key)
 }
 
-/// Discover the HLTB search key by fetching their homepage and JS bundle.
-async fn discover_search_key() -> Result<String> {
-    let html = crate::http::get_text_with_timeout(HLTB_BASE, Duration::from_secs(10)).await?;
-
-    let script_path = extract_app_script_path(&html).ok_or_else(|| {
-        Error::Other("HLTB: could not find app script URL in homepage HTML".to_string())
-    })?;
-
-    let js_url = format!("{HLTB_BASE}{script_path}");
-    let js = crate::http::get_text_with_timeout(&js_url, Duration::from_secs(10)).await?;
-
-    extract_search_key(&js).ok_or_else(|| {
-        Error::Other("HLTB: could not extract search key from JS bundle".to_string())
-    })
-}
-
-/// Find the `/_next/static/chunks/pages/_app-HASH.js` path from the HTML.
-fn extract_app_script_path(html: &str) -> Option<String> {
-    // Look for the _app chunk script tag
-    let needle = "/_next/static/chunks/pages/_app-";
-    let start = html.find(needle)?;
-    let rest = &html[start..];
-    let end = rest.find('"').or_else(|| rest.find('\''))?;
-    Some(rest[..end].to_string())
-}
-
-/// Extract the API key from the JS bundle.
+/// Discover the HLTB search key by scanning JS chunks from their site.
 ///
-/// Looks for patterns like `"/api/search/".concat("XXXXXXXX")` or
-/// `api/search/XXXXXXXX` embedded in the minified Next.js output.
+/// HLTB uses Next.js/Turbopack with hashed chunk names that change each
+/// deploy. We fetch the game page (which loads search-related bundles) and
+/// scan each referenced chunk until we find the embedded key.
+async fn discover_search_key() -> Result<String> {
+    // The game page loads search-related chunks that the homepage may not.
+    let probe_urls = [
+        format!("{HLTB_BASE}/game/2380"),
+        HLTB_BASE.to_string(),
+    ];
+
+    for page_url in &probe_urls {
+        let html = match crate::http::get_text_with_timeout(page_url, Duration::from_secs(10)).await {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::debug!("HLTB: failed to fetch {page_url}: {e}");
+                continue;
+            }
+        };
+
+        // Fast path: key embedded in an inline script on the page itself.
+        if let Some(key) = extract_search_key(&html) {
+            tracing::debug!("HLTB: found key in inline script of {page_url}");
+            return Ok(key);
+        }
+
+        let chunks = extract_chunk_paths(&html);
+        tracing::debug!("HLTB: scanning {} chunks from {page_url}", chunks.len());
+
+        for path in &chunks {
+            let url = format!("{HLTB_BASE}{path}");
+            match crate::http::get_text_with_timeout(&url, Duration::from_secs(8)).await {
+                Ok(js) => {
+                    if let Some(key) = extract_search_key(&js) {
+                        tracing::debug!("HLTB: found key in chunk {path}");
+                        return Ok(key);
+                    }
+                }
+                Err(e) => tracing::debug!("HLTB: chunk {path} fetch failed: {e}"),
+            }
+        }
+    }
+
+    Err(Error::Other(
+        "HLTB: could not find search key in any JS chunk".to_string(),
+    ))
+}
+
+/// Collect all unique `/_next/static/chunks/*.js` paths from an HTML page.
+fn extract_chunk_paths(html: &str) -> Vec<String> {
+    let needle = "/_next/static/chunks/";
+    let mut seen = std::collections::HashSet::new();
+    let mut paths = Vec::new();
+    let mut pos = 0;
+
+    while let Some(rel) = html[pos..].find(needle) {
+        let start = pos + rel;
+        let rest = &html[start..];
+        let end = rest
+            .find(|c: char| matches!(c, '"' | '\'' | '`' | ' ' | ')' | '\\'))
+            .unwrap_or(rest.len());
+        let path = &rest[..end];
+        if path.ends_with(".js") && seen.insert(path.to_string()) {
+            paths.push(path.to_string());
+        }
+        pos = start + 1;
+    }
+
+    paths
+}
+
+/// Extract the API key from a JS string (inline HTML or a chunk file).
+///
+/// Tries multiple patterns covering old Next.js pages router and newer
+/// Turbopack/app-router minification styles.
 fn extract_search_key(js: &str) -> Option<String> {
-    // Primary pattern: "/api/search/".concat("KEY")
+    // Pattern 1 (pages router): "/api/search/".concat("KEY")
     if let Some(idx) = js.find("\"/api/search/\".concat(\"") {
         let after = &js[idx + "\"/api/search/\".concat(\"".len()..];
         if let Some(end) = after.find('"') {
             let key = &after[..end];
-            if !key.is_empty() && key.len() <= 32 {
+            if is_valid_key(key) {
                 return Some(key.to_string());
             }
         }
     }
 
-    // Fallback pattern: `api/search/` followed directly by the key
+    // Pattern 2 (app router): "/api/search/KEY" as a string literal
+    if let Some(idx) = js.find("\"/api/search/") {
+        let after = &js[idx + "\"/api/search/".len()..];
+        let end = after.find('"').unwrap_or(after.len());
+        let key = &after[..end];
+        if is_valid_key(key) {
+            return Some(key.to_string());
+        }
+    }
+
+    // Pattern 3: `/api/search/KEY` (template literal or backtick)
+    if let Some(idx) = js.find("`/api/search/") {
+        let after = &js[idx + "`/api/search/".len()..];
+        let end = after.find('`').unwrap_or(after.len());
+        let key = &after[..end];
+        if is_valid_key(key) {
+            return Some(key.to_string());
+        }
+    }
+
+    // Pattern 4 (fallback): bare `api/search/KEY` anywhere
     if let Some(idx) = js.find("api/search/") {
         let after = &js[idx + "api/search/".len()..];
-        // Key ends at a quote, slash, or whitespace
         let end = after
-            .find(|c: char| c == '"' || c == '\'' || c == '/' || c.is_whitespace())
+            .find(|c: char| c == '"' || c == '\'' || c == '`' || c == '/' || c.is_whitespace())
             .unwrap_or(after.len());
         let key = &after[..end];
-        if key.len() >= 4 && key.len() <= 32 && key.chars().all(|c| c.is_alphanumeric()) {
+        if is_valid_key(key) {
             return Some(key.to_string());
         }
     }
 
     None
+}
+
+fn is_valid_key(s: &str) -> bool {
+    s.len() >= 4 && s.len() <= 64 && s.chars().all(|c| c.is_alphanumeric())
 }
 
 /// Remove ROM filename tags like "(USA)", "[!]", "(Rev 1)" from a display name.
@@ -237,14 +306,35 @@ mod tests {
     }
 
     #[test]
-    fn extract_search_key_primary_pattern() {
+    fn extract_search_key_concat_pattern() {
         let js = r#"var x="/api/search/".concat("abc123def");"#;
         assert_eq!(extract_search_key(js), Some("abc123def".to_string()));
     }
 
     #[test]
-    fn extract_search_key_fallback_pattern() {
+    fn extract_search_key_string_literal_pattern() {
+        let js = r#"fetch("/api/search/xyz789abc","#;
+        assert_eq!(extract_search_key(js), Some("xyz789abc".to_string()));
+    }
+
+    #[test]
+    fn extract_search_key_bare_pattern() {
         let js = r#"fetch("https://howlongtobeat.com/api/search/xyz789","#;
         assert_eq!(extract_search_key(js), Some("xyz789".to_string()));
+    }
+
+    #[test]
+    fn extract_chunk_paths_finds_js_urls() {
+        let html = r#"<script src="/_next/static/chunks/framework-abc.js"></script><script src="/_next/static/chunks/main-def.js"></script>"#;
+        let paths = extract_chunk_paths(html);
+        assert!(paths.contains(&"/_next/static/chunks/framework-abc.js".to_string()));
+        assert!(paths.contains(&"/_next/static/chunks/main-def.js".to_string()));
+    }
+
+    #[test]
+    fn extract_chunk_paths_deduplicates() {
+        let html = r#"src="/_next/static/chunks/abc.js" src="/_next/static/chunks/abc.js""#;
+        let paths = extract_chunk_paths(html);
+        assert_eq!(paths.len(), 1);
     }
 }
