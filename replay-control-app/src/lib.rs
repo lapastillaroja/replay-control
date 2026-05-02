@@ -25,6 +25,7 @@ use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
 use i18n::provide_i18n;
 use pages::ErrorDisplay;
+use pages::backlog::BacklogPage;
 use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
@@ -143,6 +144,7 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/developer/:name") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><DeveloperPage /></ErrorBoundary> } />
                         <Route path=path!("/games/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemRomView /></ErrorBoundary> } />
                         <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GameDetailPage /></ErrorBoundary> } />
+                        <Route path=path!("/backlog") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><BacklogPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />

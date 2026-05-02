@@ -513,6 +513,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillCoOp => "Co-op Games",
         Key::SpotlightCoOp => "Co-op Games",
 
+        // Backlog (Want to Play)
+        Key::NavBacklog => "Backlog",
+        Key::BacklogTitle => "Backlog",
+        Key::BacklogEmpty => "No games in your backlog yet",
+        Key::BacklogBrowse => "Browse games",
+        Key::BacklogGames => "games",
+        Key::BacklogRemove => "Remove from backlog",
+
+        // HowLongToBeat
+        Key::HltbTitle => "How Long to Beat",
+        Key::HltbFetch => "Look up completion time",
+        Key::HltbFetching => "Fetching...",
+        Key::HltbNoData => "No data found on HowLongToBeat",
+        Key::HltbAddToBacklog => "Add to Backlog",
+        Key::HltbInBacklog => "In Backlog",
+        Key::HltbMain => "Main Story",
+        Key::HltbMainExtra => "Main + Extras",
+        Key::HltbCompletionist => "Completionist",
+
         // Analytics
         Key::MoreSectionPrivacy => "Privacy",
         Key::AnalyticsTitle => "Anonymous usage statistics",

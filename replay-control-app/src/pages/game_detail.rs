@@ -7,6 +7,7 @@ use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::hero_card::GameScrollCard;
+use crate::components::hltb_section::HltbSection;
 use crate::components::manual_section::ManualSection;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{Key, t, tf, use_i18n};
@@ -573,6 +574,14 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             rom_filename=filename_sv
             display_name=game_name_sv
             base_title=base_title_sv
+        />
+
+        // HowLongToBeat — completion times and backlog toggle.
+        <HltbSection
+            system=system_sv
+            rom_filename=filename_sv
+            base_title=base_title_sv
+            display_name=game_name_sv
         />
 
         // Related Games (lazy-loaded)

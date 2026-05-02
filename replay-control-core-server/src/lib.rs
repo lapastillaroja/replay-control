@@ -23,6 +23,9 @@ pub use capture::screenshots;
 pub mod http;
 
 #[cfg(feature = "http")]
+pub mod hltb;
+
+#[cfg(feature = "http")]
 pub mod update;
 
 pub mod platform;

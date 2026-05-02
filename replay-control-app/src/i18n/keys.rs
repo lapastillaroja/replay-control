@@ -486,6 +486,25 @@ pub enum Key {
     PillCoOp,
     SpotlightCoOp,
 
+    // Backlog (Want to Play)
+    NavBacklog,
+    BacklogTitle,
+    BacklogEmpty,
+    BacklogBrowse,
+    BacklogGames,
+    BacklogRemove,
+
+    // HowLongToBeat
+    HltbTitle,
+    HltbFetch,
+    HltbFetching,
+    HltbNoData,
+    HltbAddToBacklog,
+    HltbInBacklog,
+    HltbMain,
+    HltbMainExtra,
+    HltbCompletionist,
+
     // Analytics
     MoreSectionPrivacy,
     AnalyticsTitle,

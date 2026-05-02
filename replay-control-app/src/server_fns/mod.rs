@@ -16,6 +16,7 @@ mod settings;
 mod system;
 mod thumbnails;
 mod videos;
+mod want_to_play;
 
 pub use boxart::*;
 pub use favorites::*;
@@ -30,6 +31,7 @@ pub use settings::*;
 pub use system::*;
 pub use thumbnails::*;
 pub use videos::*;
+pub use want_to_play::*;
 
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
