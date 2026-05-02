@@ -108,7 +108,13 @@ fn BacklogRow(
                         if let Some(url) = box_art_url.get_value() {
                             view! { <img class="backlog-art-img" src=url alt="" /> }.into_any()
                         } else {
-                            view! { <BoxArtPlaceholder system=system.get_value() /> }.into_any()
+                            view! {
+                                <BoxArtPlaceholder
+                                    system=system.get_value()
+                                    name=display_name.get_value()
+                                    size="list".to_string()
+                                />
+                            }.into_any()
                         }
                     }}
                 </div>
