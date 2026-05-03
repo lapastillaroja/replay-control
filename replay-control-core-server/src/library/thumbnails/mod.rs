@@ -151,12 +151,10 @@ pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
         "nintendo_nes" => Some(&["Nintendo - Nintendo Entertainment System"]),
         "nintendo_snes" => Some(&["Nintendo - Super Nintendo Entertainment System"]),
         "panasonic_3do" => Some(&["The 3DO Company - 3DO"]),
-        // STOPGAP: "Philips - CDi" repo was removed from
-        // libretro-thumbnails entirely; no successor in the org. Returning
-        // None lets philips_cdi systems fall through to other thumbnail
-        // sources without spamming 404 logs. Real fix is catalog-build-time
-        // slug resolution; needs its own design pass.
-        "philips_cdi" => None,
+        // STOPGAP: was "Philips - CDi" — the repo was renamed upstream
+        // to "Philips - CD-i" (extra hyphen). Real fix is
+        // catalog-build-time slug resolution; needs its own design pass.
+        "philips_cdi" => Some(&["Philips - CD-i"]),
         "sega_32x" => Some(&["Sega - 32X", "Sega - Mega-CD - Sega CD"]),
         "sega_cd" => Some(&["Sega - Mega-CD - Sega CD"]),
         "sega_dc" => Some(&["Sega - Dreamcast"]),

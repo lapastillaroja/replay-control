@@ -89,11 +89,10 @@ pub fn collect_all_repos() -> Vec<RepoInfo> {
 }
 
 /// Hardcoded default branch lookup. Most repos use `master`; a few use `main`.
-/// (`"Philips - CDi"` removed — repo no longer exists upstream; see the
-/// stopgap comment in `thumbnails::mod::thumbnail_repo_names`.)
 pub fn default_branch(repo_display_name: &str) -> &'static str {
     match repo_display_name {
-        "Commodore - CD32" | "Commodore - CDTV" | "Sega - Naomi" | "Sega - Naomi 2" => "main",
+        "Commodore - CD32" | "Commodore - CDTV" | "Sega - Naomi" | "Sega - Naomi 2"
+        | "Philips - CD-i" => "main",
         _ => "master",
     }
 }
