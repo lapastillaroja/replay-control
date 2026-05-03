@@ -325,6 +325,14 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailPublisher => "Editora",
         Key::GameDetailRating => "Valoración",
 
+        // Achievements
+        Key::AchievementsTitle => "Logros",
+        Key::AchievementsPoints => "pts",
+        Key::AchievementsShowAll => "Mostrar todos los logros",
+        Key::AchievementsNone => "No hay logros disponibles",
+        Key::AchievementsConfigureKey => "Configurar clave API",
+        Key::AchievementsConfigureKeyHint => "Configura tu clave API de RetroAchievements en Ajustes para ver los logros.",
+
         // Metadata management
         Key::MoreMetadata => "Metadatos de juegos",
         Key::MetadataTitle => "Datos de juegos",

@@ -308,6 +308,14 @@ pub enum Key {
     GameDetailPublisher,
     GameDetailRating,
 
+    // Achievements
+    AchievementsTitle,
+    AchievementsPoints,
+    AchievementsShowAll,
+    AchievementsNone,
+    AchievementsConfigureKey,
+    AchievementsConfigureKeyHint,
+
     // Metadata management
     MoreMetadata,
     MetadataTitle,

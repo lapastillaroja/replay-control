@@ -114,6 +114,7 @@ pub struct UserPreferences {
     pub region_secondary: Option<RegionPreference>,
     pub font_size: String,
     pub setup_dismissed: bool,
+    pub ra_api_key: Option<String>,
 }
 
 impl Default for UserPreferences {
@@ -125,6 +126,7 @@ impl Default for UserPreferences {
             region_secondary: None,
             font_size: "normal".to_string(),
             setup_dismissed: false,
+            ra_api_key: None,
         }
     }
 }
@@ -142,6 +144,7 @@ impl UserPreferences {
                 .map(RegionPreference::from_str_value),
             font_size: settings.font_size().to_string(),
             setup_dismissed: settings.setup_dismissed(),
+            ra_api_key: settings.ra_api_key().map(|s| s.to_string()),
         }
     }
 }
@@ -400,6 +403,20 @@ pub fn read_github_api_key(store: &SettingsStore) -> Option<String> {
 pub fn write_github_api_key(store: &SettingsStore, key: &str) -> Result<()> {
     let mut settings = store.load();
     settings.set_github_api_key(key);
+    store.save(&settings)
+}
+
+/// Read the RetroAchievements API key from settings.
+/// Returns `None` if the file doesn't exist or the key is empty.
+pub fn read_ra_api_key(store: &SettingsStore) -> Option<String> {
+    store.load().ra_api_key().map(|s| s.to_string())
+}
+
+/// Write the RetroAchievements API key to settings.
+/// Creates the directory and file if they don't exist. Preserves other keys.
+pub fn write_ra_api_key(store: &SettingsStore, key: &str) -> Result<()> {
+    let mut settings = store.load();
+    settings.set_ra_api_key(key);
     store.save(&settings)
 }
 

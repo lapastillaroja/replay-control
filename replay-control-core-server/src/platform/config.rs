@@ -308,6 +308,10 @@ impl AppSettings {
         self.inner.get_non_empty("github_api_key")
     }
 
+    pub fn ra_api_key(&self) -> Option<&str> {
+        self.inner.get_non_empty("ra_api_key")
+    }
+
     pub fn update_channel(&self) -> &str {
         self.inner.get("update_channel").unwrap_or("stable")
     }
@@ -365,6 +369,10 @@ impl AppSettings {
 
     pub fn set_github_api_key(&mut self, key: &str) {
         self.inner.set("github_api_key", key);
+    }
+
+    pub fn set_ra_api_key(&mut self, key: &str) {
+        self.inner.set("ra_api_key", key);
     }
 
     pub fn set_update_channel(&mut self, channel: &str) {
