@@ -124,6 +124,7 @@ mod ssr {
             let version = replay_control_app::VERSION;
             let (library_corrupt, user_data_corrupt, user_data_backup_exists) =
                 state.corruption_status();
+            let asset_health = state.asset_health_snapshot();
             yield Ok::<_, Infallible>(Event::default().data(serde_json::json!({
                 "type": "init",
                 "skin_index": skin,
@@ -134,6 +135,7 @@ mod ssr {
                 "library_corrupt": library_corrupt,
                 "user_data_corrupt": user_data_corrupt,
                 "user_data_backup_exists": user_data_backup_exists,
+                "asset_health": asset_health,
             }).to_string()));
 
             // Then wait for broadcast events (no polling).

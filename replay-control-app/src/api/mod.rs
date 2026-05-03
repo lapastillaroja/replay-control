@@ -61,6 +61,9 @@ pub enum ConfigEvent {
         user_data_corrupt: bool,
         user_data_backup_exists: bool,
     },
+    AssetHealthChanged {
+        issues: Vec<replay_control_core::asset_health::AssetHealthIssue>,
+    },
 }
 
 /// Shared application state.
@@ -98,6 +101,12 @@ pub struct AppState {
     pub config_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
     /// Broadcast channel for activity state changes (import, thumbnail, rebuild).
     pub activity_tx: tokio::sync::broadcast::Sender<Activity>,
+    /// Reportable health issues with shipped data assets (catalog schema
+    /// mismatch today; future asset types via the release-asset-manifest plan).
+    /// Populated at startup; consumed by the SSE init payload + the
+    /// `<AssetHealthBanner>` UI component.
+    pub asset_health:
+        Arc<std::sync::RwLock<Vec<replay_control_core::asset_health::AssetHealthIssue>>>,
 }
 
 /// Register a corruption-change callback on each pool.
@@ -396,6 +405,20 @@ impl AppState {
         // Load all user preferences from settings.cfg once at startup.
         let prefs = replay_control_core_server::settings::UserPreferences::load(&settings);
 
+        // Seed the asset-health registry from startup probes. Today's only
+        // reporter is the catalog schema check (set in init_catalog before
+        // AppState construction); future asset types plug in here when the
+        // release-asset-manifest work lands.
+        let mut initial_issues: Vec<replay_control_core::asset_health::AssetHealthIssue> =
+            Vec::new();
+        if replay_control_core_server::catalog_pool::schema_outdated() {
+            initial_issues.push(replay_control_core::asset_health::AssetHealthIssue {
+                asset: "catalog.sqlite".into(),
+                kind: "schema_too_old".into(),
+                message: "Catalog out of date. Reinstall Replay Control to refresh.".into(),
+            });
+        }
+
         let state = Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
             config: Arc::new(std::sync::RwLock::new(config)),
@@ -414,6 +437,7 @@ impl AppState {
             activity,
             config_tx,
             activity_tx,
+            asset_health: Arc::new(std::sync::RwLock::new(initial_issues)),
         };
 
         // Surface custom-skin fallback in the log; without this it's invisible
@@ -457,6 +481,40 @@ impl AppState {
             self.library_pool.is_corrupt(),
             self.user_data_pool.is_corrupt(),
         )
+    }
+
+    /// Snapshot of currently-reported asset health issues. Used by
+    /// `sse_config_stream` to seed the `init` payload.
+    pub fn asset_health_snapshot(
+        &self,
+    ) -> Vec<replay_control_core::asset_health::AssetHealthIssue> {
+        self.asset_health
+            .read()
+            .expect("asset_health lock poisoned")
+            .clone()
+    }
+
+    /// Append an asset health issue to the registry and broadcast on the
+    /// config channel. Idempotent on `(asset, kind)` — if the same issue is
+    /// already reported, no-op (avoids duplicate banners on retry paths).
+    pub fn report_asset_issue(&self, issue: replay_control_core::asset_health::AssetHealthIssue) {
+        let snapshot = {
+            let mut guard = self
+                .asset_health
+                .write()
+                .expect("asset_health lock poisoned");
+            if guard
+                .iter()
+                .any(|existing| existing.asset == issue.asset && existing.kind == issue.kind)
+            {
+                return;
+            }
+            guard.push(issue);
+            guard.clone()
+        };
+        let _ = self
+            .config_tx
+            .send(ConfigEvent::AssetHealthChanged { issues: snapshot });
     }
 
     /// Returns `(library_corrupt, user_data_corrupt, user_data_backup_exists)`.

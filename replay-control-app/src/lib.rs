@@ -20,6 +20,7 @@ use leptos::prelude::*;
 use leptos_router::components::{A, Route, Router, Routes};
 use leptos_router::path;
 
+use components::asset_health_banner::AssetHealthBanner;
 use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
@@ -110,6 +111,9 @@ pub fn App() -> impl IntoView {
     // Banners and other consumers subscribe to these via use_context.
     provide_context(RwSignal::new(Activity::Idle));
     provide_context(RwSignal::new(CorruptionStatus::default()));
+    provide_context(RwSignal::new(Vec::<
+        replay_control_core::asset_health::AssetHealthIssue,
+    >::new()));
     // Fed by SseConfigListener; the skin page subscribes so its "current"
     // badge follows external skin changes (e.g. changed from the Pi).
     provide_context(RwSignal::<Option<u32>>::new(None));
@@ -135,6 +139,7 @@ pub fn App() -> impl IntoView {
                 </header>
 
                 <CorruptionBanner />
+                <AssetHealthBanner />
                 <MetadataBusyBanner />
 
                 <main class="content">
@@ -175,6 +180,21 @@ fn corruption_status_from_payload(payload: &serde_json::Value) -> CorruptionStat
     }
 }
 
+#[cfg(feature = "hydrate")]
+fn asset_health_from_payload(
+    payload: &serde_json::Value,
+) -> Vec<replay_control_core::asset_health::AssetHealthIssue> {
+    // Init carries the snapshot under `asset_health`; the
+    // `AssetHealthChanged` event carries it under `issues`. Try both.
+    let value = payload
+        .get("asset_health")
+        .or_else(|| payload.get("issues"));
+    value
+        .cloned()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
 /// SSE listener for config changes (skin, storage, update, corruption).
 ///
 /// Connects to `/sse/config` on hydration. This is a broadcast-based endpoint
@@ -201,6 +221,8 @@ fn SseConfigListener() -> impl IntoView {
         let update_state_signal =
             use_context::<RwSignal<replay_control_core::update::UpdateState>>();
         let corruption_signal = use_context::<RwSignal<CorruptionStatus>>();
+        let asset_health_signal =
+            use_context::<RwSignal<Vec<replay_control_core::asset_health::AssetHealthIssue>>>();
 
         Effect::new(move || {
             let es = match web_sys::EventSource::new("/sse/config") {
@@ -256,6 +278,9 @@ fn SseConfigListener() -> impl IntoView {
                             }
                             if let Some(sig) = corruption_signal {
                                 sig.set(corruption_status_from_payload(&payload));
+                            }
+                            if let Some(sig) = asset_health_signal {
+                                sig.set(asset_health_from_payload(&payload));
                             }
                             // Version-based reload for stale tabs.
                             if let Some(server_version) =
@@ -342,6 +367,11 @@ fn SseConfigListener() -> impl IntoView {
                         "CorruptionChanged" => {
                             if let Some(sig) = corruption_signal {
                                 sig.set(corruption_status_from_payload(&payload));
+                            }
+                        }
+                        "AssetHealthChanged" => {
+                            if let Some(sig) = asset_health_signal {
+                                sig.set(asset_health_from_payload(&payload));
                             }
                         }
                         _ => {}

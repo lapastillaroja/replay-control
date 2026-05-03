@@ -77,3 +77,31 @@
 .corruption-banner-btn-danger:hover {
     background: rgba(248, 113, 113, 0.15);
 }
+
+/* ================================================================
+   Asset Health Banner — shown when a shipped data asset (catalog,
+   future fonts/themes) is incompatible with the running binary.
+   Styled differently from the corruption banner (amber, not red)
+   to reflect "non-fatal: feature degraded" vs corruption's
+   "needs-recovery-action".
+   ================================================================ */
+
+.asset-health-banner {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 8px 16px;
+    background: #78350f;
+    color: #fde68a;
+    font-size: 0.8rem;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.asset-health-banner-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
