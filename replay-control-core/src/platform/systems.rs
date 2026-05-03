@@ -420,7 +420,7 @@ pub static SYSTEMS: &[System] = &[
         folder_name: "snk_ng",
         display_name: "Neo Geo",
         manufacturer: "SNK",
-        category: SystemCategory::Console,
+        category: SystemCategory::Arcade,
         abbreviation: "NG",
         placeholder_color: "#b8860b",
         extensions: &["zip"],
@@ -646,6 +646,7 @@ pub fn arcade_source_priority(folder_name: &str) -> &'static [ArcadeSource] {
         "arcade_mame" => &[Mame, Mame2k3p, Fbneo],
         "arcade_mame_2k3p" => &[Mame2k3p, Mame, Fbneo],
         "arcade_dc" => &[Naomi, Mame, Mame2k3p, Fbneo],
+        "snk_ng" => &[Mame, Mame2k3p, Fbneo],
         _ => &[],
     }
 }
