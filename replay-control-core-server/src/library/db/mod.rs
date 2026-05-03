@@ -758,54 +758,16 @@ impl LibraryDb {
         Ok(())
     }
 
-    /// Check if a table's schema matches the expected columns.
     /// Returns `true` if the table needs to be dropped and recreated.
+    /// Wraps `crate::sqlite::table_columns_diverge` with library-specific
+    /// rebuild-intent logging.
     fn table_needs_rebuild(conn: &Connection, table: &str, expected: &[&str]) -> bool {
-        let actual: std::collections::HashSet<String> =
-            match conn.prepare(&format!("PRAGMA table_info({table})")) {
-                Ok(mut stmt) => match stmt
-                    .query_map([], |row| row.get::<_, String>(1))
-                    .and_then(|rows| rows.collect::<std::result::Result<_, _>>())
-                {
-                    Ok(cols) => cols,
-                    Err(e) => {
-                        tracing::warn!("Failed to read {table} schema: {e}");
-                        return false;
-                    }
-                },
-                Err(e) => {
-                    tracing::warn!("Failed to prepare PRAGMA table_info({table}): {e}");
-                    return false;
-                }
-            };
-
-        if actual.is_empty() {
-            return false; // Table doesn't exist yet.
-        }
-
-        let missing: Vec<&str> = expected
-            .iter()
-            .filter(|col| !actual.contains(**col))
-            .copied()
-            .collect();
-
-        if missing.is_empty() && actual.len() == expected.len() {
-            return false; // Schema matches exactly.
-        }
-
-        if missing.is_empty() {
-            tracing::warn!(
-                "{table} schema has extra columns ({} actual vs {} expected), rebuilding",
-                actual.len(),
-                expected.len(),
-            );
+        if crate::sqlite::table_columns_diverge(conn, table, expected) {
+            tracing::warn!("{table} schema differs from expected, rebuilding");
+            true
         } else {
-            tracing::warn!(
-                "{table} schema outdated, rebuilding (missing: {})",
-                missing.join(", ")
-            );
+            false
         }
-        true
     }
 
     /// Helper: convert a row to GameEntry (used by multiple queries).

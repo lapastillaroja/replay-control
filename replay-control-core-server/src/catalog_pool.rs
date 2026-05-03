@@ -12,6 +12,21 @@ use deadpool_sync::SyncWrapper;
 
 static CATALOG_POOL: OnceLock<Pool<CatalogManager>> = OnceLock::new();
 
+/// Set to `true` at startup if the bundled catalog's `arcade_games` schema
+/// doesn't match what the running binary expects. When set, `with_catalog`
+/// short-circuits all queries — non-arcade systems keep working, arcade
+/// lookups return `None` instead of spamming WARN-per-row SQL errors. The
+/// user reaches this state by upgrading the binary without refreshing the
+/// catalog (e.g. an auto-update from a release whose updater predated the
+/// catalog-swap path); recovery is reinstalling Replay Control.
+static CATALOG_SCHEMA_OUTDATED: OnceLock<bool> = OnceLock::new();
+
+/// Returns true if startup detected a catalog schema mismatch. Test-only
+/// helper for forcing the flag is in `#[cfg(test)]` below.
+pub fn schema_outdated() -> bool {
+    CATALOG_SCHEMA_OUTDATED.get().copied().unwrap_or(false)
+}
+
 /// Sized for the ~6 parallel Suspense resources the metadata page fires
 /// plus headroom for background enrichment / batch lookups.
 const POOL_SIZE: usize = 8;
@@ -74,17 +89,39 @@ pub async fn init_catalog(path: impl AsRef<std::path::Path>) -> Result<(), Catal
         .get()
         .await
         .map_err(|e| CatalogInitError::Connection(e.to_string()))?;
-    conn.interact(|c: &mut rusqlite::Connection| {
-        c.query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'arcade_games'",
-            [],
-            |_| Ok(()),
-        )
-    })
-    .await
-    .map_err(|e| CatalogInitError::Connection(e.to_string()))?
-    .map_err(|e| CatalogInitError::Connection(format!("catalog schema missing: {e}")))?;
+
+    // Two checks under one connection: arcade_games exists, and its column
+    // set matches what the runtime expects. The second guards against a
+    // partial upgrade where the binary was replaced but the catalog wasn't.
+    let outdated = conn
+        .interact(|c: &mut rusqlite::Connection| {
+            c.query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'arcade_games'",
+                [],
+                |_| Ok(()),
+            )?;
+            Ok(crate::sqlite::table_columns_diverge(
+                c,
+                "arcade_games",
+                crate::game::arcade_db::ARCADE_COL_NAMES,
+            ))
+        })
+        .await
+        .map_err(|e| CatalogInitError::Connection(e.to_string()))?
+        .map_err(|e: rusqlite::Error| {
+            CatalogInitError::Connection(format!("catalog schema missing: {e}"))
+        })?;
     drop(conn);
+
+    if outdated {
+        let _ = CATALOG_SCHEMA_OUTDATED.set(true);
+        tracing::error!(
+            target: "telemetry",
+            event = "catalog_outdated",
+            "Catalog out of date: arcade_games column set does not match runtime expectation. \
+             Reinstall Replay Control to refresh /usr/local/bin/catalog.sqlite."
+        );
+    }
 
     let _ = CATALOG_POOL.set(pool);
     Ok(())
@@ -95,6 +132,9 @@ where
     F: FnOnce(&rusqlite::Connection) -> rusqlite::Result<T> + Send + 'static,
     T: Send + 'static,
 {
+    if schema_outdated() {
+        return None;
+    }
     let pool = CATALOG_POOL.get()?;
     let conn = match pool.get().await {
         Ok(c) => c,

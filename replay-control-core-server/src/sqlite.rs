@@ -104,6 +104,35 @@ pub fn has_invalid_sqlite_header(path: &Path) -> bool {
     }
 }
 
+/// Returns `true` if the table's column set differs from `expected`
+/// (missing column, extra column, or count mismatch). Returns `false`
+/// when the table doesn't exist or `PRAGMA table_info` fails — caller
+/// decides what those mean in context.
+///
+/// Pure detection: no logging. Library callers (drop-and-rebuild) and
+/// catalog callers (refuse-to-query) wrap this with their own
+/// response. Reads are sub-millisecond on schemas of any practical size.
+pub fn table_columns_diverge(conn: &Connection, table: &str, expected: &[&str]) -> bool {
+    let actual: std::collections::HashSet<String> =
+        match conn.prepare(&format!("PRAGMA table_info({table})")) {
+            Ok(mut stmt) => match stmt
+                .query_map([], |row| row.get::<_, String>(1))
+                .and_then(|rows| rows.collect::<std::result::Result<_, _>>())
+            {
+                Ok(cols) => cols,
+                Err(_) => return false,
+            },
+            Err(_) => return false,
+        };
+    if actual.is_empty() {
+        return false;
+    }
+    if actual.len() != expected.len() {
+        return true;
+    }
+    expected.iter().any(|col| !actual.contains(*col))
+}
+
 /// Probe tables for corruption. Returns `Err` if any table is unreadable.
 ///
 /// `PRAGMA quick_check` misses corrupt data pages, so we touch every table
@@ -292,5 +321,52 @@ mod tests {
         std::fs::write(&p, &bytes).unwrap();
         assert!(!has_invalid_sqlite_header(&p));
         let _ = std::fs::remove_file(&p);
+    }
+
+    fn open_in_memory_with(create_sql: &str) -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(create_sql).unwrap();
+        conn
+    }
+
+    #[test]
+    fn columns_match_returns_false_for_exact_schema() {
+        let conn = open_in_memory_with("CREATE TABLE t (a INTEGER, b TEXT, c BLOB);");
+        assert!(!table_columns_diverge(&conn, "t", &["a", "b", "c"]));
+    }
+
+    #[test]
+    fn columns_match_ignores_declaration_order() {
+        let conn = open_in_memory_with("CREATE TABLE t (a INTEGER, b TEXT, c BLOB);");
+        // Column order in the expected list is irrelevant — set comparison.
+        assert!(!table_columns_diverge(&conn, "t", &["c", "a", "b"]));
+    }
+
+    #[test]
+    fn columns_diverge_when_expected_column_is_missing() {
+        // The beta.5 arcade trap, in miniature: runtime expects `source` but
+        // the on-disk schema (the user's stale catalog) doesn't have it.
+        let conn =
+            open_in_memory_with("CREATE TABLE arcade_games (rom_name TEXT, display_name TEXT);");
+        assert!(table_columns_diverge(
+            &conn,
+            "arcade_games",
+            &["rom_name", "source", "display_name"],
+        ));
+    }
+
+    #[test]
+    fn columns_diverge_when_table_has_extra_column() {
+        let conn = open_in_memory_with("CREATE TABLE t (a INTEGER, b TEXT, c BLOB);");
+        assert!(table_columns_diverge(&conn, "t", &["a", "b"]));
+    }
+
+    #[test]
+    fn columns_match_returns_false_for_missing_table() {
+        // A missing table means PRAGMA returns no rows. Caller decides what
+        // that means in context (existence is a separate check upstream); the
+        // helper itself reports "no divergence" rather than guessing.
+        let conn = Connection::open_in_memory().unwrap();
+        assert!(!table_columns_diverge(&conn, "nope", &["a"]));
     }
 }

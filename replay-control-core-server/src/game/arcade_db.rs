@@ -104,6 +104,26 @@ fn row_to_source_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRow> {
     })
 }
 
+/// Column name list driving both the SELECT projection (`ARCADE_COLS`) and
+/// the runtime schema check at `catalog_pool::init_catalog`. Single source
+/// of truth — adding/removing/renaming a column here is the one edit that
+/// flows to both sites. Keep `ARCADE_COLS` below in lockstep.
+pub(crate) const ARCADE_COL_NAMES: &[&str] = &[
+    "rom_name",
+    "source",
+    "display_name",
+    "year",
+    "manufacturer",
+    "players",
+    "rotation",
+    "status",
+    "is_clone",
+    "is_bios",
+    "parent",
+    "category",
+    "normalized_genre",
+];
+
 const ARCADE_COLS: &str = "rom_name, source, display_name, year, manufacturer, players, rotation, status, \
      is_clone, is_bios, parent, category, normalized_genre";
 
