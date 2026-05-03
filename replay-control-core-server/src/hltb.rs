@@ -46,7 +46,8 @@ pub async fn fetch_hltb(display_name: &str) -> Option<HltbData> {
     let clean_name = strip_rom_tags(display_name);
     let terms: Vec<&str> = clean_name.split_whitespace().collect();
 
-    let body = serde_json::json!({
+    // The auth key-value pair must also be embedded in the request body.
+    let mut body = serde_json::json!({
         "searchType": "games",
         "searchTerms": terms,
         "searchPage": 1,
@@ -57,8 +58,8 @@ pub async fn fetch_hltb(display_name: &str) -> Option<HltbData> {
                 "platform": "",
                 "sortCategory": "popular",
                 "rangeCategory": "main",
-                "rangeTime": { "min": null, "max": null },
-                "gameplay": { "perspective": "", "flow": "", "genre": "", "subGenre": "" },
+                "rangeTime": { "min": 0, "max": 0 },
+                "gameplay": { "perspective": "", "flow": "", "genre": "", "difficulty": "" },
                 "rangeYear": { "min": "", "max": "" },
                 "modifier": ""
             },
@@ -67,8 +68,12 @@ pub async fn fetch_hltb(display_name: &str) -> Option<HltbData> {
             "filter": "",
             "sort": 0,
             "randomizer": 0
-        }
+        },
+        "useCache": true
     });
+    if !auth.hp_key.is_empty() {
+        body[&auth.hp_key] = serde_json::Value::String(auth.hp_val.clone());
+    }
 
     let search_url = format!("{HLTB_BASE}{endpoint}");
     let result = crate::http::shared_client()
