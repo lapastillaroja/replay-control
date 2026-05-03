@@ -3,8 +3,6 @@
 //! Implements Tier 1 of the pool-design plan
 //! (`investigations/2026-04-29-pool-design-findings.md`):
 //!   - one in-memory snapshot replaces six per-stat server fns
-//!   - one `pool.read(|c| ...)` closure runs all DB queries — minimises pool
-//!     acquisitions and shrinks the cancellation-orphan blast radius
 //!   - invalidation hooks attach to the same write-completion sites that
 //!     already invalidate the other caches
 //!   - stale-on-`None` keeps the page interactive while a write is in flight
@@ -14,31 +12,25 @@
 //! pool is touched only at boot, on cache miss, and once after each write
 //! batch completes.
 //!
+//! Each query runs in its own short `pool.read()` closure rather than one
+//! bundled closure: bundling was a premature "single pool acquisition"
+//! optimisation that became a problem at scale (the whole rebuild ran as
+//! a single 80–170 s closure on 141 k-ROM libraries, holding a read slot
+//! and tripping the 15 s `INTERACT_TIMEOUT` tripwire). Splitting lets the
+//! pool cycle: SSR readers slot in between queries, no closure exceeds
+//! the cap, and total wallclock is ~the same on cold cache (or faster
+//! under contention because requests don't wait for the slowest one to
+//! release the connection).
+//!
 //! See `investigations/2026-04-29-ssr-cache-snapshot-vs-pool-starvation.md`
 //! for the design rationale.
 
-use replay_control_core::library_db::{
-    DriverStatusCounts, LibrarySummary, MetadataStats, SystemCoverage,
-};
+use replay_control_core::library_db::{DriverStatusCounts, SystemCoverage};
 use replay_control_core_server::library_db::{DataSourceStats, LibraryDb, SystemCoverageStats};
 
 use crate::api::AppState;
 pub use crate::server_fns::MetadataPageSnapshot;
 use crate::server_fns::{BuiltinDbStats, DataSourceSummary};
-
-/// Internal struct: the parts of the snapshot that come from a single
-/// `pool.read()` closure. Computed inside the closure so the connection is
-/// held just once for all DB queries.
-struct DbBundle {
-    stats: MetadataStats,
-    library_summary: LibrarySummary,
-    entries_per_system: Vec<(String, usize)>,
-    thumbnails_per_system: Vec<(String, usize)>,
-    coverage_stats: Vec<SystemCoverageStats>,
-    driver_status: std::collections::HashMap<String, DriverStatusCounts>,
-    data_source_stats: Option<DataSourceStats>,
-    image_count_pair: (usize, usize),
-}
 
 /// Build the snapshot. Returns `None` only when the DB pool was unavailable
 /// for the duration of the call — caller should keep the previous (stale)
@@ -47,33 +39,35 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let storage = state.storage();
     let db_path = state.library_pool.db_path();
 
-    // Single closure → single pool acquisition → single potential
-    // cancellation-orphan slot. All synchronous DB queries that the page
-    // needs are batched here; everything else is computed off-connection
-    // below.
-    let bundle = state
-        .library_pool
-        .read(move |conn| {
-            let stats = LibraryDb::stats(conn, &db_path).unwrap_or_default();
-            let library_summary = LibraryDb::library_summary(conn).unwrap_or_default();
-            let entries_per_system = LibraryDb::entries_per_system(conn).unwrap_or_default();
-            let thumbnails_per_system = LibraryDb::thumbnails_per_system(conn).unwrap_or_default();
-            let coverage_stats = LibraryDb::system_coverage_stats(conn).unwrap_or_default();
-            let driver_status = LibraryDb::driver_status_per_system(conn).unwrap_or_default();
-            let data_source_stats =
-                LibraryDb::get_data_source_stats(conn, "libretro-thumbnails").ok();
-            let image_count_pair = LibraryDb::image_stats(conn).unwrap_or((0, 0));
-            DbBundle {
-                stats,
-                library_summary,
-                entries_per_system,
-                thumbnails_per_system,
-                coverage_stats,
-                driver_status,
-                data_source_stats,
-                image_count_pair,
-            }
-        })
+    // 8 independent reads. Each closure does one query and returns
+    // immediately, releasing the pool slot for SSR / other background
+    // work to slot in. `unwrap_or_default()` keeps the snapshot
+    // best-effort: a single transient pool failure degrades that one
+    // section instead of failing the whole rebuild.
+    let pool = &state.library_pool;
+    let stats = pool
+        .read(move |c| LibraryDb::stats(c, &db_path).unwrap_or_default())
+        .await?;
+    let library_summary = pool
+        .read(|c| LibraryDb::library_summary(c).unwrap_or_default())
+        .await?;
+    let entries_per_system = pool
+        .read(|c| LibraryDb::entries_per_system(c).unwrap_or_default())
+        .await?;
+    let thumbnails_per_system = pool
+        .read(|c| LibraryDb::thumbnails_per_system(c).unwrap_or_default())
+        .await?;
+    let coverage_stats = pool
+        .read(|c| LibraryDb::system_coverage_stats(c).unwrap_or_default())
+        .await?;
+    let driver_status = pool
+        .read(|c| LibraryDb::driver_status_per_system(c).unwrap_or_default())
+        .await?;
+    let data_source_stats = pool
+        .read(|c| LibraryDb::get_data_source_stats(c, "libretro-thumbnails").ok())
+        .await?;
+    let image_count_pair = pool
+        .read(|c| LibraryDb::image_stats(c).unwrap_or((0, 0)))
         .await?;
 
     // Off-pool work: the L1 systems cache, the on-disk media size, and the
@@ -83,26 +77,22 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
         .cached_systems(&storage, &state.library_pool)
         .await;
     let media_size = replay_control_core_server::thumbnails::media_dir_size(&storage.root);
-    let image_stats = (
-        bundle.image_count_pair.0,
-        bundle.image_count_pair.1,
-        media_size,
-    );
+    let image_stats = (image_count_pair.0, image_count_pair.1, media_size);
 
     let coverage = build_coverage(
         systems,
-        bundle.entries_per_system,
-        bundle.thumbnails_per_system,
-        bundle.coverage_stats,
-        bundle.driver_status,
+        entries_per_system,
+        thumbnails_per_system,
+        coverage_stats,
+        driver_status,
     );
 
-    let data_source = build_data_source_summary(bundle.data_source_stats);
+    let data_source = build_data_source_summary(data_source_stats);
     let builtin_stats = build_builtin_stats().await;
 
     Some(MetadataPageSnapshot {
-        stats: bundle.stats,
-        library_summary: bundle.library_summary,
+        stats,
+        library_summary,
         coverage,
         data_source,
         image_stats,
