@@ -241,11 +241,15 @@ pub fn import_launchbox(
         stats.inserted += n;
     }
 
-    tracing::info!(
-        "LaunchBox import: {} source entries, {} matched, {} inserted, {} skipped",
+    // NOTE: stats.inserted is parser-local and always 0 in the bulk-import
+    // path because flush_batch returns 0 there (the writer task tracks the
+    // real count via an atomic, patched into stats after both tasks join).
+    // The final, accurate log line lives in `run_bulk_import` where the
+    // patched count is visible.
+    tracing::debug!(
+        "LaunchBox parse: {} source entries, {} matched ROMs, {} skipped",
         stats.total_source,
         stats.matched,
-        stats.inserted,
         stats.skipped,
     );
 
@@ -801,6 +805,13 @@ pub async fn run_bulk_import(
 
     let (mut stats, parse_result) = parse_outcome;
     stats.inserted = inserted.load(Ordering::Relaxed);
+    tracing::info!(
+        "LaunchBox import: {} source entries, {} matched ROMs, {} metadata rows inserted, {} skipped",
+        stats.total_source,
+        stats.matched,
+        stats.inserted,
+        stats.skipped,
+    );
     Ok((stats, parse_result))
 }
 
