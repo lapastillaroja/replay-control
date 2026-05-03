@@ -25,40 +25,42 @@ impl LibraryDb {
         Ok(())
     }
 
-    /// Bulk insert game aliases within a single transaction.
+    /// Bulk insert game aliases in chunked transactions.
+    ///
+    /// Chunked because the LaunchBox import on a 30k-alias library used to
+    /// fire the 15s `INTERACT_TIMEOUT` tripwire on slow SD storage with one
+    /// monolithic transaction. `INSERT OR REPLACE` is row-idempotent so
+    /// cross-batch atomicity isn't required — a power loss mid-import means
+    /// the next import re-inserts cleanly.
     pub fn bulk_insert_aliases(conn: &mut Connection, aliases: &[AliasInsert]) -> Result<usize> {
-        if aliases.is_empty() {
-            return Ok(0);
-        }
-
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
-
+        const ALIAS_BATCH: usize = 5_000;
         let mut count = 0usize;
-        {
-            let mut stmt = tx
-                .prepare(
-                    "INSERT OR REPLACE INTO game_alias (system, base_title, alias_name, alias_region, source)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                )
-                .map_err(|e| Error::Other(format!("Prepare bulk_insert_aliases: {e}")))?;
-
-            for a in aliases {
-                stmt.execute(params![
-                    a.system,
-                    a.base_title,
-                    a.alias_name,
-                    a.alias_region,
-                    a.source
-                ])
-                .map_err(|e| Error::Other(format!("Insert alias failed: {e}")))?;
-                count += 1;
+        for chunk in aliases.chunks(ALIAS_BATCH) {
+            let tx = conn
+                .transaction()
+                .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
+            {
+                let mut stmt = tx
+                    .prepare(
+                        "INSERT OR REPLACE INTO game_alias (system, base_title, alias_name, alias_region, source)
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                    )
+                    .map_err(|e| Error::Other(format!("Prepare bulk_insert_aliases: {e}")))?;
+                for a in chunk {
+                    stmt.execute(params![
+                        a.system,
+                        a.base_title,
+                        a.alias_name,
+                        a.alias_region,
+                        a.source
+                    ])
+                    .map_err(|e| Error::Other(format!("Insert alias failed: {e}")))?;
+                    count += 1;
+                }
             }
+            tx.commit()
+                .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
         }
-
-        tx.commit()
-            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
         Ok(count)
     }
 
