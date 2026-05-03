@@ -174,13 +174,14 @@ struct ResolvedDbPaths {
 fn prepare_storage_dbs(
     storage: &replay_control_core_server::storage::StorageLocation,
     data_dir: &replay_control_core_server::data_dir::DataDir,
-    is_production: bool,
+    _is_production: bool,
 ) -> Result<ResolvedDbPaths, String> {
-    if is_production {
-        storage
-            .wait_until_ready()
-            .map_err(|e| format!("Storage not ready: {e}"))?;
-    }
+    // Caller is responsible for the readiness gate (`StorageLocation::is_ready`)
+    // — when the FS isn't a real mount yet (rootfs-stub race on slow NFS),
+    // this function should never be called. Routing the not-ready case
+    // through the existing no-storage path lets the background re-detection
+    // loop pick the mount up later, instead of failing startup with a
+    // bounded-deadline timeout that could never be tuned right.
     let storage_id = storage
         .ensure_storage_id()
         .map_err(|e| format!("Failed to assign storage id: {e}"))?;
@@ -298,7 +299,18 @@ impl AppState {
             };
 
             match StorageLocation::detect(&config) {
-                Ok(storage) => (Some(storage), config),
+                Ok(storage) if storage.is_ready() => (Some(storage), config),
+                Ok(storage) => {
+                    // Path exists but the kernel hasn't finished mounting on
+                    // top of the rootfs stub yet (slow NFS first-mount, etc).
+                    // Route to the no-storage path; background re-detection
+                    // will pick the mount up when it appears.
+                    tracing::warn!(
+                        "Storage path {} not yet a mount point — starting in no-storage mode, will retry",
+                        storage.root.display()
+                    );
+                    (None, config)
+                }
                 Err(e) => {
                     tracing::warn!("Storage unavailable at startup: {e}");
                     (None, config)
@@ -620,6 +632,17 @@ impl AppState {
         }
 
         let new_storage = StorageLocation::detect(&config)?;
+        if !new_storage.is_ready() {
+            // Path exists but mount hasn't completed — same rootfs-stub
+            // race the startup detect site handles. Caller's next tick
+            // will retry; treating as no-change avoids tearing down a
+            // working storage state for a transient mount-not-ready blip.
+            tracing::debug!(
+                "refresh_storage: {} not yet a mount point; deferring",
+                new_storage.root.display()
+            );
+            return Ok(false);
+        }
         let had_storage = self.has_storage();
 
         let changed = {

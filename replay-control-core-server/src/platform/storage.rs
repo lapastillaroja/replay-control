@@ -197,31 +197,22 @@ impl StorageLocation {
         ensure_storage_id_at(&self.rc_dir(), self.kind.as_str())
     }
 
-    /// Wait up to [`STORAGE_READY_TIMEOUT`] for `<root>` to actually become a
-    /// mount point. Closes the rootfs-stub race where the kernel hasn't
-    /// finished mounting the underlying device yet — without this, a marker
-    /// written before the real FS surfaces lands on rootfs and gets shadowed.
-    /// Production callers should run this before [`Self::ensure_storage_id`];
-    /// dev / test callers (running with an explicit `--storage-path`) skip it.
-    pub fn wait_until_ready(&self) -> Result<()> {
-        if is_mount_point(&self.root) {
-            return Ok(());
-        }
-        wait_until_mount_point(&self.root, STORAGE_READY_TIMEOUT)
+    /// True when `<root>` is actually the active mount point (not just a
+    /// rootfs stub the kernel hasn't finished mounting on top of yet).
+    /// Production callers should gate `ensure_storage_id` and friends on
+    /// this — when it returns false, treat as no-storage and let the
+    /// background re-detection loop pick the mount up later. Dev / test
+    /// callers (`--storage-path`) skip the check entirely.
+    pub fn is_ready(&self) -> bool {
+        is_mount_point(&self.root)
     }
 }
-
-/// How long to wait for `<storage_root>` to actually be a mount point before
-/// deciding "this storage is missing its marker." Defends against a service
-/// startup where systemd has the path but the kernel hasn't finished mounting
-/// the underlying device on top of the rootfs stub yet.
-const STORAGE_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Read or create the storage-id marker inside `rc_dir`. Public for callers
 /// that have the `.replay-control` directory path but not a `StorageLocation`
 /// (tests, raw storage_root code paths). Production code routes through
-/// [`StorageLocation::ensure_storage_id`], which calls
-/// [`StorageLocation::wait_until_ready`] first to close the rootfs-stub race.
+/// [`StorageLocation::ensure_storage_id`] only after gating on
+/// [`StorageLocation::is_ready`] to close the rootfs-stub race.
 ///
 /// Resolution order:
 /// 1. Existing marker (cache hit).
@@ -360,26 +351,6 @@ fn is_mount_point(path: &Path) -> bool {
     mount_entry_for(path)
         .map(|m| Path::new(&m.mount_point) == path)
         .unwrap_or(false)
-}
-
-fn wait_until_mount_point(path: &Path, timeout: std::time::Duration) -> Result<()> {
-    let deadline = std::time::Instant::now() + timeout;
-    let mut delay = std::time::Duration::from_millis(200);
-    let max_delay = std::time::Duration::from_secs(2);
-    loop {
-        if is_mount_point(path) {
-            return Ok(());
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err(Error::Other(format!(
-                "{} did not become a mount point within {:?}",
-                path.display(),
-                timeout
-            )));
-        }
-        std::thread::sleep(delay);
-        delay = std::cmp::min(delay * 2, max_delay);
-    }
 }
 
 /// Resolve a stable filesystem identifier for `path`. Block-backed filesystems
