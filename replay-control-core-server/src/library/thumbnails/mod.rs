@@ -127,7 +127,11 @@ pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
     match system {
         "atari_2600" => Some(&["Atari - 2600"]),
         "atari_5200" => Some(&["Atari - 5200"]),
-        "atari_7800" => Some(&["Atari - 7800 ProSystem"]),
+        // STOPGAP: was "Atari - 7800 ProSystem" — that repo no longer
+        // exists in libretro-thumbnails (renamed). Real fix is
+        // catalog-build-time slug resolution from the live GitHub org;
+        // needs its own design pass.
+        "atari_7800" => Some(&["Atari - 7800"]),
         "atari_jaguar" => Some(&["Atari - Jaguar"]),
         "atari_lynx" => Some(&["Atari - Lynx"]),
         "amstrad_cpc" => Some(&["Amstrad - CPC"]),
@@ -147,7 +151,12 @@ pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
         "nintendo_nes" => Some(&["Nintendo - Nintendo Entertainment System"]),
         "nintendo_snes" => Some(&["Nintendo - Super Nintendo Entertainment System"]),
         "panasonic_3do" => Some(&["The 3DO Company - 3DO"]),
-        "philips_cdi" => Some(&["Philips - CDi"]),
+        // STOPGAP: "Philips - CDi" repo was removed from
+        // libretro-thumbnails entirely; no successor in the org. Returning
+        // None lets philips_cdi systems fall through to other thumbnail
+        // sources without spamming 404 logs. Real fix is catalog-build-time
+        // slug resolution; needs its own design pass.
+        "philips_cdi" => None,
         "sega_32x" => Some(&["Sega - 32X", "Sega - Mega-CD - Sega CD"]),
         "sega_cd" => Some(&["Sega - Mega-CD - Sega CD"]),
         "sega_dc" => Some(&["Sega - Dreamcast"]),
