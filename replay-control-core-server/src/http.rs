@@ -4,15 +4,20 @@
 
 use std::sync::OnceLock;
 
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE};
 use replay_control_core::error::{Error, Result};
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
-/// Shared HTTP client with sensible defaults (User-Agent, timeouts, connection pooling).
+/// Shared HTTP client with browser-like headers (User-Agent, Accept) for Cloudflare compatibility.
 pub fn shared_client() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| {
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
+        headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.5"));
         reqwest::Client::builder()
-            .user_agent("replay-control")
+            .user_agent("Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .default_headers(headers)
             .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(30))
             .pool_max_idle_per_host(4)

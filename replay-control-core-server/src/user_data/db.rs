@@ -16,6 +16,7 @@ use replay_control_core::error::{Error, Result};
 pub const USER_DATA_DB_FILE: &str = "user_data.db";
 
 pub use replay_control_core::user_data_db::{GameStatus, StatusGameEntry, VideoEntry};
+pub use replay_control_core::want_to_play::{HltbData, WantToPlayEntry};
 
 /// Stateless query namespace for the user data SQLite database.
 ///
@@ -26,7 +27,7 @@ pub struct UserDataDb;
 impl UserDataDb {
     /// Tables to probe for corruption detection.
     /// NOTE: update this list when adding new tables.
-    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos", "game_notes", "game_status"];
+    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos", "game_notes", "game_status", "want_to_play", "hltb_cache"];
 
     /// Resolve the user_data.db path under `<storage_root>/.replay-control/`
     /// without touching the filesystem. Useful for callers that need the path
@@ -106,7 +107,24 @@ impl UserDataDb {
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_game_status_status
-                    ON game_status (status);",
+                    ON game_status (status);
+
+                CREATE TABLE IF NOT EXISTS want_to_play (
+                    system TEXT NOT NULL,
+                    rom_filename TEXT NOT NULL,
+                    base_title TEXT NOT NULL DEFAULT '',
+                    added_at INTEGER NOT NULL,
+                    PRIMARY KEY (system, rom_filename)
+                );
+
+                CREATE TABLE IF NOT EXISTS hltb_cache (
+                    base_title TEXT NOT NULL PRIMARY KEY,
+                    game_id INTEGER,
+                    main_secs INTEGER,
+                    main_extra_secs INTEGER,
+                    completionist_secs INTEGER,
+                    fetched_at INTEGER NOT NULL
+                );",
         )
         .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
         Ok(())
@@ -304,7 +322,7 @@ impl UserDataDb {
         Ok(())
     }
 
-    /// Delete all user data entries for a ROM (box art overrides + videos + notes + status).
+    /// Delete all user data entries for a ROM (box art overrides, videos, notes, status, backlog).
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(
             "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
@@ -320,6 +338,10 @@ impl UserDataDb {
         );
         let _ = conn.execute(
             "DELETE FROM game_status WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
+        let _ = conn.execute(
+            "DELETE FROM want_to_play WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
         );
     }
@@ -349,6 +371,12 @@ impl UserDataDb {
             params![system, old_filename, new_filename],
         ) {
             tracing::warn!("Failed to update game_status: {e}");
+        }
+        if let Err(e) = conn.execute(
+            "UPDATE want_to_play SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            params![system, old_filename, new_filename],
+        ) {
+            tracing::warn!("Failed to update want_to_play: {e}");
         }
     }
 
@@ -488,5 +516,182 @@ impl UserDataDb {
 
         rows.collect::<std::result::Result<std::collections::HashMap<_, _>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect status counts: {e}")))
+    }
+
+    // --- Want To Play (Backlog) ---
+
+    /// Add a game to the backlog. Returns true if it was newly added, false if already present.
+    pub fn add_want_to_play(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        base_title: &str,
+    ) -> Result<bool> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let affected = conn
+            .execute(
+                "INSERT OR IGNORE INTO want_to_play (system, rom_filename, base_title, added_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![system, rom_filename, base_title, now],
+            )
+            .map_err(|e| Error::Other(format!("Failed to add want_to_play: {e}")))?;
+
+        Ok(affected > 0)
+    }
+
+    /// Remove a game from the backlog.
+    pub fn remove_want_to_play(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<()> {
+        conn.execute(
+            "DELETE FROM want_to_play WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        )
+        .map_err(|e| Error::Other(format!("Failed to remove want_to_play: {e}")))?;
+        Ok(())
+    }
+
+    /// Check whether a specific ROM is in the backlog.
+    pub fn is_want_to_play(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+    ) -> Result<bool> {
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM want_to_play WHERE system = ?1 AND rom_filename = ?2",
+                params![system, rom_filename],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Failed to query want_to_play: {e}")))?;
+        Ok(count > 0)
+    }
+
+    /// List all backlog entries ordered newest-first.
+    pub fn list_want_to_play(conn: &Connection) -> Result<Vec<WantToPlayEntry>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, rom_filename, base_title, added_at
+                 FROM want_to_play
+                 ORDER BY added_at DESC",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare list_want_to_play: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(WantToPlayEntry {
+                    system: row.get(0)?,
+                    rom_filename: row.get(1)?,
+                    base_title: row.get(2)?,
+                    added_at: row.get::<_, i64>(3)? as u64,
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to query want_to_play: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
+    /// Delete want_to_play entry for a deleted ROM.
+    pub fn delete_want_to_play_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
+        let _ = conn.execute(
+            "DELETE FROM want_to_play WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
+    }
+
+    // --- HLTB Cache ---
+
+    const HLTB_CACHE_TTL_SECS: i64 = 7 * 24 * 3600;
+
+    /// Look up a cached HLTB result. Returns `None` if absent or older than 7 days.
+    pub fn get_hltb_cache(conn: &Connection, base_title: &str) -> Result<Option<HltbData>> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let row = conn
+            .query_row(
+                "SELECT game_id, main_secs, main_extra_secs, completionist_secs, fetched_at
+                 FROM hltb_cache WHERE base_title = ?1",
+                params![base_title],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<i64>>(0)?,
+                        row.get::<_, Option<i64>>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to query hltb_cache: {e}")))?;
+
+        let Some((game_id, main, plus, comp100, fetched_at)) = row else {
+            return Ok(None);
+        };
+
+        if now - fetched_at > Self::HLTB_CACHE_TTL_SECS {
+            return Ok(None);
+        }
+
+        Ok(Some(HltbData {
+            game_id: game_id.unwrap_or(0) as u64,
+            main_secs: main.map(|v| v as u64),
+            main_extra_secs: plus.map(|v| v as u64),
+            completionist_secs: comp100.map(|v| v as u64),
+        }))
+    }
+
+    /// Store a HLTB result in the cache, overwriting any previous entry.
+    pub fn set_hltb_cache(
+        conn: &Connection,
+        base_title: &str,
+        data: &HltbData,
+    ) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO hltb_cache
+                 (base_title, game_id, main_secs, main_extra_secs, completionist_secs, fetched_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                base_title,
+                data.game_id as i64,
+                data.main_secs.map(|v| v as i64),
+                data.main_extra_secs.map(|v| v as i64),
+                data.completionist_secs.map(|v| v as i64),
+                now,
+            ],
+        )
+        .map_err(|e| Error::Other(format!("Failed to set hltb_cache: {e}")))?;
+        Ok(())
+    }
+
+    /// Store a negative HLTB result (no data found) to prevent re-fetching for 7 days.
+    pub fn set_hltb_cache_empty(conn: &Connection, base_title: &str) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO hltb_cache
+                 (base_title, game_id, main_secs, main_extra_secs, completionist_secs, fetched_at)
+             VALUES (?1, NULL, NULL, NULL, NULL, ?2)",
+            params![base_title, now],
+        )
+        .map_err(|e| Error::Other(format!("Failed to set empty hltb_cache: {e}")))?;
+        Ok(())
     }
 }

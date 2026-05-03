@@ -10,6 +10,7 @@ use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::game_notes_section::GameNotesSection;
 use crate::components::game_status_section::GameStatusSection;
 use crate::components::hero_card::GameScrollCard;
+use crate::components::hltb_section::HltbSection;
 use crate::components::manual_section::ManualSection;
 use crate::components::series_timeline::SeriesTimeline;
 use crate::components::video_section::GameVideoSection;
@@ -592,6 +593,14 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         <AchievementsSection
             system=system_sv
             rom_filename=filename_sv
+            display_name=game_name_sv
+        />
+
+        // HowLongToBeat — completion times and backlog toggle.
+        <HltbSection
+            system=system_sv
+            rom_filename=filename_sv
+            base_title=base_title_sv
             display_name=game_name_sv
         />
 

@@ -30,6 +30,8 @@ pub use user_data as user_data_db;
 pub mod settings;
 pub use settings::skins;
 
+pub mod want_to_play;
+
 mod capture;
 pub use capture::video_url;
 

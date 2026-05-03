@@ -532,6 +532,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillCoOp => "協力プレイ",
         Key::SpotlightCoOp => "協力プレイ",
 
+        // Backlog (積みゲー)
+        Key::NavBacklog => "積みゲー",
+        Key::BacklogTitle => "積みゲー",
+        Key::BacklogEmpty => "積みゲーリストは空です",
+        Key::BacklogBrowse => "ゲームを探す",
+        Key::BacklogGames => "本",
+        Key::BacklogRemove => "リストから削除",
+
+        // HowLongToBeat
+        Key::HltbTitle => "クリア時間",
+        Key::HltbFetch => "クリア時間を調べる",
+        Key::HltbFetching => "検索中...",
+        Key::HltbNoData => "HowLongToBeatにデータなし",
+        Key::HltbAddToBacklog => "積みゲーに追加",
+        Key::HltbInBacklog => "積みゲー登録済み",
+        Key::HltbMain => "メインストーリー",
+        Key::HltbMainExtra => "メイン＋エクストラ",
+        Key::HltbCompletionist => "完全クリア",
+
         // Analytics
         Key::MoreSectionPrivacy => "プライバシー",
         Key::AnalyticsTitle => "匿名の使用統計",

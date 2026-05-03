@@ -1,5 +1,6 @@
 pub mod achievements_section;
 pub mod boxart_picker;
+pub mod hltb_section;
 pub mod boxart_placeholder;
 pub mod captures;
 pub mod corruption_banner;

@@ -19,6 +19,7 @@ mod stats;
 mod system;
 mod thumbnails;
 mod videos;
+mod want_to_play;
 
 mod achievements;
 
@@ -39,6 +40,7 @@ pub use system::*;
 pub use thumbnails::*;
 pub use videos::*;
 pub use achievements::*;
+pub use want_to_play::*;
 
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
