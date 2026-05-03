@@ -325,6 +325,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailPublisher => "Editora",
         Key::GameDetailRating => "Valoración",
 
+        // Series timeline
+        Key::SeriesTimelineCurrent => "Este juego",
+
         // Metadata management
         Key::MoreMetadata => "Metadatos de juegos",
         Key::MetadataTitle => "Datos de juegos",

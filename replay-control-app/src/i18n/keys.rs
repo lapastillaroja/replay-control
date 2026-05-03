@@ -308,6 +308,9 @@ pub enum Key {
     GameDetailPublisher,
     GameDetailRating,
 
+    // Series timeline
+    SeriesTimelineCurrent,
+
     // Metadata management
     MoreMetadata,
     MetadataTitle,
