@@ -93,7 +93,7 @@ echo "==> Hashing assets..."
 WASM_HASH=$(sha256sum "$WASM_FILE" | cut -c1-16)
 HASHED_WASM="$PKG_DIR/${CRATE_SNAKE}.${WASM_HASH}.wasm"
 mv "$WASM_FILE" "$HASHED_WASM"
-sed -i "s|${CRATE_SNAKE}_bg\.wasm|${CRATE_SNAKE}.${WASM_HASH}.wasm|g" "$JS_FILE"
+perl -pi -e "s|\Q${CRATE_SNAKE}_bg.wasm\E|${CRATE_SNAKE}.${WASM_HASH}.wasm|g" "$JS_FILE"
 JS_HASH=$(sha256sum "$JS_FILE" | cut -c1-16)
 HASHED_JS="$PKG_DIR/${CRATE_SNAKE}.${JS_HASH}.js"
 mv "$JS_FILE" "$HASHED_JS"
