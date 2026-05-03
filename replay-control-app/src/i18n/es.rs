@@ -7,6 +7,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavHome => "Juegos",
         Key::NavGames => "Juegos",
         Key::NavFavorites => "Favs",
+        Key::NavMyGames => "Mis Juegos",
         Key::NavSearch => "Buscar",
         Key::NavMore => "Más",
         Key::NavSettings => "Ajustes",
@@ -591,5 +592,23 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameNotesClear => "Borrar",
         Key::GameNotesAdd => "Añadir Nota",
         Key::GameNotesEmpty => "Aún no hay notas",
+
+        // Game status
+        Key::GameStatusTitle => "Mi Progreso",
+        Key::GameStatusNone => "Sin definir",
+        Key::GameStatusWantToPlay => "Quiero Jugar",
+        Key::GameStatusInProgress => "En Progreso",
+        Key::GameStatusCompleted => "Completado",
+        Key::GameStatusPlatinum => "Platino",
+        Key::GameStatusSetStatus => "Definir Estado",
+        Key::GameStatusClear => "Quitar Estado",
+        Key::MyGamesTitle => "Mis Juegos",
+        Key::MyGamesAll => "Todos",
+        Key::MyGamesWantToPlay => "Quiero Jugar",
+        Key::MyGamesInProgress => "En Progreso",
+        Key::MyGamesCompleted => "Completados",
+        Key::MyGamesPlatinum => "Platino",
+        Key::MyGamesEmpty => "Aún no hay juegos con este estado",
+        Key::MyGamesUpdated => "Estado actualizado",
     }
 }

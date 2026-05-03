@@ -6,6 +6,7 @@ use replay_control_core_server::user_data_db::UserDataDb;
 mod boxart;
 mod favorites;
 mod game_notes;
+mod game_status;
 mod images;
 mod manuals;
 mod metadata;
@@ -21,6 +22,7 @@ mod videos;
 pub use boxart::*;
 pub use favorites::*;
 pub use game_notes::*;
+pub use game_status::*;
 pub use images::*;
 pub use manuals::*;
 pub use metadata::*;
@@ -38,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use server_fn::ServerFnError;
 
 pub use replay_control_core::favorites::OrganizeCriteria;
+pub use replay_control_core::user_data_db::{GameStatus, StatusGameEntry};
 
 pub const PAGE_SIZE: usize = 100;
 

@@ -15,7 +15,7 @@ use replay_control_core::error::{Error, Result};
 /// Filename for the SQLite user data database.
 pub const USER_DATA_DB_FILE: &str = "user_data.db";
 
-pub use replay_control_core::user_data_db::VideoEntry;
+pub use replay_control_core::user_data_db::{GameStatus, StatusGameEntry, VideoEntry};
 
 /// Stateless query namespace for the user data SQLite database.
 ///
@@ -26,7 +26,7 @@ pub struct UserDataDb;
 impl UserDataDb {
     /// Tables to probe for corruption detection.
     /// NOTE: update this list when adding new tables.
-    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos", "game_notes"];
+    pub const TABLES: &[&str] = &["box_art_overrides", "game_videos", "game_notes", "game_status"];
 
     /// Resolve the user_data.db path under `<storage_root>/.replay-control/`
     /// without touching the filesystem. Useful for callers that need the path
@@ -95,7 +95,18 @@ impl UserDataDb {
                     note TEXT NOT NULL,
                     updated_at INTEGER NOT NULL,
                     PRIMARY KEY (system, rom_filename)
-                );",
+                );
+
+                CREATE TABLE IF NOT EXISTS game_status (
+                    system TEXT NOT NULL,
+                    rom_filename TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (system, rom_filename)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_game_status_status
+                    ON game_status (status);",
         )
         .map_err(|e| Error::Other(format!("Failed to init user_data DB: {e}")))?;
         Ok(())
@@ -293,7 +304,7 @@ impl UserDataDb {
         Ok(())
     }
 
-    /// Delete all user data entries for a ROM (box art overrides + videos + notes).
+    /// Delete all user data entries for a ROM (box art overrides + videos + notes + status).
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(
             "DELETE FROM box_art_overrides WHERE system = ?1 AND rom_filename = ?2",
@@ -305,6 +316,10 @@ impl UserDataDb {
         );
         let _ = conn.execute(
             "DELETE FROM game_notes WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        );
+        let _ = conn.execute(
+            "DELETE FROM game_status WHERE system = ?1 AND rom_filename = ?2",
             params![system, rom_filename],
         );
     }
@@ -328,6 +343,12 @@ impl UserDataDb {
             params![system, old_filename, new_filename],
         ) {
             tracing::warn!("Failed to update game_notes: {e}");
+        }
+        if let Err(e) = conn.execute(
+            "UPDATE game_status SET rom_filename = ?3 WHERE system = ?1 AND rom_filename = ?2",
+            params![system, old_filename, new_filename],
+        ) {
+            tracing::warn!("Failed to update game_status: {e}");
         }
     }
 
@@ -377,5 +398,95 @@ impl UserDataDb {
         )
         .map_err(|e| Error::Other(format!("Failed to clear game_note: {e}")))?;
         Ok(())
+    }
+
+    // --- Game Status ---
+
+    /// Get the current status for a single game. Returns None if no status set.
+    pub fn get_game_status(conn: &Connection, system: &str, rom_filename: &str) -> Result<Option<GameStatus>> {
+        let result = conn.query_row(
+            "SELECT status FROM game_status WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Failed to query game_status: {e}")))?;
+
+        match result {
+            Some(s) => Ok(GameStatus::from_str(&s)),
+            None => Ok(None),
+        }
+    }
+
+    /// Set or update the status for a game.
+    pub fn set_game_status(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        status: GameStatus,
+    ) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO game_status (system, rom_filename, status, updated_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![system, rom_filename, status.as_str(), now],
+        )
+        .map_err(|e| Error::Other(format!("Failed to set game_status: {e}")))?;
+        Ok(())
+    }
+
+    /// Remove the status for a game (clear it).
+    pub fn clear_game_status(conn: &Connection, system: &str, rom_filename: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM game_status WHERE system = ?1 AND rom_filename = ?2",
+            params![system, rom_filename],
+        )
+        .map_err(|e| Error::Other(format!("Failed to clear game_status: {e}")))?;
+        Ok(())
+    }
+
+    /// Get all games with a specific status. Returns entries ordered by updated_at DESC.
+    pub fn get_games_by_status(conn: &Connection, status: GameStatus) -> Result<Vec<(String, String, u64)>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, rom_filename, updated_at FROM game_status
+                 WHERE status = ?1 ORDER BY updated_at DESC",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare get_games_by_status: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![status.as_str()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)? as u64,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Failed to query game_status: {e}")))?;
+
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect game_status: {e}")))
+    }
+
+    /// Get count of games per status. Returns a HashMap of status -> count.
+    pub fn get_status_counts(conn: &Connection) -> Result<std::collections::HashMap<GameStatus, usize>> {
+        let mut stmt = conn
+            .prepare("SELECT status, COUNT(*) FROM game_status GROUP BY status")
+            .map_err(|e| Error::Other(format!("Failed to prepare get_status_counts: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let s: String = row.get(0)?;
+                let count: i64 = row.get(1)?;
+                Ok((GameStatus::from_str(&s).unwrap_or(GameStatus::WantToPlay), count as usize))
+            })
+            .map_err(|e| Error::Other(format!("Failed to query status counts: {e}")))?;
+
+        rows.collect::<std::result::Result<std::collections::HashMap<_, _>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect status counts: {e}")))
     }
 }

@@ -7,6 +7,7 @@ pub mod home;
 pub mod hostname;
 pub mod logs;
 pub mod metadata;
+pub mod my_games;
 pub mod nfs;
 pub mod password;
 pub mod search;

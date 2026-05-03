@@ -7,6 +7,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavHome => "ゲーム",
         Key::NavGames => "ゲーム",
         Key::NavFavorites => "お気に入り",
+        Key::NavMyGames => "マイゲーム",
         Key::NavSearch => "検索",
         Key::NavMore => "その他",
         Key::NavSettings => "設定",
@@ -581,5 +582,23 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameNotesClear => "削除",
         Key::GameNotesAdd => "メモを追加",
         Key::GameNotesEmpty => "まだメモはありません",
+
+        // Game status
+        Key::GameStatusTitle => "プレイ状況",
+        Key::GameStatusNone => "未設定",
+        Key::GameStatusWantToPlay => "プレイ予定",
+        Key::GameStatusInProgress => "プレイ中",
+        Key::GameStatusCompleted => "クリア",
+        Key::GameStatusPlatinum => "コンプリート",
+        Key::GameStatusSetStatus => "状態を設定",
+        Key::GameStatusClear => "状態をクリア",
+        Key::MyGamesTitle => "マイゲーム",
+        Key::MyGamesAll => "すべて",
+        Key::MyGamesWantToPlay => "プレイ予定",
+        Key::MyGamesInProgress => "プレイ中",
+        Key::MyGamesCompleted => "クリア",
+        Key::MyGamesPlatinum => "コンプリート",
+        Key::MyGamesEmpty => "まだこの状態のゲームはありません",
+        Key::MyGamesUpdated => "状態を更新しました",
     }
 }

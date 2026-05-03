@@ -7,6 +7,7 @@ use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
 use crate::components::game_notes_section::GameNotesSection;
+use crate::components::game_status_section::GameStatusSection;
 use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;
 use crate::components::video_section::GameVideoSection;
@@ -576,7 +577,11 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             base_title=base_title_sv
         />
 
-        // Personal Notes — free-form notes about progress.
+        <GameStatusSection
+            system=system_sv
+            rom_filename=filename_sv
+        />
+
         <GameNotesSection
             system=system_sv
             rom_filename=filename_sv
