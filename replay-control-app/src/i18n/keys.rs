@@ -272,6 +272,7 @@ pub enum Key {
     GameDetailManual,
     GameDetailNoManual,
     GameDetailFindManual,
+    GameDetailOpenManual,
     GameDetailViewManual,
     GameDetailNoManualResults,
     GameDetailManualSaved,
@@ -469,6 +470,7 @@ pub enum Key {
     CommonRename,
     CommonActions,
     CommonSave,
+    CommonClose,
 
     // Recommendation section / discover pill titles (returned as keys from server)
     SpotlightBestGenre,

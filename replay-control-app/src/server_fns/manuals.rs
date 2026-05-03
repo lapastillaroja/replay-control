@@ -151,6 +151,57 @@ pub async fn get_local_manuals(
     Ok(manuals)
 }
 
+/// Check if a manual is available for a game (local or remote).
+///
+/// Returns `true` if either:
+/// - A local PDF exists in `<storage>/manuals/<system>/`
+/// - The retrokit TSV index has an entry for this game
+///
+/// This is a lightweight check used for list/grid badges.
+#[cfg(feature = "ssr")]
+pub(crate) async fn check_manual_availability(system: &str, base_title: &str) -> bool {
+    use replay_control_core_server::retrokit_manuals;
+
+    let folder = retrokit_manuals::manual_folder_name(system).to_string();
+    let state = expect_context::<crate::api::AppState>();
+    let manuals_dir = state.storage().manuals_dir().join(&folder);
+
+    // Check local manuals directory
+    if manuals_dir.is_dir() {
+        let title_lower = base_title.to_lowercase();
+        if let Ok(entries) = std::fs::read_dir(&manuals_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let filename = entry.file_name().to_string_lossy().to_string();
+                if filename.to_lowercase().ends_with(".pdf") {
+                    let stem = filename
+                        .strip_suffix(".pdf")
+                        .or_else(|| filename.strip_suffix(".PDF"))
+                        .unwrap_or(&filename);
+                    let file_base = extract_manual_base_title(stem);
+                    if file_base == title_lower {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check retrokit TSV index
+    if let Some(folder_name) = retrokit_manuals::retrokit_folder_name(system)
+        && let Ok(index) = load_retrokit_index(folder_name).await {
+            let normalized = retrokit_manuals::normalize_retrokit_title(base_title);
+            if index.contains_key(&normalized) {
+                return true;
+            }
+        }
+
+    false
+}
+
 /// Search for game manuals via two-tier lookup:
 /// 1. Retrokit TSV (deterministic, cached)
 /// 2. Archive.org search API (fuzzy fallback)

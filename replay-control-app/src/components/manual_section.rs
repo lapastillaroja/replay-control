@@ -247,7 +247,6 @@ fn DocumentLink(
     let label = doc.label.clone();
     let ext_upper = doc.extension.to_uppercase();
 
-    // Build the URL using base64-encoded ROM filename for path safety
     let encoded_rom = StoredValue::new(crate::util::base64_encode(
         rom_filename.get_value().as_bytes(),
     ));

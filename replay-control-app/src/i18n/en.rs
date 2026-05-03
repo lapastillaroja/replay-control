@@ -287,6 +287,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailManual => "Manual",
         Key::GameDetailNoManual => "No manual available",
         Key::GameDetailFindManual => "Find Manual",
+        Key::GameDetailOpenManual => "Open manual",
         Key::GameDetailViewManual => "View",
         Key::GameDetailNoManualResults => "No manuals found",
         Key::GameDetailManualSaved => "Manual saved",
@@ -496,6 +497,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CommonRename => "Rename",
         Key::CommonActions => "Actions",
         Key::CommonSave => "Save",
+        Key::CommonClose => "Close",
 
         // Recommendation section / discover pill titles
         Key::SpotlightBestGenre => "Best {0}",
