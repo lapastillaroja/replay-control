@@ -288,6 +288,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailManual => "マニュアル",
         Key::GameDetailNoManual => "マニュアルなし",
         Key::GameDetailFindManual => "マニュアルを検索",
+        Key::GameDetailOpenManual => "マニュアルを開く",
         Key::GameDetailViewManual => "表示",
         Key::GameDetailNoManualResults => "マニュアルが見つかりません",
         Key::GameDetailManualSaved => "マニュアルを保存しました",
@@ -512,6 +513,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CommonRename => "名前変更",
         Key::CommonActions => "操作",
         Key::CommonSave => "保存",
+        Key::CommonClose => "閉じる",
 
         // Recommendation section / discover pill titles
         Key::SpotlightBestGenre => "ベスト{0}",

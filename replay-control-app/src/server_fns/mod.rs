@@ -89,6 +89,9 @@ pub struct RomListEntry {
     /// Genre string for display (e.g., "Platform", "Beat 'em Up").
     #[serde(default)]
     pub genre: String,
+    /// Whether a manual (local or remote) is available for this game.
+    #[serde(default)]
+    pub has_manual: bool,
 }
 
 /// Batch-resolve favorites for a set of game references.
@@ -176,12 +179,36 @@ pub(crate) async fn enrich_game_entries(
 
     let enriched = enrich_box_art_and_favorites(state, &input).await;
 
+    // Batch-check manual availability (local + retrokit) for all entries.
+    let manual_availability = {
+        let mut tasks = tokio::task::JoinSet::new();
+        for entry in &entries {
+            let base_title = replay_control_core::title_utils::base_title(
+                entry.display_name.as_deref().unwrap_or(&entry.rom_filename),
+            );
+            let system = entry.system.clone();
+            let key = (entry.system.clone(), entry.rom_filename.clone());
+            tasks.spawn(async move {
+                let has = manuals::check_manual_availability(&system, &base_title).await;
+                (key, has)
+            });
+        }
+        let mut map = std::collections::HashMap::new();
+        while let Some(res) = tasks.join_next().await {
+            if let Ok((key, has)) = res {
+                map.insert(key, has);
+            }
+        }
+        map
+    };
+
     // Single pass: convert GameEntry -> RomListEntry with enrichment.
     entries
         .into_iter()
         .map(|entry| {
             let key = (entry.system.clone(), entry.rom_filename.clone());
             let (box_art_url, is_favorite) = enriched.get(&key).cloned().unwrap_or((None, false));
+            let has_manual = manual_availability.get(&key).copied().unwrap_or(false);
             RomListEntry {
                 display_name: entry
                     .display_name
@@ -197,6 +224,7 @@ pub(crate) async fn enrich_game_entries(
                 rating: entry.rating,
                 players: entry.players,
                 genre: entry.genre_group,
+                has_manual,
             }
         })
         .collect()
