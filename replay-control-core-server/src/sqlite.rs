@@ -64,7 +64,11 @@ pub fn open_connection(db_path: &Path, label: &str) -> Result<Connection> {
             }
         }
     } else {
-        tracing::info!("{label}: filesystem does not support WAL, using DELETE journal");
+        // debug! not info! — fires per connection on every open against an
+        // exFAT / NFS DB. The "this pool is in DELETE mode" fact only needs
+        // to surface once, and the higher-level "User data DB ready at …"
+        // INFO already tells the operator the DB is up.
+        tracing::debug!("{label}: filesystem does not support WAL, using DELETE journal");
         match open_nolock(db_path, label) {
             Ok(conn) => Ok(conn),
             Err(_) => {
