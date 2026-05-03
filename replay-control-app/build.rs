@@ -11,6 +11,11 @@ fn main() {
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=GIT_HASH={hash}");
+    // Re-run when the git ref moves so /api/version doesn't lie on
+    // incremental builds (HEAD covers branch switches; index updates on
+    // every commit even when HEAD is unchanged).
+    println!("cargo:rerun-if-changed=../.git/HEAD");
+    println!("cargo:rerun-if-changed=../.git/index");
 
     let style_dir = Path::new("style");
     let out_dir = std::env::var("OUT_DIR").unwrap();
