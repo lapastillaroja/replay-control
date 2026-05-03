@@ -26,11 +26,10 @@ pub fn AssetHealthBanner() -> impl IntoView {
                     issues
                         .read()
                         .iter()
-                        .cloned()
                         .map(|issue| {
                             view! {
                                 <div class="asset-health-banner-row">
-                                    <span>{copy_for(&issue)}</span>
+                                    <span>{copy_for(issue)}</span>
                                 </div>
                             }
                         })

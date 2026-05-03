@@ -73,7 +73,7 @@ pub(crate) async fn compute_recommendations(
         .await;
     let count = count.clamp(1, 12);
 
-    let favorites_info = collect_favorites_info_sync(&state, &storage, &systems).await;
+    let favorites_info = collect_favorites_info_sync(state, &storage, &systems).await;
     let favorites_info_for_picks = favorites_info.clone();
 
     // Pre-roll spotlight type so we can lazily collect Hidden Gems exclusion data.
@@ -103,7 +103,7 @@ pub(crate) async fn compute_recommendations(
         Vec::new()
     };
 
-    let (region_str, region_secondary_str) = super::region_strings(&state);
+    let (region_str, region_secondary_str) = super::region_strings(state);
 
     let systems_for_spotlight: Vec<(String, String)> = systems
         .iter()
