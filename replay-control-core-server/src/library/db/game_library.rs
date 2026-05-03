@@ -857,6 +857,28 @@ impl LibraryDb {
         Ok(())
     }
 
+    /// Set or clear a single ROM's `box_art_url`. Pass `None` to revert to
+    /// the enrichment-resolved default on the next enrichment pass.
+    pub fn update_box_art_url(
+        conn: &Connection,
+        system: &str,
+        rom_filename: &str,
+        url: Option<&str>,
+    ) -> Result<()> {
+        match url {
+            Some(url) => conn.execute(
+                "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
+                params![url, system, rom_filename],
+            ),
+            None => conn.execute(
+                "UPDATE game_library SET box_art_url = NULL WHERE system = ?1 AND rom_filename = ?2",
+                params![system, rom_filename],
+            ),
+        }
+        .map_err(|e| Error::Other(format!("Update box_art_url: {e}")))?;
+        Ok(())
+    }
+
     /// Delete the `game_library` entry for a specific ROM.
     pub fn delete_for_rom(conn: &Connection, system: &str, rom_filename: &str) {
         let _ = conn.execute(

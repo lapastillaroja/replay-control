@@ -17,16 +17,26 @@ impl LibraryService {
     pub async fn enrich_system_cache(&self, state: &crate::api::AppState, system: String) {
         let db = &state.library_pool;
 
-        let index = build_image_index(state, &system).await;
-
-        let auto_matched_ratings = self.auto_match_metadata(state, &system).await;
-
+        // Fetch the visible-filename list once; image-index, auto-match,
+        // and arcade lookup all consume it. Previously each path read
+        // it independently (an N+1 against the same query).
         let sys = system.clone();
         let rom_filenames: Vec<String> = db
             .read(move |conn| LibraryDb::visible_filenames(conn, &sys).unwrap_or_default())
             .await
             .unwrap_or_default();
-        let arcade_lookup = ArcadeInfoLookup::build(&system, &rom_filenames).await;
+
+        if rom_filenames.is_empty() {
+            return;
+        }
+
+        // Three independent setup steps. The pool's read slots serialize
+        // as needed; `join!` lets the slowest overlap with the others.
+        let (index, auto_matched_ratings, arcade_lookup) = tokio::join!(
+            build_image_index(state, &system),
+            self.auto_match_metadata(state, &system, &rom_filenames),
+            ArcadeInfoLookup::build(&system, &rom_filenames),
+        );
 
         let sys = system.clone();
         // Heavy enrichment pass (per-row matching, manifest cross-ref, image
@@ -48,9 +58,12 @@ impl LibraryService {
             return;
         };
 
-        // Queue on-demand manifest downloads (app-specific: needs AppState).
+        // Queue on-demand manifest downloads. Each await throttles to
+        // the orchestrator's visible queue capacity so a large fan-out
+        // (e.g. 4k+ thumbnails after a fresh rescan) backpressures
+        // instead of dropping work.
         for (rom_filename, manifest_match) in &result.manifest_downloads {
-            queue_on_demand_download(state, &system, rom_filename, manifest_match);
+            queue_on_demand_download(state, &system, rom_filename, manifest_match).await;
         }
 
         // Write developer updates to DB.
@@ -137,13 +150,12 @@ impl LibraryService {
         &self,
         state: &crate::api::AppState,
         system: &str,
+        rom_filenames: &[String],
     ) -> HashMap<String, f64> {
         use replay_control_core_server::metadata_matching;
 
         let db = &state.library_pool;
 
-        // Gather inputs: existing metadata from DB. May return thousands of
-        // rows for large libraries; one of 3 library read slots covers it.
         let sys = system.to_string();
         let all_metadata = state
             .library_pool
@@ -156,20 +168,8 @@ impl LibraryService {
             return HashMap::new();
         }
 
-        // Gather inputs: ROM filenames from L2 (SQLite).
-        let sys = system.to_string();
-        let rom_filenames: Vec<String> = db
-            .read(move |conn| LibraryDb::visible_filenames(conn, &sys).unwrap_or_default())
-            .await
-            .unwrap_or_default();
-
-        if rom_filenames.is_empty() {
-            return HashMap::new();
-        }
-
-        // Call pure core matching function.
         let matches =
-            metadata_matching::match_roms_to_metadata(system, &rom_filenames, &all_metadata).await;
+            metadata_matching::match_roms_to_metadata(system, rom_filenames, &all_metadata).await;
 
         if matches.is_empty() {
             return HashMap::new();
@@ -245,16 +245,9 @@ async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageI
         })
 }
 
-/// Queue a background download for a single thumbnail.
-/// Deduplicates concurrent requests for the same image.
 /// Queue an on-demand box-art download via the thumbnail orchestrator.
-///
-/// The orchestrator handles dedup, concurrency cap, and priority — the
-/// previous implementation here did unbounded `tokio::spawn` per missing
-/// thumbnail and could exhaust the process fd table on a fresh-system
-/// rescan. The on-complete hook updates `box_art_url` in the DB and
-/// invalidates user caches so the new art surfaces on the next render.
-fn queue_on_demand_download(
+/// The on-complete hook persists `box_art_url` and invalidates user caches.
+async fn queue_on_demand_download(
     state: &crate::api::AppState,
     system: &str,
     rom_filename: &str,
@@ -292,38 +285,31 @@ fn queue_on_demand_download(
                     let sys = system_for_hook.clone();
                     let rom = rom_filename_for_hook.clone();
                     let _ = library_pool
-                            .write(move |conn| {
-                                if let Err(e) = conn.execute(
-                                    "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
-                                    [&url, &sys, &rom],
-                                ) {
-                                    tracing::error!(
-                                        "Failed to save box art URL for {sys}/{rom}: {e}"
-                                    );
-                                }
-                            })
-                            .await;
-                    // Clear user caches so next page load picks up the new art.
+                        .write(move |conn| {
+                            if let Err(e) =
+                                LibraryDb::update_box_art_url(conn, &sys, &rom, Some(&url))
+                            {
+                                tracing::error!("Failed to save box art URL for {sys}/{rom}: {e}");
+                            }
+                        })
+                        .await;
                     state_for_invalidate.invalidate_user_caches().await;
                 }
-                Outcome::DownloadFailed(e) => {
-                    tracing::debug!("On-demand download failed for {}: {e}", filename_for_hook);
+                Outcome::DownloadFailed(e) | Outcome::SaveFailed(e) => {
+                    tracing::debug!("On-demand thumbnail failed for {filename_for_hook}: {e}");
                 }
-                Outcome::SaveFailed(e) => {
-                    tracing::debug!("On-demand save failed for {}: {e}", filename_for_hook);
-                }
-                // submit_visible doesn't surface Skipped to the hook —
-                // dedup collision short-circuits before this hook is
-                // attached. Match arm here for exhaustiveness only.
                 Outcome::Skipped => {}
             }
         })
     });
 
-    state.thumbnail_orchestrator.submit_visible(
-        key,
-        m.clone(),
-        state.storage().root.clone(),
-        Some(on_complete),
-    );
+    state
+        .thumbnail_orchestrator
+        .submit_visible(
+            key,
+            m.clone(),
+            state.storage().root.clone(),
+            Some(on_complete),
+        )
+        .await;
 }

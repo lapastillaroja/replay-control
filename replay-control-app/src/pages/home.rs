@@ -18,7 +18,7 @@ pub fn HomePage() -> impl IntoView {
     let recents = Resource::new(|| (), |_| server_fns::get_recents());
     let systems = Resource::new_blocking(|| (), |_| server_fns::get_systems());
 
-    let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations(6));
+    let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations());
     view! {
         <div class="page home-page">
             <SetupChecklist />

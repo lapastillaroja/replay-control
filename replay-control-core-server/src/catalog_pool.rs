@@ -14,11 +14,8 @@ static CATALOG_POOL: OnceLock<Pool<CatalogManager>> = OnceLock::new();
 
 /// Set to `true` at startup if the bundled catalog's `arcade_games` schema
 /// doesn't match what the running binary expects. When set, `with_catalog`
-/// short-circuits all queries — non-arcade systems keep working, arcade
-/// lookups return `None` instead of spamming WARN-per-row SQL errors. The
-/// user reaches this state by upgrading the binary without refreshing the
-/// catalog (e.g. an auto-update from a release whose updater predated the
-/// catalog-swap path); recovery is reinstalling Replay Control.
+/// short-circuits arcade queries to `None` instead of spamming WARN-per-row
+/// SQL errors; non-arcade systems are unaffected.
 static CATALOG_SCHEMA_OUTDATED: OnceLock<bool> = OnceLock::new();
 
 /// Returns true if startup detected a catalog schema mismatch. Test-only

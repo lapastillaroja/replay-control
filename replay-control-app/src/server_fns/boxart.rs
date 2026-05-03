@@ -189,10 +189,12 @@ pub async fn set_boxart_override(
         let _ = state
             .library_pool
             .write(move |conn| {
-                conn.execute(
-                    "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
-                    [&url, &sys, &rom],
-                ).ok();
+                let _ = replay_control_core_server::library_db::LibraryDb::update_box_art_url(
+                    conn,
+                    &sys,
+                    &rom,
+                    Some(&url),
+                );
             })
             .await;
     }
@@ -224,10 +226,9 @@ pub async fn reset_boxart_override(
         let _ = state
             .library_pool
             .write(move |conn| {
-                conn.execute(
-                    "UPDATE game_library SET box_art_url = NULL WHERE system = ?1 AND rom_filename = ?2",
-                    [&sys, &rom],
-                ).ok();
+                let _ = replay_control_core_server::library_db::LibraryDb::update_box_art_url(
+                    conn, &sys, &rom, None,
+                );
             })
             .await;
     }

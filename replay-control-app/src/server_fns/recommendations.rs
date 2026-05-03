@@ -49,13 +49,8 @@ pub struct RecommendationData {
 
 /// Get recommendation data from SQLite game_library + filesystem image resolution.
 /// Returns empty data gracefully if game_library is not yet populated.
-/// Server fn — thin wrapper around the snapshot. The `count` parameter
-/// is preserved for wire compatibility but ignored: the underlying
-/// snapshot is always built with the home-page canonical count (matches
-/// the previous TtlSlot first-caller-wins semantics — there's only one
-/// caller in the codebase today, `home.rs` with `count=6`).
 #[server(prefix = "/sfn")]
-pub async fn get_recommendations(_count: usize) -> Result<RecommendationData, ServerFnError> {
+pub async fn get_recommendations() -> Result<RecommendationData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     Ok(state.cache.recommendations_snapshot(&state).await)
 }

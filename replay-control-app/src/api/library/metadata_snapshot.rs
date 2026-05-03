@@ -1,28 +1,9 @@
 //! Single-flight cached snapshot of the `/settings/metadata` page payload.
 //!
-//! Implements Tier 1 of the pool-design plan
-//! (`investigations/2026-04-29-pool-design-findings.md`):
-//!   - one in-memory snapshot replaces six per-stat server fns
-//!   - invalidation hooks attach to the same write-completion sites that
-//!     already invalidate the other caches
-//!   - stale-on-`None` keeps the page interactive while a write is in flight
-//!     or the pool is briefly unavailable
-//!
-//! The result is that hot SSR navigation never queues on the DB pool. The
-//! pool is touched only at boot, on cache miss, and once after each write
-//! batch completes.
-//!
-//! Each query runs in its own short `pool.read()` closure rather than one
-//! bundled closure: bundling was a premature "single pool acquisition"
-//! optimisation that became a problem at scale (the whole rebuild ran as
-//! a single 80–170 s closure on 141 k-ROM libraries, holding a read slot
-//! and tripping the 15 s `INTERACT_TIMEOUT` tripwire). Splitting lets the
-//! pool cycle: SSR readers slot in between queries, no closure exceeds
-//! the cap, and total wallclock is ~the same on cold cache (or faster
-//! under contention because requests don't wait for the slowest one to
-//! release the connection).
-//!
-//! See `investigations/2026-04-29-ssr-cache-snapshot-vs-pool-starvation.md`
+//! Each query runs in its own short `pool.read()` closure (fanned out
+//! with `tokio::join!`) so SSR readers can slot in between them and no
+//! single closure exceeds the pool's `INTERACT_TIMEOUT` cap. See
+//! `investigations/2026-04-29-ssr-cache-snapshot-vs-pool-starvation.md`
 //! for the design rationale.
 
 use replay_control_core::library_db::{DriverStatusCounts, SystemCoverage};
@@ -39,36 +20,39 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let storage = state.storage();
     let db_path = state.library_pool.db_path();
 
-    // 8 independent reads. Each closure does one query and returns
-    // immediately, releasing the pool slot for SSR / other background
-    // work to slot in. `unwrap_or_default()` keeps the snapshot
-    // best-effort: a single transient pool failure degrades that one
-    // section instead of failing the whole rebuild.
+    // 8 independent reads. The pool serializes them on its slot count
+    // (3); fanning them out lets the slowest queries overlap with the
+    // others instead of running back-to-back. `unwrap_or_default()`
+    // keeps the snapshot best-effort: a single transient pool failure
+    // degrades that one section instead of failing the whole rebuild.
     let pool = &state.library_pool;
-    let stats = pool
-        .read(move |c| LibraryDb::stats(c, &db_path).unwrap_or_default())
-        .await?;
-    let library_summary = pool
-        .read(|c| LibraryDb::library_summary(c).unwrap_or_default())
-        .await?;
-    let entries_per_system = pool
-        .read(|c| LibraryDb::entries_per_system(c).unwrap_or_default())
-        .await?;
-    let thumbnails_per_system = pool
-        .read(|c| LibraryDb::thumbnails_per_system(c).unwrap_or_default())
-        .await?;
-    let coverage_stats = pool
-        .read(|c| LibraryDb::system_coverage_stats(c).unwrap_or_default())
-        .await?;
-    let driver_status = pool
-        .read(|c| LibraryDb::driver_status_per_system(c).unwrap_or_default())
-        .await?;
-    let data_source_stats = pool
-        .read(|c| LibraryDb::get_data_source_stats(c, "libretro-thumbnails").ok())
-        .await?;
-    let image_count_pair = pool
-        .read(|c| LibraryDb::image_stats(c).unwrap_or((0, 0)))
-        .await?;
+    let (
+        stats,
+        library_summary,
+        entries_per_system,
+        thumbnails_per_system,
+        coverage_stats,
+        driver_status,
+        data_source_stats,
+        image_count_pair,
+    ) = tokio::join!(
+        pool.read(move |c| LibraryDb::stats(c, &db_path).unwrap_or_default()),
+        pool.read(|c| LibraryDb::library_summary(c).unwrap_or_default()),
+        pool.read(|c| LibraryDb::entries_per_system(c).unwrap_or_default()),
+        pool.read(|c| LibraryDb::thumbnails_per_system(c).unwrap_or_default()),
+        pool.read(|c| LibraryDb::system_coverage_stats(c).unwrap_or_default()),
+        pool.read(|c| LibraryDb::driver_status_per_system(c).unwrap_or_default()),
+        pool.read(|c| LibraryDb::get_data_source_stats(c, "libretro-thumbnails").ok()),
+        pool.read(|c| LibraryDb::image_stats(c).unwrap_or((0, 0))),
+    );
+    let stats = stats?;
+    let library_summary = library_summary?;
+    let entries_per_system = entries_per_system?;
+    let thumbnails_per_system = thumbnails_per_system?;
+    let coverage_stats = coverage_stats?;
+    let driver_status = driver_status?;
+    let data_source_stats = data_source_stats?;
+    let image_count_pair = image_count_pair?;
 
     // Off-pool work: the L1 systems cache, the on-disk media size, and the
     // bundled-catalog read-only stats.

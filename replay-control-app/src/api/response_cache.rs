@@ -11,9 +11,6 @@ use crate::server_fns::GameSection;
 /// already calls `invalidate_all()` (favorites toggle, library invalidate,
 /// image clear, etc.). The TTL is the *upper bound* for staleness when no
 /// write invalidation has fired in that window.
-///
-/// (`recommendations` moved to `LibraryService::recommendations` —
-/// `SsrSnapshot` with event-driven invalidation, strictly better than TTL.)
 const RESPONSE_TTL: Duration = Duration::from_secs(300);
 
 /// Single TTL-gated slot holding at most one value.

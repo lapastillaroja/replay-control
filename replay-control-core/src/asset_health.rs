@@ -1,17 +1,6 @@
-//! Reportable health issues with shipped data assets.
-//!
-//! A "shipped data asset" is anything the binary depends on that lives
-//! outside its own image — currently `catalog.sqlite`, eventually fonts,
-//! themes, and other artifacts the release bundle will carry once the
-//! release-asset-manifest plan lands. Issues are detected at startup
-//! (file missing, schema drift, signature invalid, …) and surfaced to
-//! the UI through the existing config-SSE channel.
-//!
-//! v1 ships with a single concrete reporter: catalog schema mismatch.
-//! `severity` and `action` fields aren't here yet — every reporter we
-//! have today is fatal-to-the-affected-feature with reinstall as the
-//! only safe remediation. Add fields when a real Warning-severity or
-//! in-app remediation case appears.
+//! Reportable health issues with shipped data assets (`catalog.sqlite`
+//! today; future fonts/themes/etc. via the release-asset-manifest plan).
+//! Detected at startup and surfaced to the UI via the config-SSE channel.
 
 use serde::{Deserialize, Serialize};
 

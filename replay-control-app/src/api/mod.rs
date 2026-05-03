@@ -94,12 +94,8 @@ pub struct AppState {
     /// Thumbnail pipeline (index + download operations).
     pub thumbnails: Arc<ThumbnailPipeline>,
     /// Single coordinator for all thumbnail-download work (bulk
-    /// pre-fetch + on-demand). Owns concurrency cap, dedup, priority,
-    /// and per-job completion delivery. Replaces the previous
-    /// `pending_downloads` HashSet + the unbounded `tokio::spawn` in
-    /// `enrichment::queue_on_demand_download` + the local `Semaphore`
-    /// in `library/thumbnails/manifest.rs`. See
-    /// `api/thumbnail_orchestrator.rs`.
+    /// pre-fetch + on-demand): concurrency cap, dedup, and priority.
+    /// See `api/thumbnail_orchestrator.rs`.
     pub thumbnail_orchestrator: Arc<thumbnail_orchestrator::ThumbnailDownloadOrchestrator>,
     /// Unified activity state: at most one activity at a time.
     /// Replaces `busy`, `busy_label`, `scanning`, and `rebuild_progress`.
@@ -540,14 +536,10 @@ impl AppState {
             .send(ConfigEvent::AssetHealthChanged { issues: snapshot });
     }
 
-    /// Invalidate every user-facing cache that depends on library state:
-    /// the `ResponseCache` TTL slots and the `LibraryService::recommendations`
-    /// snapshot. Called from every write-completion site (favorites toggle,
-    /// boxart change, library invalidate, image clear, …) so recommendations
-    /// stay consistent with the underlying data.
-    ///
-    /// `metadata_page` is *not* in this set — it's invalidated separately
-    /// at the few sites that affect system-stats display.
+    /// Invalidate user-facing caches that depend on library state:
+    /// the `ResponseCache` TTL slots and the `recommendations` snapshot.
+    /// `metadata_page` is invalidated separately by the few sites that
+    /// affect system-stats display.
     pub async fn invalidate_user_caches(&self) {
         self.response_cache.invalidate_all();
         self.cache.invalidate_recommendations().await;

@@ -177,53 +177,39 @@ impl ThumbnailDownloadOrchestrator {
         }
     }
 
-    /// Submit a visible (= user-facing) job. Returns immediately. If
-    /// the same key is already in flight, the request collapses and
-    /// `on_complete` is *not* invoked (the in-flight job will deliver
-    /// its result through whoever submitted it first).
+    /// Submit a visible (= user-facing priority) job. Awaits when the
+    /// visible queue is full so submitters cooperate with backpressure.
     ///
-    /// `try_send` failure here means the visible queue is full
-    /// (worker is wedged or extremely busy) — drop the request rather
-    /// than hold up the request handler. Visible queue capacity is
-    /// generous enough that this should not fire under healthy load.
-    pub fn submit_visible(
+    /// If the same key is already in flight, the request collapses and
+    /// the in-flight job's `on_complete` runs (whoever submitted first).
+    /// This caller's `on_complete` is dropped silently.
+    ///
+    /// Priority over bulk is enforced inside the worker via
+    /// `select! biased`, not by this method's send semantics.
+    pub async fn submit_visible(
         &self,
         key: ThumbnailKey,
         payload: ManifestMatch,
         storage_root: PathBuf,
         on_complete: Option<OnCompleteHook>,
     ) {
-        if !self.try_claim(&key) {
+        let Some(claim) = self.try_claim(key.clone()) else {
             return;
-        }
+        };
         let job = Job {
-            key: key.clone(),
+            key,
             payload,
             storage_root,
             completion_tx: None,
             on_complete,
         };
-        if let Err(e) = self.visible_tx.try_send(job) {
-            // Roll back the dedup claim so a future retry can succeed.
-            self.state
-                .pending
-                .lock()
-                .expect("pending lock")
-                .remove(&key);
-            tracing::warn!(
-                "thumbnail orchestrator: visible queue full, dropping {}/{:?}/{}: {e}",
-                key.system,
-                key.kind,
-                key.filename
-            );
-        }
+        self.enqueue(&self.visible_tx, claim, job).await;
     }
 
-    /// Submit a bulk pre-fetch job. Awaits when the bulk queue is full
-    /// — caller cooperates with backpressure. `completion_tx` carries
-    /// each finished `JobResult`; close the channel by dropping the
-    /// sender once all jobs have been submitted, then drain the
-    /// receiver to consume completions.
+    /// Submit a bulk pre-fetch job. Awaits when the bulk queue is full.
+    /// `completion_tx` carries each finished `JobResult`; close the
+    /// channel by dropping the sender once submission is done, then
+    /// drain the receiver to consume completions.
     ///
     /// `cancel` is observed by the worker between job spawns so a bulk
     /// caller can stop submission mid-stream and avoid wasting work.
@@ -238,32 +224,23 @@ impl ThumbnailDownloadOrchestrator {
         if cancel.load(Ordering::Relaxed) {
             return;
         }
-        if !self.try_claim(&key) {
-            // Another path is already handling this key. Send a
-            // `Skipped` result so the caller's drain loop progresses,
-            // but the outcome variant tells the caller *not* to
-            // double-count this in download totals.
+        let Some(claim) = self.try_claim(key.clone()) else {
+            // Dedup hit: tell the caller's drain loop to advance, but
+            // tag the outcome `Skipped` so it isn't counted as work.
             let _ = completion_tx.send(JobResult {
                 key,
                 outcome: Outcome::Skipped,
             });
             return;
-        }
+        };
         let job = Job {
-            key: key.clone(),
+            key,
             payload,
             storage_root,
             completion_tx: Some(completion_tx),
             on_complete: None,
         };
-        if self.bulk_tx.send(job).await.is_err() {
-            // Worker has exited (shutdown). Roll back the claim.
-            self.state
-                .pending
-                .lock()
-                .expect("pending lock")
-                .remove(&key);
-        }
+        self.enqueue(&self.bulk_tx, claim, job).await;
     }
 
     /// Live in-flight download count. Atomic load; safe to call hot.
@@ -279,15 +256,56 @@ impl ThumbnailDownloadOrchestrator {
         )
     }
 
-    /// Atomic check-then-insert into the pending set. Returns true if
-    /// this caller now owns the work; false if another caller already
-    /// has it queued or in flight.
-    fn try_claim(&self, key: &ThumbnailKey) -> bool {
-        self.state
+    /// Atomic check-then-insert into the pending set. Returns a
+    /// `ClaimGuard` (with rollback-on-drop) when this caller now owns
+    /// the work, or `None` when another caller already has it queued
+    /// or in flight.
+    fn try_claim(&self, key: ThumbnailKey) -> Option<ClaimGuard> {
+        let inserted = self
+            .state
             .pending
             .lock()
             .expect("pending lock")
-            .insert(key.clone())
+            .insert(key.clone());
+        inserted.then(|| ClaimGuard {
+            state: self.state.clone(),
+            key: Some(key),
+        })
+    }
+
+    /// Enqueue a job onto `sender`, transferring claim ownership to
+    /// the worker on success. On failure (worker has exited) or if the
+    /// caller's future is cancelled mid-await, the `ClaimGuard` drops
+    /// and rolls back the dedup entry so retries aren't blocked.
+    async fn enqueue(&self, sender: &mpsc::Sender<Job>, claim: ClaimGuard, job: Job) {
+        if sender.send(job).await.is_ok() {
+            claim.disarm();
+        }
+    }
+}
+
+/// RAII rollback for a pending-set claim. Drops the claim back out of
+/// the dedup set on `Drop` unless `disarm()` was called first.
+struct ClaimGuard {
+    state: Arc<OrchestratorState>,
+    key: Option<ThumbnailKey>,
+}
+
+impl ClaimGuard {
+    fn disarm(mut self) {
+        self.key = None;
+    }
+}
+
+impl Drop for ClaimGuard {
+    fn drop(&mut self) {
+        if let Some(key) = self.key.take() {
+            self.state
+                .pending
+                .lock()
+                .expect("pending lock")
+                .remove(&key);
+        }
     }
 }
 
@@ -397,12 +415,13 @@ mod tests {
         let orch = ThumbnailDownloadOrchestrator::spawn(Config::default());
         let k = key("nintendo_nes", "Test (USA)");
 
-        // First claim: succeeds (worker would attempt the download).
-        assert!(orch.try_claim(&k));
+        // First claim: succeeds. Hold the guard so dedup actually
+        // sees the key; otherwise Drop rolls it back immediately.
+        let _g1 = orch.try_claim(k.clone()).expect("first claim");
         // Second claim of the same key: blocked by dedup.
-        assert!(!orch.try_claim(&k));
+        assert!(orch.try_claim(k.clone()).is_none());
         // Distinct key: free.
-        assert!(orch.try_claim(&key("nintendo_nes", "Other (USA)")));
+        assert!(orch.try_claim(key("nintendo_nes", "Other (USA)")).is_some());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -410,7 +429,7 @@ mod tests {
         let orch = ThumbnailDownloadOrchestrator::spawn(Config::default());
         let k = key("nintendo_nes", "Test (USA)");
         // Pre-claim so the next submit_bulk hits the dedup branch.
-        assert!(orch.try_claim(&k));
+        let _claim = orch.try_claim(k.clone()).expect("pre-claim");
 
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -472,13 +491,116 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         for i in 0..1500 {
             let k = key("nintendo_nes", &format!("Game {i}"));
-            if orch.try_claim(&k) {
+            if let Some(_guard) = orch.try_claim(k) {
                 counter.fetch_add(1, Ordering::Relaxed);
-                // Release immediately to mimic completion.
-                orch.state.pending.lock().expect("pending lock").remove(&k);
+                // _guard drops at end of block, releasing the claim
+                // (the same way the worker releases on job completion).
             }
         }
         assert_eq!(counter.load(Ordering::Relaxed), 1500);
         assert_eq!(orch.in_flight(), 0);
+    }
+
+    /// `ClaimGuard` is the mechanism that defends `submit_visible` /
+    /// `submit_bulk` against orphaned dedup entries when the submit
+    /// future is cancelled mid-await. Verify the Drop rollback fires.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn claim_guard_rolls_back_on_drop() {
+        let orch = ThumbnailDownloadOrchestrator::spawn(Config::default());
+        let k = key("nintendo_nes", "Test");
+        {
+            let _claim = orch.try_claim(k.clone()).expect("first claim");
+            assert!(
+                orch.state
+                    .pending
+                    .lock()
+                    .expect("pending lock")
+                    .contains(&k),
+                "claim should be live while guard is held"
+            );
+        }
+        assert!(
+            !orch
+                .state
+                .pending
+                .lock()
+                .expect("pending lock")
+                .contains(&k),
+            "guard Drop should roll back the claim"
+        );
+    }
+
+    /// After `disarm()` the guard becomes a no-op on Drop — used by the
+    /// happy path where the worker now owns cleanup.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn claim_guard_disarm_keeps_claim() {
+        let orch = ThumbnailDownloadOrchestrator::spawn(Config::default());
+        let k = key("nintendo_nes", "Test");
+        let claim = orch.try_claim(k.clone()).expect("first claim");
+        claim.disarm();
+        assert!(
+            orch.state
+                .pending
+                .lock()
+                .expect("pending lock")
+                .contains(&k),
+            "disarmed guard must not roll back; worker owns cleanup"
+        );
+    }
+
+    /// End-to-end: a `submit_visible` future cancelled while awaiting
+    /// on a saturated queue must not leak the dedup claim.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn cancelled_submit_rolls_back_claim() {
+        // max_concurrent=0 → worker pulls jobs but blocks forever on
+        // `sem.acquire_owned()`. visible_capacity=1 → at most one
+        // queued + one held by the worker before sends start blocking.
+        let orch = ThumbnailDownloadOrchestrator::spawn(Config {
+            max_concurrent: 0,
+            visible_capacity: 1,
+            bulk_capacity: 1,
+        });
+        let payload = || ManifestMatch {
+            filename: "x".into(),
+            is_symlink: false,
+            repo_url_name: "x".into(),
+            branch: "master".into(),
+        };
+
+        // Fill: worker recvs and parks on the semaphore; queue then
+        // accepts one more buffered item.
+        orch.submit_visible(
+            key("nintendo_nes", "Held"),
+            payload(),
+            PathBuf::from("/tmp/x"),
+            None,
+        )
+        .await;
+        // Tiny yield so the worker definitely drains the first send
+        // before we fill the buffered slot.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        orch.submit_visible(
+            key("nintendo_nes", "Buffered"),
+            payload(),
+            PathBuf::from("/tmp/x"),
+            None,
+        )
+        .await;
+
+        // Third send must block on a full channel; cancel via timeout.
+        let cancelled = key("nintendo_nes", "Cancelled");
+        let fut = orch.submit_visible(cancelled.clone(), payload(), PathBuf::from("/tmp/x"), None);
+        let result = tokio::time::timeout(Duration::from_millis(50), fut).await;
+        assert!(result.is_err(), "submit should have blocked and timed out");
+
+        assert!(
+            !orch
+                .state
+                .pending
+                .lock()
+                .expect("pending lock")
+                .contains(&cancelled),
+            "claim for cancelled submit leaked"
+        );
     }
 }
