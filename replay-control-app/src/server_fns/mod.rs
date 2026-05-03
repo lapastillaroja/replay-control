@@ -8,7 +8,7 @@ mod favorites;
 mod images;
 mod manuals;
 mod metadata;
-mod recommendations;
+pub(crate) mod recommendations;
 mod related;
 mod roms;
 mod search;

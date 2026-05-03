@@ -457,7 +457,7 @@ pub async fn delete_rom(system: String, relative_path: String) -> Result<(), Ser
         tracing::debug!("post-mutation invalidate_system skipped: {e}");
     }
     state.cache.invalidate_favorites().await;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
 
     Ok(())
 }
@@ -595,7 +595,7 @@ pub async fn rename_rom(
         tracing::debug!("post-mutation invalidate_system skipped: {e}");
     }
     state.cache.invalidate_favorites().await;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
 
     Ok(new_path.display().to_string())
 }
@@ -730,7 +730,7 @@ pub async fn launch_game(rom_path: String) -> Result<String, ServerFnError> {
             tracing::warn!("Failed to create recents entry: {e}");
         }
         state.cache.invalidate_recents().await;
-        state.response_cache.recommendations.invalidate();
+        state.cache.invalidate_recommendations().await;
     }
 
     Ok("Game launching".into())

@@ -1,17 +1,19 @@
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
-use crate::server_fns::{GameSection, RecommendationData};
+use crate::server_fns::GameSection;
 
 /// TTL for response-level cache entries. Generous on purpose: every cache
 /// expiry forces a 200-300 ms recompute on a Pi 4 / USB storage, which the
 /// user perceives as "stale browser load" on the next navigation. Five
-/// minutes is well within the freshness window for these payloads —
-/// recommendations and favorites_recommendations are mostly random
-/// curation, and every write path that *could* invalidate them already
-/// calls `invalidate_all()` (favorites toggle, library invalidate, image
-/// clear, etc.). The TTL is the *upper bound* for staleness when no write
-/// invalidation has fired in that window.
+/// minutes is well within the freshness window for `favorites_recommendations`
+/// — random curation, and every write path that *could* invalidate it
+/// already calls `invalidate_all()` (favorites toggle, library invalidate,
+/// image clear, etc.). The TTL is the *upper bound* for staleness when no
+/// write invalidation has fired in that window.
+///
+/// (`recommendations` moved to `LibraryService::recommendations` —
+/// `SsrSnapshot` with event-driven invalidation, strictly better than TTL.)
 const RESPONSE_TTL: Duration = Duration::from_secs(300);
 
 /// Single TTL-gated slot holding at most one value.
@@ -49,15 +51,17 @@ impl<T: Clone> TtlSlot<T> {
 
 /// Response-level cache for assembled recommendation payloads.
 ///
-/// Caches the final serializable data returned by `get_recommendations` and
+/// Caches the final serializable data returned by
 /// `get_favorites_recommendations` so that back-navigation and rapid reloads
 /// skip all DB queries and box-art resolution.
 ///
-/// Lives on `AppState` (not inside `LibraryService`) because it caches the fully
-/// assembled server-function response, not raw library data.
+/// Lives on `AppState` (not inside `LibraryService`) because it caches the
+/// fully assembled server-function response, not raw library data. Callers
+/// should prefer `AppState::invalidate_user_caches()` over this struct's
+/// `invalidate_all` so the parallel `LibraryService::recommendations`
+/// snapshot stays in lockstep.
 #[derive(Default)]
 pub struct ResponseCache {
-    pub recommendations: TtlSlot<RecommendationData>,
     pub favorites_recommendations: TtlSlot<Vec<GameSection>>,
 }
 
@@ -67,7 +71,6 @@ impl ResponseCache {
     }
 
     pub fn invalidate_all(&self) {
-        self.recommendations.invalidate();
         self.favorites_recommendations.invalidate();
     }
 }

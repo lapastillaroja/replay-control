@@ -100,7 +100,7 @@ pub async fn add_favorite(
     .await
     .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     Ok(result)
 }
 
@@ -128,7 +128,7 @@ pub async fn remove_favorite(
     }
 
     state.cache.invalidate_favorites().await;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     Ok(())
 }
 
@@ -160,7 +160,7 @@ pub async fn organize_favorites(
     .await
     .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     Ok(OrganizeResult {
         organized: result.organized,
         skipped: result.skipped,
@@ -173,7 +173,7 @@ pub async fn group_favorites() -> Result<usize, ServerFnError> {
     let result = replay_control_core_server::favorites::group_by_system(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     Ok(result)
 }
 
@@ -183,7 +183,7 @@ pub async fn flatten_favorites() -> Result<usize, ServerFnError> {
     let result = replay_control_core_server::favorites::flatten_favorites(&state.storage())
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.cache.invalidate_favorites().await;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     Ok(result)
 }
 

@@ -3,7 +3,7 @@ use super::*;
 use replay_control_core_server::library_db::LibraryDb;
 
 /// A recommended game card with display info and navigation link.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RecommendedGame {
     pub system: String,
     pub system_display: String,
@@ -19,7 +19,7 @@ pub struct RecommendedGame {
 
 /// A pill in the Discover section: translation key + interpolation args + link.
 /// The client resolves `label_key` via `key_from_str` and calls `tf(locale, key, &args)`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DiscoverPill {
     pub label_key: String,
     pub label_args: Vec<String>,
@@ -29,7 +29,7 @@ pub struct DiscoverPill {
 /// A titled row of game recommendations (favorites-based, curated spotlight, etc.).
 /// `title_key` is a `Key` variant name; `title_args` are interpolation arguments.
 /// The client resolves and translates these via `key_from_str` + `tf`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GameSection {
     pub title_key: String,
     pub title_args: Vec<String>,
@@ -39,7 +39,7 @@ pub struct GameSection {
 }
 
 /// All recommendation data in a single response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RecommendationData {
     pub random_picks: GameSection,
     pub discover_pills: Vec<DiscoverPill>,
@@ -49,21 +49,28 @@ pub struct RecommendationData {
 
 /// Get recommendation data from SQLite game_library + filesystem image resolution.
 /// Returns empty data gracefully if game_library is not yet populated.
+/// Server fn — thin wrapper around the snapshot. The `count` parameter
+/// is preserved for wire compatibility but ignored: the underlying
+/// snapshot is always built with the home-page canonical count (matches
+/// the previous TtlSlot first-caller-wins semantics — there's only one
+/// caller in the codebase today, `home.rs` with `count=6`).
 #[server(prefix = "/sfn")]
-pub async fn get_recommendations(count: usize) -> Result<RecommendationData, ServerFnError> {
-    #[cfg(feature = "ssr")]
-    let fn_start = std::time::Instant::now();
-
+pub async fn get_recommendations(_count: usize) -> Result<RecommendationData, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    if let Some(cached) = state.response_cache.recommendations.get() {
-        #[cfg(feature = "ssr")]
-        tracing::debug!(
-            elapsed_ms = fn_start.elapsed().as_millis(),
-            "get_recommendations cache hit"
-        );
-        return Ok(cached);
-    }
+    Ok(state.cache.recommendations_snapshot(&state).await)
+}
 
+/// Compute the recommendation payload from scratch. Called by
+/// `LibraryService::recommendations_snapshot` on cache miss; the
+/// SsrSnapshot layer handles single-flight + stale-on-`None` caching.
+///
+/// Returns `None` only when the DB pool is unavailable — caller keeps
+/// the previous (stale) snapshot rather than caching `None`.
+#[cfg(feature = "ssr")]
+pub(crate) async fn compute_recommendations(
+    state: &crate::api::AppState,
+    count: usize,
+) -> Option<RecommendationData> {
     let storage = state.storage();
     let systems = state
         .cache
@@ -112,12 +119,6 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
     let cached_developers = state.cache.query_cache.get_top_developers();
     let cached_decades = state.cache.query_cache.get_decades();
     let cached_active_systems = state.cache.query_cache.get_active_systems();
-    #[cfg(feature = "ssr")]
-    tracing::debug!(
-        elapsed_ms = fn_start.elapsed().as_millis(),
-        "get_recommendations query cache reads done"
-    );
-
     // Single DB access: run all SQL queries under one connection.
     // This includes the favorites genre lookup that previously required a
     // separate DB read round-trip.
@@ -372,11 +373,6 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
             )
         })
         .await;
-    #[cfg(feature = "ssr")]
-    tracing::debug!(
-        elapsed_ms = fn_start.elapsed().as_millis(),
-        "get_recommendations db_read complete"
-    );
 
     let Some((
         random_pool,
@@ -391,17 +387,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         fav_roms,
     )) = db_data
     else {
-        return Ok(RecommendationData {
-            random_picks: GameSection {
-                title_key: String::new(),
-                title_args: Vec::new(),
-                games: Vec::new(),
-                see_all_href: None,
-            },
-            discover_pills: Vec::new(),
-            favorites_picks: None,
-            curated_spotlight: None,
-        });
+        return Some(RecommendationData::default());
     };
 
     state.cache.query_cache.set_top_genres(&top_genres);
@@ -473,11 +459,6 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         }
     };
 
-    #[cfg(feature = "ssr")]
-    tracing::debug!(
-        elapsed_ms = fn_start.elapsed().as_millis(),
-        "get_recommendations box art resolved"
-    );
     let data = RecommendationData {
         random_picks: GameSection {
             title_key: "SpotlightRediscover".to_string(),
@@ -490,14 +471,7 @@ pub async fn get_recommendations(count: usize) -> Result<RecommendationData, Ser
         curated_spotlight,
     };
 
-    state.response_cache.recommendations.set(data.clone());
-
-    #[cfg(feature = "ssr")]
-    tracing::info!(
-        elapsed_ms = fn_start.elapsed().as_millis(),
-        "get_recommendations complete"
-    );
-    Ok(data)
+    Some(data)
 }
 
 /// Info about the user's favorites needed for building recommendations.

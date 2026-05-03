@@ -355,7 +355,7 @@ pub async fn rescan_game_library() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     state.cache.invalidate_l1().await;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
 
     state.spawn_rescan(guard);
     Ok(())
@@ -384,7 +384,7 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         .invalidate(&state.library_pool)
         .await
         .map_err(|e| ServerFnError::new(format!("Could not clear library: {e}")))?;
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
 
     state.spawn_rebuild_enrichment(guard);
     Ok(())
@@ -427,7 +427,7 @@ pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
     if let Err(e) = state.cache.invalidate(&state.library_pool).await {
         tracing::warn!("post-rebuild cache.invalidate failed: {e}");
     }
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     // Trigger background re-import if XML exists.
     let _ = state.import.regenerate_metadata(&state).await;
     Ok(())

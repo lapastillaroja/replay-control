@@ -272,7 +272,7 @@ fn queue_on_demand_download(
     let rom_filename = rom_filename.to_string();
     let pending = state.pending_downloads.clone();
     let library_pool = state.library_pool.clone();
-    let response_cache = state.response_cache.clone();
+    let state_for_invalidate = state.clone();
 
     tokio::spawn(async move {
         match download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir()).await {
@@ -305,8 +305,8 @@ fn queue_on_demand_download(
                             tracing::error!("Failed to save box art URL for {sys}/{rom}: {e}");
                         }
                     }).await;
-                    // Clear response cache so next page load picks up the new art.
-                    response_cache.invalidate_all();
+                    // Clear user caches so next page load picks up the new art.
+                    state_for_invalidate.invalidate_user_caches().await;
                 }
             }
             Err(e) => {

@@ -352,7 +352,7 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     if let Err(e) = state.cache.invalidate(&state.library_pool).await {
         tracing::debug!("post-region cache.invalidate skipped: {e}");
     }
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     // Re-resolve release_date mirror columns for the new region preference.
     // Fast (milliseconds on a typical library) — no re-fetch, no re-parse.
     let region_secondary = state.region_preference_secondary();
@@ -399,7 +399,7 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
     if let Err(e) = state.cache.invalidate(&state.library_pool).await {
         tracing::debug!("post-region cache.invalidate skipped: {e}");
     }
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     // Re-resolve release_date mirror columns for the new secondary region preference.
     let region_primary = state.region_preference();
     state

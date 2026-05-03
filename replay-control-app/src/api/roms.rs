@@ -65,7 +65,7 @@ async fn delete_rom(
     if let Err(e) = state.cache.invalidate(&state.library_pool).await {
         tracing::debug!("post-mutation cache.invalidate skipped: {e}");
     }
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -82,7 +82,7 @@ async fn rename_rom(
     if let Err(e) = state.cache.invalidate(&state.library_pool).await {
         tracing::debug!("post-mutation cache.invalidate skipped: {e}");
     }
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     Ok(Json(serde_json::json!({
         "new_path": new_path.display().to_string()
     })))

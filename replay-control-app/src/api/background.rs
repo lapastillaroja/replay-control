@@ -1691,12 +1691,12 @@ impl AppState {
                 if favorites_changed {
                     tracing::debug!("ROM watcher: _favorites/ changed, invalidating cache");
                     state.cache.invalidate_favorites().await;
-                    state.response_cache.invalidate_all();
+                    state.invalidate_user_caches().await;
                 }
                 if recents_changed {
                     tracing::debug!("ROM watcher: _recent/ changed, invalidating cache");
                     state.cache.invalidate_recents().await;
-                    state.response_cache.recommendations.invalidate();
+                    state.cache.invalidate_recommendations().await;
                 }
 
                 // Skip the heavier system rescan if any activity is running
@@ -1725,7 +1725,7 @@ impl AppState {
                     {
                         tracing::debug!("rom-watch invalidate_system({system}) skipped: {e}");
                     }
-                    state.response_cache.invalidate_all();
+                    state.invalidate_user_caches().await;
                 }
 
                 // Re-scan each affected system.

@@ -529,6 +529,19 @@ impl AppState {
             .send(ConfigEvent::AssetHealthChanged { issues: snapshot });
     }
 
+    /// Invalidate every user-facing cache that depends on library state:
+    /// the `ResponseCache` TTL slots and the `LibraryService::recommendations`
+    /// snapshot. Called from every write-completion site (favorites toggle,
+    /// boxart change, library invalidate, image clear, …) so recommendations
+    /// stay consistent with the underlying data.
+    ///
+    /// `metadata_page` is *not* in this set — it's invalidated separately
+    /// at the few sites that affect system-stats display.
+    pub async fn invalidate_user_caches(&self) {
+        self.response_cache.invalidate_all();
+        self.cache.invalidate_recommendations().await;
+    }
+
     /// Returns `(library_corrupt, user_data_corrupt, user_data_backup_exists)`.
     /// Used by `sse_config_stream` to seed the `init` payload.
     pub fn corruption_status(&self) -> (bool, bool, bool) {
@@ -687,7 +700,7 @@ impl AppState {
             if let Err(e) = self.cache.invalidate(&self.library_pool).await {
                 tracing::debug!("storage-change cache.invalidate skipped: {e}");
             }
-            self.response_cache.invalidate_all();
+            self.invalidate_user_caches().await;
 
             // Reload user preferences from the settings store.
             let new_prefs =

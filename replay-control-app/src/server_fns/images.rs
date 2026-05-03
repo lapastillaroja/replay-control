@@ -41,7 +41,7 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
         tracing::warn!("Failed to clear box_art_url after image clear: {e}");
     }
 
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     state.cache.invalidate_metadata_page().await;
 
     // _guard drops → Idle

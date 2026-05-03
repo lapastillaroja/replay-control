@@ -196,7 +196,7 @@ pub async fn set_boxart_override(
             })
             .await;
     }
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
     Ok(image_url)
 }
 
@@ -231,7 +231,7 @@ pub async fn reset_boxart_override(
             })
             .await;
     }
-    state.response_cache.invalidate_all();
+    state.invalidate_user_caches().await;
 
     Ok(())
 }

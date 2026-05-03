@@ -3,6 +3,7 @@ mod enrichment;
 mod favorites;
 pub mod metadata_snapshot;
 pub(crate) mod query;
+mod recommendations_snapshot;
 mod scan_pipeline;
 pub mod ssr_snapshot;
 
@@ -46,6 +47,7 @@ pub(crate) fn dir_mtime(path: &Path) -> Option<SystemTime> {
     Some(max_mtime)
 }
 
+use crate::server_fns::RecommendationData;
 use favorites::FavoritesCache;
 use metadata_snapshot::MetadataPageSnapshot;
 use ssr_snapshot::SsrSnapshot;
@@ -60,6 +62,10 @@ pub struct LibraryService {
     /// into the same single-flight + stale-on-`None` semantics with one
     /// new field + one accessor (see `ssr_snapshot.rs`).
     pub(super) metadata_page: SsrSnapshot<MetadataPageSnapshot>,
+    /// In-memory snapshot of the home-page recommendation payload.
+    /// Replaces the previous TtlSlot — strictly better caching (event-
+    /// driven invalidation, single-flight rebuild, stale-on-`None`).
+    pub(super) recommendations: SsrSnapshot<RecommendationData>,
 }
 
 impl LibraryService {
@@ -70,6 +76,7 @@ impl LibraryService {
             favorites: RwLock::new(None),
             recents: RwLock::new(None),
             metadata_page: SsrSnapshot::new(),
+            recommendations: SsrSnapshot::new(),
             query_cache,
         }
     }
@@ -90,6 +97,26 @@ impl LibraryService {
     /// write-completion sites that already invalidate the other caches.
     pub async fn invalidate_metadata_page(&self) {
         self.metadata_page.invalidate().await;
+    }
+
+    /// Get the home-page recommendations snapshot, rebuilding on miss.
+    /// Cold case returns `RecommendationData::default()` (empty carousels)
+    /// instantly — same UX as an empty library — while a background
+    /// rebuild populates the snapshot. Subsequent callers get the cached
+    /// data until the next invalidation.
+    pub async fn recommendations_snapshot(&self, state: &super::AppState) -> RecommendationData {
+        self.recommendations
+            .get_or_compute("recommendations_snapshot", || async {
+                recommendations_snapshot::compute(state).await
+            })
+            .await
+    }
+
+    /// Invalidate the recommendations snapshot. Routed through the same
+    /// post-write helper that invalidates the other user-facing caches
+    /// (`AppState::invalidate_user_caches`).
+    pub async fn invalidate_recommendations(&self) {
+        self.recommendations.invalidate().await;
     }
 
     /// Get cached systems or scan and cache.
