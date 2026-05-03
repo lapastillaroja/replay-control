@@ -324,6 +324,18 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailPublisher => "Publisher",
         Key::GameDetailRating => "Rating",
 
+        // Achievements
+        Key::AchievementsTitle => "Achievements",
+        Key::AchievementsPoints => "pts",
+        Key::AchievementsShowAll => "Show all achievements",
+        Key::AchievementsNone => "No achievements available",
+        Key::AchievementsConfigureKey => "Configure API Key",
+        Key::AchievementsConfigureKeyHint => "Set your RetroAchievements API key in Settings to view achievements.",
+        Key::AchievementsCompleted => "Completed",
+        Key::AchievementsProgress => "Progress",
+        Key::AchievementsEarned => "Earned",
+        Key::AchievementsHardcore => "Hardcore",
+
         // Metadata management
         Key::MoreMetadata => "Game Metadata",
         Key::MetadataTitle => "Game Data",

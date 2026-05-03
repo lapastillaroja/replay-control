@@ -19,6 +19,8 @@ mod system;
 mod thumbnails;
 mod videos;
 
+mod achievements;
+
 pub use boxart::*;
 pub use favorites::*;
 pub use game_notes::*;
@@ -34,6 +36,7 @@ pub use settings::*;
 pub use system::*;
 pub use thumbnails::*;
 pub use videos::*;
+pub use achievements::*;
 
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};

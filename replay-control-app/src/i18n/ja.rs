@@ -324,6 +324,18 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailPublisher => "発売元",
         Key::GameDetailRating => "評価",
 
+        // Achievements
+        Key::AchievementsTitle => "実績",
+        Key::AchievementsPoints => "ポイント",
+        Key::AchievementsShowAll => "すべての実績を表示",
+        Key::AchievementsNone => "実績はありません",
+        Key::AchievementsConfigureKey => "APIキーを設定",
+        Key::AchievementsConfigureKeyHint => "実績を表示するには、設定でRetroAchievements APIキーを設定してください。",
+        Key::AchievementsCompleted => "完了",
+        Key::AchievementsProgress => "進捗",
+        Key::AchievementsEarned => "獲得済み",
+        Key::AchievementsHardcore => "ハードコア",
+
         // Metadata management
         Key::MoreMetadata => "ゲームメタデータ",
         Key::MetadataTitle => "ゲームデータ",

@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
+use crate::components::achievements_section::AchievementsSection;
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
@@ -585,6 +586,12 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         <GameNotesSection
             system=system_sv
             rom_filename=filename_sv
+        />
+
+        <AchievementsSection
+            system=system_sv
+            rom_filename=filename_sv
+            display_name=game_name_sv
         />
 
         // Related Games (lazy-loaded)
