@@ -32,3 +32,6 @@ pub use settings::skins;
 
 mod capture;
 pub use capture::video_url;
+
+pub mod stats;
+pub use stats::*;

@@ -13,6 +13,7 @@ pub mod password;
 pub mod search;
 pub mod settings;
 pub mod skin;
+pub mod stats;
 pub mod updating;
 pub mod wifi;
 

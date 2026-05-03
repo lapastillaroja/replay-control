@@ -14,6 +14,7 @@ pub fn BottomNav() -> impl IntoView {
         ("/favorites", Key::NavFavorites, "\u{2B50}"),
         ("/my-games", Key::NavMyGames, "\u{1F4DA}"),
         ("/search", Key::NavSearch, "\u{1F50D}"),
+        ("/stats", Key::NavStats, "\u{1F4CA}"),
         ("/settings", Key::NavSettings, "\u{2699}"),
     ];
 
