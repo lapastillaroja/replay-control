@@ -35,7 +35,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
-use replay_control_core::error::Result;
 use replay_control_core_server::thumbnail_manifest::{
     ManifestMatch, download_thumbnail, save_thumbnail,
 };
@@ -57,6 +56,10 @@ pub struct ThumbnailKey {
 pub enum Outcome {
     /// Downloaded + saved successfully.
     Saved,
+    /// Job collapsed against an in-flight duplicate; another caller's
+    /// task will deliver the real bytes. Bulk callers should treat this
+    /// as "not my work" — *don't* count it in `downloaded` totals.
+    Skipped,
     /// HTTP download failed (404, network error, timeout, …).
     DownloadFailed(String),
     /// Download succeeded but writing to disk failed.
@@ -65,7 +68,7 @@ pub enum Outcome {
 
 impl Outcome {
     pub fn is_success(&self) -> bool {
-        matches!(self, Outcome::Saved)
+        matches!(self, Outcome::Saved | Outcome::Skipped)
     }
 }
 
@@ -237,11 +240,12 @@ impl ThumbnailDownloadOrchestrator {
         }
         if !self.try_claim(&key) {
             // Another path is already handling this key. Send a
-            // synthetic "saved" result so the caller's progress count
-            // doesn't stall waiting for a completion that won't arrive.
+            // `Skipped` result so the caller's drain loop progresses,
+            // but the outcome variant tells the caller *not* to
+            // double-count this in download totals.
             let _ = completion_tx.send(JobResult {
                 key,
-                outcome: Outcome::Saved,
+                outcome: Outcome::Skipped,
             });
             return;
         }
@@ -371,17 +375,6 @@ async fn run_job(state: Arc<OrchestratorState>, job: Job) {
     state.pending.lock().expect("pending lock").remove(&key);
 }
 
-/// Convenience: returns `Result<()>` mapping the outcome for callers
-/// that don't care about distinguishing the two failure modes.
-pub fn outcome_to_result(outcome: &Outcome) -> Result<()> {
-    match outcome {
-        Outcome::Saved => Ok(()),
-        Outcome::DownloadFailed(e) | Outcome::SaveFailed(e) => {
-            Err(replay_control_core::error::Error::Other(e.clone()))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,7 +406,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn submit_bulk_signals_synthetic_saved_on_dedup_collision() {
+    async fn submit_bulk_signals_skipped_on_dedup_collision() {
         let orch = ThumbnailDownloadOrchestrator::spawn(Config::default());
         let k = key("nintendo_nes", "Test (USA)");
         // Pre-claim so the next submit_bulk hits the dedup branch.
@@ -435,13 +428,14 @@ mod tests {
         )
         .await;
 
-        // Synthetic Saved must arrive so the caller's count doesn't stall.
+        // Caller's drain loop expects exactly one JobResult per submit;
+        // Skipped tells the caller this isn't theirs to count.
         let res = tokio::time::timeout(Duration::from_millis(100), rx.recv())
             .await
-            .expect("orchestrator should signal a synthetic completion on dedup");
+            .expect("orchestrator should signal a Skipped completion on dedup");
         let res = res.expect("channel should not close before delivering");
         assert_eq!(res.key, k);
-        assert!(res.outcome.is_success());
+        assert!(matches!(res.outcome, Outcome::Skipped));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

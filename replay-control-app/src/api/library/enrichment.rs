@@ -312,6 +312,10 @@ fn queue_on_demand_download(
                 Outcome::SaveFailed(e) => {
                     tracing::debug!("On-demand save failed for {}: {e}", filename_for_hook);
                 }
+                // submit_visible doesn't surface Skipped to the hook —
+                // dedup collision short-circuits before this hook is
+                // attached. Match arm here for exhaustiveness only.
+                Outcome::Skipped => {}
             }
         })
     });
