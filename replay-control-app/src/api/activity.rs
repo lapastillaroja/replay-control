@@ -100,14 +100,23 @@ impl Activity {
                 ),
                 _ => String::new(),
             },
-            Self::Rebuild { progress } => match progress.phase {
-                RebuildPhase::Complete => format!("Rebuild complete ({}s)", progress.elapsed_secs,),
-                RebuildPhase::Failed => format!(
-                    "Rebuild failed: {}",
-                    progress.error.as_deref().unwrap_or("unknown error"),
-                ),
-                _ => String::new(),
-            },
+            Self::Rebuild { progress } => {
+                let label = if progress.is_rescan {
+                    "Rescan"
+                } else {
+                    "Rebuild"
+                };
+                match progress.phase {
+                    RebuildPhase::Complete => {
+                        format!("{label} complete ({}s)", progress.elapsed_secs)
+                    }
+                    RebuildPhase::Failed => format!(
+                        "{label} failed: {}",
+                        progress.error.as_deref().unwrap_or("unknown error"),
+                    ),
+                    _ => String::new(),
+                }
+            }
             Self::Update { progress } => match progress.phase {
                 UpdatePhase::Complete => format!("Update complete ({}s)", progress.elapsed_secs),
                 UpdatePhase::Failed => format!(
@@ -181,6 +190,10 @@ pub enum RebuildPhase {
 }
 
 /// Progress for the game library rebuild operation.
+///
+/// `is_rescan` distinguishes the destructive rebuild (false) from the additive
+/// rescan (true). Both share this struct because their progress shape is
+/// identical; only the user-visible copy differs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RebuildProgress {
     pub phase: RebuildPhase,
@@ -189,6 +202,23 @@ pub struct RebuildProgress {
     pub systems_total: usize,
     pub elapsed_secs: u64,
     pub error: Option<String>,
+    #[serde(default)]
+    pub is_rescan: bool,
+}
+
+impl RebuildProgress {
+    /// Initial progress at the moment a rebuild or rescan starts.
+    pub fn initial(is_rescan: bool) -> Self {
+        Self {
+            phase: RebuildPhase::Scanning,
+            current_system: String::new(),
+            systems_done: 0,
+            systems_total: 0,
+            elapsed_secs: 0,
+            error: None,
+            is_rescan,
+        }
+    }
 }
 
 /// Phase of the software update operation.

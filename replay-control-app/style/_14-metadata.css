@@ -228,8 +228,45 @@
 .manage-action-hint {
     font-size: 0.85rem;
     color: var(--text-secondary);
-    margin-bottom: 10px;
+    margin-top: 10px;
+    margin-bottom: 0;
     line-height: 1.5;
+}
+
+/* When the hint sits at the top of the card (inside the confirm dialog flow),
+   skip the top margin — the card padding already handles it. */
+.manage-action-card > .manage-action-hint:first-child {
+    margin-top: 0;
+}
+
+/* Add breathing room between the confirm question and the Confirm/Cancel
+   buttons. `.manage-action-hint` has `margin-bottom: 0` so the rescan card
+   doesn't get a tall empty space below the hint; the gap belongs on the
+   buttons instead. */
+.manage-action-card .game-delete-confirm {
+    margin-top: 12px;
+}
+
+/* Compact 2-column grid for the Advanced section so 5 destructive cards
+   don't make the section feel like a wall. Falls back to single-column on
+   narrow screens where the responsive flex-row stays vertical anyway. */
+.manage-actions-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 12px;
+}
+@media (min-width: 600px) {
+    .manage-actions-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    /* Override the responsive flex-row rule for the grid container. */
+    .manage-actions-grid {
+        flex-direction: unset;
+    }
+    .manage-actions-grid > .manage-action-card {
+        flex: unset;
+    }
 }
 
 .manage-action-progress {

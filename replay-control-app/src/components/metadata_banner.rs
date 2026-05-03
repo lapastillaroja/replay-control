@@ -49,23 +49,24 @@ pub fn MetadataBusyBanner() -> impl IntoView {
             }
         }
         Activity::Rebuild { progress } => {
-            if progress.current_system.is_empty() {
-                "Rebuilding library...".to_string()
-            } else if progress.systems_total > 0 {
-                let phase = match progress.phase {
-                    server_fns::RebuildPhase::Scanning => "Scanning",
-                    server_fns::RebuildPhase::Enriching => "Enriching",
-                    _ => "Rebuilding",
-                };
-                format!(
-                    "{} {} ({}/{})...",
-                    phase,
-                    progress.current_system,
-                    progress.systems_done + 1,
-                    progress.systems_total
-                )
+            let idle_key = if progress.is_rescan {
+                Key::MetadataBannerRescanningLibrary
             } else {
-                format!("Rebuilding library ({})...", progress.current_system)
+                Key::MetadataBannerRebuildingLibrary
+            };
+            let phase_verb = match progress.phase {
+                server_fns::RebuildPhase::Scanning => "Scanning",
+                server_fns::RebuildPhase::Enriching => "Enriching",
+                _ if progress.is_rescan => "Rescanning",
+                _ => "Rebuilding",
+            };
+            match (progress.current_system.as_str(), progress.systems_total) {
+                ("", _) => t(i18n.locale.get(), idle_key).to_string(),
+                (sys, 0) => format!("{phase_verb} {sys}..."),
+                (sys, total) => format!(
+                    "{phase_verb} {sys} ({}/{total})...",
+                    progress.systems_done + 1
+                ),
             }
         }
         Activity::Maintenance { kind } => {

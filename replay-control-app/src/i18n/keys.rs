@@ -348,6 +348,12 @@ pub enum Key {
     MetadataRebuildingGameLibrary,
     MetadataGameLibraryRebuilt,
     MetadataConfirmRebuildGameLibrary,
+    MetadataRescanGameLibrary,
+    MetadataRescanningGameLibrary,
+    MetadataGameLibraryRescanned,
+    MetadataRescanGameLibraryHint,
+    MetadataBannerRebuildingLibrary,
+    MetadataBannerRescanningLibrary,
 
     // Advanced data management
     MetadataAdvancedActions,

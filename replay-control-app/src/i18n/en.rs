@@ -365,6 +365,14 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataConfirmRebuildGameLibrary => {
             "Rebuild the game library? This re-scans all games from disk."
         }
+        Key::MetadataRescanGameLibrary => "Rescan Library",
+        Key::MetadataRescanningGameLibrary => "Rescanning...",
+        Key::MetadataGameLibraryRescanned => "Library rescan complete",
+        Key::MetadataRescanGameLibraryHint => {
+            "Pick up newly added ROMs without waiting. NFS auto-detection runs on a delay."
+        }
+        Key::MetadataBannerRebuildingLibrary => "Rebuilding library...",
+        Key::MetadataBannerRescanningLibrary => "Rescanning library...",
 
         // Advanced data management
         Key::MetadataAdvancedActions => "Advanced",

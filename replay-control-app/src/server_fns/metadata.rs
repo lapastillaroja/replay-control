@@ -337,24 +337,41 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
     Ok(())
 }
 
-/// Rebuild the game library: clears game_library tables and triggers a full
-/// rescan + enrichment from disk.
+/// Additively rescan the game library: walk ROM directories and insert any
+/// new ROMs into `game_library` via `INSERT OR IGNORE`. Existing rows are
+/// preserved; per-ROM `hash_mtime` caching means unchanged files are not
+/// re-hashed. Built for users with large NFS libraries who need to pick up
+/// newly-added ROMs without paying the cost of a full rebuild.
 #[server(prefix = "/sfn")]
-pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
-    use crate::api::activity::{RebuildPhase, RebuildProgress};
+pub async fn rescan_game_library() -> Result<(), ServerFnError> {
+    use crate::api::activity::RebuildProgress;
 
     let state = expect_context::<crate::api::AppState>();
 
     let guard = state
         .try_start_activity(crate::api::Activity::Rebuild {
-            progress: RebuildProgress {
-                phase: RebuildPhase::Scanning,
-                current_system: String::new(),
-                systems_done: 0,
-                systems_total: 0,
-                elapsed_secs: 0,
-                error: None,
-            },
+            progress: RebuildProgress::initial(true),
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    state.cache.invalidate_l1().await;
+    state.response_cache.invalidate_all();
+
+    state.spawn_rescan(guard);
+    Ok(())
+}
+
+/// Rebuild the game library: clears game_library tables and triggers a full
+/// rescan + enrichment from disk.
+#[server(prefix = "/sfn")]
+pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
+    use crate::api::activity::RebuildProgress;
+
+    let state = expect_context::<crate::api::AppState>();
+
+    let guard = state
+        .try_start_activity(crate::api::Activity::Rebuild {
+            progress: RebuildProgress::initial(false),
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 

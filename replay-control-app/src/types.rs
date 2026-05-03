@@ -78,14 +78,23 @@ impl Activity {
                 ),
                 _ => String::new(),
             },
-            Self::Rebuild { progress } => match progress.phase {
-                RebuildPhase::Complete => format!("Rebuild complete ({}s)", progress.elapsed_secs,),
-                RebuildPhase::Failed => format!(
-                    "Rebuild failed: {}",
-                    progress.error.as_deref().unwrap_or("unknown error"),
-                ),
-                _ => String::new(),
-            },
+            Self::Rebuild { progress } => {
+                let label = if progress.is_rescan {
+                    "Rescan"
+                } else {
+                    "Rebuild"
+                };
+                match progress.phase {
+                    RebuildPhase::Complete => {
+                        format!("{label} complete ({}s)", progress.elapsed_secs)
+                    }
+                    RebuildPhase::Failed => format!(
+                        "{label} failed: {}",
+                        progress.error.as_deref().unwrap_or("unknown error"),
+                    ),
+                    _ => String::new(),
+                }
+            }
             Self::Update { progress } => match progress.phase {
                 UpdatePhase::Complete => format!("Update complete ({}s)", progress.elapsed_secs),
                 UpdatePhase::Failed => format!(
@@ -150,6 +159,8 @@ pub struct RebuildProgress {
     pub systems_total: usize,
     pub elapsed_secs: u64,
     pub error: Option<String>,
+    #[serde(default)]
+    pub is_rescan: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

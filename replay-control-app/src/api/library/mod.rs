@@ -415,17 +415,25 @@ impl LibraryService {
         Ok(entries)
     }
 
+    /// Invalidate L1 (in-memory) caches only — does NOT touch the L2
+    /// (SQLite) game_library tables. Use this for additive flows like
+    /// rescan that must drop stale cached views without deleting any rows.
+    /// Destructive flows should call `invalidate()` instead.
+    pub async fn invalidate_l1(&self) {
+        *self.systems.write().await = None;
+        *self.favorites.write().await = None;
+        *self.recents.write().await = None;
+        self.metadata_page.invalidate().await;
+        self.query_cache.invalidate_all();
+    }
+
     /// Invalidate all caches (after delete, rename, upload). Clears L1
     /// in-memory caches *and* L2 (SQLite). Returns `Ok(())` only if the
     /// L2 clear actually ran — caller-driven destructive flows (rebuild,
     /// re-import) must propagate the error rather than proceeding to write
     /// over a not-actually-cleared table.
     pub async fn invalidate(&self, db: &DbPool) -> Result<(), DbError> {
-        *self.systems.write().await = None;
-        *self.favorites.write().await = None;
-        *self.recents.write().await = None;
-        self.metadata_page.invalidate().await;
-        self.query_cache.invalidate_all();
+        self.invalidate_l1().await;
         db.try_write(|conn| LibraryDb::clear_all_game_library(conn))
             .await?
             .map_err(|e| DbError::Other(format!("clear_all_game_library: {e}")))

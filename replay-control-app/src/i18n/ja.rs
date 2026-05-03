@@ -365,6 +365,14 @@ pub fn translate(key: Key) -> &'static str {
         Key::MetadataConfirmRebuildGameLibrary => {
             "ゲームライブラリを再構築しますか？ディスクからすべてのゲームを再スキャンします。"
         }
+        Key::MetadataRescanGameLibrary => "ライブラリを再スキャン",
+        Key::MetadataRescanningGameLibrary => "再スキャン中...",
+        Key::MetadataGameLibraryRescanned => "ライブラリの再スキャンが完了しました",
+        Key::MetadataRescanGameLibraryHint => {
+            "新しく追加された ROM をすぐに検出します。NFS 共有の自動検出には遅延があります。"
+        }
+        Key::MetadataBannerRebuildingLibrary => "ライブラリを再構築中...",
+        Key::MetadataBannerRescanningLibrary => "ライブラリを再スキャン中...",
 
         // Advanced data management
         Key::MetadataAdvancedActions => "詳細設定",

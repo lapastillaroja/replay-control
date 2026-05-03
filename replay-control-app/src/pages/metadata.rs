@@ -6,11 +6,24 @@ use crate::components::stat_card::StatCard;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{
     self, Activity, DriverStatusCounts, ImportState, LibrarySummary, MetadataPageSnapshot,
-    RebuildPhase, SystemCoverage, ThumbnailPhase,
+    RebuildPhase, RebuildProgress, SystemCoverage, ThumbnailPhase,
 };
 use crate::util::{format_number, format_size, format_year_range, pct};
 
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
+
+fn format_rebuild_progress(p: &RebuildProgress) -> Option<String> {
+    let action = match p.phase {
+        RebuildPhase::Scanning => "Scanning",
+        RebuildPhase::Enriching => "Enriching",
+        _ => return None,
+    };
+    Some(match (p.current_system.as_str(), p.systems_total) {
+        ("", _) => format!("{action}..."),
+        (sys, 0) => format!("{action} {sys}..."),
+        (sys, total) => format!("{action} {sys}... ({}/{total})", p.systems_done),
+    })
+}
 
 #[component]
 pub fn MetadataPage() -> impl IntoView {
@@ -511,36 +524,21 @@ fn DataManagementSection(
     let i18n = use_i18n();
     let show_advanced = RwSignal::new(false);
 
-    // Rebuild state
-    let rebuilding = Memo::new(move |_| matches!(activity.get(), Activity::Rebuild { .. }));
+    let rebuilding = Memo::new(
+        move |_| matches!(activity.get(), Activity::Rebuild { progress } if !progress.is_rescan),
+    );
+    let rescanning = Memo::new(
+        move |_| matches!(activity.get(), Activity::Rebuild { progress } if progress.is_rescan),
+    );
+
+    // Each card gets its own display memo so that during a rescan the
+    // (advanced-section) Rebuild card stays blank, and vice versa.
     let rebuild_display = Memo::new(move |_| match activity.get() {
-        Activity::Rebuild { progress } => match progress.phase {
-            RebuildPhase::Scanning => {
-                if progress.systems_total > 0 {
-                    Some(format!(
-                        "Scanning {}... ({}/{})",
-                        progress.current_system, progress.systems_done, progress.systems_total,
-                    ))
-                } else if progress.current_system.is_empty() {
-                    Some("Scanning...".to_string())
-                } else {
-                    Some(format!("Scanning {}...", progress.current_system))
-                }
-            }
-            RebuildPhase::Enriching => {
-                if progress.systems_total > 0 {
-                    Some(format!(
-                        "Enriching {}... ({}/{})",
-                        progress.current_system, progress.systems_done, progress.systems_total,
-                    ))
-                } else if progress.current_system.is_empty() {
-                    Some("Enriching...".to_string())
-                } else {
-                    Some(format!("Enriching {}...", progress.current_system))
-                }
-            }
-            _ => None,
-        },
+        Activity::Rebuild { progress } if !progress.is_rescan => format_rebuild_progress(&progress),
+        _ => None,
+    });
+    let rescan_display = Memo::new(move |_| match activity.get() {
+        Activity::Rebuild { progress } if progress.is_rescan => format_rebuild_progress(&progress),
         _ => None,
     });
 
@@ -575,6 +573,18 @@ fn DataManagementSection(
         confirming_rebuild.set(false);
         leptos::task::spawn_local(async move {
             if let Err(e) = server_fns::rebuild_game_library().await {
+                result_message.set(Some(format!("Error: {e}")));
+            }
+        });
+    });
+
+    let on_rescan = Callback::new(move |_: leptos::ev::MouseEvent| {
+        if is_busy.get() {
+            return;
+        }
+        result_message.set(None);
+        leptos::task::spawn_local(async move {
+            if let Err(e) = server_fns::rescan_game_library().await {
                 result_message.set(Some(format!("Error: {e}")));
             }
         });
@@ -673,27 +683,15 @@ fn DataManagementSection(
         <section class="section">
             <h2 class="section-title">{move || t(i18n.locale.get(), Key::MetadataDataManagement)}</h2>
             <div class="manage-actions">
-                // Main actions (always visible)
-                <ClearActionCard
-                    confirming=confirming_rebuild
-                    clearing=rebuilding
+                <RescanActionCard
+                    rescanning=rescanning
                     result=result_message
-                    label_key=Key::MetadataRebuildGameLibrary
-                    clearing_key=Key::MetadataRebuildingGameLibrary
-                    confirm_key=Key::MetadataConfirmRebuildGameLibrary
-                    on_confirm=on_rebuild
+                    label_key=Key::MetadataRescanGameLibrary
+                    rescanning_key=Key::MetadataRescanningGameLibrary
+                    hint_key=Key::MetadataRescanGameLibraryHint
+                    on_click=on_rescan
                     disabled=is_busy
-                    progress_text=rebuild_display
-                />
-                <ClearActionCard
-                    confirming=confirming_orphans
-                    clearing=cleaning_orphans
-                    result=orphans_result
-                    label_key=Key::MetadataCleanupOrphans
-                    clearing_key=Key::MetadataCleaningOrphans
-                    confirm_key=Key::MetadataConfirmCleanupOrphans
-                    on_confirm=on_cleanup_orphans
-                    disabled=is_busy
+                    progress_text=rescan_display
                 />
             </div>
 
@@ -708,7 +706,28 @@ fn DataManagementSection(
                 </button>
             </div>
             <Show when=move || show_advanced.get()>
-                <div class="manage-actions">
+                <div class="manage-actions manage-actions-grid">
+                    <ClearActionCard
+                        confirming=confirming_rebuild
+                        clearing=rebuilding
+                        result=result_message
+                        label_key=Key::MetadataRebuildGameLibrary
+                        clearing_key=Key::MetadataRebuildingGameLibrary
+                        confirm_key=Key::MetadataConfirmRebuildGameLibrary
+                        on_confirm=on_rebuild
+                        disabled=is_busy
+                        progress_text=rebuild_display
+                    />
+                    <ClearActionCard
+                        confirming=confirming_orphans
+                        clearing=cleaning_orphans
+                        result=orphans_result
+                        label_key=Key::MetadataCleanupOrphans
+                        clearing_key=Key::MetadataCleaningOrphans
+                        confirm_key=Key::MetadataConfirmCleanupOrphans
+                        on_confirm=on_cleanup_orphans
+                        disabled=is_busy
+                    />
                     <ClearActionCard
                         confirming=confirming_images
                         clearing=clearing_images
@@ -742,6 +761,47 @@ fn DataManagementSection(
                 </div>
             </Show>
         </section>
+    }
+}
+
+/// Card for a non-destructive, single-click action like rescan. Always shows
+/// the hint underneath so the user understands what they're triggering — no
+/// two-step confirm because the operation can't lose data.
+#[component]
+fn RescanActionCard(
+    #[prop(into)] rescanning: Signal<bool>,
+    result: RwSignal<Option<String>>,
+    label_key: Key,
+    rescanning_key: Key,
+    hint_key: Key,
+    on_click: Callback<leptos::ev::MouseEvent>,
+    #[prop(optional)] disabled: Option<Memo<bool>>,
+    #[prop(optional)] progress_text: Option<Memo<Option<String>>>,
+) -> impl IntoView {
+    let i18n = use_i18n();
+    let externally_disabled = move || disabled.is_some_and(|d| d.get());
+
+    view! {
+        <div class="manage-action-card">
+            <button
+                class="game-action-btn"
+                on:click=move |ev| on_click.run(ev)
+                disabled=move || rescanning.get() || externally_disabled()
+            >
+                {move || if rescanning.get() {
+                    t(i18n.locale.get(), rescanning_key)
+                } else {
+                    t(i18n.locale.get(), label_key)
+                }}
+            </button>
+            <p class="manage-action-hint">{move || t(i18n.locale.get(), hint_key)}</p>
+            {move || progress_text.and_then(|pt| pt.get()).map(|text| view! {
+                <p class="manage-action-progress">{text}</p>
+            })}
+            <Show when=move || result.read().is_some()>
+                <p class="manage-action-result">{move || result.get().unwrap_or_default()}</p>
+            </Show>
+        </div>
     }
 }
 
