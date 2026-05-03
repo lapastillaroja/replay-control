@@ -115,6 +115,8 @@ pub struct UserPreferences {
     pub font_size: String,
     pub setup_dismissed: bool,
     pub ra_api_key: Option<String>,
+    pub ra_username: Option<String>,
+    pub ra_web_token: Option<String>,
 }
 
 impl Default for UserPreferences {
@@ -127,6 +129,8 @@ impl Default for UserPreferences {
             font_size: "normal".to_string(),
             setup_dismissed: false,
             ra_api_key: None,
+            ra_username: None,
+            ra_web_token: None,
         }
     }
 }
@@ -145,6 +149,8 @@ impl UserPreferences {
             font_size: settings.font_size().to_string(),
             setup_dismissed: settings.setup_dismissed(),
             ra_api_key: settings.ra_api_key().map(|s| s.to_string()),
+            ra_username: settings.ra_username().map(|s| s.to_string()),
+            ra_web_token: settings.ra_web_token().map(|s| s.to_string()),
         }
     }
 }
@@ -417,6 +423,32 @@ pub fn read_ra_api_key(store: &SettingsStore) -> Option<String> {
 pub fn write_ra_api_key(store: &SettingsStore, key: &str) -> Result<()> {
     let mut settings = store.load();
     settings.set_ra_api_key(key);
+    store.save(&settings)
+}
+
+/// Read the RetroAchievements username from settings.
+/// Returns `None` if the file doesn't exist or the key is empty.
+pub fn read_ra_username(store: &SettingsStore) -> Option<String> {
+    store.load().ra_username().map(|s| s.to_string())
+}
+
+/// Write the RetroAchievements username to settings.
+pub fn write_ra_username(store: &SettingsStore, username: &str) -> Result<()> {
+    let mut settings = store.load();
+    settings.set_ra_username(username);
+    store.save(&settings)
+}
+
+/// Read the RetroAchievements web token from settings.
+/// Returns `None` if the file doesn't exist or the key is empty.
+pub fn read_ra_web_token(store: &SettingsStore) -> Option<String> {
+    store.load().ra_web_token().map(|s| s.to_string())
+}
+
+/// Write the RetroAchievements web token to settings.
+pub fn write_ra_web_token(store: &SettingsStore, token: &str) -> Result<()> {
+    let mut settings = store.load();
+    settings.set_ra_web_token(token);
     store.save(&settings)
 }
 

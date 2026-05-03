@@ -332,6 +332,10 @@ pub fn translate(key: Key) -> &'static str {
         Key::AchievementsNone => "No hay logros disponibles",
         Key::AchievementsConfigureKey => "Configurar clave API",
         Key::AchievementsConfigureKeyHint => "Configura tu clave API de RetroAchievements en Ajustes para ver los logros.",
+        Key::AchievementsCompleted => "Completado",
+        Key::AchievementsProgress => "Progreso",
+        Key::AchievementsEarned => "Obtenidos",
+        Key::AchievementsHardcore => "Hardcore",
 
         // Metadata management
         Key::MoreMetadata => "Metadatos de juegos",

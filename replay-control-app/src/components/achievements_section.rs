@@ -26,13 +26,16 @@ pub fn AchievementsSection(
     let game_info = RwSignal::new(Option::<RaGameInfo>::None);
     let loaded = RwSignal::new(false);
     let show_all = RwSignal::new(false);
+    let has_user_progress = RwSignal::new(false);
 
     let _sync = Effect::new(move || {
         if let Some(result) = achievements_resource.get() {
             match result {
                 Ok(info) => {
+                    let has_progress = info.is_some() && info.as_ref().map(|g| g.earned_count > 0).unwrap_or(false);
                     game_info.set(info);
                     loaded.set(true);
+                    has_user_progress.set(has_progress);
                 }
                 Err(_) => {
                     loaded.set(true);
@@ -49,6 +52,8 @@ pub fn AchievementsSection(
     };
 
     let total_points = move || game_info.get().map(|g| g.total_points).unwrap_or(0);
+    let earned_points = move || game_info.get().map(|g| g.earned_points).unwrap_or(0);
+    let completion_pct = move || game_info.get().map(|g| g.completion_percentage).unwrap_or(0.0);
 
     view! {
         <Show when=move || loaded.get() && game_info.get().is_some()>
@@ -58,10 +63,41 @@ pub fn AchievementsSection(
                     <span class="achievement-count">
                         {move || format!("({})", achievement_count())}
                     </span>
-                    <span class="achievement-points">
-                        {move || format!("{} {}", total_points(), t(i18n.locale.get(), Key::AchievementsPoints))}
-                    </span>
+                    <Show when=move || has_user_progress.get()>
+                        <span class="achievement-complete-badge">
+                            {move || t(i18n.locale.get(), Key::AchievementsCompleted)}
+                        </span>
+                    </Show>
                 </h2>
+
+                <Show when=move || has_user_progress.get()>
+                    <div class="achievement-progress-section">
+                        <div class="achievement-progress-header">
+                            <span class="achievement-progress-label">
+                                {move || format!(
+                                    "{} / {} ({:.0}%)",
+                                    game_info.get().map(|g| g.earned_count).unwrap_or(0),
+                                    achievement_count(),
+                                    completion_pct()
+                                )}
+                            </span>
+                            <span class="achievement-progress-points">
+                                {move || format!(
+                                    "{} / {} {}",
+                                    earned_points(),
+                                    total_points(),
+                                    t(i18n.locale.get(), Key::AchievementsPoints)
+                                )}
+                            </span>
+                        </div>
+                        <div class="achievement-progress-bar">
+                            <div
+                                class="achievement-progress-fill"
+                                style=move || format!("width: {}%", completion_pct())
+                            ></div>
+                        </div>
+                    </div>
+                </Show>
 
                 <div class="achievements-grid">
                     {move || {
@@ -85,17 +121,35 @@ pub fn AchievementsSection(
                                 let description_sv = StoredValue::new(a.description);
                                 let points = a.points;
                                 let type_sv = StoredValue::new(a.r#type);
+                                let unlocked = a.unlocked;
+                                let unlocked_date_sv = StoredValue::new(a.unlocked_date);
+                                let unlocked_hardcore = a.unlocked_hardcore;
+
+                                let badge_class = if unlocked {
+                                    "achievement-badge"
+                                } else {
+                                    "achievement-badge achievement-badge-locked"
+                                };
+
+                                let card_class = if unlocked {
+                                    "achievement-card achievement-card-earned"
+                                } else {
+                                    "achievement-card"
+                                };
 
                                 view! {
-                                    <div class="achievement-card">
+                                    <div class=card_class>
                                         <div class="achievement-badge-wrapper">
                                             <img
-                                                class="achievement-badge"
+                                                class=badge_class
                                                 src=badge_url
                                                 alt=title_sv.get_value()
                                                 loading="lazy"
                                             />
-                                            <Show when=move || type_sv.get_value().is_some()>
+                                            <Show when=move || unlocked_hardcore>
+                                                <span class="achievement-hardcore-badge">HC</span>
+                                            </Show>
+                                            <Show when=move || !unlocked && type_sv.get_value().is_some()>
                                                 <span class="achievement-type-badge">
                                                     {move || {
                                                         type_sv.get_value()
@@ -112,6 +166,15 @@ pub fn AchievementsSection(
                                                 <span class="achievement-points-badge">{points}</span>
                                             </div>
                                             <p class="achievement-description">{description_sv.get_value()}</p>
+                                            <Show when=move || unlocked>
+                                                <span class="achievement-unlock-date">
+                                                    {move || {
+                                                        unlocked_date_sv.get_value()
+                                                            .map(|d| format!("✓ {d}"))
+                                                            .unwrap_or_else(|| "✓".to_string())
+                                                    }}
+                                                </span>
+                                            </Show>
                                         </div>
                                     </div>
                                 }

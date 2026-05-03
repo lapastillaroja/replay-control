@@ -24,6 +24,11 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.achievement-card-earned {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, var(--surface) 0%, rgba(255, 215, 0, 0.05) 100%);
+}
+
 .achievement-badge-wrapper {
     position: relative;
     flex-shrink: 0;
@@ -35,6 +40,24 @@
     border-radius: var(--radius-xs);
     object-fit: cover;
     background: var(--bg);
+}
+
+.achievement-badge-locked {
+    filter: grayscale(100%) brightness(0.6);
+    opacity: 0.7;
+}
+
+.achievement-hardcore-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background: #ff6b00;
+    color: white;
+    font-size: 0.55rem;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: var(--radius-xs);
+    letter-spacing: 0.5px;
 }
 
 .achievement-type-badge {
@@ -99,6 +122,12 @@
     overflow: hidden;
 }
 
+.achievement-unlock-date {
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-weight: 500;
+}
+
 .achievement-count {
     font-size: 0.85rem;
     font-weight: 400;
@@ -111,6 +140,55 @@
     font-weight: 400;
     color: var(--accent);
     margin-left: 8px;
+}
+
+.achievement-complete-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    background: var(--accent);
+    padding: 2px 8px;
+    border-radius: var(--radius-xs);
+    margin-left: 8px;
+}
+
+/* Progress bar section */
+.achievement-progress-section {
+    margin-top: 8px;
+    margin-bottom: 12px;
+}
+
+.achievement-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.achievement-progress-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.achievement-progress-points {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.achievement-progress-bar {
+    height: 8px;
+    background: var(--bg);
+    border-radius: var(--radius-xs);
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.achievement-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent) 0%, #ff6b00 100%);
+    border-radius: var(--radius-xs);
+    transition: width 0.3s ease;
 }
 
 .achievements-show-all {

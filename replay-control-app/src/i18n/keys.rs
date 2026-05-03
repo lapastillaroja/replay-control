@@ -315,6 +315,10 @@ pub enum Key {
     AchievementsNone,
     AchievementsConfigureKey,
     AchievementsConfigureKeyHint,
+    AchievementsCompleted,
+    AchievementsProgress,
+    AchievementsEarned,
+    AchievementsHardcore,
 
     // Metadata management
     MoreMetadata,

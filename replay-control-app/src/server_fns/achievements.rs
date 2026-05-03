@@ -12,6 +12,9 @@ pub struct AchievementInfo {
     pub badge_url: String,
     pub author: String,
     pub r#type: Option<String>,
+    pub unlocked: bool,
+    pub unlocked_date: Option<String>,
+    pub unlocked_hardcore: bool,
 }
 
 /// Full game info with achievements returned to the UI.
@@ -30,6 +33,10 @@ pub struct RaGameInfo {
     pub released: String,
     pub achievements: Vec<AchievementInfo>,
     pub total_points: u32,
+    pub earned_points: u32,
+    pub earned_count: u32,
+    pub completion_percentage: f64,
+    pub is_complete: bool,
 }
 
 /// Result of a game search in RetroAchievements.
@@ -165,7 +172,6 @@ async fn search_ra_games(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Keep only results with a reasonable match score
     results.retain(|r| {
         similarity_score(&search_title, &r.title) >= 0.3
     });
@@ -176,19 +182,75 @@ async fn search_ra_games(
 /// Get the RetroAchievements API key from settings or environment.
 #[cfg(feature = "ssr")]
 fn get_ra_api_key(state: &crate::api::AppState) -> Option<String> {
-    // Check environment variable first
     if let Ok(key) = std::env::var("RA_API_KEY")
         && !key.is_empty() {
         return Some(key);
     }
 
-    // Check settings
     let prefs = state.prefs.read().ok()?;
     prefs.ra_api_key.clone()
 }
 
+/// Get user credentials for RA progress endpoints.
+#[cfg(feature = "ssr")]
+fn get_ra_user_credentials(state: &crate::api::AppState) -> Option<(String, String)> {
+    let prefs = state.prefs.read().ok()?;
+    let username = prefs.ra_username.clone()?;
+    let token = prefs.ra_web_token.clone()?;
+    if username.is_empty() || token.is_empty() {
+        return None;
+    }
+    Some((username, token))
+}
+
+/// Fetch user progress for a game from RetroAchievements.
+/// Returns a map of achievement ID -> (unlocked, unlock_date, hardcore).
+#[cfg(feature = "ssr")]
+async fn fetch_user_progress(
+    api_key: &str,
+    username: &str,
+    web_token: &str,
+    game_id: u32,
+) -> Result<std::collections::HashMap<u32, (bool, Option<String>, bool)>, ServerFnError> {
+    use replay_control_core_server::http::get_json_with_timeout;
+
+    let url = format!(
+        "{}/GetUserGameProgress.php?z={}&u={}&t={}&i={}",
+        RA_API_BASE, api_key, username, web_token, game_id
+    );
+
+    let json = get_json_with_timeout(
+        &url,
+        std::time::Duration::from_secs(15),
+    )
+    .await
+    .map_err(|e| ServerFnError::new(format!("Failed to fetch user progress: {e}")))?;
+
+    let mut result = std::collections::HashMap::new();
+
+    if let Some(achievements) = json.get("achievements")
+        && let Some(achievements_arr) = achievements.as_array() {
+        for entry in achievements_arr {
+            if let (Some(id), Some(unlocked)) = (
+                entry.get("AchievementID").and_then(|v| v.as_u64()),
+                entry.get("UnlockDate").and_then(|v| v.as_str()),
+            ) {
+                let hardcore = entry.get("HardcoreAchieved").and_then(|v| v.as_bool()).unwrap_or(false);
+                let date = if unlocked.is_empty() {
+                    None
+                } else {
+                    Some(unlocked.to_string())
+                };
+                result.insert(id as u32, (true, date, hardcore));
+            }
+        }
+    }
+
+    Ok(result)
+}
+
 /// Fetch achievements for a game by system and ROM filename.
-/// This searches RetroAchievements by title match and returns the best match's achievements.
+/// If user credentials are configured, also fetches personal progress.
 #[server(prefix = "/sfn")]
 pub async fn get_game_achievements(
     system: String,
@@ -207,17 +269,14 @@ pub async fn get_game_achievements(
         ServerFnError::new(format!("System '{system}' is not supported by RetroAchievements"))
     })?;
 
-    // Search for the game
     let results = search_ra_games(&api_key, console_id, &game_title).await?;
 
     if results.is_empty() {
         return Ok(None);
     }
 
-    // Take the best match
     let best = &results[0];
 
-    // Fetch extended game info with achievements
     let url = format!(
         "{}/GetGameExtended.php?z={}&i={}",
         RA_API_BASE, api_key, best.game_id
@@ -233,23 +292,48 @@ pub async fn get_game_achievements(
     let game_ext: RaGameExtended = serde_json::from_value(json)
         .map_err(|e| ServerFnError::new(format!("Failed to parse RA game info: {e}")))?;
 
+    let user_progress = if let Some((username, token)) = get_ra_user_credentials(&state) {
+        fetch_user_progress(&api_key, &username, &token, best.game_id).await.ok()
+    } else {
+        None
+    };
+
     let mut achievements: Vec<AchievementInfo> = game_ext
         .achievements
         .into_values()
-        .map(|a| AchievementInfo {
-            id: a.id,
-            title: a.title,
-            description: a.description,
-            points: a.points,
-            badge_url: format!("https://media.retroachievements.org/Badge/{}.png", a.badge_name),
-            author: a.author,
-            r#type: a.r#type,
+        .map(|a| {
+            let (unlocked, unlocked_date, unlocked_hardcore) = user_progress
+                .as_ref()
+                .and_then(|up| up.get(&a.id))
+                .map(|(u, d, h)| (*u, d.clone(), *h))
+                .unwrap_or((false, None, false));
+
+            AchievementInfo {
+                id: a.id,
+                title: a.title,
+                description: a.description,
+                points: a.points,
+                badge_url: format!("https://media.retroachievements.org/Badge/{}.png", a.badge_name),
+                author: a.author,
+                r#type: a.r#type,
+                unlocked,
+                unlocked_date,
+                unlocked_hardcore,
+            }
         })
         .collect();
 
     achievements.sort_by_key(|a| a.id);
 
     let total_points: u32 = achievements.iter().map(|a| a.points).sum();
+    let earned_points: u32 = achievements.iter().filter(|a| a.unlocked).map(|a| a.points).sum();
+    let earned_count: u32 = achievements.iter().filter(|a| a.unlocked).count() as u32;
+    let completion_percentage = if !achievements.is_empty() {
+        (earned_count as f64 / achievements.len() as f64) * 100.0
+    } else {
+        0.0
+    };
+    let is_complete = earned_count > 0 && earned_count == achievements.len() as u32;
 
     Ok(Some(RaGameInfo {
         game_id: best.game_id,
@@ -265,6 +349,10 @@ pub async fn get_game_achievements(
         released: game_ext.released,
         achievements,
         total_points,
+        earned_points,
+        earned_count,
+        completion_percentage,
+        is_complete,
     }))
 }
 
@@ -315,4 +403,25 @@ pub async fn search_ra_games_api(
     })?;
 
     search_ra_games(&api_key, console_id, &title).await
+}
+
+/// Save RetroAchievements user credentials.
+#[server(prefix = "/sfn")]
+pub async fn save_ra_credentials(
+    username: String,
+    web_token: String,
+) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let store = state.settings.clone();
+
+    replay_control_core_server::settings::write_ra_username(&store, &username)
+        .map_err(|e| ServerFnError::new(format!("Failed to save username: {e}")))?;
+    replay_control_core_server::settings::write_ra_web_token(&store, &web_token)
+        .map_err(|e| ServerFnError::new(format!("Failed to save token: {e}")))?;
+
+    let mut prefs = state.prefs.write().map_err(|_| ServerFnError::new("Prefs lock poisoned"))?;
+    prefs.ra_username = if username.is_empty() { None } else { Some(username) };
+    prefs.ra_web_token = if web_token.is_empty() { None } else { Some(web_token) };
+
+    Ok(())
 }
