@@ -336,6 +336,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::AchievementsEarned => "Earned",
         Key::AchievementsHardcore => "Hardcore",
 
+        // Series timeline
+        Key::SeriesTimelineCurrent => "This game",
+
         // Metadata management
         Key::MoreMetadata => "Game Metadata",
         Key::MetadataTitle => "Game Data",

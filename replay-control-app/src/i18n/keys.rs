@@ -321,6 +321,9 @@ pub enum Key {
     AchievementsEarned,
     AchievementsHardcore,
 
+    // Series timeline
+    SeriesTimelineCurrent,
+
     // Metadata management
     MoreMetadata,
     MetadataTitle,

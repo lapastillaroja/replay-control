@@ -11,6 +11,7 @@ use crate::components::game_notes_section::GameNotesSection;
 use crate::components::game_status_section::GameStatusSection;
 use crate::components::hero_card::GameScrollCard;
 use crate::components::manual_section::ManualSection;
+use crate::components::series_timeline::SeriesTimeline;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
@@ -985,10 +986,10 @@ fn RelatedGamesSection(
                                     />
                                 </Show>
                                 <Show when=move || has_series>
-                                    <SimilarGamesRow
-                                        games=data.series_siblings.clone()
-                                        title_key=Key::GameDetailMoreInSeries
-                                        custom_title=data.series_name.clone()
+                                    <SeriesTimeline
+                                        system=system
+                                        rom_filename=rom_filename
+                                        series_name=data.series_name.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_similar>
