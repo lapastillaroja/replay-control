@@ -247,76 +247,79 @@ async fn build_image_index(state: &crate::api::AppState, system: &str) -> ImageI
 
 /// Queue a background download for a single thumbnail.
 /// Deduplicates concurrent requests for the same image.
+/// Queue an on-demand box-art download via the thumbnail orchestrator.
+///
+/// The orchestrator handles dedup, concurrency cap, and priority — the
+/// previous implementation here did unbounded `tokio::spawn` per missing
+/// thumbnail and could exhaust the process fd table on a fresh-system
+/// rescan. The on-complete hook updates `box_art_url` in the DB and
+/// invalidates user caches so the new art surfaces on the next render.
 fn queue_on_demand_download(
     state: &crate::api::AppState,
     system: &str,
     rom_filename: &str,
     m: &replay_control_core_server::thumbnail_manifest::ManifestMatch,
 ) {
-    use replay_control_core_server::thumbnail_manifest::{download_thumbnail, save_thumbnail};
     use replay_control_core_server::thumbnails::ThumbnailKind;
 
-    let download_key = format!("{system}/{}", m.filename);
+    use crate::api::thumbnail_orchestrator::{Outcome, ThumbnailKey};
 
-    // Check and insert atomically to prevent duplicate downloads.
-    {
-        let mut pending = state.pending_downloads.write().expect("pending lock");
-        if !pending.insert(download_key.clone()) {
-            return; // Already queued.
-        }
-    }
+    let key = ThumbnailKey {
+        system: system.to_string(),
+        kind: ThumbnailKind::Boxart,
+        filename: m.filename.clone(),
+    };
 
-    let m = m.clone();
-    let storage_root = state.storage().root.clone();
-    let system = system.to_string();
-    let rom_filename = rom_filename.to_string();
-    let pending = state.pending_downloads.clone();
+    // Capture the per-job state the on-complete hook needs. Cheap clones
+    // (Arc + small strings); the orchestrator's dedup ensures this hook
+    // only runs once per (system, filename).
     let library_pool = state.library_pool.clone();
     let state_for_invalidate = state.clone();
+    let system_for_hook = system.to_string();
+    let rom_filename_for_hook = rom_filename.to_string();
+    let filename_for_hook = m.filename.clone();
 
-    tokio::spawn(async move {
-        match download_thumbnail(&m, ThumbnailKind::Boxart.repo_dir()).await {
-            Ok(bytes) => {
-                if let Err(e) = save_thumbnail(
-                    &storage_root,
-                    &system,
-                    ThumbnailKind::Boxart,
-                    &m.filename,
-                    bytes,
-                )
-                .await
-                {
-                    tracing::debug!("On-demand save failed for {}: {e}", m.filename);
-                } else {
-                    // Update box_art_url in the DB so it's visible immediately.
+    let on_complete: crate::api::thumbnail_orchestrator::OnCompleteHook = Box::new(move |result| {
+        Box::pin(async move {
+            match result.outcome {
+                Outcome::Saved => {
                     let boxart_dir = ThumbnailKind::Boxart.media_dir();
-                    let png_name = format!("{}.png", m.filename);
+                    let png_name = format!("{filename_for_hook}.png");
                     let url = replay_control_core_server::enrichment::format_box_art_url(
-                        &system,
+                        &system_for_hook,
                         &format!("{boxart_dir}/{png_name}"),
                     );
-                    let sys = system.clone();
-                    let rom = rom_filename.clone();
-                    let _ = library_pool.write(move |conn| {
-                        if let Err(e) = conn.execute(
-                            "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
-                            [&url, &sys, &rom],
-                        ) {
-                            tracing::error!("Failed to save box art URL for {sys}/{rom}: {e}");
-                        }
-                    }).await;
+                    let sys = system_for_hook.clone();
+                    let rom = rom_filename_for_hook.clone();
+                    let _ = library_pool
+                            .write(move |conn| {
+                                if let Err(e) = conn.execute(
+                                    "UPDATE game_library SET box_art_url = ?1 WHERE system = ?2 AND rom_filename = ?3",
+                                    [&url, &sys, &rom],
+                                ) {
+                                    tracing::error!(
+                                        "Failed to save box art URL for {sys}/{rom}: {e}"
+                                    );
+                                }
+                            })
+                            .await;
                     // Clear user caches so next page load picks up the new art.
                     state_for_invalidate.invalidate_user_caches().await;
                 }
+                Outcome::DownloadFailed(e) => {
+                    tracing::debug!("On-demand download failed for {}: {e}", filename_for_hook);
+                }
+                Outcome::SaveFailed(e) => {
+                    tracing::debug!("On-demand save failed for {}: {e}", filename_for_hook);
+                }
             }
-            Err(e) => {
-                tracing::debug!("On-demand download failed for {}: {e}", m.filename);
-            }
-        }
-
-        // Remove from pending set.
-        if let Ok(mut guard) = pending.write() {
-            guard.remove(&download_key);
-        }
+        })
     });
+
+    state.thumbnail_orchestrator.submit_visible(
+        key,
+        m.clone(),
+        state.storage().root.clone(),
+        Some(on_complete),
+    );
 }

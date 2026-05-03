@@ -9,6 +9,7 @@ pub mod recents;
 pub mod response_cache;
 pub mod roms;
 pub mod system_info;
+pub mod thumbnail_orchestrator;
 pub mod thumbnail_pipeline;
 pub mod upload;
 
@@ -92,8 +93,14 @@ pub struct AppState {
     pub import: Arc<ImportPipeline>,
     /// Thumbnail pipeline (index + download operations).
     pub thumbnails: Arc<ThumbnailPipeline>,
-    /// Track in-flight on-demand thumbnail downloads to avoid duplicates.
-    pub pending_downloads: Arc<std::sync::RwLock<std::collections::HashSet<String>>>,
+    /// Single coordinator for all thumbnail-download work (bulk
+    /// pre-fetch + on-demand). Owns concurrency cap, dedup, priority,
+    /// and per-job completion delivery. Replaces the previous
+    /// `pending_downloads` HashSet + the unbounded `tokio::spawn` in
+    /// `enrichment::queue_on_demand_download` + the local `Semaphore`
+    /// in `library/thumbnails/manifest.rs`. See
+    /// `api/thumbnail_orchestrator.rs`.
+    pub thumbnail_orchestrator: Arc<thumbnail_orchestrator::ThumbnailDownloadOrchestrator>,
     /// Unified activity state: at most one activity at a time.
     /// Replaces `busy`, `busy_label`, `scanning`, and `rebuild_progress`.
     pub(crate) activity: Arc<std::sync::RwLock<Activity>>,
@@ -445,7 +452,11 @@ impl AppState {
             user_data_pool,
             import,
             thumbnails,
-            pending_downloads: Arc::new(std::sync::RwLock::new(std::collections::HashSet::new())),
+            thumbnail_orchestrator: Arc::new(
+                thumbnail_orchestrator::ThumbnailDownloadOrchestrator::spawn(
+                    thumbnail_orchestrator::Config::default(),
+                ),
+            ),
             activity,
             config_tx,
             activity_tx,

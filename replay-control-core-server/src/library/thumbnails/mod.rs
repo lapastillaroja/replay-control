@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use replay_control_core::error::{Error, Result};
 
 /// Kind of thumbnail image.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThumbnailKind {
     Boxart,
     Snap,
