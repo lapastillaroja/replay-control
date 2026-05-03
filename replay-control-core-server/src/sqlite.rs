@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn columns_diverge_when_expected_column_is_missing() {
-        // The beta.5 arcade trap, in miniature: runtime expects `source` but
+        // Arcade trap, in miniature: runtime expects `source` but
         // the on-disk schema (the user's stale catalog) doesn't have it.
         let conn =
             open_in_memory_with("CREATE TABLE arcade_games (rom_name TEXT, display_name TEXT);");
