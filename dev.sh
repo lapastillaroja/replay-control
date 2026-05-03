@@ -374,7 +374,10 @@ REPLAY_PORT=8080
 REPLAY_SITE_ROOT=/usr/local/share/replay/site
 
 # Log level (trace, debug, info, warn, error)
-RUST_LOG=replay_control_app=info,replay_control_core=info
+# dev.sh seeds debug for the project crates so dev-deploy logs show
+# enrichment / scan / orchestrator traces — production install.sh keeps
+# the leaner info-only default.
+RUST_LOG=info,replay_control_app=debug,replay_control_core=debug,replay_control_core_server=debug
 ENV
 fi
 
