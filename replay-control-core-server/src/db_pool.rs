@@ -553,7 +553,9 @@ impl DbPool {
 
     /// Pool acquisition + interact + timeout — the shared body of
     /// `try_read` and `try_write`. Pre-flight gates (`Corrupt`, write-gate
-    /// `Busy`) are checked here so both paths stay aligned.
+    /// `Busy`) are checked here so both paths stay aligned. Every error
+    /// path logs at least at debug! so callers don't have to guess why
+    /// `pool.read()` returned `None`.
     async fn dispatch<F, R>(
         &self,
         op: Op,
@@ -564,22 +566,37 @@ impl DbPool {
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        let label = self.label;
+        let kind = op.kind();
         if self.corrupt.load(Ordering::Acquire) {
+            tracing::debug!("{label}: {kind} short-circuited: corrupt flag set");
             return Err(DbError::Corrupt);
         }
         if op == Op::Read && self.write_gate.load(Ordering::Acquire) {
+            tracing::debug!("{label}: read short-circuited: write gate active");
             return Err(DbError::Busy);
         }
-        let pool = slot
-            .read()
-            .map_err(|_| DbError::Other("pool slot lock poisoned".into()))?
-            .as_ref()
-            .ok_or(DbError::Closed)?
-            .clone();
-        let conn = pool.get().await?;
+        let pool = match slot.read() {
+            Ok(g) => match g.as_ref() {
+                Some(p) => p.clone(),
+                None => {
+                    tracing::debug!("{label}: {kind} short-circuited: pool slot empty (closed)");
+                    return Err(DbError::Closed);
+                }
+            },
+            Err(_) => {
+                tracing::error!("{label}: pool slot RwLock poisoned");
+                return Err(DbError::Other("pool slot lock poisoned".into()));
+            }
+        };
+        let conn = match pool.get().await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("{label}: {kind} connection acquire failed: {e}");
+                return Err(DbError::Acquire(e));
+            }
+        };
         let pool_for_corrupt = self.clone();
-        let label = self.label;
-        let kind = op.kind();
         let interact = conn.interact(move |c| {
             let r = f(c);
             check_for_corruption(c, &pool_for_corrupt);
