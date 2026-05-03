@@ -2,11 +2,9 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
+use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns;
 
-/// Unified game list row component used across search results, developer pages,
-/// system ROM lists, and other game lists. Shows box art, game name, optional
-/// system badge, genre/rating badges, and a favorite toggle.
 #[component]
 pub fn GameListItem(
     system: String,
@@ -14,7 +12,6 @@ pub fn GameListItem(
     display_name: String,
     rom_path: String,
     box_art_url: Option<String>,
-    /// Show the system name (e.g., for cross-system lists like developer page).
     #[prop(default = false)]
     show_system: bool,
     #[prop(default = true)] show_favorite: bool,
@@ -22,10 +19,12 @@ pub fn GameListItem(
     #[prop(default = None)] genre: Option<String>,
     #[prop(default = None)] rating: Option<f32>,
     #[prop(default = None)] driver_status: Option<String>,
-    /// Pre-resolved system display name. When provided, avoids a server-side lookup.
     #[prop(default = None)]
     system_display: Option<String>,
+    #[prop(default = false)] has_manual: bool,
+    #[prop(default = None)] base_title: Option<String>,
 ) -> impl IntoView {
+    let i18n = use_i18n();
     let system = StoredValue::new(system);
     let rom_filename = StoredValue::new(rom_filename);
     let rom_path = StoredValue::new(rom_path);
@@ -33,16 +32,12 @@ pub fn GameListItem(
     let box_art_url = StoredValue::new(box_art_url);
     let placeholder_name = StoredValue::new(display_name.clone());
     let placeholder_system = StoredValue::new(system.get_value());
-
     let game_href = StoredValue::new(format!(
         "/games/{}/{}",
         system.get_value(),
         urlencoding::encode(&rom_filename.get_value())
     ));
 
-    // Resolve system display name for the badge.
-    // All callers that set show_system=true pass system_display, so the
-    // fallback to raw folder name only exists as a safety net.
     let system_label = StoredValue::new(if show_system {
         system_display.unwrap_or_else(|| system.get_value())
     } else {
@@ -52,7 +47,6 @@ pub fn GameListItem(
     let has_genre = genre.as_ref().is_some_and(|g| !g.is_empty());
     let genre = StoredValue::new(genre.unwrap_or_default());
 
-    // Favorite toggle.
     let is_fav = RwSignal::new(is_favorite);
     let on_toggle_fav = move |_| {
         let fav = is_fav.get();
@@ -72,6 +66,36 @@ pub fn GameListItem(
         }
     };
     let star = move || if is_fav.get() { "\u{2605}" } else { "\u{2606}" };
+
+    let _base_title_sv = StoredValue::new(base_title.unwrap_or_default());
+    let _display_name_sv = StoredValue::new(display_name.clone());
+
+    let on_open_manual = move |_| {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let sys = system.get_value();
+            let bt = _base_title_sv.get_value();
+            let title = _display_name_sv.get_value();
+            leptos::task::spawn_local(async move {
+                let url = if let Ok(manuals) = server_fns::get_local_manuals(sys.clone(), bt.clone()).await
+                    && let Some(manual) = manuals.into_iter().next()
+                {
+                    Some(manual.url)
+                } else if let Ok(results) = server_fns::search_game_manuals(sys, bt, title).await
+                    && let Some(rec) = results.into_iter().next()
+                {
+                    Some(rec.url)
+                } else {
+                    None
+                };
+                if let Some(url) = url {
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.open_with_url_and_target(&url, "_blank");
+                    }
+                }
+            });
+        }
+    };
 
     view! {
         <div class="game-list-item">
@@ -105,9 +129,6 @@ pub fn GameListItem(
                         {display_name}
                     </A>
                     {driver_status.as_ref().and_then(|status| {
-                        // Only show the dot for non-Working statuses — "Working" is the
-                        // default/expected state and showing a green dot for every working
-                        // game adds noise without value.
                         let (class, title) = match status.as_str() {
                             "Working" => return None,
                             "Imperfect" => (
@@ -125,6 +146,15 @@ pub fn GameListItem(
                         };
                         Some(view! { <span class=class title=title></span> })
                     })}
+                    <Show when=move || has_manual>
+                        <span
+                            class="manual-badge"
+                            on:click=on_open_manual
+                            title={move || t(i18n.locale.get(), Key::GameDetailOpenManual)}
+                        >
+                            "\u{1F4C4}"
+                        </span>
+                    </Show>
                 </div>
                 <div class="game-list-badges">
                     <Show when=move || show_system>

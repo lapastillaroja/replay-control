@@ -50,6 +50,31 @@ pub struct SequelLink {
     pub in_library: bool,
 }
 
+/// A single entry in the series timeline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeriesTimelineEntry {
+    /// Chronological order within the series (from Wikidata).
+    pub order: i32,
+    /// Display name of the game.
+    pub display_name: String,
+    /// System folder name.
+    pub system: String,
+    /// System display name (e.g., "Super Nintendo").
+    pub system_display: String,
+    /// Release year, if known.
+    pub year: Option<u16>,
+    /// ROM filename, present only if the game is in the user's library.
+    pub rom_filename: Option<String>,
+    /// Link to the game's detail page, present only if in library.
+    pub href: Option<String>,
+    /// Whether this game is in the user's library.
+    pub in_library: bool,
+    /// Whether this is the currently viewed game.
+    pub is_current: bool,
+    /// Box art URL, if available.
+    pub box_art_url: Option<String>,
+}
+
 /// A regional variant chip linking to another version of the same game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegionalVariant {
@@ -691,6 +716,95 @@ pub(crate) fn arcade_clone_label(parent_display: &str, clone_display: &str) -> S
         // Different name, show full clone display name.
         clone_display.to_string()
     }
+}
+
+/// Get the complete series timeline for a game.
+///
+/// Returns all games in the same Wikidata series, ordered by `series_order`,
+/// with release year, library presence, and current-game marker.
+#[server(prefix = "/sfn")]
+pub async fn get_series_timeline(
+    system: String,
+    rom_filename: String,
+) -> Result<Vec<SeriesTimelineEntry>, ServerFnError> {
+    use replay_control_core::title_utils::filename_stem;
+    use replay_control_core_server::library_db::LibraryDb;
+
+    let state = expect_context::<crate::api::AppState>();
+    let storage = state.storage();
+    let systems = state
+        .cache
+        .cached_systems(&storage, &state.library_pool)
+        .await;
+
+    let region_pref = state.region_preference();
+    let region_pref_str = region_pref.as_str().to_string();
+
+    let base_title = {
+        let sys = system.clone();
+        let fname = rom_filename.clone();
+        state
+            .library_pool
+            .read(move |conn| {
+                let all_entries = LibraryDb::load_system_entries(conn, &sys).unwrap_or_default();
+                all_entries
+                    .iter()
+                    .find(|e| e.rom_filename == fname)
+                    .map(|e| e.base_title.clone())
+                    .unwrap_or_else(|| filename_stem(&fname).to_string())
+            })
+            .await
+            .unwrap_or_else(|| filename_stem(&rom_filename).to_string())
+    };
+
+    let timeline_data = {
+        let sys = system.clone();
+        let bt = base_title.clone();
+        let rp = region_pref_str.clone();
+        state
+            .library_pool
+            .read(move |conn| {
+                LibraryDb::series_timeline(conn, &sys, &bt, &rp).unwrap_or_default()
+            })
+            .await
+    };
+
+    let Some(timeline_data) = timeline_data else {
+        return Ok(Vec::new());
+    };
+
+    let entries: Vec<SeriesTimelineEntry> = timeline_data
+        .into_iter()
+        .filter_map(|(entry, order, is_current)| {
+            let order = order?;
+            let in_library = true;
+            let href = Some(format!(
+                "/games/{}/{}",
+                entry.system,
+                urlencoding::encode(&entry.rom_filename)
+            ));
+            let system_display = systems
+                .iter()
+                .find(|s| s.folder_name == entry.system)
+                .map(|s| s.display_name.to_string())
+                .unwrap_or_else(|| entry.system.clone());
+
+            Some(SeriesTimelineEntry {
+                order,
+                display_name: entry.display_name.clone().unwrap_or_else(|| entry.rom_filename.clone()),
+                system: entry.system.clone(),
+                system_display,
+                year: entry.release_year(),
+                rom_filename: Some(entry.rom_filename.clone()),
+                href,
+                in_library,
+                is_current,
+                box_art_url: entry.box_art_url.clone(),
+            })
+        })
+        .collect();
+
+    Ok(entries)
 }
 
 #[cfg(test)]

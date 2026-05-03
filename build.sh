@@ -73,16 +73,17 @@ wasm-bindgen \
 # Optimize WASM with wasm-opt if available.
 WASM_FILE="$PKG_DIR/${CRATE_SNAKE}_bg.wasm"
 JS_FILE="$PKG_DIR/${CRATE_SNAKE}.js"
+_filesize() { stat -c%s "$1" 2>/dev/null || stat -f%z "$1" 2>/dev/null || echo 0; }
 if command -v wasm-opt &>/dev/null; then
     echo "==> Running wasm-opt -Oz..."
-    BEFORE=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
+    BEFORE=$(_filesize "$WASM_FILE")
     wasm-opt -Oz \
         --enable-bulk-memory \
         --enable-nontrapping-float-to-int \
         --enable-sign-ext \
         --enable-mutable-globals \
         "$WASM_FILE" -o "$WASM_FILE"
-    AFTER=$(stat -c%s "$WASM_FILE" 2>/dev/null || echo 0)
+    AFTER=$(_filesize "$WASM_FILE")
     echo "    WASM: ${BEFORE} -> ${AFTER} bytes ($(( (BEFORE - AFTER) * 100 / BEFORE ))% reduction)"
 else
     echo "    (wasm-opt not found, skipping)"
@@ -90,11 +91,14 @@ fi
 
 # Content-hash assets for cache busting (Leptos hash_files convention).
 echo "==> Hashing assets..."
-WASM_HASH=$(sha256sum "$WASM_FILE" | cut -c1-16)
+# sha256sum (GNU) or shasum -a 256 (macOS)
+_sha256() { sha256sum "$1" 2>/dev/null | cut -c1-16 || shasum -a 256 "$1" | cut -c1-16; }
+WASM_HASH=$(_sha256 "$WASM_FILE")
 HASHED_WASM="$PKG_DIR/${CRATE_SNAKE}.${WASM_HASH}.wasm"
 mv "$WASM_FILE" "$HASHED_WASM"
-sed -i "s|${CRATE_SNAKE}_bg\.wasm|${CRATE_SNAKE}.${WASM_HASH}.wasm|g" "$JS_FILE"
-JS_HASH=$(sha256sum "$JS_FILE" | cut -c1-16)
+# perl -pi is portable across GNU/Linux and macOS (unlike sed -i which differs)
+perl -pi -e "s|\Q${CRATE_SNAKE}_bg.wasm\E|${CRATE_SNAKE}.${WASM_HASH}.wasm|g" "$JS_FILE"
+JS_HASH=$(_sha256 "$JS_FILE")
 HASHED_JS="$PKG_DIR/${CRATE_SNAKE}.${JS_HASH}.js"
 mv "$JS_FILE" "$HASHED_JS"
 printf 'js: %s\nwasm: %s\n' "$JS_HASH" "$WASM_HASH" > "$OUT_DIR/hash.txt"
@@ -104,7 +108,7 @@ echo "    wasm: ${WASM_HASH}"
 # Pre-compress WASM for static serving.
 echo "==> Pre-compressing WASM..."
 gzip -9 -k -f "$HASHED_WASM"
-GZ_SIZE=$(stat -c%s "${HASHED_WASM}.gz" 2>/dev/null || echo 0)
+GZ_SIZE=$(_filesize "${HASHED_WASM}.gz")
 echo "    ${HASHED_WASM}.gz: ${GZ_SIZE} bytes"
 
 # Copy static assets

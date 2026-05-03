@@ -7,7 +7,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavHome => "ゲーム",
         Key::NavGames => "ゲーム",
         Key::NavFavorites => "お気に入り",
+        Key::NavMyGames => "マイゲーム",
         Key::NavSearch => "検索",
+        Key::NavStats => "統計",
         Key::NavMore => "その他",
         Key::NavSettings => "設定",
 
@@ -287,6 +289,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailManual => "マニュアル",
         Key::GameDetailNoManual => "マニュアルなし",
         Key::GameDetailFindManual => "マニュアルを検索",
+        Key::GameDetailOpenManual => "マニュアルを開く",
         Key::GameDetailViewManual => "表示",
         Key::GameDetailNoManualResults => "マニュアルが見つかりません",
         Key::GameDetailManualSaved => "マニュアルを保存しました",
@@ -322,6 +325,21 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailExternalMetadata => "追加情報",
         Key::GameDetailPublisher => "発売元",
         Key::GameDetailRating => "評価",
+
+        // Achievements
+        Key::AchievementsTitle => "実績",
+        Key::AchievementsPoints => "ポイント",
+        Key::AchievementsShowAll => "すべての実績を表示",
+        Key::AchievementsNone => "実績はありません",
+        Key::AchievementsConfigureKey => "APIキーを設定",
+        Key::AchievementsConfigureKeyHint => "実績を表示するには、設定でRetroAchievements APIキーを設定してください。",
+        Key::AchievementsCompleted => "完了",
+        Key::AchievementsProgress => "進捗",
+        Key::AchievementsEarned => "獲得済み",
+        Key::AchievementsHardcore => "ハードコア",
+
+        // Series timeline
+        Key::SeriesTimelineCurrent => "このゲーム",
 
         // Metadata management
         Key::MoreMetadata => "ゲームメタデータ",
@@ -496,6 +514,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CommonRename => "名前変更",
         Key::CommonActions => "操作",
         Key::CommonSave => "保存",
+        Key::CommonClose => "閉じる",
 
         // Recommendation section / discover pill titles
         Key::SpotlightBestGenre => "ベスト{0}",
@@ -512,6 +531,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillMultiplayer => "マルチプレイ",
         Key::PillCoOp => "協力プレイ",
         Key::SpotlightCoOp => "協力プレイ",
+
+        // Backlog (積みゲー)
+        Key::NavBacklog => "積みゲー",
+        Key::BacklogTitle => "積みゲー",
+        Key::BacklogEmpty => "積みゲーリストは空です",
+        Key::BacklogBrowse => "ゲームを探す",
+        Key::BacklogGames => "本",
+        Key::BacklogRemove => "リストから削除",
+
+        // HowLongToBeat
+        Key::HltbTitle => "クリア時間",
+        Key::HltbFetch => "クリア時間を調べる",
+        Key::HltbFetching => "検索中...",
+        Key::HltbNoData => "HowLongToBeatにデータなし",
+        Key::HltbAddToBacklog => "積みゲーに追加",
+        Key::HltbInBacklog => "積みゲー登録済み",
+        Key::HltbMain => "メインストーリー",
+        Key::HltbMainExtra => "メイン＋エクストラ",
+        Key::HltbCompletionist => "完全クリア",
 
         // Analytics
         Key::MoreSectionPrivacy => "プライバシー",
@@ -571,5 +609,64 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupTaskDone => "完了",
         Key::SetupStart => "開始",
         Key::SetupUpdate => "更新",
+
+        // Game notes
+        Key::GameNotesTitle => "メモ",
+        Key::GameNotesPlaceholder => "このゲームについてのメモを追加...",
+        Key::GameNotesSave => "保存",
+        Key::GameNotesSaving => "保存中...",
+        Key::GameNotesEdit => "編集",
+        Key::GameNotesClear => "削除",
+        Key::GameNotesAdd => "メモを追加",
+        Key::GameNotesEmpty => "まだメモはありません",
+
+        // Game status
+        Key::GameStatusTitle => "プレイ状況",
+        Key::GameStatusNone => "未設定",
+        Key::GameStatusWantToPlay => "プレイ予定",
+        Key::GameStatusInProgress => "プレイ中",
+        Key::GameStatusCompleted => "クリア",
+        Key::GameStatusPlatinum => "コンプリート",
+        Key::GameStatusSetStatus => "状態を設定",
+        Key::GameStatusClear => "状態をクリア",
+        Key::MyGamesTitle => "マイゲーム",
+        Key::MyGamesAll => "すべて",
+        Key::MyGamesWantToPlay => "プレイ予定",
+        Key::MyGamesInProgress => "プレイ中",
+        Key::MyGamesCompleted => "クリア",
+        Key::MyGamesPlatinum => "コンプリート",
+        Key::MyGamesEmpty => "まだこの状態のゲームはありません",
+        Key::MyGamesUpdated => "状態を更新しました",
+
+        // Stats dashboard
+        Key::StatsTitle => "ライブラリ統計",
+        Key::StatsLoading => "統計を読み込み中...",
+        Key::StatsTotalGames => "総ゲーム数",
+        Key::StatsTotalSystems => "システム",
+        Key::StatsTotalSize => "ライブラリサイズ",
+        Key::StatsPlayerModes => "プレイ人数",
+        Key::StatsSinglePlayer => "1人用",
+        Key::StatsCooperative => "協力",
+        Key::StatsMultiplayer => "マルチ",
+        Key::StatsUnknown => "不明",
+        Key::StatsArcadeConsole => "アーケード vs コンソール",
+        Key::StatsArcade => "アーケード",
+        Key::StatsConsole => "コンソール",
+        Key::StatsBySystem => "システム別",
+        Key::StatsByGenre => "ジャンル別",
+        Key::StatsByDecade => "年代別",
+        Key::StatsByDeveloper => "開発元別",
+        Key::StatsVariants => "バリエーション",
+        Key::StatsVerified => "認証済み（CRC）",
+        Key::StatsClones => "クローン",
+        Key::StatsHacks => "ハック",
+        Key::StatsTranslations => "翻訳",
+        Key::StatsSpecial => "特別",
+        Key::StatsMetadataCoverage => "メタデータ網羅率",
+        Key::StatsGenreCoverage => "ジャンル",
+        Key::StatsDeveloperCoverage => "開発元",
+        Key::StatsRatingCoverage => "評価",
+        Key::StatsBoxartCoverage => "カバーアート",
+        Key::StatsScreenshotCoverage => "スクリーンショット",
     }
 }

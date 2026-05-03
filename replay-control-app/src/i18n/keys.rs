@@ -9,7 +9,9 @@ pub enum Key {
     NavHome,
     NavGames,
     NavFavorites,
+    NavMyGames,
     NavSearch,
+    NavStats,
     NavMore,
     NavSettings,
 
@@ -272,6 +274,7 @@ pub enum Key {
     GameDetailManual,
     GameDetailNoManual,
     GameDetailFindManual,
+    GameDetailOpenManual,
     GameDetailViewManual,
     GameDetailNoManualResults,
     GameDetailManualSaved,
@@ -307,6 +310,21 @@ pub enum Key {
     GameDetailExternalMetadata,
     GameDetailPublisher,
     GameDetailRating,
+
+    // Achievements
+    AchievementsTitle,
+    AchievementsPoints,
+    AchievementsShowAll,
+    AchievementsNone,
+    AchievementsConfigureKey,
+    AchievementsConfigureKeyHint,
+    AchievementsCompleted,
+    AchievementsProgress,
+    AchievementsEarned,
+    AchievementsHardcore,
+
+    // Series timeline
+    SeriesTimelineCurrent,
 
     // Metadata management
     MoreMetadata,
@@ -469,6 +487,7 @@ pub enum Key {
     CommonRename,
     CommonActions,
     CommonSave,
+    CommonClose,
 
     // Recommendation section / discover pill titles (returned as keys from server)
     SpotlightBestGenre,
@@ -485,6 +504,25 @@ pub enum Key {
     PillMultiplayer,
     PillCoOp,
     SpotlightCoOp,
+
+    // Backlog (Want to Play)
+    NavBacklog,
+    BacklogTitle,
+    BacklogEmpty,
+    BacklogBrowse,
+    BacklogGames,
+    BacklogRemove,
+
+    // HowLongToBeat
+    HltbTitle,
+    HltbFetch,
+    HltbFetching,
+    HltbNoData,
+    HltbAddToBacklog,
+    HltbInBacklog,
+    HltbMain,
+    HltbMainExtra,
+    HltbCompletionist,
 
     // Analytics
     MoreSectionPrivacy,
@@ -538,4 +576,63 @@ pub enum Key {
     SetupTaskDone,
     SetupStart,
     SetupUpdate,
+
+    // Game notes
+    GameNotesTitle,
+    GameNotesPlaceholder,
+    GameNotesSave,
+    GameNotesSaving,
+    GameNotesEdit,
+    GameNotesClear,
+    GameNotesAdd,
+    GameNotesEmpty,
+
+    // Game status
+    GameStatusTitle,
+    GameStatusNone,
+    GameStatusWantToPlay,
+    GameStatusInProgress,
+    GameStatusCompleted,
+    GameStatusPlatinum,
+    GameStatusSetStatus,
+    GameStatusClear,
+    MyGamesTitle,
+    MyGamesAll,
+    MyGamesWantToPlay,
+    MyGamesInProgress,
+    MyGamesCompleted,
+    MyGamesPlatinum,
+    MyGamesEmpty,
+    MyGamesUpdated,
+
+    // Stats dashboard
+    StatsTitle,
+    StatsLoading,
+    StatsTotalGames,
+    StatsTotalSystems,
+    StatsTotalSize,
+    StatsPlayerModes,
+    StatsSinglePlayer,
+    StatsCooperative,
+    StatsMultiplayer,
+    StatsUnknown,
+    StatsArcadeConsole,
+    StatsArcade,
+    StatsConsole,
+    StatsBySystem,
+    StatsByGenre,
+    StatsByDecade,
+    StatsByDeveloper,
+    StatsVariants,
+    StatsVerified,
+    StatsClones,
+    StatsHacks,
+    StatsTranslations,
+    StatsSpecial,
+    StatsMetadataCoverage,
+    StatsGenreCoverage,
+    StatsDeveloperCoverage,
+    StatsRatingCoverage,
+    StatsBoxartCoverage,
+    StatsScreenshotCoverage,
 }

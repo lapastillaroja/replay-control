@@ -509,6 +509,7 @@ fn SystemGroup(
 #[component]
 fn SearchResultItem(result: RomListEntry) -> impl IntoView {
     let genre = (!result.genre.is_empty()).then(|| result.genre.clone());
+    let base_title = replay_control_core::title_utils::base_title(&result.display_name);
     view! {
         <GameListItem
             system=result.system.clone()
@@ -520,6 +521,8 @@ fn SearchResultItem(result: RomListEntry) -> impl IntoView {
             genre=genre
             rating=result.rating
             driver_status=result.driver_status.clone()
+            has_manual=result.has_manual
+            base_title=Some(base_title)
         />
     }
 }

@@ -6,12 +6,13 @@ pub mod update;
 mod platform;
 pub use platform::systems;
 
-mod game;
+pub mod game;
 pub use game::date_precision;
 pub use game::date_precision::DatePrecision;
 pub use game::developer;
 pub use game::game_ref;
 pub use game::genre;
+pub use game::ra_types;
 pub use game::rom_tags;
 pub use game::title_utils;
 
@@ -29,5 +30,10 @@ pub use user_data as user_data_db;
 pub mod settings;
 pub use settings::skins;
 
+pub mod want_to_play;
+
 mod capture;
 pub use capture::video_url;
+
+pub mod stats;
+pub use stats::*;

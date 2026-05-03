@@ -1,3 +1,4 @@
+pub mod backlog;
 pub mod developer;
 pub mod favorites;
 pub mod game_detail;
@@ -7,11 +8,13 @@ pub mod home;
 pub mod hostname;
 pub mod logs;
 pub mod metadata;
+pub mod my_games;
 pub mod nfs;
 pub mod password;
 pub mod search;
 pub mod settings;
 pub mod skin;
+pub mod stats;
 pub mod updating;
 pub mod wifi;
 

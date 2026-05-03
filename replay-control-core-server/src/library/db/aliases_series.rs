@@ -281,6 +281,78 @@ impl LibraryDb {
         .ok()
     }
 
+    /// Get the complete series timeline for a game, including the game itself.
+    ///
+    /// Returns all games in the same Wikidata series, ordered by `series_order`,
+    /// with release year, library presence, and current-game marker.
+    pub fn series_timeline(
+        conn: &Connection,
+        system: &str,
+        base_title: &str,
+        region_pref: &str,
+    ) -> Result<Vec<(GameEntry, Option<i32>, bool)>> {
+        let mut stmt = conn
+            .prepare(
+                "WITH candidates AS (
+                    SELECT ?2 AS bt
+                    UNION SELECT base_title FROM game_alias
+                        WHERE system = ?1 AND alias_name = ?2
+                    UNION SELECT alias_name FROM game_alias
+                        WHERE system = ?1 AND base_title = ?2
+                    UNION SELECT ga2.alias_name FROM game_alias ga
+                        JOIN game_alias ga2 ON ga2.system = ga.system
+                            AND ga2.base_title = ga.base_title
+                        WHERE ga.system = ?1 AND ga.alias_name = ?2
+                ),
+                current_series AS (
+                    SELECT series_name FROM game_series
+                    WHERE system = ?1 AND base_title IN (SELECT bt FROM candidates)
+                    LIMIT 1
+                ),
+                series_games AS (
+                    SELECT gs.system, gs.base_title, gs.series_order, gs.series_name
+                    FROM game_series gs
+                    JOIN current_series cs ON gs.series_name = cs.series_name
+                ),
+                deduped AS (
+                    SELECT gl.*, sg.series_order,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY gl.system, gl.base_title
+                            ORDER BY CASE
+                                WHEN gl.region = ?3 THEN 0
+                                WHEN gl.region = 'world' THEN 1
+                                ELSE 2
+                            END
+                        ) AS rn
+                    FROM series_games sg
+                    JOIN game_library gl ON gl.base_title = sg.base_title COLLATE NOCASE
+                    WHERE gl.is_clone = 0
+                      AND gl.is_translation = 0
+                      AND gl.is_hack = 0
+                      AND gl.is_special = 0
+                )
+                SELECT system, rom_filename, rom_path, display_name, base_title, series_key,
+                        region, developer, genre, genre_group, rating, rating_count, players,
+                        is_clone, is_m3u, is_translation, is_hack, is_special,
+                        box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
+                        release_date, release_precision, release_region_used, cooperative, series_order
+                FROM deduped WHERE rn = 1
+                ORDER BY series_order NULLS LAST, display_name",
+            )
+            .map_err(|e| Error::Other(format!("Prepare series_timeline: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![system, base_title, region_pref], |row| {
+                let entry = Self::row_to_game_entry(row)?;
+                let order: Option<i32> = row.get(28)?;
+                let is_current = entry.system == system && entry.base_title == base_title;
+                Ok((entry, order, is_current))
+            })
+            .map_err(|e| Error::Other(format!("Query series_timeline: {e}")))?;
+
+        Ok(rows.flatten().collect())
+    }
+
     /// Get sequel/prequel chain info for a game.
     ///
     /// Returns the predecessor and successor titles, optional `GameEntry` for each

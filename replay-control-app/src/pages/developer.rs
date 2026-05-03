@@ -239,6 +239,7 @@ pub fn DeveloperPage() -> impl IntoView {
                                             {
                                                 let genre = (!rom.genre.is_empty()).then(|| rom.genre.clone());
                                                 let sys_display = system_display_map.get_value().get(&rom.system).cloned();
+                                                let base_title = replay_control_core::title_utils::base_title(&rom.display_name);
                                                 view! { <GameListItem
                                                     system=rom.system.clone()
                                                     rom_filename=rom.rom_filename.clone()
@@ -251,6 +252,8 @@ pub fn DeveloperPage() -> impl IntoView {
                                                     rating=rom.rating
                                                     driver_status=rom.driver_status.clone()
                                                     system_display=sys_display
+                                                    has_manual=rom.has_manual
+                                                    base_title=Some(base_title)
                                                 /> }
                                             }
                                         }).collect::<Vec<_>>()}
@@ -259,6 +262,7 @@ pub fn DeveloperPage() -> impl IntoView {
                                             extra_roms.get().into_iter().map(|rom| {
                                                 let genre = (!rom.genre.is_empty()).then(|| rom.genre.clone());
                                                 let sys_display = system_display_map.get_value().get(&rom.system).cloned();
+                                                let base_title = replay_control_core::title_utils::base_title(&rom.display_name);
                                                 view! { <GameListItem
                                                     system=rom.system.clone()
                                                     rom_filename=rom.rom_filename.clone()
@@ -271,6 +275,8 @@ pub fn DeveloperPage() -> impl IntoView {
                                                     rating=rom.rating
                                                     driver_status=rom.driver_status.clone()
                                                     system_display=sys_display
+                                                    has_manual=rom.has_manual
+                                                    base_title=Some(base_title)
                                                 /> }
                                             }).collect::<Vec<_>>()
                                         }}

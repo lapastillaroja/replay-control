@@ -1,0 +1,123 @@
+/* Game Notes Section */
+
+.game-notes-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.game-notes-textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 4.5rem;
+}
+
+.game-notes-textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.game-notes-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.game-notes-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.game-notes-btn:hover {
+    background: var(--hover-bg);
+}
+
+.game-notes-btn.game-notes-save {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
+}
+
+.game-notes-btn.game-notes-save:hover {
+    opacity: 0.9;
+}
+
+.game-notes-btn.game-notes-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.game-notes-btn.game-notes-add {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
+    margin-top: 0.5rem;
+}
+
+/* Displayed note */
+
+.game-notes-display {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.game-note-text {
+    padding: 0.75rem;
+    background: var(--card-bg);
+    border-radius: 0.5rem;
+    border-left: 3px solid var(--accent-color);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+}
+
+.game-note-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.game-note-date {
+    font-style: italic;
+}
+
+.game-note-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.game-note-btn {
+    padding: 0.25rem 0.5rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.game-note-btn:hover {
+    color: var(--accent-color);
+}
+
+.game-note-btn.game-note-clear:hover {
+    color: var(--error-color);
+}

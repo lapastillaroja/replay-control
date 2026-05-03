@@ -25,6 +25,7 @@ use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
 use i18n::provide_i18n;
 use pages::ErrorDisplay;
+use pages::backlog::BacklogPage;
 use pages::developer::DeveloperPage;
 use pages::favorites::{FavoritesPage, SystemFavoritesPage};
 use pages::game_detail::GameDetailPage;
@@ -39,6 +40,7 @@ use pages::password::PasswordPage;
 use pages::search::SearchPage;
 use pages::settings::SettingsPage;
 use pages::skin::SkinPage;
+use pages::stats::StatsDashboardPage;
 use pages::updating::UpdatingPage;
 use pages::wifi::WifiPage;
 use server_fns::{Activity, CorruptionStatus};
@@ -143,9 +145,12 @@ pub fn App() -> impl IntoView {
                         <Route path=path!("/developer/:name") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><DeveloperPage /></ErrorBoundary> } />
                         <Route path=path!("/games/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemRomView /></ErrorBoundary> } />
                         <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GameDetailPage /></ErrorBoundary> } />
+                        <Route path=path!("/backlog") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><BacklogPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
+                        <Route path=path!("/my-games") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><pages::my_games::MyGamesPage /></ErrorBoundary> } />
                         <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />
+                        <Route path=path!("/stats") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><StatsDashboardPage /></ErrorBoundary> } />
                         <Route path=path!("/settings") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SettingsPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/wifi") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><WifiPage /></ErrorBoundary> } />
                         <Route path=path!("/settings/nfs") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><NfsPage /></ErrorBoundary> } />

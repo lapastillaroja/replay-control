@@ -268,6 +268,7 @@ pub fn RomList(system: String) -> impl IntoView {
                                 // First page ROMs (from SSR).
                                 {page.roms.into_iter().map(|rom| {
                                     let genre = if rom.genre.is_empty() { None } else { Some(rom.genre.clone()) };
+                                    let base_title = replay_control_core::title_utils::base_title(&rom.display_name);
                                     view! {
                                         <GameListItem
                                             system=rom.system
@@ -281,6 +282,8 @@ pub fn RomList(system: String) -> impl IntoView {
                                             driver_status=rom.driver_status
                                             show_system=false
                                             show_favorite=true
+                                            has_manual=rom.has_manual
+                                            base_title=Some(base_title)
                                         />
                                     }
                                 }).collect::<Vec<_>>()}
@@ -289,6 +292,7 @@ pub fn RomList(system: String) -> impl IntoView {
                                 {move || {
                                     extra_roms.get().into_iter().map(|rom| {
                                         let genre = if rom.genre.is_empty() { None } else { Some(rom.genre.clone()) };
+                                        let base_title = replay_control_core::title_utils::base_title(&rom.display_name);
                                         view! {
                                             <GameListItem
                                                 system=rom.system
@@ -302,6 +306,8 @@ pub fn RomList(system: String) -> impl IntoView {
                                                 driver_status=rom.driver_status
                                                 show_system=false
                                                 show_favorite=true
+                                                has_manual=rom.has_manual
+                                                base_title=Some(base_title)
                                             />
                                         }
                                     }).collect::<Vec<_>>()
