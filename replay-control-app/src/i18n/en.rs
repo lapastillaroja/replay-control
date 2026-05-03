@@ -7,6 +7,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavHome => "Games",
         Key::NavGames => "Games",
         Key::NavFavorites => "Favs",
+        Key::NavMyGames => "My Games",
         Key::NavSearch => "Search",
         Key::NavMore => "More",
         Key::NavSettings => "Settings",
@@ -573,5 +574,23 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupTaskDone => "Done",
         Key::SetupStart => "Start",
         Key::SetupUpdate => "Update",
+
+        // Game status
+        Key::GameStatusTitle => "My Progress",
+        Key::GameStatusNone => "Not set",
+        Key::GameStatusWantToPlay => "Want to Play",
+        Key::GameStatusInProgress => "In Progress",
+        Key::GameStatusCompleted => "Completed",
+        Key::GameStatusPlatinum => "Platinum",
+        Key::GameStatusSetStatus => "Set Status",
+        Key::GameStatusClear => "Clear Status",
+        Key::MyGamesTitle => "My Games",
+        Key::MyGamesAll => "All",
+        Key::MyGamesWantToPlay => "Want to Play",
+        Key::MyGamesInProgress => "In Progress",
+        Key::MyGamesCompleted => "Completed",
+        Key::MyGamesPlatinum => "Platinum",
+        Key::MyGamesEmpty => "No games with this status yet",
+        Key::MyGamesUpdated => "Status updated",
     }
 }

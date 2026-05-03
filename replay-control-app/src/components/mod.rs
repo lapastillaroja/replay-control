@@ -5,6 +5,7 @@ pub mod corruption_banner;
 pub mod filter_chips;
 pub mod game_list_item;
 pub mod game_section_row;
+pub mod game_status_section;
 pub mod genre_dropdown;
 pub mod hero_card;
 pub mod manual_section;
