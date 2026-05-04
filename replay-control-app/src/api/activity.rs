@@ -137,10 +137,16 @@ impl Activity {
                 _ => String::new(),
             },
             Self::RefreshExternalMetadata { progress } => match progress.phase {
-                RefreshMetadataPhase::Complete => format!(
-                    "Metadata refresh complete ({}s, {} source entries)",
-                    progress.elapsed_secs, progress.source_entries
-                ),
+                RefreshMetadataPhase::Complete => {
+                    if progress.source_entries > 0 {
+                        format!(
+                            "Metadata refresh complete ({}s, {} source entries)",
+                            progress.elapsed_secs, progress.source_entries
+                        )
+                    } else {
+                        format!("Metadata refresh complete ({}s)", progress.elapsed_secs)
+                    }
+                }
                 RefreshMetadataPhase::Failed => format!(
                     "Metadata refresh failed: {}",
                     progress.error.as_deref().unwrap_or("unknown error"),

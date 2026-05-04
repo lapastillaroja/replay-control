@@ -263,12 +263,21 @@ impl BackgroundManager {
 
             if stored_etag.is_some() && stored_etag == upstream_head.etag {
                 tracing::info!(
-                    "LaunchBox ETag matches ({}) — already up to date",
+                    "LaunchBox ETag matches ({}) — skipping download, re-enriching",
                     upstream_head.etag.as_deref().unwrap_or("")
                 );
+                // Skip the download and XML re-parse, but still enrich so any
+                // ROMs added since the last refresh pick up their metadata.
                 state.update_activity(|act| {
                     if let Activity::RefreshExternalMetadata { progress } = act {
-                        progress.phase = RefreshMetadataPhase::UpToDate;
+                        progress.phase = RefreshMetadataPhase::Enriching;
+                    }
+                });
+                Self::reenrich_all_systems(&state).await;
+                state.update_activity(|act| {
+                    if let Activity::RefreshExternalMetadata { progress } = act {
+                        progress.phase = RefreshMetadataPhase::Complete;
+                        progress.elapsed_secs = start.elapsed().as_secs();
                     }
                 });
                 return; // guard drops → Activity::Idle
