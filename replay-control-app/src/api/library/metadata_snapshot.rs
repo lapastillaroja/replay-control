@@ -63,7 +63,12 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
         .cache
         .cached_systems(&storage, &state.library_pool)
         .await;
-    let media_size = replay_control_core_server::thumbnails::media_dir_size(&storage.root);
+    let storage_root = storage.root.clone();
+    let media_size = tokio::task::spawn_blocking(move || {
+        replay_control_core_server::thumbnails::media_dir_size(&storage_root)
+    })
+    .await
+    .unwrap_or(0);
     let image_stats = (image_count_pair.0, image_count_pair.1, media_size);
 
     let coverage = build_coverage(
@@ -178,12 +183,25 @@ fn build_data_source_summary(stats: Option<DataSourceStats>) -> DataSourceSummar
 
 async fn build_builtin_stats() -> BuiltinDbStats {
     use replay_control_core_server::{arcade_db, game_db, series_db};
+    let (
+        arcade_entries,
+        game_rom_entries,
+        game_system_count,
+        wikidata_series_entries,
+        wikidata_series_count,
+    ) = tokio::join!(
+        arcade_db::entry_count(),
+        game_db::total_rom_entries(),
+        game_db::system_count(),
+        series_db::entry_count(),
+        async { series_db::all_series_names().await.len() },
+    );
     BuiltinDbStats {
-        arcade_entries: arcade_db::entry_count().await,
+        arcade_entries,
         arcade_mame_version: arcade_db::MAME_VERSION.to_string(),
-        game_rom_entries: game_db::total_rom_entries().await,
-        game_system_count: game_db::system_count().await,
-        wikidata_series_entries: series_db::entry_count().await,
-        wikidata_series_count: series_db::all_series_names().await.len(),
+        game_rom_entries,
+        game_system_count,
+        wikidata_series_entries,
+        wikidata_series_count,
     }
 }
