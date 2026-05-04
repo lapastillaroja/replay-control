@@ -7,7 +7,9 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavHome => "Juegos",
         Key::NavGames => "Juegos",
         Key::NavFavorites => "Favs",
+        Key::NavMyGames => "Mis Juegos",
         Key::NavSearch => "Buscar",
+        Key::NavStats => "Estadísticas",
         Key::NavMore => "Más",
         Key::NavSettings => "Ajustes",
 
@@ -113,6 +115,15 @@ pub fn translate(key: Key) -> &'static str {
             "Opcional. Aumenta el límite de la API de GitHub de 60 a 5.000 solicitudes/hora para la indexación de miniaturas. Crea un token en github.com/settings/tokens (no se necesitan permisos)."
         }
 
+        // RetroAchievements settings
+        Key::MoreRetroAchievements => "RetroAchievements",
+        Key::RaTitle => "RetroAchievements",
+        Key::RaApiKeyLabel => "Clave de API",
+        Key::RaApiKeyHint => "Tu clave de API de RetroAchievements. La encontrarás en retroachievements.org/settings.",
+        Key::RaUsernameLabel => "Usuario",
+        Key::RaUsernameHint => "Tu nombre de usuario en RetroAchievements. Necesario para mostrar tus logros conseguidos.",
+        Key::RaSaved => "Ajustes guardados",
+
         // Settings page
         Key::SettingsTitle => "Ajustes",
         Key::SettingsSectionAppearance => "Apariencia",
@@ -196,6 +207,18 @@ pub fn translate(key: Key) -> &'static str {
         Key::SkinApplied => "Tema aplicado.",
         Key::SkinSync => "Sincronizar con ReplayOS",
         Key::SkinSyncHint => "Al activarlo, el tema de la app sigue el ajuste de tema de ReplayOS.",
+
+        // Themes
+        Key::ThemeTitle => "Tema de la Web",
+        Key::ThemeDefault => "Predeterminado",
+        Key::ThemeLight => "Claro",
+        Key::ThemeAmber => "Ámbar CRT",
+        Key::ThemeGreen => "Verde CRT",
+        Key::ThemeMidnight => "Medianoche",
+        Key::ThemeRose => "Rosa",
+        Key::ThemeNord => "Nord",
+        Key::ThemeHighContrast => "Alto Contraste",
+        Key::ThemeActive => "Activo",
 
         // WiFi configuration
         Key::WifiTitle => "Configuración Wi-Fi",
@@ -289,6 +312,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailManual => "Manual",
         Key::GameDetailNoManual => "Manual no disponible",
         Key::GameDetailFindManual => "Buscar manual",
+        Key::GameDetailOpenManual => "Abrir manual",
         Key::GameDetailViewManual => "Ver",
         Key::GameDetailNoManualResults => "No se encontraron manuales",
         Key::GameDetailManualSaved => "Manual guardado",
@@ -324,6 +348,21 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailExternalMetadata => "Información adicional",
         Key::GameDetailPublisher => "Editora",
         Key::GameDetailRating => "Valoración",
+
+        // Achievements
+        Key::AchievementsTitle => "Logros",
+        Key::AchievementsPoints => "pts",
+        Key::AchievementsShowAll => "Mostrar todos los logros",
+        Key::AchievementsNone => "No hay logros disponibles",
+        Key::AchievementsConfigureKey => "Configurar clave API",
+        Key::AchievementsConfigureKeyHint => "Configura tu clave API de RetroAchievements en Ajustes para ver los logros.",
+        Key::AchievementsCompleted => "Completado",
+        Key::AchievementsProgress => "Progreso",
+        Key::AchievementsEarned => "Obtenidos",
+        Key::AchievementsHardcore => "Hardcore",
+
+        // Series timeline
+        Key::SeriesTimelineCurrent => "Este juego",
 
         // Metadata management
         Key::MoreMetadata => "Metadatos de juegos",
@@ -500,6 +539,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::CommonRename => "Renombrar",
         Key::CommonActions => "Acciones",
         Key::CommonSave => "Guardar",
+        Key::CommonClose => "Cerrar",
 
         // Recommendation section / discover pill titles
         Key::SpotlightBestGenre => "Mejor {0}",
@@ -516,6 +556,25 @@ pub fn translate(key: Key) -> &'static str {
         Key::PillMultiplayer => "Multijugador",
         Key::PillCoOp => "Juegos cooperativos",
         Key::SpotlightCoOp => "Juegos cooperativos",
+
+        // Backlog (Quiero jugar)
+        Key::NavBacklog => "Backlog",
+        Key::BacklogTitle => "Backlog",
+        Key::BacklogEmpty => "Tu backlog está vacío",
+        Key::BacklogBrowse => "Explorar juegos",
+        Key::BacklogGames => "juegos",
+        Key::BacklogRemove => "Quitar del backlog",
+
+        // HowLongToBeat
+        Key::HltbTitle => "Cuánto dura",
+        Key::HltbFetch => "Buscar duración",
+        Key::HltbFetching => "Buscando...",
+        Key::HltbNoData => "Sin datos en HowLongToBeat",
+        Key::HltbAddToBacklog => "Añadir al backlog",
+        Key::HltbInBacklog => "En el backlog",
+        Key::HltbMain => "Historia principal",
+        Key::HltbMainExtra => "Historia + extras",
+        Key::HltbCompletionist => "Completista",
 
         // Analytics
         Key::MoreSectionPrivacy => "Privacidad",
@@ -581,5 +640,64 @@ pub fn translate(key: Key) -> &'static str {
         Key::SetupTaskDone => "Hecho",
         Key::SetupStart => "Iniciar",
         Key::SetupUpdate => "Actualizar",
+
+        // Game notes
+        Key::GameNotesTitle => "Notas",
+        Key::GameNotesPlaceholder => "Añade notas sobre este juego...",
+        Key::GameNotesSave => "Guardar",
+        Key::GameNotesSaving => "Guardando...",
+        Key::GameNotesEdit => "Editar",
+        Key::GameNotesClear => "Borrar",
+        Key::GameNotesAdd => "Añadir Nota",
+        Key::GameNotesEmpty => "Aún no hay notas",
+
+        // Game status
+        Key::GameStatusTitle => "Mi Progreso",
+        Key::GameStatusNone => "Sin definir",
+        Key::GameStatusWantToPlay => "Quiero Jugar",
+        Key::GameStatusInProgress => "En Progreso",
+        Key::GameStatusCompleted => "Completado",
+        Key::GameStatusPlatinum => "Platino",
+        Key::GameStatusSetStatus => "Definir Estado",
+        Key::GameStatusClear => "Quitar Estado",
+        Key::MyGamesTitle => "Mis Juegos",
+        Key::MyGamesAll => "Todos",
+        Key::MyGamesWantToPlay => "Quiero Jugar",
+        Key::MyGamesInProgress => "En Progreso",
+        Key::MyGamesCompleted => "Completados",
+        Key::MyGamesPlatinum => "Platino",
+        Key::MyGamesEmpty => "Aún no hay juegos con este estado",
+        Key::MyGamesUpdated => "Estado actualizado",
+
+        // Stats dashboard
+        Key::StatsTitle => "Estadísticas",
+        Key::StatsLoading => "Cargando estadísticas...",
+        Key::StatsTotalGames => "Total Juegos",
+        Key::StatsTotalSystems => "Sistemas",
+        Key::StatsTotalSize => "Tamaño Biblioteca",
+        Key::StatsPlayerModes => "Modos de Juego",
+        Key::StatsSinglePlayer => "Un Jugador",
+        Key::StatsCooperative => "Cooperativo",
+        Key::StatsMultiplayer => "Multijugador",
+        Key::StatsUnknown => "Desconocido",
+        Key::StatsArcadeConsole => "Arcade vs Consola",
+        Key::StatsArcade => "Arcade",
+        Key::StatsConsole => "Consola",
+        Key::StatsBySystem => "Por Sistema",
+        Key::StatsByGenre => "Por Género",
+        Key::StatsByDecade => "Por Década",
+        Key::StatsByDeveloper => "Por Desarrollador",
+        Key::StatsVariants => "Variantes",
+        Key::StatsVerified => "Verificados (CRC)",
+        Key::StatsClones => "Clones",
+        Key::StatsHacks => "Hacks",
+        Key::StatsTranslations => "Traducciones",
+        Key::StatsSpecial => "Especiales",
+        Key::StatsMetadataCoverage => "Cobertura de Metadatos",
+        Key::StatsGenreCoverage => "Género",
+        Key::StatsDeveloperCoverage => "Desarrollador",
+        Key::StatsRatingCoverage => "Valoración",
+        Key::StatsBoxartCoverage => "Carátulas",
+        Key::StatsScreenshotCoverage => "Capturas",
     }
 }

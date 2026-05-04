@@ -3,11 +3,16 @@ use leptos_router::components::A;
 use leptos_router::hooks::{use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
+use crate::components::achievements_section::AchievementsSection;
 use crate::components::boxart_picker::BoxArtPicker;
 use crate::components::boxart_placeholder::BoxArtPlaceholder;
 use crate::components::captures::{ImageLightbox, LightboxImage};
+use crate::components::game_notes_section::GameNotesSection;
+use crate::components::game_status_section::GameStatusSection;
 use crate::components::hero_card::GameScrollCard;
+use crate::components::hltb_section::HltbSection;
 use crate::components::manual_section::ManualSection;
+use crate::components::series_timeline::SeriesTimeline;
 use crate::components::video_section::GameVideoSection;
 use crate::i18n::{Key, t, tf, use_i18n};
 use crate::server_fns::{self, RecommendedGame, RomDetail};
@@ -111,6 +116,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let relative_path_sv = StoredValue::new(game.rom_path.clone());
     let system_sv = StoredValue::new(system.clone());
     let base_title_sv = StoredValue::new(detail.base_title.clone());
+    let game_status = RwSignal::new(Option::<crate::server_fns::GameStatus>::None);
     let system_display = game.system_display.clone();
     let size_display = format_size_for_system(detail.size_bytes, &system);
     let has_arcade = game.rotation.is_some();
@@ -575,6 +581,32 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             base_title=base_title_sv
         />
 
+        <GameStatusSection
+            system=system_sv
+            rom_filename=filename_sv
+            current_status=game_status
+        />
+
+        <GameNotesSection
+            system=system_sv
+            rom_filename=filename_sv
+        />
+
+        <AchievementsSection
+            system=system_sv
+            rom_filename=filename_sv
+            display_name=game_name_sv
+            current_status=game_status
+        />
+
+        // HowLongToBeat — completion times and backlog toggle.
+        <HltbSection
+            system=system_sv
+            rom_filename=filename_sv
+            base_title=base_title_sv
+            display_name=game_name_sv
+        />
+
         // Related Games (lazy-loaded)
         <RelatedGamesSection
             system=system_sv
@@ -966,10 +998,10 @@ fn RelatedGamesSection(
                                     />
                                 </Show>
                                 <Show when=move || has_series>
-                                    <SimilarGamesRow
-                                        games=data.series_siblings.clone()
-                                        title_key=Key::GameDetailMoreInSeries
-                                        custom_title=data.series_name.clone()
+                                    <SeriesTimeline
+                                        system=system
+                                        rom_filename=rom_filename
+                                        series_name=data.series_name.clone()
                                     />
                                 </Show>
                                 <Show when=move || has_similar>

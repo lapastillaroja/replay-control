@@ -1,0 +1,175 @@
+/* ================================================================
+   Themes — Color palettes for the Replay Control web UI.
+   Apply a theme class to <html> (e.g. html.theme-amber).
+   ================================================================ */
+
+/* ── Light ───────────────────────────────────────────────────────────── */
+html.theme-light {
+    --bg: #f3f4f6;
+    --surface: #ffffff;
+    --surface-hover: #f0f1f3;
+    --surface-raised: #ffffff;
+    --surface-lowered: #e5e7eb;
+    --border: #d1d5db;
+    --text: #1f2937;
+    --text-muted: #6b7280;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --accent-dim: color-mix(in srgb, var(--accent) 10%, transparent);
+    --accent-glow: color-mix(in srgb, var(--accent) 15%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 25%, transparent);
+    --star: #f59e0b;
+    --error: #dc2626;
+    --success: #16a34a;
+}
+
+/* ── Amber CRT ───────────────────────────────────────────────────────── */
+html.theme-amber {
+    --bg: #1a1500;
+    --surface: #2a2000;
+    --surface-hover: #362900;
+    --surface-raised: #3a2e00;
+    --surface-lowered: #1f1a00;
+    --border: #4a3a00;
+    --text: #ffb84d;
+    --text-muted: #cc9333;
+    --accent: #ffb000;
+    --accent-hover: #ffcc33;
+    --accent-dim: color-mix(in srgb, var(--accent) 12%, transparent);
+    --accent-glow: color-mix(in srgb, var(--accent) 25%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 35%, transparent);
+    --star: #ffcc33;
+    --error: #ff6633;
+    --success: #99cc33;
+}
+
+/* Amber CRT scanlines overlay */
+html.theme-amber body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.08) 2px,
+        rgba(0, 0, 0, 0.08) 4px
+    );
+}
+
+/* ── Green CRT (Phosphor) ────────────────────────────────────────────── */
+html.theme-green {
+    --bg: #0a1a0a;
+    --surface: #0f200f;
+    --surface-hover: #152915;
+    --surface-raised: #1a331a;
+    --surface-lowered: #0d170d;
+    --border: #204020;
+    --text: #33ff33;
+    --text-muted: #22cc22;
+    --accent: #44ff44;
+    --accent-hover: #66ff66;
+    --accent-dim: color-mix(in srgb, var(--accent) 12%, transparent);
+    --accent-glow: color-mix(in srgb, var(--accent) 30%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
+    --star: #ffcc33;
+    --error: #ff4444;
+    --success: #66ff66;
+}
+
+html.theme-green body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.1) 2px,
+        rgba(0, 0, 0, 0.1) 4px
+    );
+}
+
+/* ── Midnight ────────────────────────────────────────────────────────── */
+html.theme-midnight {
+    --bg: #0c1222;
+    --surface: #151f32;
+    --surface-hover: #1b2840;
+    --surface-raised: #1e3050;
+    --surface-lowered: #0e1525;
+    --border: #253550;
+    --text: #c8d6e5;
+    --text-muted: #7b8fa8;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-dim: color-mix(in srgb, var(--accent) 10%, transparent);
+    --accent-glow: color-mix(in srgb, var(--accent) 20%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 30%, transparent);
+    --star: #f59e0b;
+    --error: #ef4444;
+    --success: #22c55e;
+}
+
+/* ── Rose ────────────────────────────────────────────────────────────── */
+html.theme-rose {
+    --bg: #1a0f14;
+    --surface: #261520;
+    --surface-hover: #301b28;
+    --surface-raised: #3a2233;
+    --surface-lowered: #1e1018;
+    --border: #4a2a3a;
+    --text: #e8d5dd;
+    --text-muted: #a08090;
+    --accent: #f472b6;
+    --accent-hover: #f9a8d4;
+    --accent-dim: color-mix(in srgb, var(--accent) 10%, transparent);
+    --accent-glow: color-mix(in srgb, var(--accent) 20%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 30%, transparent);
+    --star: #fbbf24;
+    --error: #f87171;
+    --success: #4ade80;
+}
+
+/* ── Nord ────────────────────────────────────────────────────────────── */
+html.theme-nord {
+    --bg: #2e3440;
+    --surface: #3b4252;
+    --surface-hover: #434c5e;
+    --surface-raised: #4c566a;
+    --surface-lowered: #272c36;
+    --border: #4c566a;
+    --text: #eceff4;
+    --text-muted: #9ca3b0;
+    --accent: #88c0d0;
+    --accent-hover: #8fbcbb;
+    --accent-dim: color-mix(in srgb, var(--accent) 10%, transparent);
+    --accent-glow: color-mix(in srgb, var(--accent) 18%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 28%, transparent);
+    --star: #ebcb8b;
+    --error: #bf616a;
+    --success: #a3be8c;
+}
+
+/* ── High Contrast ───────────────────────────────────────────────────── */
+html.theme-high-contrast {
+    --bg: #000000;
+    --surface: #111111;
+    --surface-hover: #1a1a1a;
+    --surface-raised: #222222;
+    --surface-lowered: #0a0a0a;
+    --border: #444444;
+    --text: #ffffff;
+    --text-muted: #cccccc;
+    --accent: #ffff00;
+    --accent-hover: #ffff66;
+    --accent-dim: color-mix(in srgb, var(--accent) 15%, transparent);
+    --accent-glow: color-mix(in srgb, var(--accent) 30%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 50%, transparent);
+    --star: #ffff00;
+    --error: #ff3333;
+    --success: #33ff33;
+}

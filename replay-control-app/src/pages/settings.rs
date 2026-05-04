@@ -3,6 +3,7 @@ use leptos_router::components::A;
 use server_fn::ServerFnError;
 
 use crate::components::reboot_button::RebootButton;
+use crate::components::theme_selector::ThemeSelector;
 use crate::i18n::{Key, Locale, t, use_i18n};
 use crate::server_fns;
 use crate::util::format_size;
@@ -53,6 +54,11 @@ pub fn SettingsPage() -> impl IntoView {
                             </div>
 
                             <div class="settings-inline-setting">
+                                <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::ThemeTitle)}</h4>
+                                <ThemeSelector />
+                            </div>
+
+                            <div class="settings-inline-setting">
                                 <h4 class="settings-setting-title">{move || t(i18n.locale.get(), Key::MoreTextSize)}</h4>
                                 <p class="form-hint">{move || t(i18n.locale.get(), Key::MoreTextSizeHint)}</p>
                                 <Transition fallback=move || view! { <div class="loading">{move || t(i18n.locale.get(), Key::CommonLoading)}</div> }>
@@ -82,6 +88,7 @@ pub fn SettingsPage() -> impl IntoView {
                         <div class="settings-section-body">
                             <div class="menu-list">
                                 <MenuItem icon="\u{1F4DA}" label_key=Key::MoreMetadata href=Some("/settings/metadata") />
+                                <MenuItem icon="\u{1F3C6}" label_key=Key::MoreRetroAchievements href=Some("/settings/retroachievements") />
                             </div>
 
                             <div class="settings-inline-setting">

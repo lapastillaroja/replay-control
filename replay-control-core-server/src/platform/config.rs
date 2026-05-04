@@ -308,6 +308,18 @@ impl AppSettings {
         self.inner.get_non_empty("github_api_key")
     }
 
+    pub fn ra_api_key(&self) -> Option<&str> {
+        self.inner.get_non_empty("ra_api_key")
+    }
+
+    pub fn ra_username(&self) -> Option<&str> {
+        self.inner.get_non_empty("ra_username")
+    }
+
+    pub fn ra_web_token(&self) -> Option<&str> {
+        self.inner.get_non_empty("ra_web_token")
+    }
+
     pub fn update_channel(&self) -> &str {
         self.inner.get("update_channel").unwrap_or("stable")
     }
@@ -365,6 +377,18 @@ impl AppSettings {
 
     pub fn set_github_api_key(&mut self, key: &str) {
         self.inner.set("github_api_key", key);
+    }
+
+    pub fn set_ra_api_key(&mut self, key: &str) {
+        self.inner.set("ra_api_key", key);
+    }
+
+    pub fn set_ra_username(&mut self, username: &str) {
+        self.inner.set("ra_username", username);
+    }
+
+    pub fn set_ra_web_token(&mut self, token: &str) {
+        self.inner.set("ra_web_token", token);
     }
 
     pub fn set_update_channel(&mut self, channel: &str) {

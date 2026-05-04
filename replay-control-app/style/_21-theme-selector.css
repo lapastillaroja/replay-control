@@ -1,0 +1,92 @@
+/* ================================================================
+   Theme Selector — Grid of theme preview cards in Settings
+   ================================================================ */
+
+.theme-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+}
+
+button.theme-card {
+    all: unset;
+    box-sizing: border-box;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 8px;
+    text-align: center;
+    position: relative;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+button.theme-card:hover {
+    border-color: var(--accent-border);
+}
+
+.theme-card-active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+.theme-preview {
+    background: var(--theme-bg);
+    border-radius: 6px;
+    padding: 8px 6px;
+    margin-bottom: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: center;
+}
+
+.theme-preview-bar {
+    height: 4px;
+    width: 70%;
+    border-radius: 2px;
+}
+
+.theme-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.theme-preview-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.theme-preview-line {
+    height: 4px;
+    flex: 1;
+    border-radius: 2px;
+    background: var(--theme-surface);
+}
+
+.theme-name {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--text);
+}
+
+.theme-badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    background: var(--accent);
+    color: #fff;
+    padding: 1px 5px;
+    border-radius: 6px;
+    margin-top: 3px;
+}
+
+@media (max-width: 480px) {
+    .theme-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

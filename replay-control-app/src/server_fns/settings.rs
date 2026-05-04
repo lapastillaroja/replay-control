@@ -671,3 +671,35 @@ pub async fn start_update(tag: String) -> Result<(), ServerFnError> {
         .await
         .map_err(|e| ServerFnError::new(format!("Update failed: {e}")))
 }
+
+/// Get RetroAchievements API key and username from cached preferences.
+#[server(prefix = "/sfn")]
+pub async fn get_ra_settings() -> Result<(String, String), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let prefs = state
+        .prefs
+        .read()
+        .map_err(|_| ServerFnError::new("Prefs lock poisoned"))?;
+    let key = prefs.ra_api_key.clone().unwrap_or_default();
+    let username = prefs.ra_username.clone().unwrap_or_default();
+    Ok((key, username))
+}
+
+/// Save RetroAchievements API key and username to settings.
+#[server(prefix = "/sfn")]
+pub async fn save_ra_settings(api_key: String, username: String) -> Result<(), ServerFnError> {
+    let state = expect_context::<crate::api::AppState>();
+    let key = api_key.trim().to_string();
+    let uname = username.trim().to_string();
+    replay_control_core_server::settings::write_ra_api_key(&state.settings, &key)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    replay_control_core_server::settings::write_ra_username(&state.settings, &uname)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut prefs = state
+        .prefs
+        .write()
+        .map_err(|_| ServerFnError::new("Prefs lock poisoned"))?;
+    prefs.ra_api_key = if key.is_empty() { None } else { Some(key) };
+    prefs.ra_username = if uname.is_empty() { None } else { Some(uname) };
+    Ok(())
+}

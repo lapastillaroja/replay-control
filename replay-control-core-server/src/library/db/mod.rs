@@ -13,6 +13,7 @@ mod game_metadata;
 mod recommendations;
 mod relationships;
 pub mod release_dates;
+pub mod stats;
 
 pub use aliases_series::SequelChainInfo;
 pub use game_library::SearchFilter;
