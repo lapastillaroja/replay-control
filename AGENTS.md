@@ -1,5 +1,32 @@
 # Code Rules
 
+## Start Here
+
+Before making non-trivial changes, read the relevant docs. The source of truth is `docs/`; `site/content/docs/` is generated.
+
+- `docs/README.md` — documentation map for features and architecture
+- `docs/architecture/technical-foundation.md` — crate responsibilities, stack, key file paths, runtime data flow
+- `docs/architecture/design-decisions.md` — Raspberry Pi constraints, memory/performance tradeoffs, rejected alternatives
+- `docs/architecture/server-functions.md` — Leptos SSR patterns, server function registration, response cache, SSE
+- `docs/architecture/startup-pipeline.md` — background initialization, metadata refresh, cache verification, watchers
+- `docs/architecture/database-schema.md` — SQLite tables, indexes, migrations, corruption handling
+- `docs/architecture/connection-pooling.md` — read/write pools, journal modes, WriteGate, pool lifecycle
+- `docs/known-issues.md` — known product issues before treating behavior as a regression
+
+Read task-specific docs as needed:
+
+- Library browsing, ROM changes, favorites, recents: `docs/features/game-library.md`
+- Game detail pages, variants, media, launch actions: `docs/features/game-detail.md`
+- Metadata imports, built-in catalog data, ROM tags: `docs/features/metadata.md`
+- Box art, screenshots, thumbnail matching: `docs/features/thumbnails.md`
+- Search and developer pages: `docs/features/search.md`
+- Settings, skin, locale, update channel: `docs/features/settings.md`
+- Storage modes, NFS/exFAT behavior, corruption recovery: `docs/features/storage.md`
+- Auto-update behavior: `docs/features/updates.md`
+- Recommendations and related games: `docs/features/recommendations.md`
+- Series/franchise behavior: `docs/features/game-series.md`
+- TV/libretro proof of concept: `docs/features/libretro-core.md`
+
 ## Commits
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`, `docs:`, `style:`, `test:`, `chore:`, `perf:`, `build:`
@@ -29,6 +56,14 @@
 - After editing docs, run `site/sync-docs.sh` to sync, then restart Hugo (`pkill -f 'hugo server'; cd site && ./dev.sh &`)
 - Hugo auto-reload usually fails after content changes — always restart
 - Use `./site/dev.sh` to serve locally (auto LAN IP + subpath)
+
+## Raspberry Pi Access
+
+- Default Pi host is `replay.local`; use a specific IP only when the user provides one.
+- Use `root` as the SSH user. The default password is `replayos`, or `PI_PASS` if the environment overrides it.
+- Prefer `./dev.sh --pi` for build/deploy because it already handles the default host, `SSH_ASKPASS`, SSH options, ControlMaster reuse, rsync, service stop/start, and catalog/site deployment.
+- To deploy to a specific address, run `./dev.sh --pi <ip-or-hostname>`.
+- For ad hoc SSH commands, mirror `dev.sh`'s connection assumptions: `root@replay.local` by default, strict host key checking disabled for the appliance, and the same password behavior.
 
 ## General
 
