@@ -190,11 +190,6 @@ impl BackgroundManager {
             // Checkpoint after Phase 2 writes (game_library inserts/updates).
             state.library_pool.checkpoint().await;
 
-            state.update_activity(|act| {
-                if let Activity::Startup { phase, .. } = act {
-                    *phase = StartupPhase::RebuildingIndex;
-                }
-            });
             Self::phase_auto_rebuild_thumbnail_index(state).await;
 
             // Pre-warm the metadata-page snapshot so the very first user
@@ -855,6 +850,12 @@ impl BackgroundManager {
                 "Thumbnail data sources exist but index is empty (data loss?) — rebuilding index from GitHub API"
             );
         }
+
+        state.update_activity(|act| {
+            if let Activity::Startup { phase, .. } = act {
+                *phase = StartupPhase::RebuildingIndex;
+            }
+        });
 
         // Rebuild index from images on disk — no GitHub API needed.
         // Scan media/<system>/boxart/ directories and insert filenames into thumbnail_index.
