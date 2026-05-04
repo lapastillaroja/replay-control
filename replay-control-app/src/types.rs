@@ -144,11 +144,12 @@ pub enum RefreshMetadataPhase {
     UpToDate,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RefreshMetadataProgress {
     pub phase: RefreshMetadataPhase,
     pub source_entries: usize,
     pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
     pub elapsed_secs: u64,
     pub error: Option<String>,
 }

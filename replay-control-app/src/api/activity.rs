@@ -196,13 +196,15 @@ pub enum RefreshMetadataPhase {
 }
 
 /// Progress for the external_metadata refresh path.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RefreshMetadataProgress {
     pub phase: RefreshMetadataPhase,
     /// Source-entry counter during `Parsing`; otherwise 0.
     pub source_entries: usize,
     /// Total bytes downloaded during `Downloading`; otherwise 0.
     pub downloaded_bytes: u64,
+    /// Total bytes expected (from Content-Length), if known.
+    pub total_bytes: Option<u64>,
     pub elapsed_secs: u64,
     pub error: Option<String>,
 }
@@ -213,6 +215,7 @@ impl RefreshMetadataProgress {
             phase: RefreshMetadataPhase::Checking,
             source_entries: 0,
             downloaded_bytes: 0,
+            total_bytes: None,
             elapsed_secs: 0,
             error: None,
         }

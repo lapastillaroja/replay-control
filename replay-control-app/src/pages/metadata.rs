@@ -48,6 +48,10 @@ pub fn MetadataPage() -> impl IntoView {
         Activity::Import { progress } => Some(progress),
         _ => None,
     });
+    let refresh_progress = Memo::new(move |_| match activity.get() {
+        Activity::RefreshExternalMetadata { progress } => Some(progress),
+        _ => None,
+    });
     let thumb_progress = Memo::new(move |_| match activity.get() {
         Activity::ThumbnailUpdate { progress, .. } => Some(progress),
         _ => None,
@@ -55,7 +59,14 @@ pub fn MetadataPage() -> impl IntoView {
 
     // Derived helpers.
     let is_busy = Memo::new(move |_| activity.with(|a| !matches!(a, Activity::Idle)));
-    let is_importing = Memo::new(move |_| activity.with(|a| matches!(a, Activity::Import { .. })));
+    let is_importing = Memo::new(move |_| {
+        activity.with(|a| {
+            matches!(
+                a,
+                Activity::Import { .. } | Activity::RefreshExternalMetadata { .. }
+            )
+        })
+    });
     let is_thumb_updating =
         Memo::new(move |_| activity.with(|a| matches!(a, Activity::ThumbnailUpdate { .. })));
     let can_cancel =
@@ -232,6 +243,9 @@ pub fn MetadataPage() -> impl IntoView {
                     </div>
                     <Show when=move || import_progress.get().is_some()>
                         <ImportProgressDisplay progress=import_progress />
+                    </Show>
+                    <Show when=move || refresh_progress.get().is_some()>
+                        <RefreshMetadataProgressDisplay progress=refresh_progress />
                     </Show>
                     <Show when=move || import_result.read().is_some()>
                         <p class="settings-saved">{move || import_result.get().unwrap_or_default()}</p>
@@ -439,6 +453,57 @@ fn ImportProgressDisplay(progress: Memo<Option<server_fns::ImportProgress>>) -> 
                     }
                     None => view! { <span></span> }.into_any(),
                 }
+            }}
+        </div>
+    }
+}
+
+/// Displays LaunchBox metadata refresh progress under the Update button.
+#[component]
+fn RefreshMetadataProgressDisplay(
+    progress: Memo<Option<server_fns::RefreshMetadataProgress>>,
+) -> impl IntoView {
+    use server_fns::RefreshMetadataPhase;
+    view! {
+        <div class="import-progress">
+            {move || {
+                let Some(p) = progress.get() else {
+                    return view! { <span></span> }.into_any();
+                };
+                let state_text = match p.phase {
+                    RefreshMetadataPhase::Checking => "Checking for updates...".to_string(),
+                    RefreshMetadataPhase::Downloading => match (p.downloaded_bytes, p.total_bytes) {
+                        (0, _) => "Downloading...".to_string(),
+                        (bytes, Some(total)) => format!(
+                            "Downloading {} / {}",
+                            format_size(bytes),
+                            format_size(total),
+                        ),
+                        (bytes, None) => format!("Downloading {}", format_size(bytes)),
+                    },
+                    RefreshMetadataPhase::Parsing => {
+                        if p.source_entries > 0 {
+                            format!("Parsing ({} entries)...", p.source_entries)
+                        } else {
+                            "Parsing...".to_string()
+                        }
+                    }
+                    RefreshMetadataPhase::Enriching => "Re-enriching library...".to_string(),
+                    RefreshMetadataPhase::Failed => format!(
+                        "Failed: {}",
+                        p.error.as_deref().unwrap_or("unknown error"),
+                    ),
+                    RefreshMetadataPhase::Complete | RefreshMetadataPhase::UpToDate => {
+                        return view! { <span></span> }.into_any();
+                    }
+                };
+                let elapsed = format!("{}s", p.elapsed_secs);
+                view! {
+                    <div class="import-progress-bar">
+                        <span class="import-progress-text">{state_text}</span>
+                        <span class="import-progress-time">{elapsed}</span>
+                    </div>
+                }.into_any()
             }}
         </div>
     }

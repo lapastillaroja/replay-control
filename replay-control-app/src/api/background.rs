@@ -301,7 +301,7 @@ impl BackgroundManager {
                     replay_control_core_server::launchbox::download_metadata(
                         &cache_dir,
                         upstream_content_length,
-                        |bytes, _total| {
+                        |bytes, total| {
                             let prev = last_reported.load(Ordering::Relaxed);
                             if bytes - prev < THROTTLE_BYTES && bytes != 0 {
                                 return;
@@ -310,6 +310,7 @@ impl BackgroundManager {
                             state_for_progress.update_activity(|act| {
                                 if let Activity::RefreshExternalMetadata { progress } = act {
                                     progress.downloaded_bytes = bytes;
+                                    progress.total_bytes = total;
                                 }
                             });
                         },
