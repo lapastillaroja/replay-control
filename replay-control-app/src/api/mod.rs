@@ -34,10 +34,11 @@ const LIBRARY_READ_POOL_SIZE: usize = 3;
 /// and the WriteGate path still serializes against writers.
 const USER_DATA_READ_POOL_SIZE: usize = 1;
 
-/// Read pool size for the host-global external_metadata DB. Only background
-/// enrichment + per-page thumbnail-variant lookups read from here; the SSR
-/// fan-out doesn't touch this DB. One reader is plenty.
-const EXTERNAL_METADATA_READ_POOL_SIZE: usize = 1;
+/// Read pool size for the host-global external_metadata DB. Metadata
+/// snapshots, thumbnail planning, enrichment, box art variants, and metadata
+/// server functions all read from here. Two readers keep short UI reads moving
+/// while one longer background read is active.
+const EXTERNAL_METADATA_READ_POOL_SIZE: usize = 2;
 
 use std::path::PathBuf;
 use std::sync::Arc;

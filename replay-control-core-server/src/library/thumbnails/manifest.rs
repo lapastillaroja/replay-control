@@ -1306,22 +1306,19 @@ pub struct DownloadPlan {
     pub skipped: usize,
 }
 
-/// Plan which thumbnails need downloading for a system. Sync — caller passes
-/// the `external_metadata` read connection.
+/// Plan which thumbnails need downloading from preloaded manifest data.
 ///
-/// `arcade_lookup` must be pre-populated by the caller.
-pub fn plan_system_thumbnails(
-    em_conn: &Connection,
+/// This does CPU work and filesystem checks but no DB work. Callers should
+/// load manifest rows under an `external_metadata` read connection, release
+/// that connection, then call this helper.
+pub fn plan_system_thumbnails_from_repo_data(
+    repo_data: &[(String, String, Vec<ThumbnailManifestEntry>)],
     storage_root: &Path,
     system: &str,
     kind: ThumbnailKind,
     arcade_lookup: &crate::image_resolution::ArcadeInfoLookup,
 ) -> Result<DownloadPlan> {
-    let repo_names = thumbnails::thumbnail_repo_names(system)
-        .ok_or_else(|| Error::Other(format!("No thumbnail repo for {system}")))?;
-
-    let display_names: Vec<&str> = repo_names.to_vec();
-    let manifest_index = build_manifest_fuzzy_index(em_conn, &display_names, kind.repo_dir());
+    let manifest_index = build_manifest_fuzzy_index_from_raw(repo_data);
 
     let rom_filenames = thumbnails::list_rom_filenames(storage_root, system);
     let total = rom_filenames.len();
@@ -1362,7 +1359,7 @@ pub fn plan_system_thumbnails(
 }
 
 /// Execute planned thumbnail downloads with async concurrency.
-/// Does not need a DB connection — call `plan_system_thumbnails` first.
+/// Does not need a DB connection — call `plan_system_thumbnails_from_repo_data` first.
 ///
 /// `on_progress(processed, total, downloaded)` is called periodically.
 #[cfg(feature = "http")]

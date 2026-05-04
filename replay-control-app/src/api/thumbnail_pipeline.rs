@@ -331,34 +331,53 @@ impl ThumbnailPipeline {
                     break;
                 }
 
-                let storage_root_plan = storage_root.clone();
                 let system_plan = system.clone();
-                let arcade_lookup_plan = arcade_lookup.clone();
-                // Long-running read: builds an in-memory fuzzy index over
-                // every thumbnail entry for the system, then fans matches.
-                // Reads `external_metadata.db` (the host-global thumbnail
-                // manifest), not the per-storage library DB.
-                let plan = state
+                // Keep the external_metadata DB read tight: load manifest rows
+                // only, then build fuzzy indexes and touch the filesystem after
+                // the pooled connection is released.
+                let repo_data = state
                     .external_metadata_pool
                     .read(move |em_conn| {
-                        thumbnail_manifest::plan_system_thumbnails(
+                        let Some(repo_names) =
+                            replay_control_core_server::thumbnails::thumbnail_repo_names(
+                                &system_plan,
+                            )
+                        else {
+                            return Err(replay_control_core::error::Error::Other(format!(
+                                "No thumbnail repo for {system_plan}"
+                            )));
+                        };
+                        let display_names: Vec<&str> = repo_names.to_vec();
+                        Ok(thumbnail_manifest::load_repo_manifest_data(
                             em_conn,
-                            &storage_root_plan,
-                            &system_plan,
-                            *kind,
-                            &arcade_lookup_plan,
-                        )
+                            &display_names,
+                            kind.repo_dir(),
+                        ))
                     })
                     .await;
 
-                let plan = match plan {
-                    Some(Ok(p)) => p,
+                let repo_data = match repo_data {
+                    Some(Ok(data)) => data,
                     Some(Err(e)) => {
+                        let kind_name = kind.media_dir();
+                        tracing::warn!("{kind_name} manifest load failed for {system}: {e}");
+                        continue;
+                    }
+                    None => continue,
+                };
+                let plan = match thumbnail_manifest::plan_system_thumbnails_from_repo_data(
+                    &repo_data,
+                    &storage_root,
+                    system,
+                    *kind,
+                    &arcade_lookup,
+                ) {
+                    Ok(p) => p,
+                    Err(e) => {
                         let kind_name = kind.media_dir();
                         tracing::warn!("{kind_name} plan failed for {system}: {e}");
                         continue;
                     }
-                    None => continue,
                 };
 
                 // Phase 2: Execute downloads (async, no DB connection held).

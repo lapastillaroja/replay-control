@@ -110,13 +110,15 @@ impl managed::Manager for SqliteManager {
             return Err(RecycleError::message("mutex poisoned"));
         }
 
-        // Run PRAGMA optimize at most once per hour to keep query planner
-        // statistics fresh without adding overhead to every pool return.
-        let should_optimize = self
-            .last_optimize
-            .lock()
-            .ok()
-            .is_some_and(|last| last.elapsed() > std::time::Duration::from_secs(3600));
+        // Run PRAGMA optimize at most once per hour on write connections to
+        // keep query planner statistics fresh without adding overhead to every
+        // pool return. Read connections are query_only and cannot run it.
+        let should_optimize = self.is_write
+            && self
+                .last_optimize
+                .lock()
+                .ok()
+                .is_some_and(|last| last.elapsed() > std::time::Duration::from_secs(3600));
 
         if should_optimize {
             let result = conn
