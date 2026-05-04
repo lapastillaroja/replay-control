@@ -84,9 +84,23 @@ pub async fn list_recents(storage: &StorageLocation) -> Result<Vec<RecentEntry>>
 
     let raw = collect_raw_recents_blocking(recents_dir).await?;
 
+    // Batch catalog lookup: group by (marker, system, rom_filename), fetch in
+    // one round-trip per system instead of one per ROM.
+    let parsed: Vec<(String, String, String)> = raw
+        .iter()
+        .map(|r| {
+            (
+                r.marker_filename.clone(),
+                r.system.clone(),
+                r.rom_filename.clone(),
+            )
+        })
+        .collect();
+    let batch = super::favorites::CatalogLookup::prefetch(&parsed).await;
+
     let mut recents: Vec<RecentEntry> = Vec::with_capacity(raw.len());
     for r in raw {
-        let game = crate::game_ref::new(&r.system, r.rom_filename, r.rom_path).await;
+        let game = super::favorites::build_game_ref(&r.system, r.rom_filename, r.rom_path, &batch);
         recents.push(RecentEntry {
             game,
             marker_filename: r.marker_filename,

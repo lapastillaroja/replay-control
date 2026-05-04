@@ -347,13 +347,13 @@ pub async fn organize_favorites(
 
 /// Prefetched catalog data indexed by `(system, stem)`.
 #[derive(Default)]
-struct CatalogLookup {
+pub(crate) struct CatalogLookup {
     arcade: HashMap<(String, String), ArcadeGameInfo>,
     game: HashMap<(String, String), CanonicalGame>,
 }
 
 impl CatalogLookup {
-    async fn prefetch(parsed: &[(String, String, String)]) -> Self {
+    pub(crate) async fn prefetch(parsed: &[(String, String, String)]) -> Self {
         let mut by_system: HashMap<&str, Vec<&str>> = HashMap::new();
         for (_fav, system, rom_filename) in parsed {
             by_system
@@ -753,7 +753,7 @@ async fn collect_favorites(dir: &Path, favs_root: &Path, out: &mut Vec<Favorite>
 /// Build a `GameRef` from a prefetched `CatalogLookup`.
 /// Falls back to letting `GameRef` compute a display name from the filename
 /// stem (tags, disc labels, article inversion) when the catalog has no match.
-fn build_game_ref(
+pub(crate) fn build_game_ref(
     system: &str,
     rom_filename: String,
     rom_path: String,

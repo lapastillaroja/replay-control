@@ -46,6 +46,9 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ### Fixed
 
+- Recents list arcade-display-name resolution is now one catalog round-trip per system instead of one per ROM (N→1), matching the batch approach already used by favorites.
+- "Update Thumbnails" no longer re-fetches the libretro manifest from GitHub (~70 API calls) when clicked a second time within 5 minutes — the last-fetched timestamp is stored in `external_meta` and used as a TTL gate for phase 1.
+- "Refresh metadata" no longer re-downloads the 100+ MB LaunchBox ZIP when the on-disk XML was already downloaded within the last hour — skips straight to parse, avoiding redundant bandwidth on back-to-back clicks.
 - ROMs added to a system after a one-shot LaunchBox import are now enriched on the next pass (was: silently skipped forever).
 - Two concurrent boots (boot pipeline + storage-watcher restart) no longer race the LaunchBox refresh — the activity slot is claimed before the hash check, so the second caller cleanly bails.
 - Activity SSE no longer flickers `Idle` between the download and parse phases of a one-button refresh — the guard is threaded from the download path into `phase_auto_import_inner` via an explicit parameter.

@@ -100,10 +100,37 @@ impl ThumbnailPipeline {
         // Read GitHub API key from settings (if configured).
         let api_key = replay_control_core_server::settings::read_github_api_key(&state.settings);
 
-        let index_result = {
+        // Short TTL: if the manifest was fetched within the last 5 minutes,
+        // skip the ~70 GitHub API round-trips — back-to-back "Update Thumbnails"
+        // clicks produce the same result anyway since repos don't update in < 5 min.
+        const MANIFEST_TTL_SECS: u64 = 300;
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let manifest_recently_fetched = state
+            .external_metadata_pool
+            .read(|conn| {
+                use replay_control_core_server::external_metadata::{self, meta_keys};
+                external_metadata::read_meta(conn, meta_keys::THUMBNAIL_MANIFEST_FETCHED_AT)
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(|last| now_secs.saturating_sub(last) < MANIFEST_TTL_SECS)
+                    .unwrap_or(false)
+            })
+            .await
+            .flatten()
+            .unwrap_or(false);
+
+        let index_result = if manifest_recently_fetched {
+            tracing::info!(
+                "run_thumbnail_update: manifest fetched <{}s ago, skipping phase 1",
+                MANIFEST_TTL_SECS
+            );
+            Ok(replay_control_core_server::thumbnail_manifest::ManifestImportStats::default())
+        } else {
             let activity_ref = activity_lock.clone();
             let activity_tx = state.activity_tx.clone();
-            thumbnail_manifest::import_all_manifests(
+            let result = thumbnail_manifest::import_all_manifests(
                 &state.external_metadata_pool,
                 &|repos_done, repos_total, current_repo| {
                     let mut guard = write_lock(&activity_ref, "activity");
@@ -121,7 +148,25 @@ impl ThumbnailPipeline {
                 &cancel,
                 api_key.as_deref(),
             )
-            .await
+            .await;
+            // Stamp the fetch time on success so the next click within the TTL
+            // can skip phase 1.
+            if result.as_ref().map(|s| !s.rate_limited).unwrap_or(false) {
+                let ts = now_secs.to_string();
+                state
+                    .external_metadata_pool
+                    .write(|conn| {
+                        use replay_control_core_server::external_metadata::{self, meta_keys};
+                        external_metadata::write_meta(
+                            conn,
+                            meta_keys::THUMBNAIL_MANIFEST_FETCHED_AT,
+                            Some(&ts),
+                        )
+                    })
+                    .await
+                    .ok();
+            }
+            result
         };
 
         let index_stats = match index_result {

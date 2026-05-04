@@ -240,6 +240,48 @@ impl BackgroundManager {
 
             let start = std::time::Instant::now();
             let cache_dir = state.data_dir.cache_dir();
+
+            // Freshness gate: if the XML already exists on disk AND was downloaded
+            // within the last hour, skip the 100+ MB re-download and go straight
+            // to parse. Prevents wasted bandwidth on back-to-back "Refresh metadata"
+            // clicks when the upstream file hasn't changed.
+            const DOWNLOAD_TTL_SECS: u64 = 3600;
+            {
+                use replay_control_core_server::external_metadata::{self, meta_keys};
+                use replay_control_core_server::library_db::resolve_launchbox_xml;
+
+                let storage = state.storage();
+                let rc_dir = storage.rc_dir();
+                let xml_on_disk = resolve_launchbox_xml(&cache_dir, &rc_dir).is_some();
+
+                let recently_downloaded = state
+                    .external_metadata_pool
+                    .read(|conn| {
+                        external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_DOWNLOADED_AT)
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .map(|last| {
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0);
+                                now.saturating_sub(last) < DOWNLOAD_TTL_SECS
+                            })
+                            .unwrap_or(false)
+                    })
+                    .await
+                    .flatten()
+                    .unwrap_or(false);
+
+                if xml_on_disk && recently_downloaded {
+                    tracing::info!(
+                        "LaunchBox XML already downloaded within {}s, skipping download",
+                        DOWNLOAD_TTL_SECS
+                    );
+                    Self::phase_auto_import_inner(&state, Some(guard)).await;
+                    return;
+                }
+            }
+
             let download_result = {
                 let cache_dir = cache_dir.clone();
                 let state_for_progress = state.clone();
@@ -274,6 +316,24 @@ impl BackgroundManager {
             match download_result {
                 Ok(Ok(xml_path)) => {
                     tracing::info!("LaunchBox metadata downloaded to {}", xml_path.display());
+                    // Stamp the download time so a re-click within the TTL skips the download.
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                        .to_string();
+                    state
+                        .external_metadata_pool
+                        .write(|conn| {
+                            use replay_control_core_server::external_metadata::{self, meta_keys};
+                            external_metadata::write_meta(
+                                conn,
+                                meta_keys::LAUNCHBOX_XML_DOWNLOADED_AT,
+                                Some(&ts),
+                            )
+                        })
+                        .await
+                        .ok();
                     Self::phase_auto_import_inner(&state, Some(guard)).await;
                 }
                 Ok(Err(e)) => {

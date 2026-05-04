@@ -116,6 +116,17 @@ pub mod meta_keys {
     /// Comparison is always current-vs-stored (n=2), so CRC32's collision
     /// profile is plenty — no need for a cryptographic hash.
     pub const LAUNCHBOX_XML_CRC32: &str = "launchbox_xml_crc32";
+
+    /// Unix seconds at which the LaunchBox `Metadata.zip` was last
+    /// successfully downloaded. Used to skip redundant back-to-back downloads
+    /// within a short window when the on-disk XML already exists.
+    pub const LAUNCHBOX_XML_DOWNLOADED_AT: &str = "launchbox_xml_downloaded_at";
+
+    /// Unix seconds at which the libretro thumbnail manifest was last
+    /// successfully fetched from GitHub. Used as a short TTL to skip
+    /// per-repo SHA checks when the user clicks "Update Thumbnails" twice
+    /// within a few minutes.
+    pub const THUMBNAIL_MANIFEST_FETCHED_AT: &str = "thumbnail_manifest_fetched_at";
 }
 
 /// Create or rebuild the schema. Drops divergent tables before recreating
