@@ -285,6 +285,7 @@ pub struct LbAlternateName {
 const METADATA_URL: &str = "https://gamesdb.launchbox-app.com/Metadata.zip";
 
 /// Result of a HEAD request: content length and ETag, either may be absent.
+#[derive(Default)]
 pub struct HeadHeaders {
     pub content_length: Option<u64>,
     pub etag: Option<String>,
@@ -297,12 +298,7 @@ fn fetch_head_headers(url: &str) -> HeadHeaders {
         .output()
     {
         Ok(o) => o,
-        Err(_) => {
-            return HeadHeaders {
-                content_length: None,
-                etag: None,
-            };
-        }
+        Err(_) => return HeadHeaders::default(),
     };
     let text = String::from_utf8_lossy(&output.stdout);
     let mut content_length = None;
@@ -358,14 +354,12 @@ pub fn download_metadata(
     let extracted_path = dest_dir.join("Metadata.xml"); // name inside the zip
     let xml_path = dest_dir.join(LAUNCHBOX_XML);
 
-    // Step 1: Get Content-Length (skip HEAD when caller already has it).
     let total_bytes = content_length.or_else(|| fetch_head_headers(METADATA_URL).content_length);
     tracing::info!(
         "Downloading LaunchBox metadata from {METADATA_URL} (size: {})",
         total_bytes.map_or("unknown".to_string(), |n| format!("{n} bytes")),
     );
 
-    // Step 2: Stream download with piped stdout.
     let mut child = std::process::Command::new("curl")
         .args(["-fsSL", "-o", "-", METADATA_URL])
         .stdout(std::process::Stdio::piped())

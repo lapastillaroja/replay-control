@@ -284,7 +284,6 @@ impl BackgroundManager {
             let upstream_etag = upstream_head.etag;
             let upstream_content_length = upstream_head.content_length;
             let download_result = {
-                let cache_dir = cache_dir.clone();
                 let state_for_progress = state.clone();
                 tokio::task::spawn_blocking(move || {
                     // Throttle: each curl read is ~64 KB; updating activity per
