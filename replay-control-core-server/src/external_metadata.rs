@@ -117,10 +117,11 @@ pub mod meta_keys {
     /// profile is plenty — no need for a cryptographic hash.
     pub const LAUNCHBOX_XML_CRC32: &str = "launchbox_xml_crc32";
 
-    /// Unix seconds at which the LaunchBox `Metadata.zip` was last
-    /// successfully downloaded. Used to skip redundant back-to-back downloads
-    /// within a short window when the on-disk XML already exists.
-    pub const LAUNCHBOX_XML_DOWNLOADED_AT: &str = "launchbox_xml_downloaded_at";
+    /// ETag of the upstream LaunchBox `Metadata.zip` at the time of the last
+    /// successful download. Compared against the server's current ETag via a
+    /// HEAD request before starting a new download — if they match the file
+    /// hasn't changed and the download is skipped.
+    pub const LAUNCHBOX_UPSTREAM_ETAG: &str = "launchbox_upstream_etag";
 
     /// Unix seconds at which the libretro thumbnail manifest was last
     /// successfully fetched from GitHub. Used as a short TTL to skip
@@ -562,6 +563,7 @@ pub fn clear_launchbox(conn: &rusqlite::Connection) -> Result<()> {
     conn.execute("DELETE FROM launchbox_alternate", [])
         .map_err(|e| Error::Other(format!("clear launchbox_alternate: {e}")))?;
     write_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32, None)?;
+    write_meta(conn, meta_keys::LAUNCHBOX_UPSTREAM_ETAG, None)?;
     Ok(())
 }
 

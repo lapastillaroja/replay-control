@@ -460,6 +460,8 @@ pub enum Key {
     // Metadata busy/scanning banners
     MetadataBusyBanner,
     MetadataScanningBanner,
+    MetadataBannerFetchingGameMetadata,
+    MetadataBannerAlreadyUpToDate,
 
     // Common
     CommonLoading,

@@ -361,7 +361,7 @@ fn dispatch_terminal(
     snapshot: SnapshotRes,
 ) {
     let target = match &prev {
-        Activity::Import { .. } => Some(import_result),
+        Activity::Import { .. } | Activity::RefreshExternalMetadata { .. } => Some(import_result),
         Activity::ThumbnailUpdate { .. } => {
             thumb_cancelling.set(false);
             Some(thumb_result)

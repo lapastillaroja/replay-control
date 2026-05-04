@@ -110,7 +110,7 @@ impl ThumbnailPipeline {
             .unwrap_or(0);
         let manifest_recently_fetched = state
             .external_metadata_pool
-            .read(|conn| {
+            .read(move |conn| {
                 use replay_control_core_server::external_metadata::{self, meta_keys};
                 external_metadata::read_meta(conn, meta_keys::THUMBNAIL_MANIFEST_FETCHED_AT)
                     .and_then(|s| s.parse::<u64>().ok())
@@ -118,7 +118,6 @@ impl ThumbnailPipeline {
                     .unwrap_or(false)
             })
             .await
-            .flatten()
             .unwrap_or(false);
 
         let index_result = if manifest_recently_fetched {
@@ -151,11 +150,11 @@ impl ThumbnailPipeline {
             .await;
             // Stamp the fetch time on success so the next click within the TTL
             // can skip phase 1.
-            if result.as_ref().map(|s| !s.rate_limited).unwrap_or(false) {
+            if matches!(result, Ok(ref s) if !s.rate_limited) {
                 let ts = now_secs.to_string();
-                state
+                let _ = state
                     .external_metadata_pool
-                    .write(|conn| {
+                    .write(move |conn| {
                         use replay_control_core_server::external_metadata::{self, meta_keys};
                         external_metadata::write_meta(
                             conn,
@@ -163,8 +162,7 @@ impl ThumbnailPipeline {
                             Some(&ts),
                         )
                     })
-                    .await
-                    .ok();
+                    .await;
             }
             result
         };

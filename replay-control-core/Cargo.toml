@@ -1,6 +1,6 @@
 [package]
 name = "replay-control-core"
-version = "0.4.0-beta.6"
+version = "0.4.0-beta.7"
 edition = "2024"
 description = "Pure types, wire contracts, and domain logic for Replay Control"
 license.workspace = true

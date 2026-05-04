@@ -284,22 +284,48 @@ pub struct LbAlternateName {
 /// The LaunchBox metadata download URL.
 const METADATA_URL: &str = "https://gamesdb.launchbox-app.com/Metadata.zip";
 
-/// HEAD request to get Content-Length. Returns `None` on failure.
-fn get_content_length(url: &str) -> Option<u64> {
-    let output = std::process::Command::new("curl")
-        .args(["-sI", "--max-time", "5", url])
+/// Result of a HEAD request: content length and ETag, either may be absent.
+pub struct HeadHeaders {
+    pub content_length: Option<u64>,
+    pub etag: Option<String>,
+}
+
+/// HEAD request. Returns `None` fields on failure or missing headers.
+fn fetch_head_headers(url: &str) -> HeadHeaders {
+    let output = match std::process::Command::new("curl")
+        .args(["-sI", "--max-time", "10", url])
         .output()
-        .ok()?;
-    let headers = String::from_utf8_lossy(&output.stdout);
-    for line in headers.lines() {
-        if let Some(val) = line
-            .strip_prefix("content-length:")
-            .or_else(|| line.strip_prefix("Content-Length:"))
-        {
-            return val.trim().parse().ok();
+    {
+        Ok(o) => o,
+        Err(_) => {
+            return HeadHeaders {
+                content_length: None,
+                etag: None,
+            };
+        }
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut content_length = None;
+    let mut etag = None;
+    for line in text.lines() {
+        let lower = line.to_ascii_lowercase();
+        if let Some(v) = lower.strip_prefix("content-length:") {
+            content_length = v.trim().parse().ok();
+        } else if lower.starts_with("etag:") {
+            // ETags are case-sensitive (RFC 7232 §2.3) — extract from original line.
+            etag = line.get("etag:".len()..).map(|v| v.trim().to_string());
         }
     }
-    None
+    HeadHeaders {
+        content_length,
+        etag,
+    }
+}
+
+/// Fetch the HEAD headers for the upstream LaunchBox ZIP without downloading it.
+/// Returns `None` fields if the server doesn't respond or omits a header.
+pub fn fetch_upstream_head() -> HeadHeaders {
+    fetch_head_headers(METADATA_URL)
 }
 
 /// Download LaunchBox Metadata.zip and extract to `launchbox-metadata.xml` in the given directory.
@@ -307,10 +333,14 @@ fn get_content_length(url: &str) -> Option<u64> {
 /// Uses `curl` with streaming stdout for download progress and `unzip` for extraction.
 /// The zip internally contains `Metadata.xml`, which is renamed after extraction.
 ///
+/// `content_length` — if the caller already did a HEAD request (e.g. for an ETag check),
+/// pass the Content-Length here to skip a redundant HEAD. Pass `None` to fetch it.
+///
 /// `on_progress` is called with `(bytes_downloaded, total_bytes)` during the download.
 /// `total_bytes` is `None` if the server didn't provide Content-Length.
 pub fn download_metadata(
     dest_dir: &Path,
+    content_length: Option<u64>,
     on_progress: impl Fn(u64, Option<u64>),
 ) -> Result<std::path::PathBuf> {
     use std::io::{Read, Write};
@@ -328,8 +358,8 @@ pub fn download_metadata(
     let extracted_path = dest_dir.join("Metadata.xml"); // name inside the zip
     let xml_path = dest_dir.join(LAUNCHBOX_XML);
 
-    // Step 1: Get Content-Length via HEAD request.
-    let total_bytes = get_content_length(METADATA_URL);
+    // Step 1: Get Content-Length (skip HEAD when caller already has it).
+    let total_bytes = content_length.or_else(|| fetch_head_headers(METADATA_URL).content_length);
     tracing::info!(
         "Downloading LaunchBox metadata from {METADATA_URL} (size: {})",
         total_bytes.map_or("unknown".to_string(), |n| format!("{n} bytes")),

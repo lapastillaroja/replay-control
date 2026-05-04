@@ -20,7 +20,9 @@ pub fn MetadataBusyBanner() -> impl IntoView {
         Activity::Startup { phase, system } => {
             use server_fns::StartupPhase;
             match phase {
-                StartupPhase::FetchingMetadata => "Fetching game metadata...".to_string(),
+                StartupPhase::FetchingMetadata => {
+                    t(i18n.locale.get(), Key::MetadataBannerFetchingGameMetadata).to_string()
+                }
                 StartupPhase::Scanning => {
                     if system.is_empty() {
                         "Scanning game library...".to_string()
@@ -104,6 +106,9 @@ pub fn MetadataBusyBanner() -> impl IntoView {
                 RefreshMetadataPhase::Enriching => "Re-enriching library...".to_string(),
                 RefreshMetadataPhase::Complete => String::new(),
                 RefreshMetadataPhase::Failed => "Metadata refresh failed".to_string(),
+                RefreshMetadataPhase::UpToDate => {
+                    t(i18n.locale.get(), Key::MetadataBannerAlreadyUpToDate).to_string()
+                }
             }
         }
     };

@@ -4,7 +4,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## Unreleased
+## [0.4.0-beta.7](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.7) - 2026-05-04
 
 ### Highlights
 
@@ -18,12 +18,13 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 - New host-global `external_metadata.db` (LaunchBox `launchbox_game` / `launchbox_alternate`, libretro `thumbnail_manifest` / `data_source`, `external_meta` key-value).
 - New per-storage `game_description (system, rom_filename, description, publisher)` table in `library.db`. Truncate-and-repopulate per system on every enrichment pass.
-- `Activity::RefreshExternalMetadata { progress }` SSE variant + `RefreshMetadataPhase` (Checking → Downloading → Parsing → Enriching → Complete/Failed) + `RefreshMetadataProgress` (source_entries, downloaded_bytes, elapsed_secs, error). Mirrored on both SSR-side `api::activity` and WASM-side `types`.
+- `Activity::RefreshExternalMetadata { progress }` SSE variant + `RefreshMetadataPhase` (Checking → Downloading → Parsing → Enriching → Complete/Failed/**UpToDate**) + `RefreshMetadataProgress` (source_entries, downloaded_bytes, elapsed_secs, error). Mirrored on both SSR-side `api::activity` and WASM-side `types`.
 - `BackgroundManager::spawn_external_metadata_refresh` and `spawn_external_metadata_download_and_refresh` for UI-triggered refreshes (regenerate, download).
 - `library_db::resolve_launchbox_xml(cache_dir, storage_rc_dir)` — single helper that picks the LaunchBox XML across the host-global cache and per-storage legacy locations (boot-time hash check + UI download both use it).
 - `replay_control_core::title_utils::normalize_title_for_metadata` — single canonical normalizer used by both the import-time index and the per-row read-time lookup, so the two sides can never drift.
 - Setup checklist's "metadata imported?" now reads `external_metadata.launchbox_game`'s row count.
 - First-boot data seeding (Phase 0.5): on a fresh install, the startup pipeline silently downloads the LaunchBox XML and libretro thumbnail manifest before the first ROM scan so initial enrichment has full data. Network failures are warn-logged and the pipeline continues — offline-ready behaviour is preserved. Subsequent boots skip the phase entirely.
+- `launchbox::fetch_upstream_head()` — single HEAD request to the LaunchBox ZIP URL that returns both ETag and Content-Length, eliminating the two-subprocess pattern used by the former download flow.
 
 ### Changed
 
@@ -34,6 +35,7 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - `LibraryDb::all_ratings`, `image_stats`, `rom_genre` are now sourced from `game_library` (already populated by enrichment) instead of the dead per-storage `game_metadata` table.
 - Download-progress callback throttled from per-64-KB-chunk to every-1-MB so the activity SSE channel doesn't churn 3 200 lock+broadcast cycles per 200 MB download.
 - Parse-progress now updates the activity stream every 5 000 entries so the UI banner shows a live counter during the 30–90 s LaunchBox parse.
+- "Refresh metadata" now performs an HTTP ETag check before downloading — the stored `launchbox_upstream_etag` key in `external_meta` is compared against the server's current ETag via a single HEAD request. On match, the flow short-circuits to `RefreshMetadataPhase::UpToDate` and shows an "Already up to date" result for 5 seconds, skipping the 100+ MB download entirely. Clearing metadata also clears the stored ETag so a post-clear refresh always re-fetches.
 
 ### Removed
 
@@ -47,8 +49,8 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 ### Fixed
 
 - Recents list arcade-display-name resolution is now one catalog round-trip per system instead of one per ROM (N→1), matching the batch approach already used by favorites.
-- "Update Thumbnails" no longer re-fetches the libretro manifest from GitHub (~70 API calls) when clicked a second time within 5 minutes — the last-fetched timestamp is stored in `external_meta` and used as a TTL gate for phase 1.
-- "Refresh metadata" no longer re-downloads the 100+ MB LaunchBox ZIP when the on-disk XML was already downloaded within the last hour — skips straight to parse, avoiding redundant bandwidth on back-to-back clicks.
+- "Update Thumbnails" no longer re-fetches the libretro manifest from GitHub (~70 API calls) when clicked a second time within 5 minutes — the last-fetched timestamp is stored in `external_meta` and used as a 5-minute TTL gate.
+- "Refresh metadata" clicked when no upstream change occurred now shows "Already up to date" in the result strip for 5 seconds instead of producing no visible feedback. The ETag check runs in the `Checking` phase so the banner is visible before the result is known.
 - ROMs added to a system after a one-shot LaunchBox import are now enriched on the next pass (was: silently skipped forever).
 - Two concurrent boots (boot pipeline + storage-watcher restart) no longer race the LaunchBox refresh — the activity slot is claimed before the hash check, so the second caller cleanly bails.
 - Activity SSE no longer flickers `Idle` between the download and parse phases of a one-button refresh — the guard is threaded from the download path into `phase_auto_import_inner` via an explicit parameter.

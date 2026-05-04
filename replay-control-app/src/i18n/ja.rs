@@ -489,6 +489,8 @@ pub fn translate(key: Key) -> &'static str {
             "メタデータを更新中です \u{2014} 一部の情報が一時的に表示されない場合があります"
         }
         Key::MetadataScanningBanner => "ゲームライブラリをスキャン中...",
+        Key::MetadataBannerFetchingGameMetadata => "ゲームメタデータを取得中...",
+        Key::MetadataBannerAlreadyUpToDate => "すでに最新です",
 
         // Common
         Key::CommonLoading => "読み込み中...",

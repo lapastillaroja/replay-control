@@ -72,7 +72,9 @@ impl Activity {
             }
             Self::RefreshExternalMetadata { progress } => matches!(
                 progress.phase,
-                RefreshMetadataPhase::Complete | RefreshMetadataPhase::Failed
+                RefreshMetadataPhase::Complete
+                    | RefreshMetadataPhase::Failed
+                    | RefreshMetadataPhase::UpToDate
             ),
             _ => false,
         }
@@ -143,6 +145,7 @@ impl Activity {
                     "Metadata refresh failed: {}",
                     progress.error.as_deref().unwrap_or("unknown error"),
                 ),
+                RefreshMetadataPhase::UpToDate => "Metadata already up to date".to_string(),
                 _ => String::new(),
             },
             _ => String::new(),
@@ -182,6 +185,8 @@ pub enum RefreshMetadataPhase {
     Enriching,
     Complete,
     Failed,
+    /// ETag matched — upstream file is unchanged; no download or parse needed.
+    UpToDate,
 }
 
 /// Progress for the external_metadata refresh path.

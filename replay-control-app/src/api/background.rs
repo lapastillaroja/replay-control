@@ -219,15 +219,18 @@ impl BackgroundManager {
     /// Spawn a background task that downloads the LaunchBox `Metadata.zip`
     /// into the host-global cache directory, extracts the XML, then triggers
     /// the standard refresh path against it.
+    ///
+    /// Uses an HTTP ETag check to skip the 100+ MB download when the upstream
+    /// file hasn't changed since the last successful download.
     pub fn spawn_external_metadata_download_and_refresh(state: AppState) {
         tokio::spawn(async move {
-            // Claim the slot here and hand it to `phase_auto_import_inner`
-            // after the download succeeds. Releasing-then-reclaiming would
-            // broadcast a transient Idle state and let a third caller slip
-            // in between phases.
+            use replay_control_core_server::external_metadata::{self, meta_keys};
+
+            // Claim the slot. Start at Checking so the banner shows while we
+            // do the HEAD request before committing to a full download.
             let guard = match state.try_start_activity(Activity::RefreshExternalMetadata {
                 progress: RefreshMetadataProgress {
-                    phase: RefreshMetadataPhase::Downloading,
+                    phase: RefreshMetadataPhase::Checking,
                     ..RefreshMetadataProgress::initial()
                 },
             }) {
@@ -241,47 +244,45 @@ impl BackgroundManager {
             let start = std::time::Instant::now();
             let cache_dir = state.data_dir.cache_dir();
 
-            // Freshness gate: if the XML already exists on disk AND was downloaded
-            // within the last hour, skip the 100+ MB re-download and go straight
-            // to parse. Prevents wasted bandwidth on back-to-back "Refresh metadata"
-            // clicks when the upstream file hasn't changed.
-            const DOWNLOAD_TTL_SECS: u64 = 3600;
-            {
-                use replay_control_core_server::external_metadata::{self, meta_keys};
-                use replay_control_core_server::library_db::resolve_launchbox_xml;
+            let stored_etag = state
+                .external_metadata_pool
+                .read(|conn| external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_UPSTREAM_ETAG))
+                .await
+                .flatten();
 
-                let storage = state.storage();
-                let rc_dir = storage.rc_dir();
-                let xml_on_disk = resolve_launchbox_xml(&cache_dir, &rc_dir).is_some();
+            // Single HEAD request — captures ETag (freshness check) and Content-Length
+            // (passed to download_metadata to avoid a redundant second HEAD).
+            let upstream_head = tokio::task::spawn_blocking(
+                replay_control_core_server::launchbox::fetch_upstream_head,
+            )
+            .await
+            .unwrap_or(replay_control_core_server::launchbox::HeadHeaders {
+                content_length: None,
+                etag: None,
+            });
 
-                let recently_downloaded = state
-                    .external_metadata_pool
-                    .read(|conn| {
-                        external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_DOWNLOADED_AT)
-                            .and_then(|s| s.parse::<u64>().ok())
-                            .map(|last| {
-                                let now = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_secs())
-                                    .unwrap_or(0);
-                                now.saturating_sub(last) < DOWNLOAD_TTL_SECS
-                            })
-                            .unwrap_or(false)
-                    })
-                    .await
-                    .flatten()
-                    .unwrap_or(false);
-
-                if xml_on_disk && recently_downloaded {
-                    tracing::info!(
-                        "LaunchBox XML already downloaded within {}s, skipping download",
-                        DOWNLOAD_TTL_SECS
-                    );
-                    Self::phase_auto_import_inner(&state, Some(guard)).await;
-                    return;
-                }
+            if stored_etag.is_some() && stored_etag == upstream_head.etag {
+                tracing::info!(
+                    "LaunchBox ETag matches ({}) — already up to date",
+                    upstream_head.etag.as_deref().unwrap_or("")
+                );
+                state.update_activity(|act| {
+                    if let Activity::RefreshExternalMetadata { progress } = act {
+                        progress.phase = RefreshMetadataPhase::UpToDate;
+                    }
+                });
+                return; // guard drops → Activity::Idle
             }
 
+            // ETags differ (or unavailable) — proceed with the full download.
+            state.update_activity(|act| {
+                if let Activity::RefreshExternalMetadata { progress } = act {
+                    progress.phase = RefreshMetadataPhase::Downloading;
+                }
+            });
+
+            let upstream_etag = upstream_head.etag;
+            let upstream_content_length = upstream_head.content_length;
             let download_result = {
                 let cache_dir = cache_dir.clone();
                 let state_for_progress = state.clone();
@@ -296,6 +297,7 @@ impl BackgroundManager {
                     let last_reported = AtomicU64::new(0);
                     replay_control_core_server::launchbox::download_metadata(
                         &cache_dir,
+                        upstream_content_length,
                         |bytes, _total| {
                             let prev = last_reported.load(Ordering::Relaxed);
                             if bytes - prev < THROTTLE_BYTES && bytes != 0 {
@@ -316,24 +318,20 @@ impl BackgroundManager {
             match download_result {
                 Ok(Ok(xml_path)) => {
                     tracing::info!("LaunchBox metadata downloaded to {}", xml_path.display());
-                    // Stamp the download time so a re-click within the TTL skips the download.
-                    let ts = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0)
-                        .to_string();
-                    state
-                        .external_metadata_pool
-                        .write(|conn| {
-                            use replay_control_core_server::external_metadata::{self, meta_keys};
-                            external_metadata::write_meta(
-                                conn,
-                                meta_keys::LAUNCHBOX_XML_DOWNLOADED_AT,
-                                Some(&ts),
-                            )
-                        })
-                        .await
-                        .ok();
+                    // Store the upstream ETag so the next "Refresh metadata" can
+                    // detect an unchanged file without re-downloading.
+                    if let Some(etag) = upstream_etag {
+                        let _ = state
+                            .external_metadata_pool
+                            .write(move |conn| {
+                                external_metadata::write_meta(
+                                    conn,
+                                    meta_keys::LAUNCHBOX_UPSTREAM_ETAG,
+                                    Some(&etag),
+                                )
+                            })
+                            .await;
+                    }
                     Self::phase_auto_import_inner(&state, Some(guard)).await;
                 }
                 Ok(Err(e)) => {
@@ -428,7 +426,7 @@ impl BackgroundManager {
         if needs_launchbox {
             let dest = cache_dir.clone();
             let result = tokio::task::spawn_blocking(move || {
-                replay_control_core_server::launchbox::download_metadata(&dest, |_, _| {})
+                replay_control_core_server::launchbox::download_metadata(&dest, None, |_, _| {})
             })
             .await;
             match result {

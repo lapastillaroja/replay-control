@@ -489,6 +489,8 @@ pub fn translate(key: Key) -> &'static str {
             "Metadata update in progress \u{2014} some info may be temporarily unavailable"
         }
         Key::MetadataScanningBanner => "Scanning game library...",
+        Key::MetadataBannerFetchingGameMetadata => "Fetching game metadata...",
+        Key::MetadataBannerAlreadyUpToDate => "Already up to date",
 
         // Common
         Key::CommonLoading => "Loading...",
