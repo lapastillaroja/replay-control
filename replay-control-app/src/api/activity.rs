@@ -21,6 +21,11 @@ pub enum Activity {
     /// Metadata import (LaunchBox XML parse or download + parse).
     Import { progress: ImportProgress },
 
+    /// Refresh of the host-global `external_metadata.db` (LaunchBox XML
+    /// parse, optionally preceded by a download). Single-flight: a second
+    /// caller while one is in flight gets `ActivityInFlight`.
+    RefreshExternalMetadata { progress: RefreshMetadataProgress },
+
     /// Thumbnail update (index refresh + image download).
     /// The `cancel` token enables cooperative cancellation -- the blocking loop
     /// checks it between systems. Only this variant carries a cancel token.
@@ -65,6 +70,10 @@ impl Activity {
             Self::Update { progress } => {
                 matches!(progress.phase, UpdatePhase::Complete | UpdatePhase::Failed)
             }
+            Self::RefreshExternalMetadata { progress } => matches!(
+                progress.phase,
+                RefreshMetadataPhase::Complete | RefreshMetadataPhase::Failed
+            ),
             _ => false,
         }
     }
@@ -125,6 +134,17 @@ impl Activity {
                 ),
                 _ => String::new(),
             },
+            Self::RefreshExternalMetadata { progress } => match progress.phase {
+                RefreshMetadataPhase::Complete => format!(
+                    "Metadata refresh complete ({}s, {} source entries)",
+                    progress.elapsed_secs, progress.source_entries
+                ),
+                RefreshMetadataPhase::Failed => format!(
+                    "Metadata refresh failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
             _ => String::new(),
         }
     }
@@ -132,6 +152,8 @@ impl Activity {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StartupPhase {
+    /// Downloading LaunchBox XML and libretro thumbnail manifest on first boot.
+    FetchingMetadata,
     /// Scanning ROM directories, populating game library.
     Scanning,
     /// Rebuilding thumbnail index from disk.
@@ -144,6 +166,46 @@ pub enum MaintenanceKind {
     ClearImages,
     ClearThumbnailIndex,
     CleanupOrphans,
+}
+
+/// Phase of the external_metadata refresh path (download → parse).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RefreshMetadataPhase {
+    /// Hashing the on-disk XML before deciding whether a refresh is needed.
+    Checking,
+    /// Downloading `Metadata.zip` from upstream.
+    Downloading,
+    /// Streaming the XML into `external_metadata.db`.
+    Parsing,
+    /// Re-running enrichment so launchbox data flows into game_library /
+    /// game_description.
+    Enriching,
+    Complete,
+    Failed,
+}
+
+/// Progress for the external_metadata refresh path.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshMetadataProgress {
+    pub phase: RefreshMetadataPhase,
+    /// Source-entry counter during `Parsing`; otherwise 0.
+    pub source_entries: usize,
+    /// Total bytes downloaded during `Downloading`; otherwise 0.
+    pub downloaded_bytes: u64,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
+impl RefreshMetadataProgress {
+    pub fn initial() -> Self {
+        Self {
+            phase: RefreshMetadataPhase::Checking,
+            source_entries: 0,
+            downloaded_bytes: 0,
+            elapsed_secs: 0,
+            error: None,
+        }
+    }
 }
 
 /// Phase of the thumbnail pipeline.

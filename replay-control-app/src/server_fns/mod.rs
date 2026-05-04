@@ -413,72 +413,24 @@ async fn enrich_detail_fields(
         }
     }
 
-    // Fetch detail-only fields from game_metadata table.
+    // Fetch detail-only fields (description, publisher) from
+    // `game_description` — denormalized at enrichment time so the request
+    // path stays on the library pool (no cross-pool acquire).
     let system = info.system.clone();
     let rom_filename = info.rom_filename.clone();
-    if let Some(lookup_result) = state
+    let arcade_display_owned = arcade_display.map(str::to_owned);
+    if let Some(Ok(Some(meta))) = state
         .library_pool
-        .read(move |conn| LibraryDb::lookup(conn, &system, &rom_filename))
+        .read(move |conn| LibraryDb::lookup_description(conn, &system, &rom_filename))
         .await
     {
-        match lookup_result {
-            Ok(Some(meta)) => {
-                info.description = meta.description;
-                info.publisher = meta.publisher;
-
-                // Box art fallback from game_metadata when GameEntry has none
-                // and no user override was set above.
-                if info.box_art_url.is_none()
-                    && let Some(ref path) = meta.box_art_path
-                {
-                    let full = state
-                        .storage()
-                        .rc_dir()
-                        .join("media")
-                        .join(&info.system)
-                        .join(path);
-                    if is_valid_image(full).await {
-                        info.box_art_url = Some(format!("/media/{}/{path}", info.system));
-                    }
-                }
-                if let Some(ref path) = meta.screenshot_path {
-                    let full = state
-                        .storage()
-                        .rc_dir()
-                        .join("media")
-                        .join(&info.system)
-                        .join(path);
-                    if is_valid_image(full).await {
-                        info.screenshot_url = Some(format!("/media/{}/{path}", info.system));
-                    }
-                }
-                if let Some(ref path) = meta.title_path {
-                    let full = state
-                        .storage()
-                        .rc_dir()
-                        .join("media")
-                        .join(&info.system)
-                        .join(path);
-                    if is_valid_image(full).await {
-                        info.title_url = Some(format!("/media/{}/{path}", info.system));
-                    }
-                }
-            }
-            Ok(None) => {}
-            Err(e) => {
-                tracing::debug!(
-                    "Metadata lookup failed for {}/{}: {e}",
-                    info.system,
-                    info.rom_filename
-                );
-            }
-        }
+        info.description = meta.description;
+        info.publisher = meta.publisher;
     }
 
     // Filesystem fallback for screenshots and title screens.
     if info.screenshot_url.is_none() || info.title_url.is_none() {
         let media_base = state.storage().rc_dir().join("media").join(&info.system);
-        let arcade_display_owned = arcade_display.map(str::to_owned);
         if info.screenshot_url.is_none()
             && let Some(path) = resolve_image_on_disk(
                 arcade_display_owned.clone(),
@@ -540,42 +492,10 @@ pub(crate) async fn resolve_box_art_url(
         }
     }
 
-    // 1. Try library DB — but validate the file on disk (catches git fake-symlink artifacts).
-    //    If the DB path is a fake symlink, try resolving it before falling back to disk scan.
-    if let Some(Some(meta)) = state
-        .library_pool
-        .read({
-            let system = system.to_string();
-            let rom_filename = rom_filename.to_string();
-            move |conn| {
-                LibraryDb::lookup(conn, &system, &rom_filename)
-                    .ok()
-                    .flatten()
-            }
-        })
-        .await
-        && let Some(ref path) = meta.box_art_path
-    {
-        let full_path = media_base.join(path);
-        if is_valid_image(full_path.clone()).await {
-            return Some(format!("/media/{system}/{path}"));
-        }
-        // DB path points to a fake symlink — try resolving it.
-        let kind_dir = full_path
-            .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| media_base.clone());
-        if let Some(resolved) = try_resolve_fake_symlink(full_path, kind_dir).await {
-            let kind = std::path::Path::new(path)
-                .parent()
-                .and_then(|p| p.to_str())
-                .unwrap_or(
-                    replay_control_core_server::thumbnails::ThumbnailKind::Boxart.media_dir(),
-                );
-            return Some(format!("/media/{system}/{kind}/{resolved}"));
-        }
-    }
-    // 2. Filesystem fallback — resolve_image_on_disk handles arcade name translation.
+    // 1. (Legacy game_metadata.box_art_path lookup removed — the new schema
+    //    stores box_art_url on game_library and the caller passes that through
+    //    `info.box_art_url`. Filesystem fallback below handles the rest.)
+    //    Filesystem fallback — resolve_image_on_disk handles arcade name translation.
     resolve_image_on_disk(
         arcade_display.map(str::to_owned),
         media_base,
@@ -588,6 +508,4 @@ pub(crate) async fn resolve_box_art_url(
 
 // Re-export image utilities from core for use in this crate.
 #[cfg(feature = "ssr")]
-pub(crate) use replay_control_core_server::thumbnails::{
-    is_valid_image, resolve_image_on_disk, try_resolve_fake_symlink,
-};
+pub(crate) use replay_control_core_server::thumbnails::{is_valid_image, resolve_image_on_disk};

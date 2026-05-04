@@ -1,7 +1,5 @@
 use super::*;
 #[cfg(feature = "ssr")]
-use replay_control_core_server::library_db::LibraryDb;
-#[cfg(feature = "ssr")]
 use replay_control_core_server::user_data_db::UserDataDb;
 
 /// A box art variant returned to the UI.
@@ -39,11 +37,11 @@ pub async fn get_boxart_variants(
     // (e.g., during a metadata import or thumbnail update operation).
     let storage_root = storage.root.clone();
     let Some(core_variants) = state
-        .library_pool
+        .external_metadata_pool
         .read({
-            move |conn| {
+            move |em_conn| {
                 replay_control_core_server::thumbnail_manifest::find_boxart_variants(
-                    conn,
+                    em_conn,
                     &system,
                     &rom_filename,
                     arcade_display.as_deref(),
@@ -92,26 +90,31 @@ pub async fn set_boxart_override(
 
         let variant_fn = variant_filename.clone();
         state
-            .library_pool
-            .read(move |conn| {
+            .external_metadata_pool
+            .read(move |em_conn| {
                 for display_name in repo_names {
                     let url_name =
                         replay_control_core_server::thumbnails::repo_url_name(display_name);
                     let source_name =
                         replay_control_core_server::thumbnails::libretro_source_name(display_name);
 
-                    let branch = LibraryDb::get_data_source(conn, &source_name)
-                        .ok()
-                        .flatten()
-                        .and_then(|s| s.branch)
-                        .unwrap_or_else(|| "master".to_string());
-
-                    let entries = LibraryDb::query_thumbnail_index(
-                        conn,
+                    let branch = replay_control_core_server::external_metadata::get_data_source(
+                        em_conn,
                         &source_name,
-                        replay_control_core_server::thumbnails::ThumbnailKind::Boxart.repo_dir(),
                     )
-                    .unwrap_or_default();
+                    .ok()
+                    .flatten()
+                    .and_then(|s| s.branch)
+                    .unwrap_or_else(|| "master".to_string());
+
+                    let entries =
+                        replay_control_core_server::external_metadata::query_thumbnail_manifest(
+                            em_conn,
+                            &source_name,
+                            replay_control_core_server::thumbnails::ThumbnailKind::Boxart
+                                .repo_dir(),
+                        )
+                        .unwrap_or_default();
 
                     if entries.iter().any(|e| e.filename == variant_fn) {
                         return Some(thumbnail_manifest::ManifestMatch {

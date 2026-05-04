@@ -32,17 +32,18 @@ Both console and arcade databases map to a shared set of ~18 normalized genres: 
 
 ## External Metadata (Optional)
 
-### LaunchBox Import
+### LaunchBox Refresh
 
-Download the [LaunchBox](https://gamesdb.launchbox-app.com/) XML file (~460 MB) from the metadata page. The import:
+Download the [LaunchBox](https://gamesdb.launchbox-app.com/) XML file (~460 MB) from the metadata page. One-button "Refresh metadata" handles download → parse → match → enrich:
 
-- Parses the file with real-time progress updates (downloading, parsing, matching)
-- Automatically matches entries to your ROM library by title
-- Shows per-system coverage stats after import
+- Real-time progress updates (downloading, parsing, enriching) via the activity SSE stream
+- The XML is parsed once into the host-global `external_metadata.db` (`/var/lib/replay-control/external_metadata.db`); per-storage caches no longer hold a copy
+- Boot-time freshness is content-derived (CRC32 of the XML vs. the last-parsed stamp) — newly added ROMs after a refresh pick up metadata automatically on the next enrichment
+- Per-system coverage stats refresh after enrichment completes
 
 Data imported: description, rating, rating count, publisher, developer, genre, max players, release date, and cooperative flag.
 
-Where the built-in database already has a value (e.g., genre), it takes priority. LaunchBox data only fills gaps.
+Where the built-in database already has a value (e.g., genre), it takes priority. LaunchBox data only fills gaps. Description and publisher are denormalized into a per-storage `game_description` cache so the game-detail page reads them from a single pool.
 
 ### Box Art and Screenshots
 
@@ -72,6 +73,6 @@ ROMs are classified into tiers that affect their visibility in recommendations a
 
 The metadata page provides tools to manage stored data:
 
-- **Clear metadata** -- removes imported LaunchBox data
-- **Clear images** -- removes downloaded box art and screenshots
+- **Clear metadata** -- wipes `launchbox_game` + `launchbox_alternate` and resets the XML hash stamp so the next refresh re-parses from disk
+- **Clear images** -- removes downloaded box art and screenshots from disk + clears `box_art_url` from `game_library`
 - **Cleanup orphaned images** -- removes downloaded images no longer associated with any game in the library, with a safety threshold per system to prevent accidental mass deletion

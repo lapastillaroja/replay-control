@@ -8,6 +8,7 @@
 pub mod catalog_pool;
 pub mod data_dir;
 pub mod db_pool;
+pub mod external_metadata;
 pub mod launch;
 pub mod settings;
 pub mod sqlite;
@@ -56,7 +57,6 @@ pub use library::manuals::retrokit as retrokit_manuals;
 #[cfg(feature = "library")]
 pub use library::matching::alias as alias_matching;
 #[cfg(feature = "library")]
-pub use library::matching::metadata as metadata_matching;
 #[cfg(feature = "library")]
 pub use library::thumbnails;
 #[cfg(feature = "library")]

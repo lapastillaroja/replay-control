@@ -116,10 +116,10 @@ ${BOLD}FLAGS${RESET}
                         and the env file)
     --purge             Like --uninstall but also wipes ALL Replay Control
                         data: /var/lib/replay-control/ (per-storage library
-                        DBs), .replay-control/ on storage (user_data.db,
-                        downloaded media, LaunchBox XML, storage-id), and the
-                        env file. ROMs, saves, captures, and BIOS are NOT
-                        touched.
+                        DBs + host-global external_metadata.db + cache),
+                        .replay-control/ on storage (user_data.db, downloaded
+                        media, storage-id), and the env file. ROMs, saves,
+                        captures, and BIOS are NOT touched.
     --yes               Skip the confirmation prompt for --purge
     --sdcard [PATH]     Write directly to a mounted RePlayOS SD card
     --ip ADDRESS        Skip Pi discovery, use this IP address
@@ -847,7 +847,7 @@ maybe_confirm_purge() {
     echo "  - ${ENV_FILE}"
     echo "  - /var/lib/replay-control/  (central per-storage library DBs)"
     for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
-        echo "  - ${root}/.replay-control/  (user_data.db, downloaded media, LaunchBox XML, storage-id)"
+        echo "  - ${root}/.replay-control/  (user_data.db, downloaded media, storage-id)"
     done
     echo "ROMs, saves, captures, and BIOS files are NOT touched."
     echo ""
@@ -866,7 +866,7 @@ uninstall_local() {
         dry "Would run: systemctl daemon-reload"
         if $PURGE_DATA; then
             dry "Would remove: ${ENV_FILE}"
-            dry "Would remove: /var/lib/replay-control/ (central library DBs)"
+            dry "Would remove: /var/lib/replay-control/ (per-storage library DBs + host-global external_metadata.db + cache)"
             for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
                 dry "Would remove: ${root}/.replay-control/ (if present)"
             done
@@ -921,7 +921,7 @@ uninstall_ssh() {
         dry "  - Run: systemctl daemon-reload"
         if $PURGE_DATA; then
             dry "  - Remove: ${ENV_FILE}"
-            dry "  - Remove: /var/lib/replay-control/ (central library DBs)"
+            dry "  - Remove: /var/lib/replay-control/ (per-storage library DBs + host-global external_metadata.db + cache)"
             for root in "${REPLAY_STORAGE_ROOTS[@]}"; do
                 dry "  - Remove: ${root}/.replay-control/ (if present)"
             done

@@ -39,17 +39,23 @@ pub async fn get_setup_status(force: bool) -> Result<SetupStatus, ServerFnError>
     }
 
     let has_metadata = state
-        .library_pool
-        .read(|conn| !LibraryDb::is_empty(conn).unwrap_or(true))
+        .external_metadata_pool
+        .read(|conn| {
+            replay_control_core_server::external_metadata::launchbox_game_count(conn).unwrap_or(0)
+                > 0
+        })
         .await
         .unwrap_or(false);
 
     let has_thumbnail_index = state
-        .library_pool
+        .external_metadata_pool
         .read(|conn| {
-            LibraryDb::get_data_source_stats(conn, "libretro-thumbnails")
-                .map(|s| s.total_entries > 0)
-                .unwrap_or(false)
+            replay_control_core_server::external_metadata::get_data_source_stats(
+                conn,
+                "libretro-thumbnails",
+            )
+            .map(|s| s.total_entries > 0)
+            .unwrap_or(false)
         })
         .await
         .unwrap_or(false);
@@ -81,13 +87,13 @@ pub async fn dismiss_setup() -> Result<(), ServerFnError> {
 // Re-export progress types from the activity module (SSR) or types module (WASM).
 #[cfg(feature = "ssr")]
 pub use crate::api::activity::{
-    Activity, MaintenanceKind, RebuildPhase, RebuildProgress, StartupPhase, ThumbnailPhase,
-    ThumbnailProgress,
+    Activity, MaintenanceKind, RebuildPhase, RebuildProgress, RefreshMetadataPhase,
+    RefreshMetadataProgress, StartupPhase, ThumbnailPhase, ThumbnailProgress,
 };
 #[cfg(not(feature = "ssr"))]
 pub use crate::types::{
-    Activity, MaintenanceKind, RebuildPhase, RebuildProgress, StartupPhase, ThumbnailPhase,
-    ThumbnailProgress,
+    Activity, MaintenanceKind, RebuildPhase, RebuildProgress, RefreshMetadataPhase,
+    RefreshMetadataProgress, StartupPhase, ThumbnailPhase, ThumbnailProgress,
 };
 
 pub use replay_control_core::library_db::{
@@ -133,10 +139,12 @@ pub async fn get_metadata_page_snapshot() -> Result<MetadataPageSnapshot, Server
 #[server(prefix = "/sfn")]
 pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    let db_path = state.library_pool.db_path();
+    let db_path = state.external_metadata_pool.db_path();
     let Some(result) = state
-        .library_pool
-        .read(move |conn| LibraryDb::stats(conn, &db_path))
+        .external_metadata_pool
+        .read(move |conn| {
+            replay_control_core_server::external_metadata::launchbox_stats(conn, &db_path)
+        })
         .await
     else {
         return Ok(MetadataStats::default());
@@ -145,27 +153,6 @@ pub async fn get_metadata_stats() -> Result<MetadataStats, ServerFnError> {
         tracing::warn!("get_metadata_stats failed: {e:?}");
         ServerFnError::new("Could not load metadata stats. Please try again.")
     })
-}
-
-/// Start a background metadata import from a LaunchBox metadata XML file.
-/// Returns immediately; subscribe to `/sse/activity` for progress.
-#[server(prefix = "/sfn")]
-pub async fn import_launchbox_metadata(xml_path: String) -> Result<(), ServerFnError> {
-    let state = expect_context::<crate::api::AppState>();
-    let path = std::path::PathBuf::from(&xml_path);
-
-    if !path.exists() {
-        return Err(ServerFnError::new(format!("File not found: {xml_path}")));
-    }
-
-    if !state.import.start_import(path, state.clone()) {
-        return Err(ServerFnError::new(
-            "Another metadata operation is already running",
-        ));
-    }
-
-    tracing::info!("Started LaunchBox import from {xml_path}");
-    Ok(())
 }
 
 /// Get aggregate library summary stats for the metadata page summary cards.
@@ -188,16 +175,25 @@ pub async fn get_library_summary() -> Result<LibrarySummary, ServerFnError> {
 pub async fn get_system_coverage() -> Result<Vec<SystemCoverage>, ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
 
-    // Get metadata entries, thumbnail counts, coverage stats, and driver status
-    // per system from DB. Return empty data when DB is unavailable (e.g., during import).
-    let (entries_per_system, thumbnails_per_system, coverage_stats, driver_status) = state
+    // Get metadata entries (from external_metadata pool), thumbnail counts,
+    // coverage stats, and driver status per system. Return empty data when a
+    // pool is unavailable (e.g., during import).
+    let entries_per_system = state
+        .external_metadata_pool
+        .read(|conn| {
+            replay_control_core_server::external_metadata::launchbox_entries_per_system(conn)
+                .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
+
+    let (thumbnails_per_system, coverage_stats, driver_status) = state
         .library_pool
         .read(|conn| {
-            let entries = LibraryDb::entries_per_system(conn).unwrap_or_default();
             let thumbnails = LibraryDb::thumbnails_per_system(conn).unwrap_or_default();
             let stats = LibraryDb::system_coverage_stats(conn).unwrap_or_default();
             let drivers = LibraryDb::driver_status_per_system(conn).unwrap_or_default();
-            (entries, thumbnails, stats, drivers)
+            (thumbnails, stats, drivers)
         })
         .await
         .unwrap_or_default();
@@ -283,7 +279,9 @@ pub async fn get_builtin_db_stats() -> Result<BuiltinDbStats, ServerFnError> {
     })
 }
 
-/// Clear all cached metadata.
+/// Clear cached LaunchBox metadata. Drops every row in `launchbox_game` and
+/// `launchbox_alternate` and resets the XML hash stamp so the next boot
+/// re-parses from disk.
 #[server(prefix = "/sfn")]
 pub async fn clear_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -295,45 +293,38 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     state
-        .library_pool
-        .write(|conn| LibraryDb::clear(conn))
+        .external_metadata_pool
+        .write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
         .await
-        .ok_or_else(|| ServerFnError::new("Cannot open library DB"))?
+        .ok_or_else(|| ServerFnError::new("external_metadata pool unavailable"))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Checkpoint WAL after the DELETE + VACUUM.
-    state.library_pool.checkpoint().await;
-
-    // Drop the metadata-page snapshot — stats / coverage / image_stats just
-    // changed.
+    state.external_metadata_pool.checkpoint().await;
     state.cache.invalidate_metadata_page().await;
-
-    // _guard drops → Idle
     Ok(())
 }
 
-/// Clear library DB and trigger re-import from launchbox-metadata.xml.
-/// The import runs in the background; subscribe to `/sse/activity` for progress.
+/// Clear LaunchBox metadata and re-trigger the boot-time refresh path.
+/// The XML hash stamp is wiped so the next pipeline tick re-parses.
 #[server(prefix = "/sfn")]
 pub async fn regenerate_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
     state
-        .import
-        .regenerate_metadata(&state)
+        .external_metadata_pool
+        .write(|conn| replay_control_core_server::external_metadata::clear_launchbox(conn))
         .await
-        .map_err(ServerFnError::new)
+        .ok_or_else(|| ServerFnError::new("external_metadata pool unavailable"))?
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    crate::api::BackgroundManager::spawn_external_metadata_refresh(state.clone());
+    Ok(())
 }
 
-/// Download LaunchBox metadata from the internet, extract, and import.
-/// The entire process runs in the background; subscribe to `/sse/activity` for progress.
+/// Download LaunchBox metadata from the internet, extract, then trigger
+/// the standard refresh path.
 #[server(prefix = "/sfn")]
 pub async fn download_metadata() -> Result<(), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
-    if !state.import.start_metadata_download(&state) {
-        return Err(ServerFnError::new(
-            "A metadata operation is already running",
-        ));
-    }
+    crate::api::BackgroundManager::spawn_external_metadata_download_and_refresh(state.clone());
     Ok(())
 }
 
@@ -429,7 +420,7 @@ pub async fn rebuild_corrupt_library() -> Result<(), ServerFnError> {
     }
     state.invalidate_user_caches().await;
     // Trigger background re-import if XML exists.
-    let _ = state.import.regenerate_metadata(&state).await;
+    crate::api::BackgroundManager::spawn_external_metadata_refresh(state.clone());
     Ok(())
 }
 

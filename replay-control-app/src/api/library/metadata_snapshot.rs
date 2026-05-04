@@ -7,7 +7,8 @@
 //! for the design rationale.
 
 use replay_control_core::library_db::{DriverStatusCounts, SystemCoverage};
-use replay_control_core_server::library_db::{DataSourceStats, LibraryDb, SystemCoverageStats};
+use replay_control_core_server::external_metadata::{self, DataSourceStats};
+use replay_control_core_server::library_db::{LibraryDb, SystemCoverageStats};
 
 use crate::api::AppState;
 pub use crate::server_fns::MetadataPageSnapshot;
@@ -18,14 +19,15 @@ use crate::server_fns::{BuiltinDbStats, DataSourceSummary};
 /// snapshot rather than caching `None`.
 pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let storage = state.storage();
-    let db_path = state.library_pool.db_path();
+    let em_db_path = state.external_metadata_pool.db_path();
 
-    // 8 independent reads. The pool serializes them on its slot count
-    // (3); fanning them out lets the slowest queries overlap with the
-    // others instead of running back-to-back. `unwrap_or_default()`
-    // keeps the snapshot best-effort: a single transient pool failure
-    // degrades that one section instead of failing the whole rebuild.
-    let pool = &state.library_pool;
+    // 8 independent reads across two pools. The pools serialize them on their
+    // slot counts; fanning them out lets the slowest queries overlap with the
+    // others instead of running back-to-back. `unwrap_or_default()` keeps the
+    // snapshot best-effort: a single transient pool failure degrades that one
+    // section instead of failing the whole rebuild.
+    let lib_pool = &state.library_pool;
+    let em_pool = &state.external_metadata_pool;
     let (
         stats,
         library_summary,
@@ -36,14 +38,15 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
         data_source_stats,
         image_count_pair,
     ) = tokio::join!(
-        pool.read(move |c| LibraryDb::stats(c, &db_path).unwrap_or_default()),
-        pool.read(|c| LibraryDb::library_summary(c).unwrap_or_default()),
-        pool.read(|c| LibraryDb::entries_per_system(c).unwrap_or_default()),
-        pool.read(|c| LibraryDb::thumbnails_per_system(c).unwrap_or_default()),
-        pool.read(|c| LibraryDb::system_coverage_stats(c).unwrap_or_default()),
-        pool.read(|c| LibraryDb::driver_status_per_system(c).unwrap_or_default()),
-        pool.read(|c| LibraryDb::get_data_source_stats(c, "libretro-thumbnails").ok()),
-        pool.read(|c| LibraryDb::image_stats(c).unwrap_or((0, 0))),
+        em_pool
+            .read(move |c| external_metadata::launchbox_stats(c, &em_db_path).unwrap_or_default()),
+        lib_pool.read(|c| LibraryDb::library_summary(c).unwrap_or_default()),
+        em_pool.read(|c| external_metadata::launchbox_entries_per_system(c).unwrap_or_default()),
+        lib_pool.read(|c| LibraryDb::thumbnails_per_system(c).unwrap_or_default()),
+        lib_pool.read(|c| LibraryDb::system_coverage_stats(c).unwrap_or_default()),
+        lib_pool.read(|c| LibraryDb::driver_status_per_system(c).unwrap_or_default()),
+        em_pool.read(|c| external_metadata::get_data_source_stats(c, "libretro-thumbnails").ok()),
+        lib_pool.read(|c| LibraryDb::image_stats(c).unwrap_or((0, 0))),
     );
     let stats = stats?;
     let library_summary = library_summary?;
@@ -52,7 +55,7 @@ pub(super) async fn compute(state: &AppState) -> Option<MetadataPageSnapshot> {
     let coverage_stats = coverage_stats?;
     let driver_status = driver_status?;
     let data_source_stats = data_source_stats?;
-    let image_count_pair = image_count_pair?;
+    let image_count_pair: (usize, usize) = image_count_pair?;
 
     // Off-pool work: the L1 systems cache, the on-disk media size, and the
     // bundled-catalog read-only stats.

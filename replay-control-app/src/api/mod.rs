@@ -3,7 +3,6 @@ pub mod analytics;
 pub mod background;
 pub(crate) mod core_api;
 pub mod favorites;
-pub mod import;
 pub(crate) mod library;
 pub mod recents;
 pub mod response_cache;
@@ -15,7 +14,6 @@ pub mod upload;
 
 pub use activity::{Activity, ActivityGuard, MaintenanceKind, StartupPhase};
 pub use background::BackgroundManager;
-pub use import::ImportPipeline;
 pub use library::LibraryService;
 pub use replay_control_core_server::db_pool::{DbError, DbPool, rusqlite};
 pub use thumbnail_pipeline::ThumbnailPipeline;
@@ -35,6 +33,11 @@ const LIBRARY_READ_POOL_SIZE: usize = 3;
 /// which can be DELETE-mode (exFAT/NFS); extra readers don't help there
 /// and the WriteGate path still serializes against writers.
 const USER_DATA_READ_POOL_SIZE: usize = 1;
+
+/// Read pool size for the host-global external_metadata DB. Only background
+/// enrichment + per-page thumbnail-variant lookups read from here; the SSR
+/// fan-out doesn't touch this DB. One reader is plenty.
+const EXTERNAL_METADATA_READ_POOL_SIZE: usize = 1;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -89,8 +92,10 @@ pub struct AppState {
     pub library_pool: DbPool,
     /// User data DB pool (deadpool-backed, concurrent reads).
     pub user_data_pool: DbPool,
-    /// Import pipeline (metadata import operations).
-    pub import: Arc<ImportPipeline>,
+    /// Host-global external metadata DB pool — LaunchBox text + libretro
+    /// thumbnail manifests. Read by enrichment + thumbnail UI lookups;
+    /// written by the LaunchBox + libretro refresh paths.
+    pub external_metadata_pool: DbPool,
     /// Thumbnail pipeline (index + download operations).
     pub thumbnails: Arc<ThumbnailPipeline>,
     /// Single coordinator for all thumbnail-download work (bulk
@@ -326,6 +331,24 @@ impl AppState {
         let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
         let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
 
+        // Open / create the host-global external_metadata.db before any
+        // pool that might write to it. Same model as `init_catalog` —
+        // single file directly under the data root, not per-storage.
+        let em_path = data_dir.external_metadata_db_path();
+        if let Some(parent) = em_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+        }
+        replay_control_core_server::external_metadata::open_at(&em_path)
+            .map_err(|e| format!("Failed to open external_metadata DB: {e}"))?;
+        let external_metadata_pool = DbPool::new(
+            em_path.clone(),
+            "external_metadata_db",
+            replay_control_core_server::external_metadata::open_at,
+            EXTERNAL_METADATA_READ_POOL_SIZE,
+        )?;
+        tracing::info!("external_metadata DB ready at {}", em_path.display());
+
         let (library_pool, user_data_pool) = if let Some(ref storage) = storage {
             tracing::info!("Storage: {:?} at {}", storage.kind, storage.root.display());
 
@@ -399,7 +422,6 @@ impl AppState {
 
         let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
 
-        let import = Arc::new(ImportPipeline::new());
         let thumbnails = Arc::new(ThumbnailPipeline::new());
 
         // Resolve settings directory from CLI args.
@@ -446,7 +468,7 @@ impl AppState {
             prefs: Arc::new(std::sync::RwLock::new(prefs)),
             library_pool,
             user_data_pool,
-            import,
+            external_metadata_pool,
             thumbnails,
             thumbnail_orchestrator: Arc::new(
                 thumbnail_orchestrator::ThumbnailDownloadOrchestrator::spawn(

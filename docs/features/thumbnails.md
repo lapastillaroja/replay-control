@@ -10,6 +10,13 @@ All images come from [libretro-thumbnails](https://github.com/libretro-thumbnail
 - **In-game screenshots** -- captured during gameplay
 - **Title screens** -- title screen captures
 
+## Where Things Live
+
+- **Manifest** (the per-repo list of available filenames) lives in the host-global `external_metadata.db` (`/var/lib/replay-control/external_metadata.db`) under the `thumbnail_manifest` and `data_source` tables. One copy per host — every storage shares it.
+- **Image files** stay per-storage at `<storage>/.replay-control/media/<system>/<kind>/`. The actual bytes live with the ROMs so an unplugged storage doesn't lose its art.
+
+This split means a fresh storage (or one that just lost its DB) can rebuild the manifest from disk without re-fetching from GitHub.
+
 ## Downloading Images
 
 From the metadata page (**Settings > Game Data**):

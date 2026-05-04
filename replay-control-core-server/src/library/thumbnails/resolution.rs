@@ -6,10 +6,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use rusqlite::Connection;
-
+use crate::external_metadata::ThumbnailManifestEntry;
 use crate::image_matching::{self, DirIndex};
-use crate::library_db::LibraryDb;
 use crate::thumbnail_manifest::{self, ManifestFuzzyIndex, ManifestMatch};
 use crate::thumbnails::{self, ThumbnailKind};
 
@@ -39,21 +37,25 @@ pub enum BoxArtResult<'a> {
     NotFound,
 }
 
-/// Build an image index for a system from the filesystem and DB.
+/// Build an image index for a system from the filesystem.
 ///
-/// Scans the boxart media directory, resolves fake symlinks, loads DB paths
-/// (with user overrides merged in), and builds the manifest fuzzy index.
+/// Scans the boxart media directory, resolves fake symlinks, applies the
+/// user's per-ROM box-art overrides, and wraps the libretro fuzzy index.
 ///
 /// # Arguments
-/// * `conn` - Library DB connection (for box_art_paths, manifest data)
-/// * `system` - System folder name
-/// * `storage_root` - Root of the storage device (e.g., `/media/usb`)
-/// * `user_overrides` - User box art overrides from user_data.db (rom_filename -> path)
+/// * `system` - System folder name.
+/// * `storage_root` - Root of the storage device (e.g., `/media/usb`).
+/// * `user_overrides` - User box art overrides from user_data.db
+///   (rom_filename → relative path under `media/<system>/`).
+/// * `libretro_repo_data` - Pre-loaded libretro manifest data for this system,
+///   loaded by the caller from `external_metadata.db` via
+///   `thumbnail_manifest::load_repo_manifest_data`. Empty when no repos
+///   apply or the host-global pool was unavailable.
 pub fn build_image_index(
-    conn: &Connection,
     system: &str,
     storage_root: &Path,
     user_overrides: HashMap<String, String>,
+    libretro_repo_data: Vec<(String, String, Vec<ThumbnailManifestEntry>)>,
 ) -> ImageIndex {
     let boxart_media = ThumbnailKind::Boxart.media_dir();
     let rc_dir = storage_root.join(crate::storage::RC_DIR);
@@ -127,43 +129,22 @@ pub fn build_image_index(
         }
     }
 
-    // Load DB paths from library DB.
-    let mut db_paths = LibraryDb::system_box_art_paths(conn, system).unwrap_or_default();
+    // db_paths used to come from `game_metadata.box_art_path` (legacy
+    // thumbnail-download path). With v2, `game_library.box_art_url` is
+    // written directly during enrichment, so the only thing left here is
+    // the user's per-ROM override layer.
+    let db_paths: HashMap<String, String> = user_overrides;
 
-    // Inject user box art overrides (highest priority — overwrites auto-matched paths).
-    for (rom_filename, override_path) in user_overrides {
-        db_paths.insert(rom_filename, override_path);
-    }
-
-    // Load raw manifest data and build the manifest fuzzy index.
+    // Build the manifest fuzzy index from the pre-loaded libretro repo data.
     // Returns None when no libretro thumbnail data exists.
-    let manifest: Option<ManifestFuzzyIndex> = {
-        if let Some(repo_names) = thumbnails::thumbnail_repo_names(system) {
-            let mut repo_data = Vec::new();
-            for display_name in repo_names {
-                let url_name = thumbnails::repo_url_name(display_name);
-                let source_name = thumbnails::libretro_source_name(display_name);
-                let branch = LibraryDb::get_data_source(conn, &source_name)
-                    .ok()
-                    .flatten()
-                    .and_then(|s| s.branch)
-                    .unwrap_or_else(|| "master".to_string());
-                let entries = LibraryDb::query_thumbnail_index(
-                    conn,
-                    &source_name,
-                    ThumbnailKind::Boxart.repo_dir(),
-                )
-                .unwrap_or_default();
-                repo_data.push((url_name, branch, entries));
-            }
-            let idx = thumbnail_manifest::build_manifest_fuzzy_index_from_raw(&repo_data);
-            if idx.exact.is_empty() {
-                None
-            } else {
-                Some(idx)
-            }
-        } else {
+    let manifest: Option<ManifestFuzzyIndex> = if libretro_repo_data.is_empty() {
+        None
+    } else {
+        let idx = thumbnail_manifest::build_manifest_fuzzy_index_from_raw(&libretro_repo_data);
+        if idx.exact.is_empty() {
             None
+        } else {
+            Some(idx)
         }
     };
 

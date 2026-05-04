@@ -20,6 +20,7 @@ pub fn MetadataBusyBanner() -> impl IntoView {
         Activity::Startup { phase, system } => {
             use server_fns::StartupPhase;
             match phase {
+                StartupPhase::FetchingMetadata => "Fetching game metadata...".to_string(),
                 StartupPhase::Scanning => {
                     if system.is_empty() {
                         "Scanning game library...".to_string()
@@ -83,6 +84,26 @@ pub fn MetadataBusyBanner() -> impl IntoView {
                 "Updating software...".to_string()
             } else {
                 progress.phase_detail.clone()
+            }
+        }
+        Activity::RefreshExternalMetadata { progress } => {
+            use server_fns::RefreshMetadataPhase;
+            match progress.phase {
+                RefreshMetadataPhase::Checking => "Checking metadata...".to_string(),
+                RefreshMetadataPhase::Downloading => {
+                    if progress.downloaded_bytes > 0 {
+                        format!(
+                            "Downloading metadata ({} MB)...",
+                            progress.downloaded_bytes / (1024 * 1024)
+                        )
+                    } else {
+                        "Downloading metadata...".to_string()
+                    }
+                }
+                RefreshMetadataPhase::Parsing => "Parsing metadata...".to_string(),
+                RefreshMetadataPhase::Enriching => "Re-enriching library...".to_string(),
+                RefreshMetadataPhase::Complete => String::new(),
+                RefreshMetadataPhase::Failed => "Metadata refresh failed".to_string(),
             }
         }
     };

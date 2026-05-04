@@ -115,45 +115,6 @@ impl LibraryDb {
         Ok(count)
     }
 
-    /// Populate `game_release_date` from `game_metadata` rows (LaunchBox-origin dates).
-    ///
-    /// Cross-joins against `game_library` to get the `(base_title, region)` for each
-    /// `(system, rom_filename)`. Uses `source = 'launchbox'`.
-    pub fn seed_release_dates_from_metadata(conn: &mut Connection) -> Result<usize> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT gm.system, gl.base_title, \
-                        CASE WHEN gl.region = '' THEN 'unknown' ELSE gl.region END, \
-                        gm.release_date, gm.release_precision \
-                 FROM game_metadata gm \
-                 JOIN game_library gl \
-                   ON gl.system = gm.system AND gl.rom_filename = gm.rom_filename \
-                 WHERE gl.base_title != '' AND gm.release_date IS NOT NULL",
-            )
-            .map_err(|e| Error::Other(format!("Prepare seed_release_dates_from_metadata: {e}")))?;
-
-        let rows: Vec<ReleaseDateRow> = stmt
-            .query_map([], |row| {
-                Ok(ReleaseDateRow {
-                    system: row.get(0)?,
-                    base_title: row.get(1)?,
-                    region: row.get(2)?,
-                    release_date: row.get(3)?,
-                    precision: row
-                        .get::<_, Option<DpSql>>(4)?
-                        .map(|DpSql(d)| d)
-                        .unwrap_or(DatePrecision::Year),
-                    source: "launchbox".to_string(),
-                })
-            })
-            .map_err(|e| Error::Other(format!("Query seed_release_dates_from_metadata: {e}")))?
-            .flatten()
-            .collect();
-
-        drop(stmt);
-        Self::upsert_release_dates(conn, &rows)
-    }
-
     /// Populate `game_release_date` from build-time embedded static data.
     ///
     /// Reads `game_db::console_release_dates()` (per-region TGDB-sourced rows)

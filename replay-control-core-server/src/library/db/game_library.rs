@@ -150,6 +150,66 @@ impl LibraryDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Look up `genre` for a single ROM from `game_library`. Returns the
+    /// stored value (which enrichment populates from catalog at scan-time
+    /// and from LaunchBox at fill-empty time) or empty when nothing is set.
+    pub fn rom_genre(conn: &Connection, system: &str, rom_filename: &str) -> Result<String> {
+        use rusqlite::OptionalExtension;
+        let genre: Option<Option<String>> = conn
+            .query_row(
+                "SELECT genre FROM game_library WHERE system = ?1 AND rom_filename = ?2",
+                rusqlite::params![system, rom_filename],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("rom_genre: {e}")))?;
+        Ok(genre.flatten().unwrap_or_default())
+    }
+
+    /// All `(system, rom_filename) → rating` pairs across the library.
+    /// Used by the favorites organizer to rank entries; reads from
+    /// `game_library.rating` (which enrichment populates from LaunchBox).
+    pub fn all_ratings(
+        conn: &Connection,
+    ) -> Result<std::collections::HashMap<(String, String), f64>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT system, rom_filename, rating
+                 FROM game_library
+                 WHERE rating IS NOT NULL",
+            )
+            .map_err(|e| Error::Other(format!("all_ratings prepare: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("all_ratings query: {e}")))?;
+        let mut map = std::collections::HashMap::new();
+        for r in rows.flatten() {
+            map.insert((r.0, r.1), r.2);
+        }
+        Ok(map)
+    }
+
+    /// Count of `game_library` rows that have a `box_art_url` set.
+    /// Replaces the legacy `image_stats` count over `game_metadata.box_art_path`.
+    /// Screenshots/title screens aren't tracked centrally any more
+    /// (filesystem fallback at request time), so the second field is always 0.
+    pub fn image_stats(conn: &Connection) -> Result<(usize, usize)> {
+        let with_boxart: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM game_library WHERE box_art_url IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("image_stats: {e}")))?;
+        Ok((with_boxart as usize, 0))
+    }
+
     /// Count games with thumbnails per system from `game_library.box_art_url`.
     ///
     /// This is the live source of truth -- rebuilt every enrichment pass.
@@ -1581,45 +1641,12 @@ mod tests {
     use super::super::tests::*;
     use super::SearchFilter;
 
-    #[test]
-    fn genre_enrichment_fills_empty_genre_from_launchbox() {
-        let (mut conn, _dir) = open_temp_db();
-
-        LibraryDb::bulk_upsert(
-            &mut conn,
-            &[(
-                "sega_smd".into(),
-                "Sonic.md".into(),
-                make_metadata_with_genre("Platform"),
-            )],
-        )
-        .unwrap();
-
-        LibraryDb::save_system_entries(
-            &mut conn,
-            "sega_smd",
-            &[make_game_entry("sega_smd", "Sonic.md", false)],
-            None,
-        )
-        .unwrap();
-
-        LibraryDb::update_box_art_genre_rating(
-            &mut conn,
-            "sega_smd",
-            &[super::super::BoxArtGenreRating {
-                rom_filename: "Sonic.md".into(),
-                box_art_url: None,
-                genre: Some("Platform".into()),
-                players: None,
-                rating: None,
-                rating_count: None,
-            }],
-        )
-        .unwrap();
-
-        let roms = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
-        assert_eq!(roms[0].genre.as_deref(), Some("Platform"));
-    }
+    // Removed: `genre_enrichment_fills_empty_genre_from_launchbox` — exercised
+    // LibraryDb::bulk_upsert + the legacy game_metadata table. The
+    // genre-update behavior is still covered by
+    // `genre_enrichment_does_not_overwrite_existing_genre` and
+    // `genre_enrichment_mixed_empty_and_existing` below, which feed
+    // BoxArtGenreRating directly.
 
     #[test]
     fn genre_enrichment_does_not_overwrite_existing_genre() {

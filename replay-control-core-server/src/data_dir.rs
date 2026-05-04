@@ -21,6 +21,13 @@ const STORAGES_SUBDIR: &str = "storages";
 /// feature callers (path resolution only) don't need to enable the feature.
 pub const LIBRARY_DB_FILE: &str = "library.db";
 
+/// Mirrors `external_metadata::EXTERNAL_METADATA_DB_FILE`.
+pub const EXTERNAL_METADATA_DB_FILE: &str = "external_metadata.db";
+
+/// Subdirectory under the data root for downloaded source files (e.g.
+/// LaunchBox XML). Created on demand by the refresh path.
+pub const CACHE_SUBDIR: &str = "cache";
+
 /// Cheap to clone.
 #[derive(Debug, Clone)]
 pub struct DataDir {
@@ -48,6 +55,19 @@ impl DataDir {
 
     pub fn library_db_path(&self, id: &StorageId) -> PathBuf {
         self.storage_dir(id).join(LIBRARY_DB_FILE)
+    }
+
+    /// Path to the host-global `external_metadata.db` (LaunchBox text +
+    /// libretro thumbnail manifests). Lives directly under the data root,
+    /// not under a per-storage subdir.
+    pub fn external_metadata_db_path(&self) -> PathBuf {
+        self.root.join(EXTERNAL_METADATA_DB_FILE)
+    }
+
+    /// Directory used for downloaded source files awaiting parse
+    /// (e.g. `launchbox-metadata.xml`).
+    pub fn cache_dir(&self) -> PathBuf {
+        self.root.join(CACHE_SUBDIR)
     }
 
     pub fn ensure_storage_dir(&self, id: &StorageId) -> Result<PathBuf> {

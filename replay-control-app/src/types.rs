@@ -21,6 +21,7 @@ pub enum Activity {
     Idle,
     Startup { phase: StartupPhase, system: String },
     Import { progress: ImportProgress },
+    RefreshExternalMetadata { progress: RefreshMetadataProgress },
     ThumbnailUpdate { progress: ThumbnailProgress },
     Rebuild { progress: RebuildProgress },
     Maintenance { kind: MaintenanceKind },
@@ -45,6 +46,10 @@ impl Activity {
             Self::Update { progress } => {
                 matches!(progress.phase, UpdatePhase::Complete | UpdatePhase::Failed)
             }
+            Self::RefreshExternalMetadata { progress } => matches!(
+                progress.phase,
+                RefreshMetadataPhase::Complete | RefreshMetadataPhase::Failed
+            ),
             _ => false,
         }
     }
@@ -103,13 +108,44 @@ impl Activity {
                 ),
                 _ => String::new(),
             },
+            Self::RefreshExternalMetadata { progress } => match progress.phase {
+                RefreshMetadataPhase::Complete => format!(
+                    "Metadata refresh complete ({}s, {} source entries)",
+                    progress.elapsed_secs, progress.source_entries
+                ),
+                RefreshMetadataPhase::Failed => format!(
+                    "Metadata refresh failed: {}",
+                    progress.error.as_deref().unwrap_or("unknown error"),
+                ),
+                _ => String::new(),
+            },
             _ => String::new(),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RefreshMetadataPhase {
+    Checking,
+    Downloading,
+    Parsing,
+    Enriching,
+    Complete,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefreshMetadataProgress {
+    pub phase: RefreshMetadataPhase,
+    pub source_entries: usize,
+    pub downloaded_bytes: u64,
+    pub elapsed_secs: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StartupPhase {
+    FetchingMetadata,
     Scanning,
     RebuildingIndex,
 }

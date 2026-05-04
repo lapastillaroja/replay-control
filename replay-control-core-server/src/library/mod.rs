@@ -8,6 +8,8 @@ pub mod db;
 #[cfg(feature = "library")]
 pub mod enrichment;
 #[cfg(feature = "library")]
+pub mod external_metadata_refresh;
+#[cfg(feature = "library")]
 pub mod game_entry_builder;
 #[cfg(feature = "library")]
 pub mod imports;

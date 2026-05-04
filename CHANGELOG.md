@@ -4,6 +4,61 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## Unreleased
+
+### Highlights
+
+- **External-metadata pipeline redesign.** LaunchBox text and libretro thumbnail manifests move out of per-storage `library.db` into a host-global `external_metadata.db` at `/var/lib/replay-control/external_metadata.db`. Newly added ROMs (after a LaunchBox refresh) automatically pick up metadata on the next enrichment pass — fixes the long-standing one-shot-import bug. Storage swaps no longer re-parse the 460 MB XML; only the binary keeps a stamp of the last-parsed file's CRC32. Image files stay per-storage at `<storage>/.replay-control/media/`, only the manifest of available filenames moves host-global.
+- **`library.db` schema bumped 1 → 3** in two migration steps. v2 drops `game_metadata`, `thumbnail_index`, `data_sources` (relocated to `external_metadata.db`). v3 adds `game_description` (description + publisher denormalized so the game-detail page stays on a single pool). A downgrade guard refuses to open a DB stamped with a newer version than the binary.
+- **One-button metadata refresh.** The legacy "Import LaunchBox metadata" UI is replaced by a single host-global "Refresh metadata" button that downloads, parses, and re-enriches every system in one flow with live SSE progress (Downloading → Parsing → Enriching → Complete). New `Activity::RefreshExternalMetadata` SSE variant — clients should add a render branch.
+- **Game-detail page request path is now strictly single-pool.** Description, publisher, ratings, genre, and image stats all read from `library.db`; the host-global `external_metadata.db` is touched only at enrichment time.
+- **Per-system enrichment writes collapse to one transaction.** Six separate `db.write` calls per system (developer / cooperative / year / release-date resolver / game_description / box-art-genre-rating) are now bundled into a single library-pool write — saves ~1.5 s of per-commit fsync across a 30-system re-enrichment on Pi.
+
+### Added
+
+- New host-global `external_metadata.db` (LaunchBox `launchbox_game` / `launchbox_alternate`, libretro `thumbnail_manifest` / `data_source`, `external_meta` key-value).
+- New per-storage `game_description (system, rom_filename, description, publisher)` table in `library.db`. Truncate-and-repopulate per system on every enrichment pass.
+- `Activity::RefreshExternalMetadata { progress }` SSE variant + `RefreshMetadataPhase` (Checking → Downloading → Parsing → Enriching → Complete/Failed) + `RefreshMetadataProgress` (source_entries, downloaded_bytes, elapsed_secs, error). Mirrored on both SSR-side `api::activity` and WASM-side `types`.
+- `BackgroundManager::spawn_external_metadata_refresh` and `spawn_external_metadata_download_and_refresh` for UI-triggered refreshes (regenerate, download).
+- `library_db::resolve_launchbox_xml(cache_dir, storage_rc_dir)` — single helper that picks the LaunchBox XML across the host-global cache and per-storage legacy locations (boot-time hash check + UI download both use it).
+- `replay_control_core::title_utils::normalize_title_for_metadata` — single canonical normalizer used by both the import-time index and the per-row read-time lookup, so the two sides can never drift.
+- Setup checklist's "metadata imported?" now reads `external_metadata.launchbox_game`'s row count.
+- First-boot data seeding (Phase 0.5): on a fresh install, the startup pipeline silently downloads the LaunchBox XML and libretro thumbnail manifest before the first ROM scan so initial enrichment has full data. Network failures are warn-logged and the pipeline continues — offline-ready behaviour is preserved. Subsequent boots skip the phase entirely.
+
+### Changed
+
+- Boot pipeline Phase 1 (`phase_auto_import`) is now a content-derived hash check + refresh against `external_metadata.db` — replaces the legacy "DB-empty" gate that broke when ROMs were added after a one-shot import. Hash + stamp-read run in parallel via `tokio::join!`. After refresh, every active system is re-enriched so launchbox data flows through `game_library` + `game_description`.
+- Enrichment now reads launchbox via a single batched per-system query (`external_metadata::system_launchbox_rows`) instead of seven separate one-field queries. Per-ROM lookup uses normalized-title candidates (handles arcade clones via the parent's display name).
+- Image index construction (`build_image_index`) drops its DB-connection arg — it's now a pure filesystem walk plus the pre-loaded libretro repo data, called from `tokio::task::spawn_blocking`.
+- Game-detail page lookup of description + publisher reads from per-storage `game_description` (single library-pool acquire) instead of cross-pool acquiring `external_metadata.db`.
+- `LibraryDb::all_ratings`, `image_stats`, `rom_genre` are now sourced from `game_library` (already populated by enrichment) instead of the dead per-storage `game_metadata` table.
+- Download-progress callback throttled from per-64-KB-chunk to every-1-MB so the activity SSE channel doesn't churn 3 200 lock+broadcast cycles per 200 MB download.
+- Parse-progress now updates the activity stream every 5 000 entries so the UI banner shows a live counter during the 30–90 s LaunchBox parse.
+
+### Removed
+
+- Per-storage `game_metadata`, `thumbnail_index`, `data_sources` tables (relocated to `external_metadata.db`).
+- Legacy `LibraryDb::bulk_upsert` / `lookup` / `system_metadata_*` / `clear` / `is_empty` / `delete_orphaned_metadata` / `bulk_update_image_paths` / `system_box_art_paths` / `entries_per_system` / `stats` and the `GameMetadata` / `MetadataStats` / `DataSourceInfo` / `DataSourceStats` / `ThumbnailIndexEntry` / `ImagePathUpdate` types.
+- Legacy `library/imports/launchbox.rs` import functions (`import_launchbox`, `run_bulk_import`, `build_rom_index`, `build_index_entries`, `import_launchbox_aliases`) and the `library/matching/metadata.rs` auto-match module — replaced by `library/external_metadata_refresh.rs::refresh_launchbox`.
+- Legacy `api::ImportPipeline` and the `import_launchbox_metadata` server fn — replaced by `BackgroundManager::spawn_external_metadata_refresh` + `spawn_external_metadata_download_and_refresh`.
+- Legacy `cleanup_legacy_metadata_db` (pre-0.5 `metadata.db` cleanup); the upgrade path is now far past it.
+- `update_image_paths_from_disk` and the `ImagePathUpdate` flow (legacy thumbnail-download path that wrote `box_art_path` to `game_metadata`); the new flow writes `box_art_url` directly to `game_library`.
+
+### Fixed
+
+- ROMs added to a system after a one-shot LaunchBox import are now enriched on the next pass (was: silently skipped forever).
+- Two concurrent boots (boot pipeline + storage-watcher restart) no longer race the LaunchBox refresh — the activity slot is claimed before the hash check, so the second caller cleanly bails.
+- Activity SSE no longer flickers `Idle` between the download and parse phases of a one-button refresh — the guard is threaded from the download path into `phase_auto_import_inner` via an explicit parameter.
+- Neo Geo (`snk_ng`) re-categorized from `Console` → `Arcade` so MAME-shortname ROMs (`mslug.zip`, `kof98.zip`) route through `arcade_db` instead of failing to match LaunchBox.
+
+### Migration / Upgrade Notes
+
+- **Downgrade is not supported.** Once `library.db` is stamped with v3, an older binary refuses to open it (the downgrade-guard check in `LibraryDb::run_migrations` raises an error). Roll forward only.
+- First boot after upgrade re-parses the LaunchBox XML (~5–8 minutes on Pi at the typical ~150 K-game XML size) because the new `external_metadata.db` starts empty. Subsequent boots are no-op when the XML hash matches the stamp.
+- Existing per-storage `<storage>/.replay-control/launchbox-metadata.xml` continues to work — the refresh path checks the host-global cache first, then falls back to the per-storage location.
+
+---
+
 ## [0.4.0-beta.6](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.6) - 2026-05-03
 
 ### Highlights

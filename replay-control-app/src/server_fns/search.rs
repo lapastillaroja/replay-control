@@ -72,28 +72,25 @@ pub(crate) async fn lookup_genre(system: &str, rom_filename: &str) -> String {
         return baked_genre;
     }
 
-    // Fallback: check LaunchBox metadata for genre.
+    // Fallback: read the genre that enrichment already wrote to
+    // `game_library.genre` (populated from LaunchBox when the catalog had
+    // nothing). Single library-pool acquire — no cross-pool launchbox
+    // lookup needed.
     let state = leptos::prelude::expect_context::<crate::api::AppState>();
-    if let Some(genre) = state
+    let system = system.to_string();
+    let rom_filename = rom_filename.to_string();
+    state
         .library_pool
-        .read({
-            let system = system.to_string();
-            let rom_filename = rom_filename.to_string();
-            move |conn| {
-                LibraryDb::lookup(conn, &system, &rom_filename)
-                    .ok()
-                    .flatten()
-                    .and_then(|meta| meta.genre)
-                    .filter(|g| !g.is_empty())
-            }
+        .read(move |conn| {
+            replay_control_core_server::library_db::LibraryDb::rom_genre(
+                conn,
+                &system,
+                &rom_filename,
+            )
+            .unwrap_or_default()
         })
         .await
-        .flatten()
-    {
-        return genre;
-    }
-
-    String::new()
+        .unwrap_or_default()
 }
 
 // clippy::too_many_arguments — Leptos server functions require flat parameter lists

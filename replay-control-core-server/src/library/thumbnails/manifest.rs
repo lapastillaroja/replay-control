@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::Connection;
 
-use crate::library_db::LibraryDb;
+use crate::external_metadata::{self, ThumbnailManifestEntry};
 use crate::thumbnails::{self, ThumbnailKind};
 use replay_control_core::error::{Error, Result};
 
@@ -279,37 +279,35 @@ pub struct ThumbnailEntry {
     pub is_symlink: bool, // true if git mode is 120000 (symlink)
 }
 
-/// Insert parsed thumbnail entries into the `thumbnail_index` table.
-pub fn insert_thumbnail_entries(
-    conn: &mut Connection,
-    source_name: &str,
+/// Convert parsed thumbnail entries into the (kind, filename, symlink_target)
+/// triples expected by `external_metadata::insert_thumbnail_manifest_rows`.
+pub(crate) fn entries_to_tuples(
     entries: &[ThumbnailEntry],
-) -> Result<usize> {
-    let tuples: Vec<(String, String, Option<String>)> = entries
+) -> Vec<(String, String, Option<String>)> {
+    entries
         .iter()
         .map(|e| {
             let symlink_target = if e.is_symlink {
-                Some(String::new()) // Placeholder -- resolved at download time
+                Some(String::new()) // Placeholder — resolved at download time.
             } else {
                 None
             };
             (e.kind.clone(), e.filename.clone(), symlink_target)
         })
-        .collect();
-
-    LibraryDb::bulk_insert_thumbnail_index(conn, source_name, &tuples)
+        .collect()
 }
 
 /// Orchestrate the full manifest import for all repos.
 /// Calls `on_progress(repos_done, repos_total, current_repo_display_name)`.
 /// Returns import stats. Skips repos whose commit SHA hasn't changed.
 ///
-/// Takes `&DbPool` rather than `&mut Connection` so the write connection is
-/// only held during the per-repo SQL transaction — not the entire import,
-/// which interleaves SQL with GitHub HTTP fetches that can take seconds each.
+/// Writes go to the host-global `external_metadata.db` via the pool the app
+/// constructs and passes in. Each repo's per-transaction write briefly
+/// acquires the pool's single writer; the GitHub HTTP fetches between repos
+/// run pool-free so they don't hold a write lock.
 #[cfg(feature = "http")]
 pub async fn import_all_manifests(
-    pool: &crate::DbPool,
+    em_pool: &crate::DbPool,
     on_progress: &(dyn Fn(usize, usize, &str) + Send + Sync),
     cancel: &AtomicBool,
     api_key: Option<&str>,
@@ -317,8 +315,6 @@ pub async fn import_all_manifests(
     let repos = collect_all_repos();
     let total = repos.len();
     let mut stats = ManifestImportStats::default();
-
-    let db_unavailable = || Error::Other("library DB unavailable during manifest import".into());
 
     tracing::info!(
         "Manifest import: starting ({} repos, api_key={})",
@@ -382,11 +378,15 @@ pub async fn import_all_manifests(
 
         // Check if repo has changed since last import.
         let source_name_read = source_name.clone();
-        let existing = pool
-            .read(move |conn| LibraryDb::get_data_source(conn, &source_name_read))
+        let existing = em_pool
+            .read(move |conn| {
+                external_metadata::get_data_source(conn, &source_name_read)
+                    .ok()
+                    .flatten()
+            })
             .await
-            .ok_or_else(db_unavailable)?;
-        if let Ok(Some(status)) = existing {
+            .flatten();
+        if let Some(status) = existing {
             let existing_hash = status.version_hash.as_deref().unwrap_or("");
             if !existing_hash.is_empty() {
                 match check_repo_freshness(&repo.url_name, existing_hash, api_key).await {
@@ -455,30 +455,42 @@ pub async fn import_all_manifests(
                 }
             };
 
-        // Single transaction per repo: upsert source row (FK parent), insert
-        // thumbnail entries, then patch source row's count. Batching these
-        // amortizes the deadpool round-trip and keeps the trio atomic — a
-        // partial state would leave entries pointing at a row claiming count=0.
+        // Single transaction per repo on the pool's write connection: upsert
+        // data_source, replace manifest rows, then patch the source row's
+        // count. Atomic so partial state never leaves rows pointing at a
+        // count=0 row.
         let source_name_w = source_name.clone();
-        let result: Option<Result<usize>> = pool
-            .write(move |conn| {
-                LibraryDb::upsert_data_source(
-                    conn,
+        let actual_branch_w = actual_branch.to_string();
+        let result = em_pool
+            .write(move |conn| -> Result<usize> {
+                let tx = conn
+                    .transaction()
+                    .map_err(|e| Error::Other(format!("begin: {e}")))?;
+                external_metadata::upsert_data_source(
+                    &tx,
                     &source_name_w,
                     "libretro-thumbnails",
                     &commit_sha,
-                    actual_branch,
+                    &actual_branch_w,
                     0,
                 )?;
-                let count = insert_thumbnail_entries(conn, &source_name_w, &entries)?;
-                LibraryDb::upsert_data_source(
-                    conn,
+                external_metadata::delete_thumbnail_manifest(&tx, &source_name_w)?;
+                let tuples = entries_to_tuples(&entries);
+                let count = external_metadata::insert_thumbnail_manifest_rows(
+                    &tx,
+                    &source_name_w,
+                    &tuples,
+                )?;
+                external_metadata::upsert_data_source(
+                    &tx,
                     &source_name_w,
                     "libretro-thumbnails",
                     &commit_sha,
-                    actual_branch,
+                    &actual_branch_w,
                     count,
                 )?;
+                tx.commit()
+                    .map_err(|e| Error::Other(format!("commit: {e}")))?;
                 Ok(count)
             })
             .await;
@@ -494,9 +506,10 @@ pub async fn import_all_manifests(
                 consecutive_failures += 1;
             }
             None => {
-                stats
-                    .errors
-                    .push(format!("{}: library DB unavailable", repo.display_name));
+                stats.errors.push(format!(
+                    "{}: external_metadata pool unavailable",
+                    repo.display_name
+                ));
                 consecutive_failures += 1;
             }
         }
@@ -613,108 +626,50 @@ pub struct ManifestFuzzyIndex {
     pub by_aggressive_compact: HashMap<String, ManifestMatch>,
 }
 
-/// Build a ManifestFuzzyIndex from the DB for the given repos and kind.
-pub fn build_manifest_fuzzy_index(
-    conn: &Connection,
+/// Load the raw `(url_name, branch, entries)` triples for a list of libretro
+/// repos and a single image `kind` from an `external_metadata` read connection.
+///
+/// Pure data fetch — keep DB-side work tight so the caller can drop the
+/// connection before invoking `build_manifest_fuzzy_index_from_raw`.
+pub fn load_repo_manifest_data(
+    em_conn: &Connection,
     repo_display_names: &[&str],
     kind: &str,
-) -> ManifestFuzzyIndex {
-    use replay_control_core::title_utils::{
-        base_title, normalize_aggressive, normalize_aggressive_compact,
-    };
-    use thumbnails::{strip_tags, strip_version};
-
-    let mut exact = HashMap::new();
-    let mut exact_ci = HashMap::new();
-    let mut by_tags = HashMap::new();
-    let mut by_version = HashMap::new();
-    let mut by_base_title = HashMap::new();
-    let mut by_aggressive = HashMap::new();
-    let mut by_aggressive_compact = HashMap::new();
-
+) -> Vec<(String, String, Vec<ThumbnailManifestEntry>)> {
+    let mut out = Vec::with_capacity(repo_display_names.len());
     for display_name in repo_display_names {
         let url_name = thumbnails::repo_url_name(display_name);
         let source_name = thumbnails::libretro_source_name(display_name);
-
-        // Look up branch from data_sources.
-        let branch = LibraryDb::get_data_source(conn, &source_name)
+        let branch = external_metadata::get_data_source(em_conn, &source_name)
             .ok()
             .flatten()
             .and_then(|s| s.branch)
             .unwrap_or_else(|| "master".to_string());
-
-        let entries =
-            LibraryDb::query_thumbnail_index(conn, &source_name, kind).unwrap_or_default();
-
-        for entry in entries {
-            let m = ManifestMatch {
-                filename: entry.filename.clone(),
-                is_symlink: entry.symlink_target.is_some(),
-                repo_url_name: url_name.clone(),
-                branch: branch.clone(),
-            };
-
-            // Tier 1: exact
-            exact
-                .entry(entry.filename.clone())
-                .or_insert_with(|| m.clone());
-
-            // Tier 1b: case-insensitive exact (preserves region tags)
-            exact_ci
-                .entry(entry.filename.to_lowercase())
-                .or_insert_with(|| m.clone());
-
-            // Tier 2: strip tags
-            let stripped = strip_tags(&entry.filename);
-            let key = stripped.to_lowercase();
-            by_tags.entry(key.clone()).or_insert_with(|| m.clone());
-
-            // Tier 3: version-stripped
-            let version_key = strip_version(&key);
-            if version_key.len() < key.len() {
-                by_version
-                    .entry(version_key.to_string())
-                    .or_insert_with(|| m.clone());
-            }
-
-            // Tier 4: base_title (tilde split + article normalization)
-            let bt = base_title(&entry.filename);
-            if bt != key {
-                by_base_title.entry(bt.clone()).or_insert_with(|| m.clone());
-            }
-
-            // Tier 5: aggressive normalization (strip all punctuation, keep spaces)
-            let agg = normalize_aggressive(&bt);
-            by_aggressive.entry(agg).or_insert_with(|| m.clone());
-
-            // Tier 6: compact-aggressive (also strips spaces). Catches
-            // "Galaga '88" ↔ "Galaga88" where the apostrophe-as-space
-            // expansion at tier 5 leaves a space mismatch.
-            let agg_compact = normalize_aggressive_compact(&bt);
-            if !agg_compact.is_empty() {
-                by_aggressive_compact.entry(agg_compact).or_insert(m);
-            }
-        }
+        let entries = external_metadata::query_thumbnail_manifest(em_conn, &source_name, kind)
+            .unwrap_or_default();
+        out.push((url_name, branch, entries));
     }
+    out
+}
 
-    ManifestFuzzyIndex {
-        exact,
-        exact_ci,
-        by_tags,
-        by_version,
-        by_base_title,
-        by_aggressive,
-        by_aggressive_compact,
-    }
+/// Convenience: load + build in one call. Sync — caller passes the
+/// `external_metadata` read connection.
+pub fn build_manifest_fuzzy_index(
+    em_conn: &Connection,
+    repo_display_names: &[&str],
+    kind: &str,
+) -> ManifestFuzzyIndex {
+    let repo_data = load_repo_manifest_data(em_conn, repo_display_names, kind);
+    build_manifest_fuzzy_index_from_raw(&repo_data)
 }
 
 /// Build a manifest fuzzy index from pre-fetched raw data.
 ///
 /// Each element in `repo_data` is `(repo_url_name, branch, entries)` where
-/// entries were queried from `thumbnail_index` under the DB lock. This allows
-/// the caller to release the DB lock before the expensive index construction.
+/// entries were queried from `thumbnail_manifest`. The pre-loaded shape lets
+/// the caller release the DB connection before the expensive index construction.
 pub fn build_manifest_fuzzy_index_from_raw(
-    repo_data: &[(String, String, Vec<crate::library_db::ThumbnailIndexEntry>)],
+    repo_data: &[(String, String, Vec<ThumbnailManifestEntry>)],
 ) -> ManifestFuzzyIndex {
     use replay_control_core::title_utils::{
         base_title, normalize_aggressive, normalize_aggressive_compact,
@@ -1095,7 +1050,7 @@ pub struct BoxArtVariant {
 ///
 /// Results from both layers are de-duplicated by filename stem.
 pub fn find_boxart_variants(
-    conn: &Connection,
+    em_conn: &Connection,
     system: &str,
     rom_filename: &str,
     arcade_display: Option<&str>,
@@ -1178,14 +1133,13 @@ pub fn find_boxart_variants(
             let url_name = thumbnails::repo_url_name(repo_display);
             let source_name = thumbnails::libretro_source_name(repo_display);
 
-            let branch = LibraryDb::get_data_source(conn, &source_name)
+            let branch = external_metadata::get_data_source(em_conn, &source_name)
                 .ok()
                 .flatten()
                 .and_then(|s| s.branch)
                 .unwrap_or_else(|| "master".to_string());
-
-            let entries = LibraryDb::query_thumbnail_index(
-                conn,
+            let entries = external_metadata::query_thumbnail_manifest(
+                em_conn,
                 &source_name,
                 ThumbnailKind::Boxart.repo_dir(),
             )
@@ -1245,7 +1199,7 @@ pub fn find_boxart_variants(
 /// The full `find_boxart_variants()` (with filesystem scan) is only called on the
 /// game detail page.
 pub fn count_boxart_variants(
-    conn: &Connection,
+    em_conn: &Connection,
     system: &str,
     rom_filename: &str,
     arcade_display: Option<&str>,
@@ -1270,9 +1224,12 @@ pub fn count_boxart_variants(
     for repo_display in repo_names {
         let source_name = thumbnails::libretro_source_name(repo_display);
 
-        let entries =
-            LibraryDb::query_thumbnail_index(conn, &source_name, ThumbnailKind::Boxart.repo_dir())
-                .unwrap_or_default();
+        let entries = external_metadata::query_thumbnail_manifest(
+            em_conn,
+            &source_name,
+            ThumbnailKind::Boxart.repo_dir(),
+        )
+        .unwrap_or_default();
 
         for entry in &entries {
             let entry_base = strip_tags(&entry.filename).to_lowercase();
@@ -1349,11 +1306,12 @@ pub struct DownloadPlan {
     pub skipped: usize,
 }
 
-/// Plan which thumbnails need downloading for a system (sync, needs DB).
+/// Plan which thumbnails need downloading for a system. Sync — caller passes
+/// the `external_metadata` read connection.
 ///
 /// `arcade_lookup` must be pre-populated by the caller.
 pub fn plan_system_thumbnails(
-    conn: &Connection,
+    em_conn: &Connection,
     storage_root: &Path,
     system: &str,
     kind: ThumbnailKind,
@@ -1363,7 +1321,7 @@ pub fn plan_system_thumbnails(
         .ok_or_else(|| Error::Other(format!("No thumbnail repo for {system}")))?;
 
     let display_names: Vec<&str> = repo_names.to_vec();
-    let manifest_index = build_manifest_fuzzy_index(conn, &display_names, kind.repo_dir());
+    let manifest_index = build_manifest_fuzzy_index(em_conn, &display_names, kind.repo_dir());
 
     let rom_filenames = thumbnails::list_rom_filenames(storage_root, system);
     let total = rom_filenames.len();
@@ -1831,16 +1789,16 @@ mod tests {
         // Simulate arcade_fbneo's real manifest: both FBNeo and MAME entries indexed
         // via `build_manifest_fuzzy_index_from_raw`. FBNeo has "Galaga '88"; MAME has
         // "Galaga '88 (set 1)" and "Galaga '88 (Japan)".
-        let fbneo_entries = vec![crate::library_db::ThumbnailIndexEntry {
+        let fbneo_entries = vec![ThumbnailManifestEntry {
             filename: "Galaga '88".to_string(),
             symlink_target: None,
         }];
         let mame_entries = vec![
-            crate::library_db::ThumbnailIndexEntry {
+            ThumbnailManifestEntry {
                 filename: "Galaga '88 (set 1)".to_string(),
                 symlink_target: None,
             },
-            crate::library_db::ThumbnailIndexEntry {
+            ThumbnailManifestEntry {
                 filename: "Galaga '88 (Japan)".to_string(),
                 symlink_target: None,
             },
@@ -1997,11 +1955,11 @@ mod tests {
     #[test]
     fn find_in_manifest_galaga88_no_apostrophe_catalog_matches_apostrophe_thumbnail() {
         let entries = vec![
-            crate::library_db::ThumbnailIndexEntry {
+            ThumbnailManifestEntry {
                 filename: "Galaga '88".into(),
                 symlink_target: None,
             },
-            crate::library_db::ThumbnailIndexEntry {
+            ThumbnailManifestEntry {
                 filename: "Galaga '88 (Japan)".into(),
                 symlink_target: None,
             },

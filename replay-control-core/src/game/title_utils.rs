@@ -70,6 +70,58 @@ pub fn base_title(name: &str) -> String {
     lower
 }
 
+/// Normalize a game title for fuzzy matching against LaunchBox / catalog
+/// metadata. Single canonical implementation used by both the import-time
+/// indexer and the per-row read-time lookup, so the two sides can never drift.
+///
+/// Steps:
+/// - Strip parenthesized / bracketed tags (`(USA)`, `[!]`, …)
+/// - Reorder trailing article (`"Foo, The"` → `"The Foo"`, also "A" / "An")
+/// - Strip TOSEC-style trailing version (`v1.000`, `v2.0`)
+/// - Keep alphanumerics only, lowercase
+pub fn normalize_title_for_metadata(name: &str) -> String {
+    let mut stripped = String::with_capacity(name.len());
+    let mut depth = 0u32;
+    for ch in name.chars() {
+        match ch {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => stripped.push(ch),
+            _ => {}
+        }
+    }
+    let stripped = stripped.trim();
+
+    let reordered = if let Some(idx) = stripped.rfind(", ") {
+        let (before, after_comma) = stripped.split_at(idx);
+        let after_comma = &after_comma[2..];
+        let first_word_end = after_comma
+            .find(|c: char| !c.is_alphabetic())
+            .unwrap_or(after_comma.len());
+        let first_word = &after_comma[..first_word_end];
+        let lower = first_word.to_ascii_lowercase();
+        if matches!(lower.as_str(), "the" | "a" | "an") {
+            let rest = after_comma[first_word_end..].trim_start_matches([' ', '-']);
+            if rest.is_empty() {
+                format!("{first_word} {before}")
+            } else {
+                format!("{first_word} {before} {rest}")
+            }
+        } else {
+            stripped.to_string()
+        }
+    } else {
+        stripped.to_string()
+    };
+
+    let version_stripped = strip_version(&reordered);
+    version_stripped
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
 /// Aggressively normalize a title by stripping all punctuation and collapsing spaces.
 ///
 /// Strips `' : - _ . , ! ? &` and any other non-alphanumeric, non-space characters,

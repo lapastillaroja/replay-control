@@ -258,14 +258,14 @@ pub async fn get_rom_detail(system: String, filename: String) -> Result<RomDetai
     let arcade_display =
         replay_control_core_server::arcade_db::display_name_if_arcade(&system, &filename).await;
     let variant_count = state
-        .library_pool
+        .external_metadata_pool
         .read({
             let system = system.clone();
             let filename = filename.clone();
             let arcade_display = arcade_display.clone();
-            move |conn| {
+            move |em_conn| {
                 replay_control_core_server::thumbnail_manifest::count_boxart_variants(
-                    conn,
+                    em_conn,
                     &system,
                     &filename,
                     arcade_display.as_deref(),

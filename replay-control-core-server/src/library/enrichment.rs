@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::Connection;
 
+use crate::external_metadata::LaunchboxRow;
 use crate::library_db::{BoxArtGenreRating, LibraryDb};
 use crate::thumbnail_manifest::ManifestMatch;
 use replay_control_core::developer::normalize_developer;
@@ -18,17 +19,6 @@ pub use crate::image_resolution::{
     ArcadeInfoLookup, BoxArtResult, ImageIndex, build_image_index, format_box_art_url,
     resolve_box_art_with_hash,
 };
-
-/// Batched metadata from LaunchBox import, keyed by ROM filename.
-struct LaunchBoxMetadata {
-    ratings: HashMap<String, f64>,
-    genres: HashMap<String, String>,
-    players: HashMap<String, u8>,
-    rating_counts: HashMap<String, u32>,
-    developers: HashMap<String, String>,
-    release_years: HashMap<String, u16>,
-    cooperative: HashSet<String>,
-}
 
 /// All enrichment updates produced for a single system.
 ///
@@ -42,9 +32,70 @@ pub struct EnrichmentResult {
     pub year_updates: Vec<(String, u16)>,
     /// Cooperative flag updates: rom_filenames that should be set to cooperative=1.
     pub cooperative_updates: Vec<String>,
+    /// `game_description` rows for this system: `(rom_filename, description, publisher)`.
+    /// Caller calls `LibraryDb::replace_descriptions_for_system` to truncate
+    /// + repopulate atomically.
+    pub description_rows: Vec<(String, Option<String>, Option<String>)>,
     /// On-demand manifest matches that need background downloads.
     /// Each entry is (rom_filename, ManifestMatch).
     pub manifest_downloads: Vec<(String, ManifestMatch)>,
+}
+
+/// Build the per-ROM list of normalized-title candidates used to look up
+/// `launchbox_game` rows.
+///
+/// Console ROMs map to a single normalized title (the filename stem). Arcade
+/// ROMs map to one or two: the per-system merged display name from
+/// `arcade_db`, plus the parent's display name if the ROM is a clone — same
+/// pairing the legacy import-time index built in
+/// `launchbox::build_index_entries`.
+fn rom_normalized_titles(
+    system: &str,
+    rom_filenames: &[String],
+    arcade_lookup: &ArcadeInfoLookup,
+) -> HashMap<String, Vec<String>> {
+    let is_arcade = replay_control_core::systems::is_arcade_system(system);
+    let mut out: HashMap<String, Vec<String>> = HashMap::with_capacity(rom_filenames.len());
+
+    for filename in rom_filenames {
+        let stem = replay_control_core::title_utils::filename_stem(filename);
+        let mut norms = Vec::new();
+        if is_arcade {
+            if let Some(info) = arcade_lookup.get(stem) {
+                norms.push(crate::launchbox::normalize_title(&info.display_name));
+                if info.is_clone
+                    && !info.parent.is_empty()
+                    && let Some(parent_info) = arcade_lookup.get(&info.parent)
+                {
+                    let parent_norm = crate::launchbox::normalize_title(&parent_info.display_name);
+                    if !norms.contains(&parent_norm) {
+                        norms.push(parent_norm);
+                    }
+                }
+            } else {
+                norms.push(crate::launchbox::normalize_title(stem));
+            }
+        } else {
+            norms.push(crate::launchbox::normalize_title(stem));
+        }
+        out.insert(filename.clone(), norms);
+    }
+    out
+}
+
+/// Pick the first matching `launchbox_game` row for each ROM filename, given
+/// the candidate normalized-title list.
+fn match_launchbox_rows<'a>(
+    rom_norms: &HashMap<String, Vec<String>>,
+    launchbox_rows: &'a HashMap<String, LaunchboxRow>,
+) -> HashMap<String, &'a LaunchboxRow> {
+    let mut out = HashMap::with_capacity(rom_norms.len());
+    for (rom, norms) in rom_norms {
+        if let Some(row) = norms.iter().find_map(|n| launchbox_rows.get(n)) {
+            out.insert(rom.clone(), row);
+        }
+    }
+    out
 }
 
 /// Run the full enrichment pipeline for a system.
@@ -53,42 +104,19 @@ pub struct EnrichmentResult {
 /// The app layer is responsible for writing updates and cache invalidation.
 ///
 /// # Arguments
-/// * `conn` - Library DB connection (same DB has both game_library and game_metadata)
-/// * `system` - System folder name
-/// * `index` - Pre-built image index for this system
-/// * `auto_matched_ratings` - Ratings from auto-matching (pre-computed by app)
+/// * `conn` - Library DB connection (game_library + derived caches).
+/// * `system` - System folder name.
+/// * `index` - Pre-built image index for this system.
+/// * `arcade_lookup` - Per-system arcade-game info (display_name etc.).
+/// * `launchbox_rows` - Per-system LaunchBox metadata, keyed by
+///   normalized title (from `external_metadata::system_launchbox_rows`).
 pub fn enrich_system(
     conn: &Connection,
     system: &str,
     index: &ImageIndex,
     arcade_lookup: &ArcadeInfoLookup,
-    auto_matched_ratings: &HashMap<String, f64>,
+    launchbox_rows: &HashMap<String, LaunchboxRow>,
 ) -> EnrichmentResult {
-    // Load LaunchBox metadata from game_metadata table.
-    let lb = LaunchBoxMetadata {
-        ratings: LibraryDb::system_ratings(conn, system)
-            .ok()
-            .unwrap_or_default(),
-        genres: LibraryDb::system_metadata_genres(conn, system)
-            .ok()
-            .unwrap_or_default(),
-        players: LibraryDb::system_metadata_players(conn, system)
-            .ok()
-            .unwrap_or_default(),
-        rating_counts: LibraryDb::system_metadata_rating_counts(conn, system)
-            .ok()
-            .unwrap_or_default(),
-        developers: LibraryDb::system_metadata_developers(conn, system)
-            .ok()
-            .unwrap_or_default(),
-        release_years: LibraryDb::system_metadata_release_years(conn, system)
-            .ok()
-            .unwrap_or_default(),
-        cooperative: LibraryDb::system_metadata_cooperative(conn, system)
-            .ok()
-            .unwrap_or_default(),
-    };
-
     // Load existing game_library values to know which are already set.
     let existing_genres: HashSet<String> = LibraryDb::system_rom_genres(conn, system)
         .map(|map| map.into_keys().collect())
@@ -100,12 +128,6 @@ pub fn enrich_system(
     let existing_years: HashSet<String> =
         LibraryDb::system_rom_release_years(conn, system).unwrap_or_default();
 
-    // Merge auto-matched ratings into the main ratings map.
-    let mut all_ratings = lb.ratings;
-    for (filename, rating) in auto_matched_ratings {
-        all_ratings.entry(filename.clone()).or_insert(*rating);
-    }
-
     // Read visible filenames from game_library.
     let rom_filenames: Vec<String> = LibraryDb::visible_filenames(conn, system).unwrap_or_default();
 
@@ -115,9 +137,15 @@ pub fn enrich_system(
             developer_updates: Vec::new(),
             year_updates: Vec::new(),
             cooperative_updates: Vec::new(),
+            description_rows: Vec::new(),
             manifest_downloads: Vec::new(),
         };
     }
+
+    // Resolve each ROM filename to its candidate normalized titles, then pick
+    // the first matching launchbox_game row.
+    let rom_norms = rom_normalized_titles(system, &rom_filenames, arcade_lookup);
+    let lb_by_rom = match_launchbox_rows(&rom_norms, launchbox_rows);
 
     // Load hash_matched_names for No-Intro-based thumbnail fallback.
     let hash_matched_names: HashMap<String, String> =
@@ -144,15 +172,16 @@ pub fn enrich_system(
                 }
                 BoxArtResult::NotFound => None,
             };
-            let rating = all_ratings.get(filename).map(|&r| r as f32);
-            let rating_count = lb.rating_counts.get(filename).copied();
+            let row = lb_by_rom.get(filename).copied();
+            let rating = row.and_then(|r| r.rating).map(|v| v as f32);
+            let rating_count = row.and_then(|r| r.rating_count);
             let genre = if !existing_genres.contains(filename) {
-                lb.genres.get(filename).cloned()
+                row.and_then(|r| r.genre.clone())
             } else {
                 None
             };
             let players = if !existing_players.contains(filename) {
-                lb.players.get(filename).copied()
+                row.and_then(|r| r.players)
             } else {
                 None
             };
@@ -185,8 +214,9 @@ pub fn enrich_system(
         .iter()
         .filter(|f| !existing_developers.contains(*f))
         .filter_map(|f| {
-            lb.developers
+            lb_by_rom
                 .get(f)
+                .and_then(|row| row.developer.as_ref())
                 .map(|dev| (f.clone(), normalize_developer(dev)))
         })
         .filter(|(_, dev)| !dev.is_empty())
@@ -196,18 +226,42 @@ pub fn enrich_system(
     let year_updates: Vec<(String, u16)> = rom_filenames
         .iter()
         .filter(|f| !existing_years.contains(*f))
-        .filter_map(|f| lb.release_years.get(f).map(|&year| (f.clone(), year)))
+        .filter_map(|f| {
+            lb_by_rom
+                .get(f)
+                .and_then(|row| row.release_year)
+                .map(|year| (f.clone(), year))
+        })
         .collect();
 
     // Cooperative enrichment: set cooperative=1 for ROMs flagged by LaunchBox.
-    // Only update ROMs that are not already cooperative (existing_cooperative tracks those).
+    // Only update ROMs that are not already cooperative.
     let existing_cooperative: HashSet<String> =
         LibraryDb::system_rom_cooperative(conn, system).unwrap_or_default();
     let cooperative_updates: Vec<String> = rom_filenames
         .iter()
         .filter(|f| !existing_cooperative.contains(*f))
-        .filter(|f| lb.cooperative.contains(*f))
+        .filter(|f| {
+            lb_by_rom
+                .get(f.as_str())
+                .map(|row| row.cooperative)
+                .unwrap_or(false)
+        })
         .cloned()
+        .collect();
+
+    // game_description rows: per-ROM denormalized description + publisher.
+    // Always rebuild the full set for the system (not just newly-matched
+    // ROMs) so removing a ROM also removes its description on the next
+    // enrichment pass.
+    let description_rows: Vec<(String, Option<String>, Option<String>)> = rom_filenames
+        .iter()
+        .map(|filename| {
+            let row = lb_by_rom.get(filename).copied();
+            let description = row.and_then(|r| r.description.clone());
+            let publisher = row.and_then(|r| r.publisher.clone());
+            (filename.clone(), description, publisher)
+        })
         .collect();
 
     EnrichmentResult {
@@ -215,6 +269,7 @@ pub fn enrich_system(
         developer_updates,
         year_updates,
         cooperative_updates,
+        description_rows,
         manifest_downloads,
     }
 }
@@ -484,61 +539,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn cooperative_or_merge_from_launchbox() {
-        let (mut conn, _dir) = open_temp_db();
-
-        // Insert a game into game_library with cooperative = false.
-        let mut entry = make_entry_with_base_title("sega_smd", "Streets (USA).md", "streets");
-        entry.cooperative = false;
-        LibraryDb::save_system_entries(&mut conn, "sega_smd", &[entry], None).unwrap();
-
-        // Insert same game into game_metadata with cooperative = true.
-        let meta = crate::library_db::GameMetadata {
-            cooperative: true,
-            description: None,
-            rating: None,
-            rating_count: None,
-            publisher: None,
-            developer: None,
-            genre: None,
-            players: None,
-            release_date: None,
-            release_precision: None,
-            release_region_used: None,
-            fetched_at: 0,
-            box_art_path: None,
-            screenshot_path: None,
-            title_path: None,
-        };
-        LibraryDb::bulk_upsert(
-            &mut conn,
-            &[("sega_smd".into(), "Streets (USA).md".into(), meta)],
-        )
-        .unwrap();
-
-        // Verify game_library starts with cooperative = false.
-        let before = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
-        assert!(!before[0].cooperative, "should start non-cooperative");
-
-        // Simulate the enrichment cooperative update (the enrich_system pipeline
-        // reads game_metadata cooperative and produces cooperative_updates).
-        let coop_set = LibraryDb::system_metadata_cooperative(&conn, "sega_smd").unwrap();
-        assert!(coop_set.contains("Streets (USA).md"));
-
-        let existing = LibraryDb::system_rom_cooperative(&conn, "sega_smd").unwrap();
-        let updates: Vec<String> = coop_set
-            .into_iter()
-            .filter(|f| !existing.contains(f))
-            .collect();
-        LibraryDb::update_cooperative(&mut conn, "sega_smd", &updates).unwrap();
-
-        let after = LibraryDb::load_system_entries(&conn, "sega_smd").unwrap();
-        assert!(
-            after[0].cooperative,
-            "should be cooperative after enrichment (OR merge)"
-        );
-    }
+    // Removed: `cooperative_or_merge_from_launchbox` — exercised the legacy
+    // game_metadata table (GameMetadata + LibraryDb::bulk_upsert +
+    // system_metadata_cooperative). The new external_metadata DB has its own
+    // tests in `library/external_metadata_refresh.rs`.
 
     #[test]
     fn enrichment_fills_genre_gap_but_does_not_overwrite() {

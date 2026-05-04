@@ -5,8 +5,10 @@ use replay_control_core_server::update as update_io;
 use std::time::Duration;
 
 use super::AppState;
-use super::activity::{Activity, RebuildPhase, RebuildProgress, StartupPhase};
-use super::import::ImportPipeline;
+use super::activity::{
+    Activity, RebuildPhase, RebuildProgress, RefreshMetadataPhase, RefreshMetadataProgress,
+    StartupPhase,
+};
 use super::library::dir_mtime;
 
 #[derive(Clone, Copy)]
@@ -161,14 +163,14 @@ impl BackgroundManager {
         }
         drop(storage);
 
+        // Phase 0.5: On first boot, silently pre-fetch LaunchBox XML and the
+        // libretro thumbnail manifest so Phase 2 enrichment has data without
+        // requiring a manual "Refresh metadata" before the first scan.
+        Self::phase_first_run_seed(state).await;
+
         // Phase 1: Auto-import (if launchbox XML exists + DB empty).
         // Import claims/releases its own Activity::Import via try_start_activity.
         Self::phase_auto_import(state).await;
-
-        // Wait for auto-import to finish (check activity state).
-        while ImportPipeline::has_active_import(state) {
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
 
         // Phase 2+3: Claim Activity::Startup for populate + thumbnail rebuild.
         // Guard drops → Idle on completion or panic.
@@ -206,45 +208,415 @@ impl BackgroundManager {
         }
     }
 
-    /// Phase 1: Auto-import metadata on startup if metadata file exists and DB is empty.
-    ///
-    /// Imports LaunchBox XML if the file exists on disk.
-    async fn phase_auto_import(state: &AppState) {
-        let should_import = state
-            .library_pool
-            .read(|conn| LibraryDb::is_empty(conn).unwrap_or(false))
-            .await
-            .unwrap_or(false);
+    /// Spawn a background task that re-runs `phase_auto_import`. Used by the
+    /// "Regenerate metadata" UI button and other on-demand triggers.
+    pub fn spawn_external_metadata_refresh(state: AppState) {
+        tokio::spawn(async move {
+            Self::phase_auto_import(&state).await;
+        });
+    }
 
-        if !should_import {
-            return;
-        }
-
-        let storage = state.storage();
-        let rc_dir = storage.rc_dir();
-
-        // Try LaunchBox XML.
-        {
-            use replay_control_core_server::library_db::LAUNCHBOX_XML;
-
-            let xml_path = rc_dir.join(LAUNCHBOX_XML);
-            // Backwards-compat: fall back to old upstream name if user placed it manually.
-            let xml_path = if xml_path.exists() {
-                xml_path
-            } else {
-                let old_path = rc_dir.join("Metadata.xml");
-                if old_path.exists() {
-                    old_path
-                } else {
-                    xml_path
+    /// Spawn a background task that downloads the LaunchBox `Metadata.zip`
+    /// into the host-global cache directory, extracts the XML, then triggers
+    /// the standard refresh path against it.
+    pub fn spawn_external_metadata_download_and_refresh(state: AppState) {
+        tokio::spawn(async move {
+            // Claim the slot here and hand it to `phase_auto_import_inner`
+            // after the download succeeds. Releasing-then-reclaiming would
+            // broadcast a transient Idle state and let a third caller slip
+            // in between phases.
+            let guard = match state.try_start_activity(Activity::RefreshExternalMetadata {
+                progress: RefreshMetadataProgress {
+                    phase: RefreshMetadataPhase::Downloading,
+                    ..RefreshMetadataProgress::initial()
+                },
+            }) {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::warn!("download+refresh: activity busy: {e}");
+                    return;
                 }
             };
 
-            if xml_path.exists() {
-                tracing::info!("Auto-importing metadata from {}", xml_path.display());
-                state.import.start_import_no_enrich(xml_path, state.clone());
+            let start = std::time::Instant::now();
+            let cache_dir = state.data_dir.cache_dir();
+            let download_result = {
+                let cache_dir = cache_dir.clone();
+                let state_for_progress = state.clone();
+                tokio::task::spawn_blocking(move || {
+                    // Throttle: each curl read is ~64 KB; updating activity per
+                    // chunk is 3000+ RwLock+broadcast cycles per 200 MB
+                    // download. Only fire when we cross a 1 MiB boundary.
+                    // `download_metadata` takes `Fn`, so we need interior
+                    // mutability for the watermark.
+                    use std::sync::atomic::{AtomicU64, Ordering};
+                    const THROTTLE_BYTES: u64 = 1024 * 1024;
+                    let last_reported = AtomicU64::new(0);
+                    replay_control_core_server::launchbox::download_metadata(
+                        &cache_dir,
+                        |bytes, _total| {
+                            let prev = last_reported.load(Ordering::Relaxed);
+                            if bytes - prev < THROTTLE_BYTES && bytes != 0 {
+                                return;
+                            }
+                            last_reported.store(bytes, Ordering::Relaxed);
+                            state_for_progress.update_activity(|act| {
+                                if let Activity::RefreshExternalMetadata { progress } = act {
+                                    progress.downloaded_bytes = bytes;
+                                }
+                            });
+                        },
+                    )
+                })
+                .await
+            };
+
+            match download_result {
+                Ok(Ok(xml_path)) => {
+                    tracing::info!("LaunchBox metadata downloaded to {}", xml_path.display());
+                    Self::phase_auto_import_inner(&state, Some(guard)).await;
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!("LaunchBox download failed: {e}");
+                    state.update_activity(|act| {
+                        if let Activity::RefreshExternalMetadata { progress } = act {
+                            progress.phase = RefreshMetadataPhase::Failed;
+                            progress.error = Some(e.to_string());
+                            progress.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("LaunchBox download task panicked: {e}");
+                    state.update_activity(|act| {
+                        if let Activity::RefreshExternalMetadata { progress } = act {
+                            progress.phase = RefreshMetadataPhase::Failed;
+                            progress.error = Some(format!("task panicked: {e}"));
+                            progress.elapsed_secs = start.elapsed().as_secs();
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    /// Phase 0.5: On first boot, silently download the LaunchBox XML and the
+    /// libretro thumbnail manifest so Phase 2 enrichment runs with data.
+    ///
+    /// First-run conditions (checked independently):
+    ///   - LaunchBox: no `launchbox_xml_crc32` in `external_meta` AND no XML on disk.
+    ///   - Libretro: `data_source` has no rows.
+    ///
+    /// Any network failure is warn-logged and the pipeline continues normally.
+    /// Phase 1 will detect and parse the downloaded XML via its usual hash check.
+    async fn phase_first_run_seed(state: &AppState) {
+        use replay_control_core_server::external_metadata::{self, meta_keys};
+        use replay_control_core_server::library_db::resolve_launchbox_xml;
+
+        let storage = state.storage();
+        let rc_dir = storage.rc_dir();
+        let cache_dir = state.data_dir.cache_dir();
+        drop(storage);
+
+        let seed_check = state
+            .external_metadata_pool
+            .read(|conn| {
+                let has_crc32 =
+                    external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32).is_some();
+                let has_sources =
+                    external_metadata::get_data_source_stats(conn, "libretro-thumbnails")
+                        .ok()
+                        .map(|s| s.repo_count > 0)
+                        .unwrap_or(false);
+                (has_crc32, has_sources)
+            })
+            .await;
+
+        let (has_crc32, has_libretro_sources) = match seed_check {
+            Some(v) => v,
+            None => {
+                tracing::debug!("phase_first_run_seed: pool unavailable, skipping");
+                return;
+            }
+        };
+
+        let xml_on_disk = resolve_launchbox_xml(&cache_dir, &rc_dir).is_some();
+        let needs_launchbox = !has_crc32 && !xml_on_disk;
+        let needs_libretro = !has_libretro_sources;
+
+        if !needs_launchbox && !needs_libretro {
+            tracing::debug!("phase_first_run_seed: not a first-run install, skipping");
+            return;
+        }
+
+        tracing::info!(
+            "phase_first_run_seed: first-run detected \
+             (launchbox={needs_launchbox}, libretro={needs_libretro})"
+        );
+
+        let _guard = match state.try_start_activity(Activity::Startup {
+            phase: StartupPhase::FetchingMetadata,
+            system: String::new(),
+        }) {
+            Ok(g) => g,
+            Err(e) => {
+                tracing::warn!("phase_first_run_seed: activity busy: {e}");
+                return;
+            }
+        };
+
+        if needs_launchbox {
+            let dest = cache_dir.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                replay_control_core_server::launchbox::download_metadata(&dest, |_, _| {})
+            })
+            .await;
+            match result {
+                Ok(Ok(p)) => tracing::info!(
+                    "phase_first_run_seed: LaunchBox XML downloaded to {}",
+                    p.display()
+                ),
+                Ok(Err(e)) => {
+                    tracing::warn!("phase_first_run_seed: LaunchBox download failed: {e}")
+                }
+                Err(e) => tracing::warn!("phase_first_run_seed: LaunchBox task panicked: {e}"),
             }
         }
+
+        if needs_libretro {
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            let api_key =
+                replay_control_core_server::settings::read_github_api_key(&state.settings);
+            match replay_control_core_server::thumbnail_manifest::import_all_manifests(
+                &state.external_metadata_pool,
+                &|_, _, _| {},
+                &cancel,
+                api_key.as_deref(),
+            )
+            .await
+            {
+                Ok(stats) => tracing::info!(
+                    "phase_first_run_seed: libretro manifest fetched \
+                     ({} repos, {} entries{})",
+                    stats.repos_fetched,
+                    stats.total_entries,
+                    if stats.rate_limited {
+                        ", rate-limited"
+                    } else {
+                        ""
+                    }
+                ),
+                Err(e) => tracing::warn!("phase_first_run_seed: libretro manifest failed: {e}"),
+            }
+        }
+
+        // _guard drops → Activity::Idle
+    }
+
+    /// Phase 1: Refresh `external_metadata.db` from the LaunchBox XML when its
+    /// content has changed (or the DB has never been populated).
+    ///
+    /// Freshness is content-derived: hash the XML, compare against the stored
+    /// `external_meta.launchbox_xml_crc32`. mtime is unreliable across copies /
+    /// rsync / clock skew. Skips entirely when no XML is present — users can
+    /// still get scan-time + catalog enrichment.
+    async fn phase_auto_import(state: &AppState) {
+        Self::phase_auto_import_inner(state, None).await;
+    }
+
+    /// Inner entry point with optional caller-owned activity guard. Used by
+    /// `spawn_external_metadata_download_and_refresh` to thread its
+    /// `Downloading`-phase guard into the parse step without releasing it
+    /// (avoiding an Idle flicker on the SSE stream).
+    async fn phase_auto_import_inner(
+        state: &AppState,
+        existing_guard: Option<crate::api::ActivityGuard>,
+    ) {
+        use replay_control_core_server::external_metadata::{self, meta_keys};
+        use replay_control_core_server::library_db::resolve_launchbox_xml;
+
+        let storage = state.storage();
+        let rc_dir = storage.rc_dir();
+        let cache_dir = state.data_dir.cache_dir();
+
+        let Some(xml_path) = resolve_launchbox_xml(&cache_dir, &rc_dir) else {
+            tracing::debug!(
+                "phase_auto_import: no LaunchBox XML in {} or {} — skipping",
+                cache_dir.display(),
+                rc_dir.display()
+            );
+            return;
+        };
+
+        // Claim the activity slot first (or reuse the caller's guard) so the
+        // hash check itself is single-flight — two concurrent boots can't
+        // both pass the hash mismatch and then race on the write.
+        let guard = match existing_guard {
+            Some(g) => g,
+            None => match state.try_start_activity(Activity::RefreshExternalMetadata {
+                progress: RefreshMetadataProgress::initial(),
+            }) {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::info!("phase_auto_import: another refresh in flight: {e}");
+                    return;
+                }
+            },
+        };
+
+        let start = std::time::Instant::now();
+
+        // Hash + stamp-read are independent — let the slowest dictate the
+        // wall-clock instead of running them back-to-back.
+        let xml_for_hash = xml_path.clone();
+        let hash_fut =
+            tokio::task::spawn_blocking(move || external_metadata::hash_file_crc32(&xml_for_hash));
+        let stamp_fut = state
+            .external_metadata_pool
+            .read(|conn| external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32));
+        let (hash_join, stored_hash) = tokio::join!(hash_fut, stamp_fut);
+        let stored_hash = stored_hash.flatten();
+
+        let current_hash = match hash_join {
+            Ok(Ok(h)) => h,
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    "phase_auto_import: hash failed for {}: {e}",
+                    xml_path.display()
+                );
+                return;
+            }
+            Err(e) => {
+                tracing::warn!("phase_auto_import: hash task panicked: {e}");
+                return;
+            }
+        };
+
+        if stored_hash.as_deref() == Some(current_hash.as_str()) {
+            tracing::debug!(
+                "phase_auto_import: LaunchBox XML hash matches stamp ({current_hash}) — skipping refresh"
+            );
+            return;
+        }
+
+        tracing::info!(
+            "phase_auto_import: refreshing external_metadata.db from {} (hash {current_hash})",
+            xml_path.display()
+        );
+
+        state.update_activity(|act| {
+            if let Activity::RefreshExternalMetadata { progress } = act {
+                progress.phase = RefreshMetadataPhase::Parsing;
+            }
+        });
+
+        // Surface parse progress to SSE so the UI banner doesn't sit frozen
+        // for the 30–90 s parse on Pi. The closure runs on the blocking pool
+        // (deadpool's interact thread); update_activity is RwLock-only +
+        // broadcast, no async work.
+        let xml_for_task = xml_path.clone();
+        let progress_state = state.clone();
+        let result = state
+            .external_metadata_pool
+            .write(move |conn| {
+                replay_control_core_server::library::external_metadata_refresh::refresh_launchbox(
+                    &xml_for_task,
+                    conn,
+                    move |processed| {
+                        progress_state.update_activity(|act| {
+                            if let Activity::RefreshExternalMetadata { progress } = act {
+                                progress.source_entries = processed;
+                            }
+                        });
+                    },
+                )
+            })
+            .await;
+
+        let stats = match result {
+            Some(Ok(stats)) => stats,
+            Some(Err(e)) => {
+                tracing::warn!("phase_auto_import: refresh failed: {e}");
+                state.update_activity(|act| {
+                    if let Activity::RefreshExternalMetadata { progress } = act {
+                        progress.phase = RefreshMetadataPhase::Failed;
+                        progress.error = Some(e.to_string());
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                    }
+                });
+                return;
+            }
+            None => {
+                tracing::warn!("phase_auto_import: external_metadata pool unavailable");
+                state.update_activity(|act| {
+                    if let Activity::RefreshExternalMetadata { progress } = act {
+                        progress.phase = RefreshMetadataPhase::Failed;
+                        progress.error = Some("external_metadata pool unavailable".into());
+                        progress.elapsed_secs = start.elapsed().as_secs();
+                    }
+                });
+                return;
+            }
+        };
+
+        tracing::info!(
+            "phase_auto_import: refresh complete — {} games, {} alternates from {} source entries",
+            stats.games_written,
+            stats.alternates_written,
+            stats.source_entries
+        );
+
+        // Re-enrichment: launchbox data just changed, so flush it through
+        // game_library + game_description for every system the user has.
+        // Without this, the request path keeps showing pre-refresh data
+        // until something else triggers enrichment (storage swap, rebuild).
+        state.update_activity(|act| {
+            if let Activity::RefreshExternalMetadata { progress } = act {
+                progress.phase = RefreshMetadataPhase::Enriching;
+                progress.source_entries = stats.source_entries;
+            }
+        });
+        Self::reenrich_all_systems(state).await;
+
+        state.update_activity(|act| {
+            if let Activity::RefreshExternalMetadata { progress } = act {
+                progress.phase = RefreshMetadataPhase::Complete;
+                progress.source_entries = stats.source_entries;
+                progress.elapsed_secs = start.elapsed().as_secs();
+            }
+        });
+        // `guard` drops at end of scope → ActivityGuard::Drop broadcasts Idle.
+        drop(guard);
+    }
+
+    /// After an external_metadata refresh, iterate every system in the
+    /// library cache and re-run enrichment so the new launchbox data
+    /// flows into `game_library` + `game_description`. Does nothing on a
+    /// fresh / empty library.
+    async fn reenrich_all_systems(state: &AppState) {
+        let storage = state.storage();
+        let systems = state
+            .cache
+            .cached_systems(&storage, &state.library_pool)
+            .await;
+        let active: Vec<String> = systems
+            .into_iter()
+            .filter(|s| s.game_count > 0)
+            .map(|s| s.folder_name)
+            .collect();
+        if active.is_empty() {
+            return;
+        }
+        tracing::info!(
+            "post-refresh re-enrichment starting for {} system(s)",
+            active.len()
+        );
+        for system in active {
+            state.cache.enrich_system_cache(state, system).await;
+        }
+        // Drop the metadata-page snapshot — coverage just changed.
+        state.cache.invalidate_metadata_page().await;
+        state.invalidate_user_caches().await;
     }
 
     /// Phase 2: Verify L2 cache freshness on startup and re-scan stale/incomplete systems.
@@ -375,19 +747,23 @@ impl BackgroundManager {
     /// Skips when both tables are empty (first-time setup — user hasn't configured
     /// thumbnails yet) to avoid wasting time on GitHub API calls when offline.
     async fn phase_auto_rebuild_thumbnail_index(state: &AppState) {
-        // Check data_sources for libretro-thumbnails entries and thumbnail_index emptiness.
+        use replay_control_core_server::external_metadata;
+
+        // Check data_source for libretro-thumbnails entries and thumbnail_manifest emptiness.
         let (has_sources, index_empty) = match state
-            .library_pool
+            .external_metadata_pool
             .read(|conn| {
-                let stats = LibraryDb::get_data_source_stats(conn, "libretro-thumbnails").ok()?;
-                let index_count: i64 = LibraryDb::thumbnail_index_count(conn).unwrap_or(0);
+                let stats =
+                    external_metadata::get_data_source_stats(conn, "libretro-thumbnails").ok()?;
+                let index_count: i64 =
+                    external_metadata::thumbnail_manifest_count(conn).unwrap_or(0);
                 Some((stats.repo_count > 0, index_count == 0))
             })
             .await
             .flatten()
         {
             Some(result) => result,
-            None => return, // DB unavailable
+            None => return, // pool unavailable
         };
 
         if !has_sources {
@@ -455,10 +831,17 @@ impl BackgroundManager {
             });
         }
 
-        // Now write all collected data to the DB in a single write() call.
+        // Now write all collected data to external_metadata.db in one txn.
         let write_result = state
-            .library_pool
+            .external_metadata_pool
             .write(move |db| {
+                let tx = match db.transaction() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::warn!("phase_auto_rebuild_thumbnail_index: begin failed: {e}");
+                        return (0usize, 0usize);
+                    }
+                };
                 let mut w_total_entries = 0usize;
                 let mut w_total_repos = 0usize;
 
@@ -471,8 +854,8 @@ impl BackgroundManager {
                     );
                     let entry_count = data.entries.len();
 
-                    if let Err(e) = LibraryDb::upsert_data_source(
-                        db,
+                    if let Err(e) = external_metadata::upsert_data_source(
+                        &tx,
                         &source_name,
                         "libretro-thumbnails",
                         "disk-rebuild",
@@ -482,7 +865,12 @@ impl BackgroundManager {
                         tracing::warn!("Failed to upsert data source {source_name}: {e}");
                     }
 
-                    match LibraryDb::bulk_insert_thumbnail_index(db, &source_name, &data.entries) {
+                    let _ = external_metadata::delete_thumbnail_manifest(&tx, &source_name);
+                    match external_metadata::insert_thumbnail_manifest_rows(
+                        &tx,
+                        &source_name,
+                        &data.entries,
+                    ) {
                         Ok(_) => w_total_entries += entry_count,
                         Err(e) => tracing::warn!(
                             "Failed to insert disk-based index for {}: {e}",
@@ -500,8 +888,8 @@ impl BackgroundManager {
                             replay_control_core_server::thumbnail_manifest::default_branch(
                                 extra_repo,
                             );
-                        if let Err(e) = LibraryDb::upsert_data_source(
-                            db,
+                        if let Err(e) = external_metadata::upsert_data_source(
+                            &tx,
                             &extra_source,
                             "libretro-thumbnails",
                             "disk-rebuild",
@@ -514,6 +902,9 @@ impl BackgroundManager {
                     w_total_repos += data.repo_names.len();
                 }
 
+                if let Err(e) = tx.commit() {
+                    tracing::warn!("phase_auto_rebuild_thumbnail_index: commit failed: {e}");
+                }
                 (w_total_entries, w_total_repos)
             })
             .await;

@@ -13,9 +13,10 @@ use replay_control_core::rom_tags;
 use replay_control_core::systems;
 use replay_control_core::title_utils;
 use replay_control_core_server::arcade_db;
+use replay_control_core_server::data_dir::DataDir;
+use replay_control_core_server::external_metadata;
 use replay_control_core_server::game_db;
-use replay_control_core_server::launchbox;
-use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::library::external_metadata_refresh;
 use replay_control_core_server::roms;
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
@@ -24,34 +25,34 @@ async fn main() {
     let (storage_path, import_xml) = parse_args();
     let storage = StorageLocation::from_path(storage_path, StorageKind::Usb);
 
-    // Optional: re-import LaunchBox metadata before generating the report.
+    // External metadata lives host-global; default to /var/lib/replay-control/.
+    let data_dir = DataDir::default_root();
+    let em_db_path = data_dir.external_metadata_db_path();
+
     if let Some(xml_path) = import_xml {
-        eprintln!("Building ROM index...");
-        let rom_index = launchbox::build_rom_index(&storage.root).await;
-        eprintln!("ROM index: {} entries", rom_index.len());
-
-        eprintln!("Opening library DB...");
-        let mut conn = LibraryDb::open(&storage.root).expect("Failed to open library DB");
-
-        eprintln!("Importing LaunchBox XML from {}...", xml_path.display());
-        let (stats, _parse_result) = launchbox::import_launchbox(
-            &xml_path,
-            &rom_index,
-            |total, matched, inserted| {
-                eprint!("\r  Progress: {total} scanned, {matched} matched, {inserted} inserted");
-            },
-            |batch| LibraryDb::bulk_upsert(&mut conn, batch),
-        )
-        .expect("Import failed");
-
         eprintln!(
-            "\nImport complete: {} source, {} matched, {} inserted, {} skipped",
-            stats.total_source, stats.matched, stats.inserted, stats.skipped
+            "Importing LaunchBox metadata from {} into {}…",
+            xml_path.display(),
+            em_db_path.display()
         );
+        let mut conn = match external_metadata::open_at(&em_db_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Failed to open {}: {e}", em_db_path.display());
+                std::process::exit(1);
+            }
+        };
+        match external_metadata_refresh::refresh_launchbox(&xml_path, &mut conn, |_| {}) {
+            Ok(stats) => eprintln!(
+                "  done: {} games, {} alternates from {} source entries",
+                stats.games_written, stats.alternates_written, stats.source_entries
+            ),
+            Err(e) => {
+                eprintln!("  refresh failed: {e}");
+                std::process::exit(1);
+            }
+        }
     }
-
-    // Open library DB (may not exist yet on fresh storage).
-    let meta_conn = LibraryDb::open(&storage.root).ok();
 
     let summaries = match roms::scan_systems(&storage).await {
         Ok(s) => s,
@@ -110,6 +111,15 @@ async fn main() {
         let total = rom_list.len();
         let mut embedded = EmbeddedCoverage::default();
         let mut external = ExternalCoverage::default();
+
+        // Per-system batched read: one SELECT for every launchbox row
+        // belonging to this system, keyed by normalized title.
+        let launchbox_rows = match external_metadata::open_at(&em_db_path) {
+            Ok(conn) => {
+                external_metadata::system_launchbox_rows(&conn, system_name).unwrap_or_default()
+            }
+            Err(_) => Default::default(),
+        };
 
         let arcade_batch = if is_arcade {
             let stems: Vec<&str> = rom_list
@@ -217,27 +227,32 @@ async fn main() {
                 }
             }
 
-            // --- External metadata (SQLite) ---
-            if let Some(ref conn) = meta_conn
-                && let Ok(Some(meta)) = LibraryDb::lookup(conn, system_name, filename)
-            {
-                if meta.description.as_ref().is_some_and(|d| !d.is_empty()) {
+            // --- External metadata (host-global external_metadata.db) ---
+            let stem = title_utils::filename_stem(filename);
+            let primary = if is_arcade {
+                arcade_batch
+                    .get(stem)
+                    .map(|info| info.display_name.as_str())
+                    .unwrap_or(stem)
+            } else {
+                stem
+            };
+            let norm = title_utils::normalize_title_for_metadata(primary);
+            if let Some(row) = launchbox_rows.get(&norm) {
+                if row.description.as_deref().is_some_and(|d| !d.is_empty()) {
                     external.description += 1;
                 }
-                if meta.rating.is_some() {
+                if row.rating.is_some() {
                     external.rating += 1;
                 }
-                if meta.publisher.as_ref().is_some_and(|p| !p.is_empty()) {
+                if row.publisher.as_deref().is_some_and(|p| !p.is_empty()) {
                     external.publisher += 1;
-                }
-                if meta.box_art_path.is_some() {
-                    external.box_art += 1;
-                }
-                if meta.screenshot_path.is_some() {
-                    external.screenshot += 1;
                 }
                 external.any += 1;
             }
+            // Box art / screenshot counts no longer come from a metadata
+            // table — they're either present on disk under
+            // <storage>/.replay-control/media/ or not. Skip in this report.
         }
 
         // Print system report

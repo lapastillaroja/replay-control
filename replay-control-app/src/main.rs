@@ -532,6 +532,9 @@ mod ssr {
             }
         };
 
+        // The external_metadata DB pool is constructed inside AppState::new
+        // (alongside library_pool / user_data_pool); no extra wiring here.
+
         // Start background pipeline only if storage is available.
         // When no storage, the storage watcher polls every 10s and starts
         // the pipeline on None->Some transition via refresh_storage().
@@ -573,8 +576,6 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveHostname>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ChangeRootPassword>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetMetadataStats>();
-        server_fn::axum::register_explicit::<replay_control_app::server_fns::ImportLaunchboxMetadata>(
-        );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::ClearMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RegenerateMetadata>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::DownloadMetadata>();

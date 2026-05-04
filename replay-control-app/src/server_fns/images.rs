@@ -4,6 +4,10 @@ use replay_control_core_server::library_db::LibraryDb;
 
 /// Get image stats: (boxart_count, snap_count, media_size_bytes).
 /// Returns zeros when the DB is unavailable (e.g., during import).
+///
+/// `boxart_count` is read from `game_library.box_art_url`. Screenshot/title
+/// counts aren't tracked centrally any more (filesystem fallback at request
+/// time), so `snap_count` is always 0.
 #[server(prefix = "/sfn")]
 pub async fn get_image_stats() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -48,10 +52,11 @@ pub async fn clear_images() -> Result<(), ServerFnError> {
     Ok(())
 }
 
-/// Cleanup orphaned images: delete metadata rows and thumbnail files for ROMs
-/// that no longer exist in the game library.
-///
-/// Returns `(metadata_rows_deleted, image_files_deleted, bytes_freed)`.
+/// Delete thumbnail files on disk for ROMs that no longer exist in
+/// `game_library`. Returns `(0, image_files_deleted, bytes_freed)` —
+/// the first slot used to count deleted `game_metadata` rows; that table
+/// is gone, so the caller-visible tuple shape is preserved with a
+/// hard-coded 0.
 #[server(prefix = "/sfn")]
 pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnError> {
     let state = expect_context::<crate::api::AppState>();
@@ -63,27 +68,16 @@ pub async fn cleanup_orphaned_images() -> Result<(usize, usize, u64), ServerFnEr
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let storage = state.storage();
-
-    // 1. Delete orphaned metadata rows.
-    // 2. Delete orphaned thumbnail files.
     let storage_root = storage.root.clone();
-    let (metadata_deleted, files_deleted, bytes_freed) = state
+    let (files_deleted, bytes_freed) = state
         .library_pool
         .write(move |conn| {
-            let meta_del = LibraryDb::delete_orphaned_metadata(conn).unwrap_or(0);
-            let (files_del, freed) =
-                replay_control_core_server::thumbnails::delete_orphaned_thumbnails(
-                    &storage_root,
-                    conn,
-                )
-                .unwrap_or((0, 0));
-            (meta_del, files_del, freed)
+            replay_control_core_server::thumbnails::delete_orphaned_thumbnails(&storage_root, conn)
+                .unwrap_or((0, 0))
         })
         .await
-        .unwrap_or((0, 0, 0));
+        .unwrap_or((0, 0));
 
     state.cache.invalidate_metadata_page().await;
-
-    // _guard drops → Idle
-    Ok((metadata_deleted, files_deleted, bytes_freed))
+    Ok((0, files_deleted, bytes_freed))
 }

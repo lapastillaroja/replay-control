@@ -104,7 +104,7 @@ impl ThumbnailPipeline {
             let activity_ref = activity_lock.clone();
             let activity_tx = state.activity_tx.clone();
             thumbnail_manifest::import_all_manifests(
-                &state.library_pool,
+                &state.external_metadata_pool,
                 &|repos_done, repos_total, current_repo| {
                     let mut guard = write_lock(&activity_ref, "activity");
                     if let Activity::ThumbnailUpdate { progress, .. } = &mut *guard {
@@ -293,13 +293,13 @@ impl ThumbnailPipeline {
                 let arcade_lookup_plan = arcade_lookup.clone();
                 // Long-running read: builds an in-memory fuzzy index over
                 // every thumbnail entry for the system, then fans matches.
-                // Library pool has 3 read slots; this takes one, SSR keeps
-                // the rest.
+                // Reads `external_metadata.db` (the host-global thumbnail
+                // manifest), not the per-storage library DB.
                 let plan = state
-                    .library_pool
-                    .read(move |conn| {
+                    .external_metadata_pool
+                    .read(move |em_conn| {
                         thumbnail_manifest::plan_system_thumbnails(
-                            conn,
+                            em_conn,
                             &storage_root_plan,
                             &system_plan,
                             *kind,
@@ -368,13 +368,9 @@ impl ThumbnailPipeline {
                 }
             }
 
-            // Lock DB for image path update, then release.
-            replay_control_core_server::thumbnails::update_image_paths_from_disk(
-                &state.library_pool,
-                &storage_root,
-                system,
-            )
-            .await;
+            // (legacy `update_image_paths_from_disk` removed in v2 — box_art_url
+            // now lives in `game_library` and is rewritten by the enrichment
+            // pass spawned below.)
         }
 
         // Image index is no longer cached — enrichment builds it fresh each run.

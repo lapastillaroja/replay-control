@@ -141,12 +141,17 @@ pub async fn organize_favorites(
     let state = expect_context::<crate::api::AppState>();
     let needs_ratings =
         primary == OrganizeCriteria::Rating || secondary == Some(OrganizeCriteria::Rating);
+    // Ratings now live in `game_library.rating` (denormalized at enrichment),
+    // so the organizer reads them through the library pool keyed by
+    // (system, rom_filename) — no normalized-title bridge needed.
     let ratings = if needs_ratings {
         state
             .library_pool
-            .read(|conn| replay_control_core_server::library_db::LibraryDb::all_ratings(conn).ok())
+            .read(|conn| {
+                replay_control_core_server::library_db::LibraryDb::all_ratings(conn)
+                    .unwrap_or_default()
+            })
             .await
-            .flatten()
     } else {
         None
     };

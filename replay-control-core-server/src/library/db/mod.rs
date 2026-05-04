@@ -7,14 +7,14 @@
 //! here.
 
 mod aliases_series;
-mod data_sources;
+pub mod game_description;
 mod game_library;
-mod game_metadata;
 mod recommendations;
 mod relationships;
 pub mod release_dates;
 
 pub use aliases_series::SequelChainInfo;
+pub use game_description::GameDescription;
 pub use game_library::SearchFilter;
 pub use release_dates::{
     ReleaseDateRow, StaticReleaseData, fetch_static_release_data, region_pref_to_db_region,
@@ -31,36 +31,27 @@ pub use crate::storage::RC_DIR;
 
 /// Filename for the SQLite library database.
 pub const LIBRARY_DB_FILE: &str = "library.db";
-/// Legacy filename for the pre-0.5 library database. Removed on first open
-/// of the new `library.db` — see [`cleanup_legacy_metadata_db`].
-const LEGACY_METADATA_DB_FILE: &str = "metadata.db";
 /// Filename for the LaunchBox XML dump.
 pub const LAUNCHBOX_XML: &str = "launchbox-metadata.xml";
 
-/// A row from the `data_sources` table.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DataSourceInfo {
-    pub source_name: String,
-    pub source_type: String,
-    pub version_hash: Option<String>,
-    pub imported_at: i64,
-    pub entry_count: usize,
-    pub branch: Option<String>,
-}
-
-/// Aggregate stats for a source type.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct DataSourceStats {
-    pub repo_count: usize,
-    pub total_entries: usize,
-    pub oldest_imported_at: Option<i64>,
-}
-
-/// A single entry from the `thumbnail_index` table.
-#[derive(Debug, Clone)]
-pub struct ThumbnailIndexEntry {
-    pub filename: String,
-    pub symlink_target: Option<String>,
+/// Find the LaunchBox XML on disk. Searches in priority order:
+///   1. host-global cache (`/var/lib/replay-control/cache/launchbox-metadata.xml`)
+///      — where `download_metadata` writes
+///   2. per-storage legacy location (`<storage>/.replay-control/launchbox-metadata.xml`)
+///      — pre-v2 location, kept for users who manually placed the XML there
+///   3. per-storage legacy upstream filename (`<storage>/.replay-control/Metadata.xml`)
+///
+/// Returns the first existing path. None when no XML is present.
+pub fn resolve_launchbox_xml(
+    cache_dir: &Path,
+    storage_rc_dir: &Path,
+) -> Option<std::path::PathBuf> {
+    let candidates = [
+        cache_dir.join(LAUNCHBOX_XML),
+        storage_rc_dir.join(LAUNCHBOX_XML),
+        storage_rc_dir.join("Metadata.xml"),
+    ];
+    candidates.into_iter().find(|p| p.exists())
 }
 
 pub use replay_control_core::library_db::{
@@ -114,29 +105,6 @@ impl rusqlite::types::FromSql for DpSql {
 /// Extract the year from an ISO 8601 partial/full date string (`"YYYY"`, `"YYYY-MM"`, `"YYYY-MM-DD"`).
 pub fn year_from_release_date(date: &str) -> Option<u16> {
     date.get(..4).and_then(|y| y.parse().ok())
-}
-
-/// Cached metadata for a single game.
-#[derive(Debug, Clone)]
-pub struct GameMetadata {
-    pub description: Option<String>,
-    pub rating: Option<f64>,
-    pub rating_count: Option<u32>,
-    pub publisher: Option<String>,
-    pub developer: Option<String>,
-    pub genre: Option<String>,
-    pub players: Option<u8>,
-    /// Release date in ISO 8601 partial/full format: `"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`.
-    pub release_date: Option<String>,
-    /// Precision of `release_date`.
-    pub release_precision: Option<DatePrecision>,
-    /// Region the resolver picked for this date (`"usa" | "japan" | "europe" | "world" | ...`).
-    pub release_region_used: Option<String>,
-    pub cooperative: bool,
-    pub fetched_at: i64,
-    pub box_art_path: Option<String>,
-    pub screenshot_path: Option<String>,
-    pub title_path: Option<String>,
 }
 
 /// A cached ROM entry from the `game_library` table.
@@ -231,16 +199,6 @@ pub struct AliasInsert {
     pub source: String,
 }
 
-/// An image path update for bulk insertion via `bulk_update_image_paths`.
-#[derive(Debug, Clone)]
-pub struct ImagePathUpdate {
-    pub system: String,
-    pub rom_filename: String,
-    pub box_art_path: Option<String>,
-    pub screenshot_path: Option<String>,
-    pub title_path: Option<String>,
-}
-
 /// A game series entry for bulk insertion into the `game_series` table.
 #[derive(Debug, Clone)]
 pub struct SeriesInsert {
@@ -262,31 +220,6 @@ pub struct SystemMeta {
     pub rom_count: usize,
     pub total_size_bytes: u64,
 }
-
-/// SQL to create the `game_metadata` table. Single source of truth used by
-/// `init_tables()` and `validate_game_metadata_schema()`.
-const CREATE_GAME_METADATA_SQL: &str = "
-    CREATE TABLE IF NOT EXISTS game_metadata (
-        system TEXT NOT NULL,
-        rom_filename TEXT NOT NULL,
-        description TEXT,
-        genre TEXT,
-        developer TEXT,
-        publisher TEXT,
-        release_date TEXT,
-        release_precision TEXT,
-        release_region_used TEXT,
-        rating REAL,
-        rating_count INTEGER,
-        cooperative INTEGER NOT NULL DEFAULT 0,
-        players INTEGER,
-        box_art_path TEXT,
-        screenshot_path TEXT,
-        title_path TEXT,
-        fetched_at INTEGER NOT NULL,
-        PRIMARY KEY (system, rom_filename)
-    );
-";
 
 /// SQL to create the `game_release_date` table (multi-region, full-precision).
 const CREATE_GAME_RELEASE_DATE_SQL: &str = "
@@ -351,6 +284,24 @@ const CREATE_GAME_LIBRARY_META_SQL: &str = "
     );
 ";
 
+/// SQL to create the `game_description` table.
+///
+/// Denormalizes long-form description + publisher per ROM so the
+/// game-detail server fn doesn't have to acquire the host-global
+/// `external_metadata_pool` (which would need a normalized-title lookup
+/// too). Populated at enrichment from `external_metadata.launchbox_game`.
+const CREATE_GAME_DESCRIPTION_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS game_description (
+        system TEXT NOT NULL,
+        rom_filename TEXT NOT NULL,
+        description TEXT,
+        publisher TEXT,
+        PRIMARY KEY (system, rom_filename)
+    );
+";
+
+const GAME_DESCRIPTION_COLUMNS: &[&str] = &["system", "rom_filename", "description", "publisher"];
+
 /// Expected columns in the `game_library` table.
 /// Used by [`LibraryDb::validate_game_library_schema`] to detect stale schemas.
 const GAME_LIBRARY_COLUMNS: &[&str] = &[
@@ -385,28 +336,6 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "cooperative",
 ];
 
-/// Expected columns in the `game_metadata` table.
-/// Used by [`LibraryDb::validate_game_metadata_schema`] to detect stale schemas.
-const GAME_METADATA_COLUMNS: &[&str] = &[
-    "system",
-    "rom_filename",
-    "description",
-    "genre",
-    "developer",
-    "publisher",
-    "release_date",
-    "release_precision",
-    "release_region_used",
-    "rating",
-    "rating_count",
-    "cooperative",
-    "players",
-    "box_art_path",
-    "screenshot_path",
-    "title_path",
-    "fetched_at",
-];
-
 /// Expected columns in the `game_release_date` table.
 const GAME_RELEASE_DATE_COLUMNS: &[&str] = &[
     "system",
@@ -426,11 +355,10 @@ pub struct LibraryDb;
 impl LibraryDb {
     /// Tables to probe for corruption detection.
     pub const TABLES: &[&str] = &[
-        "game_metadata",
         "game_library",
+        "game_library_meta",
+        "game_description",
         "game_release_date",
-        "data_sources",
-        "thumbnail_index",
         "game_alias",
         "game_series",
     ];
@@ -475,7 +403,6 @@ impl LibraryDb {
     pub fn open(storage_root: &Path) -> Result<Connection> {
         let dir = storage_root.join(RC_DIR);
         std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
-        cleanup_legacy_metadata_db(&dir);
         Self::open_at(&dir.join(LIBRARY_DB_FILE))
     }
 
@@ -485,10 +412,8 @@ impl LibraryDb {
     /// Mirrors [`crate::settings::SettingsStore::migrate_from_storage`]:
     /// no-op if `dest` already exists; no-op if the old file is missing;
     /// atomic rename when possible, copy + delete fallback across filesystems.
-    /// The legacy `metadata.db` sidecar is cleaned up regardless.
     pub fn migrate_from_storage(storage_root: &Path, dest: &Path) -> Result<()> {
         let old_dir = storage_root.join(RC_DIR);
-        cleanup_legacy_metadata_db(&old_dir);
 
         if dest.exists() {
             tracing::debug!(
@@ -564,41 +489,17 @@ impl LibraryDb {
                 "DROP TABLE IF EXISTS game_library; DROP TABLE IF EXISTS game_library_meta;",
             );
         }
-        if Self::table_needs_rebuild(conn, "game_metadata", GAME_METADATA_COLUMNS) {
-            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_metadata;");
-        }
         if Self::table_needs_rebuild(conn, "game_release_date", GAME_RELEASE_DATE_COLUMNS) {
             let _ = conn.execute_batch("DROP TABLE IF EXISTS game_release_date;");
         }
+        if Self::table_needs_rebuild(conn, "game_description", GAME_DESCRIPTION_COLUMNS) {
+            let _ = conn.execute_batch("DROP TABLE IF EXISTS game_description;");
+        }
 
-        conn.execute_batch(CREATE_GAME_METADATA_SQL)
-            .map_err(|e| Error::Other(format!("Failed to create game_metadata: {e}")))?;
         conn.execute_batch(CREATE_GAME_RELEASE_DATE_SQL)
             .map_err(|e| Error::Other(format!("Failed to create game_release_date: {e}")))?;
-
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS data_sources (
-                    source_name TEXT PRIMARY KEY,
-                    source_type TEXT NOT NULL,
-                    version_hash TEXT,
-                    imported_at INTEGER NOT NULL,
-                    entry_count INTEGER NOT NULL DEFAULT 0,
-                    branch TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS thumbnail_index (
-                    repo_name TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    filename TEXT NOT NULL,
-                    symlink_target TEXT,
-                    PRIMARY KEY (repo_name, kind, filename),
-                    FOREIGN KEY (repo_name) REFERENCES data_sources(source_name)
-                );
-                -- PK (repo_name, kind, filename) already covers repo_name-only lookups,
-                -- so no separate idx_thumbidx_repo index is needed.
-            ",
-        )
-        .map_err(|e| Error::Other(format!("Failed to create tables: {e}")))?;
+        conn.execute_batch(CREATE_GAME_DESCRIPTION_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create game_description: {e}")))?;
 
         conn.execute_batch(CREATE_GAME_LIBRARY_SQL)
             .map_err(|e| Error::Other(format!("Failed to create game_library: {e}")))?;
@@ -640,15 +541,6 @@ impl LibraryDb {
                 CREATE INDEX IF NOT EXISTS idx_game_library_cooperative
                   ON game_library (system, cooperative)
                   WHERE cooperative = 1;
-
-                -- Covers: data_sources queries by source_type (get_data_source_stats,
-                -- clear_thumbnail_index)
-                CREATE INDEX IF NOT EXISTS idx_data_sources_type
-                  ON data_sources (source_type);
-
-                -- Drop the redundant idx_thumbidx_repo if it exists from older schema.
-                -- The PK (repo_name, kind, filename) already covers repo_name prefix lookups.
-                DROP INDEX IF EXISTS idx_thumbidx_repo;
 
                 CREATE TABLE IF NOT EXISTS game_alias (
                     system TEXT NOT NULL,
@@ -701,16 +593,28 @@ impl LibraryDb {
 
     /// Current schema version. Bump when adding a new `migrate_v{N-1}_v{N}`
     /// step in [`Self::run_migrations`].
-    pub const SCHEMA_VERSION: i64 = 1;
+    ///
+    /// History:
+    /// - **v1**: original shape (game_library + per-storage game_metadata,
+    ///   thumbnail_index, data_sources, game_release_date, game_series).
+    /// - **v2**: external_metadata.db redesign — drops game_metadata,
+    ///   thumbnail_index, and data_sources (now per-host in
+    ///   external_metadata.db).
+    /// - **v3**: adds game_description (per-storage description + publisher
+    ///   denormalized from external_metadata.launchbox_game so the
+    ///   game-detail server fn can stay on the library pool).
+    pub const SCHEMA_VERSION: i64 = 3;
 
-    /// Run pending additive migrations.
+    /// Run pending migrations.
     ///
     /// Reads the stored version from `schema_version`, applies each
-    /// `migrate_v{N-1}_v{N}` step in a single transaction, stamps on
-    /// success. Use this for `ADD COLUMN` / `CREATE INDEX` upgrades on
-    /// tables we don't want to drop (e.g. user-settings). The four
-    /// derived tables in `init_tables` use the simpler drop-and-recreate
-    /// path on column-set mismatch since their content is reproducible.
+    /// migration step in order, stamps on success. Destructive `DROP TABLE`
+    /// migrations are explicit per step (logged at info above the SQL).
+    ///
+    /// `init_tables` runs first and only creates tables that exist in the
+    /// **current** v2 shape — so on first open of an existing v1 DB, the old
+    /// tables are still present (init_tables left them alone), and this
+    /// function drops them with the v1→v2 step below.
     pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_version (
@@ -728,19 +632,48 @@ impl LibraryDb {
             )
             .map_err(|e| Error::Other(format!("read schema_version: {e}")))?;
 
+        // Downgrade guard: refuse to open a DB stamped with a newer schema
+        // than this binary knows. Continuing would silently treat new-shape
+        // rows as old-shape and corrupt them on subsequent writes.
+        if current > Self::SCHEMA_VERSION {
+            return Err(Error::Other(format!(
+                "Library DB schema (v{current}) is newer than this binary (v{}). \
+                 Upgrade the binary or restore an older DB.",
+                Self::SCHEMA_VERSION
+            )));
+        }
+
         if current >= Self::SCHEMA_VERSION {
             return Ok(());
         }
 
-        // Each step is gated by `if current < N` so a brand-new DB (which
-        // already had `init_tables` build the v1 shape) just stamps to
-        // SCHEMA_VERSION; an upgrade from N-1 runs the bridge step.
-        // No destructive `DROP TABLE` paths — if a future migration
-        // genuinely needs to clear data, log a WARN above the SQL.
-        //
-        // (No migrations defined yet — SCHEMA_VERSION = 1 is the
-        // current shape that `init_tables` builds. Future changes:
-        // `if current < 2 { migrate_v1_v2(conn)?; }`.)
+        // ── v1 → v2 ───────────────────────────────────────────────
+        // Drop tables now relocated to external_metadata.db. Their content
+        // is reproducible from the LaunchBox XML + libretro repos + on-disk
+        // images, so a destructive drop is safe.
+        if current < 2 {
+            tracing::info!(
+                "Library DB v1 → v2: dropping game_metadata + thumbnail_index + data_sources \
+                 (now lives in external_metadata.db)"
+            );
+            conn.execute_batch(
+                "DROP TABLE IF EXISTS thumbnail_index;
+                 DROP TABLE IF EXISTS data_sources;
+                 DROP TABLE IF EXISTS game_metadata;
+                 DROP INDEX IF EXISTS idx_data_sources_type;",
+            )
+            .map_err(|e| Error::Other(format!("v1→v2 drop tables: {e}")))?;
+        }
+
+        // ── v2 → v3 ───────────────────────────────────────────────
+        // game_description is created by `init_tables` (which runs before
+        // run_migrations), so this step is just a version stamp on
+        // existing v2 DBs. The next enrichment pass populates the table.
+        if current < 3 {
+            tracing::info!(
+                "Library DB v2 → v3: game_description ready; next enrichment populates it"
+            );
+        }
 
         let now = unix_now();
         conn.execute(
@@ -834,27 +767,6 @@ pub(crate) fn unix_now() -> i64 {
         .as_secs() as i64
 }
 
-/// Remove legacy pre-0.5 `metadata.db` files from the `.replay-control` directory.
-///
-/// The library DB used to be called `metadata.db`. It was rebuildable then and
-/// remains rebuildable now, so we delete the file outright on upgrade rather
-/// than migrating schema: the startup pipeline rescans ROMs, re-imports
-/// LaunchBox data from `launchbox-metadata.xml`, and rebuilds the thumbnail
-/// index from disk. No data is lost.
-///
-/// Idempotent: silent no-op once the legacy files are gone.
-fn cleanup_legacy_metadata_db(dir: &Path) {
-    let legacy = dir.join(LEGACY_METADATA_DB_FILE);
-    if !legacy.exists() {
-        return;
-    }
-    tracing::info!(
-        "Removing legacy {} (rebuilding as library.db)",
-        legacy.display()
-    );
-    crate::sqlite::delete_db_files(&legacy);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -865,41 +777,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let conn = LibraryDb::open(dir.path()).unwrap();
         (conn, dir)
-    }
-
-    pub(crate) fn make_metadata(box_art: Option<&str>) -> GameMetadata {
-        GameMetadata {
-            description: None,
-            rating: Some(4.0),
-            rating_count: None,
-            publisher: None,
-            developer: None,
-            genre: None,
-            players: None,
-            release_date: None,
-            release_precision: None,
-            release_region_used: None,
-            cooperative: false,
-            fetched_at: 0,
-            box_art_path: box_art.map(String::from),
-            screenshot_path: None,
-            title_path: None,
-        }
-    }
-
-    pub(crate) fn make_metadata_with_genre(genre: &str) -> GameMetadata {
-        GameMetadata {
-            genre: Some(genre.into()),
-            ..make_metadata(None)
-        }
-    }
-
-    /// Create test metadata with a description (and optionally a box_art_path).
-    pub(crate) fn make_metadata_with_desc(desc: &str, box_art: Option<&str>) -> GameMetadata {
-        GameMetadata {
-            description: Some(desc.into()),
-            ..make_metadata(box_art)
-        }
     }
 
     pub(crate) fn make_game_entry(system: &str, filename: &str, is_m3u: bool) -> GameEntry {
@@ -1074,38 +951,6 @@ mod tests {
             .join("library.db");
         let _conn = LibraryDb::open_at(&nested).unwrap();
         assert!(nested.exists());
-    }
-
-    #[test]
-    fn cleanup_legacy_metadata_db_removes_all_siblings() {
-        let dir = tempfile::tempdir().unwrap();
-        let rc = dir.path().join(RC_DIR);
-        std::fs::create_dir_all(&rc).unwrap();
-
-        // Plant a legacy metadata.db + every sidecar file.
-        let legacy = rc.join("metadata.db");
-        std::fs::write(&legacy, b"legacy-db").unwrap();
-        std::fs::write(legacy.with_extension("db-wal"), b"wal").unwrap();
-        std::fs::write(legacy.with_extension("db-shm"), b"shm").unwrap();
-        std::fs::write(legacy.with_extension("db-journal"), b"journal").unwrap();
-
-        let _conn = LibraryDb::open(dir.path()).unwrap();
-        let lib_path = dir.path().join(RC_DIR).join(LIBRARY_DB_FILE);
-
-        assert!(lib_path.exists(), "new library.db should be created");
-        assert!(!legacy.exists(), "legacy metadata.db should be gone");
-        assert!(
-            !legacy.with_extension("db-wal").exists(),
-            "metadata.db-wal should be gone"
-        );
-        assert!(
-            !legacy.with_extension("db-shm").exists(),
-            "metadata.db-shm should be gone"
-        );
-        assert!(
-            !legacy.with_extension("db-journal").exists(),
-            "metadata.db-journal should be gone"
-        );
     }
 
     pub(crate) fn make_game_entry_with_genre(
