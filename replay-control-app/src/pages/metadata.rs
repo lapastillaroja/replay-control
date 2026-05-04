@@ -133,7 +133,7 @@ pub fn MetadataPage() -> impl IntoView {
 
             // ── Library Summary Cards ────────────────────────────────
             <section class="section">
-                <Suspense fallback=move || view! { <SummaryCardsSkeleton /> }>
+                <Transition fallback=move || view! { <SummaryCardsSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
                         let snap = snapshot.await?;
@@ -147,7 +147,7 @@ pub fn MetadataPage() -> impl IntoView {
                             view! { <SummaryCards summary=s storage_kind locale /> }.into_any()
                         })
                     })}
-                </Suspense>
+                </Transition>
             </section>
 
             <SystemOverviewSection snapshot />
@@ -157,7 +157,7 @@ pub fn MetadataPage() -> impl IntoView {
                 <h2 class="section-title">{move || t(i18n.locale.get(), Key::MetadataDataSources)}</h2>
 
                 // Built-in data info block
-                <Suspense fallback=move || view! { <MetadataCardSkeleton /> }>
+                <Transition fallback=move || view! { <MetadataCardSkeleton /> }>
                     {move || Suspend::new(async move {
                         let locale = i18n.locale.get();
                         let snap = snapshot.await?;
@@ -187,14 +187,14 @@ pub fn MetadataPage() -> impl IntoView {
                             </div>
                         })
                     })}
-                </Suspense>
+                </Transition>
 
                 // Descriptions & Ratings
                 <div class="data-source-card">
                     <div class="data-source-header">
                         <span class="data-source-name">{move || t(i18n.locale.get(), Key::MetadataDescriptionsRatings)}</span>
                     </div>
-                    <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
+                    <Transition fallback=move || view! { <MetadataLineSkeleton /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let snap = snapshot.await?;
@@ -216,7 +216,7 @@ pub fn MetadataPage() -> impl IntoView {
                                 }.into_any()
                             })
                         })}
-                    </Suspense>
+                    </Transition>
                     <div class="data-source-actions">
                         <button
                             class="metadata-download-btn"
@@ -243,7 +243,7 @@ pub fn MetadataPage() -> impl IntoView {
                     <div class="data-source-header">
                         <span class="data-source-name">{move || t(i18n.locale.get(), Key::MetadataThumbnailsLibretro)}</span>
                     </div>
-                    <Suspense fallback=move || view! { <MetadataLineSkeleton /> }>
+                    <Transition fallback=move || view! { <MetadataLineSkeleton /> }>
                         {move || Suspend::new(async move {
                             let locale = i18n.locale.get();
                             let snap = snapshot.await?;
@@ -299,7 +299,7 @@ pub fn MetadataPage() -> impl IntoView {
                                 }.into_any()
                             })
                         })}
-                    </Suspense>
+                    </Transition>
                     <div class="data-source-actions">
                         <button
                             class="metadata-download-btn"
@@ -964,7 +964,7 @@ fn SystemOverviewSection(snapshot: SnapshotRes) -> impl IntoView {
                     }}
                 </button>
             </div>
-            <Suspense fallback=move || view! { <AccordionSkeleton /> }>
+            <Transition fallback=move || view! { <AccordionSkeleton /> }>
                 {move || Suspend::new(async move {
                     let snap = snapshot.await?;
                     let data = snap.coverage;
@@ -979,7 +979,7 @@ fn SystemOverviewSection(snapshot: SnapshotRes) -> impl IntoView {
                         <div class="system-accordion-list">{rows}</div>
                     })
                 })}
-            </Suspense>
+            </Transition>
         </section>
     }
 }
