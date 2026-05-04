@@ -38,6 +38,11 @@ PI_SERVICE="replay-control"
 
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
 
+# Prefer cargo-installed tools over image-level defaults when both are present.
+if [[ -d "$HOME/.cargo/bin" ]]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
 # ── Colors ───────────────────────────────────────────────────────────────────
 
 if [[ -t 1 ]] && [[ -n "${TERM:-}" ]] && command -v tput &>/dev/null; then
