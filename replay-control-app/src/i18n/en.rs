@@ -448,9 +448,15 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreLogs => "System Logs",
         Key::LogsTitle => "System Logs",
         Key::LogsRefresh => "Refresh",
+        Key::LogsCopy => "Copy",
+        Key::LogsCopied => "Logs copied",
         Key::LogsSourceAll => "All Services",
         Key::LogsSourceCompanion => "Replay Control",
         Key::LogsSourceReplay => "RePlayOS UI",
+        Key::LogsLevelTitle => "Replay Control log level",
+        Key::LogsLevelInfo => "Info",
+        Key::LogsLevelDebug => "Debug",
+        Key::LogsLevelRebootHint => "Saved changes are applied after the system is rebooted.",
 
         // Search
         Key::SearchTitle => "Search",

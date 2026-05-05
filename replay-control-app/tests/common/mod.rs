@@ -109,6 +109,8 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::GetSystemCoverage>();
     server_fn::axum::register_explicit::<server_fns::GetImageStats>();
     server_fn::axum::register_explicit::<server_fns::GetSystemLogs>();
+    server_fn::axum::register_explicit::<server_fns::GetLogLevelConfig>();
+    server_fn::axum::register_explicit::<server_fns::SaveLogLevelConfig>();
     server_fn::axum::register_explicit::<server_fns::GlobalSearch>();
     server_fn::axum::register_explicit::<server_fns::GetAllGenres>();
     server_fn::axum::register_explicit::<server_fns::GetSystemGenres>();

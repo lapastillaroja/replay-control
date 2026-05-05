@@ -506,6 +506,11 @@ mod ssr {
         let _ = any_spawner::Executor::init_tokio();
 
         let cli = Cli::parse();
+        tracing::info!(
+            "Replay Control version: v{} ({})",
+            replay_control_app::VERSION,
+            replay_control_app::GIT_HASH
+        );
 
         let catalog_path = resolve_catalog_path(&cli.catalog_path);
         if let Err(e) = replay_control_core_server::init_catalog(&catalog_path).await {
@@ -585,6 +590,8 @@ mod ssr {
         server_fn::axum::register_explicit::<replay_control_app::server_fns::CleanupOrphanedImages>(
         );
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetSystemLogs>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::GetLogLevelConfig>();
+        server_fn::axum::register_explicit::<replay_control_app::server_fns::SaveLogLevelConfig>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::GetGameVideos>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::AddGameVideo>();
         server_fn::axum::register_explicit::<replay_control_app::server_fns::RemoveGameVideo>();

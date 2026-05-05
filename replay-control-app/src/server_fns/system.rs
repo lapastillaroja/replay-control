@@ -16,6 +16,19 @@ pub struct RefreshResult {
     pub storage_root: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogLevelConfig {
+    pub level: String,
+}
+
+#[cfg(feature = "ssr")]
+const REPLAY_CONTROL_ENV_FILE: &str = "/etc/default/replay-control";
+#[cfg(feature = "ssr")]
+const RUST_LOG_INFO: &str = "info";
+#[cfg(feature = "ssr")]
+const RUST_LOG_DEBUG: &str =
+    "info,replay_control_app=debug,replay_control_core=debug,replay_control_core_server=debug";
+
 #[server(prefix = "/sfn")]
 pub async fn get_info() -> Result<SystemInfo, ServerFnError> {
     #[cfg(feature = "ssr")]
@@ -192,6 +205,104 @@ pub async fn get_system_logs(source: String, lines: usize) -> Result<String, Ser
             }
         }
     }
+}
+
+#[server(prefix = "/sfn")]
+pub async fn get_log_level_config() -> Result<LogLevelConfig, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let content = tokio::fs::read_to_string(REPLAY_CONTROL_ENV_FILE)
+            .await
+            .unwrap_or_default();
+        Ok(LogLevelConfig {
+            level: rust_log_level_from_env_file(&content).to_string(),
+        })
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        Ok(LogLevelConfig {
+            level: "info".to_string(),
+        })
+    }
+}
+
+#[server(prefix = "/sfn")]
+pub async fn save_log_level_config(level: String) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let rust_log = match level.as_str() {
+            "debug" => RUST_LOG_DEBUG,
+            "info" => RUST_LOG_INFO,
+            _ => return Err(ServerFnError::new("Invalid log level")),
+        };
+
+        let content = tokio::fs::read_to_string(REPLAY_CONTROL_ENV_FILE)
+            .await
+            .unwrap_or_default();
+        let updated = set_rust_log_in_env_file(&content, rust_log);
+        tokio::fs::write(REPLAY_CONTROL_ENV_FILE, updated)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(())
+    }
+
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = level;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "ssr")]
+fn rust_log_level_from_env_file(content: &str) -> &'static str {
+    let Some(value) = rust_log_value_from_env_file(content) else {
+        return "info";
+    };
+    if value.split(',').any(|part| {
+        let part = part.trim();
+        part == "debug" || part.ends_with("=debug")
+    }) {
+        "debug"
+    } else {
+        "info"
+    }
+}
+
+#[cfg(feature = "ssr")]
+fn rust_log_value_from_env_file(content: &str) -> Option<String> {
+    content.lines().find_map(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            return None;
+        }
+        let value = trimmed.strip_prefix("RUST_LOG=")?;
+        Some(value.trim().trim_matches(['"', '\'']).to_string())
+    })
+}
+
+#[cfg(feature = "ssr")]
+fn set_rust_log_in_env_file(content: &str, rust_log: &str) -> String {
+    let mut found = false;
+    let mut lines = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with('#') && trimmed.starts_with("RUST_LOG=") {
+            lines.push(format!("RUST_LOG={rust_log}"));
+            found = true;
+        } else {
+            lines.push(line.to_string());
+        }
+    }
+
+    if !found {
+        lines.push(format!("RUST_LOG={rust_log}"));
+    }
+
+    let mut output = lines.join("\n");
+    output.push('\n');
+    output
 }
 
 #[cfg(feature = "ssr")]

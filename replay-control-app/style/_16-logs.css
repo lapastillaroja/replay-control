@@ -8,9 +8,26 @@
     margin-bottom: 12px;
     align-items: center;
 }
+.logs-level-form {
+    margin-top: 20px;
+}
+.logs-level-select {
+    max-width: 220px;
+}
 .logs-source-select {
     flex: 1;
+    color: var(--text);
+    background-color: var(--surface);
     max-width: 220px;
+    min-width: 180px;
+}
+.logs-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.logs-copy-icon {
+    line-height: 1;
 }
 .logs-output {
     background: var(--bg);

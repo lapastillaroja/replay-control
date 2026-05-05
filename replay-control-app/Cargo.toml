@@ -21,6 +21,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 urlencoding = "2"
 wasm-bindgen = "0.2"
+wasm-bindgen-futures = { version = "0.4", optional = true }
 js-sys = "0.3"
 replay-control-core = { path = "../replay-control-core", default-features = false }
 replay-control-core-server = { path = "../replay-control-core-server", default-features = false, optional = true }
@@ -75,6 +76,7 @@ default = []
 hydrate = [
     "leptos/hydrate",
     "dep:web-sys",
+    "dep:wasm-bindgen-futures",
     "dep:gloo-timers",
     "dep:console_error_panic_hook",
 ]

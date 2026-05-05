@@ -452,9 +452,17 @@ pub fn translate(key: Key) -> &'static str {
         Key::MoreLogs => "Registros del sistema",
         Key::LogsTitle => "Registros del sistema",
         Key::LogsRefresh => "Actualizar",
+        Key::LogsCopy => "Copiar",
+        Key::LogsCopied => "Registros copiados",
         Key::LogsSourceAll => "Todos los servicios",
         Key::LogsSourceCompanion => "Replay Control",
         Key::LogsSourceReplay => "RePlayOS UI",
+        Key::LogsLevelTitle => "Nivel de registro de Replay Control",
+        Key::LogsLevelInfo => "Info",
+        Key::LogsLevelDebug => "Debug",
+        Key::LogsLevelRebootHint => {
+            "Los cambios guardados se aplican después de reiniciar el sistema."
+        }
 
         // Search
         Key::SearchTitle => "Buscar",

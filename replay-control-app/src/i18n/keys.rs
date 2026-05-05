@@ -421,9 +421,15 @@ pub enum Key {
     MoreLogs,
     LogsTitle,
     LogsRefresh,
+    LogsCopy,
+    LogsCopied,
     LogsSourceAll,
     LogsSourceCompanion,
     LogsSourceReplay,
+    LogsLevelTitle,
+    LogsLevelInfo,
+    LogsLevelDebug,
+    LogsLevelRebootHint,
 
     // Search
     SearchTitle,
