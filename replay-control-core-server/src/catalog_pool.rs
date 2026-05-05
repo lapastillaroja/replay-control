@@ -24,14 +24,33 @@ pub fn schema_outdated() -> bool {
     CATALOG_SCHEMA_OUTDATED.get().copied().unwrap_or(false)
 }
 
-/// Sized for the ~6 parallel Suspense resources the metadata page fires
-/// plus headroom for background enrichment / batch lookups.
-const POOL_SIZE: usize = 8;
+const DEFAULT_POOL_SIZE: usize = 2;
+const DEFAULT_CACHE_KIB: i64 = 2048;
+const DEFAULT_MMAP_MB: u64 = 64;
 
-const CATALOG_PRAGMAS: &str = "\
-        PRAGMA mmap_size = 67108864;\
-        PRAGMA cache_size = -8192;\
-        PRAGMA temp_store = MEMORY;";
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn env_i64(name: &str, default: i64) -> i64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum CatalogInitError {
@@ -45,6 +64,8 @@ pub enum CatalogInitError {
 
 struct CatalogManager {
     path: PathBuf,
+    cache_kib: i64,
+    mmap_bytes: u64,
 }
 
 impl managed::Manager for CatalogManager {
@@ -53,12 +74,16 @@ impl managed::Manager for CatalogManager {
 
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         let path = self.path.clone();
+        let cache_kib = self.cache_kib;
+        let mmap_bytes = self.mmap_bytes;
         SyncWrapper::new(Runtime::Tokio1, move || {
             let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
                 | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
                 | rusqlite::OpenFlags::SQLITE_OPEN_URI;
             let conn = rusqlite::Connection::open_with_flags(&path, flags)?;
-            conn.execute_batch(CATALOG_PRAGMAS)?;
+            conn.execute_batch(&format!(
+                "PRAGMA mmap_size = {mmap_bytes}; PRAGMA cache_size = -{cache_kib}; PRAGMA temp_store = MEMORY;"
+            ))?;
             Ok(conn)
         })
         .await
@@ -74,10 +99,18 @@ impl managed::Manager for CatalogManager {
 }
 
 pub async fn init_catalog(path: impl AsRef<std::path::Path>) -> Result<(), CatalogInitError> {
+    let pool_size = env_usize("REPLAY_CATALOG_POOL_SIZE", DEFAULT_POOL_SIZE);
+    let cache_kib = env_i64("REPLAY_CATALOG_CACHE_KB", DEFAULT_CACHE_KIB);
+    let mmap_bytes = env_u64("REPLAY_CATALOG_MMAP_MB", DEFAULT_MMAP_MB) * 1024 * 1024;
+    tracing::info!(
+        "catalog pool: {pool_size} read connection(s), {cache_kib} KiB cache, {mmap_bytes} mmap bytes"
+    );
     let pool = Pool::builder(CatalogManager {
         path: path.as_ref().to_path_buf(),
+        cache_kib,
+        mmap_bytes,
     })
-    .config(PoolConfig::new(POOL_SIZE))
+    .config(PoolConfig::new(pool_size))
     .runtime(Runtime::Tokio1)
     .build()
     .map_err(|e| CatalogInitError::Build(e.to_string()))?;

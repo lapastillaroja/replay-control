@@ -36,6 +36,10 @@ struct SqliteManager {
     /// Whether this manager creates write-pool connections. Read connections
     /// set `query_only = ON` for safety.
     is_write: bool,
+    /// Read cache size in KiB. Applied as `PRAGMA cache_size = -N`.
+    read_cache_kib: i64,
+    /// Write cache size in KiB. Applied as `PRAGMA cache_size = -N`.
+    write_cache_kib: i64,
     /// Throttle `PRAGMA optimize` to at most once per hour.
     last_optimize: Arc<std::sync::Mutex<std::time::Instant>>,
 }
@@ -47,8 +51,40 @@ impl std::fmt::Debug for SqliteManager {
             .field("journal_mode", &self.journal_mode)
             .field("label", &self.label)
             .field("is_write", &self.is_write)
+            .field("read_cache_kib", &self.read_cache_kib)
+            .field("write_cache_kib", &self.write_cache_kib)
             .finish()
     }
+}
+
+async fn create_managed_connection(
+    db_path: PathBuf,
+    label: String,
+    is_write: bool,
+    read_cache_kib: i64,
+    write_cache_kib: i64,
+) -> Result<SyncWrapper<rusqlite::Connection>, rusqlite::Error> {
+    SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
+        let conn = sqlite::open_connection(&db_path, &label).map_err(|e| {
+            rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(1), Some(e.to_string()))
+        })?;
+
+        // Per-role PRAGMAs (on top of the base PRAGMAs from open_connection):
+        // Cache sizes are configured in KiB so the measurement harness can
+        // compare 2 MB vs 4 MB variants directly.
+        if is_write {
+            conn.execute_batch(&format!("PRAGMA cache_size = -{};", write_cache_kib))?;
+        } else {
+            conn.execute_batch(&format!("PRAGMA cache_size = -{};", read_cache_kib))?;
+        }
+        if !is_write {
+            // Read connections should never modify data (defense-in-depth).
+            conn.execute_batch("PRAGMA query_only = ON;")?;
+        }
+
+        Ok(conn)
+    })
+    .await
 }
 
 impl managed::Manager for SqliteManager {
@@ -59,35 +95,9 @@ impl managed::Manager for SqliteManager {
         let db_path = self.db_path.clone();
         let is_write = self.is_write;
         let label = self.label.clone();
-
-        SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
-            let conn = sqlite::open_connection(&db_path, &label).map_err(|e| {
-                rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(1), Some(e.to_string()))
-            })?;
-
-            // Per-role PRAGMAs (on top of the base PRAGMAs from open_connection):
-            // Read connections: 1000 pages (~4 MB). Big enough that the
-            // recommendations / system_coverage_stats / metadata snapshot
-            // queries can hold their working set in cache without paging
-            // hot indexes back from disk between calls.
-            // Write connection: 500 pages (~2 MB) — its working set is
-            // dominated by per-batch dirty pages and rolled into the WAL.
-            // 1×4 + 1×4 + 1×2 = 10 MB per DbPool, ~20 MB across both
-            // mutable DBs. Plenty of headroom on Pi 4 / Pi 5.
-            // See Tier 5 of `2026-04-29-pool-design-findings.md`.
-            if is_write {
-                conn.execute_batch("PRAGMA cache_size = 500;")?;
-            } else {
-                conn.execute_batch("PRAGMA cache_size = 1000;")?;
-            }
-            if !is_write {
-                // Read connections should never modify data (defense-in-depth).
-                conn.execute_batch("PRAGMA query_only = ON;")?;
-            }
-
-            Ok(conn)
-        })
-        .await
+        let read_cache_kib = self.read_cache_kib;
+        let write_cache_kib = self.write_cache_kib;
+        create_managed_connection(db_path, label, is_write, read_cache_kib, write_cache_kib).await
     }
 
     async fn recycle(
@@ -210,6 +220,10 @@ pub struct DbPool {
     label: &'static str,
     /// Read-pool size, captured for `reopen()`.
     read_size: usize,
+    /// Read cache size in KiB, captured for `reopen()`.
+    read_cache_kib: i64,
+    /// Write cache size in KiB, captured for `reopen()`.
+    write_cache_kib: i64,
     /// Journal mode. Atomic so `reopen()` can swap mode → pool slots in
     /// that order; a `write()` arriving mid-reopen never sees stale mode
     /// + new pool.
@@ -341,12 +355,16 @@ fn build_pool(
     is_write: bool,
     label: &str,
     max_size: usize,
+    read_cache_kib: i64,
+    write_cache_kib: i64,
 ) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     let mgr = SqliteManager {
         db_path: db_path.to_path_buf(),
         label: label.to_string(),
         journal_mode,
         is_write,
+        read_cache_kib,
+        write_cache_kib,
         last_optimize: Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
     };
     let pool = managed::Pool::builder(mgr)
@@ -386,6 +404,18 @@ impl DbPool {
         opener: fn(&Path) -> replay_control_core::error::Result<rusqlite::Connection>,
         read_size: usize,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_with_cache(db_path, label, opener, read_size, 4096, 2048)
+    }
+
+    /// Create a new pool with explicit cache sizes in KiB.
+    pub fn new_with_cache(
+        db_path: PathBuf,
+        label: &'static str,
+        opener: fn(&Path) -> replay_control_core::error::Result<rusqlite::Connection>,
+        read_size: usize,
+        read_cache_kib: i64,
+        write_cache_kib: i64,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         // Recovery before any connection exists — sibling deadpool opens
         // skip it (per-connection recovery would unlink WAL under live fds).
         sqlite::recover_after_unclean_shutdown(&db_path);
@@ -401,8 +431,18 @@ impl DbPool {
             false,
             &format!("{label}_read"),
             read_size,
+            read_cache_kib,
+            write_cache_kib,
         )?;
-        let write_pool = build_pool(&db_path, journal_mode, true, &format!("{label}_write"), 1)?;
+        let write_pool = build_pool(
+            &db_path,
+            journal_mode,
+            true,
+            &format!("{label}_write"),
+            1,
+            read_cache_kib,
+            write_cache_kib,
+        )?;
 
         Ok(Self {
             read_pool: Arc::new(std::sync::RwLock::new(Some(read_pool))),
@@ -410,6 +450,8 @@ impl DbPool {
             db_path: Arc::new(std::sync::RwLock::new(db_path)),
             label,
             read_size,
+            read_cache_kib,
+            write_cache_kib,
             journal_mode: Arc::new(AtomicU8::new(journal_mode.as_u8())),
             opener,
             corrupt: Arc::new(AtomicBool::new(false)),
@@ -430,6 +472,8 @@ impl DbPool {
             db_path: Arc::new(std::sync::RwLock::new(PathBuf::new())),
             label,
             read_size: 1,
+            read_cache_kib: 4096,
+            write_cache_kib: 2048,
             // No file → mode is moot; Delete is the safer default in case
             // an accidental write reaches the pool somehow.
             journal_mode: Arc::new(AtomicU8::new(JournalMode::Delete.as_u8())),
@@ -459,6 +503,8 @@ impl DbPool {
             db_path: Arc::new(std::sync::RwLock::new(db_path)),
             label,
             read_size,
+            read_cache_kib: 4096,
+            write_cache_kib: 2048,
             // Mode learned on next `reopen`.
             journal_mode: Arc::new(AtomicU8::new(JournalMode::Delete.as_u8())),
             opener,
@@ -682,6 +728,8 @@ impl DbPool {
                 is_write,
                 &format!("{}_{role}", self.label),
                 max_size,
+                self.read_cache_kib,
+                self.write_cache_kib,
             )
         };
         let new_read = match make(false, self.read_size, "read") {

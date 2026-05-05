@@ -24,10 +24,11 @@ pub const CACHE_1D: &str = "public, max-age=86400";
 pub const CACHE_IMMUTABLE: &str = "public, max-age=31536000, immutable";
 
 /// Read pool size for the library DB. WAL on ext4 SD lets concurrent reads
-/// actually parallelise; 3 covers typical SSR fan-out (recommendations +
-/// recents + favorites + system info) overlapping with one long enrichment
-/// or thumbnail-planning pass.
-const LIBRARY_READ_POOL_SIZE: usize = 3;
+/// actually parallelise. Two readers with 2 MiB caches were the best
+/// memory/runtime tradeoff measured on the large NFS test library.
+const LIBRARY_READ_POOL_SIZE: usize = 2;
+const LIBRARY_READ_CACHE_KIB: i64 = 2048;
+const LIBRARY_WRITE_CACHE_KIB: i64 = 2048;
 
 /// Read pool size for the user_data DB. The DB lives on the ROM storage,
 /// which can be DELETE-mode (exFAT/NFS); extra readers don't help there
@@ -39,6 +40,57 @@ const USER_DATA_READ_POOL_SIZE: usize = 1;
 /// server functions all read from here. Two readers keep short UI reads moving
 /// while one longer background read is active.
 const EXTERNAL_METADATA_READ_POOL_SIZE: usize = 2;
+const EXTERNAL_METADATA_READ_CACHE_KIB: i64 = 2048;
+const EXTERNAL_METADATA_WRITE_CACHE_KIB: i64 = 2048;
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn env_i64(name: &str, default: i64) -> i64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+fn library_read_pool_size() -> usize {
+    env_usize("REPLAY_LIBRARY_READ_POOL_SIZE", LIBRARY_READ_POOL_SIZE)
+}
+
+fn library_read_cache_kib() -> i64 {
+    env_i64("REPLAY_LIBRARY_READ_CACHE_KIB", LIBRARY_READ_CACHE_KIB)
+}
+
+fn library_write_cache_kib() -> i64 {
+    env_i64("REPLAY_LIBRARY_WRITE_CACHE_KIB", LIBRARY_WRITE_CACHE_KIB)
+}
+
+fn external_metadata_read_pool_size() -> usize {
+    env_usize(
+        "REPLAY_EXTERNAL_METADATA_READ_POOL_SIZE",
+        EXTERNAL_METADATA_READ_POOL_SIZE,
+    )
+}
+
+fn external_metadata_read_cache_kib() -> i64 {
+    env_i64(
+        "REPLAY_EXTERNAL_METADATA_READ_CACHE_KIB",
+        EXTERNAL_METADATA_READ_CACHE_KIB,
+    )
+}
+
+fn external_metadata_write_cache_kib() -> i64 {
+    env_i64(
+        "REPLAY_EXTERNAL_METADATA_WRITE_CACHE_KIB",
+        EXTERNAL_METADATA_WRITE_CACHE_KIB,
+    )
+}
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -342,11 +394,19 @@ impl AppState {
         }
         replay_control_core_server::external_metadata::open_at(&em_path)
             .map_err(|e| format!("Failed to open external_metadata DB: {e}"))?;
-        let external_metadata_pool = DbPool::new(
+        let em_read_pool_size = external_metadata_read_pool_size();
+        let em_read_cache_kib = external_metadata_read_cache_kib();
+        let em_write_cache_kib = external_metadata_write_cache_kib();
+        tracing::info!(
+            "external_metadata pool: {em_read_pool_size} read connection(s), {em_read_cache_kib} KiB read cache, {em_write_cache_kib} KiB write cache"
+        );
+        let external_metadata_pool = DbPool::new_with_cache(
             em_path.clone(),
             "external_metadata_db",
             replay_control_core_server::external_metadata::open_at,
-            EXTERNAL_METADATA_READ_POOL_SIZE,
+            em_read_pool_size,
+            em_read_cache_kib,
+            em_write_cache_kib,
         )?;
         tracing::info!("external_metadata DB ready at {}", em_path.display());
 
@@ -358,11 +418,19 @@ impl AppState {
             replay_control_core_server::library_db::LibraryDb::open_at(&paths.library)
                 .map_err(|e| format!("Failed to open library DB: {e}"))?;
             tracing::info!("Library DB ready at {}", paths.library.display());
-            let library_pool = DbPool::new(
+            let lib_read_pool_size = library_read_pool_size();
+            let lib_read_cache_kib = library_read_cache_kib();
+            let lib_write_cache_kib = library_write_cache_kib();
+            tracing::info!(
+                "library pool: {lib_read_pool_size} read connection(s), {lib_read_cache_kib} KiB read cache, {lib_write_cache_kib} KiB write cache"
+            );
+            let library_pool = DbPool::new_with_cache(
                 paths.library.clone(),
                 "library_db",
                 replay_control_core_server::library_db::LibraryDb::open_at,
-                LIBRARY_READ_POOL_SIZE,
+                lib_read_pool_size,
+                lib_read_cache_kib,
+                lib_write_cache_kib,
             )?;
 
             // user_data isn't rebuildable, so a clobbered header → start in
