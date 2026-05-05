@@ -51,7 +51,7 @@ impl SkinInfo {
 }
 
 #[cfg(feature = "ssr")]
-pub(crate) fn is_replayos() -> bool {
+pub fn is_replayos() -> bool {
     std::path::Path::new("/opt/replay").exists()
 }
 

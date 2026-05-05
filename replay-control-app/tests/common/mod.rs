@@ -77,6 +77,12 @@ pub fn test_router(state: AppState) -> axum::Router {
     replay_control_app::api::build_router(state, leptos_options)
 }
 
+/// Build the full application router plus the production no-storage guard.
+pub fn test_guarded_router(state: AppState) -> axum::Router {
+    let app = test_router(state.clone());
+    replay_control_app::api::with_storage_guard(app, state)
+}
+
 /// Build an API-only router (no SSR fallback, no server function handler).
 /// Useful for tests that only exercise REST API routes.
 pub fn test_api_router(state: AppState) -> axum::Router {

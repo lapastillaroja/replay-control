@@ -99,6 +99,14 @@ use replay_control_core_server::config::SystemConfig;
 use replay_control_core_server::data_dir::DataDir;
 use replay_control_core_server::storage::{StorageKind, StorageLocation};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StorageStatus {
+    WaitingForMount,
+    Activating,
+    Ready,
+    Error { message: String },
+}
+
 /// Config change events pushed to clients via the `/sse/config` broadcast channel.
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "type")]
@@ -127,6 +135,7 @@ pub enum ConfigEvent {
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Arc<std::sync::RwLock<Option<StorageLocation>>>,
+    pub storage_status: Arc<std::sync::RwLock<StorageStatus>>,
     pub config: Arc<std::sync::RwLock<SystemConfig>>,
     pub config_path: Option<PathBuf>,
     pub cache: Arc<LibraryService>,
@@ -265,15 +274,16 @@ fn prepare_storage_dbs(
 /// swap so the corruption banner fires on either path. Library DBs don't
 /// need this — `LibraryDb::open_at` deletes-and-recreates on bad header
 /// (the file is rebuildable cache); user_data is not rebuildable.
-async fn reopen_user_data_or_mark_corrupt(pool: &DbPool, db_path: &std::path::Path) {
+async fn reopen_user_data_or_mark_corrupt(pool: &DbPool, db_path: &std::path::Path) -> bool {
     if replay_control_core_server::sqlite::has_invalid_sqlite_header(db_path) {
         tracing::error!(
             "user_data.db at {} has invalid SQLite header — flagging pool corrupt",
             db_path.display()
         );
         pool.mark_corrupt();
+        true
     } else {
-        pool.reopen(db_path).await;
+        pool.reopen(db_path).await
     }
 }
 
@@ -483,11 +493,29 @@ impl AppState {
             tracing::warn!(
                 "Starting without storage — all requests will redirect to /waiting until storage appears"
             );
-            let library_pool = DbPool::new_closed("library_db");
-            let user_data_pool = DbPool::new_closed("user_data_db");
+            let library_pool = DbPool::new_deferred(
+                "library_db",
+                replay_control_core_server::library_db::LibraryDb::open_at,
+                library_read_pool_size(),
+                library_read_cache_kib(),
+                library_write_cache_kib(),
+            );
+            let user_data_pool = DbPool::new_deferred(
+                "user_data_db",
+                open_user_data_db,
+                USER_DATA_READ_POOL_SIZE,
+                4096,
+                2048,
+            );
             register_corruption_callbacks(&library_pool, &user_data_pool, config_tx.clone());
             (library_pool, user_data_pool)
         };
+
+        let storage_status = Arc::new(std::sync::RwLock::new(if storage.is_some() {
+            StorageStatus::Ready
+        } else {
+            StorageStatus::WaitingForMount
+        }));
 
         let activity = Arc::new(std::sync::RwLock::new(Activity::Idle));
 
@@ -527,6 +555,7 @@ impl AppState {
 
         let state = Self {
             storage: Arc::new(std::sync::RwLock::new(storage)),
+            storage_status,
             config: Arc::new(std::sync::RwLock::new(config)),
             config_path,
             cache: Arc::new(LibraryService::new()),
@@ -568,6 +597,25 @@ impl AppState {
             .read()
             .expect("storage lock poisoned")
             .is_some()
+    }
+
+    pub fn storage_status(&self) -> StorageStatus {
+        self.storage_status
+            .read()
+            .expect("storage status lock poisoned")
+            .clone()
+    }
+
+    fn set_storage_status(&self, status: StorageStatus) {
+        *self
+            .storage_status
+            .write()
+            .expect("storage status lock poisoned") = status;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_storage_status_for_test(&self, status: StorageStatus) {
+        self.set_storage_status(status);
     }
 
     /// Read-lock storage and clone the current StorageLocation.
@@ -748,6 +796,7 @@ impl AppState {
                 "refresh_storage: {} not yet a mount point; deferring",
                 new_storage.root.display()
             );
+            self.set_storage_status(StorageStatus::WaitingForMount);
             return Ok(false);
         }
         let had_storage = self.has_storage();
@@ -766,20 +815,47 @@ impl AppState {
                 new_storage.kind,
                 new_storage.root.display()
             );
+            self.set_storage_status(StorageStatus::Activating);
 
-            let paths = prepare_storage_dbs(
+            let paths = match prepare_storage_dbs(
                 &new_storage,
                 &self.data_dir,
                 self.storage_path_override.is_none(),
-            )?;
+            ) {
+                Ok(paths) => paths,
+                Err(e) => {
+                    let message = format!("Could not prepare storage databases: {e}");
+                    tracing::warn!("{message}");
+                    self.set_storage_status(StorageStatus::Error { message });
+                    return Ok(false);
+                }
+            };
+
+            if !self.library_pool.reopen(&paths.library).await {
+                let message = format!(
+                    "Could not open library database at {}",
+                    paths.library.display()
+                );
+                tracing::warn!("{message}");
+                self.set_storage_status(StorageStatus::Error { message });
+                return Ok(false);
+            }
+
+            if !reopen_user_data_or_mark_corrupt(&self.user_data_pool, &paths.user_data).await {
+                let message = format!(
+                    "Could not open user data database at {}",
+                    paths.user_data.display()
+                );
+                tracing::warn!("{message}");
+                self.set_storage_status(StorageStatus::Error { message });
+                return Ok(false);
+            }
 
             {
                 let mut guard = self.storage.write().expect("storage lock poisoned");
                 *guard = Some(new_storage);
             }
-
-            self.library_pool.reopen(&paths.library).await;
-            reopen_user_data_or_mark_corrupt(&self.user_data_pool, &paths.user_data).await;
+            self.set_storage_status(StorageStatus::Ready);
 
             // Back up user_data.db after opening at the new location.
             if !had_storage {
@@ -946,9 +1022,243 @@ pub fn build_router(
         .with_state(app_state)
 }
 
+/// Paths that bypass the storage guard middleware.
+/// When storage is unavailable, all other requests redirect to `/waiting`.
+pub fn is_allowed_without_storage(path: &str) -> bool {
+    path == "/waiting"
+        || path == "/waiting/reboot"
+        || path.starts_with("/static/")
+        || path == "/api/version"
+}
+
+/// Render the `/waiting` page using the current storage status.
+pub fn waiting_page_response(state: AppState) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    axum::response::Html(waiting_page_html(&state)).into_response()
+}
+
+/// Handle the reboot action exposed only on waiting-page storage errors.
+pub fn waiting_reboot_response() -> axum::response::Response {
+    use axum::response::{IntoResponse, Redirect};
+
+    if !crate::server_fns::is_replayos() {
+        return Redirect::temporary("/waiting").into_response();
+    }
+
+    let _ = std::process::Command::new("sync").output();
+    match std::process::Command::new("reboot").output() {
+        Ok(_) => axum::response::Html(
+            r#"<!DOCTYPE html><html><head><meta http-equiv="refresh" content="10;url=/waiting"><title>Rebooting</title></head><body>Rebooting...</body></html>"#,
+        )
+        .into_response(),
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to reboot: {e}"),
+        )
+            .into_response(),
+    }
+}
+
+/// Add the production no-storage guard and waiting routes around an app router.
+pub fn with_storage_guard(app: axum::Router, app_state: AppState) -> axum::Router {
+    use axum::middleware::Next;
+    use axum::response::{IntoResponse, Redirect};
+
+    let waiting_state = app_state.clone();
+    let waiting_handler = axum::routing::get(move || {
+        let state = waiting_state.clone();
+        async move { waiting_page_response(state) }
+    });
+    let waiting_reboot_handler = axum::routing::post(|| async { waiting_reboot_response() });
+    let guard_state = app_state.clone();
+
+    app.route("/waiting", waiting_handler)
+        .route("/waiting/reboot", waiting_reboot_handler)
+        .layer(axum::middleware::from_fn(
+            move |request: axum::http::Request<axum::body::Body>, next: Next| {
+                let state = guard_state.clone();
+                async move {
+                    if state.has_storage() {
+                        return next.run(request).await;
+                    }
+
+                    let path = request.uri().path().to_string();
+                    if is_allowed_without_storage(&path) {
+                        return next.run(request).await;
+                    }
+
+                    Redirect::temporary("/waiting").into_response()
+                }
+            },
+        ))
+}
+
+pub fn waiting_page_html(state: &AppState) -> String {
+    let config = state.config.read().expect("config lock poisoned");
+    let storage_mode = config.storage_mode().to_string();
+    drop(config);
+
+    let storage_label = match storage_mode.as_str() {
+        "usb" => "USB",
+        "nvme" => "NVMe",
+        "nfs" => "NFS",
+        _ => "SD",
+    };
+
+    let skin_index = state.effective_skin();
+    let skin_css = replay_control_core::skins::theme_css(skin_index).unwrap_or_default();
+    let theme_color = replay_control_core::skins::theme_color(skin_index);
+    let status = state.storage_status();
+    let (subtitle, error_html) = match status {
+        StorageStatus::Error { message } => (
+            "Storage was detected, but Replay Control could not open its database.",
+            format!(
+                r#"<div class="waiting-error">
+                    <p>Replay Control will keep retrying automatically.</p>
+                    <p class="waiting-error-detail">{}</p>
+                    <p>If storage was just attached or the network mount is still settling, rebooting the Pi may help.</p>
+                    <form method="post" action="/waiting/reboot">
+                        <button class="btn btn-danger" type="submit">Reboot System</button>
+                    </form>
+                </div>"#,
+                escape_html(&message)
+            ),
+        ),
+        StorageStatus::Activating => (
+            "Storage was detected. Replay Control is opening its databases.",
+            String::new(),
+        ),
+        StorageStatus::WaitingForMount | StorageStatus::Ready => (
+            "The configured storage device is not available yet.",
+            String::new(),
+        ),
+    };
+
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="{theme_color}">
+    <meta http-equiv="refresh" content="5">
+    <title>Replay Control — Waiting for Storage</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style id="skin-theme">{skin_css}</style>
+    <style>
+        .waiting-page {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+            padding: 2rem;
+            text-align: center;
+        }}
+        .waiting-icon {{
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            animation: pulse 2s ease-in-out infinite;
+        }}
+        @keyframes pulse {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.4; }}
+        }}
+        .waiting-title {{
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }}
+        .waiting-subtitle {{
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }}
+        .waiting-error {{
+            max-width: 440px;
+            margin-bottom: 2rem;
+        }}
+        .waiting-error-detail {{
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            overflow-wrap: anywhere;
+        }}
+        .waiting-tips {{
+            text-align: left;
+            max-width: 400px;
+        }}
+        .waiting-tips h4 {{
+            margin-bottom: 0.5rem;
+        }}
+        .waiting-tips ul {{
+            padding-left: 1.2rem;
+            line-height: 1.8;
+        }}
+        .waiting-auto {{
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 2rem;
+        }}
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="top-bar">
+            <h1 class="app-title">Replay Control</h1>
+        </header>
+        <main class="content">
+            <div class="waiting-page">
+                <div class="waiting-icon">&#x1F4E1;</div>
+                <h2 class="waiting-title">Waiting for {storage_label} storage...</h2>
+                <p class="waiting-subtitle">{subtitle}</p>
+                {error_html}
+
+                <div class="waiting-tips">
+                    <h4>Troubleshooting</h4>
+                    <ul>
+                        <li><b>USB</b>: Check that the USB drive is plugged in and recognized.</li>
+                        <li><b>NFS</b>: Verify WiFi is connected and NFS server is reachable.</li>
+                        <li><b>NVMe</b>: Check that the NVMe drive is installed correctly.</li>
+                    </ul>
+                </div>
+
+                <p class="waiting-auto">This page auto-refreshes every 5 seconds.</p>
+            </div>
+        </main>
+    </div>
+</body>
+</html>"#
+    )
+}
+
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn build_waiting_page_test_state(storage_root: &std::path::Path) -> AppState {
+        std::fs::create_dir_all(storage_root.join("roms")).unwrap();
+        std::fs::create_dir_all(storage_root.join("config")).unwrap();
+        std::fs::write(
+            storage_root.join("config/replay.cfg"),
+            "storage_mode=nfs\nsystem_skin=0\n",
+        )
+        .unwrap();
+
+        AppState::new(
+            Some(storage_root.to_string_lossy().into_owned()),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
 
     /// `refresh_storage`'s symmetric pre-flight: when the re-attached
     /// storage has a clobbered user_data.db magic header, the helper
@@ -1005,5 +1315,37 @@ mod tests {
 
         assert!(!pool.is_corrupt(), "healthy header must not flag corrupt");
         assert_eq!(pool.db_path(), new_path, "pool must reopen at new path");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn waiting_page_shows_reboot_action_on_storage_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = build_waiting_page_test_state(tmp.path());
+        state.set_storage_status_for_test(StorageStatus::Error {
+            message: "open <failed> & retry".into(),
+        });
+
+        let html = waiting_page_html(&state);
+
+        assert!(
+            html.contains("Storage was detected, but Replay Control could not open its database.")
+        );
+        assert!(html.contains("Replay Control will keep retrying automatically."));
+        assert!(html.contains("open &lt;failed&gt; &amp; retry"));
+        assert!(html.contains(r#"action="/waiting/reboot""#));
+        assert!(html.contains("Reboot System"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn waiting_page_hides_reboot_action_while_waiting_for_mount() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = build_waiting_page_test_state(tmp.path());
+        state.set_storage_status_for_test(StorageStatus::WaitingForMount);
+
+        let html = waiting_page_html(&state);
+
+        assert!(html.contains("The configured storage device is not available yet."));
+        assert!(!html.contains("Reboot System"));
+        assert!(!html.contains(r#"action="/waiting/reboot""#));
     }
 }

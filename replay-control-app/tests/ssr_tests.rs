@@ -3,11 +3,12 @@
 mod common;
 
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{Request, StatusCode, header};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
-use common::{TestEnv, init_executor, register_server_fns, test_router};
+use common::{TestEnv, init_executor, register_server_fns, test_guarded_router, test_router};
+use replay_control_app::api::StorageStatus;
 
 /// SSR tests require the Leptos executor and server function registration.
 fn setup() {
@@ -132,4 +133,61 @@ async fn home_page_contains_setup_checklist_on_fresh_storage() {
         html.contains("setup-checklist"),
         "home page on fresh storage should contain the setup checklist"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn storage_guard_redirects_to_waiting_page_with_error_reboot_action() {
+    setup();
+    let env = TestEnv::new();
+    {
+        let mut storage = env.state.storage.write().expect("storage lock poisoned");
+        *storage = None;
+    }
+    {
+        let mut status = env
+            .state
+            .storage_status
+            .write()
+            .expect("storage status lock poisoned");
+        *status = StorageStatus::Error {
+            message: "Could not re-open library_db DB: closed".into(),
+        };
+    }
+    let app = test_guarded_router(env.state.clone());
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/settings/metadata")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        resp.headers().get(header::LOCATION).unwrap(),
+        "/waiting",
+        "guard should redirect app routes to the waiting page when storage is unavailable"
+    );
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/waiting")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    assert!(html.contains("Storage was detected, but Replay Control could not open its database."));
+    assert!(html.contains("Could not re-open library_db DB: closed"));
+    assert!(html.contains(r#"action="/waiting/reboot""#));
+    assert!(html.contains("Reboot System"));
 }

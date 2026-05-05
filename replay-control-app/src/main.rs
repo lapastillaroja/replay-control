@@ -13,8 +13,6 @@ mod ssr {
     use tower_http::services::ServeDir;
     use tower_http::set_header::SetResponseHeaderLayer;
 
-    use axum::middleware::Next;
-    use axum::response::{IntoResponse, Redirect, Response};
     use replay_control_app::api;
 
     #[derive(Parser)]
@@ -357,117 +355,6 @@ mod ssr {
         serve_file_etagged(&file_path, content_type, &headers, api::CACHE_1D).await
     }
 
-    /// Paths that bypass the storage guard middleware.
-    /// When storage is unavailable, ALL other requests redirect to `/waiting`.
-    fn is_allowed_without_storage(path: &str) -> bool {
-        path == "/waiting" || path.starts_with("/static/") || path == "/api/version"
-    }
-
-    /// Render the /waiting page: tells the user storage is unavailable and
-    /// what type of storage is expected. Auto-refreshes every 5 seconds.
-    fn waiting_page(state: api::AppState) -> Response {
-        let config = state.config.read().expect("config lock poisoned");
-        let storage_mode = config.storage_mode().to_string();
-        drop(config);
-
-        let storage_label = match storage_mode.as_str() {
-            "usb" => "USB",
-            "nvme" => "NVMe",
-            "nfs" => "NFS",
-            _ => "SD",
-        };
-
-        let skin_index = state.effective_skin();
-        let skin_css = replay_control_core::skins::theme_css(skin_index).unwrap_or_default();
-        let theme_color = replay_control_core::skins::theme_color(skin_index);
-
-        let html = format!(
-            r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="{theme_color}">
-    <meta http-equiv="refresh" content="5">
-    <title>Replay Control — Waiting for Storage</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <style id="skin-theme">{skin_css}</style>
-    <style>
-        .waiting-page {{
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 80vh;
-            padding: 2rem;
-            text-align: center;
-        }}
-        .waiting-icon {{
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            animation: pulse 2s ease-in-out infinite;
-        }}
-        @keyframes pulse {{
-            0%, 100% {{ opacity: 1; }}
-            50% {{ opacity: 0.4; }}
-        }}
-        .waiting-title {{
-            font-size: 1.5rem;
-            margin-bottom: 0.5rem;
-        }}
-        .waiting-subtitle {{
-            color: var(--text-secondary);
-            margin-bottom: 2rem;
-        }}
-        .waiting-tips {{
-            text-align: left;
-            max-width: 400px;
-        }}
-        .waiting-tips h4 {{
-            margin-bottom: 0.5rem;
-        }}
-        .waiting-tips ul {{
-            padding-left: 1.2rem;
-            line-height: 1.8;
-        }}
-        .waiting-auto {{
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-            margin-top: 2rem;
-        }}
-    </style>
-</head>
-<body>
-    <div class="app">
-        <header class="top-bar">
-            <h1 class="app-title">Replay Control</h1>
-        </header>
-        <main class="content">
-            <div class="waiting-page">
-                <div class="waiting-icon">&#x1F4E1;</div>
-                <h2 class="waiting-title">Waiting for {storage_label} storage...</h2>
-                <p class="waiting-subtitle">The configured storage device is not available yet.</p>
-
-                <div class="waiting-tips">
-                    <h4>Troubleshooting</h4>
-                    <ul>
-                        <li><b>USB</b>: Check that the USB drive is plugged in and recognized.</li>
-                        <li><b>NFS</b>: Verify WiFi is connected and NFS server is reachable.</li>
-                        <li><b>NVMe</b>: Check that the NVMe drive is installed correctly.</li>
-                    </ul>
-                </div>
-
-                <p class="waiting-auto">This page auto-refreshes every 5 seconds.</p>
-            </div>
-        </main>
-    </div>
-</body>
-</html>"#
-        );
-
-        axum::response::Html(html).into_response()
-    }
-
     /// Resolve the catalog SQLite path. If the supplied path is relative and
     /// doesn't exist at the current working directory, fall back to the same
     /// filename next to the executable (systemd units without `WorkingDirectory`
@@ -807,18 +694,10 @@ mod ssr {
             async move { sse_config_stream(state) }
         });
 
-        // Waiting page handler: serves a static HTML page when storage is unavailable.
-        let waiting_state = app_state.clone();
-        let waiting_handler = axum::routing::get(move || {
-            let state = waiting_state.clone();
-            async move { waiting_page(state) }
-        });
-
         // Clone state for the storage guard middleware before build_router consumes it.
         let guard_state = app_state.clone();
 
         let app = api::build_router(app_state, leptos_options)
-            .route("/waiting", waiting_handler)
             // DEPRECATED: Remove /more redirects in next-next beta release
             // Redirect legacy /more/* routes to /settings/*
             .route(
@@ -912,27 +791,9 @@ mod ssr {
                 }),
             )
             .layer(CompressionLayer::new().gzip(true))
-            .layer(CorsLayer::permissive())
-            .layer({
-                axum::middleware::from_fn(
-                    move |request: axum::http::Request<axum::body::Body>, next: Next| {
-                        let state = guard_state.clone();
-                        async move {
-                            if state.has_storage() {
-                                return next.run(request).await;
-                            }
+            .layer(CorsLayer::permissive());
 
-                            let path = request.uri().path().to_string();
-
-                            if is_allowed_without_storage(&path) {
-                                return next.run(request).await;
-                            }
-
-                            Redirect::temporary("/waiting").into_response()
-                        }
-                    },
-                )
-            });
+        let app = api::with_storage_guard(app, guard_state);
 
         let addr = format!("0.0.0.0:{}", cli.port);
         tracing::info!("Starting server on {addr}");

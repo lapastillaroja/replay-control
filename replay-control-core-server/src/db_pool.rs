@@ -486,6 +486,34 @@ impl DbPool {
         }
     }
 
+    /// Create a deferred pool. Like `new_closed`, it starts with no live
+    /// connections, but it keeps the real opener/config so `reopen()` can
+    /// activate it once a storage path becomes available.
+    pub fn new_deferred(
+        label: &'static str,
+        opener: fn(&Path) -> replay_control_core::error::Result<rusqlite::Connection>,
+        read_size: usize,
+        read_cache_kib: i64,
+        write_cache_kib: i64,
+    ) -> Self {
+        Self {
+            read_pool: Arc::new(std::sync::RwLock::new(None)),
+            write_pool: Arc::new(std::sync::RwLock::new(None)),
+            db_path: Arc::new(std::sync::RwLock::new(PathBuf::new())),
+            label,
+            read_size,
+            read_cache_kib,
+            write_cache_kib,
+            journal_mode: Arc::new(AtomicU8::new(JournalMode::Delete.as_u8())),
+            opener,
+            corrupt: Arc::new(AtomicBool::new(false)),
+            recovered: Arc::new(AtomicBool::new(false)),
+            write_gate: Arc::new(AtomicBool::new(false)),
+            on_corruption_change: Arc::new(std::sync::RwLock::new(None)),
+            metrics: Arc::new(PoolMetrics::default()),
+        }
+    }
+
     /// Create a pool that starts in the corrupt state — no live connections,
     /// `is_corrupt()` returns true. Differs from `new_closed` in that the DB
     /// path and the real opener are wired, so `reopen()` (called by recovery
@@ -964,6 +992,26 @@ mod tests {
         let pool = DbPool::new_closed("test_db");
         assert!(pool.read(|_| 1u32).await.is_none());
         assert!(pool.write(|_| 1u32).await.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn deferred_pool_can_reopen() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("deferred.db");
+        let pool = DbPool::new_deferred("test_db", test_opener, 2, 2048, 1024);
+
+        assert!(pool.read(|_| 1u32).await.is_none());
+        assert!(pool.write(|_| 1u32).await.is_none());
+
+        assert!(pool.reopen(&path).await);
+        assert_eq!(pool.db_path(), path);
+
+        let value = pool
+            .read(|conn| conn.query_row("SELECT 1", [], |r| r.get::<_, i64>(0)))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(value, 1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
