@@ -4,6 +4,32 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.8](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.8) - 2026-05-04
+
+### Highlights
+
+- This beta focuses on diagnostics and large-library stability: startup logs now identify the exact build, `/settings/logs` can switch Replay Control between info/debug for the next reboot and copy logs to the clipboard, and the external metadata reader path is less likely to starve UI requests during very large scans.
+
+### Changed
+
+- External-metadata read pool increased from 1 to 2 connections. Large background enrichment and thumbnail-planning reads no longer monopolize the only reader, so short UI/server-function reads have a second slot during big-library scans.
+- Thumbnail planning now releases its `external_metadata.db` read connection after loading manifest rows. Fuzzy matching and filesystem checks run off-pool, reducing reader starvation during thumbnail updates.
+- Startup logs now include the same Replay Control version and git hash shown on the Settings page, making remote log captures easier to tie to an exact build.
+- WAL databases now use SQLite's automatic checkpointing instead of disabling `wal_autocheckpoint` and forcing broad manual checkpoints after heavy write phases.
+
+### Added
+
+- `/settings/logs` now includes a Replay Control log-level selector. It writes the selected `RUST_LOG` value to `/etc/default/replay-control` and tells the user that changes apply after reboot; it does not restart or reboot the system.
+- `/settings/logs` now has a copy-to-clipboard action next to Refresh, with a fallback path for browser contexts where `navigator.clipboard` is unavailable.
+
+### Fixed
+
+- Read-pool connections no longer attempt `PRAGMA optimize` while marked `query_only`, removing repeated `attempt to write a readonly database` recycle warnings.
+- The logs source dropdown now binds its displayed value explicitly, fixing a blank collapsed select where the options only appeared after opening the dropdown.
+- Large scans no longer force a post-scan `library.db` checkpoint through the generic 15-second write path, avoiding misleading write-acquire timeout bursts after successful scans.
+
+---
+
 ## [0.4.0-beta.7](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.7) - 2026-05-04
 
 ### Highlights
