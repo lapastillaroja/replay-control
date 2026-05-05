@@ -187,8 +187,6 @@ impl BackgroundManager {
             };
 
             Self::phase_cache_verification(state).await;
-            // Checkpoint after Phase 2 writes (game_library inserts/updates).
-            state.library_pool.checkpoint().await;
 
             Self::phase_auto_rebuild_thumbnail_index(state).await;
 
@@ -982,8 +980,6 @@ impl BackgroundManager {
         };
 
         if total_entries > 0 {
-            // Checkpoint WAL after the bulk thumbnail index writes.
-            state.library_pool.checkpoint().await;
             tracing::info!(
                 "Thumbnail index rebuilt from disk: {total_entries} entries across {total_repos} repos"
             );
@@ -1671,7 +1667,6 @@ impl AppState {
                     PopulateProgress::Startup,
                 )
                 .await;
-                state.library_pool.checkpoint().await;
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
@@ -1741,7 +1736,6 @@ impl AppState {
                     PopulateProgress::Rebuild { start },
                 )
                 .await;
-                state.library_pool.checkpoint().await;
             }
 
             // Enrichment phase: update box art URLs and ratings for all systems.
@@ -1829,7 +1823,6 @@ impl AppState {
                 PopulateProgress::Rescan { start },
             )
             .await;
-            state.library_pool.checkpoint().await;
 
             update_rebuild_progress(&state, |p| {
                 p.phase = RebuildPhase::Complete;

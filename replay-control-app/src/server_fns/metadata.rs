@@ -299,7 +299,6 @@ pub async fn clear_metadata() -> Result<(), ServerFnError> {
         .ok_or_else(|| ServerFnError::new("external_metadata pool unavailable"))?
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    state.external_metadata_pool.checkpoint().await;
     state.cache.invalidate_metadata_page().await;
     Ok(())
 }

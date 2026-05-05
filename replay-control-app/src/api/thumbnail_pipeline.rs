@@ -244,8 +244,6 @@ impl ThumbnailPipeline {
             }
         };
 
-        // Checkpoint WAL after the index phase's bulk writes.
-        state.library_pool.checkpoint().await;
         tracing::info!(
             "run_thumbnail_update: phase 1 done in {}s",
             start.elapsed().as_secs()

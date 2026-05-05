@@ -1,17 +1,19 @@
 # Connection Pooling
 
-`DbPool`, the private `WriteGate`, and the custom `SqliteManager` live in `replay-control-core-server/src/db_pool.rs` as a generic, app-agnostic utility. `replay-control-app/src/api/mod.rs` constructs the two app-specific pool instances and stores them on `AppState`.
+`DbPool`, the private `WriteGate`, and the custom `SqliteManager` live in `replay-control-core-server/src/db_pool.rs` as a generic, app-agnostic utility. `replay-control-app/src/api/mod.rs` constructs the app-specific pool instances and stores them on `AppState`.
 
 ## Pool Architecture
 
-Each SQLite database gets a `DbPool` instance backed by `deadpool` with a custom `SqliteManager`. The app has two pools:
+Each mutable SQLite database gets a `DbPool` instance backed by `deadpool` with a custom `SqliteManager`. The app has three `DbPool` instances plus the separate read-only catalog pool:
 
 - `library_pool` — for `library.db` (game library, thumbnails, imported metadata). Stored centrally on the host SD at `/var/lib/replay-control/storages/<storage-id>/library.db`. Always WAL on ext4.
+- `external_metadata_pool` — for host-global `external_metadata.db` (LaunchBox rows, libretro thumbnail manifests, source stamps). Stored under `/var/lib/replay-control/external_metadata.db` on the host SD.
 - `user_data_pool` — for `user_data.db` (box art overrides, saved videos). Stays per-storage at `<storage>/.replay-control/user_data.db`. Mode follows the storage filesystem (WAL on ext4, DELETE on exFAT/NFS).
 
 Each `DbPool` contains two internal deadpool pools, sized per-pool at construction:
 
 - **Library read pool**: `LIBRARY_READ_POOL_SIZE = 3`. WAL on ext4 lets concurrent readers actually parallelise; 3 covers SSR fan-out (recommendations + recents + favorites + system info) overlapping with one long enrichment / thumbnail-planning pass.
+- **External metadata read pool**: `EXTERNAL_METADATA_READ_POOL_SIZE = 2`. Keeps short UI/server-function reads moving while one longer background enrichment or thumbnail-manifest read is active.
 - **User data read pool**: `USER_DATA_READ_POOL_SIZE = 1`. exFAT/NFS DELETE-mode pools serialise readers vs. writers via the gate; extra readers don't help.
 - **Write pool**: 1 connection (SQLite serialises writes).
 
@@ -26,7 +28,6 @@ Per-role PRAGMAs applied on top of base PRAGMAs from `open_connection()`:
 ```
 PRAGMA cache_size = 1000;          -- Read connections: ~4 MB
 PRAGMA cache_size = 500;           -- Write connection: ~2 MB
-PRAGMA wal_autocheckpoint = 0;     -- Write + WAL only: manual checkpoint control
 PRAGMA query_only = ON;            -- Read only: defense-in-depth, prevents accidental writes
 ```
 
@@ -34,7 +35,7 @@ PRAGMA query_only = ON;            -- Read only: defense-in-depth, prevents acci
 
 Skips the default SELECT health check (3.5x faster, per Matrix SDK findings). If the connection is broken, the next `interact()` call fails and the pool discards it.
 
-Runs `PRAGMA optimize` (with `analysis_limit = 400`) at most once per hour to keep query planner statistics fresh without per-return overhead.
+Runs `PRAGMA optimize` (with `analysis_limit = 400`) on write connections at most once per hour to keep query planner statistics fresh without per-return overhead. Read connections are `query_only` and do not run optimize.
 
 ## Journal Mode Detection
 
@@ -81,6 +82,6 @@ After every `interact()` closure runs, `check_for_corruption` reads `sqlite3_err
 - **`replace_with_file(src)`**: drain → unlink sidecars → copy `src` over → reopen. Used by user-data restore-from-backup.
 - **Closed state**: `DbPool::new_closed()` creates a pool where all `try_*` return `Err(DbError::Closed)`. Used at startup when storage is unavailable.
 
-## Manual Checkpointing
+## WAL Checkpointing
 
-`DbPool::checkpoint()` runs `PRAGMA wal_checkpoint(PASSIVE)` on the write connection. PASSIVE mode doesn't block readers. Called after heavy write operations (import, thumbnail rebuild, full populate) to fold the WAL back into the main database file and prevent unbounded WAL growth.
+WAL pools use SQLite's default automatic checkpointing. The app does not disable `wal_autocheckpoint` and normal heavy-write paths do not force broad post-scan checkpoints through the generic `DbPool::write` timeout window.

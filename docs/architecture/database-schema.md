@@ -194,7 +194,7 @@ Records the applied schema version. Used by the downgrade guard: `LibraryDb::ope
 
 Host-global. Lives at `/var/lib/replay-control/external_metadata.db`. Holds source-derived metadata that doesn't depend on which storage is mounted (LaunchBox text + libretro thumbnail manifests + source-version stamps). Schema in `replay-control-core-server/src/external_metadata.rs`.
 
-Read **only at enrichment time** — request paths always read `library.db`. Single-reader pool + single-writer pool, exposed on `AppState::external_metadata_pool`.
+Read mostly by enrichment, metadata maintenance, thumbnail planning, and box-art variant lookups. Normal game-detail/list request paths read `library.db`. Exposed on `AppState::external_metadata_pool` with a 2-reader / 1-writer pool.
 
 ### launchbox_game
 

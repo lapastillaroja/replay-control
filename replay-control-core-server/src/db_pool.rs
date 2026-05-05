@@ -32,11 +32,9 @@ struct SqliteManager {
     db_path: PathBuf,
     label: String,
     /// Actual journal mode determined at pool creation by querying the DB.
-    /// Controls WAL-specific PRAGMAs (autocheckpoint on write connections).
     journal_mode: JournalMode,
-    /// Whether this manager creates write-pool connections.
-    /// Write + WAL connections disable auto-checkpoint for manual control.
-    /// Read connections set `query_only = ON` for safety.
+    /// Whether this manager creates write-pool connections. Read connections
+    /// set `query_only = ON` for safety.
     is_write: bool,
     /// Throttle `PRAGMA optimize` to at most once per hour.
     last_optimize: Arc<std::sync::Mutex<std::time::Instant>>,
@@ -60,7 +58,6 @@ impl managed::Manager for SqliteManager {
     async fn create(&self) -> Result<SyncWrapper<rusqlite::Connection>, Self::Error> {
         let db_path = self.db_path.clone();
         let is_write = self.is_write;
-        let is_wal = self.journal_mode == JournalMode::Wal;
         let label = self.label.clone();
 
         SyncWrapper::new(deadpool_sqlite::Runtime::Tokio1, move || {
@@ -82,11 +79,6 @@ impl managed::Manager for SqliteManager {
                 conn.execute_batch("PRAGMA cache_size = 500;")?;
             } else {
                 conn.execute_batch("PRAGMA cache_size = 1000;")?;
-            }
-            if is_write && is_wal {
-                // Disable automatic WAL checkpoints so we can checkpoint
-                // manually after heavy writes (import, thumbnail rebuild).
-                conn.execute_batch("PRAGMA wal_autocheckpoint = 0;")?;
             }
             if !is_write {
                 // Read connections should never modify data (defense-in-depth).
@@ -383,8 +375,8 @@ impl DbPool {
     /// Create a new pool. Opens the DB synchronously to detect journal mode and
     /// fail fast on inaccessible files. Deadpool connections are created lazily
     /// on first use — `Manager::create` only adds trivial role PRAGMAs
-    /// (`cache_size`, `query_only`, `wal_autocheckpoint`) on top of the open
-    /// path we just exercised, so eagerly warming them adds no error coverage.
+    /// (`cache_size`, `query_only`) on top of the open path we just exercised,
+    /// so eagerly warming them adds no error coverage.
     /// Avoiding `block_in_place + block_on` here keeps `DbPool::new` callable
     /// from any tokio runtime flavor (including `current_thread`), which lets
     /// integration tests run without the multi-thread runtime requirement.
@@ -831,18 +823,6 @@ impl DbPool {
         {
             cb();
         }
-    }
-
-    /// Run a passive WAL checkpoint on the write connection.
-    ///
-    /// PASSIVE mode does not block readers. Call after heavy write operations
-    /// (import, thumbnail rebuild, metadata clear) to fold the WAL back into
-    /// the main database file and prevent unbounded WAL growth.
-    pub async fn checkpoint(&self) {
-        self.write(|conn| {
-            let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);");
-        })
-        .await;
     }
 
     /// Get the current DB file path.

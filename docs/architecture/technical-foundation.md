@@ -20,7 +20,7 @@ This crate is the default home for new code. If code touches SQLite, fs, HTTP, o
 
 Server-only native implementation. Compiled for native targets only (never wasm). Pulls `rusqlite`, `deadpool-sqlite`, `tokio`, `reqwest` (optional), `quick-xml` (optional). Contains:
 
-- **DbPool**: generic `deadpool-sqlite` wrapper with read/write pools, journal mode detection, internal `WriteGate` (auto-activated on DELETE-mode pools only), `try_read`/`try_write` returning typed `DbError`, and atomic lifecycle (`reset_to_empty`, `replace_with_file`, drained `close`/`reopen`). App constructs `library_pool` and `user_data_pool` on top, sized 3 readers / 1 reader respectively.
+- **DbPool**: generic `deadpool-sqlite` wrapper with read/write pools, journal mode detection, internal `WriteGate` (auto-activated on DELETE-mode pools only), `try_read`/`try_write` returning typed `DbError`, and atomic lifecycle (`reset_to_empty`, `replace_with_file`, drained `close`/`reopen`). App constructs `library_pool`, `external_metadata_pool`, and `user_data_pool` on top, sized 3 / 2 / 1 readers respectively.
 - **Catalog pool**: async read-only `deadpool-sqlite` pool for the bundled `catalog.sqlite` (game databases, arcade DB, series DB)
 - **Game DB queries**: native SQL lookups for arcade/console metadata, display name resolution, release dates
 - **Library scanning + uploads**: ROM discovery, favorites/recents I/O, hashing, disc-group detection, `roms::write_rom` for upload writes
@@ -126,7 +126,7 @@ See [ROM Classification](rom-classification.md) for the full tier system and tag
 
 ## Connection Pooling
 
-`deadpool-sqlite` connection pool with separate read/write pools per database. Async API (`pool.get().await` + `conn.interact().await`) prevents tokio worker starvation. Library pool sized at 3 readers / 1 writer (always WAL on the host SD); user_data pool at 1 / 1 (DELETE-mode on the storage filesystem). Filesystem-aware journal mode selection. Pool-internal write gate auto-activates around writes on DELETE-mode pools only — WAL pools never block readers. `try_read`/`try_write` return typed `DbError`; cascade gates must distinguish "pool unavailable" from "no rows".
+`deadpool-sqlite` connection pool with separate read/write pools per database. Async API (`pool.get().await` + `conn.interact().await`) prevents tokio worker starvation. Library pool is sized at 3 readers / 1 writer, external metadata at 2 / 1, and user_data at 1 / 1. Filesystem-aware journal mode selection. Pool-internal write gate auto-activates around writes on DELETE-mode pools only — WAL pools never block readers. WAL pools rely on SQLite auto-checkpointing rather than broad manual post-scan checkpoints. `try_read`/`try_write` return typed `DbError`; cascade gates must distinguish "pool unavailable" from "no rows".
 
 See [Connection Pooling](connection-pooling.md) for the full architecture.
 

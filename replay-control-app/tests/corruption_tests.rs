@@ -388,9 +388,12 @@ async fn restore_user_data_backup_actually_restores_content() {
         .await;
     assert!(matches!(inserted, Some(Ok(1))), "sentinel insert failed");
 
-    // Checkpoint so the WAL is rolled into the main file before we copy —
-    // otherwise the .bak we make is missing the row.
-    env.state.user_data_pool.checkpoint().await;
+    // Test setup only: fold the WAL into the main file before copying it as
+    // a manual .bak snapshot; otherwise the copied main file can miss the row.
+    env.state
+        .user_data_pool
+        .write(|conn| conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);"))
+        .await;
 
     // Manually refresh the .bak so it carries the sentinel row.
     let ud_path = env.state.user_data_pool.db_path();

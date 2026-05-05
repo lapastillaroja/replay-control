@@ -56,10 +56,11 @@ The base `open_connection()` in `sqlite.rs` sets `cache_size = -8000` (8MB) for 
 ```rust
 // replay-control-app/src/api/mod.rs
 const LIBRARY_READ_POOL_SIZE: usize = 3;
+const EXTERNAL_METADATA_READ_POOL_SIZE: usize = 2;
 const USER_DATA_READ_POOL_SIZE: usize = 1;
 ```
 
-Sized at construction time, per pool, by the host crate. The library DB lives centrally on the host SD (always WAL on ext4); 3 readers cover SSR fan-out — recommendations + recents + favorites + system info — overlapping with one long enrichment / thumbnail-planning pass without queueing. The user_data DB stays on ROM storage (often exFAT/NFS, DELETE-mode), where the gate serialises readers vs. writers and extra reader slots don't help.
+Sized at construction time, per pool, by the host crate. The library DB lives centrally on the host SD (always WAL on ext4); 3 readers cover SSR fan-out — recommendations + recents + favorites + system info — overlapping with one long enrichment / thumbnail-planning pass without queueing. The host-global external metadata DB uses 2 readers so short metadata/UI reads can proceed while one longer enrichment or manifest-planning read is active. The user_data DB stays on ROM storage (often exFAT/NFS, DELETE-mode), where the gate serialises readers vs. writers and extra reader slots don't help.
 
 **Files**: `replay-control-app/src/api/mod.rs`, `replay-control-core-server/src/db_pool.rs`
 
