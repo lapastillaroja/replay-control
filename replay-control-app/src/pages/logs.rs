@@ -12,7 +12,7 @@ const LOG_SOURCES: &[(&str, Key)] = &[
     ("replay", Key::LogsSourceReplay),
 ];
 
-const LOG_LINES: usize = 200;
+const LOG_LINES: usize = 400;
 
 #[component]
 pub fn LogsPage() -> impl IntoView {
