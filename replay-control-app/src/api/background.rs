@@ -11,6 +11,8 @@ use super::activity::{
 };
 use super::library::dir_mtime;
 
+const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 #[derive(Clone, Copy)]
 pub(crate) enum PopulateProgress {
     /// Boot pipeline / post-import. Updates `Activity::Startup` if active and
@@ -578,7 +580,7 @@ impl BackgroundManager {
         let progress_state = state.clone();
         let result = state
             .external_metadata_pool
-            .write(move |conn| {
+            .try_write_with_timeout(EXTERNAL_METADATA_REFRESH_TIMEOUT, move |conn| {
                 replay_control_core_server::library::external_metadata_refresh::refresh_launchbox(
                     &xml_for_task,
                     conn,
@@ -594,8 +596,8 @@ impl BackgroundManager {
             .await;
 
         let stats = match result {
-            Some(Ok(stats)) => stats,
-            Some(Err(e)) => {
+            Ok(Ok(stats)) => stats,
+            Ok(Err(e)) => {
                 tracing::warn!("phase_auto_import: refresh failed: {e}");
                 state.update_activity(|act| {
                     if let Activity::RefreshExternalMetadata { progress } = act {
@@ -606,12 +608,12 @@ impl BackgroundManager {
                 });
                 return;
             }
-            None => {
-                tracing::warn!("phase_auto_import: external_metadata pool unavailable");
+            Err(e) => {
+                tracing::warn!("phase_auto_import: external_metadata pool write failed: {e}");
                 state.update_activity(|act| {
                     if let Activity::RefreshExternalMetadata { progress } = act {
                         progress.phase = RefreshMetadataPhase::Failed;
-                        progress.error = Some("external_metadata pool unavailable".into());
+                        progress.error = Some(e.to_string());
                         progress.elapsed_secs = start.elapsed().as_secs();
                     }
                 });

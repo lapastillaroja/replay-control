@@ -571,7 +571,9 @@ impl DbPool {
         // `dispatch` is single-typed over `&mut Connection`; reads borrow
         // immutably via reborrow. `query_only=ON` is set on read connections
         // (see `SqliteManager::create`) so a misbehaving closure can't write.
-        let result = self.dispatch(Op::Read, &self.read_pool, |c| f(c)).await;
+        let result = self
+            .dispatch(Op::Read, &self.read_pool, INTERACT_TIMEOUT, |c| f(c))
+            .await;
         match &result {
             Ok(_) => {
                 self.metrics.reads_completed.fetch_add(1, Ordering::Relaxed);
@@ -606,11 +608,28 @@ impl DbPool {
         F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
         R: Send + 'static,
     {
+        self.try_write_with_timeout(INTERACT_TIMEOUT, f).await
+    }
+
+    /// Run a write closure with a caller-selected wall-clock cap.
+    ///
+    /// Use this for known long maintenance writes (for example bulk metadata
+    /// imports). The default [`Self::try_write`] timeout remains intentionally
+    /// short so UI/server-function writes still surface stuck closures quickly.
+    pub async fn try_write_with_timeout<F, R>(
+        &self,
+        timeout: std::time::Duration,
+        f: F,
+    ) -> Result<R, DbError>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> R + Send + 'static,
+        R: Send + 'static,
+    {
         self.metrics.writes_started.fetch_add(1, Ordering::Relaxed);
         let _gate = self
             .is_delete_mode()
             .then(|| WriteGate::activate(&self.write_gate));
-        let result = self.dispatch(Op::Write, &self.write_pool, f).await;
+        let result = self.dispatch(Op::Write, &self.write_pool, timeout, f).await;
         if result.is_ok() {
             self.metrics
                 .writes_completed
@@ -628,6 +647,7 @@ impl DbPool {
         &self,
         op: Op,
         slot: &Arc<std::sync::RwLock<Option<SqlitePool>>>,
+        timeout: std::time::Duration,
         f: F,
     ) -> Result<R, DbError>
     where
@@ -670,7 +690,7 @@ impl DbPool {
             check_for_corruption(c, &pool_for_corrupt);
             r
         });
-        match tokio::time::timeout(INTERACT_TIMEOUT, interact).await {
+        match tokio::time::timeout(timeout, interact).await {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(e)) => {
                 tracing::warn!("{label}: {kind} interact failed: {e}");
@@ -679,7 +699,7 @@ impl DbPool {
             Err(_) => {
                 tracing::error!(
                     "{label}: {kind} exceeded {:?}; closure still running on blocking pool",
-                    INTERACT_TIMEOUT
+                    timeout
                 );
                 let counter = if op == Op::Read {
                     &self.metrics.reads_timed_out
@@ -687,7 +707,7 @@ impl DbPool {
                     &self.metrics.writes_timed_out
                 };
                 counter.fetch_add(1, Ordering::Relaxed);
-                Err(DbError::Timeout(INTERACT_TIMEOUT))
+                Err(DbError::Timeout(timeout))
             }
         }
     }
@@ -985,6 +1005,40 @@ mod tests {
             .await
             .flatten();
         assert_eq!(value.as_deref(), Some("hello"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn custom_write_timeout_allows_known_slow_maintenance_write() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        let result = pool
+            .try_write_with_timeout(std::time::Duration::from_millis(250), |conn| {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                conn.execute("INSERT INTO kv VALUES ('slow', 'ok')", [])
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(result, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn custom_write_timeout_reports_timeout() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pool = build_test_pool(&tmp);
+
+        let result = pool
+            .try_write_with_timeout(std::time::Duration::from_millis(5), |_| {
+                std::thread::sleep(std::time::Duration::from_millis(75));
+            })
+            .await;
+
+        assert!(
+            matches!(result, Err(DbError::Timeout(timeout)) if timeout == std::time::Duration::from_millis(5))
+        );
+        assert_eq!(pool.metrics().writes_timed_out, 1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
