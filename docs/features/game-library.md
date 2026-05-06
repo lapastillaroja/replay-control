@@ -94,7 +94,7 @@ A secondary region preference is also supported for a two-tier sort: Primary > S
 
 On local storage (SD, USB, NVMe), the app watches the `roms/` directory for changes. New, modified, or deleted ROMs are detected automatically -- no manual refresh needed. Changes are debounced (3 seconds) to handle bulk file copies smoothly.
 
-On NFS storage, automatic detection is not possible (inotify does not work across network mounts). Use the "Rebuild Game Library" button in the metadata page to pick up changes.
+On NFS storage, automatic detection is not possible (inotify does not work across network mounts). Use the "Rescan Game Library" button in the metadata page to reconcile the library after external changes.
 
 ## Startup Behavior
 

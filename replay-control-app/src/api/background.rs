@@ -23,10 +23,10 @@ pub(crate) enum PopulateProgress {
     /// already empty (`cache.invalidate` truncated it), so cached_systems
     /// falls through to a fresh L3 filesystem scan automatically.
     Rebuild { start: std::time::Instant },
-    /// Additive rescan. Updates `Activity::Rebuild` (with `is_rescan: true`).
-    /// Forces an explicit `scan_systems` walk because `game_library_meta`
-    /// still holds the old `rom_count = 0` rows for systems whose folders
-    /// were empty before — cached_systems would silently filter them out.
+    /// Reconcile rescan. Updates `Activity::Rebuild` (with `is_rescan: true`)
+    /// and walks every visible system directly so removals are applied too.
+    /// Uses strict per-system scans: missing top-level system dirs become
+    /// empty systems, but recursive read failures preserve old rows.
     Rescan { start: std::time::Instant },
 }
 
@@ -1004,19 +1004,26 @@ impl BackgroundManager {
                     .cached_systems(storage, &state.library_pool)
                     .await
             }
-            PopulateProgress::Rescan { .. } => {
-                match replay_control_core_server::roms::scan_systems(storage).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::warn!("populate_all_systems: scan_systems failed: {e}");
-                        return;
-                    }
-                }
-            }
+            PopulateProgress::Rescan { .. } => replay_control_core::systems::visible_systems()
+                .map(|system| replay_control_core::roms::SystemSummary {
+                    folder_name: system.folder_name.to_string(),
+                    display_name: system.display_name.to_string(),
+                    manufacturer: system.manufacturer.to_string(),
+                    category: format!("{:?}", system.category).to_lowercase(),
+                    game_count: 0,
+                    total_size_bytes: 0,
+                })
+                .collect(),
         };
-        let with_games: Vec<_> = systems.iter().filter(|s| s.game_count > 0).collect();
-        let total = with_games.len();
-        tracing::info!("L2 warmup: populating {} system(s) with games", total);
+        let rescan = matches!(progress, PopulateProgress::Rescan { .. });
+        let systems_to_scan: Vec<_> = if rescan {
+            systems.iter().collect()
+        } else {
+            systems.iter().filter(|s| s.game_count > 0).collect()
+        };
+        let total = systems_to_scan.len();
+        let log_target = if rescan { "reconciling" } else { "populating" };
+        tracing::info!("L2 warmup: {log_target} {total} system(s)");
 
         let start = std::time::Instant::now();
 
@@ -1031,19 +1038,32 @@ impl BackgroundManager {
         }
 
         let mut total_roms = 0usize;
-        for (i, sys) in with_games.iter().enumerate() {
+        for (i, sys) in systems_to_scan.iter().enumerate() {
             report_system(state, progress, i, &sys.display_name, false);
-            match state
-                .cache
-                .scan_and_cache_system(
-                    storage,
-                    &sys.folder_name,
-                    region_pref,
-                    region_secondary,
-                    &state.library_pool,
-                )
-                .await
-            {
+            let scan_result = if rescan {
+                state
+                    .cache
+                    .scan_and_cache_system_reconcile(
+                        storage,
+                        &sys.folder_name,
+                        region_pref,
+                        region_secondary,
+                        &state.library_pool,
+                    )
+                    .await
+            } else {
+                state
+                    .cache
+                    .scan_and_cache_system(
+                        storage,
+                        &sys.folder_name,
+                        region_pref,
+                        region_secondary,
+                        &state.library_pool,
+                    )
+                    .await
+            };
+            match scan_result {
                 Ok(roms) => {
                     tracing::debug!("L2 warmup: {} — {} ROMs", sys.folder_name, roms.len());
                     total_roms += roms.len();
@@ -1069,7 +1089,7 @@ impl BackgroundManager {
             });
         }
 
-        for (i, sys) in with_games.iter().enumerate() {
+        for (i, sys) in systems_to_scan.iter().enumerate() {
             report_system(state, progress, i, &sys.display_name, true);
             state
                 .cache
@@ -1796,9 +1816,9 @@ impl AppState {
         });
     }
 
-    /// Spawn an additive rescan: walk all ROM directories, insert any new ROMs
-    /// into `game_library` (via `INSERT OR IGNORE`), and run enrichment.
-    /// Existing rows are preserved.
+    /// Spawn a non-destructive rescan: walk all visible ROM directories,
+    /// reconcile each system to current disk state, and run enrichment.
+    /// Unlike rebuild, this does not clear the whole library up front.
     pub fn spawn_rescan(&self, guard: super::activity::ActivityGuard) {
         let state = self.clone();
         let start = std::time::Instant::now();

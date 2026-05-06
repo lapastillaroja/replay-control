@@ -334,6 +334,68 @@ impl LibraryService {
         Ok(arc)
     }
 
+    /// Scan a system from filesystem with strict error handling and write the
+    /// result to L2 (SQLite), reconciling removals as well as additions.
+    ///
+    /// A missing top-level system directory is only treated as empty when the
+    /// cache has never seen ROMs for that system. If rows already exist, a
+    /// disappeared system dir is treated like a transient storage failure and
+    /// surfaced as an error so callers preserve old cached rows. Any recursive
+    /// directory read failure under an existing system is also surfaced.
+    pub async fn scan_and_cache_system_reconcile(
+        &self,
+        storage: &StorageLocation,
+        system: &str,
+        region_pref: RegionPreference,
+        region_secondary: Option<RegionPreference>,
+        db: &DbPool,
+    ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
+        let system_dir = storage.roms_dir().join(system);
+        if !system_dir.exists() {
+            let sys = system.to_string();
+            let cached_meta = db
+                .read(move |conn| LibraryDb::load_system_meta(conn, &sys))
+                .await
+                .and_then(|r| r.ok())
+                .flatten();
+            if cached_meta.as_ref().is_some_and(|meta| meta.rom_count > 0) {
+                return Err(replay_control_core::error::Error::Other(format!(
+                    "reconcile scan skipped for {system}: top-level system dir missing while cache still has rows"
+                )));
+            }
+        }
+
+        tracing::debug!("L3 reconcile scan for {system}: starting filesystem scan");
+        let mut roms = replay_control_core_server::roms::list_roms_strict(
+            storage,
+            system,
+            region_pref,
+            region_secondary,
+        )
+        .await?;
+        tracing::debug!("L3 reconcile scan for {system}: found {} ROMs", roms.len());
+
+        let hash_results = self
+            .hash_roms_for_system(storage, system, &mut roms, db)
+            .await;
+
+        let arc = Arc::new(roms);
+
+        self.save_roms_to_db(
+            storage,
+            system,
+            &arc,
+            &system_dir,
+            &hash_results,
+            region_pref,
+            region_secondary,
+            db,
+        )
+        .await;
+
+        Ok(arc)
+    }
+
     /// Try to load ROMs from SQLite game_library, validating via mtime.
     pub(crate) async fn load_roms_from_db(
         &self,
@@ -443,9 +505,9 @@ impl LibraryService {
     }
 
     /// Invalidate L1 (in-memory) caches only — does NOT touch the L2
-    /// (SQLite) game_library tables. Use this for additive flows like
-    /// rescan that must drop stale cached views without deleting any rows.
-    /// Destructive flows should call `invalidate()` instead.
+    /// (SQLite) game_library tables. Use this for non-destructive flows like
+    /// rescan that reconcile rows in place without clearing the whole
+    /// library. Destructive flows should call `invalidate()` instead.
     pub async fn invalidate_l1(&self) {
         *self.systems.write().await = None;
         *self.favorites.write().await = None;
@@ -493,6 +555,9 @@ impl LibraryService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use replay_control_core::rom_tags::RegionPreference;
+    use replay_control_core_server::test_utils::build_library_pool;
+    use replay_control_core_server::{library_db::LibraryDb, storage::StorageKind};
 
     /// Regression: `cached_systems` must fall through to the L3 filesystem
     /// scan when the DB is reachable but `game_library_meta` is empty
@@ -608,5 +673,131 @@ mod tests {
             read_count.load(std::sync::atomic::Ordering::Relaxed) > 0,
             "Reader thread should have acquired the lock between batches"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_scan_replaces_system_rows_when_roms_are_removed() {
+        use replay_control_core_server::storage::StorageLocation;
+
+        let (pool, _db_tmp) = build_library_pool();
+        let storage_tmp = tempfile::tempdir().unwrap();
+        let roms_dir = storage_tmp.path().join("roms").join("nintendo_nes");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        let rom_path = roms_dir.join("Game.nes");
+        std::fs::write(&rom_path, b"rom").unwrap();
+
+        let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
+        let svc = LibraryService::new();
+
+        svc.scan_and_cache_system_reconcile(
+            &storage,
+            "nintendo_nes",
+            RegionPreference::default(),
+            None,
+            &pool,
+        )
+        .await
+        .unwrap();
+
+        let filenames = pool
+            .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(filenames, vec!["Game.nes".to_string()]);
+
+        std::fs::remove_file(&rom_path).unwrap();
+
+        svc.scan_and_cache_system_reconcile(
+            &storage,
+            "nintendo_nes",
+            RegionPreference::default(),
+            None,
+            &pool,
+        )
+        .await
+        .unwrap();
+
+        let filenames = pool
+            .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            filenames.is_empty(),
+            "reconcile rescan should drop removed ROMs"
+        );
+
+        let meta = pool
+            .read(LibraryDb::load_all_system_meta)
+            .await
+            .unwrap()
+            .unwrap();
+        let nes = meta
+            .iter()
+            .find(|row| row.system == "nintendo_nes")
+            .expect("system meta row should remain present");
+        assert_eq!(nes.rom_count, 0);
+        assert_eq!(nes.total_size_bytes, 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_scan_preserves_cached_rows_when_system_dir_disappears() {
+        use replay_control_core_server::storage::StorageLocation;
+
+        let (pool, _db_tmp) = build_library_pool();
+        let storage_tmp = tempfile::tempdir().unwrap();
+        let roms_dir = storage_tmp.path().join("roms").join("nintendo_nes");
+        std::fs::create_dir_all(&roms_dir).unwrap();
+        let rom_path = roms_dir.join("Game.nes");
+        std::fs::write(&rom_path, b"rom").unwrap();
+
+        let storage = StorageLocation::from_path(storage_tmp.path().to_path_buf(), StorageKind::Sd);
+        let svc = LibraryService::new();
+
+        svc.scan_and_cache_system_reconcile(
+            &storage,
+            "nintendo_nes",
+            RegionPreference::default(),
+            None,
+            &pool,
+        )
+        .await
+        .unwrap();
+
+        std::fs::remove_dir_all(&roms_dir).unwrap();
+
+        let err = svc
+            .scan_and_cache_system_reconcile(
+                &storage,
+                "nintendo_nes",
+                RegionPreference::default(),
+                None,
+                &pool,
+            )
+            .await
+            .expect_err("missing top-level dir with cached rows must preserve old cache");
+        assert!(
+            err.to_string().contains("top-level system dir missing"),
+            "unexpected error: {err}"
+        );
+
+        let filenames = pool
+            .read(|conn| LibraryDb::visible_filenames(conn, "nintendo_nes"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(filenames, vec!["Game.nes".to_string()]);
+
+        let meta = pool
+            .read(LibraryDb::load_all_system_meta)
+            .await
+            .unwrap()
+            .unwrap();
+        let nes = meta
+            .iter()
+            .find(|row| row.system == "nintendo_nes")
+            .expect("system meta row should remain present");
+        assert_eq!(nes.rom_count, 1);
     }
 }

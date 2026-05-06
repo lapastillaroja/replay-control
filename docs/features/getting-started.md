@@ -60,7 +60,7 @@ roms/
     ...
 ```
 
-On local storage (SD, USB, NVMe), new ROMs are detected automatically. On NFS, use the "Rebuild Game Library" button in the metadata page to pick up changes.
+On local storage (SD, USB, NVMe), new ROMs are detected automatically. On NFS, use the "Rescan Game Library" button in the metadata page to reconcile the library after external changes.
 
 ## Browse Your Library
 

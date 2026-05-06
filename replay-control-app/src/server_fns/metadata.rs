@@ -327,11 +327,11 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
     Ok(())
 }
 
-/// Additively rescan the game library: walk ROM directories and insert any
-/// new ROMs into `game_library` via `INSERT OR IGNORE`. Existing rows are
-/// preserved; per-ROM `hash_mtime` caching means unchanged files are not
-/// re-hashed. Built for users with large NFS libraries who need to pick up
-/// newly-added ROMs without paying the cost of a full rebuild.
+/// Rescan the game library: walk ROM directories and reconcile each visible
+/// system to current disk state, applying additions, updates, and removals
+/// without clearing the whole library first. Missing top-level system
+/// directories are treated as empty systems; recursive read failures preserve
+/// the previous cached rows for that system.
 #[server(prefix = "/sfn")]
 pub async fn rescan_game_library() -> Result<(), ServerFnError> {
     use crate::api::activity::RebuildProgress;

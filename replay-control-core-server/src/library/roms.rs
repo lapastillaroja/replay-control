@@ -244,6 +244,56 @@ pub async fn list_roms(
     Ok(roms)
 }
 
+/// List ROM files for a specific system, treating filesystem read failures as
+/// errors instead of silently collapsing to an empty list.
+///
+/// Used by manual rescan/reconcile flows where "empty" must mean the system is
+/// genuinely empty on disk, not "some directory read failed during the walk".
+/// A missing top-level system directory is still treated as an empty system.
+pub async fn list_roms_strict(
+    storage: &StorageLocation,
+    system_folder: &str,
+    region_pref: RegionPreference,
+    region_secondary: Option<RegionPreference>,
+) -> Result<Vec<RomEntry>> {
+    let system = systems::find_system(system_folder)
+        .ok_or_else(|| Error::SystemNotFound(system_folder.to_string()))?;
+
+    let system_dir = storage.system_roms_dir(system_folder);
+    let roms_root = storage.roms_dir();
+
+    let raw = walk_raw_roms_blocking_strict(system_dir, roms_root.clone(), system).await?;
+    let mut roms = materialize_rom_entries(system, raw).await;
+
+    roms = apply_m3u_dedup_blocking(roms, roms_root).await;
+
+    roms.sort_by(|a, b| {
+        let a_name = a
+            .game
+            .display_name
+            .as_deref()
+            .unwrap_or(&a.game.rom_filename);
+        let b_name = b
+            .game
+            .display_name
+            .as_deref()
+            .unwrap_or(&b.game.rom_filename);
+        let (a_tier, a_region, _) = rom_tags::classify(&a.game.rom_filename);
+        let (b_tier, b_region, _) = rom_tags::classify(&b.game.rom_filename);
+        a_name
+            .to_lowercase()
+            .cmp(&b_name.to_lowercase())
+            .then(a_tier.cmp(&b_tier))
+            .then(
+                a_region
+                    .sort_key(region_pref, region_secondary)
+                    .cmp(&b_region.sort_key(region_pref, region_secondary)),
+            )
+    });
+
+    Ok(roms)
+}
+
 /// Walk the system's ROM directory on the blocking pool (native) or inline
 /// (wasm, which has no thread pool). Returns `None` if the directory does not
 /// exist.
@@ -266,6 +316,29 @@ async fn walk_raw_roms_blocking(
             None
         })
     }
+}
+
+async fn walk_raw_roms_blocking_strict(
+    system_dir: PathBuf,
+    roms_root: PathBuf,
+    system: &'static System,
+) -> Result<Vec<RawRom>> {
+    let system_dir_for_walk = system_dir.clone();
+    let walk = move || -> Result<Vec<RawRom>> {
+        if !system_dir_for_walk.exists() {
+            return Ok(Vec::new());
+        }
+        let mut raw = Vec::new();
+        collect_raw_roms_recursive_strict(&system_dir_for_walk, &roms_root, system, &mut raw)?;
+        Ok(raw)
+    };
+
+    tokio::task::spawn_blocking(walk).await.unwrap_or_else(|e| {
+        Err(Error::Other(format!(
+            "strict ROM walk task panicked for {}: {e}",
+            system_dir.display()
+        )))
+    })
 }
 
 async fn apply_m3u_dedup_blocking(roms: Vec<RomEntry>, roms_root: PathBuf) -> Vec<RomEntry> {
@@ -1187,6 +1260,47 @@ fn collect_raw_roms_recursive(
     }
 }
 
+fn collect_raw_roms_recursive_strict(
+    dir: &Path,
+    roms_root: &Path,
+    system: &System,
+    out: &mut Vec<RawRom>,
+) -> Result<()> {
+    let entries = std::fs::read_dir(dir).map_err(|e| Error::io(dir, e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| Error::io(dir, e))?;
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with('_') {
+                continue;
+            }
+            collect_raw_roms_recursive_strict(&path, roms_root, system, out)?;
+        } else if is_rom_file(&path, system) {
+            let rom_filename = entry.file_name().to_string_lossy().to_string();
+            let relative = path
+                .strip_prefix(roms_root.parent().unwrap_or(Path::new("/")))
+                .unwrap_or(&path);
+            let rom_path = format!("/{}", relative.display());
+            let size_bytes = entry.metadata().map_err(|e| Error::io(&path, e))?.len();
+            let is_m3u = path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u"));
+
+            out.push(RawRom {
+                rom_filename,
+                rom_path,
+                size_bytes,
+                is_m3u,
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// Resolve display names for a raw scan in one batch per system, then build
 /// `RomEntry` rows.
 async fn materialize_rom_entries(system: &System, raw: Vec<RawRom>) -> Vec<RomEntry> {
@@ -1499,6 +1613,8 @@ pub async fn write_rom(
 mod tests {
     use super::*;
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn is_rom_file_matches_extensions() {
@@ -1569,6 +1685,37 @@ mod tests {
             Err(ScanError::RomsDirUnreadable(_)) => {}
             other => panic!("expected RomsDirUnreadable, got {other:?}"),
         }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_roms_strict_missing_system_dir_is_empty() {
+        let tmp = tempdir();
+        fs::create_dir_all(tmp.join("roms")).unwrap();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+        let roms = list_roms_strict(&storage, "nintendo_nes", RegionPreference::default(), None)
+            .await
+            .unwrap();
+        assert!(roms.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_roms_strict_errors_on_unreadable_nested_dir() {
+        let tmp = tempdir();
+        let system_dir = tmp.join("roms").join("nintendo_nes");
+        let locked = system_dir.join("locked");
+        fs::create_dir_all(&locked).unwrap();
+        let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
+
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        let result =
+            list_roms_strict(&storage, "nintendo_nes", RegionPreference::default(), None).await;
+        let _ = fs::set_permissions(&locked, fs::Permissions::from_mode(0o755));
+
+        assert!(
+            result.is_err(),
+            "strict rescan must preserve old rows when a nested directory read fails"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

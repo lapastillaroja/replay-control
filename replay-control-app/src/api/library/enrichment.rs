@@ -28,6 +28,12 @@ impl LibraryService {
             .unwrap_or_default();
 
         if rom_filenames.is_empty() {
+            let sys = system.clone();
+            let _ = db
+                .write(move |conn| {
+                    let _ = LibraryDb::replace_descriptions_for_system(conn, &sys, &[]);
+                })
+                .await;
             return;
         }
 

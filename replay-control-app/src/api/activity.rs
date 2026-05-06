@@ -267,8 +267,9 @@ pub enum RebuildPhase {
 
 /// Progress for the game library rebuild operation.
 ///
-/// `is_rescan` distinguishes the destructive rebuild (false) from the additive
-/// rescan (true). Both share this struct because their progress shape is
+/// `is_rescan` distinguishes the destructive rebuild (false) from the
+/// non-destructive reconcile rescan (true). Both share this struct because
+/// their progress shape is
 /// identical; only the user-visible copy differs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RebuildProgress {
