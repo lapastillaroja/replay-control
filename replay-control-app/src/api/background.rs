@@ -137,6 +137,18 @@ impl BackgroundManager {
         tokio::spawn(async move {
             Self::update_check_loop(update_state).await;
         });
+
+        // Spawn now-playing detector loop (independent of startup pipeline).
+        // Linux-only: the detector relies on `/proc/<pid>/{maps,mem}`. On
+        // non-RePlayOS dev hosts (macOS, containers without `/proc`) the
+        // detector exits immediately; skip the spawn entirely.
+        #[cfg(target_os = "linux")]
+        {
+            let now_playing_state = state.clone();
+            tokio::spawn(async move {
+                super::now_playing::run_now_playing_loop(now_playing_state).await;
+            });
+        }
     }
 
     /// Run the ordered startup pipeline (async).

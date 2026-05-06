@@ -12,6 +12,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavSettings => "Settings",
 
         // Home page
+        Key::HomeNowPlaying => "Now Playing",
         Key::HomeLastPlayed => "Last Played",
         Key::HomeRecentlyPlayed => "Recently Played",
         Key::HomeLibrary => "Library",
@@ -296,6 +297,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailLaunched => "Launched!",
         Key::GameDetailLaunchError => "Failed to launch",
         Key::GameDetailLaunchNotReplayos => "Not running on RePlayOS",
+        Key::GameDetailNowPlaying => "Now Playing",
         Key::GameDetailFavorite => "Favorite",
         Key::GameDetailUnfavorite => "Unfavorite",
         Key::GameDetailConfirmDelete => "Confirm Delete",

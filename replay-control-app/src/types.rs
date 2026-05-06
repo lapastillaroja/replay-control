@@ -11,6 +11,30 @@ use serde::{Deserialize, Serialize};
 
 pub use replay_control_core::library_db::{ImportProgress, ImportState};
 
+// ── Now Playing types ───────────────────────────────
+
+/// Snapshot of "what is the appliance currently playing".
+///
+/// Only `started_at_unix_secs` is kept on the wire; clients derive the
+/// elapsed time from their own clock so the broadcast doesn't need to fire
+/// every second to keep the timer moving. That also lets the server-side
+/// detector dedupe identical observations and skip both the SQLite write
+/// and the SSE fan-out for the lifetime of an unchanged session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum NowPlayingState {
+    Playing {
+        system: String,
+        system_display: String,
+        filename: String,
+        display_name: String,
+        box_art_url: Option<String>,
+        started_at_unix_secs: u64,
+    },
+    Menu,
+    NotRunning,
+}
+
 // ── Activity types ──────────────────────────────────
 
 /// Client-side mirror of the unified Activity enum.

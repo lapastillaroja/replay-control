@@ -14,6 +14,7 @@ pub enum Key {
     NavSettings,
 
     // Home page
+    HomeNowPlaying,
     HomeLastPlayed,
     HomeRecentlyPlayed,
     HomeLibrary,
@@ -281,6 +282,7 @@ pub enum Key {
     GameDetailLaunched,
     GameDetailLaunchError,
     GameDetailLaunchNotReplayos,
+    GameDetailNowPlaying,
     GameDetailFavorite,
     GameDetailUnfavorite,
     GameDetailConfirmDelete,

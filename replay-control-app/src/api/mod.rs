@@ -4,6 +4,7 @@ pub mod background;
 pub(crate) mod core_api;
 pub mod favorites;
 pub(crate) mod library;
+pub mod now_playing;
 pub mod recents;
 pub mod response_cache;
 pub mod roms;
@@ -171,6 +172,10 @@ pub struct AppState {
     pub config_tx: tokio::sync::broadcast::Sender<ConfigEvent>,
     /// Broadcast channel for activity state changes (import, thumbnail, rebuild).
     pub activity_tx: tokio::sync::broadcast::Sender<Activity>,
+    /// Current "Now Playing" session state.
+    pub now_playing: Arc<std::sync::RwLock<crate::types::NowPlayingState>>,
+    /// Broadcast channel for now-playing updates.
+    pub now_playing_tx: tokio::sync::broadcast::Sender<crate::types::NowPlayingState>,
     /// Reportable health issues with shipped data assets (catalog schema
     /// mismatch today; future asset types via the release-asset-manifest plan).
     /// Populated at startup; consumed by the SSE init payload + the
@@ -393,6 +398,8 @@ impl AppState {
         // callbacks registered below can capture `config_tx`.
         let (config_tx, _) = tokio::sync::broadcast::channel::<ConfigEvent>(16);
         let (activity_tx, _) = tokio::sync::broadcast::channel::<Activity>(32);
+        let (now_playing_tx, _) =
+            tokio::sync::broadcast::channel::<crate::types::NowPlayingState>(32);
 
         // Open / create the host-global external_metadata.db before any
         // pool that might write to it. Same model as `init_catalog` —
@@ -576,6 +583,10 @@ impl AppState {
             activity,
             config_tx,
             activity_tx,
+            now_playing: Arc::new(std::sync::RwLock::new(
+                crate::types::NowPlayingState::NotRunning,
+            )),
+            now_playing_tx,
             asset_health: Arc::new(std::sync::RwLock::new(initial_issues)),
         };
 
@@ -693,6 +704,28 @@ impl AppState {
             user_data_corrupt,
             self.user_data_pool.backup_path_exists(),
         )
+    }
+
+    pub fn now_playing(&self) -> crate::types::NowPlayingState {
+        self.now_playing
+            .read()
+            .expect("now_playing lock poisoned")
+            .clone()
+    }
+
+    pub fn set_now_playing(&self, next: crate::types::NowPlayingState) {
+        let changed = {
+            let mut guard = self.now_playing.write().expect("now_playing lock poisoned");
+            if *guard == next {
+                false
+            } else {
+                *guard = next.clone();
+                true
+            }
+        };
+        if changed {
+            let _ = self.now_playing_tx.send(next);
+        }
     }
 
     /// Get the user's region preference from cached preferences.

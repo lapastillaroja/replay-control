@@ -5,40 +5,15 @@ use crate::storage::StorageLocation;
 use replay_control_core::error::{Error, Result};
 
 /// Check whether the replay process has a libretro game core loaded.
-///
-/// Finds the replay PID via `pgrep -x replay`, then reads `/proc/{pid}/maps`
-/// looking for a `libretro.so` mapping that is NOT `replay_libretro` (which is
-/// the menu/frontend, not a game core).
-///
-/// Returns `true` if a game core is detected, `false` otherwise. Any errors
-/// (process not found, permission denied, etc.) are treated as "not loaded".
+/// Returns `false` for any failure (process not found, unreadable maps, etc.).
+#[cfg(target_os = "linux")]
 fn check_game_loaded() -> bool {
-    // Find the replay PID
-    let output = match std::process::Command::new("pgrep")
-        .args(["-x", "replay"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(e) => {
-            tracing::warn!("health check: failed to run pgrep: {e}");
-            return false;
-        }
-    };
+    use crate::replay_proc::{find_replay_pid, maps_have_active_game_core};
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let pid = match stdout
-        .lines()
-        .next()
-        .and_then(|l| l.trim().parse::<u32>().ok())
-    {
-        Some(pid) => pid,
-        None => {
-            tracing::debug!("health check: replay process not found");
-            return false;
-        }
+    let Some(pid) = find_replay_pid() else {
+        tracing::debug!("health check: replay process not found");
+        return false;
     };
-
-    // Read the process memory maps
     let maps_path = format!("/proc/{pid}/maps");
     let maps = match std::fs::read_to_string(&maps_path) {
         Ok(m) => m,
@@ -47,17 +22,20 @@ fn check_game_loaded() -> bool {
             return false;
         }
     };
-
-    // Look for a libretro core that is NOT the menu frontend (replay_libretro)
-    for line in maps.lines() {
-        if line.contains("libretro.so") && !line.contains("replay_libretro") {
-            tracing::info!("health check: game core detected in {maps_path}");
-            return true;
-        }
+    let loaded = maps_have_active_game_core(&maps);
+    if loaded {
+        tracing::info!("health check: game core detected in {maps_path}");
+    } else {
+        tracing::warn!("health check: no game core found in {maps_path}");
     }
+    loaded
+}
 
-    tracing::warn!("health check: no game core found in {maps_path}");
-    false
+#[cfg(not(target_os = "linux"))]
+fn check_game_loaded() -> bool {
+    // Non-Linux dev hosts: no /proc, treat as "loaded" so the recovery path
+    // doesn't fire.
+    true
 }
 
 /// Launch a game on RePlayOS via the autostart + systemctl restart mechanism.

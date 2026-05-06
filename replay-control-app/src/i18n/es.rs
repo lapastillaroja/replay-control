@@ -12,6 +12,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavSettings => "Ajustes",
 
         // Home page
+        Key::HomeNowPlaying => "Jugando ahora",
         Key::HomeLastPlayed => "Último jugado",
         Key::HomeRecentlyPlayed => "Jugados recientemente",
         Key::HomeLibrary => "Biblioteca",
@@ -298,6 +299,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailLaunched => "¡Lanzado!",
         Key::GameDetailLaunchError => "Error al lanzar",
         Key::GameDetailLaunchNotReplayos => "No se está ejecutando en RePlayOS",
+        Key::GameDetailNowPlaying => "Jugando ahora",
         Key::GameDetailFavorite => "Favorito",
         Key::GameDetailUnfavorite => "Quitar de favoritos",
         Key::GameDetailConfirmDelete => "Confirmar eliminación",

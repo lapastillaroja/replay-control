@@ -1,5 +1,6 @@
-use leptos::prelude::*;
+use leptos::{html, prelude::*};
 
+use crate::hooks::use_focus_scroll;
 use crate::i18n::{Key, t, use_i18n};
 use crate::server_fns::{self, GameDocument, LocalManual, ManualRecommendation};
 
@@ -14,8 +15,11 @@ pub fn ManualSection(
     rom_filename: StoredValue<String>,
     display_name: StoredValue<String>,
     base_title: StoredValue<String>,
+    #[prop(optional)] section_id: Option<&'static str>,
+    focus_on_mount: Signal<bool>,
 ) -> impl IntoView {
     let i18n = use_i18n();
+    let section_ref = NodeRef::<html::Section>::new();
 
     // In-folder documents (Phase 1).
     // Resource fires once when the component is created (key is constant).
@@ -150,8 +154,10 @@ pub fn ManualSection(
     let has_local = move || !local_manuals.read().is_empty();
     let has_content = move || has_docs() || has_local();
 
+    use_focus_scroll(section_ref, move || focus_on_mount.get());
+
     view! {
-        <section class="section game-section">
+        <section node_ref=section_ref id=section_id class="section game-section">
             <h2 class="game-section-title">{move || t(i18n.locale.get(), Key::GameDetailManual)}</h2>
 
             // In-folder documents

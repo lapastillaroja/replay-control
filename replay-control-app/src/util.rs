@@ -127,6 +127,19 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
+pub fn format_elapsed_short(secs: u64) -> String {
+    if secs < 60 {
+        return format!("{secs}s");
+    }
+    let minutes = secs / 60;
+    let hours = minutes / 60;
+    if hours > 0 {
+        format!("{hours}h {}m", minutes % 60)
+    } else {
+        format!("{minutes}m")
+    }
+}
+
 /// Check whether a system displays ROM sizes in Megabit.
 ///
 /// On SSR builds, delegates to the canonical source of truth in the core crate.

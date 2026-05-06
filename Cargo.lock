@@ -2363,6 +2363,7 @@ dependencies = [
  "replay-control-core-server",
  "reqwest",
  "semver",
+ "send_wrapper",
  "serde",
  "serde_json",
  "server_fn",

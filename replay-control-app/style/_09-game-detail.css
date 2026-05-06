@@ -16,6 +16,33 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
+.game-cover-playing {
+    border-color: color-mix(in srgb, var(--accent) 65%, white 10%);
+    box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
+        0 10px 26px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.game-detail-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.game-live-pill {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+    border: 1px solid var(--accent-border);
+    color: var(--accent-hover);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
 .game-cover-text {
     font-size: 1.1rem;
     font-weight: 600;
@@ -150,6 +177,11 @@
 .game-action-btn:hover:not(:disabled) {
     border-color: var(--accent);
     background: var(--surface-hover);
+}
+
+.game-actions-playing .game-action-btn,
+.game-actions-playing .game-action-launch {
+    border-color: var(--accent-border);
 }
 
 .game-action-btn:disabled {

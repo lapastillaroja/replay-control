@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
-use leptos_router::hooks::{use_navigate, use_params_map};
+use leptos_router::hooks::{use_location, use_navigate, use_params_map};
 use server_fn::ServerFnError;
 
 use crate::components::boxart_picker::BoxArtPicker;
@@ -15,6 +15,11 @@ use crate::util::format_size_for_system;
 
 /// Maximum number of capture thumbnails shown before "View all".
 const INITIAL_CAPTURE_COUNT: usize = 12;
+
+/// URL fragment that scrolls the page to the manual section. Set when
+/// navigating from the home "Now Playing" hero card and read back here to
+/// drive `use_focus_scroll` on `<ManualSection>`.
+pub const MANUALS_FRAGMENT: &str = "manuals";
 
 /// Split a filename into `(stem, extension)` using `std::path::Path`.
 ///
@@ -37,6 +42,7 @@ fn split_filename(filename: &str) -> (String, String) {
 #[component]
 pub fn GameDetailPage() -> impl IntoView {
     let params = use_params_map();
+    let location = use_location();
     let system = move || params.read().get("system").unwrap_or_default();
     let filename = move || {
         let raw = params.read().get("filename").unwrap_or_default();
@@ -50,6 +56,7 @@ pub fn GameDetailPage() -> impl IntoView {
         move || (system(), filename()),
         |(sys, fname)| server_fns::get_rom_detail(sys, fname),
     );
+    let focus_manuals = move || location.hash.read().trim_start_matches('#') == MANUALS_FRAGMENT;
 
     view! {
         <div class="page game-detail">
@@ -57,7 +64,11 @@ pub fn GameDetailPage() -> impl IntoView {
                 {move || Suspend::new(async move {
                     let data = detail.await?;
                     Ok::<_, ServerFnError>(view! {
-                        <GameDetailContent detail=data system=system() />
+                        <GameDetailContent
+                            detail=data
+                            system=system()
+                            focus_manuals=Signal::derive(focus_manuals)
+                        />
                     })
                 })}
             </Suspense>
@@ -101,8 +112,13 @@ fn GameDetailSkeleton() -> impl IntoView {
 }
 
 #[component]
-fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
+fn GameDetailContent(
+    detail: RomDetail,
+    system: String,
+    focus_manuals: Signal<bool>,
+) -> impl IntoView {
     let i18n = use_i18n();
+    let now_playing = crate::hooks::use_now_playing();
 
     let game = &detail.game;
     let game_name = game.display_name.clone();
@@ -198,6 +214,28 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
     let has_screenshot = game.screenshot_url.is_some();
     let title_url = StoredValue::new(game.title_url.clone());
     let has_title = game.title_url.is_some();
+
+    let clock = use_context::<crate::hooks::Clock>();
+    let active_started_at = move || match now_playing.get() {
+        crate::types::NowPlayingState::Playing {
+            ref system,
+            ref filename,
+            started_at_unix_secs,
+            ..
+        } if *system == system_sv.get_value() && *filename == filename_sv.get_value() => {
+            Some(started_at_unix_secs)
+        }
+        _ => None,
+    };
+    let is_now_playing = move || active_started_at().is_some();
+    let active_elapsed = move || {
+        let started_at = active_started_at()?;
+        let elapsed = clock
+            .map(|c| c.now())
+            .unwrap_or(0)
+            .saturating_sub(started_at);
+        Some(crate::util::format_elapsed_short(elapsed))
+    };
 
     // Box art variant picker state.
     // Suppress "Change cover" for hack and special ROMs — they should inherit the base ROM's cover.
@@ -302,12 +340,23 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             <button class="back-btn" on:click=go_back>
                 {move || t(i18n.locale.get(), Key::GamesBack)}
             </button>
-            <h2 class="page-title">{game_name.clone()}</h2>
+            <div class="game-detail-title-wrap">
+                <h2 class="page-title">{game_name.clone()}</h2>
+                <Show when=move || is_now_playing() fallback=|| ()>
+                    <span class="game-live-pill">
+                        {move || {
+                            let locale = i18n.locale.get();
+                            let elapsed = active_elapsed().unwrap_or_default();
+                            format!("{} · {}", t(locale, Key::GameDetailNowPlaying), elapsed)
+                        }}
+                    </span>
+                </Show>
+            </div>
         </div>
 
         // Hero / Cover Art
         <section class="section">
-            <div class="game-cover">
+            <div class="game-cover" class:game-cover-playing=move || is_now_playing()>
                 <Show when=move || box_art_url.read().is_some()
                     fallback=move || view! {
                         <BoxArtPlaceholder
@@ -573,6 +622,8 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
             rom_filename=filename_sv
             display_name=game_name_sv
             base_title=base_title_sv
+            section_id="manuals"
+            focus_on_mount=focus_manuals
         />
 
         // Related Games (lazy-loaded)
@@ -584,7 +635,7 @@ fn GameDetailContent(detail: RomDetail, system: String) -> impl IntoView {
         // Actions
         <section class="section">
             <h2 class="section-title">{move || t(i18n.locale.get(), Key::CommonActions)}</h2>
-            <div class="game-actions">
+            <div class="game-actions" class:game-actions-playing=move || is_now_playing()>
                 <button class="game-action-btn game-action-fav" on:click=on_toggle_fav>
                     <span class="game-action-icon">{fav_icon}</span>
                     {fav_label}

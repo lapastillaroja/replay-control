@@ -153,6 +153,40 @@ mod ssr {
         Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(30)))
     }
 
+    /// Broadcast-based SSE stream for now-playing state changes.
+    fn sse_now_playing_stream(
+        state: api::AppState,
+    ) -> axum::response::sse::Sse<
+        impl tokio_stream::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+    > {
+        use axum::response::sse::{Event, KeepAlive, Sse};
+        use std::convert::Infallible;
+
+        let mut rx = state.now_playing_tx.subscribe();
+        let stream = async_stream::stream! {
+            let now_playing = state.now_playing();
+            let json = serde_json::to_string(&now_playing).unwrap_or_default();
+            yield Ok::<_, Infallible>(Event::default().data(json));
+
+            loop {
+                match rx.recv().await {
+                    Ok(now_playing) => {
+                        let json = serde_json::to_string(&now_playing).unwrap_or_default();
+                        yield Ok::<_, Infallible>(Event::default().data(json));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let now_playing = state.now_playing();
+                        let json = serde_json::to_string(&now_playing).unwrap_or_default();
+                        yield Ok::<_, Infallible>(Event::default().data(json));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        };
+
+        Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+    }
+
     /// Strong ETag from file metadata (mtime + size). `None` means the file
     /// is missing or its metadata is unreadable — callers map both to 404.
     async fn file_etag(path: &std::path::Path) -> Option<String> {
@@ -693,6 +727,11 @@ mod ssr {
             let state = config_sse_state.clone();
             async move { sse_config_stream(state) }
         });
+        let now_playing_sse_state = app_state.clone();
+        let now_playing_sse_handler = axum::routing::get(move || {
+            let state = now_playing_sse_state.clone();
+            async move { sse_now_playing_stream(state) }
+        });
 
         // Clone state for the storage guard middleware before build_router consumes it.
         let guard_state = app_state.clone();
@@ -723,6 +762,7 @@ mod ssr {
             )
             .route("/sse/activity", activity_sse_handler)
             .route("/sse/config", config_sse_handler)
+            .route("/sse/now-playing", now_playing_sse_handler)
             .route("/captures/*path", captures_handler)
             .route("/manuals/*path", manuals_handler)
             .route("/rom-docs/*path", rom_docs_handler)

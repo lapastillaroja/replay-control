@@ -24,6 +24,7 @@ use components::asset_health_banner::AssetHealthBanner;
 use components::corruption_banner::CorruptionBanner;
 use components::metadata_banner::MetadataBusyBanner;
 use components::nav::BottomNav;
+use components::now_playing_indicator::NowPlayingIndicator;
 use i18n::provide_i18n;
 use pages::ErrorDisplay;
 use pages::developer::DeveloperPage;
@@ -114,6 +115,21 @@ pub fn App() -> impl IntoView {
     provide_context(RwSignal::new(Vec::<
         replay_control_core::asset_health::AssetHealthIssue,
     >::new()));
+    // `Resource::new_blocking` reads `AppState.now_playing()` during SSR and
+    // serializes it into the HTML so hydration adopts the same value with no
+    // mismatch. `SseNowPlayingListener` then calls `Resource::set` directly,
+    // making the resource the single source of truth for all consumers.
+    provide_context(Resource::new_blocking(
+        || (),
+        |_| async move {
+            crate::server_fns::get_initial_now_playing()
+                .await
+                .unwrap_or(crate::types::NowPlayingState::NotRunning)
+        },
+    ));
+    provide_context(crate::hooks::Clock::install());
+
+    let now_playing = crate::hooks::use_now_playing();
     // Fed by SseConfigListener; the skin page subscribes so its "current"
     // badge follows external skin changes (e.g. changed from the Pi).
     provide_context(RwSignal::<Option<u32>>::new(None));
@@ -122,9 +138,16 @@ pub fn App() -> impl IntoView {
         <Router>
             <SseConfigListener />
             <SseActivityListener />
+            <SseNowPlayingListener />
             <SearchShortcut />
             <div class="app">
-                <header class="top-bar">
+                <header
+                    class="top-bar"
+                    class:top-bar-with-now-playing=move || matches!(
+                        now_playing.get(),
+                        crate::types::NowPlayingState::Playing { .. }
+                    )
+                >
                     <h1 class="app-title">
                         <A href="/" attr:class="app-title-link">
                             <img
@@ -136,6 +159,9 @@ pub fn App() -> impl IntoView {
                             <span class="app-logo" aria-label="Replay Control"></span>
                         </A>
                     </h1>
+                    <div class="top-bar-now-playing">
+                        <NowPlayingIndicator />
+                    </div>
                 </header>
 
                 <CorruptionBanner />
@@ -168,6 +194,54 @@ pub fn App() -> impl IntoView {
             </div>
         </Router>
     }
+}
+
+/// SSE listener for now-playing state. Pushes each event into the
+/// `Resource<NowPlayingState>` so SSR, hydration, and live updates all flow
+/// through the same signal.
+#[component]
+fn SseNowPlayingListener() -> impl IntoView {
+    #[cfg(feature = "hydrate")]
+    {
+        let resource = use_context::<Resource<crate::types::NowPlayingState>>();
+        Effect::new(move || {
+            if let Some(resource) = resource {
+                install_sse_listener::<crate::types::NowPlayingState>(
+                    "/sse/now-playing",
+                    move |np| resource.set(Some(np)),
+                );
+            }
+        });
+    }
+}
+
+/// Subscribe to a server-sent-events stream, parse each `data:` payload as
+/// `T`, and dispatch via `on_payload`. The `EventSource` and the message
+/// closure are intentionally leaked: SSE listeners installed at the app
+/// root never unmount.
+#[cfg(feature = "hydrate")]
+fn install_sse_listener<T: serde::de::DeserializeOwned + 'static>(
+    url: &'static str,
+    on_payload: impl Fn(T) + 'static,
+) {
+    use wasm_bindgen::prelude::*;
+    let es = match web_sys::EventSource::new(url) {
+        Ok(es) => es,
+        Err(_) => return,
+    };
+    let on_message =
+        Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
+            let data = event.data().as_string().unwrap_or_default();
+            if data.is_empty() {
+                return;
+            }
+            if let Ok(payload) = serde_json::from_str::<T>(&data) {
+                on_payload(payload);
+            }
+        });
+    es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+    on_message.forget();
+    std::mem::forget(es);
 }
 
 #[cfg(feature = "hydrate")]
@@ -408,37 +482,11 @@ fn SseConfigListener() -> impl IntoView {
 fn SseActivityListener() -> impl IntoView {
     #[cfg(feature = "hydrate")]
     {
-        use wasm_bindgen::prelude::*;
-
-        let activity_signal = use_context::<RwSignal<Activity>>();
-
+        let signal = use_context::<RwSignal<Activity>>();
         Effect::new(move || {
-            let Some(signal) = activity_signal else {
-                return;
-            };
-            let es = match web_sys::EventSource::new("/sse/activity") {
-                Ok(es) => es,
-                Err(_) => return,
-            };
-
-            let on_message = Closure::<dyn Fn(web_sys::MessageEvent)>::new(
-                move |event: web_sys::MessageEvent| {
-                    let data = event.data().as_string().unwrap_or_default();
-                    if data.is_empty() {
-                        return;
-                    }
-                    if let Ok(activity) = serde_json::from_str::<Activity>(&data) {
-                        signal.set(activity);
-                    }
-                },
-            );
-
-            es.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-            on_message.forget();
-
-            // Listener mounted at App root, never unmounts — leaking the
-            // EventSource keeps its wbindgen wrapper alive past Effect end.
-            std::mem::forget(es);
+            if let Some(signal) = signal {
+                install_sse_listener::<Activity>("/sse/activity", move |a| signal.set(a));
+            }
         });
     }
 }

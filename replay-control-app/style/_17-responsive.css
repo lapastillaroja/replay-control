@@ -4,6 +4,33 @@
 
 /* ── Small tablet (600px) ─────────────────────────────────────── */
 
+@media (max-width: 520px) {
+    .top-bar.top-bar-with-now-playing {
+        height: 76px;
+    }
+
+    .top-bar.top-bar-with-now-playing .app-title {
+        top: 6px;
+    }
+
+    .top-bar.top-bar-with-now-playing .top-bar-now-playing {
+        top: auto;
+        bottom: 6px;
+        right: 12px;
+        transform: none;
+        max-width: calc(100vw - 24px);
+    }
+
+    .app-logo {
+        width: 160px;
+    }
+
+    .now-playing-indicator {
+        max-width: 100%;
+        padding: 4px 6px;
+    }
+}
+
 @media (min-width: 600px) {
     .manage-actions {
         flex-direction: row;

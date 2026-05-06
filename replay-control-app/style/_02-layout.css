@@ -14,15 +14,71 @@
 .top-bar {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
+    position: relative;
     height: var(--top-bar-height);
     padding: 0 16px;
     background: var(--surface);
     border-bottom: 2px solid var(--accent);
     /* Not fixed/sticky — scrolls with content */
+    transition: height 0.2s ease;
+}
+
+.top-bar-now-playing {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    min-width: 0;
+}
+
+.now-playing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: min(48vw, 380px);
+    font-size: 0.75rem;
+    color: var(--text);
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 8px;
+}
+
+.now-playing-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: now-playing-pulse 1.2s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+.now-playing-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.now-playing-elapsed {
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+@keyframes now-playing-pulse {
+    0% { opacity: 0.35; }
+    50% { opacity: 1; }
+    100% { opacity: 0.35; }
 }
 
 .app-title {
+    position: absolute;
+    left: 50%;
+    top: 8px;
+    transform: translateX(-50%);
+    margin: 0;
     font-size: 1.25rem;
     font-weight: 700;
     color: var(--accent);

@@ -12,6 +12,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::NavSettings => "設定",
 
         // Home page
+        Key::HomeNowPlaying => "プレイ中",
         Key::HomeLastPlayed => "最後にプレイ",
         Key::HomeRecentlyPlayed => "最近プレイしたゲーム",
         Key::HomeLibrary => "ライブラリ",
@@ -296,6 +297,7 @@ pub fn translate(key: Key) -> &'static str {
         Key::GameDetailLaunched => "起動しました！",
         Key::GameDetailLaunchError => "起動に失敗しました",
         Key::GameDetailLaunchNotReplayos => "RePlayOS上で動作していません",
+        Key::GameDetailNowPlaying => "プレイ中",
         Key::GameDetailFavorite => "お気に入りに追加",
         Key::GameDetailUnfavorite => "お気に入りから削除",
         Key::GameDetailConfirmDelete => "削除の確認",
