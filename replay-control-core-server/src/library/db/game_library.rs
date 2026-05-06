@@ -16,7 +16,8 @@ const GAME_ENTRY_COLUMNS: &str = "\
     region, developer, genre, genre_group, rating, rating_count, players, \
     is_clone, is_m3u, is_translation, is_hack, is_special, \
     box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name, \
-    release_date, release_precision, release_region_used, cooperative";
+    release_date, release_precision, release_region_used, cooperative, \
+    normalized_title, normalized_title_alt";
 
 /// Build the pre-computed, lowercased search index value for a game_library row.
 ///
@@ -405,9 +406,11 @@ impl LibraryDb {
                      genre, genre_group, rating, rating_count, players,
                      is_clone, is_m3u, is_translation, is_hack, is_special,
                      box_art_url, driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-                     release_date, release_precision, release_region_used, cooperative)
+                     release_date, release_precision, release_region_used, cooperative,
+                     normalized_title, normalized_title_alt)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                             ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
+                             ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29,
+                             ?30, ?31)",
                 )
                 .map_err(|e| Error::Other(format!("Prepare game_library insert: {e}")))?;
 
@@ -449,6 +452,8 @@ impl LibraryDb {
                     rom.release_precision.map(DpSql),
                     &rom.release_region_used,
                     rom.cooperative,
+                    &rom.normalized_title,
+                    &rom.normalized_title_alt,
                 ])
                 .map_err(|e| Error::Other(format!("Insert game_library failed: {e}")))?;
             }
@@ -876,6 +881,77 @@ impl LibraryDb {
         Ok(rows.flatten().collect())
     }
 
+    /// Bulk-update the stored normalized-title columns for a system.
+    ///
+    /// Each tuple is `(rom_filename, normalized_title, normalized_title_alt)`.
+    /// Single transaction; rows missing from `updates` are left untouched.
+    /// Used by the boot-time `TITLE_NORM_VERSION` reconcile after the
+    /// caller pre-computes the new values from arcade_db / filename stems.
+    pub fn update_normalized_titles(
+        conn: &mut Connection,
+        system: &str,
+        updates: &[(String, String, String)],
+    ) -> Result<usize> {
+        if updates.is_empty() {
+            return Ok(0);
+        }
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::Other(format!("Tx start update_normalized_titles: {e}")))?;
+        let mut count = 0usize;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "UPDATE game_library
+                     SET normalized_title = ?2,
+                         normalized_title_alt = ?3
+                     WHERE system = ?4 AND rom_filename = ?1",
+                )
+                .map_err(|e| Error::Other(format!("Prepare update_normalized_titles: {e}")))?;
+            for (filename, norm, norm_alt) in updates {
+                count += stmt
+                    .execute(params![filename, norm, norm_alt, system])
+                    .map_err(|e| Error::Other(format!("update_normalized_titles: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| Error::Other(format!("Commit update_normalized_titles: {e}")))?;
+        Ok(count)
+    }
+
+    /// Get `rom_filename → (normalized_title, normalized_title_alt)` for a system.
+    ///
+    /// Drives the enrichment matcher: each ROM is looked up against the
+    /// LaunchBox row map by its stored normalized title (and the secondary
+    /// arcade-clone parent title, when present). Populated at scan time so
+    /// matching is a hashmap probe, not a per-ROM normalize() call.
+    pub fn visible_normalized_titles(
+        conn: &Connection,
+        system: &str,
+    ) -> Result<HashMap<String, (String, String)>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT rom_filename, normalized_title, normalized_title_alt
+                 FROM game_library
+                 WHERE system = ?1",
+            )
+            .map_err(|e| Error::Other(format!("Prepare visible_normalized_titles: {e}")))?;
+        let rows = stmt
+            .query_map(params![system], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|e| Error::Other(format!("Query visible_normalized_titles: {e}")))?;
+        let mut out = HashMap::new();
+        for r in rows.flatten() {
+            out.insert(r.0, (r.1, r.2));
+        }
+        Ok(out)
+    }
+
     /// Get `rom_filename → hash_matched_name` for ROMs that have a CRC match.
     ///
     /// Used by enrichment to try No-Intro canonical names as thumbnail lookup keys.
@@ -1043,31 +1119,6 @@ impl LibraryDb {
         Ok(())
     }
 
-    /// Fetch filenames that already have a `release_date` in `game_library` for a system.
-    pub fn system_rom_release_years(
-        conn: &Connection,
-        system: &str,
-    ) -> Result<std::collections::HashSet<String>> {
-        use std::collections::HashSet;
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT rom_filename FROM game_library
-                 WHERE system = ?1 AND release_date IS NOT NULL",
-            )
-            .map_err(|e| Error::Other(format!("Prepare system_rom_release_years: {e}")))?;
-
-        let rows = stmt
-            .query_map(params![system], |row| row.get::<_, String>(0))
-            .map_err(|e| Error::Other(format!("System rom release_years query: {e}")))?;
-
-        let mut set = HashSet::new();
-        for row in rows.flatten() {
-            set.insert(row);
-        }
-        Ok(set)
-    }
-
     /// Batch-load `(rom_filename, release_year)` pairs for a system (derived from release_date).
     ///
     /// Returns only rows where `release_date IS NOT NULL`, keyed by filename.
@@ -1099,38 +1150,6 @@ impl LibraryDb {
             }
         }
         Ok(map)
-    }
-
-    /// Batch update `release_date` for entries in game_library (year-precision only,
-    /// used by legacy null-fill enrichment path).
-    pub fn update_release_years(
-        conn: &mut Connection,
-        system: &str,
-        years: &[(String, u16)],
-    ) -> Result<()> {
-        let tx = conn
-            .transaction()
-            .map_err(|e| Error::Other(format!("Transaction start failed: {e}")))?;
-
-        {
-            let mut stmt = tx
-                .prepare(
-                    "UPDATE game_library \
-                     SET release_date = ?2, release_precision = 'year' \
-                     WHERE system = ?3 AND rom_filename = ?1 \
-                       AND release_date IS NULL",
-                )
-                .map_err(|e| Error::Other(format!("Prepare release_year update: {e}")))?;
-
-            for (filename, year) in years {
-                stmt.execute(params![filename, year.to_string(), system])
-                    .map_err(|e| Error::Other(format!("Update release_year: {e}")))?;
-            }
-        }
-
-        tx.commit()
-            .map_err(|e| Error::Other(format!("Transaction commit failed: {e}")))?;
-        Ok(())
     }
 
     /// Fetch current player counts from `game_library` for a single system.

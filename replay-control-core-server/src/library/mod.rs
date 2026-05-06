@@ -19,3 +19,5 @@ pub mod manuals;
 pub mod matching;
 #[cfg(feature = "library")]
 pub mod thumbnails;
+#[cfg(feature = "library")]
+pub mod title_norm_reconcile;

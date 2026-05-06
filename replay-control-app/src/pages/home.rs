@@ -20,23 +20,6 @@ pub fn HomePage() -> impl IntoView {
     let systems = Resource::new_blocking(|| (), |_| server_fns::get_systems());
     let recommendations = Resource::new(|| (), |_| server_fns::get_recommendations());
 
-    let now_playing_detail = Resource::new(
-        move || match now_playing.get() {
-            crate::types::NowPlayingState::Playing {
-                ref system,
-                ref filename,
-                ..
-            } => Some((system.clone(), filename.clone())),
-            _ => None,
-        },
-        |key| async move {
-            match key {
-                Some((system, filename)) => server_fns::get_rom_detail(system, filename).await.ok(),
-                None => None,
-            }
-        },
-    );
-
     view! {
         <div class="page home-page">
             <SetupChecklist />
@@ -77,7 +60,27 @@ pub fn HomePage() -> impl IntoView {
                     <Suspense fallback=move || view! { <HeroCardSkeleton /> }>
                         {move || Suspend::new(async move {
                             let state = now_playing.get();
-                            let detail = now_playing_detail.await;
+                            // Fetching detail inline (rather than via a derived
+                            // Resource that depends on `now_playing`) keeps every
+                            // Resource read inside this Suspend's reactive owner.
+                            // Chaining `Resource::new(source-reads-resource, …)`
+                            // makes leptos eagerly evaluate the source closure
+                            // during construction, in a Memo owner that doesn't
+                            // inherit the surrounding SuspenseContext — which
+                            // surfaces as the use_now_playing.rs:10:37 hydrate
+                            // warning.
+                            let detail = if let crate::types::NowPlayingState::Playing {
+                                ref system,
+                                ref filename,
+                                ..
+                            } = state
+                            {
+                                server_fns::get_rom_detail(system.clone(), filename.clone())
+                                    .await
+                                    .ok()
+                            } else {
+                                None
+                            };
                             Ok::<_, ServerFnError>(match state {
                                 crate::types::NowPlayingState::Playing {
                                     system,

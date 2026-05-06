@@ -54,6 +54,11 @@ pub async fn build_game_entries(
         .filter_map(|r| build_single_entry(r, hash_results, is_arcade, &batch))
         .collect();
 
+    // Populate normalized titles for the enrichment matcher. Done here (not
+    // per-row in `build_single_entry`) so we can resolve arcade clone
+    // parents in a single pass over the assembled entries.
+    populate_normalized_titles(system, &mut entries, &batch.arcade);
+
     // Phase 2: Infer is_clone for TOSEC bracket-tagged entries.
     // For non-arcade systems, entries with TOSEC bracket flags ([a], [t], [cr], etc.)
     // are marked as clones when a clean sibling (same base_title, no bracket flags) exists.
@@ -176,7 +181,53 @@ fn build_single_entry(
         release_precision: release_year.map(|_| crate::library_db::DatePrecision::Year),
         release_region_used: None,
         cooperative,
+        normalized_title: String::new(),
+        normalized_title_alt: String::new(),
     })
+}
+
+/// Populate `normalized_title` (and arcade clone-parent `normalized_title_alt`)
+/// for every entry. Stored in the row so the enrichment matcher does
+/// hashmap lookups instead of normalizing each filename per pass.
+///
+/// Mirrors the legacy logic from `enrichment::rom_normalized_titles`:
+/// - Console: normalize the canonical filename stem.
+/// - Arcade: normalize the arcade-db `display_name`. For clones, also store
+///   the parent's normalized display name (if different) as the secondary
+///   key so the matcher can fall back to parent metadata.
+///
+/// Uses `title_utils::normalize_title_for_metadata` (re-exported by the
+/// LaunchBox import module as `normalize_title`). Source-neutral: when a
+/// second metadata source is added, it can reuse the same key.
+fn populate_normalized_titles(
+    system: &str,
+    entries: &mut [GameEntry],
+    arcade_lookup: &HashMap<String, ArcadeGameInfo>,
+) {
+    let is_arcade = systems::is_arcade_system(system);
+    for entry in entries.iter_mut() {
+        let stem = title_utils::filename_stem(&entry.rom_filename);
+        if is_arcade {
+            if let Some(info) = arcade_lookup.get(stem) {
+                entry.normalized_title =
+                    title_utils::normalize_title_for_metadata(&info.display_name);
+                if info.is_clone
+                    && !info.parent.is_empty()
+                    && let Some(parent) = arcade_lookup.get(&info.parent)
+                {
+                    let parent_norm =
+                        title_utils::normalize_title_for_metadata(&parent.display_name);
+                    if parent_norm != entry.normalized_title {
+                        entry.normalized_title_alt = parent_norm;
+                    }
+                }
+            } else {
+                entry.normalized_title = title_utils::normalize_title_for_metadata(stem);
+            }
+        } else {
+            entry.normalized_title = title_utils::normalize_title_for_metadata(stem);
+        }
+    }
 }
 
 /// Batch all catalog lookups for the per-ROM builder into one or two queries

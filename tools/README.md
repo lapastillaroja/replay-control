@@ -8,6 +8,8 @@ Development tools for replay-control. Not part of the app itself.
 |--------|-------------|
 | `bench.sh` | Performance benchmark: TTFB, asset sizes, Lighthouse scores, light load test. Outputs JSON to `bench-results/`. |
 | `load-test.sh` | Stress test with Apache Bench: sweeps concurrency 1-30 across 8 endpoints + mixed concurrent test. |
+| `pi-cpu.sh` | Sample replay-control CPU% on the Pi over SSH. `--browse` adds a single-user browse load; `--json` for machine-readable output. |
+| `pi-memory.sh` | Read VmRSS / VmHWM / RssAnon for replay-control on the Pi. `--restart` for a clean idle baseline. |
 
 ## Game Launching
 

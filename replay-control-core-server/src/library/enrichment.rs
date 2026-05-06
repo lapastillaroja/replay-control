@@ -10,9 +10,11 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::Connection;
 
 use crate::external_metadata::LaunchboxRow;
-use crate::library_db::{BoxArtGenreRating, LibraryDb};
+use crate::library_db::{BoxArtGenreRating, LibraryDb, ReleaseDateRow};
 use crate::thumbnail_manifest::ManifestMatch;
+use replay_control_core::DatePrecision;
 use replay_control_core::developer::normalize_developer;
+use replay_control_core::title_utils::{filename_stem, normalize_title_for_metadata};
 
 // Re-export image resolution types so existing `use enrichment::*` paths keep working.
 pub use crate::image_resolution::{
@@ -28,8 +30,11 @@ pub struct EnrichmentResult {
     pub enrichments: Vec<BoxArtGenreRating>,
     /// Developer updates: (rom_filename, normalized_developer).
     pub developer_updates: Vec<(String, String)>,
-    /// Release year updates: (rom_filename, year).
-    pub year_updates: Vec<(String, u16)>,
+    /// Release-date rows destined for `game_release_date`. The app layer
+    /// must `upsert_release_dates` BEFORE calling
+    /// `resolve_release_date_for_library`, otherwise the resolver will
+    /// clear the LaunchBox-set date for systems with no catalog data.
+    pub release_date_rows: Vec<ReleaseDateRow>,
     /// Cooperative flag updates: rom_filenames that should be set to cooperative=1.
     pub cooperative_updates: Vec<String>,
     /// `game_description` rows for this system: `(rom_filename, description, publisher)`.
@@ -41,61 +46,73 @@ pub struct EnrichmentResult {
     pub manifest_downloads: Vec<(String, ManifestMatch)>,
 }
 
-/// Build the per-ROM list of normalized-title candidates used to look up
-/// `launchbox_game` rows.
+/// Pick the first matching `launchbox_game` row for each ROM. Match strength
+/// in descending order:
 ///
-/// Console ROMs map to a single normalized title (the filename stem). Arcade
-/// ROMs map to one or two: the per-system merged display name from
-/// `arcade_db`, plus the parent's display name if the ROM is a clone — same
-/// pairing the legacy import-time index built in
-/// `launchbox::build_index_entries`.
-fn rom_normalized_titles(
-    system: &str,
-    rom_filenames: &[String],
-    arcade_lookup: &ArcadeInfoLookup,
-) -> HashMap<String, Vec<String>> {
-    let is_arcade = replay_control_core::systems::is_arcade_system(system);
-    let mut out: HashMap<String, Vec<String>> = HashMap::with_capacity(rom_filenames.len());
-
-    for filename in rom_filenames {
-        let stem = replay_control_core::title_utils::filename_stem(filename);
-        let mut norms = Vec::new();
-        if is_arcade {
-            if let Some(info) = arcade_lookup.get(stem) {
-                norms.push(crate::launchbox::normalize_title(&info.display_name));
-                if info.is_clone
-                    && !info.parent.is_empty()
-                    && let Some(parent_info) = arcade_lookup.get(&info.parent)
-                {
-                    let parent_norm = crate::launchbox::normalize_title(&parent_info.display_name);
-                    if !norms.contains(&parent_norm) {
-                        norms.push(parent_norm);
-                    }
-                }
-            } else {
-                norms.push(crate::launchbox::normalize_title(stem));
-            }
-        } else {
-            norms.push(crate::launchbox::normalize_title(stem));
-        }
-        out.insert(filename.clone(), norms);
-    }
-    out
-}
-
-/// Pick the first matching `launchbox_game` row for each ROM filename, given
-/// the candidate normalized-title list.
+/// 1. Stored primary `normalized_title`.
+/// 2. Stored arcade-clone parent's `normalized_title` (`normalized_title_alt`).
+/// 3. LaunchBox `launchbox_alternate.normalized_alternate` → primary
+///    `normalized_title` (covers regional renames where the ROM filename
+///    matches an alternate name rather than the primary).
+/// 4. No-Intro `hash_matched_name` canonical filename normalized → primary
+///    or alt-name (covers ROMs whose filename diverges from the canonical
+///    No-Intro title — fan-translated/redumped sets, abbreviated names).
 fn match_launchbox_rows<'a>(
-    rom_norms: &HashMap<String, Vec<String>>,
+    norm_by_rom: &HashMap<String, (String, String)>,
+    hash_matched_names: &HashMap<String, String>,
     launchbox_rows: &'a HashMap<String, LaunchboxRow>,
+    alt_to_primary: &HashMap<String, String>,
 ) -> HashMap<String, &'a LaunchboxRow> {
-    let mut out = HashMap::with_capacity(rom_norms.len());
-    for (rom, norms) in rom_norms {
-        if let Some(row) = norms.iter().find_map(|n| launchbox_rows.get(n)) {
+    let mut out = HashMap::with_capacity(norm_by_rom.len());
+    for (rom, (norm, norm_alt)) in norm_by_rom {
+        if let Some(row) = match_for_rom(
+            norm,
+            norm_alt,
+            hash_matched_names.get(rom).map(String::as_str),
+            launchbox_rows,
+            alt_to_primary,
+        ) {
             out.insert(rom.clone(), row);
         }
     }
     out
+}
+
+fn match_for_rom<'a>(
+    norm: &str,
+    norm_alt: &str,
+    hash_name: Option<&str>,
+    launchbox_rows: &'a HashMap<String, LaunchboxRow>,
+    alt_to_primary: &HashMap<String, String>,
+) -> Option<&'a LaunchboxRow> {
+    if let Some(row) = launchbox_rows.get(norm) {
+        return Some(row);
+    }
+    if !norm_alt.is_empty()
+        && let Some(row) = launchbox_rows.get(norm_alt)
+    {
+        return Some(row);
+    }
+    if let Some(prim) = alt_to_primary.get(norm)
+        && let Some(row) = launchbox_rows.get(prim)
+    {
+        return Some(row);
+    }
+    if let Some(hn) = hash_name {
+        let hn_norm = normalize_title_for_metadata(filename_stem(hn));
+        if hn_norm.is_empty() || hn_norm == norm {
+            return None;
+        }
+        if let Some(row) = launchbox_rows.get(&hn_norm) {
+            return Some(row);
+        }
+        if let Some(prim) = alt_to_primary.get(&hn_norm)
+            && let Some(row) = launchbox_rows.get(prim)
+        {
+            return Some(row);
+        }
+    }
+    None
 }
 
 /// Run the full enrichment pipeline for a system.
@@ -110,12 +127,21 @@ fn match_launchbox_rows<'a>(
 /// * `arcade_lookup` - Per-system arcade-game info (display_name etc.).
 /// * `launchbox_rows` - Per-system LaunchBox metadata, keyed by
 ///   normalized title (from `external_metadata::system_launchbox_rows`).
+///
+/// `arcade_lookup` is unused at match time — the normalized title for each
+/// ROM is read from `game_library` (populated at scan time). The parameter
+/// stays in the signature because the box-art resolver still consumes it.
+///
+/// `alt_to_primary` maps `normalized_alternate → primary normalized_title`
+/// from `launchbox_alternate`. Caller loads it once per system from the
+/// host-global `external_metadata.db`.
 pub fn enrich_system(
     conn: &Connection,
     system: &str,
     index: &ImageIndex,
     arcade_lookup: &ArcadeInfoLookup,
     launchbox_rows: &HashMap<String, LaunchboxRow>,
+    alt_to_primary: &HashMap<String, String>,
 ) -> EnrichmentResult {
     // Load existing game_library values to know which are already set.
     let existing_genres: HashSet<String> = LibraryDb::system_rom_genres(conn, system)
@@ -125,8 +151,6 @@ pub fn enrich_system(
         LibraryDb::system_rom_players(conn, system).unwrap_or_default();
     let existing_developers: HashSet<String> =
         LibraryDb::system_rom_developers(conn, system).unwrap_or_default();
-    let existing_years: HashSet<String> =
-        LibraryDb::system_rom_release_years(conn, system).unwrap_or_default();
 
     // Read visible filenames from game_library.
     let rom_filenames: Vec<String> = LibraryDb::visible_filenames(conn, system).unwrap_or_default();
@@ -135,21 +159,25 @@ pub fn enrich_system(
         return EnrichmentResult {
             enrichments: Vec::new(),
             developer_updates: Vec::new(),
-            year_updates: Vec::new(),
+            release_date_rows: Vec::new(),
             cooperative_updates: Vec::new(),
             description_rows: Vec::new(),
             manifest_downloads: Vec::new(),
         };
     }
 
-    // Resolve each ROM filename to its candidate normalized titles, then pick
-    // the first matching launchbox_game row.
-    let rom_norms = rom_normalized_titles(system, &rom_filenames, arcade_lookup);
-    let lb_by_rom = match_launchbox_rows(&rom_norms, launchbox_rows);
-
-    // Load hash_matched_names for No-Intro-based thumbnail fallback.
+    // Resolve each ROM filename to its launchbox_game row using the
+    // normalized titles stored in `game_library` at scan time, the LB
+    // alt-name index, and the No-Intro hash-matched canonical name.
+    let norm_by_rom = LibraryDb::visible_normalized_titles(conn, system).unwrap_or_default();
     let hash_matched_names: HashMap<String, String> =
         LibraryDb::visible_hash_matched_names(conn, system).unwrap_or_default();
+    let lb_by_rom = match_launchbox_rows(
+        &norm_by_rom,
+        &hash_matched_names,
+        launchbox_rows,
+        alt_to_primary,
+    );
 
     // Build enrichment entries + collect manifest download requests.
     let mut manifest_downloads: Vec<(String, ManifestMatch)> = Vec::new();
@@ -222,17 +250,45 @@ pub fn enrich_system(
         .filter(|(_, dev)| !dev.is_empty())
         .collect();
 
-    // Release year enrichment: fill from LaunchBox for ROMs that don't already have one.
-    let year_updates: Vec<(String, u16)> = rom_filenames
+    // Release-date enrichment: emit `game_release_date` rows for every LB
+    // match. `upsert_release_dates` only overwrites a same-region row when
+    // the new precision is strictly higher, so this is safe to call on
+    // every enrichment pass — TGDB-year + LB-day yields the LB-day row;
+    // LB-year on a system with no catalog rows fills the gap. The app
+    // layer must run this BEFORE `resolve_release_date_for_library`,
+    // otherwise the resolver will overwrite the LB-set value with NULL
+    // for systems where `game_release_date` is empty.
+    //
+    // LaunchBox doesn't tag releases by region in the imported data; pick
+    // `"world"` so the resolver's region preference can fall back to it.
+    let base_title_by_rom: HashMap<String, String> = LibraryDb::visible_base_titles(conn, system)
+        .map(|pairs| pairs.into_iter().collect())
+        .unwrap_or_default();
+    let release_date_rows: Vec<ReleaseDateRow> = rom_filenames
         .iter()
-        .filter(|f| !existing_years.contains(*f))
         .filter_map(|f| {
-            lb_by_rom
-                .get(f)
-                .and_then(|row| row.release_year)
-                .map(|year| (f.clone(), year))
+            let row = lb_by_rom.get(f)?;
+            let date = row.release_date.as_deref()?;
+            let precision = row.release_precision?;
+            let base_title = base_title_by_rom.get(f)?;
+            if base_title.is_empty() {
+                return None;
+            }
+            Some(ReleaseDateRow {
+                system: system.to_string(),
+                base_title: base_title.clone(),
+                region: "world".to_string(),
+                release_date: date.to_string(),
+                precision,
+                source: "launchbox".to_string(),
+            })
         })
         .collect();
+
+    // Multiple ROMs (region variants, revisions) can share the same
+    // `(system, base_title)`; collapse so `upsert_release_dates` doesn't
+    // see duplicates within a single batch.
+    let release_date_rows = dedup_release_date_rows(release_date_rows);
 
     // Cooperative enrichment: set cooperative=1 for ROMs flagged by LaunchBox.
     // Only update ROMs that are not already cooperative.
@@ -267,10 +323,43 @@ pub fn enrich_system(
     EnrichmentResult {
         enrichments,
         developer_updates,
-        year_updates,
+        release_date_rows,
         cooperative_updates,
         description_rows,
         manifest_downloads,
+    }
+}
+
+/// Drop duplicate `(system, base_title, region)` keys, keeping the
+/// highest-precision row. Region variants of the same game share a
+/// `base_title`; without dedup, `upsert_release_dates` would see N rows
+/// for the same key and the last write would win.
+fn dedup_release_date_rows(rows: Vec<ReleaseDateRow>) -> Vec<ReleaseDateRow> {
+    let mut by_key: HashMap<(String, String, String), ReleaseDateRow> =
+        HashMap::with_capacity(rows.len());
+    for row in rows {
+        let key = (
+            row.system.clone(),
+            row.base_title.clone(),
+            row.region.clone(),
+        );
+        by_key
+            .entry(key)
+            .and_modify(|existing| {
+                if precision_rank(row.precision) > precision_rank(existing.precision) {
+                    *existing = row.clone();
+                }
+            })
+            .or_insert(row);
+    }
+    by_key.into_values().collect()
+}
+
+fn precision_rank(p: DatePrecision) -> u8 {
+    match p {
+        DatePrecision::Day => 3,
+        DatePrecision::Month => 2,
+        DatePrecision::Year => 1,
     }
 }
 
@@ -356,6 +445,133 @@ fn apply_base_title_fallback(
 mod tests {
     use super::*;
 
+    // ── match_for_rom tests (Phase 3 chain) ──────────────────────────
+
+    fn lb_row_with_developer(dev: &str) -> LaunchboxRow {
+        LaunchboxRow {
+            description: None,
+            genre: None,
+            developer: Some(dev.to_string()),
+            publisher: None,
+            release_date: None,
+            release_precision: None,
+            rating: None,
+            rating_count: None,
+            cooperative: false,
+            players: None,
+        }
+    }
+
+    #[test]
+    fn match_for_rom_primary_wins_over_alt() {
+        let mut rows = HashMap::new();
+        rows.insert(
+            "supermariobros".to_string(),
+            lb_row_with_developer("primary"),
+        );
+        rows.insert("alternateparent".to_string(), lb_row_with_developer("alt"));
+
+        let alt_to_primary = HashMap::new();
+        let row = match_for_rom(
+            "supermariobros",
+            "alternateparent",
+            None,
+            &rows,
+            &alt_to_primary,
+        )
+        .expect("primary hit");
+        assert_eq!(row.developer.as_deref(), Some("primary"));
+    }
+
+    #[test]
+    fn match_for_rom_arcade_alt_used_when_primary_missing() {
+        let mut rows = HashMap::new();
+        rows.insert("sf2ce".to_string(), lb_row_with_developer("parent"));
+        let alt_to_primary = HashMap::new();
+        let row = match_for_rom("sf2cebootleg", "sf2ce", None, &rows, &alt_to_primary)
+            .expect("clone parent hit");
+        assert_eq!(row.developer.as_deref(), Some("parent"));
+    }
+
+    #[test]
+    fn match_for_rom_alt_name_falls_back_to_primary() {
+        let mut rows = HashMap::new();
+        rows.insert("zelda".to_string(), lb_row_with_developer("zelda-prim"));
+
+        let mut alt_to_primary = HashMap::new();
+        alt_to_primary.insert("zeldanodensetsu".to_string(), "zelda".to_string());
+
+        // ROM filename normalises to the alternate name; no arcade alt.
+        let row = match_for_rom("zeldanodensetsu", "", None, &rows, &alt_to_primary)
+            .expect("alt-name hit");
+        assert_eq!(row.developer.as_deref(), Some("zelda-prim"));
+    }
+
+    #[test]
+    fn match_for_rom_hash_name_resolves_via_primary() {
+        // ROM filename "Aero Star (Japan)" normalises to "aerostar"; the
+        // No-Intro canonical name is "Aerostar (Japan) (En)" which
+        // normalises identically here, so use a divergent filename.
+        let mut rows = HashMap::new();
+        rows.insert("aerostar".to_string(), lb_row_with_developer("hash-prim"));
+        let alt_to_primary = HashMap::new();
+
+        // Library-stored norm derived from the user's filename (e.g. fan-renamed),
+        // hash_name is the canonical No-Intro filename.
+        let row = match_for_rom(
+            "aerostarbluestreak",             // user's filename normalised
+            "",                               // no arcade clone
+            Some("Aerostar (Japan) (En).gb"), // No-Intro canonical filename
+            &rows,
+            &alt_to_primary,
+        )
+        .expect("hash-name primary hit");
+        assert_eq!(row.developer.as_deref(), Some("hash-prim"));
+    }
+
+    #[test]
+    fn match_for_rom_hash_name_resolves_via_alt() {
+        let mut rows = HashMap::new();
+        rows.insert(
+            "officialprimary".to_string(),
+            lb_row_with_developer("alt-via-hash"),
+        );
+
+        let mut alt_to_primary = HashMap::new();
+        alt_to_primary.insert(
+            "canonicalalternate".to_string(),
+            "officialprimary".to_string(),
+        );
+
+        let row = match_for_rom(
+            "userscustomname",
+            "",
+            Some("Canonical Alternate (USA).rom"),
+            &rows,
+            &alt_to_primary,
+        )
+        .expect("hash-name alt-resolved hit");
+        assert_eq!(row.developer.as_deref(), Some("alt-via-hash"));
+    }
+
+    #[test]
+    fn match_for_rom_skips_hash_name_when_it_normalises_to_primary() {
+        // hash_name normalises identically to `norm`. We've already tried
+        // that key — bail out instead of reprobing the same map.
+        let rows: HashMap<String, LaunchboxRow> = HashMap::new();
+        let alt_to_primary = HashMap::new();
+        let result = match_for_rom("samename", "", Some("samename.rom"), &rows, &alt_to_primary);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn match_for_rom_returns_none_when_all_keys_miss() {
+        let rows: HashMap<String, LaunchboxRow> = HashMap::new();
+        let alt_to_primary = HashMap::new();
+        let result = match_for_rom("nope", "", Some("nope.rom"), &rows, &alt_to_primary);
+        assert!(result.is_none());
+    }
+
     // ── base_title fallback tests ────────────────────────────────────
 
     /// Open a temp library DB for enrichment tests.
@@ -400,6 +616,8 @@ mod tests {
             release_precision: None,
             release_region_used: None,
             cooperative: false,
+            normalized_title: String::new(),
+            normalized_title_alt: String::new(),
         }
     }
 

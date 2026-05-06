@@ -172,8 +172,9 @@ impl LibraryService {
                 //  3. Resolve per-region mirror columns from the user's
                 //     region preference.
                 //
-                // LaunchBox enrichment later runs `seed_release_dates_from_metadata`
-                // to upgrade to day-precision USA dates.
+                // The later L2 enrichment pass upserts LaunchBox-sourced
+                // rows (`launchbox` source, world region, day-precision
+                // when the XML provides it) before re-running the resolver.
                 let static_data =
                     replay_control_core_server::library_db::fetch_static_release_data().await;
                 let _ = db

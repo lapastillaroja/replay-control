@@ -3,6 +3,25 @@
 //! Provides functions for computing normalized base titles (for dedup)
 //! and series keys (for franchise grouping).
 
+/// Bump whenever `normalize_title_for_metadata`'s output changes for any
+/// input, so deployed appliances reconcile their stored normalized columns.
+///
+/// Both stored locations carry their own copy of this value:
+/// - `library_meta.title_norm_version` (per-storage `library.db`) — covers
+///   `game_library.normalized_title` / `normalized_title_alt`.
+/// - `external_meta.title_norm_version` (host-global `external_metadata.db`)
+///   — covers `launchbox_alternate.normalized_alternate`.
+///
+/// On boot the app compares the stored value against this constant and, on
+/// mismatch, rebuilds the affected columns. The two stamps are independent
+/// so a storage that's been offline still gets reconciled on first activate.
+///
+/// Pinned `(input, expected_output)` regression tests force this constant
+/// to be bumped intentionally: changing `normalize_title_for_metadata`
+/// without updating the test forces a recompile failure that signals the
+/// deferred bump.
+pub const TITLE_NORM_VERSION: u32 = 1;
+
 /// Strip parenthesized tags and trailing whitespace from a name for fuzzy matching.
 /// `"Indiana Jones and the Fate of Atlantis (Spanish)"` -> `"Indiana Jones and the Fate of Atlantis"`
 /// `"Dark Seed"` -> `"Dark Seed"` (unchanged)
@@ -686,5 +705,44 @@ mod tests {
     #[test]
     fn strip_n64dd_prefix_no_prefix_unchanged() {
         assert_eq!(strip_n64dd_prefix("Super Mario 64"), "Super Mario 64");
+    }
+
+    // --- TITLE_NORM_VERSION regression ---
+    //
+    // These pin the function's output for a representative input set.
+    // Touching `normalize_title_for_metadata` in a way that changes any of
+    // these outputs MUST be paired with a `TITLE_NORM_VERSION` bump —
+    // otherwise the deployed appliance would silently mis-match against
+    // its stored normalized columns. Update the expectations in the same
+    // commit that bumps the constant.
+    #[test]
+    fn title_norm_version_pinned_outputs() {
+        let cases = [
+            ("Super Mario World", "supermarioworld"),
+            ("Sonic The Hedgehog (USA)", "sonicthehedgehog"),
+            ("Legend of Zelda, The", "thelegendofzelda"),
+            ("Game [!] (Europe)", "game"),
+            ("Alien vs Predator", "alienvspredator"),
+            (
+                "The House of the Dead 2 v1.000 (1999)(Sega)(PAL)(M6)[!]",
+                "thehouseofthedead2",
+            ),
+            ("Final Fantasy VII", "finalfantasyvii"),
+            ("Pac-Man", "pacman"),
+            (
+                "Street Fighter II': Champion Edition",
+                "streetfighteriichampionedition",
+            ),
+            ("Game v1.2.3", "game"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                normalize_title_for_metadata(input),
+                expected,
+                "TITLE_NORM_VERSION bump required: input {input:?}"
+            );
+        }
+        // Sanity: the constant exists and is non-zero.
+        assert!(TITLE_NORM_VERSION >= 1);
     }
 }

@@ -4,6 +4,49 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
+## [0.4.0-beta.9](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.9) - 2026-05-06
+
+### Highlights
+
+- **"Now Playing" follows you across the app.** While a game is running on your appliance, a pulsing badge in the top bar shows the game name, system, and elapsed play time on every page. The home page replaces "Last Played" with a hero card for the active game, and the game's detail page picks up a "Now Playing" pill so you know you're looking at the one that's running. Tap the badge from anywhere to jump to that game's detail page.
+- **One tap to the manual.** The Now Playing card has a "Manual" button that takes you directly to the manuals section of the running game — no scrolling, no hunting.
+- **"Rescan Library" now matches what's on disk.** ROMs you delete manually no longer linger in your library. A rescan reconciles additions, updates, and removals in one pass.
+- **Metadata enrichment fills in thousands of missing fields.** A previously-silent bug was wiping LaunchBox-sourced release dates whenever a system had no built-in catalog entries (PlayStation, Sega CD, Atari ST, IBM PC, ScummVM); the fix routes them through the precision-aware date table the resolver actually reads. The matcher also accepts more ways the same game can be named — arcade clone parents, official alternate titles (e.g. "Lylat Wars" / "Star Fox 64"), and No-Intro canonical filenames — so your descriptions, developers, ratings, and players counts come through on more ROMs without any user action.
+
+### Added
+
+- New "Now Playing" detector: a Linux-only background loop in `replay-control-app/src/api/now_playing.rs` polls every 4 seconds, walks `/proc/<pid>/maps` for a non-menu libretro core and `/proc/<pid>/mem` heap for the active ROM path, and broadcasts state via the new `state.now_playing_tx` channel. Two-poll debounce on `(pid, system, filename)` filters mid-launch noise, and a PID cache verified via `/proc/<pid>/comm` keeps the steady-state `/proc` walk to a single file read.
+- `Resource<NowPlayingState>` provided at the App root with `Resource::new_blocking(get_initial_now_playing)` SSR seed so a hard refresh while a game is running paints the live state on the first frame (no hydration mismatch, no flash). After hydration `/sse/now-playing` writes new states straight into the same Resource via `Resource::set` — single source of truth.
+- New `Clock` (1 s tick) + `use_now_playing()` + `use_live_elapsed_secs(started_at)` hooks in `replay-control-app/src/hooks/` so elapsed timers update smoothly between SSE events without bloating the wire payload.
+- New shared `replay-control-core-server/src/replay_proc.rs` with `find_replay_pid`, `pid_is_replay`, `maps_have_active_game_core`, and a single `NON_GAME_CORES` exclusion list (`replay_libretro`, `avtest`).
+- New `<NowPlayingIndicator>` component (top-bar pill) and `NowPlayingHeroCard` (home page).
+- New `use_focus_scroll` hook (`ResizeObserver` on `<body>`, manual-scroll override) — the home-hero "Manual" button deep-links to `#manuals` and lands on the section even when cover-art images and lazy sections finish laying out after the initial scroll.
+- New `MANUALS_FRAGMENT` const in `pages::game_detail` consumed by the home hero card link.
+- New `docs/features/now-playing.md` covering the user surfaces, the `/proc` detection algorithm, robustness defenses, and perf numbers.
+- `game_library.normalized_title` and `normalized_title_alt` columns populated at scan time (arcade clones store the parent's normalized title in `_alt`); enrichment matching is now a hashmap probe against stored keys instead of a per-ROM `normalize_title()` call. `launchbox_alternate.normalized_alternate` mirrors this on the LaunchBox side. Schema bumped to v4 with an `ALTER TABLE` migration that preserves existing libraries.
+- New per-storage `library_meta` k/v table (first inhabitant: `title_norm_version`) and a host-side `external_meta.title_norm_version` stamp. `replay_control_core::title_utils::TITLE_NORM_VERSION` (currently `1`) is bumped any time `normalize_title_for_metadata` changes its output. On boot, mismatch on either side rebuilds the stored normalized columns silently — future matcher improvements reach deployed appliances on the next reboot without user action.
+- New `match_for_rom` chain in `replay-control-core-server/src/library/enrichment.rs`: primary `normalized_title` → arcade-clone parent's `normalized_title` → `launchbox_alternate.normalized_alternate` → No-Intro `hash_matched_name` canonical filename (probed against both primary and alt-name maps). Stops at the first hit; strength descending.
+
+### Changed
+
+- "Rescan Library" no longer just adds. Each visible system is reconciled to current disk state via a per-system strict scan that errors on permission / I/O failures, so a flaky NFS mount can't silently truncate the cached ROM list. Missing top-level system dirs become empty rows; recursive read failures preserve the previous cache.
+- `phase_auto_import` is now the single entry point that re-parses the cached LaunchBox XML on boot. It checks both `launchbox_xml_crc32` and `title_norm_version` in one read; either mismatch triggers a re-parse, and `refresh_launchbox` writes both stamps inside the same transaction. The previously-separate `reconcile_external_normalized_titles` path is gone, removing a known race where the secondary writer would `pool unavailable` while the work was actually still committing on the deadpool thread.
+- LaunchBox-sourced release dates now flow through `game_release_date` via `upsert_release_dates(source="launchbox")` *before* `resolve_release_date_for_library` runs. The resolver rebuilds `game_library.release_date` from the precision-aware table, so the previous wipe-on-resolve behavior (which zeroed the column for any system whose catalog had no `console_release_dates` rows) is gone. Day-precision LB dates upgrade year-precision catalog rows; year-precision LB dates fill systems with no catalog data at all.
+- `launch.rs::check_game_loaded` (used by the post-launch health-check) now consumes the shared `replay_proc` helpers, picking up the `avtest` exclusion that was previously only applied by the `pgrep`-based check.
+- `system_display_name` hoisted from `core::game_ref` to `core::platform::systems` so non-`GameRef` callers can use it.
+- Generic `install_sse_listener::<T>(url, on_payload)` helper extracted from the duplicated Activity / NowPlaying / Config listener boilerplate in `lib.rs`.
+- The metadata-page "Rescan" button copy and supporting docs (`docs/features/{game-library,getting-started,storage}.md`) updated to reflect reconcile semantics.
+
+### Fixed
+
+- The home hero "Manual" deep-link now lands the user on the manuals section even on slow connections — `use_focus_scroll`'s `ResizeObserver` re-anchors `scrollIntoView` until either layout settles or the user manually scrolls.
+- `use_focus_scroll`'s one-shot `requestAnimationFrame` and `setTimeout` callbacks now use `Closure::once_into_js` (auto-dropped after firing) instead of `forget()`. The `ResizeObserver` callback is stored in the cleanup teardown so it drops with the observer instead of leaking per Effect run.
+- Per-system game descriptions are now cleared when a rescan empties a system. Previously the rows leaked past the ROM rows so a removed game's description could surface on a re-added ROM with a different filename.
+- Closed the LaunchBox release-date wipe: ~740 primary-LB matches that were silently dropping their release date now persist (sega_st 0% → 82.4%, sony_psx 0% → 82.1%, ibm_pc 12.5% → 87.5%, sega_cd 0% → 61.3%, nintendo_snes 73.8% → 83.1%, nintendo_n64 70.2% → 83.3% on the dev set, with smaller gains across other systems). The stored-normalized matcher also closed ~3,000 latent gaps across genre/players/rating/developer where the primary-path match had been finding the LaunchBox row but the field write was lost in transit.
+- Dropped a hydrate-mode warning on the home page: `now_playing_detail` was a derived `Resource::new(source = move || now_playing.get(), …)` whose source closure ran in a Memo owner that doesn't inherit `SuspenseContext`. The detail fetch now happens inline inside the existing `Suspend::new(async {})` block, where every `now_playing.get()` read sits cleanly in scope. App-root `<Suspense>` wraps around the top-bar header and the `/` and `/games/:system/:filename` route views provide context for the lazy `class:` and `<Show when=>` closures that read `now_playing` from a `RenderEffect`.
+
+---
+
 ## [0.4.0-beta.8](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.8) - 2026-05-04
 
 ### Highlights

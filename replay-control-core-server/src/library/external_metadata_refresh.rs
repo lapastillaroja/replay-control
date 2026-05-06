@@ -128,18 +128,22 @@ pub fn refresh_launchbox(
     })?;
 
     // Resolve alternate names against the (system, normalized_title) keys
-    // built during the game pass.
-    let mut alternates: Vec<(String, String, String)> = Vec::new();
+    // built during the game pass. Compute `normalized_alternate` once here so
+    // the enrichment matcher can do hashmap lookups against ROM filenames'
+    // stored normalized titles instead of normalizing per ROM at match time.
+    let mut alternates: Vec<(String, String, String, String)> = Vec::new();
     for alt in &parse_result.alternate_names {
         if alt.alternate_name.is_empty() || alt.database_id.is_empty() {
             continue;
         }
+        let norm_alt = normalize_title(&alt.alternate_name);
         if let Some(keys) = db_id_to_keys.get(&alt.database_id) {
             for (system, normalized_title) in keys {
                 alternates.push((
                     system.clone(),
                     normalized_title.clone(),
                     alt.alternate_name.clone(),
+                    norm_alt.clone(),
                 ));
             }
         }
@@ -194,14 +198,19 @@ pub fn refresh_launchbox(
             let mut alt_stmt = tx
                 .prepare(
                     "INSERT OR IGNORE INTO launchbox_alternate
-                       (system, normalized_title, alternate_name)
-                     VALUES (?1, ?2, ?3)",
+                       (system, normalized_title, alternate_name, normalized_alternate)
+                     VALUES (?1, ?2, ?3, ?4)",
                 )
                 .map_err(|e| Error::Other(format!("prepare insert alt: {e}")))?;
             let mut count = 0usize;
-            for (system, normalized_title, alternate_name) in &alternates {
+            for (system, normalized_title, alternate_name, normalized_alternate) in &alternates {
                 alt_stmt
-                    .execute(params![system, normalized_title, alternate_name])
+                    .execute(params![
+                        system,
+                        normalized_title,
+                        alternate_name,
+                        normalized_alternate,
+                    ])
                     .map_err(|e| Error::Other(format!("insert launchbox_alternate: {e}")))?;
                 count += 1;
             }
@@ -209,6 +218,14 @@ pub fn refresh_launchbox(
         }
 
         external_metadata::write_meta(&tx, meta_keys::LAUNCHBOX_XML_CRC32, Some(&xml_crc32))?;
+        // Stamp the normalizer version so a future boot can detect
+        // version skew between the deployed binary and the cached
+        // normalized values in `launchbox_alternate`.
+        external_metadata::write_meta(
+            &tx,
+            meta_keys::TITLE_NORM_VERSION,
+            Some(&replay_control_core::title_utils::TITLE_NORM_VERSION.to_string()),
+        )?;
         tx.commit()
             .map_err(|e| Error::Other(format!("commit: {e}")))?;
     }
@@ -342,13 +359,18 @@ mod tests {
         assert_eq!(mario.players, Some(2));
         assert_eq!(mario.rating, Some(4.5));
         assert_eq!(mario.rating_count, Some(1234));
-        assert_eq!(mario.release_year, Some(1985));
+        assert_eq!(mario.release_date.as_deref(), Some("1985-09-13"));
+        assert_eq!(
+            mario.release_precision,
+            Some(replay_control_core::DatePrecision::Day),
+        );
         assert!(!mario.cooperative);
 
         let alts = external_metadata::system_launchbox_alternates(&conn, "nintendo_nes").unwrap();
         assert_eq!(alts.len(), 1);
         assert_eq!(alts[0].0, normalize_title("The Legend of Zelda"));
         assert_eq!(alts[0].1, "Zelda no Densetsu");
+        assert_eq!(alts[0].2, normalize_title("Zelda no Densetsu"));
     }
 
     #[test]

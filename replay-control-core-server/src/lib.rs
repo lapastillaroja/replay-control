@@ -67,6 +67,8 @@ pub use library::thumbnails::manifest as thumbnail_manifest;
 pub use library::thumbnails::matching as image_matching;
 #[cfg(feature = "library")]
 pub use library::thumbnails::resolution as image_resolution;
+#[cfg(feature = "library")]
+pub use library::title_norm_reconcile;
 
 #[cfg(feature = "library")]
 pub mod user_data;

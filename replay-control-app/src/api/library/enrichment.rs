@@ -37,12 +37,13 @@ impl LibraryService {
             return;
         }
 
-        // Four independent setup steps that all consume `system` /
-        // `rom_filenames`. Two pools (library, external_metadata) plus the
-        // arcade lookup; `join!` lets the slowest overlap with the others.
-        let (index, launchbox_rows, arcade_lookup) = tokio::join!(
+        // Independent setup steps that all consume `system` / `rom_filenames`.
+        // Two pools (library, external_metadata) plus the arcade lookup;
+        // `join!` lets the slowest overlap with the others.
+        let (index, launchbox_rows, alt_to_primary, arcade_lookup) = tokio::join!(
             build_image_index(state, &system),
             load_launchbox_rows(state, &system),
+            load_launchbox_alt_to_primary(state, &system),
             ArcadeInfoLookup::build(&system, &rom_filenames),
         );
 
@@ -58,6 +59,7 @@ impl LibraryService {
                     &index,
                     &arcade_lookup,
                     &launchbox_rows,
+                    &alt_to_primary,
                 )
             })
             .await;
@@ -84,12 +86,12 @@ impl LibraryService {
         let sys = system.clone();
         let dev_count = result.developer_updates.len();
         let coop_count = result.cooperative_updates.len();
-        let year_count = result.year_updates.len();
+        let date_count = result.release_date_rows.len();
         let desc_count = result.description_rows.len();
         let enrich_count = result.enrichments.len();
         let developer_updates = result.developer_updates;
         let cooperative_updates = result.cooperative_updates;
-        let year_updates = result.year_updates;
+        let release_date_rows = result.release_date_rows;
         let description_rows = result.description_rows;
         let enrichments = result.enrichments;
         db.write(move |conn| {
@@ -103,13 +105,17 @@ impl LibraryService {
             {
                 tracing::warn!("Cooperative enrichment failed for {sys}: {e}");
             }
-            if !year_updates.is_empty()
-                && let Err(e) = LibraryDb::update_release_years(conn, &sys, &year_updates)
+            // Upsert LaunchBox-sourced rows into game_release_date BEFORE
+            // the resolver runs. The resolver rebuilds game_library's
+            // mirror columns from game_release_date; any rows we miss
+            // here would be cleared to NULL on the same write.
+            if !release_date_rows.is_empty()
+                && let Err(e) = LibraryDb::upsert_release_dates(conn, &release_date_rows)
             {
-                tracing::warn!("Release year enrichment failed for {sys}: {e}");
+                tracing::warn!("Release-date upsert failed for {sys}: {e}");
             }
             // Release-date resolver: rewrites game_library mirror columns
-            // from `game_release_date` for every ROM (catalog-seeded data).
+            // from `game_release_date` for every ROM.
             let _ =
                 LibraryDb::resolve_release_date_for_library(conn, region_pref, region_secondary);
             // Always rebuilt (truncate + repopulate) so removed ROMs lose
@@ -129,7 +135,7 @@ impl LibraryService {
         .await;
 
         tracing::debug!(
-            "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {year_count} year / {desc_count} desc / {enrich_count} box+genre+players+ratings"
+            "L2 enrichment: {system} — {dev_count} dev / {coop_count} coop / {date_count} dates / {desc_count} desc / {enrich_count} box+genre+players+ratings"
         );
     }
 }
@@ -146,6 +152,28 @@ async fn load_launchbox_rows(
     state
         .external_metadata_pool
         .read(move |conn| external_metadata::system_launchbox_rows(conn, &sys).unwrap_or_default())
+        .await
+        .unwrap_or_default()
+}
+
+/// Load the alt-name → primary normalized_title map for a system. Empty
+/// `normalized_alternate` rows (legacy data pre-dating Phase 1 import) are
+/// dropped so the matcher's lookup is dense.
+async fn load_launchbox_alt_to_primary(
+    state: &crate::api::AppState,
+    system: &str,
+) -> HashMap<String, String> {
+    let sys = system.to_string();
+    state
+        .external_metadata_pool
+        .read(move |conn| {
+            external_metadata::system_launchbox_alternates(conn, &sys)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(_, _, na)| !na.is_empty())
+                .map(|(prim, _alt_raw, na)| (na, prim))
+                .collect::<HashMap<_, _>>()
+        })
         .await
         .unwrap_or_default()
 }

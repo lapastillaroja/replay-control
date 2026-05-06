@@ -9,6 +9,7 @@
 mod aliases_series;
 pub mod game_description;
 mod game_library;
+pub mod library_meta;
 mod recommendations;
 mod relationships;
 pub mod release_dates;
@@ -156,6 +157,15 @@ pub struct GameEntry {
     pub release_region_used: Option<String>,
     /// Cooperative play flag (from imported metadata).
     pub cooperative: bool,
+    /// Cached normalized title (`normalize_title_for_metadata` of the canonical
+    /// stem/display name). Stored at scan time so the enrichment matcher does
+    /// hashmap lookups instead of normalizing per ROM. Reconciled by the
+    /// `TITLE_NORM_VERSION` boot check; empty until the next scan/reconcile.
+    pub normalized_title: String,
+    /// Secondary normalized title — arcade clone's parent display name. Empty
+    /// for console ROMs and arcade parents. Lets the matcher fall back to the
+    /// parent's metadata without a separate per-ROM lookup at enrich time.
+    pub normalized_title_alt: String,
 }
 
 impl GameEntry {
@@ -269,6 +279,8 @@ const CREATE_GAME_LIBRARY_SQL: &str = "
         release_precision TEXT,
         release_region_used TEXT,
         cooperative INTEGER NOT NULL DEFAULT 0,
+        normalized_title TEXT NOT NULL DEFAULT '',
+        normalized_title_alt TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (system, rom_filename)
     );
 ";
@@ -302,6 +314,19 @@ const CREATE_GAME_DESCRIPTION_SQL: &str = "
 
 const GAME_DESCRIPTION_COLUMNS: &[&str] = &["system", "rom_filename", "description", "publisher"];
 
+/// SQL to create the per-storage `library_meta` k/v table.
+///
+/// First inhabitant: `title_norm_version` (set to the current
+/// `replay_control_core::title_utils::TITLE_NORM_VERSION` once a scan or
+/// reconcile finishes populating the normalized columns). Free-form for
+/// future per-storage knobs that don't deserve their own column.
+const CREATE_LIBRARY_META_SQL: &str = "
+    CREATE TABLE IF NOT EXISTS library_meta (
+        key   TEXT NOT NULL PRIMARY KEY,
+        value TEXT
+    );
+";
+
 /// Expected columns in the `game_library` table.
 /// Used by [`LibraryDb::validate_game_library_schema`] to detect stale schemas.
 const GAME_LIBRARY_COLUMNS: &[&str] = &[
@@ -334,6 +359,8 @@ const GAME_LIBRARY_COLUMNS: &[&str] = &[
     "release_precision",
     "release_region_used",
     "cooperative",
+    "normalized_title",
+    "normalized_title_alt",
 ];
 
 /// Expected columns in the `game_release_date` table.
@@ -361,6 +388,7 @@ impl LibraryDb {
         "game_release_date",
         "game_alias",
         "game_series",
+        "library_meta",
     ];
 
     /// Open (or create) the library database at the given file path.
@@ -381,16 +409,19 @@ impl LibraryDb {
         }
 
         let conn = crate::sqlite::open_connection(db_path, "library.db")?;
-        Self::init_tables(&conn)?;
+        // Migrations first: ALTER existing user data before init_tables runs
+        // its column-set divergence check. Otherwise a v3→v4 user library
+        // would be dropped on the version that adds new columns.
         Self::run_migrations(&conn)?;
+        Self::init_tables(&conn)?;
 
         if let Err(detail) = crate::sqlite::probe_tables(&conn, Self::TABLES) {
             tracing::warn!("Library DB corrupt ({detail}), deleting and recreating");
             drop(conn);
             crate::sqlite::delete_db_files(db_path);
             let conn = crate::sqlite::open_connection(db_path, "library.db")?;
-            Self::init_tables(&conn)?;
             Self::run_migrations(&conn)?;
+            Self::init_tables(&conn)?;
             return Ok(conn);
         }
 
@@ -505,6 +536,8 @@ impl LibraryDb {
             .map_err(|e| Error::Other(format!("Failed to create game_library: {e}")))?;
         conn.execute_batch(CREATE_GAME_LIBRARY_META_SQL)
             .map_err(|e| Error::Other(format!("Failed to create game_library_meta: {e}")))?;
+        conn.execute_batch(CREATE_LIBRARY_META_SQL)
+            .map_err(|e| Error::Other(format!("Failed to create library_meta: {e}")))?;
 
         conn.execute_batch(
             "-- Covers: similar_by_genre (system + genre/genre_group), system_genre_groups,
@@ -603,7 +636,11 @@ impl LibraryDb {
     /// - **v3**: adds game_description (per-storage description + publisher
     ///   denormalized from external_metadata.launchbox_game so the
     ///   game-detail server fn can stay on the library pool).
-    pub const SCHEMA_VERSION: i64 = 3;
+    /// - **v4**: adds `game_library.normalized_title` and
+    ///   `game_library.normalized_title_alt`, populated at scan time so the
+    ///   enrichment matcher does hashmap lookups instead of normalizing each
+    ///   ROM filename per pass.
+    pub const SCHEMA_VERSION: i64 = 4;
 
     /// Run pending migrations.
     ///
@@ -675,6 +712,24 @@ impl LibraryDb {
             );
         }
 
+        // ── v3 → v4 ───────────────────────────────────────────────
+        // Add `normalized_title` and `normalized_title_alt` to game_library
+        // via ALTER (preserves user data). Run BEFORE init_tables so its
+        // column-set divergence check sees the upgraded schema and skips
+        // the destructive rebuild. Empty defaults are repopulated by the
+        // next scan or by the TITLE_NORM_VERSION reconcile.
+        //
+        // Skipped on fresh installs (current == 0) where the table doesn't
+        // exist yet — init_tables will create it at the v4 shape directly.
+        if (1..4).contains(&current) {
+            tracing::info!("Library DB v3 → v4: adding normalized_title columns");
+            conn.execute_batch(
+                "ALTER TABLE game_library ADD COLUMN normalized_title     TEXT NOT NULL DEFAULT '';
+                 ALTER TABLE game_library ADD COLUMN normalized_title_alt TEXT NOT NULL DEFAULT '';",
+            )
+            .map_err(|e| Error::Other(format!("v3→v4 alter game_library: {e}")))?;
+        }
+
         let now = unix_now();
         conn.execute(
             "INSERT INTO schema_version (version, applied_at) VALUES (?1, ?2)",
@@ -710,7 +765,8 @@ impl LibraryDb {
     ///   region, developer, genre, genre_group, rating, rating_count, players,
     ///   is_clone, is_m3u, is_translation, is_hack, is_special, box_art_url,
     ///   driver_status, size_bytes, crc32, hash_mtime, hash_matched_name,
-    ///   release_date, release_precision, release_region_used, cooperative
+    ///   release_date, release_precision, release_region_used, cooperative,
+    ///   normalized_title, normalized_title_alt
     pub(crate) fn row_to_game_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<GameEntry> {
         Ok(GameEntry {
             system: row.get(0)?,
@@ -756,6 +812,8 @@ impl LibraryDb {
                 .map(|DpSql(d)| d),
             release_region_used: row.get::<_, Option<String>>(26).unwrap_or_default(),
             cooperative: row.get::<_, bool>(27).unwrap_or_default(),
+            normalized_title: row.get::<_, String>(28).unwrap_or_default(),
+            normalized_title_alt: row.get::<_, String>(29).unwrap_or_default(),
         })
     }
 }
@@ -809,6 +867,8 @@ mod tests {
             release_precision: None,
             release_region_used: None,
             cooperative: false,
+            normalized_title: String::new(),
+            normalized_title_alt: String::new(),
         }
     }
 

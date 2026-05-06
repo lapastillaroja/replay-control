@@ -141,28 +141,38 @@ pub fn App() -> impl IntoView {
             <SseNowPlayingListener />
             <SearchShortcut />
             <div class="app">
-                <header
-                    class="top-bar"
-                    class:top-bar-with-now-playing=move || matches!(
-                        now_playing.get(),
-                        crate::types::NowPlayingState::Playing { .. }
-                    )
-                >
-                    <h1 class="app-title">
-                        <A href="/" attr:class="app-title-link">
-                            <img
-                                class="top-bar-icon"
-                                src="/static/branding/app-icon.png"
-                                alt=""
-                                aria-hidden="true"
-                            />
-                            <span class="app-logo" aria-label="Replay Control"></span>
-                        </A>
-                    </h1>
-                    <div class="top-bar-now-playing">
-                        <NowPlayingIndicator />
-                    </div>
-                </header>
+                // The wrap is load-bearing for SuspenseContext, not for the
+                // fallback (Resource::new_blocking + SseNowPlayingListener
+                // means now_playing is always resolved by render time, so the
+                // fallback never appears). Inside, both the `class:` closure
+                // below and `<NowPlayingIndicator />`'s view closures call
+                // now_playing.get(); leptos' hydrate-mode resource check
+                // requires those reads to live under a Suspense/Transition,
+                // and a bare RenderEffect doesn't qualify.
+                <Suspense fallback=|| ()>
+                    <header
+                        class="top-bar"
+                        class:top-bar-with-now-playing=move || matches!(
+                            now_playing.get(),
+                            crate::types::NowPlayingState::Playing { .. }
+                        )
+                    >
+                        <h1 class="app-title">
+                            <A href="/" attr:class="app-title-link">
+                                <img
+                                    class="top-bar-icon"
+                                    src="/static/branding/app-icon.png"
+                                    alt=""
+                                    aria-hidden="true"
+                                />
+                                <span class="app-logo" aria-label="Replay Control"></span>
+                            </A>
+                        </h1>
+                        <div class="top-bar-now-playing">
+                            <NowPlayingIndicator />
+                        </div>
+                    </header>
+                </Suspense>
 
                 <CorruptionBanner />
                 <AssetHealthBanner />
@@ -170,10 +180,16 @@ pub fn App() -> impl IntoView {
 
                 <main class="content">
                     <Routes fallback=|| view! { <p class="error">"Page not found"</p> }>
-                        <Route path=path!("/") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><HomePage /></ErrorBoundary> } />
+                        // Suspense wraps the page so the top-level `<Show when=move || now_playing.get() …>`
+                        // in HomePage runs inside a SuspenseContext (the page's
+                        // own per-section Suspenses don't cover that read).
+                        <Route path=path!("/") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><Suspense fallback=|| ()><HomePage /></Suspense></ErrorBoundary> } />
                         <Route path=path!("/developer/:name") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><DeveloperPage /></ErrorBoundary> } />
                         <Route path=path!("/games/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemRomView /></ErrorBoundary> } />
-                        <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><GameDetailPage /></ErrorBoundary> } />
+                        // Suspense wraps the page so the `class:` / `<Show when=>`
+                        // closures in GameDetailContent that read now_playing.get()
+                        // inherit a SuspenseContext.
+                        <Route path=path!("/games/:system/:filename") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><Suspense fallback=|| ()><GameDetailPage /></Suspense></ErrorBoundary> } />
                         <Route path=path!("/favorites") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><FavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/favorites/:system") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SystemFavoritesPage /></ErrorBoundary> } />
                         <Route path=path!("/search") view=|| view! { <ErrorBoundary fallback=|errors| view! { <ErrorDisplay errors /> }><SearchPage /></ErrorBoundary> } />

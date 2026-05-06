@@ -1,200 +1,248 @@
 # Performance Benchmarks
 
-Last updated: 2026-04-26
-Build: v0.4.0 (release profile, commit `0359754`)
+Last updated: 2026-05-06
+Build: v0.4.0-beta.9 (release profile, commit `92d211e`)
 
-All measurements taken on Raspberry Pi 5, 2GB RAM, USB storage, ~23K ROMs across 41 systems.
+This page records what Replay Control actually costs to run — CPU, memory, page-load time, and download size — in normal use, plus what it does under artificial stress so we can spot regressions between releases.
 
-## Single Request Latency (c=1, warm cache)
+Numbers below assume:
 
-| Page | P50 | Req/s |
+- ~23 K ROMs across 41 systems on USB storage.
+- The Pi was rebooted before measurements.
+
+## Tested Hardware
+
+Each table reports numbers per platform side-by-side. New platforms can be added by filling the column.
+
+| Platform | Status |
+|---|---|
+| Raspberry Pi 5, 2 GB RAM | Measured |
+| Raspberry Pi 4 | Measurements pending |
+
+## CPU Use
+
+How much CPU `replay-control` uses, sampled with `tools/pi-cpu.sh`. Numbers are percent of **one core** — 100 % means one core is fully busy; 400 % means all four cores on a Pi are fully busy.
+
+When a libretro core is running on RePlayOS, the now-playing detector wakes every 4 s and walks the running game's memory looking for the active ROM. That adds a small CPU cost on top of the numbers below — variable depending on the core and game. See [now-playing.md](now-playing.md).
+
+| State | Pi 5 | Pi 4 |
 |---|---|---|
-| Home (cache hit) | 5ms | 176 |
-| Search "mario" | 38ms | 26 |
-| Search "sonic" | 40ms | 25 |
-| Search "street fighter" | 30ms | 33 |
-| Search "a" (broad, 23K matches) | 183ms | 5.5 |
-| System page | 1ms | 707–724 |
-| Game detail | 1ms | 792 |
+| Idle (no requests, no game running) | 0.03 % | _pending_ |
+| One user browsing (a click every couple of seconds) | 0.6 % | _pending_ |
+| Heavy concurrent load | see [Stress Tests](#stress-tests) | _pending_ |
 
-## Concurrent Load (50 requests per test)
+## Memory Use
 
-### Homepage
+Memory the `replay-control` process is using, read from `/proc` via `tools/pi-memory.sh`. "Memory in use" is the resident set the kernel reports — physical RAM the process is occupying right now.
 
-| Concurrency | Req/s | P50 (ms) | P95 (ms) |
-|---|---|---|---|
-| 1 | 176 | 5 | 7 |
-| 5 | 251 | 19 | 23 |
-| 10 | 278 | 35 | 42 |
-| 20 | 269 | 67 | 91 |
-| 30 | 259 | 90 | 140 |
+Memory naturally shrinks over time. After a burst of activity, the heap keeps tapering for several minutes as unused pages are returned to the operating system. By the time you check minutes later, the process is back near its working set.
 
-### Search "mario"
-
-| Concurrency | Req/s | P50 (ms) | P95 (ms) |
-|---|---|---|---|
-| 1 | 26 | 38 | 40 |
-| 5 | 28 | 178 | 182 |
-| 10 | 28 | 357 | 365 |
-| 20 | 28 | 707 | 735 |
-| 30 | 28 | 847 | 1,094 |
-
-### System pages (SNES, Mega Drive)
-
-| Concurrency | Req/s | P50 (ms) | P95 (ms) |
-|---|---|---|---|
-| 1 | 707–724 | 1 | 2 |
-| 5 | 1,483–1,654 | 3 | 4–5 |
-| 10 | 1,631–1,720 | 5–6 | 7–8 |
-| 20 | 1,607–1,685 | 10–11 | 16 |
-| 30 | 1,681–1,847 | 13–16 | 21–22 |
-
-### Game detail
-
-| Concurrency | Req/s | P50 (ms) | P95 (ms) |
-|---|---|---|---|
-| 1 | 792 | 1 | 2 |
-| 5 | 1,905 | 3 | 3 |
-| 10 | 1,958 | 5 | 7 |
-| 20 | 1,892 | 9 | 14 |
-| 30 | 2,112 | 11 | 18 |
-
-## Mixed Concurrent Test
-
-4 endpoints simultaneously at c=5 each (20 total concurrent connections):
-
-| Endpoint | Req/s | P50 (ms) | P95 (ms) |
-|---|---|---|---|
-| Homepage | 15.9 | 276 | 570 |
-| Search "mario" | 8.9 | 523 | 923 |
-| Search "sonic" | 8.8 | 520 | 861 |
-| Search "street fighter" | 8.7 | 518 | 951 |
-
-## Asset Sizes (v0.4.0)
-
-| Asset | Raw | Gzip |
+| State | Pi 5 | Pi 4 |
 |---|---|---|
-| WASM bundle | 3,985 KB | 843 KB |
-| CSS | 88 KB | 14 KB |
+| Steady state (one or two users browsing sporadically) | ~60–110 MB | _pending_ |
+| A few minutes after a burst of activity | ~110–130 MB | _pending_ |
+
+## What Happens at Startup
+
+When `replay-control` starts up — fresh boot, service restart, or first run on a new storage device — it runs a one-time burst of background work: metadata refresh, library scan, catalog verification, thumbnail manifest checks. While that work runs:
+
+- **CPU** briefly rises to a few percent of one core.
+- **Memory** peaks higher than usual (around 180–220 MB on Pi 5) for the first 30–60 seconds.
+
+Both settle back to the steady-state numbers above within a couple of minutes. You only see the spike if you check `htop` immediately after a boot or service restart.
+
+## Page Load Times
+
+How long the most-visited pages take to render on the server (P50 = the typical request; half are faster, half are slower). What a user sees when they click a link.
+
+| Page | Pi 5 | Pi 4 | Notes |
+|---|---|---|---|
+| Home | 5 ms | _pending_ | Cached |
+| System page (SNES, Mega Drive) | 1 ms | _pending_ | |
+| Game detail | 1 ms | _pending_ | |
+| Search "mario" | 27 ms | _pending_ | |
+| Search "sonic" | 28 ms | _pending_ | |
+| Search "street fighter" | 23 ms | _pending_ | |
+| Search "a" (broad — 23 K matches) | 133 ms | _pending_ | Worst-case search shape |
+
+## Download Sizes
+
+The web app's static files. WASM is served gzip-compressed by the server. These don't depend on the Pi model.
+
+| File | Raw | Gzip |
+|---|---|---|
+| WASM bundle | 4,201 KB | 882 KB |
+| CSS | 95 KB | 15 KB |
 | Home HTML | 58 KB | — |
-| System page HTML | 21 KB | — |
+| System page HTML (NES) | 21 KB | — |
 
-WASM is served gzip-compressed by the server.
+## Storage Caveat
 
-## v0.3.0 → v0.4.0 Comparison
+The numbers above use **USB storage**. Switching to NFS over WiFi roughly **3–4× slows** the heavier pages — Home concurrent throughput dropped from 282 to 184 req/s, system pages from 933 to 241 req/s, and the rendered HTML for `/games/<system>` ballooned because the catalog content grew on the network share. The slowdown is dominated by the SQLite catalog and ROM index living on the network share, not by the app itself. Use USB or the internal SD/NVMe for performance, NFS for convenience.
 
-### Single request (c=1)
+## Stress Tests
+
+These numbers come from Apache Bench (`ab`) firing dozens to hundreds of concurrent requests at the Pi for minutes at a time. **That isn't how the app is used in practice** — a typical install gets clicked by one or two people. These tests exist to:
+
+- Detect performance regressions between releases.
+- Probe upper bounds — what happens if a script or scraper hits the appliance.
+- Compare versions on a like-for-like basis.
+
+Read these as a robustness check, not as a representative resource budget. In the tables below:
+
+- **Concurrency** is how many requests are in flight at the same time.
+- **Req/s** is sustained requests-per-second.
+- **P50 / P95** are the median and 95th-percentile response times — the "typical" and "near-worst-case" delays in the test.
+
+### Concurrent throughput (50 requests per test)
+
+#### Homepage
+
+| Concurrency | Pi 5 Req/s | Pi 5 P50 (ms) | Pi 5 P95 (ms) | Pi 4 |
+|---|---|---|---|---|
+| 1 | 177 | 5 | 7 | _pending_ |
+| 5 | 289 | 17 | 21 | _pending_ |
+| 10 | 282 | 33 | 43 | _pending_ |
+| 20 | 291 | 62 | 91 | _pending_ |
+| 30 | 250 | 89 | 155 | _pending_ |
+
+#### Search "mario"
+
+| Concurrency | Pi 5 Req/s | Pi 5 P50 (ms) | Pi 5 P95 (ms) | Pi 4 |
+|---|---|---|---|---|
+| 1 | 37 | 27 | 29 | _pending_ |
+| 5 | 43 | 116 | 131 | _pending_ |
+| 10 | 43 | 227 | 245 | _pending_ |
+| 20 | 43 | 452 | 485 | _pending_ |
+| 30 | 41 | 560 | 730 | _pending_ |
+
+#### System pages (SNES, Mega Drive)
+
+| Concurrency | Pi 5 Req/s | Pi 5 P50 (ms) | Pi 5 P95 (ms) | Pi 4 |
+|---|---|---|---|---|
+| 1 | 703–714 | 1 | 2 | _pending_ |
+| 5 | 1,102–1,595 | 3–4 | 4–6 | _pending_ |
+| 10 | 1,626–1,721 | 5–6 | 8–9 | _pending_ |
+| 20 | 1,704–1,743 | 9–10 | 15 | _pending_ |
+| 30 | 1,776–1,825 | 13–14 | 21–23 | _pending_ |
+
+#### Game detail
+
+| Concurrency | Pi 5 Req/s | Pi 5 P50 (ms) | Pi 5 P95 (ms) | Pi 4 |
+|---|---|---|---|---|
+| 1 | 771 | 1 | 2 | _pending_ |
+| 5 | 1,672 | 3 | 5 | _pending_ |
+| 10 | 1,784 | 5 | 7 | _pending_ |
+| 20 | 1,774 | 9 | 21 | _pending_ |
+| 30 | 1,984 | 12 | 20 | _pending_ |
+
+#### Mixed concurrent (4 endpoints simultaneously, c=5 each)
+
+| Endpoint | Pi 5 Req/s | Pi 5 P50 (ms) | Pi 5 P95 (ms) | Pi 4 |
+|---|---|---|---|---|
+| Homepage | 29.0 | 180 | 200 | _pending_ |
+| Search "mario" | 15.1 | 320 | 372 | _pending_ |
+| Search "sonic" | 14.9 | 326 | 375 | _pending_ |
+| Search "street fighter" | 14.7 | 330 | 375 | _pending_ |
+
+### Memory under stress
+
+| State | Pi 5 in use | Pi 5 peak | Pi 4 |
+|---|---|---|---|
+| Idle, post-startup-settle | ~110 MB | ~220 MB | _pending_ |
+| Right after the stress burst | ~145 MB | ~310 MB | _pending_ |
+| 60 s after the burst | ~130 MB | ~310 MB | _pending_ |
+| Hours after the burst | ~110 MB | ~310 MB | _pending_ |
+
+The peak is recorded forever (it's the highest the process ever reached), but current memory drops as unused pages are returned. Real-world workloads never approach this peak.
+
+## Version Comparisons
+
+Track release-over-release changes on the same hardware. Single-page latency, idle CPU, and idle RAM are flat or improving across the line; stress-test throughput has improved substantially.
+
+### v0.4.0 → v0.4.0-beta.9 (Pi 5)
+
+#### Single request
+
+| Endpoint | v0.4.0 | v0.4.0-beta.9 | Change |
+|---|---|---|---|
+| Home | 5 ms, 176 req/s | 5 ms, 177 req/s | flat |
+| Search "mario" | 38 ms, 26 req/s | 27 ms, 37 req/s | **+42 % throughput** |
+| Search "sonic" | 40 ms, 25 req/s | 28 ms, 36 req/s | **+44 %** |
+| Search "street fighter" | 30 ms, 33 req/s | 23 ms, 43 req/s | **+30 %** |
+| Search "a" (broad) | 183 ms, 5.5 req/s | 133 ms, 7.5 req/s | **+36 %** |
+| System page | 1 ms, 707–724 req/s | 1 ms, 703–714 req/s | flat |
+| Game detail | 1 ms, 792 req/s | 1 ms, 771 req/s | flat |
+
+#### Mixed concurrent (c=5 × 4 endpoints)
+
+| Endpoint | v0.4.0 req/s | v0.4.0-beta.9 req/s | Change |
+|---|---|---|---|
+| Homepage | 15.9 | 29.0 | **+82 %** |
+| Search "mario" | 8.9 | 15.1 | **+70 %** |
+| Search "sonic" | 8.8 | 14.9 | **+69 %** |
+
+#### Memory steady state
+
+| Metric | v0.4.0 | v0.4.0-beta.9 |
+|---|---|---|
+| Idle, post-startup-settle | ~50 MB | ~60–110 MB |
+| Steady, between bursts | ~68 MB | ~110–130 MB |
+
+The steady-state climb is the database-pool redesign (one DB → four: catalog, library, external_metadata, user_data).
+
+#### Downloads
+
+| Asset | v0.4.0 gzip | v0.4.0-beta.9 gzip |
+|---|---|---|
+| WASM bundle | 843 KB | 882 KB |
+| CSS | 14 KB | 15 KB |
+
+### v0.3.0 → v0.4.0 (Pi 5)
 
 | Endpoint | v0.3.0 | v0.4.0 | Change |
 |---|---|---|---|
-| Home | 14ms, 70 req/s | 5ms, 176 req/s | **-64% latency / +151% throughput** |
-| Search "mario" | 47ms, 21 req/s | 38ms, 26 req/s | **-19% / +24%** |
-| Search "sonic" | 54ms, 18 req/s | 40ms, 25 req/s | **-26% / +39%** |
-| Search "street fighter" | 41ms, 24 req/s | 30ms, 33 req/s | **-27% / +38%** |
-| Search "a" (broad) | 194ms, 5.2 req/s | 183ms, 5.5 req/s | -6% / +6% |
-| System page | 1ms, 918 req/s | 1ms, 707–724 req/s | -23% throughput |
-| Game detail | <1ms, 1,036 req/s | 1ms, 792 req/s | -24% throughput |
+| Home (c=1) | 14 ms, 70 req/s | 5 ms, 176 req/s | **+151 % throughput** |
+| Search "mario" (c=1) | 47 ms, 21 req/s | 38 ms, 26 req/s | **+24 %** |
+| Search "a" (broad) | 194 ms, 5.2 req/s | 183 ms, 5.5 req/s | +6 % |
+| Mixed homepage (c=5×4) | 11.8 req/s | 15.9 req/s | **+35 %** |
+| WASM gzip | 995 KB | 843 KB | **−15 %** |
+| Incremental build time | ~90 s | ~10 s | **−89 %** |
 
-> Major gains on home (2.5× throughput, ~3× faster) and searches (+24–39%). Small regressions on the already-fast system and game-detail pages (~20–25% throughput) — P50 stays at 1ms, so unmeasurable on the UI.
+Key changes since v0.3.0: PHF→runtime SQLite catalog, async catalog pool, core/core-server split, subprocess async migration.
 
-### Concurrent (c=10)
-
-| Endpoint | v0.3.0 req/s | v0.4.0 req/s | Change |
-|---|---|---|---|
-| Homepage | 113 | 278 | **+146%** |
-| Search "mario" | 22 | 28 | **+27%** |
-| System pages | 1,637 | 1,631–1,720 | flat |
-| Game detail | 2,210 | 1,958 | -11% |
-
-### Mixed concurrent (c=5 × 4 endpoints)
-
-| Endpoint | v0.3.0 req/s | v0.4.0 req/s | Change |
-|---|---|---|---|
-| Homepage | 11.8 | 15.9 | **+35%** |
-| Search "mario" | 6.8 | 8.9 | **+31%** |
-| Search "sonic" | 7.5 | 8.8 | **+17%** |
-
-### Assets
-
-| Asset | v0.3.0 gzip | v0.4.0 gzip | Change |
-|---|---|---|---|
-| WASM bundle | 995 KB | 843 KB | **-15%** |
-| CSS | 14 KB | 14 KB | — |
-
-Key changes since v0.3.0:
-- **PHF → runtime SQLite catalog** (the v0.3.0→v0.4.0 headline change): cuts incremental build time from ~90s to ~10s.
-- **Async catalog pool** with `deadpool-sqlite` + `prepare_cached` + batch APIs eliminates the single-mutex bottleneck on concurrent lookups.
-- **Core split** (`replay-control-core` / `replay-control-core-server`): 89 `#[cfg(target_arch = "wasm32")]` attributes eliminated, 17 wire-type mirrors in `app/src/types.rs` deleted. Build-time wins, no runtime impact expected.
-- **Subprocess async migration**: `df`, `ip`, `journalctl`, `tail`, `systemctl`, `pgrep` all use `tokio::process::Command` instead of blocking the reactor.
-
-## v0.2.0 → v0.3.0 Comparison
-
-### Single request (c=1)
+### v0.2.0 → v0.3.0 (Pi 5)
 
 | Endpoint | v0.2.0 | v0.3.0 | Change |
 |---|---|---|---|
-| Home | 19ms, 51 req/s | 14ms, 70 req/s | **+37% throughput** |
-| Search "mario" | 63ms, 16 req/s | 47ms, 21 req/s | **+33%** |
-| Search "sonic" | 82ms, 12 req/s | 54ms, 18 req/s | **+50%** |
-| Search "street fighter" | 59ms, 17 req/s | 41ms, 24 req/s | **+41%** |
-| Search "a" (broad) | 232ms, 4.3 req/s | 194ms, 5.2 req/s | **+21%** |
-| System page | 1ms, 910 req/s | 1ms, 918 req/s | — |
-| Game detail | <1ms, 1,107 req/s | <1ms, 1,036 req/s | — |
+| Home (c=1) | 19 ms, 51 req/s | 14 ms, 70 req/s | **+37 %** |
+| Search "mario" (c=1) | 63 ms, 16 req/s | 47 ms, 21 req/s | **+33 %** |
+| Mixed homepage (c=5×4) | 8.3 req/s | 11.8 req/s | **+42 %** |
+| WASM gzip | 1,778 KB | 995 KB | **−44 %** |
 
-### Concurrent (c=10)
+Key improvements: GameInfo refactor, curl→reqwest migration, release-profile WASM optimizations.
 
-| Endpoint | v0.2.0 req/s | v0.3.0 req/s | Change |
-|---|---|---|---|
-| Homepage | 74 | 113 | **+53%** |
-| Search "mario" | 16 | 22 | **+38%** |
-| System pages | 1,897 | 1,637 | -14% |
-| Game detail | 2,162 | 2,210 | — |
+## Historical Comparison (Pi 5)
 
-### Mixed concurrent (c=5 × 4 endpoints)
+| Metric | Pre-optimization | v0.2.0 | v0.3.0 | v0.4.0 | v0.4.0-beta.9 |
+|---|---|---|---|---|---|
+| Home page (warm, c=1) | 940 ms | 19 ms | 14 ms | 5 ms | **5 ms** |
+| Home page (c=10, stress) | — | 74 req/s | 113 req/s | 278 req/s | **282 req/s** |
+| Search "mario" (c=1) | 348 ms | 63 ms | 47 ms | 38 ms | **27 ms** |
+| Steady-state memory (between bursts) | 324 MB (glibc) | 67 MB (jemalloc) | 67 MB | 68 MB | **~110 MB** |
+| Mixed homepage req/s (stress) | 0.60 | 8.3 | 11.8 | 15.9 | **29.0** |
+| WASM gzip | — | 1,778 KB | 995 KB | 843 KB | **882 KB** |
+| Incremental build time | ~90 s | ~90 s | ~90 s | ~10 s | ~10 s |
+| Idle CPU (one core) | — | — | — | — | **0.03 %** |
+| One-user browse CPU (one core) | — | — | — | — | **0.6 %** |
 
-| Endpoint | v0.2.0 req/s | v0.3.0 req/s | Change |
-|---|---|---|---|
-| Homepage | 8.3 | 11.8 | **+42%** |
-| Search "mario" | 4.8 | 6.8 | **+42%** |
-
-### Assets
-
-| Asset | v0.2.0 gzip | v0.3.0 gzip | Change |
-|---|---|---|---|
-| WASM bundle | 1,778 KB | 995 KB | **-44%** |
-| CSS | 13 KB | 14 KB | +1 KB |
-
-Key improvements: GameInfo refactor (detail page reads from DB instead of re-deriving), curl → reqwest migration (shared async client, connection pooling), and release-profile WASM optimizations.
-
-## Memory (jemalloc allocator)
-
-Measured via `/proc/<PID>/status` on the Pi using `tools/pi-memory.sh`. VmRSS is resident set size (physical memory actually in use); VmHWM is the peak RSS since process start.
-
-| State | VmRSS | RssAnon | VmHWM (peak) |
-|---|---|---|---|
-| Idle (warm, after a few page hits post-restart) | 49 MB | 20 MB | 49 MB |
-| Right after full load test (c=30 across all endpoints) | **71 MB** | 42 MB | **181 MB** |
-| 60s post-load-test | 68 MB | 39 MB | 181 MB |
-
-Pi 5 2GB host has ~1,720 MB available after OS + buff/cache.
-
-> **jemalloc returns memory well.** VmHWM hit 181 MB during the broad-search burst (`/search?q=a` at c=30, ~3,700ms per response for 50 concurrent requests) where the heap inflates. Steady-state RSS settles to 68 MB within 60 seconds — a drop of ~113 MB back to the OS. Under glibc malloc the retained portion would not be returned (v0.2.0 pre-jemalloc: 324 MB steady-state for the same workload).
-
-## Historical Comparison
-
-| Metric | Pre-optimization | v0.2.0 | v0.3.0 | v0.4.0 |
-|---|---|---|---|---|
-| Home page (warm, c=1) | 940ms | 19ms | 14ms | **5ms** |
-| Home page (c=10) | — | 74 req/s | 113 req/s | **278 req/s** |
-| Search "mario" (c=1) | 348ms | 63ms | 47ms | **38ms** |
-| Steady-state memory | 324 MB (glibc) | 67 MB (jemalloc) | 67 MB | **68 MB** |
-| Mixed load: homepage req/s | 0.60 | 8.3 | 11.8 | **15.9** |
-| WASM gzip | — | 1,778 KB | 995 KB | **843 KB** |
-| Incremental build time | ~90s | ~90s | ~90s | **~10s** |
+Pi 4 history will be tracked once initial measurements are taken.
 
 ## Test Methodology
 
-- Tool: [Apache Bench](https://httpd.apache.org/docs/current/programs/ab.html) (`ab`) via `tools/bench.sh` and `tools/load-test.sh`
-- 50 requests per test with warmup pass
-- Raw results in `tools/bench-results/`
-- Memory read from `/proc/<PID>/status` after the full load-test suite completes
+- **CPU**: `tools/pi-cpu.sh` reads `/proc/<pid>/stat` (utime + stime) at two timestamps, scales by `CLK_TCK` and the configured duration. CPU% is reported relative to one core. `--browse` simulates one user clicking through home / system / game / manuals / search every ~2 s.
+- **Memory**: `tools/pi-memory.sh` reads `/proc/<PID>/status` — VmRSS (memory in use), VmHWM (peak since process start), RssAnon (heap portion).
+- **Stress / load tests**: [Apache Bench](https://httpd.apache.org/docs/current/programs/ab.html) (`ab`) via `tools/bench.sh` and `tools/load-test.sh`. 50 requests per test with a warmup pass.
+- All current measurements were taken on a freshly rebooted Pi, USB storage, no game running, default jemalloc configuration.
+- ab's "Failed" column counts response-size variance, not HTTP errors — broad searches return slightly different result orderings between runs and ab flags them. All requests returned 200.
+- Raw results in `tools/bench-results/`.

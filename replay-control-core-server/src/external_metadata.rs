@@ -53,11 +53,17 @@ const CREATE_LAUNCHBOX_ALTERNATE_SQL: &str = "
         system TEXT NOT NULL,
         normalized_title TEXT NOT NULL,
         alternate_name TEXT NOT NULL,
+        normalized_alternate TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (system, normalized_title, alternate_name)
     );
 ";
 
-const LAUNCHBOX_ALTERNATE_COLUMNS: &[&str] = &["system", "normalized_title", "alternate_name"];
+const LAUNCHBOX_ALTERNATE_COLUMNS: &[&str] = &[
+    "system",
+    "normalized_title",
+    "alternate_name",
+    "normalized_alternate",
+];
 
 const CREATE_THUMBNAIL_MANIFEST_SQL: &str = "
     CREATE TABLE IF NOT EXISTS thumbnail_manifest (
@@ -128,6 +134,12 @@ pub mod meta_keys {
     /// per-repo SHA checks when the user clicks "Update Thumbnails" twice
     /// within a few minutes.
     pub const THUMBNAIL_MANIFEST_FETCHED_AT: &str = "thumbnail_manifest_fetched_at";
+
+    /// `replay_control_core::title_utils::TITLE_NORM_VERSION` value at the
+    /// time `launchbox_alternate.normalized_alternate` (and any other
+    /// host-global normalized cache) was last (re)populated. Mismatch on
+    /// boot triggers a `refresh_launchbox` reparse.
+    pub const TITLE_NORM_VERSION: &str = "title_norm_version";
 }
 
 /// Create or rebuild the schema. Drops divergent tables before recreating
@@ -425,14 +437,18 @@ pub fn clear_libretro_thumbnail_manifest(conn: &rusqlite::Connection) -> Result<
 // ── Per-system batched readers ────────────────────────────────────────────
 
 /// One LaunchBox metadata row, keyed by `(system, normalized_title)`.
-/// Fields mirror the `launchbox_game` schema; `release_year` is derived in SQL.
+/// Fields mirror the `launchbox_game` schema. `release_date` is the raw
+/// ISO-8601 partial value (`"YYYY"`, `"YYYY-MM"`, or `"YYYY-MM-DD"`) and
+/// `release_precision` is its precision tag — both come straight from the
+/// LaunchBox XML.
 #[derive(Debug, Clone, Default)]
 pub struct LaunchboxRow {
     pub description: Option<String>,
     pub genre: Option<String>,
     pub developer: Option<String>,
     pub publisher: Option<String>,
-    pub release_year: Option<u16>,
+    pub release_date: Option<String>,
+    pub release_precision: Option<replay_control_core::DatePrecision>,
     pub rating: Option<f64>,
     pub rating_count: Option<u32>,
     pub cooperative: bool,
@@ -448,7 +464,7 @@ pub fn system_launchbox_rows(
     let mut stmt = conn
         .prepare(
             "SELECT normalized_title, description, genre, developer, publisher,
-                    CAST(substr(release_date, 1, 4) AS INTEGER),
+                    release_date, release_precision,
                     rating, rating_count, cooperative, players
              FROM launchbox_game
              WHERE system = ?1",
@@ -458,23 +474,21 @@ pub fn system_launchbox_rows(
     let rows = stmt
         .query_map(rusqlite::params![system], |row| {
             let norm: String = row.get(0)?;
-            let release_year = row.get::<_, Option<i64>>(5)?.and_then(|y| {
-                if (1900..=9999).contains(&y) {
-                    Some(y as u16)
-                } else {
-                    None
-                }
-            });
+            let release_precision: Option<String> = row.get(6)?;
+            let release_precision = release_precision
+                .as_deref()
+                .and_then(replay_control_core::DatePrecision::from_str);
             let r = LaunchboxRow {
                 description: row.get(1)?,
                 genre: row.get(2)?,
                 developer: row.get(3)?,
                 publisher: row.get(4)?,
-                release_year,
-                rating: row.get(6)?,
-                rating_count: row.get::<_, Option<i64>>(7)?.map(|c| c as u32),
-                cooperative: row.get::<_, i64>(8).unwrap_or(0) != 0,
-                players: row.get::<_, Option<i64>>(9)?.map(|p| p as u8),
+                release_date: row.get(5)?,
+                release_precision,
+                rating: row.get(7)?,
+                rating_count: row.get::<_, Option<i64>>(8)?.map(|c| c as u32),
+                cooperative: row.get::<_, i64>(9).unwrap_or(0) != 0,
+                players: row.get::<_, Option<i64>>(10)?.map(|p| p as u8),
             };
             Ok((norm, r))
         })
@@ -568,14 +582,19 @@ pub fn clear_launchbox(conn: &rusqlite::Connection) -> Result<()> {
 }
 
 /// Load every `launchbox_alternate` row for a system. Returns
-/// `(normalized_title, alternate_name)` pairs for repopulating `game_alias`.
+/// `(normalized_title, alternate_name, normalized_alternate)` triples.
+///
+/// `normalized_title` keys back into `launchbox_game`. `normalized_alternate`
+/// is the same alternate-name run through `normalize_title_for_metadata` at
+/// import time, used by the enrichment matcher to fall back to LaunchBox
+/// rows when a ROM's normalized filename equals an alternate (Phase 3).
 pub fn system_launchbox_alternates(
     conn: &rusqlite::Connection,
     system: &str,
-) -> Result<Vec<(String, String)>> {
+) -> Result<Vec<(String, String, String)>> {
     let mut stmt = conn
         .prepare(
-            "SELECT normalized_title, alternate_name
+            "SELECT normalized_title, alternate_name, normalized_alternate
              FROM launchbox_alternate
              WHERE system = ?1",
         )
@@ -583,7 +602,11 @@ pub fn system_launchbox_alternates(
 
     let rows = stmt
         .query_map(rusqlite::params![system], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })
         .map_err(|e| Error::Other(format!("query system_launchbox_alternates: {e}")))?;
 

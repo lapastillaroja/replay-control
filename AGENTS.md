@@ -64,7 +64,12 @@ Read task-specific docs as needed:
 - Use `root` as the SSH user. The default password is `replayos`, or `PI_PASS` if the environment overrides it.
 - Prefer `./dev.sh --pi` for build/deploy because it already handles the default host, `SSH_ASKPASS`, SSH options, ControlMaster reuse, rsync, service stop/start, and catalog/site deployment.
 - To deploy to a specific address, run `./dev.sh --pi <ip-or-hostname>`.
-- For ad hoc SSH commands, mirror `dev.sh`'s connection assumptions: `root@replay.local` by default, strict host key checking disabled for the appliance, and the same password behavior.
+- For ad hoc SSH commands, use the askpass pattern from `dev.sh` — plain `ssh` with a password requires `SSH_ASKPASS`:
+  ```sh
+  ASKPASS=$(mktemp) && printf '#!/bin/sh\necho "%s"\n' "${PI_PASS:-replayos}" > "$ASKPASS" && chmod +x "$ASKPASS"
+  SSH_ASKPASS="$ASKPASS" SSH_ASKPASS_REQUIRE=force ssh -o StrictHostKeyChecking=no root@192.168.10.30 "<command>"
+  rm -f "$ASKPASS"
+  ```
 
 ## General
 

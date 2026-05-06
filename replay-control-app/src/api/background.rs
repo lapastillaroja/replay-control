@@ -186,6 +186,14 @@ impl BackgroundManager {
         // Import claims/releases its own Activity::Import via try_start_activity.
         Self::phase_auto_import(state).await;
 
+        // Phase 1.5: Reconcile `title_norm_version` stamps on both DBs.
+        // Bumping `replay_control_core::title_utils::TITLE_NORM_VERSION` in
+        // a release silently rebuilds stored normalized columns here so
+        // matching benefits without user action. No-op when stamps match
+        // (steady-state) or the cached XML is missing (fresh install
+        // pre-LB-import — auto_import will write the stamp itself).
+        Self::phase_title_norm_reconcile(state).await;
+
         // Phase 2+3: Claim Activity::Startup for populate + thumbnail rebuild.
         // Guard drops → Idle on completion or panic.
         {
@@ -374,6 +382,26 @@ impl BackgroundManager {
         });
     }
 
+    /// Phase 1.5: Reconcile per-storage `title_norm_version` on `library.db`.
+    ///
+    /// `replay_control_core::title_utils::TITLE_NORM_VERSION` bumps when
+    /// `normalize_title_for_metadata` changes its output for any input.
+    /// The host-global `external_metadata.db` is reconciled by
+    /// `phase_auto_import` (it already gates re-parse on the stamp).
+    /// This phase only handles the per-storage library DB: its stored
+    /// `normalized_title` columns are rebuilt from `rom_filename` /
+    /// arcade lookup when the stamp lags. Idempotent on success; a
+    /// failure leaves the stale stamp so the next boot retries.
+    async fn phase_title_norm_reconcile(state: &AppState) {
+        use replay_control_core_server::title_norm_reconcile;
+
+        if let Err(e) =
+            title_norm_reconcile::reconcile_library_normalized_titles(&state.library_pool).await
+        {
+            tracing::warn!("title_norm reconcile (library) failed: {e}");
+        }
+    }
+
     /// Phase 0.5: On first boot, silently download the LaunchBox XML and the
     /// libretro thumbnail manifest so Phase 2 enrichment runs with data.
     ///
@@ -541,15 +569,21 @@ impl BackgroundManager {
         let start = std::time::Instant::now();
 
         // Hash + stamp-read are independent — let the slowest dictate the
-        // wall-clock instead of running them back-to-back.
+        // wall-clock instead of running them back-to-back. Both stamps live
+        // in `external_meta`; one read pulls them together.
         let xml_for_hash = xml_path.clone();
         let hash_fut =
             tokio::task::spawn_blocking(move || external_metadata::hash_file_crc32(&xml_for_hash));
-        let stamp_fut = state
-            .external_metadata_pool
-            .read(|conn| external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32));
-        let (hash_join, stored_hash) = tokio::join!(hash_fut, stamp_fut);
-        let stored_hash = stored_hash.flatten();
+        let stamp_fut = state.external_metadata_pool.read(|conn| {
+            (
+                external_metadata::read_meta(conn, meta_keys::LAUNCHBOX_XML_CRC32),
+                external_metadata::read_meta(conn, meta_keys::TITLE_NORM_VERSION),
+            )
+        });
+        let (hash_join, stamps) = tokio::join!(hash_fut, stamp_fut);
+        let (stored_hash, stored_norm_version) = stamps.unwrap_or((None, None));
+        let stored_hash = stored_hash;
+        let stored_norm_version: Option<u32> = stored_norm_version.and_then(|s| s.parse().ok());
 
         let current_hash = match hash_join {
             Ok(Ok(h)) => h,
@@ -566,15 +600,32 @@ impl BackgroundManager {
             }
         };
 
-        if stored_hash.as_deref() == Some(current_hash.as_str()) {
+        // Re-parse on either input change: XML content (hash) or normalizer
+        // version (the keys stored in `launchbox_alternate.normalized_alternate`
+        // become stale when `title_utils::normalize_title_for_metadata`
+        // changes its output). `refresh_launchbox` writes both stamps in one
+        // transaction, so a single pass clears both gates.
+        let hash_matches = stored_hash.as_deref() == Some(current_hash.as_str());
+        let version_matches =
+            stored_norm_version == Some(replay_control_core::title_utils::TITLE_NORM_VERSION);
+        if hash_matches && version_matches {
             tracing::debug!(
-                "phase_auto_import: LaunchBox XML hash matches stamp ({current_hash}) — skipping refresh"
+                "phase_auto_import: LaunchBox XML hash + title_norm_version both match — skipping refresh"
             );
             return;
         }
 
+        let reason = if !hash_matches {
+            format!("hash {current_hash} differs from stored {:?}", stored_hash)
+        } else {
+            format!(
+                "title_norm_version {} differs from stored {:?}",
+                replay_control_core::title_utils::TITLE_NORM_VERSION,
+                stored_norm_version
+            )
+        };
         tracing::info!(
-            "phase_auto_import: refreshing external_metadata.db from {} (hash {current_hash})",
+            "phase_auto_import: refreshing external_metadata.db from {} ({reason})",
             xml_path.display()
         );
 
