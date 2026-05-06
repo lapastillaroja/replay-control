@@ -14,6 +14,7 @@ Replay Control is a web-based companion app for [RePlayOS](https://www.replayos.
 ## Browse & Play
 
 - [Game Library](game-library.md) — Browse systems, manage ROMs with favorites, rename, delete, and automatic library updates
+- [Now Playing](now-playing.md) — Live indicator showing the active game on the appliance, with elapsed time and quick actions
 - [Search](search.md) — Fast cross-system search with filters, developer pages, and random game
 - [Game Detail](game-detail.md) — Box art, screenshots, game info, launch on TV, videos, manuals, series navigation, and variant management
 - [Game Series](game-series.md) — Wikidata-powered series data with sequel/prequel navigation across systems

@@ -12,6 +12,7 @@ Replay Control documentation, organized into two sections:
 | [Getting Started](features/getting-started.md) | Prerequisites, quick install, first launch, adding ROMs |
 | [Installation](features/install.md) | All install methods, update, uninstall, environment configuration |
 | [Game Library](features/game-library.md) | System browsing, game actions, favorites, recents, region preference |
+| [Now Playing](features/now-playing.md) | Live "what's running" detector, top-bar pill, home hero, manual deep link |
 | [Game Series](features/game-series.md) | Series navigation, sequel/prequel links, cross-system matching |
 | [Metadata](features/metadata.md) | Embedded databases, LaunchBox import, ROM classification |
 | [Recommendations](features/recommendations.md) | Home page and favorites recommendations, spotlight rotation |

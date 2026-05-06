@@ -16,6 +16,7 @@ Before making non-trivial changes, read the relevant docs. The source of truth i
 Read task-specific docs as needed:
 
 - Library browsing, ROM changes, favorites, recents: `docs/features/game-library.md`
+- Now-playing detector and UI surfaces (top-bar pill, home hero, manual deep link): `docs/features/now-playing.md`
 - Game detail pages, variants, media, launch actions: `docs/features/game-detail.md`
 - Metadata imports, built-in catalog data, ROM tags: `docs/features/metadata.md`
 - Box art, screenshots, thumbnail matching: `docs/features/thumbnails.md`
