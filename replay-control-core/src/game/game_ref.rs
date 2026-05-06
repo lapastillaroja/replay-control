@@ -78,7 +78,7 @@ impl GameRef {
 
         Self {
             system: system.to_string(),
-            system_display: system_display_name(system),
+            system_display: systems::system_display_name(system),
             rom_filename,
             display_name,
             rom_path,
@@ -95,18 +95,12 @@ impl GameRef {
     ) -> Self {
         Self {
             system: system.to_string(),
-            system_display: system_display_name(system),
+            system_display: systems::system_display_name(system),
             rom_filename,
             display_name,
             rom_path,
         }
     }
-}
-
-fn system_display_name(system: &str) -> String {
-    systems::find_system(system)
-        .map(|s| s.display_name.to_string())
-        .unwrap_or_else(|| system.to_string())
 }
 
 /// Build the final display string for a non-arcade ROM given the catalog's

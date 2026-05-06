@@ -562,7 +562,10 @@ fn build_discover_pills(
         pills.push(DiscoverPill {
             label_key: "SpotlightBestGenre".to_string(),
             label_args: vec![genre.clone()],
-            href: format!("/search?genre={}&min_rating=3.5", urlencoding::encode(genre)),
+            href: format!(
+                "/search?genre={}&min_rating=3.5",
+                urlencoding::encode(genre)
+            ),
         });
         used_types.push("genre");
     }
@@ -601,7 +604,10 @@ fn build_discover_pills(
             DiscoverPill {
                 label_key: "SpotlightBestGenre".to_string(),
                 label_args: vec![genre.clone()],
-                href: format!("/search?genre={}&min_rating=3.5", urlencoding::encode(genre)),
+                href: format!(
+                    "/search?genre={}&min_rating=3.5",
+                    urlencoding::encode(genre)
+                ),
             },
         ));
         break; // Only add one extra genre candidate

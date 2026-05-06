@@ -574,6 +574,14 @@ pub fn find_system(folder_name: &str) -> Option<&'static System> {
     SYSTEMS.iter().find(|s| s.folder_name == folder_name)
 }
 
+/// Resolve a system folder name to its user-facing display name.
+/// Falls back to the folder name when unknown.
+pub fn system_display_name(folder_name: &str) -> String {
+    find_system(folder_name)
+        .map(|s| s.display_name.to_string())
+        .unwrap_or_else(|| folder_name.to_string())
+}
+
 /// Check whether a system folder name refers to an arcade system.
 /// Uses the system registry rather than hardcoded folder name lists.
 pub fn is_arcade_system(folder_name: &str) -> bool {
