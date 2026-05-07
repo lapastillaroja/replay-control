@@ -37,3 +37,4 @@ Replay Control documentation, organized into two sections:
 | [Enrichment](architecture/enrichment.md) | Box art, genre, rating population |
 | [ROM Classification](architecture/rom-classification.md) | Filename parsing, tier assignment |
 | [Activity System](architecture/activity-system.md) | Mutual exclusion, progress broadcasting |
+| [Cross-Activity Coordination](architecture/cross-activity-coordination.md) | Write-path inventory, conflict matrix, known gaps |

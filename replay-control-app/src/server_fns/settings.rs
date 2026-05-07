@@ -349,12 +349,12 @@ pub async fn save_region_preference(value: String) -> Result<(), ServerFnError> 
     replay_control_core_server::settings::write_region_preference(&state.settings, pref)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     state.prefs.write().expect("prefs lock poisoned").region = pref;
-    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
-        tracing::debug!("post-region cache.invalidate skipped: {e}");
-    }
+    // Drop only L1; the resolver below rewrites the region-dependent
+    // mirror columns. A destructive `clear_all_game_library` here would
+    // truncate rows that any concurrent rebuild/import is filling — see
+    // `docs/architecture/cross-activity-coordination.md` finding F-3.
+    state.cache.invalidate_l1().await;
     state.invalidate_user_caches().await;
-    // Re-resolve release_date mirror columns for the new region preference.
-    // Fast (milliseconds on a typical library) — no re-fetch, no re-parse.
     let region_secondary = state.region_preference_secondary();
     state
         .library_writer
@@ -396,11 +396,9 @@ pub async fn save_region_preference_secondary(value: String) -> Result<(), Serve
         .write()
         .expect("prefs lock poisoned")
         .region_secondary = pref;
-    if let Err(e) = state.cache.invalidate(&state.library_writer).await {
-        tracing::debug!("post-region cache.invalidate skipped: {e}");
-    }
+    // Drop only L1; see save_region_preference for why.
+    state.cache.invalidate_l1().await;
     state.invalidate_user_caches().await;
-    // Re-resolve release_date mirror columns for the new secondary region preference.
     let region_primary = state.region_preference();
     state
         .library_writer
