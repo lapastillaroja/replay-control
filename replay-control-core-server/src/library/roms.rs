@@ -122,9 +122,9 @@ async fn probe_once(storage: &StorageLocation) -> StorageProbe {
 /// fixture); waiting for non-zero entries would block boot for the full
 /// timeout in those cases. The race we defend against is `read_dir` itself
 /// erroring (NotFound / permission / IO) — once it succeeds, the mount has
-/// surfaced. Per-system dirent visibility lag is handled by the strict
-/// reconcile rule in `scan_and_cache_system` and the SQL-level
-/// zero-overwrite guard in `save_system_meta`.
+/// surfaced. Startup uses [`probe_storage_ready`] before destructive scan
+/// writes; per-system read failures are handled by the strict reconcile
+/// rule in `scan_and_cache_system`.
 ///
 /// Returns `Ok(())` on the first successful `read_dir`; `Err` on timeout or
 /// repeated `read_dir` failures.
@@ -235,8 +235,10 @@ async fn walk_raw_roms_blocking(
 ) -> Result<Vec<RawRom>> {
     let system_dir_for_walk = system_dir.clone();
     let walk = move || -> Result<Vec<RawRom>> {
-        if !system_dir_for_walk.exists() {
-            return Ok(Vec::new());
+        match system_dir_for_walk.try_exists() {
+            Ok(false) => return Ok(Vec::new()),
+            Ok(true) => {}
+            Err(e) => return Err(Error::io(&system_dir_for_walk, e)),
         }
         let mut raw = Vec::new();
         collect_raw_roms_recursive(&system_dir_for_walk, &roms_root, system, &mut raw)?;
@@ -1400,8 +1402,8 @@ mod tests {
     async fn wait_for_storage_ready_succeeds_when_empty_but_readable() {
         // A legitimately empty roms_dir (fresh install, empty USB) must
         // not block the boot pipeline for the full 30s timeout. Successful
-        // read_dir is the readiness signal; subdirectory visibility lag
-        // is handled by ScanError::AllSystemsMissing and the SQL guard.
+        // read_dir is the readiness signal for this low-level helper.
+        // Startup uses probe_storage_ready before destructive scans.
         let tmp = tempdir();
         let roms = tmp.join("roms");
         fs::create_dir_all(&roms).unwrap();

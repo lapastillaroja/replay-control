@@ -238,10 +238,20 @@ impl LibraryService {
         //     remote-side delete. Refuse to act on the silent signal:
         //     return `Err` so the strict-failure-preserves-L2 contract
         //     leaves cached rows intact.
-        if !system_dir.exists() && !storage.kind.is_local() {
-            return Err(replay_control_core::error::Error::Other(format!(
-                "reconcile scan skipped for {system}: top-level system dir missing on NFS storage (preserving cached state)"
-            )));
+        match system_dir.try_exists() {
+            Ok(false) if !storage.kind.is_local() => {
+                return Err(replay_control_core::error::Error::Other(format!(
+                    "reconcile scan skipped for {system}: top-level system dir missing on NFS storage (preserving cached state)"
+                )));
+            }
+            Ok(false) => {}
+            Ok(true) => {}
+            Err(e) => {
+                return Err(replay_control_core::error::Error::Other(format!(
+                    "reconcile scan skipped for {system}: could not check {}: {e}",
+                    system_dir.display()
+                )));
+            }
         }
 
         tracing::debug!("L3 reconcile scan for {system}: starting filesystem scan");
@@ -270,7 +280,7 @@ impl LibraryService {
             region_secondary,
             db,
         )
-        .await;
+        .await?;
 
         Ok(arc)
     }

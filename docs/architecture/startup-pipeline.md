@@ -85,8 +85,9 @@ Only starts for local storage kinds (SD, USB, NVMe) -- skipped for NFS because i
 Uses `notify::recommended_watcher` in recursive mode on the `roms/` directory. Events are debounced (3-second window) to batch rapid filesystem changes (bulk copy). On change:
 
 - Extracts the affected system folder name from the event path.
-- Triggers `get_roms()` + `enrich_system_cache()` for that system.
-- Top-level changes (new system directory) trigger a `get_systems()` refresh.
+- Invalidates L1/user caches without pre-clearing L2.
+- Strict-scans each affected system and then runs `enrich_system_cache()` only when the scan succeeds.
+- Top-level `roms/` changes iterate `visible_systems()` so newly-created system folders are discovered and removed local folders reconcile to empty.
 
 ## On-Demand Refresh Helpers
 

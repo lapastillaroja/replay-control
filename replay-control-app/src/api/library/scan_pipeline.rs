@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use replay_control_core::error::{Error, Result};
 use replay_control_core::rom_tags::RegionPreference;
 use replay_control_core_server::roms::RomEntry;
 use replay_control_core_server::storage::StorageLocation;
@@ -128,7 +129,7 @@ impl LibraryService {
         region_pref: RegionPreference,
         region_secondary: Option<RegionPreference>,
         db: &LibraryWritePool,
-    ) {
+    ) -> Result<()> {
         let mtime_secs = dir_mtime_secs(system_dir);
 
         // Delegate ROM->GameEntry conversion, clone inference, and disambiguation to core.
@@ -187,9 +188,18 @@ impl LibraryService {
                         );
                     })
                     .await;
+                Ok(())
             }
-            Some(Err(e)) => tracing::warn!("L2 write-through: {system} FAILED: {e}"),
-            None => tracing::warn!("L2 write-through: {system} skipped (DB unavailable)"),
+            Some(Err(e)) => {
+                tracing::warn!("L2 write-through: {system} FAILED: {e}");
+                Err(e)
+            }
+            None => {
+                tracing::warn!("L2 write-through: {system} skipped (DB unavailable)");
+                Err(Error::Other(format!(
+                    "L2 write-through skipped for {system}: DB unavailable"
+                )))
+            }
         }
     }
 }

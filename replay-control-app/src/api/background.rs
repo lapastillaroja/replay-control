@@ -1,5 +1,6 @@
 use replay_control_core_server::db_pool::rusqlite;
 use replay_control_core_server::library_db::LibraryDb;
+use replay_control_core_server::roms::StorageProbe;
 use replay_control_core_server::update as update_io;
 use std::time::Duration;
 
@@ -105,25 +106,6 @@ where
 /// How often the background task re-checks storage (in seconds).
 const STORAGE_CHECK_INTERVAL: u64 = 60;
 
-/// Cold-NFS meta poisoning fingerprint: every row reports
-/// `rom_count = 0` while still carrying a stamped `dir_mtime_secs`.
-/// Empty meta returns `false` (the legitimate fresh-DB state).
-///
-/// TODO(post-0.4.0): delete this and the recovery branch in
-/// `phase_cache_verification` once enough releases have passed that
-/// pre-existing poisoned users have all upgraded. The bug class can no
-/// longer occur (write-isolation landed in 0.4.0-beta.9); this is
-/// purely upgrade-path self-heal. Earliest safe drop: 2026-08, when
-/// most beta-channel users will have cycled through several releases.
-fn has_poisoned_meta_fingerprint(
-    cached_meta: &[replay_control_core_server::library_db::SystemMeta],
-) -> bool {
-    !cached_meta.is_empty()
-        && cached_meta
-            .iter()
-            .all(|m| m.rom_count == 0 && m.dir_mtime_secs.is_some())
-}
-
 /// Orchestrates the ordered background startup pipeline and long-running watchers.
 ///
 /// Pipeline phases (sequential, async):
@@ -174,24 +156,33 @@ impl BackgroundManager {
         // Brief delay to let the server start accepting requests.
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        // Phase 0: wait for the roms_dir to be readable AND non-empty before
-        // attempting any scan. On NFS / autofs / USB hot-plug the storage
-        // root may resolve before subdirectories surface; without this, the
-        // first L3 scan returns "all systems empty" and persists zeros into
-        // game_library_meta. Capped at 30s — the worst case (legitimately
-        // empty library) just falls through to a no-op populate.
-        // See `2026-04-29-nfs-startup-race-and-thumbnail-silent-failure.md`.
+        // Phase 0: confirm storage dirents are stable enough before any
+        // scan writes L2. On NFS / autofs / USB hot-plug the storage root
+        // may resolve before subdirectories surface; without this, the
+        // first strict scan can legitimately observe an empty filesystem
+        // and reconcile cached rows to zero.
         let storage = state.storage();
-        if let Err(e) = replay_control_core_server::roms::wait_for_storage_ready(
-            &storage.roms_dir(),
-            Duration::from_secs(30),
-        )
-        .await
-        {
-            tracing::warn!(
-                "Startup: roms_dir readiness check timed out: {e}. Proceeding; \
-                 subsequent scans will retry on demand."
-            );
+        let mut next_probe_warn = std::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            match replay_control_core_server::roms::probe_storage_ready(&storage).await {
+                StorageProbe::HasVisibleEntries | StorageProbe::StableEmpty => break,
+                StorageProbe::NotReady => {
+                    let now = std::time::Instant::now();
+                    if now >= next_probe_warn {
+                        tracing::warn!(
+                            "Startup: storage at {} not ready; still waiting before startup scan",
+                            storage.root.display()
+                        );
+                        next_probe_warn = now + Duration::from_secs(30);
+                    } else {
+                        tracing::debug!(
+                            "Startup: storage at {} not ready; retrying before startup scan",
+                            storage.root.display()
+                        );
+                    }
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+            }
         }
         drop(storage);
 
@@ -788,64 +779,6 @@ impl BackgroundManager {
         else {
             return;
         };
-
-        // Self-heal the cold-NFS poisoned-meta state. The is_stale /
-        // is_incomplete checks below can't recover it on their own:
-        // mtime matches, rom_count == 0 so the `> 0` guard skips.
-        // Clearing meta drops us into the empty-DB branch for a clean
-        // repopulate.
-        if has_poisoned_meta_fingerprint(&cached_meta) {
-            // Atomic on the writer connection: re-check that
-            // `game_library` is empty and clear in the same closure, so
-            // a hypothetical concurrent write can't insert rows between
-            // the check and the clear. Activity::Startup already
-            // serializes against other writers, but the in-closure
-            // re-check makes the safety local rather than guard-derived.
-            let cleared = state
-                .library_writer
-                .try_write(|conn| -> Result<bool, replay_control_core::error::Error> {
-                    let count = LibraryDb::game_library_count(conn)?;
-                    if count != 0 {
-                        return Ok(false);
-                    }
-                    LibraryDb::clear_all_game_library(conn)?;
-                    Ok(true)
-                })
-                .await;
-            match cleared {
-                Ok(Ok(true)) => {
-                    tracing::warn!(
-                        "phase_cache_verification: detected poisoned all-zero meta ({} rows) — cleared for repopulate",
-                        cached_meta.len()
-                    );
-                    Self::populate_all_systems(
-                        state,
-                        &storage,
-                        region_pref,
-                        region_secondary,
-                        PopulateProgress::Startup,
-                    )
-                    .await;
-                    return;
-                }
-                Ok(Ok(false)) => {
-                    // game_library has rows after all — fingerprint was
-                    // a false positive (something populated since the
-                    // initial cached_meta read). Fall through to the
-                    // normal stale/incomplete checks below.
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!(
-                        "phase_cache_verification: recovery transaction failed ({e}); skipping this boot"
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "phase_cache_verification: pool unavailable ({e}); skipping recovery this boot"
-                    );
-                }
-            }
-        }
 
         if cached_meta.is_empty() {
             // Fresh DB — full populate.
@@ -2231,7 +2164,8 @@ impl AppState {
                 // when the FS read fails. Pre-clearing destroys that
                 // fallback. See plan #24's "do not clear L2 before
                 // scanning" invariant.
-                if !affected_systems.is_empty() {
+                if !affected_systems.is_empty() || roms_dir_changed {
+                    state.cache.invalidate_l1().await;
                     state.invalidate_user_caches().await;
                 }
 
@@ -2247,7 +2181,7 @@ impl AppState {
                             .join(", ")
                     );
                     for system in &affected_systems {
-                        let _ = state
+                        match state
                             .cache
                             .scan_and_cache_system(
                                 &storage,
@@ -2256,46 +2190,59 @@ impl AppState {
                                 region_secondary,
                                 &state.library_writer,
                             )
-                            .await;
-                        state
-                            .cache
-                            .enrich_system_cache(&state, system.clone())
-                            .await;
+                            .await
+                        {
+                            Ok(_) => {
+                                state
+                                    .cache
+                                    .enrich_system_cache(&state, system.clone())
+                                    .await;
+                            }
+                            Err(e) => tracing::warn!(
+                                "ROM watcher: scan failed for {system}, preserving cached state: {e}"
+                            ),
+                        }
                     }
                 }
 
                 // If the roms/ directory itself changed (new subdirectory
-                // created or removed), refresh the systems list to discover
-                // new systems and update game counts.
+                // created or removed), scan every visible system to discover
+                // newly-created local system folders and reconcile removed
+                // ones. Do not use cached_systems() for discovery here: it
+                // only sees the previous L2 state.
                 if roms_dir_changed {
                     tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
-                    let systems = state
-                        .cache
-                        .cached_systems(&storage, &state.library_reader)
-                        .await;
-                    for sys in &systems {
-                        if sys.game_count > 0 && !affected_systems.contains(&sys.folder_name) {
-                            let _ = state
+                    for sys in replay_control_core::systems::visible_systems() {
+                        if !affected_systems.contains(sys.folder_name) {
+                            match state
                                 .cache
                                 .scan_and_cache_system(
                                     &storage,
-                                    &sys.folder_name,
+                                    sys.folder_name,
                                     region_pref,
                                     region_secondary,
                                     &state.library_writer,
                                 )
-                                .await;
-                            state
-                                .cache
-                                .enrich_system_cache(&state, sys.folder_name.clone())
-                                .await;
+                                .await
+                            {
+                                Ok(_) => {
+                                    state
+                                        .cache
+                                        .enrich_system_cache(&state, sys.folder_name.to_string())
+                                        .await;
+                                }
+                                Err(e) => tracing::warn!(
+                                    "ROM watcher: scan failed for {}, preserving cached state: {e}",
+                                    sys.folder_name
+                                ),
+                            }
                         }
                     }
-                } else if !affected_systems.is_empty() {
-                    let _ = state
-                        .cache
-                        .cached_systems(&storage, &state.library_reader)
-                        .await;
+                }
+
+                if !affected_systems.is_empty() || roms_dir_changed {
+                    state.cache.invalidate_l1().await;
+                    state.invalidate_user_caches().await;
                 }
             }
         });
@@ -2375,54 +2322,6 @@ impl AppState {
 mod tests {
     use super::*;
     use std::path::Path;
-
-    // ── has_poisoned_meta_fingerprint ───────────────────────────────
-
-    fn meta(
-        system: &str,
-        rom_count: usize,
-        mtime: Option<i64>,
-    ) -> replay_control_core_server::library_db::SystemMeta {
-        replay_control_core_server::library_db::SystemMeta {
-            system: system.into(),
-            dir_mtime_secs: mtime,
-            scanned_at: 0,
-            rom_count,
-            total_size_bytes: 0,
-        }
-    }
-
-    #[test]
-    fn poisoned_fingerprint_empty_meta_is_not_poisoned() {
-        assert!(!has_poisoned_meta_fingerprint(&[]));
-    }
-
-    #[test]
-    fn poisoned_fingerprint_all_zero_with_mtime_is_poisoned() {
-        let rows = vec![
-            meta("nintendo_nes", 0, Some(1700000000)),
-            meta("sega_smd", 0, Some(1700000000)),
-            meta("snes", 0, Some(1700000001)),
-        ];
-        assert!(has_poisoned_meta_fingerprint(&rows));
-    }
-
-    #[test]
-    fn poisoned_fingerprint_zero_without_mtime_is_not_poisoned() {
-        // Pre-2026 meta without mtime stamps; the regular `is_stale`
-        // path treats `None` as stale and rescans them.
-        let rows = vec![meta("nintendo_nes", 0, None), meta("sega_smd", 0, None)];
-        assert!(!has_poisoned_meta_fingerprint(&rows));
-    }
-
-    #[test]
-    fn poisoned_fingerprint_any_nonzero_row_is_not_poisoned() {
-        let rows = vec![
-            meta("nintendo_nes", 12, Some(1700000000)),
-            meta("sega_smd", 0, Some(1700000000)),
-        ];
-        assert!(!has_poisoned_meta_fingerprint(&rows));
-    }
 
     // ── generate_update_script ──────────────────────────────────────
 
