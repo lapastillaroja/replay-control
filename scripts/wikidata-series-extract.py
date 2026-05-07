@@ -99,7 +99,13 @@ def qid_from_uri(uri):
 
 
 def sparql_query(query, retries=5, backoff=10):
-    """Execute a SPARQL query against the Wikidata endpoint with retry logic."""
+    """Execute a SPARQL query against the Wikidata endpoint with retry logic.
+
+    A JSONDecodeError on the response body usually means WDQS hit its 60 s
+    server-side timeout and silently truncated the body — same retry path as a
+    5xx, since a less-loaded shard often completes the next attempt. The
+    caller is still responsible for keeping individual queries under the
+    per-query timeout (see chunking in `fetch_series_data`)."""
     params = urllib.parse.urlencode({
         "query": query,
         "format": "json",
@@ -125,6 +131,10 @@ def sparql_query(query, retries=5, backoff=10):
         except urllib.error.URLError as e:
             wait = backoff * (2 ** attempt)
             print(f"Network error: {e}, retrying in {wait}s (attempt {attempt + 1}/{retries})...", file=sys.stderr)
+            time.sleep(wait)
+        except json.JSONDecodeError as e:
+            wait = backoff * (2 ** attempt)
+            print(f"Truncated SPARQL response (likely WDQS timeout): {e}, retrying in {wait}s (attempt {attempt + 1}/{retries})...", file=sys.stderr)
             time.sleep(wait)
 
     raise RuntimeError(f"SPARQL query failed after {retries} retries")
@@ -219,11 +229,45 @@ def load_arcade_names(script_dir):
 # SPARQL queries — broad (no platform filter)
 # ---------------------------------------------------------------------------
 
-def fetch_series_data():
-    """Fetch P179 series data with P1545 ordinals for ALL video games.
-    Platform is fetched optionally but not used as a filter."""
+def fetch_distinct_series_qids():
+    """Return the list of series QIDs that have at least one video game (P31=Q7889)
+    attached via P179. This is intentionally a small, fast query — only the
+    series URIs come back, not the full game list — so we can use the result
+    as the chunk axis for `fetch_series_data`."""
 
     query = """
+SELECT DISTINCT ?series WHERE {
+  ?game wdt:P31 wd:Q7889 .
+  ?game wdt:P179 ?series .
+}
+"""
+    print("Fetching distinct series QIDs (chunk axis)...", file=sys.stderr)
+    result = sparql_query(query)
+    return [qid_from_uri(b["series"]["value"]) for b in result["results"]["bindings"]]
+
+
+def fetch_series_data(chunk_size=100):
+    """Fetch P179 series data with P1545 ordinals for video games, chunked by
+    series QID.
+
+    The naive "all video games with P179, no platform filter" query exceeds
+    WDQS's 60 s per-query timeout when the result set crosses ~500k rows
+    (which it does: ~1k series × multiple games × multiple platform rows).
+    We instead enumerate distinct series QIDs once (fast, single query) and
+    then issue one bounded query per chunk of `chunk_size` series. Each
+    chunk's result is small enough to fit comfortably under the per-query
+    timeout, and the script-level aggregation in `main()` is order-
+    independent (output is sorted at the end)."""
+
+    series_qids = fetch_distinct_series_qids()
+    total = len(series_qids)
+    print(f"  {total} distinct series; fetching games in chunks of {chunk_size}...", file=sys.stderr)
+
+    all_rows = []
+    chunks = [series_qids[i:i + chunk_size] for i in range(0, total, chunk_size)]
+    for idx, chunk in enumerate(chunks, start=1):
+        values_block = " ".join(f"wd:{qid}" for qid in chunk)
+        query = f"""
 SELECT DISTINCT
   ?game
   ?gameLabel
@@ -231,27 +275,33 @@ SELECT DISTINCT
   ?series
   ?seriesLabel
   ?ordinal
-WHERE {
+WHERE {{
+  VALUES ?series {{ {values_block} }}
   ?game wdt:P31 wd:Q7889 .
   ?game wdt:P179 ?series .
 
-  OPTIONAL { ?game wdt:P400 ?platform . }
+  OPTIONAL {{ ?game wdt:P400 ?platform . }}
 
-  OPTIONAL {
+  OPTIONAL {{
     ?game p:P179 ?seriesStmt .
     ?seriesStmt ps:P179 ?series .
     ?seriesStmt pq:P1545 ?ordinal .
-  }
+  }}
 
-  SERVICE wikibase:label {
+  SERVICE wikibase:label {{
     bd:serviceParam wikibase:language "en,mul" .
-  }
-}
-ORDER BY ?seriesLabel ?ordinal ?gameLabel
+  }}
+}}
 """
-    print("Fetching series data (P179 + P1545, all platforms)...", file=sys.stderr)
-    result = sparql_query(query)
-    return result["results"]["bindings"]
+        print(f"  Series chunk {idx}/{len(chunks)} ({len(chunk)} series)...", file=sys.stderr)
+        result = sparql_query(query)
+        all_rows.extend(result["results"]["bindings"])
+        # Polite throttle between WDQS calls — keeps us under the public
+        # endpoint's per-IP rate limit even on slow CI runners.
+        time.sleep(1)
+
+    print(f"  Series total: {len(all_rows)} rows across {len(chunks)} chunks", file=sys.stderr)
+    return all_rows
 
 
 def fetch_sequel_data():
@@ -333,9 +383,8 @@ def main():
     print("Loading arcade game names...", file=sys.stderr)
     arcade_names = load_arcade_names(script_dir)
 
-    # Fetch series data
+    # Fetch series data (chunked by series QID — see fetch_series_data docstring)
     series_rows = fetch_series_data()
-    print(f"  Series query returned {len(series_rows)} rows", file=sys.stderr)
 
     # Small delay to be polite to the endpoint
     time.sleep(3)
