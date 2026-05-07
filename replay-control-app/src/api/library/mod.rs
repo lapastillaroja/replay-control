@@ -194,7 +194,7 @@ impl LibraryService {
             });
         }
 
-        // Sort: systems with games first, then alphabetically (same as scan_systems).
+        // Sort: systems with games first, then alphabetically.
         summaries.sort_by(|a, b| {
             let a_has = a.game_count > 0;
             let b_has = b.game_count > 0;
@@ -441,8 +441,8 @@ mod tests {
     /// `cached_systems` is strictly read-only: an empty `game_library_meta`
     /// must return an empty list rather than fall through to a filesystem
     /// scan. Discovering and persisting systems is the job of the
-    /// background pipeline (`populate_all_systems` calls `scan_systems`
-    /// directly) — letting a request handler do it was the cold-NFS
+    /// background pipeline (`populate_all_systems` walks `visible_systems()`
+    /// per-system) — letting a request handler do it was the cold-NFS
     /// poisoning vector traced in the write-isolation investigation.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cached_systems_returns_empty_on_empty_db_without_writing() {

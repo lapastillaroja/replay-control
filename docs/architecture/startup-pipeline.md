@@ -45,9 +45,11 @@ Claims `Activity::Startup { phase: Scanning }`. Works directly with the DB and f
 
 Loads `game_library_meta` to get cached directory mtimes and ROM counts, then detects three cases:
 
-1. **Fresh DB**: `game_library_meta` is empty -- runs `populate_all_systems()` (full scan + enrich for every system with games).
+1. **Fresh DB**: `game_library_meta` is empty -- runs `populate_all_systems()` (single per-system pass: strict scan + inline enrich for every visible system).
 2. **Stale mtime**: filesystem directory mtime differs from stored value -- re-scans that system via `scan_and_cache_system()` + `enrich_system_cache()`.
 3. **Interrupted scan**: meta says `rom_count > 0` but `game_library` has 0 rows for that system -- re-scans.
+
+`populate_all_systems` no longer pre-walks the filesystem to count systems; it iterates `visible_systems()` directly and lets each per-system call decide what to write (strict reconcile rule). Empty walks on local storage reconcile to empty meta; on NFS they return `Err` and preserve cached state. See `replay-control-app/src/api/library/mod.rs` and the per-system reconcile tests there.
 
 After all systems are verified, the pipeline continues directly into thumbnail-index recovery. WAL databases rely on SQLite's automatic checkpointing, so startup no longer forces a broad post-scan `library_pool.checkpoint()`.
 

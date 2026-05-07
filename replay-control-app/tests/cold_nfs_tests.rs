@@ -1,12 +1,15 @@
 #![cfg(feature = "ssr")]
-//! Regression tests for the three layers that block read-time writes
-//! to `library.db` during the NFS partial-mount window:
+//! Regression tests for the layers that block read-time writes to
+//! `library.db` during the NFS partial-mount window:
 //!
-//!   1. `scan_systems` returns `AllSystemsMissing` when the walk
-//!      finds zero ROMs across every visible system.
-//!   2. `cached_systems` is strictly read-only — an empty L2 returns
+//!   1. `cached_systems` is strictly read-only — an empty L2 returns
 //!      `[]` rather than falling through to a filesystem scan.
-//!   3. `GET /api/systems/<sys>/roms` is L2-only — no L3 fallback.
+//!   2. `GET /api/systems/<sys>/roms` is L2-only — no L3 fallback.
+//!
+//! The strict reconcile rule (per-system) replaces the older
+//! `scan_systems`-based `AllSystemsMissing` defence; see
+//! `replay-control-app/src/api/library/mod.rs` and the per-system
+//! reconcile tests there.
 
 mod common;
 

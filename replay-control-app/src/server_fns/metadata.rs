@@ -329,9 +329,17 @@ pub async fn download_metadata() -> Result<(), ServerFnError> {
 
 /// Rescan the game library: walk ROM directories and reconcile each visible
 /// system to current disk state, applying additions, updates, and removals
-/// without clearing the whole library first. Missing top-level system
-/// directories are treated as empty systems; recursive read failures preserve
-/// the previous cached rows for that system.
+/// without clearing the whole library first.
+///
+/// Per-system semantics:
+/// - **Local storage** (SD/USB/NVMe): a missing top-level system folder is
+///   treated as a user-initiated deletion and reconciled to empty (cached
+///   rows are dropped, meta updates to `rom_count=0`).
+/// - **NFS storage**: a missing top-level system folder is ambiguous (could
+///   be a transient mount blip or a real remote-side delete) and returns
+///   `Err`; cached rows are preserved.
+/// - Any FS read error mid-walk returns `Err` and preserves cached state on
+///   every storage kind.
 #[server(prefix = "/sfn")]
 pub async fn rescan_game_library() -> Result<(), ServerFnError> {
     use crate::api::activity::RebuildProgress;

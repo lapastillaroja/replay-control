@@ -122,9 +122,9 @@ async fn probe_once(storage: &StorageLocation) -> StorageProbe {
 /// fixture); waiting for non-zero entries would block boot for the full
 /// timeout in those cases. The race we defend against is `read_dir` itself
 /// erroring (NotFound / permission / IO) — once it succeeds, the mount has
-/// surfaced. Subdirectory visibility lag is handled separately via the
-/// `ScanError::AllSystemsMissing` signal from `scan_systems` and the
-/// SQL-level zero-overwrite guard in `save_system_meta`.
+/// surfaced. Per-system dirent visibility lag is handled by the strict
+/// reconcile rule in `scan_and_cache_system` and the SQL-level
+/// zero-overwrite guard in `save_system_meta`.
 ///
 /// Returns `Ok(())` on the first successful `read_dir`; `Err` on timeout or
 /// repeated `read_dir` failures.
@@ -1426,9 +1426,9 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn probe_returns_stable_empty_for_truly_empty_library() {
-        // roms_dir exists, no system folders inside — scan_systems returns
-        // AllSystemsMissing twice in a row; probe stabilizes on
-        // StableEmpty so the gate can open.
+        // roms_dir exists, no system folders inside — probe sees zero
+        // dirents in every visible-system folder twice in a row and
+        // stabilizes on StableEmpty so the gate can open.
         let tmp = tempdir();
         fs::create_dir_all(tmp.join("roms")).unwrap();
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);

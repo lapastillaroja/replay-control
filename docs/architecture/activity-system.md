@@ -25,7 +25,7 @@ enum Activity {
 - **Startup**: Background pipeline phases 2+3 (cache verification + thumbnail index rebuild). Phase 1 auto-import uses `Import` instead. Contains `StartupPhase::Scanning` or `StartupPhase::RebuildingIndex` and the current system name.
 - **Import**: LaunchBox metadata parse (local XML or download + parse). Carries `ImportProgress` with state machine (Downloading -> BuildingIndex -> Parsing -> Complete/Failed), processed/matched/inserted counts, and download bytes.
 - **ThumbnailUpdate**: Index refresh + image download from libretro-thumbnails. Two phases: `Indexing` (GitHub API) then `Downloading` (raw.githubusercontent.com). Only variant with a `cancel` token (`Arc<AtomicBool>`) for cooperative cancellation.
-- **Rebuild**: Game library rebuild (invalidate + rescan + enrich). Phases: `Scanning` -> `Enriching` -> `Complete`/`Failed`. Tracks per-system progress.
+- **Rebuild**: Game library rebuild or rescan (per-system strict reconcile + inline enrichment). Phases: `Scanning` -> `Complete`/`Failed`. Per-system label carries the in-progress phase ("Super Nintendo (enriching)") so there's no fleet-wide `Enriching` transition. The `RebuildProgress.is_rescan` flag distinguishes rescan ("Rescanning ...") from rebuild ("Rebuilding ...") in the banner copy.
 - **Maintenance**: Short DB/filesystem operations (clear metadata, clear images, cleanup orphans). No detailed progress -- just a `MaintenanceKind` discriminant.
 
 ## ActivityGuard (RAII Pattern)

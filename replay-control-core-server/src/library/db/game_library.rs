@@ -580,7 +580,8 @@ impl LibraryDb {
     }
 
     /// Save just the system-level metadata (counts, mtime) without replacing game entries.
-    /// Used when we know game counts from scan_systems but haven't loaded entries yet.
+    /// Used by callers that have a known rom count + mtime independent of
+    /// the per-system scan path.
     ///
     /// **Zero-overwrite protection.** A racy NFS / autofs / USB hot-plug scan
     /// can return rom_count=0 for a system that actually has games on disk.
@@ -3173,10 +3174,12 @@ mod tests {
     // ── save_system_meta zero-overwrite protection ─────────────────────
     //
     // Defends against the NFS startup race documented in
-    // `2026-04-29-nfs-startup-race-and-thumbnail-silent-failure.md`: when
-    // `scan_systems` returns rom_count=0 for a system that actually has
-    // games (because the storage subdirectory hadn't materialised yet),
-    // the UPSERT must not lower a previously valid non-zero count to zero.
+    // `2026-04-29-nfs-startup-race-and-thumbnail-silent-failure.md`: a
+    // racy scan that returns rom_count=0 for a system that actually has
+    // games (because the storage subdirectory hadn't materialised yet)
+    // must not lower a previously valid non-zero count to zero. The
+    // strict reconcile rule (plan #24) is the primary defence; this
+    // SQL-level guard is belt-and-suspenders.
 
     #[test]
     fn save_system_meta_inserts_zero_on_fresh_row() {

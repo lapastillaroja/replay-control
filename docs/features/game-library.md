@@ -92,9 +92,9 @@ A secondary region preference is also supported for a two-tier sort: Primary > S
 
 ## Automatic Library Updates
 
-On local storage (SD, USB, NVMe), the app watches the `roms/` directory for changes. New, modified, or deleted ROMs are detected automatically -- no manual refresh needed. Changes are debounced (3 seconds) to handle bulk file copies smoothly.
+On local storage (SD, USB, NVMe), the app watches the `roms/` directory for changes. New, modified, or deleted ROMs are detected automatically -- no manual refresh needed. Changes are debounced (3 seconds) to handle bulk file copies smoothly. Removing an entire system folder also propagates: cached rows for that system are dropped to match disk.
 
-On NFS storage, automatic detection is not possible (inotify does not work across network mounts). Use the "Rescan Game Library" button in the metadata page to reconcile the library after external changes.
+On NFS storage, automatic detection is not possible (inotify does not work across network mounts). Use the "Rescan Game Library" button in the metadata page to reconcile the library after external changes. NFS rescans treat a missing top-level system folder as ambiguous (could be a transient mount blip) and preserve the cached rows; only successful walks replace state.
 
 ## Startup Behavior
 
