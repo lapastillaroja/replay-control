@@ -42,6 +42,8 @@ pub struct HashIdentifyResult {
 /// Excluded categories:
 /// - CD systems (PSX, Saturn, Sega CD, PCE-CD, Dreamcast, 3DO, CD-i, Neo Geo CD)
 /// - Computer/folder systems (ScummVM, DOS/IBM PC, Sharp X68000, Amiga, C64, Amstrad)
+///   except MSX cartridge images, which are small single-file ROMs with
+///   No-Intro CRC data.
 /// - Arcade (MAME, FBNeo — identified by romset name, not file content)
 /// - Nintendo DS (excluded for now — ROMs average 64 MB, first-scan too slow)
 struct HashSystemRule {
@@ -105,6 +107,11 @@ const HASH_SYSTEM_RULES: &[HashSystemRule] = &[
         system: "sega_32x",
         extensions: &["32x", "bin"],
         excluded_name_markers: &["sega cd 32x", "mega-cd 32x"],
+    },
+    HashSystemRule {
+        system: "microsoft_msx",
+        extensions: &["rom", "mx1", "mx2"],
+        excluded_name_markers: &[],
     },
 ];
 
@@ -449,6 +456,7 @@ mod tests {
         assert!(is_hash_eligible("sega_gg"));
         assert!(is_hash_eligible("sega_sg"));
         assert!(is_hash_eligible("sega_32x"));
+        assert!(is_hash_eligible("microsoft_msx"));
     }
 
     #[test]
@@ -467,6 +475,16 @@ mod tests {
         assert!(!is_hash_eligible("sharp_x68k"));
         // DS excluded for now
         assert!(!is_hash_eligible("nintendo_ds"));
+    }
+
+    #[test]
+    fn msx_hashes_only_cartridge_files() {
+        assert!(is_file_hash_eligible("microsoft_msx", "Aleste (Japan).rom"));
+        assert!(is_file_hash_eligible("microsoft_msx", "Game.mx1"));
+        assert!(is_file_hash_eligible("microsoft_msx", "Game.mx2"));
+        assert!(!is_file_hash_eligible("microsoft_msx", "Disk Game.dsk"));
+        assert!(!is_file_hash_eligible("microsoft_msx", "Multi Disk.m3u"));
+        assert!(!is_file_hash_eligible("microsoft_msx", "Tape Game.cas"));
     }
 
     #[test]

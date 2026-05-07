@@ -844,7 +844,7 @@ fn insert_arcade_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resul
 
 struct SystemConfig {
     folder_name: &'static str,
-    nointro_dat: &'static str,
+    nointro_dats: &'static [&'static str],
     tgdb_platform_ids: &'static [u32],
 }
 
@@ -852,189 +852,189 @@ const GAME_DB_SYSTEMS: &[SystemConfig] = &[
     // Nintendo cartridge/handheld
     SystemConfig {
         folder_name: "nintendo_nes",
-        nointro_dat: "Nintendo - Nintendo Entertainment System.dat",
+        nointro_dats: &["Nintendo - Nintendo Entertainment System.dat"],
         tgdb_platform_ids: &[7],
     },
     SystemConfig {
         folder_name: "nintendo_snes",
-        nointro_dat: "Nintendo - Super Nintendo Entertainment System.dat",
+        nointro_dats: &["Nintendo - Super Nintendo Entertainment System.dat"],
         tgdb_platform_ids: &[6],
     },
     SystemConfig {
         folder_name: "nintendo_gb",
-        nointro_dat: "Nintendo - Game Boy.dat",
+        nointro_dats: &["Nintendo - Game Boy.dat"],
         tgdb_platform_ids: &[4],
     },
     SystemConfig {
         folder_name: "nintendo_gbc",
-        nointro_dat: "Nintendo - Game Boy Color.dat",
+        nointro_dats: &["Nintendo - Game Boy Color.dat"],
         tgdb_platform_ids: &[41],
     },
     SystemConfig {
         folder_name: "nintendo_gba",
-        nointro_dat: "Nintendo - Game Boy Advance.dat",
+        nointro_dats: &["Nintendo - Game Boy Advance.dat"],
         tgdb_platform_ids: &[5],
     },
     SystemConfig {
         folder_name: "nintendo_n64",
-        nointro_dat: "Nintendo - Nintendo 64.dat",
+        nointro_dats: &["Nintendo - Nintendo 64.dat"],
         tgdb_platform_ids: &[3],
     },
     // Sega cartridge/handheld
     SystemConfig {
         folder_name: "sega_sms",
-        nointro_dat: "Sega - Master System - Mark III.dat",
+        nointro_dats: &["Sega - Master System - Mark III.dat"],
         tgdb_platform_ids: &[35],
     },
     SystemConfig {
         folder_name: "sega_smd",
-        nointro_dat: "Sega - Mega Drive - Genesis.dat",
+        nointro_dats: &["Sega - Mega Drive - Genesis.dat"],
         tgdb_platform_ids: &[18, 36],
     },
     SystemConfig {
         folder_name: "sega_gg",
-        nointro_dat: "Sega - Game Gear.dat",
+        nointro_dats: &["Sega - Game Gear.dat"],
         tgdb_platform_ids: &[20],
     },
     SystemConfig {
         folder_name: "sega_sg",
-        nointro_dat: "Sega - SG-1000.dat",
+        nointro_dats: &["Sega - SG-1000.dat"],
         tgdb_platform_ids: &[4949],
     },
     SystemConfig {
         folder_name: "sega_32x",
-        nointro_dat: "Sega - 32X.dat",
+        nointro_dats: &["Sega - 32X.dat"],
         tgdb_platform_ids: &[33],
     },
     // Atari
     SystemConfig {
         folder_name: "atari_2600",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[22],
     },
     SystemConfig {
         folder_name: "atari_5200",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[26],
     },
     SystemConfig {
         folder_name: "atari_7800",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[27],
     },
     SystemConfig {
         folder_name: "atari_jaguar",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[28],
     },
     SystemConfig {
         folder_name: "atari_lynx",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4924],
     },
     // NEC
     SystemConfig {
         folder_name: "nec_pce",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[34],
     },
     SystemConfig {
         folder_name: "nec_pcecd",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4955],
     },
     // Nintendo (no DAT yet)
     SystemConfig {
         folder_name: "nintendo_ds",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[8],
     },
     // SNK
     SystemConfig {
         folder_name: "snk_ng",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[24],
     },
     SystemConfig {
         folder_name: "snk_ngcd",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4956],
     },
     SystemConfig {
         folder_name: "snk_ngp",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4922, 4923],
     },
     // Disc-based consoles
     SystemConfig {
         folder_name: "sony_psx",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[10],
     },
     SystemConfig {
         folder_name: "sega_dc",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[16],
     },
     SystemConfig {
         folder_name: "sega_st",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[17],
     },
     SystemConfig {
         folder_name: "sega_cd",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[21],
     },
     SystemConfig {
         folder_name: "panasonic_3do",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[25],
     },
     SystemConfig {
         folder_name: "philips_cdi",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4917],
     },
     // Computer systems
     SystemConfig {
         folder_name: "amstrad_cpc",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4914],
     },
     SystemConfig {
         folder_name: "commodore_ami",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4911],
     },
     SystemConfig {
         folder_name: "commodore_amicd",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4947],
     },
     SystemConfig {
         folder_name: "commodore_c64",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[40],
     },
     SystemConfig {
         folder_name: "ibm_pc",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[1],
     },
     SystemConfig {
         folder_name: "microsoft_msx",
-        nointro_dat: "",
+        nointro_dats: &["Microsoft - MSX.dat", "Microsoft - MSX2.dat"],
         tgdb_platform_ids: &[4929],
     },
     SystemConfig {
         folder_name: "sharp_x68k",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4931],
     },
     SystemConfig {
         folder_name: "sinclair_zx",
-        nointro_dat: "",
+        nointro_dats: &[],
         tgdb_platform_ids: &[4913],
     },
 ];
@@ -1758,7 +1758,7 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
     )?;
 
     for sys in GAME_DB_SYSTEMS {
-        if sys.nointro_dat.is_empty() {
+        if sys.nointro_dats.is_empty() {
             // No No-Intro DAT for this system — insert TGDB-only canonical games
             // so that supported_systems() returns them and release dates work.
             // We only do this if we have TGDB data for the platform.
@@ -1780,35 +1780,46 @@ fn insert_console_games(conn: &Connection, sources_dir: &Path) -> rusqlite::Resu
             continue;
         }
 
-        let dat_path = nointro_dir.join(sys.nointro_dat);
-        if !dat_path.exists() {
+        let mut nointro_entries = Vec::new();
+        for dat_name in sys.nointro_dats {
+            let dat_path = nointro_dir.join(dat_name);
+            if !dat_path.exists() {
+                eprintln!(
+                    "Game DB: No-Intro DAT {} not found for {}, skipping",
+                    dat_name, sys.folder_name
+                );
+                continue;
+            }
+            nointro_entries.extend(parse_nointro_dat(&dat_path));
+        }
+        if nointro_entries.is_empty() {
             eprintln!(
-                "Game DB: No-Intro DAT not found for {}, skipping",
+                "Game DB: no No-Intro entries found for {}, skipping",
                 sys.folder_name
             );
             continue;
         }
-
-        let nointro_entries = parse_nointro_dat(&dat_path);
         eprintln!(
             "Game DB: {} - parsed {} ROM entries",
             sys.folder_name,
             nointro_entries.len()
         );
 
-        let maxusers_path = maxusers_dir.join(sys.nointro_dat);
-        let maxusers: HashMap<u32, String> = if maxusers_path.exists() {
-            parse_libretro_meta_dat(&maxusers_path, "users ")
-        } else {
-            HashMap::new()
-        };
+        let mut maxusers: HashMap<u32, String> = HashMap::new();
+        for dat_name in sys.nointro_dats {
+            let maxusers_path = maxusers_dir.join(dat_name);
+            if maxusers_path.exists() {
+                maxusers.extend(parse_libretro_meta_dat(&maxusers_path, "users "));
+            }
+        }
 
-        let genre_path = genre_dir.join(sys.nointro_dat);
-        let genres: HashMap<u32, String> = if genre_path.exists() {
-            parse_libretro_meta_dat(&genre_path, "genre ")
-        } else {
-            HashMap::new()
-        };
+        let mut genres: HashMap<u32, String> = HashMap::new();
+        for dat_name in sys.nointro_dats {
+            let genre_path = genre_dir.join(dat_name);
+            if genre_path.exists() {
+                genres.extend(parse_libretro_meta_dat(&genre_path, "genre "));
+            }
+        }
 
         // Group ROM entries into canonical games by normalized title
         let mut game_groups: HashMap<String, Vec<usize>> = HashMap::new();

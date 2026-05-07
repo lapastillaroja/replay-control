@@ -76,17 +76,20 @@ declare -A NOINTRO_DATS=(
     ["sega_gg"]="Sega - Game Gear.dat"
     ["sega_sg"]="Sega - SG-1000.dat"
     ["sega_32x"]="Sega - 32X.dat"
+    ["microsoft_msx"]="Microsoft - MSX.dat|Microsoft - MSX2.dat"
 )
 
 for system in "${!NOINTRO_DATS[@]}"; do
-    dat_name="${NOINTRO_DATS[$system]}"
-    # URL-encode the filename (spaces -> %20)
-    encoded_name="${dat_name// /%20}"
-    dest="$DATA_DIR/no-intro/$dat_name"
-    download \
-        "$LIBRETRO_DB_RAW/metadat/no-intro/$encoded_name" \
-        "$dest" \
-        "No-Intro DAT: $dat_name" || true
+    IFS='|' read -r -a dat_names <<< "${NOINTRO_DATS[$system]}"
+    for dat_name in "${dat_names[@]}"; do
+        # URL-encode the filename (spaces -> %20)
+        encoded_name="${dat_name// /%20}"
+        dest="$DATA_DIR/no-intro/$dat_name"
+        download \
+            "$LIBRETRO_DB_RAW/metadat/no-intro/$encoded_name" \
+            "$dest" \
+            "No-Intro DAT: $dat_name" || true
+    done
 done
 
 echo

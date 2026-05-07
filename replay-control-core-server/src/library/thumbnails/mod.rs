@@ -138,7 +138,7 @@ pub fn thumbnail_repo_names(system: &str) -> Option<&'static [&'static str]> {
         "commodore_amicd" => Some(&["Commodore - CD32", "Commodore - CDTV"]),
         "commodore_c64" => Some(&["Commodore - 64"]),
         "ibm_pc" => Some(&["DOS"]),
-        "microsoft_msx" => Some(&["Microsoft - MSX"]),
+        "microsoft_msx" => Some(&["Microsoft - MSX", "Microsoft - MSX2"]),
         "nec_pce" => Some(&["NEC - PC Engine - TurboGrafx 16"]),
         "nec_pcecd" => Some(&["NEC - PC Engine CD - TurboGrafx-CD"]),
         "nintendo_ds" => Some(&["Nintendo - Nintendo DS"]),
@@ -823,6 +823,14 @@ mod tests {
         assert_eq!(repos.len(), 2);
         assert!(repos.contains(&"Commodore - CD32"));
         assert!(repos.contains(&"Commodore - CDTV"));
+    }
+
+    #[test]
+    fn repo_names_multi_repo_microsoft_msx() {
+        let repos = thumbnail_repo_names("microsoft_msx").unwrap();
+        assert_eq!(repos.len(), 2);
+        assert!(repos.contains(&"Microsoft - MSX"));
+        assert!(repos.contains(&"Microsoft - MSX2"));
     }
 
     // --- ThumbnailKind ---
