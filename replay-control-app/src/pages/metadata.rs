@@ -13,11 +13,13 @@ use crate::util::{format_number, format_size, format_year_range, pct};
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
 
 fn format_rebuild_progress(p: &RebuildProgress) -> Option<String> {
-    let action = match p.phase {
-        RebuildPhase::Scanning => "Scanning",
-        RebuildPhase::Enriching => "Enriching",
-        _ => return None,
-    };
+    // `Enriching` was removed from RebuildPhase — populate runs scan+enrich
+    // per-system and the per-system label carries the phase suffix. Only
+    // emit progress text while we're actively scanning.
+    if p.phase != RebuildPhase::Scanning {
+        return None;
+    }
+    let action = "Scanning";
     Some(match (p.current_system.as_str(), p.systems_total) {
         ("", _) => format!("{action}..."),
         (sys, 0) => format!("{action} {sys}..."),

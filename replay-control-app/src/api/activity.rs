@@ -253,12 +253,16 @@ pub struct ThumbnailProgress {
 }
 
 /// Phase of the game library rebuild operation.
+///
+/// `Enriching` was removed when populate_all_systems was switched to
+/// inline per-system enrichment — there's no longer a fleet-wide
+/// "scanning all done, now enriching" transition. The per-system label
+/// (e.g. `"Super Nintendo (enriching)"`) carries the per-system phase
+/// signal instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RebuildPhase {
-    /// Scanning ROM directories and populating game library.
+    /// Scanning + enriching ROM directories per system.
     Scanning,
-    /// Enriching game entries with metadata, box art URLs, ratings.
-    Enriching,
     /// Rebuild completed successfully.
     Complete,
     /// Rebuild failed.

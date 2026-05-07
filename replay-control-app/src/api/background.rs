@@ -15,26 +15,21 @@ const EXTERNAL_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Clone, Copy)]
 pub(crate) enum PopulateProgress {
-    /// Boot pipeline / post-import. Updates `Activity::Startup` if active and
-    /// reuses the L2-cached systems list (`cached_systems`).
+    /// Boot pipeline / post-import. Updates `Activity::Startup` if active.
     Startup,
-    /// Destructive rebuild path. Updates `Activity::Rebuild` and reuses
-    /// `cached_systems` — by the time we get here `game_library_meta` is
-    /// already empty (`cache.invalidate` truncated it), so cached_systems
-    /// falls through to a fresh L3 filesystem scan automatically.
+    /// Explicit user action: rebuild or rescan. Updates `Activity::Rebuild`.
+    /// The rescan-vs-rebuild distinction lives on `Activity::Rebuild`'s
+    /// `RebuildProgress.is_rescan` flag, set by the calling server fn before
+    /// spawning. `populate_all_systems` doesn't see that flag and doesn't
+    /// need to — strict reconcile is the same operation either way.
     Rebuild { start: std::time::Instant },
-    /// Reconcile rescan. Updates `Activity::Rebuild` (with `is_rescan: true`)
-    /// and walks every visible system directly so removals are applied too.
-    /// Uses strict per-system scans: missing top-level system dirs become
-    /// empty systems, but recursive read failures preserve old rows.
-    Rescan { start: std::time::Instant },
 }
 
 impl PopulateProgress {
     fn rebuild_start(&self) -> Option<std::time::Instant> {
         match self {
             Self::Startup => None,
-            Self::Rebuild { start } | Self::Rescan { start } => Some(*start),
+            Self::Rebuild { start } => Some(*start),
         }
     }
 }
@@ -50,8 +45,11 @@ fn update_rebuild_progress(state: &AppState, f: impl FnOnce(&mut RebuildProgress
 }
 
 /// Push per-system progress into whichever Activity variant the caller
-/// owns. Startup carries a single label string; Rebuild/Rescan carry
-/// counters + elapsed seconds.
+/// owns. Startup carries a single label string; Rebuild carries counters
+/// + elapsed seconds. The `enriching` flag (set when the inline enrich
+/// step starts) appends a `(enriching)` suffix to the per-system label
+/// for both variants, so the UI shows fine-grained per-system phase
+/// without a fleet-wide RebuildPhase transition.
 fn report_system(
     state: &AppState,
     progress: PopulateProgress,
@@ -59,19 +57,20 @@ fn report_system(
     display_name: &str,
     enriching: bool,
 ) {
+    let label = if enriching {
+        format!("{display_name} (enriching)")
+    } else {
+        display_name.to_string()
+    };
     match progress {
         PopulateProgress::Startup => state.update_activity(|act| {
             if let Activity::Startup { system, .. } = act {
-                *system = if enriching {
-                    format!("{display_name} (enriching)")
-                } else {
-                    display_name.to_string()
-                };
+                *system = label;
             }
         }),
-        PopulateProgress::Rebuild { start } | PopulateProgress::Rescan { start } => {
+        PopulateProgress::Rebuild { start } => {
             update_rebuild_progress(state, |p| {
-                p.current_system = display_name.to_string();
+                p.current_system = label;
                 p.systems_done = i;
                 p.elapsed_secs = start.elapsed().as_secs();
             });
@@ -1124,42 +1123,17 @@ impl BackgroundManager {
         region_secondary: Option<replay_control_core::rom_tags::RegionPreference>,
         progress: PopulateProgress,
     ) {
-        // Startup/Rebuild discover systems via a direct filesystem walk.
-        // `cached_systems` is read-only and would return [] on fresh DB.
-        // `AllSystemsMissing` means partial-mount window or empty library
-        // — nothing to populate either way; bail.
-        let systems = match progress {
-            PopulateProgress::Startup | PopulateProgress::Rebuild { .. } => {
-                match replay_control_core_server::roms::scan_systems(storage).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::info!(
-                            "populate_all_systems: scan_systems returned {e}; nothing to populate"
-                        );
-                        return;
-                    }
-                }
-            }
-            PopulateProgress::Rescan { .. } => replay_control_core::systems::visible_systems()
-                .map(|system| replay_control_core::roms::SystemSummary {
-                    folder_name: system.folder_name.to_string(),
-                    display_name: system.display_name.to_string(),
-                    manufacturer: system.manufacturer.to_string(),
-                    category: format!("{:?}", system.category).to_lowercase(),
-                    game_count: 0,
-                    total_size_bytes: 0,
-                })
-                .collect(),
-        };
-        let rescan = matches!(progress, PopulateProgress::Rescan { .. });
-        let systems_to_scan: Vec<_> = if rescan {
-            systems.iter().collect()
-        } else {
-            systems.iter().filter(|s| s.game_count > 0).collect()
-        };
-        let total = systems_to_scan.len();
-        let log_target = if rescan { "reconciling" } else { "populating" };
-        tracing::info!("L2 warmup: {log_target} {total} system(s)");
+        // Iterate every visible_systems() platform — strict reconcile is
+        // safe to call on systems we don't have on disk (it early-returns
+        // cheaply via list_roms_strict's missing-dir branch on local
+        // storage, returns Err on NFS preserving cached state). The per-
+        // system rule (in `scan_and_cache_system`) ensures empty walks
+        // don't poison meta on partial-mount fresh boots.
+        let systems: Vec<&'static replay_control_core::systems::System> =
+            replay_control_core::systems::visible_systems().collect();
+        let total = systems.len();
+
+        tracing::info!("L2 populate: {total} visible system(s)");
 
         let start = std::time::Instant::now();
 
@@ -1174,67 +1148,46 @@ impl BackgroundManager {
         }
 
         let mut total_roms = 0usize;
-        for (i, sys) in systems_to_scan.iter().enumerate() {
-            report_system(state, progress, i, &sys.display_name, false);
-            let scan_result = if rescan {
-                state
-                    .cache
-                    .scan_and_cache_system(
-                        storage,
-                        &sys.folder_name,
-                        region_pref,
-                        region_secondary,
-                        &state.library_writer,
-                    )
-                    .await
-            } else {
-                state
-                    .cache
-                    .scan_and_cache_system(
-                        storage,
-                        &sys.folder_name,
-                        region_pref,
-                        region_secondary,
-                        &state.library_writer,
-                    )
-                    .await
-            };
+        for (i, sys) in systems.iter().enumerate() {
+            report_system(state, progress, i, sys.display_name, false);
+            let scan_result = state
+                .cache
+                .scan_and_cache_system(
+                    storage,
+                    sys.folder_name,
+                    region_pref,
+                    region_secondary,
+                    &state.library_writer,
+                )
+                .await;
             match scan_result {
                 Ok(roms) => {
-                    tracing::debug!("L2 warmup: {} — {} ROMs", sys.folder_name, roms.len());
-                    total_roms += roms.len();
+                    if !roms.is_empty() {
+                        tracing::debug!(
+                            "L2 populate: {} — {} ROMs (scan+enrich)",
+                            sys.folder_name,
+                            roms.len()
+                        );
+                        total_roms += roms.len();
+                    }
+                    // Inline enrichment runs on every Ok (including
+                    // Ok(empty), which clears stale game_description rows
+                    // when a previously-populated system goes empty).
+                    report_system(state, progress, i, sys.display_name, true);
+                    state
+                        .cache
+                        .enrich_system_cache(state, sys.folder_name.to_string())
+                        .await;
                 }
-                Err(e) => tracing::warn!("L2 warmup: failed to scan {}: {e}", sys.folder_name),
+                Err(e) => tracing::warn!(
+                    "L2 populate: {} skipped (preserving cached state): {e}",
+                    sys.folder_name
+                ),
             }
         }
 
         tracing::info!(
-            "L2 warmup: scanned {} ROMs across {} systems in {:.1}s, enriching...",
-            total_roms,
-            total,
-            start.elapsed().as_secs_f64()
-        );
-
-        if let Some(rb_start) = progress.rebuild_start() {
-            update_rebuild_progress(state, |p| {
-                p.phase = RebuildPhase::Enriching;
-                p.current_system = String::new();
-                p.systems_done = 0;
-                p.systems_total = total;
-                p.elapsed_secs = rb_start.elapsed().as_secs();
-            });
-        }
-
-        for (i, sys) in systems_to_scan.iter().enumerate() {
-            report_system(state, progress, i, &sys.display_name, true);
-            state
-                .cache
-                .enrich_system_cache(state, sys.folder_name.clone())
-                .await;
-        }
-
-        tracing::info!(
-            "L2 warmup: done -- {} ROMs across {} systems in {:.1}s",
+            "L2 populate: done — {} ROMs across {} systems in {:.1}s",
             total_roms,
             total,
             start.elapsed().as_secs_f64()
@@ -1794,10 +1747,15 @@ exit 1
 // These are the long-running watchers and the cache enrichment helper
 // that various parts of the code still call on AppState.
 impl AppState {
-    /// Re-enrich game library for all systems after a metadata or thumbnail import.
-    /// If game library is empty (e.g., DB was deleted and recreated during import),
-    /// does a full populate first (scan ROMs + enrich). Otherwise just enriches
-    /// existing entries with updated box art URLs and ratings.
+    /// Re-enrich game library after a metadata or thumbnail import.
+    ///
+    /// If the library is empty (e.g. fresh DB), `populate_all_systems`
+    /// runs scan + inline enrich for every visible system; nothing more
+    /// is needed.
+    ///
+    /// Otherwise the per-system enrich loop is the *primary* job here —
+    /// it's the path that picks up newly-imported external_metadata for
+    /// already-cached systems.
     pub fn spawn_cache_enrichment(&self) {
         let state = self.clone();
         tokio::spawn(async move {
@@ -1815,8 +1773,9 @@ impl AppState {
 
             if is_empty {
                 tracing::info!("Post-import: game library is empty, running full populate");
-                // Per-write gating happens inside `pool.write()` — SSR readers
-                // stay responsive between the populate's individual writes.
+                // populate_all_systems now inline-enriches per system,
+                // so the second-pass enrich loop below is skipped on
+                // this branch.
                 BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
@@ -1825,37 +1784,35 @@ impl AppState {
                     PopulateProgress::Startup,
                 )
                 .await;
-            }
+            } else {
+                // Enrichment-only re-pass: pick up the newly-imported
+                // external_metadata for already-cached systems. NOT
+                // gated because enrich_system_cache reads from the DB
+                // and the write gate blocks ALL reads on the same pool.
+                // Enrichment writes are small per-system UPDATEs.
+                let systems = state
+                    .cache
+                    .cached_systems(&storage, &state.library_reader)
+                    .await;
+                let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
 
-            // Enrichment phase: update box art URLs and ratings for all systems.
-            // NOTE: enrichment writes are NOT gated because enrich_system_cache
-            // reads from the DB (LaunchBox metadata, existing genres, etc.) and
-            // the write gate blocks ALL reads on the same pool. Gating here would
-            // cause enrichment reads to return None, silently skipping all updates.
-            // Enrichment writes are small per-system UPDATEs (not bulk INSERTs),
-            // so the exFAT corruption risk is low.
-            let systems = state
-                .cache
-                .cached_systems(&storage, &state.library_reader)
-                .await;
-            let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
-
-            if !with_games.is_empty() {
-                tracing::info!(
-                    "Post-import enrichment: updating {} system(s)",
-                    with_games.len()
-                );
-                let enrich_start = std::time::Instant::now();
-                for sys in &with_games {
-                    state
-                        .cache
-                        .enrich_system_cache(&state, sys.folder_name.clone())
-                        .await;
+                if !with_games.is_empty() {
+                    tracing::info!(
+                        "Post-import enrichment: updating {} system(s)",
+                        with_games.len()
+                    );
+                    let enrich_start = std::time::Instant::now();
+                    for sys in &with_games {
+                        state
+                            .cache
+                            .enrich_system_cache(&state, sys.folder_name.clone())
+                            .await;
+                    }
+                    tracing::info!(
+                        "Post-import enrichment: done in {:.1}s",
+                        enrich_start.elapsed().as_secs_f64()
+                    );
                 }
-                tracing::info!(
-                    "Post-import enrichment: done in {:.1}s",
-                    enrich_start.elapsed().as_secs_f64()
-                );
             }
 
             // Coverage / image_stats / library_summary all changed.
@@ -1863,8 +1820,10 @@ impl AppState {
         });
     }
 
-    /// Run cache enrichment as part of a rebuild operation (with an ActivityGuard).
-    /// Updates `Activity::Rebuild` progress as it goes. The guard drops → Idle on completion.
+    /// Run a rebuild: strict-reconcile every visible system in place
+    /// (preserving cached rows on per-system FS errors), then mark
+    /// complete. Inline enrichment is part of `populate_all_systems`,
+    /// so there's no separate post-loop enrichment pass.
     pub fn spawn_rebuild_enrichment(&self, guard: super::activity::ActivityGuard) {
         let state = self.clone();
         let start = std::time::Instant::now();
@@ -1874,76 +1833,19 @@ impl AppState {
             let region_pref = state.region_preference();
             let region_secondary = state.region_preference_secondary();
 
-            let Some(is_empty) = try_read_or_skip(&state.library_reader, "rebuild", |conn| {
-                LibraryDb::load_all_system_meta(conn).map(|m| m.is_empty())
-            })
-            .await
-            else {
-                return;
-            };
-
-            if is_empty {
-                tracing::info!("Rebuild: game library is empty, running full populate");
-                // Per-write gating happens inside `pool.write()` — SSR readers
-                // stay responsive between the populate's individual writes.
-                BackgroundManager::populate_all_systems(
-                    &state,
-                    &storage,
-                    region_pref,
-                    region_secondary,
-                    PopulateProgress::Rebuild { start },
-                )
-                .await;
-            }
-
-            // Enrichment phase: update box art URLs and ratings for all systems.
-            // NOTE: enrichment writes are NOT gated because enrich_system_cache
-            // reads from the DB and the write gate blocks ALL reads on the same pool.
-            // Enrichment writes are small per-system UPDATEs, not bulk INSERTs.
-            let systems = state
-                .cache
-                .cached_systems(&storage, &state.library_reader)
-                .await;
-            let with_games: Vec<_> = systems.into_iter().filter(|s| s.game_count > 0).collect();
-            let total = with_games.len();
-
-            update_rebuild_progress(&state, |p| {
-                p.phase = RebuildPhase::Enriching;
-                p.current_system = String::new();
-                p.systems_done = 0;
-                p.systems_total = total;
-                p.elapsed_secs = start.elapsed().as_secs();
-            });
-
-            if !with_games.is_empty() {
-                tracing::info!("Rebuild enrichment: updating {total} system(s)");
-                let enrich_start = std::time::Instant::now();
-                for (i, sys) in with_games.iter().enumerate() {
-                    report_system(
-                        &state,
-                        PopulateProgress::Rebuild { start },
-                        i,
-                        &sys.display_name,
-                        true,
-                    );
-                    state
-                        .cache
-                        .enrich_system_cache(&state, sys.folder_name.clone())
-                        .await;
-                }
-                tracing::info!(
-                    "Rebuild enrichment: done in {:.1}s",
-                    enrich_start.elapsed().as_secs_f64()
-                );
-            }
-
-            state.cache.invalidate_metadata_page().await;
+            BackgroundManager::populate_all_systems(
+                &state,
+                &storage,
+                region_pref,
+                region_secondary,
+                PopulateProgress::Rebuild { start },
+            )
+            .await;
 
             update_rebuild_progress(&state, |p| {
                 p.phase = RebuildPhase::Complete;
                 p.current_system = String::new();
-                p.systems_done = total;
-                p.systems_total = total;
+                p.systems_done = p.systems_total;
                 p.elapsed_secs = start.elapsed().as_secs();
                 p.error = None;
             });
@@ -1952,9 +1854,10 @@ impl AppState {
         });
     }
 
-    /// Spawn a non-destructive rescan: walk all visible ROM directories,
-    /// reconcile each system to current disk state, and run enrichment.
-    /// Unlike rebuild, this does not clear the whole library up front.
+    /// Rescan: same operation as rebuild under the strict reconcile rule
+    /// — both call `populate_all_systems(PopulateProgress::Rebuild)`. The
+    /// `is_rescan` distinction lives on `RebuildProgress` (set by the
+    /// calling server fn before spawning) and only affects UI verbiage.
     pub fn spawn_rescan(&self, guard: super::activity::ActivityGuard) {
         let state = self.clone();
         let start = std::time::Instant::now();
@@ -1964,8 +1867,8 @@ impl AppState {
             let region_pref = state.region_preference();
             let region_secondary = state.region_preference_secondary();
 
-            // Walking ROM directories on a slow NFS share can take seconds to
-            // minutes before the per-system progress starts firing. Set a
+            // Walking ROM directories on a slow NFS share can take seconds
+            // to minutes before per-system progress starts firing. Set a
             // status hint up front so the UI doesn't sit on an empty label.
             update_rebuild_progress(&state, |p| {
                 p.phase = RebuildPhase::Scanning;
@@ -1978,7 +1881,7 @@ impl AppState {
                 &storage,
                 region_pref,
                 region_secondary,
-                PopulateProgress::Rescan { start },
+                PopulateProgress::Rebuild { start },
             )
             .await;
 

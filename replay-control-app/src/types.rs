@@ -217,7 +217,6 @@ pub struct ThumbnailProgress {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RebuildPhase {
     Scanning,
-    Enriching,
     Complete,
     Failed,
 }

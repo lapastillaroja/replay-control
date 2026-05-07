@@ -57,11 +57,14 @@ pub fn MetadataBusyBanner() -> impl IntoView {
             } else {
                 Key::MetadataBannerRebuildingLibrary
             };
-            let phase_verb = match progress.phase {
-                server_fns::RebuildPhase::Scanning => "Scanning",
-                server_fns::RebuildPhase::Enriching => "Enriching",
-                _ if progress.is_rescan => "Rescanning",
-                _ => "Rebuilding",
+            // Verb is derived purely from is_rescan now — `RebuildPhase`
+            // no longer has an `Enriching` variant. The per-system label
+            // (e.g. "Super Nintendo (enriching)") set by `report_system`
+            // carries the per-system phase signal instead.
+            let phase_verb = if progress.is_rescan {
+                "Rescanning"
+            } else {
+                "Rebuilding"
             };
             match (progress.current_system.as_str(), progress.systems_total) {
                 ("", _) => t(i18n.locale.get(), idle_key).to_string(),
