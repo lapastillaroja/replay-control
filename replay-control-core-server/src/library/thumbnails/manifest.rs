@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use rusqlite::Connection;
 
 use crate::external_metadata::{self, ThumbnailManifestEntry};
+use crate::image_matching;
 use crate::thumbnails::{self, ThumbnailKind};
 use replay_control_core::error::{Error, Result};
 
@@ -1328,13 +1329,27 @@ pub fn plan_system_thumbnails_from_repo_data(
         .join("media")
         .join(system)
         .join(kind.media_dir());
+    let dir_index = image_matching::build_dir_index(&media_dir, kind.media_dir());
 
     let mut work: Vec<(String, ManifestMatch)> = Vec::new();
     let mut skipped = 0usize;
     for rom_filename in &rom_filenames {
         let stem = replay_control_core::title_utils::filename_stem(rom_filename);
         let arcade_display = arcade_lookup.get(stem).map(|i| i.display_name.as_str());
+        if image_matching::find_best_match(&dir_index, rom_filename, arcade_display, None).is_some()
+        {
+            skipped += 1;
+            continue;
+        }
+
         if let Some(m) = find_in_manifest(&manifest_index, rom_filename, arcade_display) {
+            let manifest_filename = format!("{}.png", m.filename);
+            if image_matching::find_best_match(&dir_index, &manifest_filename, None, None).is_some()
+            {
+                skipped += 1;
+                continue;
+            }
+
             let local_path = media_dir.join(format!("{}.png", m.filename));
             if local_path.exists() {
                 skipped += 1;
@@ -1466,6 +1481,53 @@ pub async fn download_system_thumbnails(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plan_skips_existing_fuzzy_local_thumbnail() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage_root = tmp.path();
+        let rom_dir = storage_root.join("roms").join("amstrad_cpc");
+        let snap_dir = storage_root
+            .join(crate::storage::RC_DIR)
+            .join("media")
+            .join("amstrad_cpc")
+            .join(ThumbnailKind::Snap.media_dir());
+        std::fs::create_dir_all(&rom_dir).unwrap();
+        std::fs::create_dir_all(&snap_dir).unwrap();
+        std::fs::write(rom_dir.join("1942 (1986)(Elite Systems).dsk"), b"fake rom").unwrap();
+        std::fs::write(
+            rom_dir.join("1942 (1986)(Elite Systems)(Alt).dsk"),
+            b"fake rom",
+        )
+        .unwrap();
+        std::fs::write(
+            snap_dir.join("1942 (1986)(Elite Systems).png"),
+            vec![0x89; 256],
+        )
+        .unwrap();
+
+        let repo_data = vec![(
+            "Amstrad_-_CPC".to_string(),
+            "master".to_string(),
+            vec![ThumbnailManifestEntry {
+                filename: "1942 (Elite Systems)".to_string(),
+                symlink_target: None,
+            }],
+        )];
+
+        let plan = plan_system_thumbnails_from_repo_data(
+            &repo_data,
+            storage_root,
+            "amstrad_cpc",
+            ThumbnailKind::Snap,
+            &crate::image_resolution::ArcadeInfoLookup::default(),
+        )
+        .unwrap();
+
+        assert_eq!(plan.total, 2);
+        assert_eq!(plan.skipped, 2);
+        assert!(plan.work.is_empty());
+    }
 
     #[test]
     fn find_in_manifest_case_insensitive_exact_match() {
