@@ -4,15 +4,16 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 
 ---
 
-## [0.4.0-beta.9](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.9) - 2026-05-06
+## [0.4.0-beta.9](https://github.com/lapastillaroja/replay-control/releases/tag/v0.4.0-beta.9) - 2026-05-07
 
 ### Highlights
 
 - **"Now Playing" follows you across the app.** While a game is running on your appliance, a pulsing badge in the top bar shows the game name, system, and elapsed play time on every page. The home page replaces "Last Played" with a hero card for the active game, and the game's detail page picks up a "Now Playing" pill so you know you're looking at the one that's running. Tap the badge from anywhere to jump to that game's detail page.
 - **One tap to the manual.** The Now Playing card has a "Manual" button that takes you directly to the manuals section of the running game — no scrolling, no hunting.
 - **"Rescan Library" now matches what's on disk.** ROMs you delete manually no longer linger in your library. A rescan reconciles additions, updates, and removals in one pass.
+- **Large NFS rescans avoid re-reading unchanged ROMs.** Cartridge systems now cache the CRC identity with the file size used to compute it. Startup, storage-swap verification, ROM watcher scans, and manual rescans reuse trusted cached CRCs when `mtime + size` or conservative same-size checks prove the ROM is unchanged; manual rebuild remains the full verification path and forces fresh CRC reads.
 - **Faster cold boot.** The library scan walks each ROM directory once instead of twice — populating + enriching per-system in a single pass instead of scan-all-then-enrich-all. Earlier systems show with full art before later systems start (visible during a rebuild on the home grid).
-- **Rebuild is now safe to interrupt.** Triggering "Rebuild Library" no longer wipes the cache up front; each system is reconciled in place. If a scan fails partway through (NFS hiccup, power loss, OOM), the cached rows for that system stay intact instead of vanishing.
+- **Rebuild is now safe to interrupt.** Triggering "Rebuild Library" no longer wipes the cache up front; each system is reconciled in place. If a scan fails partway through (NFS hiccup, power loss, OOM), the cached rows for that system stay intact instead of vanishing. If storage changes during a long rebuild/rescan, stale work is cancelled before it can write to the wrong active library DB.
 - **Metadata enrichment fills in tens of thousands of missing fields.** A previously-silent bug was wiping LaunchBox-sourced release dates for systems without built-in catalog entries; the matcher also now accepts arcade clone parents, official alternate titles ("Lylat Wars" / "Star Fox 64"), and No-Intro canonical filenames. Measured on the 81K-ROM dev library: Nintendo DS release-date coverage 0% → 90.9%, Neo Geo Pocket 0% → 92.0%, Atari Jaguar 0% → 76.6%, Sega CD 0% → 69.2%, Atari 5200/7800 lift to ~30–41%; ~9,700 release dates and ~42,000 metadata cells (descriptions, developers, ratings, publishers, genres, players counts) populated overall, with all 6,428 primary-LB release-date wipe cases closed.
 
 ### Added
@@ -28,6 +29,8 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - `game_library.normalized_title` and `normalized_title_alt` columns populated at scan time (arcade clones store the parent's normalized title in `_alt`); enrichment matching is now a hashmap probe against stored keys instead of a per-ROM `normalize_title()` call. `launchbox_alternate.normalized_alternate` mirrors this on the LaunchBox side. Schema bumped to v4 with an `ALTER TABLE` migration that preserves existing libraries.
 - New per-storage `library_meta` k/v table (first inhabitant: `title_norm_version`) and a host-side `external_meta.title_norm_version` stamp. `replay_control_core::title_utils::TITLE_NORM_VERSION` (currently `1`) is bumped any time `normalize_title_for_metadata` changes its output. On boot, mismatch on either side rebuilds the stored normalized columns silently — future matcher improvements reach deployed appliances on the next reboot without user action.
 - New `match_for_rom` chain in `replay-control-core-server/src/library/enrichment.rs`: primary `normalized_title` → arcade-clone parent's `normalized_title` → `launchbox_alternate.normalized_alternate` → No-Intro `hash_matched_name` canonical filename (probed against both primary and alt-name maps). Stops at the first hit; strength descending.
+- New `game_library.hash_size_bytes` migration. Existing CRC cache rows with a matching mtime are reused and self-heal by writing the observed file size on the next scan, avoiding a one-time post-upgrade rehash storm on large NFS libraries.
+- New storage-generation cancellation token for long scan/rebuild work. Storage swaps bump the generation, stale scans return a typed `StorageChanged` cancellation, and write boundaries re-check the token before mutating `library.db`.
 
 ### Changed
 
@@ -42,6 +45,9 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Rebuild progress text changed from "Scanning Super Nintendo (3/41)..." → "Enriching ..." sequence to "Rebuilding Super Nintendo (3/41)..." with an "(enriching)" suffix added mid-iteration. The fleet-wide `RebuildPhase::Enriching` enum variant is gone — the per-system label carries the per-system phase signal.
 - `populate_all_systems` collapsed to a single per-system pass: iterate `visible_systems()`, strict-scan + inline-enrich per system, drop the post-loop second pass. `spawn_rebuild_enrichment` and `spawn_cache_enrichment` updated to avoid double-enrich. `PopulateProgress` collapsed from three variants to two (`Startup`, `Rebuild`); rescan vs rebuild distinction lives on `RebuildProgress::is_rescan`.
 - Strict reconcile rule for `scan_and_cache_system`: a successful filesystem read replaces L2 for that system; a failed read returns `Err` and preserves L2. Missing top-level system dir splits by `storage.kind.is_local()` — local treats as user deletion (reconcile-to-empty), NFS treats as ambiguous (preserve). Rebuild and watcher paths no longer pre-clear L2 — the previous "rebuild during NFS hiccup wipes your library" vector is closed.
+- CRC identification now validates cached hashes with `mtime + size`. Normal rescans also allow conservative same-size reuse when only mtime drifts, which avoids streaming unchanged N64/GBA/SNES-era ROMs over NFS. Manual "Rebuild Library" sets `force_rehash=true` and recomputes CRCs for every hash-eligible ROM.
+- Cached hashes are loaded once per system by the background orchestrator instead of from the writer-only scan path. `LibraryWritePool::as_reader()` was removed, keeping read and write pool boundaries honest.
+- Hybrid cartridge/CD systems are handled per file: Sega 32X cartridge ROMs remain hash-eligible, while Sega CD 32X disc images are skipped even when they use `.bin` tracks.
 - Removed `scan_systems` and the silent walker family (`list_roms`, `walk_raw_roms_blocking`, `collect_raw_roms_recursive`), `count_roms_recursive`/`count_roms_inner`, `m3u_has_target_on_disk`, `ScanError::AllSystemsMissing`. The strict walker variants drop their `_strict` suffix and become the only walker. `find_duplicates` and the `library_report` binary migrated to the strict API. `StorageProbe::HasRoms` renamed to `HasVisibleEntries` — the new probe is a depth-1 dirent check (no recursion). `StorageProbe`'s strict-walker assumption was validated on a Pi NFS rig: drop-caches + immediate `read_dir` returns the correct entries synchronously, never spurious `Ok(empty)`.
 
 ### Fixed
@@ -51,6 +57,8 @@ Chronological timeline of changes to the Replay Control companion app for RePlay
 - Per-system game descriptions are now cleared when a rescan empties a system. Previously the rows leaked past the ROM rows so a removed game's description could surface on a re-added ROM with a different filename.
 - Closed the LaunchBox release-date wipe: 6,428 primary-LB matches that were silently dropping their date now persist. The alt-name + hash-name match chain additionally fills ~35,000 latent cells across genre / players / rating / developer / description / publisher where the alternate-name path had matched but field propagation was missing.
 - Dropped a hydrate-mode warning on the home page: `now_playing_detail` was a derived `Resource::new(source = move || now_playing.get(), …)` whose source closure ran in a Memo owner that doesn't inherit `SuspenseContext`. The detail fetch now happens inline inside the existing `Suspend::new(async {})` block, where every `now_playing.get()` read sits cleanly in scope. App-root `<Suspense>` wraps around the top-bar header and the `/` and `/games/:system/:filename` route views provide context for the lazy `class:` and `<Show when=>` closures that read `now_playing` from a `RenderEffect`.
+- Storage swaps during a long rebuild/rescan no longer risk stale writes into the newly-active storage DB. The cancelled activity now reports a neutral cancelled terminal state, and the new-storage startup verification retries claiming the activity slot while the old scan unwinds.
+- ROM watcher tasks restart after storage swaps, so file changes are watched under the new active `roms/` root instead of the previous storage path.
 
 ---
 
