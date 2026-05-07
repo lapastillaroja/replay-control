@@ -1119,9 +1119,18 @@ pub fn is_allowed_without_storage(path: &str) -> bool {
 }
 
 /// Render the `/waiting` page using the current storage status.
+///
+/// When storage is already available, redirect to `/` instead. The page's
+/// own `<meta http-equiv="refresh">` tag re-hits this handler every 5s,
+/// so this is the path users take out of the waiting page once their
+/// mount comes back — no SSE listener runs here (the page is plain
+/// server-rendered HTML, not Leptos-hydrated).
 pub fn waiting_page_response(state: AppState) -> axum::response::Response {
-    use axum::response::IntoResponse;
+    use axum::response::{IntoResponse, Redirect};
 
+    if state.has_storage() {
+        return Redirect::temporary("/").into_response();
+    }
     axum::response::Html(waiting_page_html(&state)).into_response()
 }
 

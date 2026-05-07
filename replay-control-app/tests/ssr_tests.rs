@@ -191,3 +191,29 @@ async fn storage_guard_redirects_to_waiting_page_with_error_reboot_action() {
     assert!(html.contains(r#"action="/waiting/reboot""#));
     assert!(html.contains("Reboot System"));
 }
+
+/// Once storage comes back (USB inserted, NFS configured, etc.), the
+/// /waiting page's `<meta http-equiv="refresh">` re-hits the handler.
+/// The handler must redirect to / so the user escapes the waiting page —
+/// /waiting is plain server-rendered HTML with no Leptos hydration, so
+/// the SSE-driven reload listener doesn't run there. Without this
+/// redirect, users stay stuck on /waiting indefinitely.
+#[tokio::test(flavor = "multi_thread")]
+async fn waiting_page_redirects_to_root_when_storage_is_available() {
+    setup();
+    let env = TestEnv::new().await; // storage = Some by default
+    let app = test_guarded_router(env.state.clone());
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/waiting")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(resp.headers().get(header::LOCATION).unwrap(), "/");
+}
