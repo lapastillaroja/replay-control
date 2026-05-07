@@ -160,6 +160,7 @@ pub fn register_server_fns() {
     server_fn::axum::register_explicit::<server_fns::SaveUpdateChannel>();
     server_fn::axum::register_explicit::<server_fns::SkipVersion>();
     server_fn::axum::register_explicit::<server_fns::StartUpdate>();
+    server_fn::axum::register_explicit::<server_fns::RescanGameLibrary>();
     server_fn::axum::register_explicit::<server_fns::GetSetupStatus>();
     server_fn::axum::register_explicit::<server_fns::DismissSetup>();
 }
