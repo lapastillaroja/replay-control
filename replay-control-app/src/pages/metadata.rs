@@ -13,9 +13,6 @@ use crate::util::{format_number, format_size, format_year_range, pct};
 type SnapshotRes = Resource<Result<MetadataPageSnapshot, ServerFnError>>;
 
 fn format_rebuild_progress(p: &RebuildProgress) -> Option<String> {
-    // `Enriching` was removed from RebuildPhase — populate runs scan+enrich
-    // per-system and the per-system label carries the phase suffix. Only
-    // emit progress text while we're actively scanning.
     if p.phase != RebuildPhase::Scanning {
         return None;
     }
@@ -23,7 +20,7 @@ fn format_rebuild_progress(p: &RebuildProgress) -> Option<String> {
     Some(match (p.current_system.as_str(), p.systems_total) {
         ("", _) => format!("{action}..."),
         (sys, 0) => format!("{action} {sys}..."),
-        (sys, total) => format!("{action} {sys}... ({}/{total})", p.systems_done),
+        (sys, total) => format!("{action} {sys}... ({}/{total})", p.systems_done + 1),
     })
 }
 

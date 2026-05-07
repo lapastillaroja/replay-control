@@ -3177,9 +3177,7 @@ mod tests {
     // `2026-04-29-nfs-startup-race-and-thumbnail-silent-failure.md`: a
     // racy scan that returns rom_count=0 for a system that actually has
     // games (because the storage subdirectory hadn't materialised yet)
-    // must not lower a previously valid non-zero count to zero. The
-    // strict reconcile rule (plan #24) is the primary defence; this
-    // SQL-level guard is belt-and-suspenders.
+    // must not lower a previously valid non-zero count to zero.
 
     #[test]
     fn save_system_meta_inserts_zero_on_fresh_row() {

@@ -12,25 +12,6 @@ use replay_control_core::error::{Error, Result};
 use replay_control_core::rom_tags::{self, RegionPreference};
 use replay_control_core::systems::{self, System};
 
-/// `read_dir(roms_dir)` itself failed (filesystem not yet ready,
-/// permission denied, path missing, etc.). Used by [`wait_for_storage_ready`]
-/// to signal that the mount has not surfaced; caller should retry with
-/// backoff before treating this as authoritative.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ScanError {
-    RomsDirUnreadable(String),
-}
-
-impl std::fmt::Display for ScanError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ScanError::RomsDirUnreadable(e) => write!(f, "roms_dir unreadable: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ScanError {}
-
 /// Probe budget: number of attempts and inter-attempt delay. Constants so
 /// tests can reason about the worst-case wall time.
 pub const PROBE_MAX_TRIES: u32 = 3;
@@ -111,62 +92,6 @@ async fn probe_once(storage: &StorageLocation) -> StorageProbe {
             tracing::warn!("probe_storage_ready task panicked: {e}");
             StorageProbe::NotReady
         })
-}
-
-/// Block until `roms_dir` is **readable**, or the timeout elapses. Used at
-/// startup to dodge the NFS / autofs / USB hot-plug race where the storage
-/// root resolves before `read_dir` succeeds.
-///
-/// **Empty readable directory counts as ready.** A legitimately empty roms
-/// folder is a real state (fresh install, empty USB drive, e2e test
-/// fixture); waiting for non-zero entries would block boot for the full
-/// timeout in those cases. The race we defend against is `read_dir` itself
-/// erroring (NotFound / permission / IO) — once it succeeds, the mount has
-/// surfaced. Startup uses [`probe_storage_ready`] before destructive scan
-/// writes; per-system read failures are handled by the strict reconcile
-/// rule in `scan_and_cache_system`.
-///
-/// Returns `Ok(())` on the first successful `read_dir`; `Err` on timeout or
-/// repeated `read_dir` failures.
-pub async fn wait_for_storage_ready(
-    roms_dir: &Path,
-    timeout: std::time::Duration,
-) -> std::result::Result<(), ScanError> {
-    let deadline = std::time::Instant::now() + timeout;
-    let mut delay = std::time::Duration::from_millis(200);
-    let max_delay = std::time::Duration::from_secs(2);
-    let roms_dir = roms_dir.to_path_buf();
-    loop {
-        let p = roms_dir.clone();
-        let res =
-            tokio::task::spawn_blocking(move || -> std::result::Result<(), std::io::Error> {
-                // We don't care whether the iterator yields anything; we
-                // only care that `read_dir` itself succeeds. Successful
-                // open = mount has surfaced.
-                std::fs::read_dir(&p).map(|_| ())
-            })
-            .await;
-        match res {
-            Ok(Ok(())) => return Ok(()),
-            Ok(Err(e)) => {
-                tracing::debug!("wait_for_storage_ready: read_dir failed: {e}");
-            }
-            Err(e) => {
-                return Err(ScanError::RomsDirUnreadable(format!(
-                    "spawn_blocking panic: {e}"
-                )));
-            }
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err(ScanError::RomsDirUnreadable(format!(
-                "{} not ready within {:?}",
-                roms_dir.display(),
-                timeout
-            )));
-        }
-        tokio::time::sleep(delay).await;
-        delay = (delay * 2).min(max_delay);
-    }
 }
 
 /// List ROM files for a specific system, treating filesystem read failures as
@@ -1389,30 +1314,6 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn wait_for_storage_ready_succeeds_when_populated() {
-        let tmp = tempdir();
-        let roms = tmp.join("roms");
-        fs::create_dir_all(roms.join("nintendo_nes")).unwrap();
-        wait_for_storage_ready(&roms, std::time::Duration::from_millis(500))
-            .await
-            .expect("ready");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn wait_for_storage_ready_succeeds_when_empty_but_readable() {
-        // A legitimately empty roms_dir (fresh install, empty USB) must
-        // not block the boot pipeline for the full 30s timeout. Successful
-        // read_dir is the readiness signal for this low-level helper.
-        // Startup uses probe_storage_ready before destructive scans.
-        let tmp = tempdir();
-        let roms = tmp.join("roms");
-        fs::create_dir_all(&roms).unwrap();
-        wait_for_storage_ready(&roms, std::time::Duration::from_millis(500))
-            .await
-            .expect("empty dir is ready");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
     async fn probe_returns_has_roms_when_populated() {
         let tmp = tempdir();
         let nes_dir = tmp.join("roms/nintendo_nes");
@@ -1448,16 +1349,6 @@ mod tests {
         let storage = StorageLocation::from_path(tmp.clone(), crate::storage::StorageKind::Sd);
 
         assert_eq!(probe_storage_ready(&storage).await, StorageProbe::NotReady);
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn wait_for_storage_ready_errors_when_missing() {
-        let tmp = tempdir();
-        let roms = tmp.join("roms_does_not_exist");
-        let err = wait_for_storage_ready(&roms, std::time::Duration::from_millis(300))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, ScanError::RomsDirUnreadable(_)));
     }
 
     #[test]

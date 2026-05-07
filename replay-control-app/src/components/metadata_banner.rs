@@ -57,10 +57,6 @@ pub fn MetadataBusyBanner() -> impl IntoView {
             } else {
                 Key::MetadataBannerRebuildingLibrary
             };
-            // Verb is derived purely from is_rescan now — `RebuildPhase`
-            // no longer has an `Enriching` variant. The per-system label
-            // (e.g. "Super Nintendo (enriching)") set by `report_system`
-            // carries the per-system phase signal instead.
             let phase_verb = if progress.is_rescan {
                 "Rescanning"
             } else {

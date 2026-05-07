@@ -830,7 +830,7 @@ impl BackgroundManager {
                         *system = display_name;
                     }
                 });
-                let _ = state
+                match state
                     .cache
                     .scan_and_cache_system(
                         &storage,
@@ -839,12 +839,20 @@ impl BackgroundManager {
                         region_secondary,
                         &state.library_writer,
                     )
-                    .await;
-                state
-                    .cache
-                    .enrich_system_cache(state, meta.system.clone())
-                    .await;
-                rescan_count += 1;
+                    .await
+                {
+                    Ok(_) => {
+                        state
+                            .cache
+                            .enrich_system_cache(state, meta.system.clone())
+                            .await;
+                        rescan_count += 1;
+                    }
+                    Err(e) => tracing::warn!(
+                        "Background re-scan: {} failed, preserving cached state: {e}",
+                        meta.system
+                    ),
+                }
             }
         }
 
@@ -1706,9 +1714,6 @@ impl AppState {
 
             if is_empty {
                 tracing::info!("Post-import: game library is empty, running full populate");
-                // populate_all_systems now inline-enriches per system,
-                // so the second-pass enrich loop below is skipped on
-                // this branch.
                 BackgroundManager::populate_all_systems(
                     &state,
                     &storage,
@@ -1753,45 +1758,13 @@ impl AppState {
         });
     }
 
-    /// Run a rebuild: strict-reconcile every visible system in place
-    /// (preserving cached rows on per-system FS errors), then mark
-    /// complete. Inline enrichment is part of `populate_all_systems`,
-    /// so there's no separate post-loop enrichment pass.
-    pub fn spawn_rebuild_enrichment(&self, guard: super::activity::ActivityGuard) {
-        let state = self.clone();
-        let start = std::time::Instant::now();
-
-        tokio::spawn(async move {
-            let storage = state.storage();
-            let region_pref = state.region_preference();
-            let region_secondary = state.region_preference_secondary();
-
-            BackgroundManager::populate_all_systems(
-                &state,
-                &storage,
-                region_pref,
-                region_secondary,
-                PopulateProgress::Rebuild { start },
-            )
-            .await;
-
-            update_rebuild_progress(&state, |p| {
-                p.phase = RebuildPhase::Complete;
-                p.current_system = String::new();
-                p.systems_done = p.systems_total;
-                p.elapsed_secs = start.elapsed().as_secs();
-                p.error = None;
-            });
-
-            drop(guard);
-        });
-    }
-
-    /// Rescan: same operation as rebuild under the strict reconcile rule
-    /// — both call `populate_all_systems(PopulateProgress::Rebuild)`. The
-    /// `is_rescan` distinction lives on `RebuildProgress` (set by the
-    /// calling server fn before spawning) and only affects UI verbiage.
-    pub fn spawn_rescan(&self, guard: super::activity::ActivityGuard) {
+    /// Strict-reconcile every visible system in place (preserving cached
+    /// rows on per-system FS errors), then mark complete. Inline enrichment
+    /// is part of `populate_all_systems`, so there's no separate post-loop
+    /// enrichment pass. Rescan and rebuild share this body; the `is_rescan`
+    /// flag on `RebuildProgress` (set by the calling server fn before
+    /// spawning) only changes UI verbiage.
+    pub fn spawn_populate(&self, guard: super::activity::ActivityGuard, scan_hint: bool) {
         let state = self.clone();
         let start = std::time::Instant::now();
 
@@ -1801,13 +1774,14 @@ impl AppState {
             let region_secondary = state.region_preference_secondary();
 
             // Walking ROM directories on a slow NFS share can take seconds
-            // to minutes before per-system progress starts firing. Set a
-            // status hint up front so the UI doesn't sit on an empty label.
-            update_rebuild_progress(&state, |p| {
-                p.phase = RebuildPhase::Scanning;
-                p.current_system = "scanning ROM directories".to_string();
-                p.elapsed_secs = start.elapsed().as_secs();
-            });
+            // to minutes before per-system progress starts firing.
+            if scan_hint {
+                update_rebuild_progress(&state, |p| {
+                    p.phase = RebuildPhase::Scanning;
+                    p.current_system = "scanning ROM directories".to_string();
+                    p.elapsed_secs = start.elapsed().as_secs();
+                });
+            }
 
             BackgroundManager::populate_all_systems(
                 &state,
@@ -2159,88 +2133,52 @@ impl AppState {
                 let region_pref = state.region_preference();
                 let region_secondary = state.region_preference_secondary();
 
-                // Invalidate L1/user caches around the scan, but do NOT
-                // pre-clear L2 — strict reconcile preserves cached rows
-                // when the FS read fails. Pre-clearing destroys that
-                // fallback. See plan #24's "do not clear L2 before
-                // scanning" invariant.
-                if !affected_systems.is_empty() || roms_dir_changed {
-                    state.cache.invalidate_l1().await;
-                    state.invalidate_user_caches().await;
-                }
-
-                // Re-scan each affected system.
-                if !affected_systems.is_empty() {
-                    tracing::info!(
-                        "ROM watcher: re-scanning {} system(s): {}",
-                        affected_systems.len(),
-                        affected_systems
-                            .iter()
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
-                    for system in &affected_systems {
-                        match state
-                            .cache
-                            .scan_and_cache_system(
-                                &storage,
-                                system,
-                                region_pref,
-                                region_secondary,
-                                &state.library_writer,
-                            )
-                            .await
-                        {
-                            Ok(_) => {
-                                state
-                                    .cache
-                                    .enrich_system_cache(&state, system.clone())
-                                    .await;
-                            }
-                            Err(e) => tracing::warn!(
-                                "ROM watcher: scan failed for {system}, preserving cached state: {e}"
-                            ),
-                        }
-                    }
-                }
-
-                // If the roms/ directory itself changed (new subdirectory
-                // created or removed), scan every visible system to discover
-                // newly-created local system folders and reconcile removed
-                // ones. Do not use cached_systems() for discovery here: it
-                // only sees the previous L2 state.
+                let mut to_scan: Vec<String> = affected_systems.iter().cloned().collect();
                 if roms_dir_changed {
                     tracing::info!("ROM watcher: roms/ directory changed, refreshing systems");
                     for sys in replay_control_core::systems::visible_systems() {
                         if !affected_systems.contains(sys.folder_name) {
-                            match state
-                                .cache
-                                .scan_and_cache_system(
-                                    &storage,
-                                    sys.folder_name,
-                                    region_pref,
-                                    region_secondary,
-                                    &state.library_writer,
-                                )
-                                .await
-                            {
-                                Ok(_) => {
-                                    state
-                                        .cache
-                                        .enrich_system_cache(&state, sys.folder_name.to_string())
-                                        .await;
-                                }
-                                Err(e) => tracing::warn!(
-                                    "ROM watcher: scan failed for {}, preserving cached state: {e}",
-                                    sys.folder_name
-                                ),
-                            }
+                            to_scan.push(sys.folder_name.to_string());
                         }
+                    }
+                } else if !affected_systems.is_empty() {
+                    tracing::info!(
+                        "ROM watcher: re-scanning {} system(s): {}",
+                        to_scan.len(),
+                        to_scan.join(", ")
+                    );
+                }
+
+                if !to_scan.is_empty() {
+                    state.cache.invalidate_l1().await;
+                    state.invalidate_user_caches().await;
+                }
+
+                for system in &to_scan {
+                    match state
+                        .cache
+                        .scan_and_cache_system(
+                            &storage,
+                            system,
+                            region_pref,
+                            region_secondary,
+                            &state.library_writer,
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            state
+                                .cache
+                                .enrich_system_cache(&state, system.clone())
+                                .await;
+                        }
+                        Err(e) => tracing::warn!(
+                            "ROM watcher: scan failed for {system}, preserving cached state: {e}"
+                        ),
                     }
                 }
 
-                if !affected_systems.is_empty() || roms_dir_changed {
+                if !to_scan.is_empty() {
                     state.cache.invalidate_l1().await;
                     state.invalidate_user_caches().await;
                 }

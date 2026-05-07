@@ -355,12 +355,12 @@ pub async fn rescan_game_library() -> Result<(), ServerFnError> {
     state.cache.invalidate_l1().await;
     state.invalidate_user_caches().await;
 
-    state.spawn_rescan(guard);
+    state.spawn_populate(guard, true);
     Ok(())
 }
 
-/// Rebuild the game library: clears game_library tables and triggers a full
-/// rescan + enrichment from disk.
+/// Rebuild the game library: strict-reconciles every visible system from disk
+/// and enriches each successful scan without pre-clearing the L2 cache.
 #[server(prefix = "/sfn")]
 pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
     use crate::api::activity::RebuildProgress;
@@ -374,15 +374,14 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Clear L1 / user caches only. **Do not pre-clear L2** — under the
-    // strict reconcile rule (plan #24), each per-system scan replaces
-    // L2 only on success and preserves L2 on FS error. Pre-clearing
-    // destroys the fallback rows that strict reconcile is designed to
-    // preserve, which is the exact "rebuild during NFS hiccup wipes
-    // your library" vector this redesign closes.
+    // strict reconcile rule, each per-system scan replaces L2 only on
+    // success and preserves L2 on FS error. Pre-clearing destroys the
+    // fallback rows, reopening the "rebuild during NFS hiccup wipes
+    // your library" vector.
     state.cache.invalidate_l1().await;
     state.invalidate_user_caches().await;
 
-    state.spawn_rebuild_enrichment(guard);
+    state.spawn_populate(guard, false);
     Ok(())
 }
 

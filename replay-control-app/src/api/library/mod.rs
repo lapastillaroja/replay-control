@@ -230,28 +230,20 @@ impl LibraryService {
     ) -> Result<Arc<Vec<RomEntry>>, replay_control_core::error::Error> {
         let system_dir = storage.roms_dir().join(system);
 
-        // Missing top-level system directory: split by storage kind.
-        //   Local (SD/USB/NVMe): treat as user-initiated deletion. Fall
-        //     through to `list_roms`, which returns `Ok(empty)` for
-        //     a non-existent dir; reconcile-to-empty per the strict rule.
-        //   NFS: ambiguous — could be a transient mount blip or a real
-        //     remote-side delete. Refuse to act on the silent signal:
-        //     return `Err` so the strict-failure-preserves-L2 contract
-        //     leaves cached rows intact.
-        match system_dir.try_exists() {
-            Ok(false) if !storage.kind.is_local() => {
-                return Err(replay_control_core::error::Error::Other(format!(
-                    "reconcile scan skipped for {system}: top-level system dir missing on NFS storage (preserving cached state)"
-                )));
-            }
-            Ok(false) => {}
-            Ok(true) => {}
-            Err(e) => {
-                return Err(replay_control_core::error::Error::Other(format!(
-                    "reconcile scan skipped for {system}: could not check {}: {e}",
-                    system_dir.display()
-                )));
-            }
+        // NFS missing dir is ambiguous (transient mount blip vs remote
+        // delete) — preserve L2. Local missing dir is a user-initiated
+        // deletion: fall through to `list_roms`, which returns
+        // `Ok(empty)` and reconciles to zero per the strict rule.
+        let exists = system_dir.try_exists().map_err(|e| {
+            replay_control_core::error::Error::Other(format!(
+                "reconcile scan skipped for {system}: could not check {}: {e}",
+                system_dir.display()
+            ))
+        })?;
+        if !exists && !storage.kind.is_local() {
+            return Err(replay_control_core::error::Error::Other(format!(
+                "reconcile scan skipped for {system}: top-level system dir missing on NFS storage (preserving cached state)"
+            )));
         }
 
         tracing::debug!("L3 reconcile scan for {system}: starting filesystem scan");
