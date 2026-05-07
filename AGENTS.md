@@ -103,6 +103,29 @@ Re-export pattern inside core-server: modules that wrap a core module do `pub us
 
 **Orphan-rule workaround**: when a native trait (like `rusqlite::ToSql`) needs to apply to a core type, create a local newtype in the consuming core-server module (e.g. `DpSql(DatePrecision)` in `library_db`). Don't move the core type to core-server just to satisfy the orphan rule.
 
+### No inline SQL in `replay-control-app`
+
+The app crate must not contain SQL strings — no `conn.prepare("...")`, `conn.query_row("SELECT ...", ...)`, `conn.execute("INSERT ...", ...)`, etc. Schema knowledge belongs in `replay-control-core-server::library_db::LibraryDb` (and the equivalent helpers for other DBs). Drift across the boundary (a column rename, an index change) should never require hunting through the app crate.
+
+When you need a new query from app code, add a method to `LibraryDb` and call it via the pool: `state.library_reader.read(LibraryDb::my_new_query)`. Tests get the same treatment — no `INSERT` strings in `tests/*.rs` either.
+
+### Read paths must not write to the library DB
+
+Writes to `library.db` are restricted to scan / rebuild / enrichment / watcher / explicit-user-action paths. Read-time SSR or HTTP handlers must not write — not even via a "just-in-time" L3 fallback. The `LibraryReadPool` / `LibraryWritePool` newtypes (in `replay-control-app/src/api/library_pool.rs`) enforce this at compile time: handlers and request-time code receive `&LibraryReadPool`, which doesn't expose `write` / `try_write` / `reopen` / `reset_to_empty`.
+
+If a handler "needs" to populate a missing system on miss, the right answer is to return what's in L2 (possibly empty) and trigger a background populate via `BackgroundManager`. Don't add an escape hatch from a read path. See `docs/architecture/database-schema.md` "Write-isolation rule" and the regression suite at `replay-control-app/tests/cold_nfs_tests.rs`.
+
+### Read-then-write must be atomic when correctness depends on it
+
+`pool.read(...)` and `pool.write(...)` (or `try_write`) are two separate `interact()` calls on two **different** deadpool connections — not in a shared SQLite transaction. Anything between them can change underneath: another writer can land, the filesystem can drift, the row you just checked can disappear. This is the TOCTOU class of bug.
+
+`LibraryWritePool` deliberately does **not** expose `read` / `try_read`. To do a read inside a writer codepath you must pick an explicit shape:
+
+- **Atomic** (the read and the write must agree): do the read **inside** the same `db.write(|conn| ...)` (or `db.transaction(|tx| ...)`) closure on the same connection. Multiple statements inside one closure share a SQLite write transaction. Don't put network or CPU-heavy work inside — that closure holds the single write connection for its entire duration.
+- **Intentionally non-atomic** (network or slow work happens between read and write): route through `pool.as_reader().read(|c| ...)`. The `.as_reader()` token at the call site is the signal that this read is on a different connection and is not in the same transaction as any later write. The downstream writes in this case must tolerate the race — typically `INSERT OR REPLACE` upserts plus `ON DELETE CASCADE` for cleanup.
+
+Use `db.transaction(...)` when you want explicit `BEGIN IMMEDIATE` / commit / rollback-on-`Err`; use `db.write(...)` for the auto-commit-on-end-of-closure shorthand.
+
 ## Leptos Components
 
 ### Structure: setup above, view below

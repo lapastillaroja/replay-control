@@ -63,6 +63,16 @@ Per-storage rebuildable cache. Lives at `/var/lib/replay-control/storages/<id>/l
 
 Schema is built by `init_tables()` (creates v3 shape on a fresh DB) and patched by `run_migrations()` (drops v1 tables on existing DBs from older binaries).
 
+### Write-isolation rule
+
+Writes to `library.db` are restricted to **scan / rebuild / enrichment / watcher / explicit-user-action** paths — never request-time SSR or HTTP read handlers. The `cached_systems` and `load_roms_from_db` reader entry points sit on top of `LibraryService` and intentionally do **not** fall through to a filesystem scan; population is the job of `BackgroundManager::populate_all_systems`, which calls `scan_systems` directly.
+
+Rationale: an earlier read-time L3 fallback wrote the result of `scan_systems` straight back to `game_library_meta`. On a partially-mounted NFS the walk returned 41 zero-rom rows that no recovery path could undo (mtime was stamped, `rom_count > 0` guard skipped). Removing the read-time write closes the vector at its source.
+
+The companion `scan_systems` guard returns `ScanError::AllSystemsMissing` when every visible system reports zero ROMs, so the rare legacy code path that does pass through a writer pool to a scan helper still cannot persist an all-zero meta row.
+
+A type-level split between `LibraryReadPool` and `LibraryWritePool` is planned to make the rule a compile-time invariant; until then it is enforced by code review, the regression suite at `replay-control-app/tests/cold_nfs_tests.rs`, and the assertions in `cached_systems_returns_empty_on_empty_db_without_writing`.
+
 ### game_library
 
 Primary game catalog. One row per ROM file. Populated by the scan pipeline, enriched by the enrichment pipeline.
