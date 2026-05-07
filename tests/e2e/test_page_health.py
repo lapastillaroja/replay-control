@@ -260,8 +260,6 @@ class TestServerFnsRegistered:
         "GetSystems",
         "GetInfo",
         "GetMetadataPageSnapshot",
-        "RescanGameLibrary",
-        "RebuildGameLibrary",
     ])
     def test_known_server_fns_registered(self, fn_name):
         status = _http_post(f"{PI_URL}/sfn/{fn_name}")

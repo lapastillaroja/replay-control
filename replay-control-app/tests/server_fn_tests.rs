@@ -109,6 +109,34 @@ async fn sfn_get_info_returns_system_info() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn sfn_rescan_game_library_is_registered() {
+    setup();
+    let env = TestEnv::new().await;
+    let app = test_router(env.state.clone());
+
+    let path = <server_fns::RescanGameLibrary as ServerFn>::PATH;
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(path)
+                .header("content-type", "application/x-www-form-urlencoded")
+                .header("accept", "application/x-www-form-urlencoded")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "RescanGameLibrary should be explicitly registered"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn sfn_nonexistent_function_returns_error() {
     setup();
     let env = TestEnv::new().await;
