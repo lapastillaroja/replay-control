@@ -365,15 +365,13 @@ pub async fn rebuild_game_library() -> Result<(), ServerFnError> {
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Clear L1+L2 cache. Surface errors instead of dropping them — a
-    // rebuild that proceeds after a no-op clear writes new rows over the
-    // *previous* table contents, which is the exact data-loss vector the
-    // typed-error refactor exists to close.
-    state
-        .cache
-        .invalidate(&state.library_writer)
-        .await
-        .map_err(|e| ServerFnError::new(format!("Could not clear library: {e}")))?;
+    // Clear L1 / user caches only. **Do not pre-clear L2** — under the
+    // strict reconcile rule (plan #24), each per-system scan replaces
+    // L2 only on success and preserves L2 on FS error. Pre-clearing
+    // destroys the fallback rows that strict reconcile is designed to
+    // preserve, which is the exact "rebuild during NFS hiccup wipes
+    // your library" vector this redesign closes.
+    state.cache.invalidate_l1().await;
     state.invalidate_user_caches().await;
 
     state.spawn_rebuild_enrichment(guard);

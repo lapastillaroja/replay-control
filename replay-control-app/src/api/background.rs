@@ -109,6 +109,13 @@ const STORAGE_CHECK_INTERVAL: u64 = 60;
 /// Cold-NFS meta poisoning fingerprint: every row reports
 /// `rom_count = 0` while still carrying a stamped `dir_mtime_secs`.
 /// Empty meta returns `false` (the legitimate fresh-DB state).
+///
+/// TODO(post-0.4.0): delete this and the recovery branch in
+/// `phase_cache_verification` once enough releases have passed that
+/// pre-existing poisoned users have all upgraded. The bug class can no
+/// longer occur (write-isolation landed in 0.4.0-beta.9); this is
+/// purely upgrade-path self-heal. Earliest safe drop: 2026-08, when
+/// most beta-channel users will have cycled through several releases.
 fn has_poisoned_meta_fingerprint(
     cached_meta: &[replay_control_core_server::library_db::SystemMeta],
 ) -> bool {
@@ -1172,7 +1179,7 @@ impl BackgroundManager {
             let scan_result = if rescan {
                 state
                     .cache
-                    .scan_and_cache_system_reconcile(
+                    .scan_and_cache_system(
                         storage,
                         &sys.folder_name,
                         region_pref,
@@ -2316,16 +2323,12 @@ impl AppState {
                 let region_pref = state.region_preference();
                 let region_secondary = state.region_preference_secondary();
 
-                // Invalidate L1+L2 for each affected system so get_roms
-                // does a fresh L3 filesystem scan.
-                for system in &affected_systems {
-                    if let Err(e) = state
-                        .cache
-                        .invalidate_system(system.clone(), &state.library_writer)
-                        .await
-                    {
-                        tracing::debug!("rom-watch invalidate_system({system}) skipped: {e}");
-                    }
+                // Invalidate L1/user caches around the scan, but do NOT
+                // pre-clear L2 — strict reconcile preserves cached rows
+                // when the FS read fails. Pre-clearing destroys that
+                // fallback. See plan #24's "do not clear L2 before
+                // scanning" invariant.
+                if !affected_systems.is_empty() {
                     state.invalidate_user_caches().await;
                 }
 
