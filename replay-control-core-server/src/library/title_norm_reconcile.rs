@@ -131,20 +131,18 @@ fn recompute(
     arcade_lookup: &HashMap<String, arcade_db::ArcadeGameInfo>,
 ) -> (String, String) {
     let stem = title_utils::filename_stem(rom_filename);
-    if is_arcade {
-        if let Some(info) = arcade_lookup.get(stem) {
-            let primary = normalize_title_for_metadata(&info.display_name);
-            let alt = if info.is_clone && !info.parent.is_empty() {
-                arcade_lookup
-                    .get(&info.parent)
-                    .map(|p| normalize_title_for_metadata(&p.display_name))
-                    .filter(|p| p != &primary)
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            return (primary, alt);
-        }
+    if is_arcade && let Some(info) = arcade_lookup.get(stem) {
+        let primary = normalize_title_for_metadata(&info.display_name);
+        let alt = if info.is_clone && !info.parent.is_empty() {
+            arcade_lookup
+                .get(&info.parent)
+                .map(|p| normalize_title_for_metadata(&p.display_name))
+                .filter(|p| p != &primary)
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        return (primary, alt);
     }
     (normalize_title_for_metadata(stem), String::new())
 }

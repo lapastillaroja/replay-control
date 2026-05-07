@@ -290,7 +290,7 @@ mod tests {
 "#;
 
     fn open_em_for_test(db_path: &Path) -> Connection {
-        let mut conn = external_metadata::open_at(db_path).unwrap();
+        let conn = external_metadata::open_at(db_path).unwrap();
         conn.execute_batch("PRAGMA synchronous=FULL;").unwrap();
         conn
     }

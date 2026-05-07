@@ -2270,68 +2270,6 @@ fn preflight_check(sources_dir: &Path) -> Result<(), String> {
     Err(msg)
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    use super::*;
-
-    fn temp_sources_dir() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        std::env::temp_dir().join(format!("build-catalog-test-{unique}"))
-    }
-
-    #[test]
-    fn insert_arcade_games_retains_full_mame_categories() {
-        let dir = temp_sources_dir();
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("mame0285-arcade.xml"),
-            r#"<?xml version="1.0"?>
-<mame version="0.285">
-<m name="ssipkr30" cloneof="ssipkr24" rotate="0" players="1" status="good"><d>SSI Poker (v3.0)</d><y>1988</y><f>SSI</f></m>
-<m name="100lions" rotate="0" players="1" status="good"><d>100 Lions</d><y>2006</y><f>Aristocrat</f></m>
-<m name="apple2gsr0p" rotate="0" status="good"><d>Apple IIgs (ROM00 prototype)</d><y>1986</y><f>Apple</f></m>
-</mame>
-"#,
-        )
-        .unwrap();
-        fs::write(
-            dir.join("catver-mame-current.ini"),
-            "[Category]\nssipkr30=Gambling / Cards\n100lions=Slot Machine / Video Slot\napple2gsr0p=Computer / Home System\n",
-        )
-        .unwrap();
-
-        let conn = Connection::open_in_memory().unwrap();
-        create_schema(&conn).unwrap();
-        insert_arcade_games(&conn, &dir).unwrap();
-
-        let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM arcade_games WHERE rom_name IN ('ssipkr30', '100lions', 'apple2gsr0p')",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(count, 3);
-
-        let genre: String = conn
-            .query_row(
-                "SELECT normalized_genre FROM arcade_games WHERE rom_name = 'ssipkr30'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(genre, "Board & Card");
-
-        fs::remove_dir_all(dir).unwrap();
-    }
-}
-
 // =============================================================================
 // Main
 // =============================================================================
@@ -2419,4 +2357,66 @@ fn main() {
     println!("  rom_entries:     {}", rom_count);
     println!("  series_entries:  {}", series_count);
     println!("  is_stub:         {}", is_stub);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn temp_sources_dir() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("build-catalog-test-{unique}"))
+    }
+
+    #[test]
+    fn insert_arcade_games_retains_full_mame_categories() {
+        let dir = temp_sources_dir();
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("mame0285-arcade.xml"),
+            r#"<?xml version="1.0"?>
+<mame version="0.285">
+<m name="ssipkr30" cloneof="ssipkr24" rotate="0" players="1" status="good"><d>SSI Poker (v3.0)</d><y>1988</y><f>SSI</f></m>
+<m name="100lions" rotate="0" players="1" status="good"><d>100 Lions</d><y>2006</y><f>Aristocrat</f></m>
+<m name="apple2gsr0p" rotate="0" status="good"><d>Apple IIgs (ROM00 prototype)</d><y>1986</y><f>Apple</f></m>
+</mame>
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("catver-mame-current.ini"),
+            "[Category]\nssipkr30=Gambling / Cards\n100lions=Slot Machine / Video Slot\napple2gsr0p=Computer / Home System\n",
+        )
+        .unwrap();
+
+        let conn = Connection::open_in_memory().unwrap();
+        create_schema(&conn).unwrap();
+        insert_arcade_games(&conn, &dir).unwrap();
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM arcade_games WHERE rom_name IN ('ssipkr30', '100lions', 'apple2gsr0p')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3);
+
+        let genre: String = conn
+            .query_row(
+                "SELECT normalized_genre FROM arcade_games WHERE rom_name = 'ssipkr30'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(genre, "Board & Card");
+
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

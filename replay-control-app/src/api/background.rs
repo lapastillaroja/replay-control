@@ -52,8 +52,8 @@ fn update_rebuild_progress(state: &AppState, f: impl FnOnce(&mut RebuildProgress
 /// Push per-system progress into whichever Activity variant the caller
 /// owns. Startup carries a single label string; Rebuild carries counters
 /// + elapsed seconds. The `enriching` flag is forwarded as a structured
-/// field on the activity so consumers (banner, page hint) format the
-/// per-system phase via i18n instead of receiving a baked English suffix.
+///   field on the activity so consumers (banner, page hint) format the
+///   per-system phase via i18n instead of receiving a baked English suffix.
 fn report_system(
     state: &AppState,
     progress: PopulateProgress,
@@ -669,7 +669,6 @@ impl BackgroundManager {
         });
         let (hash_join, stamps) = tokio::join!(hash_fut, stamp_fut);
         let (stored_hash, stored_norm_version) = stamps.unwrap_or((None, None));
-        let stored_hash = stored_hash;
         let stored_norm_version: Option<u32> = stored_norm_version.and_then(|s| s.parse().ok());
 
         let current_hash = match hash_join {

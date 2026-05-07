@@ -18,9 +18,10 @@ pub use replay_control_core::library_db::{ImportProgress, ImportState};
 /// `Misconfigured` means the user's configured target cannot currently be
 /// activated. When `current_kind` is `Some`, Replay Control is deliberately
 /// keeping the last successfully activated storage online as a fallback.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum StorageStatus {
+    #[default]
     WaitingForMount,
     Activating,
     Ready,
@@ -32,12 +33,6 @@ pub enum StorageStatus {
         current_kind: Option<String>,
         reason: String,
     },
-}
-
-impl Default for StorageStatus {
-    fn default() -> Self {
-        Self::WaitingForMount
-    }
 }
 
 pub fn storage_kind_label(kind: &str) -> &'static str {

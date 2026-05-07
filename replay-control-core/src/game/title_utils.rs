@@ -742,7 +742,6 @@ mod tests {
                 "TITLE_NORM_VERSION bump required: input {input:?}"
             );
         }
-        // Sanity: the constant exists and is non-zero.
-        assert!(TITLE_NORM_VERSION >= 1);
+        const _: () = assert!(TITLE_NORM_VERSION >= 1);
     }
 }
