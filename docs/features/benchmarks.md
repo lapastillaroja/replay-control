@@ -1,7 +1,7 @@
 # Performance Benchmarks
 
-Last updated: 2026-05-06
-Build: v0.4.0-beta.9 (release profile, commit `92d211e`)
+Last updated: 2026-05-07
+Primary benchmark build: v0.4.0-beta.9 (release profile, commit `92d211e`)
 
 This page records what Replay Control actually costs to run — CPU, memory, page-load time, and download size — in normal use, plus what it does under artificial stress so we can spot regressions between releases.
 
@@ -78,7 +78,19 @@ The web app's static files. WASM is served gzip-compressed by the server. These 
 
 ## Storage Caveat
 
-The numbers above use **USB storage**. Switching to NFS over WiFi roughly **3–4× slows** the heavier pages — Home concurrent throughput dropped from 282 to 184 req/s, system pages from 933 to 241 req/s, and the rendered HTML for `/games/<system>` ballooned because the catalog content grew on the network share. The slowdown is dominated by the SQLite catalog and ROM index living on the network share, not by the app itself. Use USB or the internal SD/NVMe for performance, NFS for convenience.
+The numbers above use **USB storage**. Older NFS measurements over WiFi showed roughly **3–4× slower** heavier pages — Home concurrent throughput dropped from 282 to 184 req/s and system pages from 933 to 241 req/s. Current builds keep `catalog.sqlite`, `library.db`, and `external_metadata.db` on the Pi, so normal page rendering should be much less sensitive to ROM storage latency than those historical numbers. NFS is still slower for library maintenance because scans must walk the remote ROM tree and rebuilds may stream large cartridge ROMs to recompute CRCs.
+
+## Library Maintenance on NFS
+
+Measured separately on the beta.9 Pi/NFS development library (95,495 ROMs across 41 systems, build `b62fa81`):
+
+| Operation | Duration | Hash behavior |
+|---|---:|---|
+| Startup cache verification, already fresh | ~4.5 s from service start | No system rescan needed |
+| Manual rescan | 194.1 s | Reused 17,490 exact CRC cache entries and 16 same-size entries; recomputed 2 hashes |
+| Manual rebuild | 636.0 s | Forced 17,508 CRC reads; skipped 2 CD/image entries in hybrid folders |
+
+The important split is rescan vs. rebuild. A normal rescan still walks the NFS tree, writes the refreshed library rows, and enriches systems, but it avoids streaming unchanged hash-eligible ROM content. Rebuild is the explicit verification/repair path and intentionally recomputes cartridge hashes, so large GBA/N64/SNES-era sets can add minutes on NFS.
 
 ## Stress Tests
 
