@@ -114,6 +114,8 @@ research/investigations/load-tests/
 tools/bench-results/
 PLAN.md
 .claude/
+# Local scratch dumps (Pi snapshots, log captures, ad-hoc analysis input)
+/tmp/
 
 # Build-time catalog (generated from data/ — not committed; only fixture is tracked)
 /catalog.sqlite
